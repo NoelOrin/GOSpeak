@@ -1,0 +1,10 @@
+{
+  "name": "@go-rtc/server",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "gin-dev": "go run main.go server --env=dev",
+    "gin-prod": "go run main.go server --env=prod",
+    "gin-build": "go build -o goRTC.exe main.go"
+  }
+}

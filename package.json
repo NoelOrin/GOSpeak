@@ -1,0 +1,22 @@
+{
+  "name": "go-rtc-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "dev:web": "pnpm --filter @go-rtc/web dev",
+    "build:web": "pnpm --filter @go-rtc/web build",
+    "dev:server-web": "pnpm --filter @go-rtc/server-web dev",
+    "build:server-web": "pnpm --filter @go-rtc/server-web build",
+    "dev:gin": "cd packages/server && go run main.go server --env=dev",
+    "build:gin": "cd packages/server && go build -o goRTC.exe main.go",
+    "dev": "pnpm run dev:web & pnpm run dev:server-web",
+    "lint": "pnpm -r lint",
+    "format": "pnpm -r format"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^17.7.2",
+    "@commitlint/config-conventional": "^17.7.0",
+    "lefthook": "1.8.5"
+  }
+}

@@ -1,0 +1,27 @@
+node_modules
+.DS_Store
+dist
+dist-ssr
+*.local
+.env
+.nitro
+.tanstack
+.wrangler
+
+.idea
+.vscode
+
+# Go
+/main.exe
+/server/logs/*
+/app.db
+/gin.log
+
+# Go workspace
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out

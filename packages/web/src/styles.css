@@ -1,0 +1,85 @@
+@import "tailwindcss";
+/* @import "@/assets/styles/components.css"; */
+/* @import "@/assets/styles/theme.css"; */
+@plugin "daisyui" {
+	themes:all
+		/* acid --default,, */
+		/* dark --prefersdark; */
+	
+}
+
+@plugin "daisyui/theme" {
+	name: "acid";
+	default: true;
+	--radius-selector: 1rem;
+	--radius-field: 0.25rem;
+	--radius-box: 0.5rem;
+}
+
+@plugin "daisyui/theme" {
+	name: "abyss";
+	/* default: true; */
+	--radius-selector: 1rem;
+	--radius-field: 0.25rem;
+	--radius-box: 0.5rem;
+}
+
+@property --light-text-color {
+	syntax: "<color>";
+	inherits: false;
+	initial-value: rgb(55 65 81);
+}
+
+@property --dark-text-color {
+	syntax: "<color>";
+	inherits: false;
+	initial-value: rgb(240 244 246);
+}
+
+@property --light-bg-color_1 {
+	syntax: "<color>";
+	inherits: false;
+	initial-value: rgb(235 238 240);
+}
+
+@property --dark-bg-color_1 {
+	syntax: "<color>";
+	inherits: false;
+	initial-value: rgb(37 36 40);
+}
+
+@property --light-bg-color_2 {
+	syntax: "<color>";
+	inherits: false;
+	initial-value: rgb(235 238 240);
+}
+
+@property --dark-bg-color_2 {
+	syntax: "<color>";
+	inherits: false;
+	initial-value: rgb(48 48 48);
+}
+
+@property --light-card-color {
+	syntax: "<color>";
+	inherits: false;
+	initial-value: rgb(227 227 227);
+}
+
+@property --dark-card-color {
+	syntax: "<color>";
+	inherits: false;
+	initial-value: rgb(62 62 68);
+}
+
+@property --dark-item-color {
+	syntax: "<color>";
+	inherits: false;
+	initial-value: rgb(82 82 91);
+}
+
+@property --light-item-color {
+	syntax: "<color>";
+	inherits: false;
+	initial-value: rgb(243 244 246);
+}
