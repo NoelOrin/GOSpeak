@@ -1,4 +1,4 @@
-package models
+package model
 
 import (
 	"github.com/oklog/ulid/v2"
@@ -7,12 +7,12 @@ import (
 )
 
 type Room struct {
-	ID        uint   `gorm:"primaryKey" json:"id"` // 仅用于维护表
+	ID        uint   `gorm:"primaryKey" json:"id"`
 	UUID      string `gorm:"type:uuid;uniqueIndex" json:"uuid"`
-	Name      string
-	Limit     uint
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Name      string `json:"name"`
+	Limit     uint   `json:"limit"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func (r *Room) BeforeCreate(_ *gorm.DB) error {

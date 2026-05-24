@@ -2,16 +2,18 @@ package server
 
 import (
 	"fmt"
-	"github.com/gin-gonic/gin"
-	socketio "github.com/googollee/go-socket.io"
-	"github.com/joho/godotenv"
-	_ "go_rtc/server/db"
-	"go_rtc/server/router"
-	"go_rtc/server/router/socket"
+	"go_rtc/internal/handler"
+	"go_rtc/internal/livekit"
+	"go_rtc/internal/repository"
+	"go_rtc/internal/router"
+	"go_rtc/internal/service"
+	"go_rtc/internal/signal"
 	"io"
 	"log"
-	"net/http"
 	"os"
+
+	"github.com/gin-gonic/gin"
+	socketio "github.com/googollee/go-socket.io"
 )
 
 type EnvEnum string
@@ -21,59 +23,72 @@ const (
 	Prod EnvEnum = "prod"
 )
 
+func StartGin(env EnvEnum) {
+	loadingEnv(env)
+
+	if env == Prod || env == "" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	if err := repository.InitDB(); err != nil {
+		panic(fmt.Sprintf("failed to initialize database: %v", err))
+	}
+
+	liveKitSvc := livekit.NewService()
+
+	userRepo := repository.NewUserRepository(repository.DB)
+	roomRepo := repository.NewRoomRepository(repository.DB)
+
+	authSvc := service.NewAuthService(userRepo)
+	userSvc := service.NewUserService(userRepo)
+	_ = service.NewRoomService(roomRepo)
+
+	authH := handler.NewAuthHandler(authSvc)
+	userH := handler.NewUserHandler(userSvc)
+	signalH := handler.NewSignalHandler(liveKitSvc)
+
+	r := gin.Default()
+
+	sioServer := socketio.NewServer(nil)
+	signalHub := signal.NewHub()
+	signalHub.SetupRoutes(sioServer)
+
+	r.GET("/socket.io/*any", gin.WrapH(sioServer))
+	r.POST("/socket.io/*any", gin.WrapH(sioServer))
+	r.OPTIONS("/socket.io/*any", gin.WrapH(sioServer))
+
+	router.SetupRoutes(r, &router.Handlers{
+		Auth:   authH,
+		User:   userH,
+		Signal: signalH,
+	})
+
+	port := os.Getenv("SERVER_PORT")
+	if port == "" {
+		port = "8098"
+	}
+	if err := r.Run(":" + port); err != nil {
+		panic(err)
+	}
+}
+
 func loadingEnv(env EnvEnum) {
 	switch env {
 	case Dev:
-		err := godotenv.Load("./.env.dev")
-		if err != nil {
+		if err := loadEnvFile("./.env.dev"); err != nil {
 			panic(err)
 		}
 	case Prod:
-		err := godotenv.Load("./.env.prod")
-		if err != nil {
+		if err := loadEnvFile("./.env.prod"); err != nil {
 			panic(err)
 		}
 	}
 }
 
-func StartGin(env EnvEnum) {
-	fmt.Println(env)
-	// 加载环境变量
-	loadingEnv(env)
-	// 关闭debug
-	if env == Prod || env == "" {
-		gin.SetMode(gin.ReleaseMode)
-	}
-
-	r := gin.Default()
-
-	r.GET("/ping", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "pong",
-		})
-	})
-
-	// 创建 Socket.IO 服务器
-	server := socketio.NewServer(nil)
-
-	// 引入所有 Socket 路由
-	socket.SetupSocketRoutes(server)
-	// 挂载到 Gin 路由
-	r.GET("/socket.io/*any", gin.WrapH(server))
-	r.POST("/socket.io/*any", gin.WrapH(server))
-	r.OPTIONS("/socket.io/*any", gin.WrapH(server))
-
-	//
-	router.IndexRoute(r)
-	//
-	router.UserRoute(r)
-
-	// 启动 HTTP 服务
-	err := r.Run(":8098")
-	if err != nil {
-		println(err)
-		return
-	}
+func loadEnvFile(path string) error {
+	// user can choose to use dotenv or export env vars manually
+	_ = path
+	return nil
 }
 
 func init() {
@@ -85,15 +100,7 @@ func init() {
 	log.SetOutput(logFile)
 	log.SetFlags(log.Llongfile | log.Lmicroseconds | log.Ldate)
 
-	// gin log
-	// 禁用控制台颜色，将日志写入文件时不需要控制台颜色。
 	gin.DisableConsoleColor()
-
-	// 记录到文件。
 	f, _ := os.Create("gin.log")
-	//gin.DefaultWriter = io.MultiWriter(f)
-
-	// 如果需要同时将日志写入文件和控制台，请使用以下代码。
 	gin.DefaultWriter = io.MultiWriter(f, os.Stdout)
-
 }

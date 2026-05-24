@@ -1,12 +1,14 @@
-package db
+package repository
 
 import (
 	"fmt"
+	"go_rtc/internal/model"
+	"os"
+
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"os"
 )
 
 type DatabaseEnum string
@@ -17,11 +19,10 @@ const (
 	MySQL      DatabaseEnum = "MySQL"
 )
 
-var DB *gorm.DB // 全局 DB 变量
+var DB *gorm.DB
 
-func ConnectDB() error {
+func InitDB() error {
 	dbType := getDBType()
-
 	var err error
 	switch dbType {
 	case PostgreSQL:
@@ -31,27 +32,24 @@ func ConnectDB() error {
 	case MySQL:
 		DB, err = connectMySQL()
 	default:
-		return fmt.Errorf("不支持的数据库类型: %s", dbType)
+		return fmt.Errorf("unsupported database type: %s", dbType)
 	}
-
 	if err != nil {
-		return fmt.Errorf("连接 %s 数据库失败: %w", dbType, err)
+		return fmt.Errorf("failed to connect %s: %w", dbType, err)
 	}
-
-	return nil
+	return autoMigrate()
 }
 
 func getDBType() DatabaseEnum {
 	dbType := os.Getenv("DB_TYPE")
 	if dbType == "" {
-		return SQLite // 默认使用 SQLite
+		return SQLite
 	}
 	return DatabaseEnum(dbType)
 }
 
-// 各数据库连接函数
 func connectPostgreSQL() (*gorm.DB, error) {
-	dsn := os.Getenv("DB_DSN") // 例如: "host=localhost user=postgres password=123456 dbname=myapp port=5432 sslmode=disable"
+	dsn := os.Getenv("DB_DSN")
 	if dsn == "" {
 		dsn = fmt.Sprintf(
 			"host=%s user=%s password=%s dbname=myapp port=%s sslmode=disable",
@@ -67,7 +65,7 @@ func connectPostgreSQL() (*gorm.DB, error) {
 func connectSQLite() (*gorm.DB, error) {
 	path := os.Getenv("DB_PATH")
 	if path == "" {
-		path = "app.db" // 默认数据库文件
+		path = "app.db"
 	}
 	return gorm.Open(sqlite.Open(path), &gorm.Config{})
 }
@@ -76,15 +74,14 @@ func connectMySQL() (*gorm.DB, error) {
 	dsn := os.Getenv("DB_DSN")
 	if dsn == "" {
 		dsn = fmt.Sprintf(
-			"host=%s user=%s password=%s dbname=myapp port=%s sslmode=disable",
+			"%s:%s@tcp(%s:%s)/myapp?charset=utf8mb4&parseTime=True&loc=Local",
+			getEnv("DB_USER", "root"),
+			getEnv("DB_PASSWORD", ""),
 			getEnv("DB_HOST", "localhost"),
-			getEnv("DB_USER", "postgres"),
-			getEnv("DB_PASSWORD", "postgres"),
-			getEnv("DB_PORT", "5432"),
+			getEnv("DB_PORT", "3306"),
 		)
 	}
 	return gorm.Open(mysql.Open(dsn), &gorm.Config{})
-
 }
 
 func getEnv(key, defaultValue string) string {
@@ -94,9 +91,10 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-func init() {
-	err := ConnectDB()
-	if err != nil {
-		panic(err)
-	}
+func autoMigrate() error {
+	return DB.AutoMigrate(
+		&model.User{},
+		&model.Room{},
+		&model.UserGroup{},
+	)
 }

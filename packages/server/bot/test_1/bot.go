@@ -2,11 +2,15 @@ package main
 
 import (
 	"fmt"
-	"go_rtc/server/service/sign"
+	"go_rtc/internal/livekit"
 )
 
 func main() {
-	BOT := sign.ClientBot{}
-	println("123")
-	fmt.Println(BOT)
+	svc := livekit.NewService()
+	token, err := svc.GenerateToken("test-room", "test-bot")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	fmt.Println("Token:", token)
 }
