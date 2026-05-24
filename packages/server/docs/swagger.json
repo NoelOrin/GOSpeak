@@ -1,4 +1,5 @@
 {
+    "schemes": [],
     "swagger": "2.0",
     "info": {
         "description": "GoRTC - WebRTC Server API",
