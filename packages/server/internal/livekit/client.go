@@ -1,7 +1,7 @@
 package livekit
 
 import (
-	"fmt"
+	"go_rtc/internal/pkg"
 	"os"
 	"time"
 
@@ -9,15 +9,15 @@ import (
 )
 
 type Service struct {
-	host   string
-	apiKey string
+	host      string
+	apiKey    string
 	apiSecret string
 }
 
 func NewService() *Service {
 	return &Service{
-		host:   os.Getenv("LIVEKIT_HOST"),
-		apiKey: os.Getenv("LIVEKIT_KEY"),
+		host:      os.Getenv("LIVEKIT_HOST"),
+		apiKey:    os.Getenv("LIVEKIT_KEY"),
 		apiSecret: os.Getenv("LIVEKIT_SECRET"),
 	}
 }
@@ -32,7 +32,11 @@ func (s *Service) GenerateToken(room, identity string) (string, error) {
 		SetIdentity(identity).
 		SetValidFor(time.Hour)
 
-	return at.ToJWT()
+	token, err := at.ToJWT()
+	if err != nil {
+		return "", pkg.NewAppError(pkg.LIVEKIT_ERROR, err.Error())
+	}
+	return token, nil
 }
 
 func (s *Service) GenerateAdminToken() (string, error) {
@@ -45,19 +49,23 @@ func (s *Service) GenerateAdminToken() (string, error) {
 		SetIdentity("admin").
 		SetValidFor(time.Hour)
 
-	return at.ToJWT()
+	token, err := at.ToJWT()
+	if err != nil {
+		return "", pkg.NewAppError(pkg.LIVEKIT_ERROR, err.Error())
+	}
+	return token, nil
 }
 
 func (s *Service) ListRooms() (interface{}, error) {
 	if s.host == "" {
-		return nil, fmt.Errorf("livekit host not configured")
+		return nil, pkg.NewAppError(pkg.LIVEKIT_NOT_CONFIGURED)
 	}
 	return nil, nil
 }
 
 func (s *Service) ListParticipants(room string) (interface{}, error) {
 	if s.host == "" {
-		return nil, fmt.Errorf("livekit host not configured")
+		return nil, pkg.NewAppError(pkg.LIVEKIT_NOT_CONFIGURED)
 	}
 	_ = room
 	return nil, nil

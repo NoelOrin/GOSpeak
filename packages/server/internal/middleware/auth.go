@@ -12,7 +12,7 @@ func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenHeader := c.Request.Header.Get("Authorization")
 		if tokenHeader == "" {
-			pkg.Error(c, http.StatusUnauthorized, pkg.TOKEN_NOT_EXIST)
+			pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 			c.Abort()
 			return
 		}
@@ -24,13 +24,13 @@ func JWTAuth() gin.HandlerFunc {
 
 		claims, err := pkg.ParseToken(tokenStr)
 		if err != nil {
-			pkg.Error(c, http.StatusUnauthorized, pkg.TOKEN_WRONG)
+			pkg.Fail(c, pkg.TOKEN_WRONG)
 			c.Abort()
 			return
 		}
 
 		if pkg.IsTokenExpired(claims) {
-			pkg.Error(c, http.StatusUnauthorized, pkg.TOKEN_RUNTIME)
+			pkg.Fail(c, pkg.TOKEN_EXPIRED)
 			c.Abort()
 			return
 		}

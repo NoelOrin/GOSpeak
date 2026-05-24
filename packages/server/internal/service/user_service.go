@@ -2,7 +2,9 @@ package service
 
 import (
 	"go_rtc/internal/model"
+	"go_rtc/internal/pkg"
 	"go_rtc/internal/repository"
+	"gorm.io/gorm"
 )
 
 type UserService struct {
@@ -14,11 +16,25 @@ func NewUserService(userRepo *repository.UserRepository) *UserService {
 }
 
 func (s *UserService) GetByID(id uint) (*model.User, error) {
-	return s.userRepo.GetByID(id)
+	user, err := s.userRepo.GetByID(id)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, pkg.NewAppError(pkg.NOT_FOUND, "user not found")
+		}
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return user, nil
 }
 
 func (s *UserService) GetByUUID(uuid string) (*model.User, error) {
-	return s.userRepo.GetByUUID(uuid)
+	user, err := s.userRepo.GetByUUID(uuid)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, pkg.NewAppError(pkg.NOT_FOUND, "user not found")
+		}
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return user, nil
 }
 
 func (s *UserService) List(page, pageSize int) ([]model.User, int64, error) {
@@ -28,17 +44,30 @@ func (s *UserService) List(page, pageSize int) ([]model.User, int64, error) {
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-	return s.userRepo.List(page, pageSize)
+	users, total, err := s.userRepo.List(page, pageSize)
+	if err != nil {
+		return nil, 0, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return users, total, nil
 }
 
 func (s *UserService) Update(user *model.User) error {
-	return s.userRepo.Update(user)
+	if err := s.userRepo.Update(user); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return nil
 }
 
 func (s *UserService) Delete(id uint) error {
 	_, err := s.userRepo.GetByID(id)
 	if err != nil {
-		return err
+		if err == gorm.ErrRecordNotFound {
+			return pkg.NewAppError(pkg.NOT_FOUND, "user not found")
+		}
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	return s.userRepo.Delete(id)
+	if err := s.userRepo.Delete(id); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return nil
 }

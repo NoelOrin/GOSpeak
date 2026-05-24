@@ -30,7 +30,7 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 
 	user, err := h.userService.GetByID(0)
 	if err != nil {
-		pkg.FailWithMsg(c, pkg.NOT_FOUND, err.Error())
+		pkg.HandleError(c, err)
 		return
 	}
 	_ = usernameStr
@@ -49,19 +49,18 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        id   path      int  true  "User ID"
 // @Success      200  {object}  pkg.Response
-// @Failure      404  {object}  pkg.Response
 // @Router       /user/{id} [get]
 func (h *UserHandler) GetByID(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		pkg.FailWithMsg(c, pkg.INVALID_PARAMS, "invalid id")
+		pkg.Fail(c, pkg.INVALID_PARAMS, "invalid id")
 		return
 	}
 
 	user, err := h.userService.GetByID(uint(id))
 	if err != nil {
-		pkg.FailWithMsg(c, pkg.NOT_FOUND, err.Error())
+		pkg.HandleError(c, err)
 		return
 	}
 
@@ -77,7 +76,6 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 // @Param        page      query  int  false  "Page number (default 1)"
 // @Param        page_size query  int  false  "Items per page (default 20, max 100)"
 // @Success      200       {object}  pkg.Response
-// @Failure      500       {object}  pkg.Response
 // @Router       /user/list [get]
 func (h *UserHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -85,7 +83,7 @@ func (h *UserHandler) List(c *gin.Context) {
 
 	users, total, err := h.userService.List(page, pageSize)
 	if err != nil {
-		pkg.FailWithMsg(c, pkg.INTERNAL_ERROR, err.Error())
+		pkg.HandleError(c, err)
 		return
 	}
 
@@ -104,18 +102,17 @@ func (h *UserHandler) List(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        id   path      int  true  "User ID"
 // @Success      200  {object}  pkg.Response
-// @Failure      500  {object}  pkg.Response
 // @Router       /user/{id} [delete]
 func (h *UserHandler) Delete(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		pkg.FailWithMsg(c, pkg.INVALID_PARAMS, "invalid id")
+		pkg.Fail(c, pkg.INVALID_PARAMS, "invalid id")
 		return
 	}
 
 	if err := h.userService.Delete(uint(id)); err != nil {
-		pkg.FailWithMsg(c, pkg.INTERNAL_ERROR, err.Error())
+		pkg.HandleError(c, err)
 		return
 	}
 

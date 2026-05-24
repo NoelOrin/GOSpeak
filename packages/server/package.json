@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "go run main.go server -e dev",
     "prod": "go run main.go server -e prod",
-    "build": "go build -o gospeak-server main.go"
+    "build": "go build -o gospeak-server main.go",
+    "test": "node test/run.js"
   }
 }

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"errors"
 	"go_rtc/internal/model"
 	"go_rtc/internal/pkg"
 	"go_rtc/internal/repository"
@@ -27,32 +26,32 @@ type RegisterRequest struct {
 }
 
 type AuthResponse struct {
-	Token        string `json:"token"`
-	RefreshToken string `json:"refresh_token"`
+	Token        string     `json:"token"`
+	RefreshToken string     `json:"refresh_token"`
 	User         model.User `json:"user"`
 }
 
 func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 	user, err := s.userRepo.GetByName(req.Username)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("user not found")
+		if err == gorm.ErrRecordNotFound {
+			return nil, pkg.NewAppError(pkg.USER_NOT_FOUND, "user not found")
 		}
-		return nil, err
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
 	if user.Password != req.Password {
-		return nil, errors.New("invalid password")
+		return nil, pkg.NewAppError(pkg.INVALID_PASSWORD)
 	}
 
 	token, err := pkg.GenerateToken(user.Name)
 	if err != nil {
-		return nil, err
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
 	refreshToken, err := pkg.GenerateRefreshToken(user.Name)
 	if err != nil {
-		return nil, err
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
 	return &AuthResponse{
@@ -65,7 +64,7 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 	existing, _ := s.userRepo.GetByName(req.Username)
 	if existing != nil {
-		return nil, errors.New("username already exists")
+		return nil, pkg.NewAppError(pkg.USERNAME_EXISTS)
 	}
 
 	user := &model.User{
@@ -73,17 +72,17 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 		Password: req.Password,
 	}
 	if err := s.userRepo.Create(user); err != nil {
-		return nil, err
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
 	token, err := pkg.GenerateToken(user.Name)
 	if err != nil {
-		return nil, err
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
 	refreshToken, err := pkg.GenerateRefreshToken(user.Name)
 	if err != nil {
-		return nil, err
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
 	return &AuthResponse{
@@ -94,5 +93,9 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 }
 
 func (s *AuthService) RefreshToken(username string) (string, error) {
-	return pkg.GenerateToken(username)
+	token, err := pkg.GenerateToken(username)
+	if err != nil {
+		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return token, nil
 }

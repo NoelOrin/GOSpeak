@@ -29,18 +29,17 @@ type JoinRoomRequest struct {
 // @Produce      json
 // @Param        request  body      JoinRoomRequest  true  "Room and identity"
 // @Success      200      {object}  pkg.Response
-// @Failure      400      {object}  pkg.Response
 // @Router       /signal/token [post]
 func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 	var req JoinRoomRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.FailWithMsg(c, pkg.INVALID_PARAMS, err.Error())
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
 
 	token, err := h.liveKitSvc.GenerateToken(req.Room, req.Identity)
 	if err != nil {
-		pkg.FailWithMsg(c, pkg.INTERNAL_ERROR, err.Error())
+		pkg.HandleError(c, err)
 		return
 	}
 
@@ -67,12 +66,11 @@ type SignalRequest struct {
 // @Produce      json
 // @Param        request  body      SignalRequest  true  "Signaling message"
 // @Success      200      {object}  pkg.Response
-// @Failure      400      {object}  pkg.Response
 // @Router       /signal/signal [post]
 func (h *SignalHandler) Signal(c *gin.Context) {
 	var req SignalRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.FailWithMsg(c, pkg.INVALID_PARAMS, err.Error())
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
 
@@ -88,12 +86,11 @@ func (h *SignalHandler) Signal(c *gin.Context) {
 // @Tags         Signal
 // @Produce      json
 // @Success      200  {object}  pkg.Response
-// @Failure      500  {object}  pkg.Response
 // @Router       /signal/rooms [get]
 func (h *SignalHandler) ListRooms(c *gin.Context) {
 	rooms, err := h.liveKitSvc.ListRooms()
 	if err != nil {
-		pkg.FailWithMsg(c, pkg.INTERNAL_ERROR, err.Error())
+		pkg.HandleError(c, err)
 		return
 	}
 
@@ -107,18 +104,17 @@ func (h *SignalHandler) ListRooms(c *gin.Context) {
 // @Produce      json
 // @Param        room  query     string  true  "Room name"
 // @Success      200   {object}  pkg.Response
-// @Failure      400   {object}  pkg.Response
 // @Router       /signal/participants [get]
 func (h *SignalHandler) ListParticipants(c *gin.Context) {
 	room := c.Query("room")
 	if room == "" {
-		pkg.FailWithMsg(c, pkg.INVALID_PARAMS, "room is required")
+		pkg.Fail(c, pkg.INVALID_PARAMS, "room is required")
 		return
 	}
 
 	participants, err := h.liveKitSvc.ListParticipants(room)
 	if err != nil {
-		pkg.FailWithMsg(c, pkg.INTERNAL_ERROR, err.Error())
+		pkg.HandleError(c, err)
 		return
 	}
 

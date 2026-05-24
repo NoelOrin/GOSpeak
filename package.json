@@ -11,6 +11,7 @@
     "dev:server": "pnpm --filter @go-rtc/server dev",
     "prod:server": "pnpm --filter @go-rtc/server prod",
     "build:server": "pnpm --filter @go-rtc/server build",
+    "test:server": "pnpm --filter @go-rtc/server test",
     "dev": "pnpm run dev:web & pnpm run dev:server-web",
     "lint": "pnpm -r lint",
     "format": "pnpm -r format"
