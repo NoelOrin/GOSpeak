@@ -65,7 +65,10 @@ func connectPostgreSQL() (*gorm.DB, error) {
 func connectSQLite() (*gorm.DB, error) {
 	path := os.Getenv("DB_PATH")
 	if path == "" {
-		path = "app.db"
+		if err := os.MkdirAll("db", 0755); err != nil {
+			return nil, fmt.Errorf("failed to create db directory: %w", err)
+		}
+		path = "db/app.db"
 	}
 	return gorm.Open(sqlite.Open(path), &gorm.Config{})
 }

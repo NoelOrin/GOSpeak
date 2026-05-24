@@ -8,8 +8,9 @@
     "build:web": "pnpm --filter @go-rtc/web build",
     "dev:server-web": "pnpm --filter @go-rtc/server-web dev",
     "build:server-web": "pnpm --filter @go-rtc/server-web build",
-    "dev:gin": "cd packages/server && go run main.go server --env=dev",
-    "build:gin": "cd packages/server && go build -o goRTC.exe main.go",
+    "dev:server": "pnpm --filter @go-rtc/server dev",
+    "prod:server": "pnpm --filter @go-rtc/server prod",
+    "build:server": "pnpm --filter @go-rtc/server build",
     "dev": "pnpm run dev:web & pnpm run dev:server-web",
     "lint": "pnpm -r lint",
     "format": "pnpm -r format"

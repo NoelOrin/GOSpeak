@@ -1,0 +1,35 @@
+[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.
+
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /socket.io/*any           --> go_rtc/server.StartGin.WrapH.func1 (3 handlers)
+[GIN-debug] POST   /socket.io/*any           --> go_rtc/server.StartGin.WrapH.func2 (3 handlers)
+[GIN-debug] OPTIONS /socket.io/*any           --> go_rtc/server.StartGin.WrapH.func3 (3 handlers)
+[GIN-debug] GET    /ping                     --> go_rtc/internal/router.SetupRoutes.func1 (4 handlers)
+[GIN-debug] GET    /swagger/*any             --> github.com/swaggo/gin-swagger.CustomWrapHandler.func1 (4 handlers)
+[GIN-debug] POST   /api/v1/auth/login        --> go_rtc/internal/handler.(*AuthHandler).Login-fm (4 handlers)
+[GIN-debug] POST   /api/v1/auth/register     --> go_rtc/internal/handler.(*AuthHandler).Register-fm (4 handlers)
+[GIN-debug] POST   /api/v1/auth/refresh_token --> go_rtc/internal/handler.(*AuthHandler).GetRefreshToken-fm (4 handlers)
+[GIN-debug] POST   /api/v1/signal/token      --> go_rtc/internal/handler.(*SignalHandler).GetJoinToken-fm (4 handlers)
+[GIN-debug] POST   /api/v1/signal/signal     --> go_rtc/internal/handler.(*SignalHandler).Signal-fm (4 handlers)
+[GIN-debug] GET    /api/v1/signal/rooms      --> go_rtc/internal/handler.(*SignalHandler).ListRooms-fm (4 handlers)
+[GIN-debug] GET    /api/v1/signal/participants --> go_rtc/internal/handler.(*SignalHandler).ListParticipants-fm (4 handlers)
+[GIN-debug] GET    /api/v1/user/profile      --> go_rtc/internal/handler.(*UserHandler).GetProfile-fm (5 handlers)
+[GIN-debug] GET    /api/v1/user/list         --> go_rtc/internal/handler.(*UserHandler).List-fm (5 handlers)
+[GIN-debug] GET    /api/v1/user/:id          --> go_rtc/internal/handler.(*UserHandler).GetByID-fm (5 handlers)
+[GIN-debug] DELETE /api/v1/user/:id          --> go_rtc/internal/handler.(*UserHandler).Delete-fm (5 handlers)
+[GIN-debug] POST   /api/v1/auth/logout       --> go_rtc/internal/handler.(*AuthHandler).Logout-fm (4 handlers)
+[GIN-debug] POST   /api/v1/auth/refresh      --> go_rtc/internal/handler.(*AuthHandler).RefreshToken-fm (4 handlers)
+[GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
+Please check https://github.com/gin-gonic/gin/blob/master/docs/doc.md#dont-trust-all-proxies for details.
+[GIN-debug] Listening and serving HTTP on :8098
+[GIN] 2026/05/24 - 22:14:46 | 200 |      3.2485ms |             ::1 | GET      "/swagger/index.html"
+[GIN] 2026/05/24 - 22:14:46 | 200 |      45.458µs |             ::1 | GET      "/swagger/index.css"
+[GIN] 2026/05/24 - 22:14:46 | 200 |      41.125µs |             ::1 | GET      "/swagger/swagger-initializer.js"
+[GIN] 2026/05/24 - 22:14:46 | 200 |    4.450292ms |             ::1 | GET      "/swagger/swagger-ui-standalone-preset.js"
+[GIN] 2026/05/24 - 22:14:46 | 200 |    7.928625ms |             ::1 | GET      "/swagger/swagger-ui.css"
+[GIN] 2026/05/24 - 22:14:46 | 200 |     13.9605ms |             ::1 | GET      "/swagger/swagger-ui-bundle.js"
+[GIN] 2026/05/24 - 22:14:46 | 404 |      26.916µs |             ::1 | GET      "/"
+[GIN] 2026/05/24 - 22:14:46 | 404 |       3.416µs |             ::1 | GET      "/@vite/client"

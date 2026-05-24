@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "gin-dev": "go run main.go server --env=dev",
-    "gin-prod": "go run main.go server --env=prod",
-    "gin-build": "go build -o goRTC.exe main.go"
+    "dev": "go run main.go server -e dev",
+    "prod": "go run main.go server -e prod",
+    "build": "go build -o gospeak-server main.go"
   }
 }

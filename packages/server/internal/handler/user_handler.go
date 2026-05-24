@@ -16,6 +16,14 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 	return &UserHandler{userService: userService}
 }
 
+// GetProfile
+// @Summary      Get user profile
+// @Description  Get the profile of the currently authenticated user
+// @Tags         User
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  pkg.Response
+// @Router       /user/profile [get]
 func (h *UserHandler) GetProfile(c *gin.Context) {
 	username, _ := c.Get("username")
 	usernameStr, _ := username.(string)
@@ -33,6 +41,16 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 	})
 }
 
+// GetByID
+// @Summary      Get user by ID
+// @Description  Retrieve a user by their ID
+// @Tags         User
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "User ID"
+// @Success      200  {object}  pkg.Response
+// @Failure      404  {object}  pkg.Response
+// @Router       /user/{id} [get]
 func (h *UserHandler) GetByID(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -50,6 +68,17 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 	pkg.Success(c, user)
 }
 
+// List
+// @Summary      List users
+// @Description  Get a paginated list of users
+// @Tags         User
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page      query  int  false  "Page number (default 1)"
+// @Param        page_size query  int  false  "Items per page (default 20, max 100)"
+// @Success      200       {object}  pkg.Response
+// @Failure      500       {object}  pkg.Response
+// @Router       /user/list [get]
 func (h *UserHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -67,6 +96,16 @@ func (h *UserHandler) List(c *gin.Context) {
 	})
 }
 
+// Delete
+// @Summary      Delete user
+// @Description  Delete a user by their ID
+// @Tags         User
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "User ID"
+// @Success      200  {object}  pkg.Response
+// @Failure      500  {object}  pkg.Response
+// @Router       /user/{id} [delete]
 func (h *UserHandler) Delete(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)

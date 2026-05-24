@@ -1,0 +1,439 @@
+basePath: /api/v1
+definitions:
+  handler.AuthResponse:
+    properties:
+      code:
+        allOf:
+        - $ref: '#/definitions/pkg.ErrCode'
+        example: 0
+      data:
+        $ref: '#/definitions/handler.AuthResponseData'
+      message:
+        example: success
+        type: string
+    type: object
+  handler.AuthResponseData:
+    properties:
+      refresh_token:
+        example: eyJhbGciOiJIUzI1NiIs...
+        type: string
+      token:
+        example: eyJhbGciOiJIUzI1NiIs...
+        type: string
+      user:
+        $ref: '#/definitions/model.User'
+    type: object
+  handler.JoinRoomRequest:
+    properties:
+      identity:
+        example: user-123
+        type: string
+      room:
+        example: my-room
+        type: string
+    required:
+    - identity
+    - room
+    type: object
+  handler.LoginRequest:
+    properties:
+      password:
+        example: "123456"
+        type: string
+      username:
+        example: john
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  handler.RefreshTokenRequest:
+    properties:
+      refresh_token:
+        example: eyJ...
+        type: string
+    required:
+    - refresh_token
+    type: object
+  handler.RegisterRequest:
+    properties:
+      password:
+        example: "123456"
+        type: string
+      username:
+        example: john
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  handler.SignalRequest:
+    properties:
+      data: {}
+      identity:
+        example: user-123
+        type: string
+      room:
+        example: my-room
+        type: string
+      type:
+        example: offer
+        type: string
+    required:
+    - type
+    type: object
+  model.User:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      updated_at:
+        type: string
+      uuid:
+        type: string
+    type: object
+  pkg.ErrCode:
+    enum:
+    - 0
+    - 1
+    - 1001
+    - 1002
+    - 1003
+    - 2001
+    - 2002
+    - 2003
+    - 5001
+    type: integer
+    x-enum-varnames:
+    - SUCCESS
+    - ERROR
+    - TOKEN_NOT_EXIST
+    - TOKEN_WRONG
+    - TOKEN_RUNTIME
+    - INVALID_PARAMS
+    - UNAUTHORIZED
+    - NOT_FOUND
+    - INTERNAL_ERROR
+  pkg.Response:
+    properties:
+      code:
+        $ref: '#/definitions/pkg.ErrCode'
+      data: {}
+      message:
+        type: string
+    type: object
+host: localhost:8098
+info:
+  contact:
+    name: NoelOrin
+    url: https://github.com/NoelOrin
+  description: GoRTC - WebRTC Server API
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: https://github.com/NoelOrin/GoRTC
+  title: GoRTC API
+  version: "1.0"
+paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate user and return JWT token
+      parameters:
+      - description: Login credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: User login
+      tags:
+      - Auth
+  /auth/logout:
+    post:
+      description: Invalidate current session (requires Bearer token)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: User logout
+      tags:
+      - Auth
+  /auth/refresh:
+    post:
+      description: Refresh the JWT token for the authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: Refresh current user token
+      tags:
+      - Auth
+  /auth/refresh_token:
+    post:
+      consumes:
+      - application/json
+      description: Get a new access token using refresh token
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RefreshTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: Refresh JWT token
+      tags:
+      - Auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Register a new user account
+      parameters:
+      - description: Registration info
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: User registration
+      tags:
+      - Auth
+  /signal/participants:
+    get:
+      description: Get all participants in a specific LiveKit room
+      parameters:
+      - description: Room name
+        in: query
+        name: room
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: List room participants
+      tags:
+      - Signal
+  /signal/rooms:
+    get:
+      description: Get all active rooms from LiveKit
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: List LiveKit rooms
+      tags:
+      - Signal
+  /signal/signal:
+    post:
+      consumes:
+      - application/json
+      description: Relay WebRTC signaling messages (offer/answer/ICE candidate)
+      parameters:
+      - description: Signaling message
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.SignalRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: Exchange signaling message
+      tags:
+      - Signal
+  /signal/token:
+    post:
+      consumes:
+      - application/json
+      description: Generate a LiveKit access token for joining a room
+      parameters:
+      - description: Room and identity
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.JoinRoomRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: Get LiveKit join token
+      tags:
+      - Signal
+  /user/{id}:
+    delete:
+      description: Delete a user by their ID
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete user
+      tags:
+      - User
+    get:
+      description: Retrieve a user by their ID
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: Get user by ID
+      tags:
+      - User
+  /user/list:
+    get:
+      description: Get a paginated list of users
+      parameters:
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: List users
+      tags:
+      - User
+  /user/profile:
+    get:
+      description: Get the profile of the currently authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: Get user profile
+      tags:
+      - User
+securityDefinitions:
+  BearerAuth:
+    description: Type "Bearer " followed by your JWT token
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
