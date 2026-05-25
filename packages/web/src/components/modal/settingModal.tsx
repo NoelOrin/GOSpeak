@@ -13,15 +13,15 @@ const SettingModal: Component<SearchModalProps> = ({ ...props }) => {
   return (
     <dialog ref={props.ref} class="modal">
       <div class="p-0 sm:w-full lg:w-[90%] sm:max-w-[100vw] lg:max-w-8xl sm:h-full lg:h-[90%] modal-box">
-        <button
+        {/* <button
           class="top-2 right-2 absolute border-0 btn btn-sm btn-circle"
           onClick={props.onClose}
         >
           ✕
-        </button>
+        </button> */}
         <SettingContext />
       </div>
-
+          
       <form method="dialog" class="modal-backdrop">
         <button></button>
       </form>

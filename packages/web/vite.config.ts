@@ -81,16 +81,18 @@ export default defineConfig(({ mode }) => {
     ],
     // 代理
     server: {
+      port: 3000,
       open: true,
       host: true,
       proxy: {
         "/api/v1": {
-          target: "http://localhost:8082",
+          target: "http://localhost:8998",
           changeOrigin: true,
-          rewrite: (path) => {
-            // console.log(path);
-            return path.replace(/^\/api\/v1/, "/api");
-          },
+        },
+        "/socket.io": {
+          target: "http://localhost:8998",
+          changeOrigin: true,
+          ws: true,
         },
       },
     },

@@ -7,11 +7,8 @@ import axios, {
 
 export interface Result<T = any> {
 	code: number;
-	message: string;
-	data?: T;
 	msg: string;
-	state: number;
-	toast?: string;
+	data?: T;
 }
 
 const createInstance = (baseURL?: string) => {

@@ -1,5 +1,5 @@
 {
-  "name": "solid-rtc",
+  "name": "@go-rtc/web",
   "private": true,
   "type": "module",
   "scripts": {
