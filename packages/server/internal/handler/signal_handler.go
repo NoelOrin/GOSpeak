@@ -22,12 +22,12 @@ type JoinRoomRequest struct {
 }
 
 // GetJoinToken
-// @Summary      Get LiveKit join token
-// @Description  Generate a LiveKit access token for joining a room
-// @Tags         Signal
+// @Summary      获取 LiveKit 加入 token
+// @Description  生成用于加入房间的 LiveKit 访问 token
+// @Tags         信令
 // @Accept       json
 // @Produce      json
-// @Param        request  body      JoinRoomRequest  true  "Room and identity"
+// @Param        request  body      JoinRoomRequest  true  "房间和身份标识"
 // @Success      200      {object}  pkg.Response
 // @Router       /signal/token [post]
 func (h *SignalHandler) GetJoinToken(c *gin.Context) {
@@ -44,7 +44,7 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 	}
 
 	pkg.Success(c, gin.H{
-		"token":    token,
+		"access_token": token,
 		"room":     req.Room,
 		"identity": req.Identity,
 	})
@@ -59,12 +59,12 @@ type SignalRequest struct {
 }
 
 // Signal
-// @Summary      Exchange signaling message
-// @Description  Relay WebRTC signaling messages (offer/answer/ICE candidate)
-// @Tags         Signal
+// @Summary      交换信令消息
+// @Description  中继 WebRTC 信令消息（offer/answer/ICE candidate）
+// @Tags         信令
 // @Accept       json
 // @Produce      json
-// @Param        request  body      SignalRequest  true  "Signaling message"
+// @Param        request  body      SignalRequest  true  "信令消息"
 // @Success      200      {object}  pkg.Response
 // @Router       /signal/signal [post]
 func (h *SignalHandler) Signal(c *gin.Context) {
@@ -81,9 +81,9 @@ func (h *SignalHandler) Signal(c *gin.Context) {
 }
 
 // ListRooms
-// @Summary      List LiveKit rooms
-// @Description  Get all active rooms from LiveKit
-// @Tags         Signal
+// @Summary      获取房间列表
+// @Description  从 LiveKit 获取所有活跃房间
+// @Tags         信令
 // @Produce      json
 // @Success      200  {object}  pkg.Response
 // @Router       /signal/rooms [get]
@@ -98,11 +98,11 @@ func (h *SignalHandler) ListRooms(c *gin.Context) {
 }
 
 // ListParticipants
-// @Summary      List room participants
-// @Description  Get all participants in a specific LiveKit room
-// @Tags         Signal
+// @Summary      获取房间参与者
+// @Description  获取指定 LiveKit 房间中的所有参与者
+// @Tags         信令
 // @Produce      json
-// @Param        room  query     string  true  "Room name"
+// @Param        room  query     string  true  "房间名称"
 // @Success      200   {object}  pkg.Response
 // @Router       /signal/participants [get]
 func (h *SignalHandler) ListParticipants(c *gin.Context) {

@@ -21,7 +21,7 @@ func NewAuthHandler(authService *service.AuthService) *AuthHandler {
 // @Tags         认证
 // @Accept       json
 // @Produce      json
-// @Param        request  body      service.LoginRequest  true  "Login credentials"
+// @Param        request  body      service.LoginRequest  true  "登录凭据"
 // @Success      200      {object}  pkg.Response
 // @Router       /auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -46,7 +46,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 // @Tags         认证
 // @Accept       json
 // @Produce      json
-// @Param        request  body      service.RegisterRequest  true  "Registration info"
+// @Param        request  body      service.RegisterRequest  true  "注册信息"
 // @Success      200      {object}  pkg.Response
 // @Router       /auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
@@ -66,13 +66,12 @@ func (h *AuthHandler) Register(c *gin.Context) {
 }
 
 // GetRefreshToken
-// @Summary      Refresh JWT token
 // @Summary      刷新 JWT token
 // @Description  使用刷新 token 获取新的访问 token
-// @Tags         Auth
+// @Tags         认证
 // @Accept       json
 // @Produce      json
-// @Param        request  body      object{refresh_token=string}  true  "Refresh token"
+// @Param        request  body      object{refresh_token=string}  true  "刷新 token"
 // @Success      200      {object}  pkg.Response
 // @Router       /auth/refresh_token [post]
 func (h *AuthHandler) GetRefreshToken(c *gin.Context) {
@@ -96,13 +95,13 @@ func (h *AuthHandler) GetRefreshToken(c *gin.Context) {
 		return
 	}
 
-	pkg.Success(c, gin.H{"token": newToken})
+	pkg.Success(c, gin.H{"access_token": newToken})
 }
 
 // Logout
-// @Summary      User logout
-// @Description  Invalidate current session (requires Bearer token)
-// @Tags         Auth
+// @Summary      用户登出
+// @Description  使当前会话失效（需要 Bearer token）
+// @Tags         认证
 // @Produce      json
 // @Security     BearerAuth
 // @Success      200  {object}  pkg.Response
@@ -112,9 +111,9 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 }
 
 // RefreshToken
-// @Summary      Refresh current user token
-// @Description  Refresh the JWT token for the authenticated user
-// @Tags         Auth
+// @Summary      刷新当前用户 token
+// @Description  为已认证用户刷新 JWT token
+// @Tags         认证
 // @Produce      json
 // @Security     BearerAuth
 // @Success      200  {object}  pkg.Response
@@ -133,5 +132,5 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	pkg.Success(c, gin.H{"token": token})
+	pkg.Success(c, gin.H{"access_token": token})
 }

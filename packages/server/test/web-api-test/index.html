@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GoRTC API 测试面板</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #232733;
+    --border: #2e3345;
+    --text: #e1e4ed;
+    --text2: #8b90a0;
+    --accent: #6c5ce7;
+    --green: #00b894;
+    --red: #e17055;
+    --orange: #fdcb6e;
+    --blue: #74b9ff;
+    --pink: #fd79a8;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Helvetica Neue', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .header h1 span { color: var(--accent); }
+  .server-config {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .server-config input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 7px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    width: 260px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .server-config input:focus { border-color: var(--accent); }
+  .server-config button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 7px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .server-config button:hover { opacity: 0.85; }
+
+  .layout {
+    display: flex;
+    height: calc(100vh - 57px);
+  }
+
+  .sidebar {
+    width: 240px;
+    min-width: 240px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 16px 0;
+    overflow-y: auto;
+  }
+  .sidebar-group { margin-bottom: 8px; }
+  .sidebar-group-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text2);
+    padding: 8px 20px 4px;
+    letter-spacing: 0.5px;
+  }
+  .sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 20px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text2);
+    transition: all 0.15s;
+    border-left: 3px solid transparent;
+  }
+  .sidebar-item:hover {
+    background: var(--surface2);
+    color: var(--text);
+  }
+  .sidebar-item.active {
+    background: rgba(108, 92, 231, 0.08);
+    color: var(--text);
+    border-left-color: var(--accent);
+  }
+  .method-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+    min-width: 38px;
+    text-align: center;
+    letter-spacing: 0.3px;
+  }
+  .method-GET    { background: rgba(116, 185, 255, 0.15); color: var(--blue); }
+  .method-POST   { background: rgba(0, 184, 148, 0.15); color: var(--green); }
+  .method-DELETE  { background: rgba(225, 112, 85, 0.15); color: var(--red); }
+
+  .main { flex: 1; overflow-y: auto; padding: 24px 32px; }
+
+  .endpoint-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .endpoint-desc {
+    font-size: 13px;
+    color: var(--text2);
+    margin-bottom: 20px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text2);
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-body { padding: 16px; }
+
+  .request-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .request-line .method-badge {
+    font-size: 12px;
+    padding: 5px 12px;
+    min-width: 55px;
+  }
+  .request-line .path {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .btn-send {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 8px 24px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .btn-send:hover { opacity: 0.85; transform: translateY(-1px); }
+  .btn-send:active { transform: translateY(0); }
+  .btn-send.loading { opacity: 0.5; pointer-events: none; }
+
+  textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 12px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    resize: vertical;
+    min-height: 80px;
+    outline: none;
+    transition: border-color 0.2s;
+    line-height: 1.6;
+  }
+  textarea:focus { border-color: var(--accent); }
+
+  .token-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding: 10px 14px;
+    background: rgba(108, 92, 231, 0.06);
+    border: 1px solid rgba(108, 92, 231, 0.2);
+    border-radius: 6px;
+  }
+  .token-bar label { font-size: 12px; color: var(--text2); white-space: nowrap; }
+  .token-bar input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    outline: none;
+  }
+  .token-bar input:focus { border-color: var(--accent); }
+  .token-bar .token-status {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    flex-shrink: 0;
+  }
+  .token-bar .token-status.valid { background: var(--green); }
+
+  .response-area { display: none; }
+  .response-area.show { display: block; }
+
+  .response-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .status-badge {
+    font-size: 12px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 4px;
+  }
+  .status-2xx { background: rgba(0, 184, 148, 0.15); color: var(--green); }
+  .status-4xx { background: rgba(253, 203, 110, 0.15); color: var(--orange); }
+  .status-5xx { background: rgba(225, 112, 85, 0.15); color: var(--red); }
+  .status-0   { background: rgba(225, 112, 85, 0.15); color: var(--red); }
+  .response-time {
+    font-size: 12px;
+    color: var(--text2);
+  }
+
+  .json-viewer {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 500px;
+    overflow-y: auto;
+    margin-top: 12px;
+  }
+  .json-viewer .key   { color: var(--pink); }
+  .json-viewer .str   { color: var(--green); }
+  .json-viewer .num   { color: var(--orange); }
+  .json-viewer .bool  { color: var(--blue); }
+  .json-viewer .null  { color: var(--text2); }
+  .json-viewer .bracket { color: var(--text2); }
+
+  .empty-state {
+    text-align: center;
+    padding: 80px 20px;
+    color: var(--text2);
+  }
+  .empty-state .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }
+  .empty-state p { font-size: 14px; }
+
+  .param-table { width: 100%; border-collapse: collapse; }
+  .param-table th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text2);
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .param-table td {
+    padding: 8px 8px 8px 0;
+    font-size: 13px;
+    vertical-align: top;
+  }
+  .param-table td:first-child {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--blue);
+    white-space: nowrap;
+  }
+  .param-table td:nth-child(2) {
+    color: var(--text2);
+    font-size: 12px;
+  }
+  .param-required { color: var(--red); font-size: 11px; }
+  .param-optional { color: var(--text2); font-size: 11px; }
+
+  @media (max-width: 768px) {
+    .layout { flex-direction: column; height: auto; }
+    .sidebar { width: 100%; min-width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
+    .main { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Go<span>RTC</span> API 测试面板</h1>
+  <div class="server-config">
+    <input type="text" id="baseUrl" value="http://localhost:8998" placeholder="服务器地址">
+    <button onclick="pingServer()">连接测试</button>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="sidebar" id="sidebar"></div>
+  <div class="main" id="main">
+    <div class="empty-state">
+      <div class="icon">&#9881;</div>
+      <p>选择左侧接口开始测试</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const TOKEN_KEY = 'gortc_jwt_token';
+let token = localStorage.getItem(TOKEN_KEY) || '';
+
+function getBase() {
+  return document.getElementById('baseUrl').value.replace(/\/+$/, '');
+}
+
+const APIs = [
+  {
+    group: '系统',
+    items: [
+      {
+        id: 'ping',
+        name: '健康检查',
+        method: 'GET',
+        path: '/ping',
+        desc: '测试服务器是否正常运行',
+        body: null
+      }
+    ]
+  },
+  {
+    group: '认证',
+    items: [
+      {
+        id: 'register',
+        name: '用户注册',
+        method: 'POST',
+        path: '/api/v1/auth/register',
+        desc: '注册新用户账号',
+        body: JSON.stringify({ username: 'testuser', password: 'Test123456', email: 'test@example.com', nickname: '测试用户' }, null, 2)
+      },
+      {
+        id: 'login',
+        name: '用户登录',
+        method: 'POST',
+        path: '/api/v1/auth/login',
+        desc: '用户登录获取 JWT token',
+        body: JSON.stringify({ username: 'testuser', password: 'Test123456' }, null, 2)
+      },
+      {
+        id: 'refresh-token',
+        name: '刷新 Token',
+        method: 'POST',
+        path: '/api/v1/auth/refresh_token',
+        desc: '使用刷新 token 获取新的访问 token',
+        body: JSON.stringify({ refresh_token: '' }, null, 2)
+      },
+      {
+        id: 'refresh',
+        name: '刷新当前 Token',
+        method: 'POST',
+        path: '/api/v1/auth/refresh',
+        desc: '刷新已认证用户的 JWT token',
+        body: null,
+        auth: true
+      },
+      {
+        id: 'logout',
+        name: '用户登出',
+        method: 'POST',
+        path: '/api/v1/auth/logout',
+        desc: '使当前会话失效',
+        body: null,
+        auth: true
+      }
+    ]
+  },
+  {
+    group: '信令',
+    items: [
+      {
+        id: 'join-token',
+        name: '获取加入 Token',
+        method: 'POST',
+        path: '/api/v1/signal/token',
+        desc: '生成用于加入房间的 LiveKit 访问 token',
+        body: JSON.stringify({ room: 'my-room', identity: 'user-123' }, null, 2)
+      },
+      {
+        id: 'signal',
+        name: '交换信令消息',
+        method: 'POST',
+        path: '/api/v1/signal/signal',
+        desc: '中继 WebRTC 信令消息（offer/answer/ICE candidate）',
+        body: JSON.stringify({ type: 'offer', room: 'my-room', identity: 'user-123', data: {} }, null, 2)
+      },
+      {
+        id: 'list-rooms',
+        name: '获取房间列表',
+        method: 'GET',
+        path: '/api/v1/signal/rooms',
+        desc: '从 LiveKit 获取所有活跃房间',
+        body: null
+      },
+      {
+        id: 'list-participants',
+        name: '获取房间参与者',
+        method: 'GET',
+        path: '/api/v1/signal/participants',
+        desc: '获取指定房间中的所有参与者，需要 ?room=xxx 参数',
+        body: null,
+        queryParams: 'room=my-room'
+      }
+    ]
+  },
+  {
+    group: '用户',
+    items: [
+      {
+        id: 'profile',
+        name: '获取用户资料',
+        method: 'GET',
+        path: '/api/v1/user/profile',
+        desc: '获取当前已认证用户的资料信息',
+        body: null,
+        auth: true
+      },
+      {
+        id: 'user-list',
+        name: '获取用户列表',
+        method: 'GET',
+        path: '/api/v1/user/list',
+        desc: '分页获取用户列表，支持 ?page=1&page_size=20',
+        body: null,
+        auth: true,
+        queryParams: 'page=1&page_size=20'
+      },
+      {
+        id: 'user-by-id',
+        name: '根据 ID 获取用户',
+        method: 'GET',
+        path: '/api/v1/user/1',
+        desc: '通过用户 ID 获取用户信息',
+        body: null,
+        auth: true
+      },
+      {
+        id: 'user-delete',
+        name: '删除用户',
+        method: 'DELETE',
+        path: '/api/v1/user/1',
+        desc: '根据用户 ID 删除用户',
+        body: null,
+        auth: true
+      }
+    ]
+  }
+];
+
+function renderSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  let html = '';
+  APIs.forEach(group => {
+    html += `<div class="sidebar-group">
+      <div class="sidebar-group-title">${group.group}</div>`;
+    group.items.forEach(api => {
+      html += `<div class="sidebar-item" data-id="${api.id}" onclick="selectApi('${api.id}')">
+        <span class="method-badge method-${api.method}">${api.method}</span>
+        <span>${api.name}</span>
+      </div>`;
+    });
+    html += '</div>';
+  });
+  sidebar.innerHTML = html;
+}
+
+function findApi(id) {
+  for (const g of APIs) {
+    for (const a of g.items) {
+      if (a.id === id) return a;
+    }
+  }
+  return null;
+}
+
+function selectApi(id) {
+  document.querySelectorAll('.sidebar-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.id === id);
+  });
+  renderMain(id);
+}
+
+function renderMain(id) {
+  const api = findApi(id);
+  if (!api) return;
+  const main = document.getElementById('main');
+
+  let html = `
+    <div class="endpoint-title">${api.name}</div>
+    <div class="endpoint-desc">${api.desc}</div>
+  `;
+
+  html += `
+    <div class="token-bar">
+      <div class="token-status ${token ? 'valid' : ''}"></div>
+      <label>JWT Token</label>
+      <input type="text" id="tokenInput" value="${escapeHtml(token)}" placeholder="登录后获取 token 粘贴到此处" oninput="onTokenChange(this.value)">
+    </div>
+  `;
+
+  html += `
+    <div class="card">
+      <div class="card-header">请求</div>
+      <div class="card-body">
+        <div class="request-line">
+          <span class="method-badge method-${api.method}">${api.method}</span>
+          <input class="path" id="reqPath" value="${escapeHtml(api.path)}${api.queryParams ? '?' + api.queryParams : ''}" readonly>
+          <button class="btn-send" id="btnSend" onclick="sendRequest()">发 送</button>
+        </div>
+  `;
+
+  if (api.body !== null) {
+    html += `
+        <div style="margin-top:12px">
+          <table class="param-table" style="margin-bottom:10px">
+            <tr><th>字段</th><th>说明</th><th>必要</th></tr>
+            ${getBodyParams(api.body)}
+          </table>
+        </div>
+        <textarea id="reqBody">${api.body}</textarea>
+    `;
+  }
+
+  html += `
+      </div>
+    </div>
+  `;
+
+  html += `
+    <div class="card response-area" id="responseArea">
+      <div class="card-header">
+        <span>响应</span>
+        <div class="response-meta">
+          <span class="status-badge" id="statusBadge"></span>
+          <span class="response-time" id="responseTime"></span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="json-viewer" id="responseBody"></div>
+      </div>
+    </div>
+  `;
+
+  main.innerHTML = html;
+}
+
+function getBodyParams(bodyStr) {
+  try {
+    const obj = JSON.parse(bodyStr);
+    const typeMap = { string: '字符串', number: '数字', boolean: '布尔' };
+    return Object.entries(obj).map(([k, v]) => {
+      const t = typeMap[typeof v] || typeof v;
+      return `<tr><td>${k}</td><td>${t}</td><td><span class="param-required">必填</span></td></tr>`;
+    }).join('');
+  } catch { return ''; }
+}
+
+function onTokenChange(val) {
+  token = val.trim();
+  localStorage.setItem(TOKEN_KEY, token);
+  const status = document.querySelector('.token-status');
+  if (status) status.classList.toggle('valid', !!token);
+}
+
+async function sendRequest() {
+  const btn = document.getElementById('btnSend');
+  btn.classList.add('loading');
+  btn.textContent = '请求中...';
+
+  const method = btn.closest('.card-body').querySelector('.method-badge').textContent;
+  const pathEl = document.getElementById('reqPath');
+  const url = getBase() + pathEl.value;
+
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+
+  const bodyEl = document.getElementById('reqBody');
+  if (bodyEl && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+    opts.body = bodyEl.value;
+  }
+
+  const t0 = performance.now();
+  try {
+    const res = await fetch(url, opts);
+    const elapsed = Math.round(performance.now() - t0);
+    let text = await res.text();
+    let json;
+    try { json = JSON.parse(text); } catch { json = null; }
+
+    const area = document.getElementById('responseArea');
+    area.classList.add('show');
+
+    const badge = document.getElementById('statusBadge');
+    const cls = res.status < 300 ? 'status-2xx' : res.status < 500 ? 'status-4xx' : 'status-5xx';
+    badge.className = 'status-badge ' + cls;
+    badge.textContent = res.status + ' ' + res.statusText;
+
+    document.getElementById('responseTime').textContent = elapsed + 'ms';
+
+    const viewer = document.getElementById('responseBody');
+    if (json) {
+      viewer.innerHTML = syntaxHighlight(JSON.stringify(json, null, 2));
+    } else {
+      viewer.textContent = text;
+    }
+  } catch (err) {
+    const area = document.getElementById('responseArea');
+    area.classList.add('show');
+
+    const badge = document.getElementById('statusBadge');
+    badge.className = 'status-badge status-0';
+    badge.textContent = '请求失败';
+    document.getElementById('responseTime').textContent = '';
+
+    document.getElementById('responseBody').innerHTML =
+      '<span class="null">无法连接到服务器</span>\n\n' +
+      '<span class="key">错误信息</span>: <span class="str">' + escapeHtml(err.message) + '</span>';
+  } finally {
+    btn.classList.remove('loading');
+    btn.textContent = '发 送';
+  }
+}
+
+function syntaxHighlight(json) {
+  json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return json.replace(
+    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+    function (match) {
+      let cls = 'num';
+      if (/^"/.test(match)) {
+        if (/:$/.test(match)) {
+          cls = 'key';
+          match = match.replace(/:$/, '');
+          return '<span class="' + cls + '">' + match + '</span>:';
+        } else {
+          cls = 'str';
+        }
+      } else if (/true|false/.test(match)) {
+        cls = 'bool';
+      } else if (/null/.test(match)) {
+        cls = 'null';
+      }
+      return '<span class="' + cls + '">' + match + '</span>';
+    }
+  );
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+async function pingServer() {
+  const btn = event.target;
+  btn.textContent = '测试中...';
+  try {
+    const res = await fetch(getBase() + '/ping');
+    const data = await res.json();
+    alert('连接成功: ' + JSON.stringify(data));
+  } catch (e) {
+    alert('连接失败: ' + e.message);
+  } finally {
+    btn.textContent = '连接测试';
+  }
+}
+
+renderSidebar();
+selectApi('ping');
+</script>
+</body>
+</html>

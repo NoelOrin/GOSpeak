@@ -8,7 +8,7 @@
 [GIN-debug] POST   /socket.io/*any           --> go_rtc/server.StartGin.WrapH.func2 (3 handlers)
 [GIN-debug] OPTIONS /socket.io/*any           --> go_rtc/server.StartGin.WrapH.func3 (3 handlers)
 [GIN-debug] GET    /ping                     --> go_rtc/internal/router.SetupRoutes.func1 (4 handlers)
-[GIN-debug] GET    /swagger/*any             --> github.com/swaggo/gin-swagger.CustomWrapHandler.func1 (4 handlers)
+[GIN-debug] GET    /swagger/*any             --> go_rtc/internal/router/routes/swagger.Register.func1 (4 handlers)
 [GIN-debug] POST   /api/v1/auth/login        --> go_rtc/internal/handler.(*AuthHandler).Login-fm (4 handlers)
 [GIN-debug] POST   /api/v1/auth/register     --> go_rtc/internal/handler.(*AuthHandler).Register-fm (4 handlers)
 [GIN-debug] POST   /api/v1/auth/refresh_token --> go_rtc/internal/handler.(*AuthHandler).GetRefreshToken-fm (4 handlers)
@@ -20,25 +20,16 @@
 [GIN-debug] GET    /api/v1/user/list         --> go_rtc/internal/handler.(*UserHandler).List-fm (5 handlers)
 [GIN-debug] GET    /api/v1/user/:id          --> go_rtc/internal/handler.(*UserHandler).GetByID-fm (5 handlers)
 [GIN-debug] DELETE /api/v1/user/:id          --> go_rtc/internal/handler.(*UserHandler).Delete-fm (5 handlers)
-[GIN-debug] POST   /api/v1/auth/logout       --> go_rtc/internal/handler.(*AuthHandler).Logout-fm (4 handlers)
-[GIN-debug] POST   /api/v1/auth/refresh      --> go_rtc/internal/handler.(*AuthHandler).RefreshToken-fm (4 handlers)
+[GIN-debug] POST   /api/v1/auth/logout       --> go_rtc/internal/handler.(*AuthHandler).Logout-fm (5 handlers)
+[GIN-debug] POST   /api/v1/auth/refresh      --> go_rtc/internal/handler.(*AuthHandler).RefreshToken-fm (5 handlers)
 [GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
 Please check https://github.com/gin-gonic/gin/blob/master/docs/doc.md#dont-trust-all-proxies for details.
 [GIN-debug] Listening and serving HTTP on :8998
-[GIN] 2026/05/25 - 11:58:47 | 200 |     996.292µs |       127.0.0.1 | GET      "/swagger/index.html"
-[GIN] 2026/05/25 - 11:58:47 | 200 |      51.583µs |       127.0.0.1 | GET      "/swagger/index.css"
-[GIN] 2026/05/25 - 11:58:47 | 200 |      50.041µs |       127.0.0.1 | GET      "/swagger/swagger-initializer.js"
-[GIN] 2026/05/25 - 11:58:47 | 200 |    2.478916ms |       127.0.0.1 | GET      "/swagger/swagger-ui.css"
-[GIN] 2026/05/25 - 11:58:47 | 200 |    9.296209ms |       127.0.0.1 | GET      "/swagger/swagger-ui-standalone-preset.js"
-[GIN] 2026/05/25 - 11:58:47 | 200 |   13.402833ms |       127.0.0.1 | GET      "/swagger/swagger-ui-bundle.js"
-[GIN] 2026/05/25 - 11:58:47 | 200 |     377.667µs |       127.0.0.1 | GET      "/swagger/doc.json"
-[GIN] 2026/05/25 - 11:58:47 | 200 |      52.167µs |       127.0.0.1 | GET      "/swagger/favicon-32x32.png"
-[GIN] 2026/05/25 - 11:58:49 | 304 |      69.542µs |       127.0.0.1 | GET      "/swagger/favicon-32x32.png"
-[GIN] 2026/05/25 - 11:58:51 | 304 |      83.125µs |       127.0.0.1 | GET      "/swagger/favicon-32x32.png"
-[GIN] 2026/05/25 - 11:58:51 | 304 |      19.209µs |       127.0.0.1 | GET      "/swagger/favicon-32x32.png"
-[GIN] 2026/05/25 - 11:58:52 | 304 |      17.958µs |       127.0.0.1 | GET      "/swagger/favicon-32x32.png"
-[GIN] 2026/05/25 - 11:58:53 | 304 |      36.417µs |       127.0.0.1 | GET      "/swagger/favicon-32x32.png"
-[GIN] 2026/05/25 - 11:58:53 | 304 |      46.625µs |       127.0.0.1 | GET      "/swagger/favicon-32x32.png"
-[GIN] 2026/05/25 - 11:58:55 | 304 |      25.125µs |       127.0.0.1 | GET      "/swagger/favicon-32x32.png"
-[GIN] 2026/05/25 - 11:58:57 | 304 |      38.292µs |       127.0.0.1 | GET      "/swagger/favicon-32x32.png"
-[GIN] 2026/05/25 - 11:59:02 | 304 |      56.125µs |       127.0.0.1 | GET      "/swagger/favicon-32x32.png"
+[GIN] 2026/05/25 - 15:15:31 | 204 |      23.958µs |             ::1 | OPTIONS  "/ping"
+[GIN] 2026/05/25 - 15:15:31 | 200 |       112.5µs |             ::1 | GET      "/ping"
+[GIN] 2026/05/25 - 15:15:33 | 204 |      19.041µs |             ::1 | OPTIONS  "/api/v1/auth/register"
+[GIN] 2026/05/25 - 15:15:33 | 200 |    1.198792ms |             ::1 | POST     "/api/v1/auth/register"
+[GIN] 2026/05/25 - 15:15:40 | 204 |       8.791µs |             ::1 | OPTIONS  "/api/v1/auth/register"
+[GIN] 2026/05/25 - 15:15:40 | 200 |    1.931667ms |             ::1 | POST     "/api/v1/auth/register"
+[GIN] 2026/05/25 - 15:15:42 | 204 |       10.75µs |             ::1 | OPTIONS  "/api/v1/auth/login"
+[GIN] 2026/05/25 - 15:15:42 | 200 |     876.084µs |             ::1 | POST     "/api/v1/auth/login"

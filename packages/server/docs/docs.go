@@ -15,7 +15,7 @@ const docTemplate = `{
             "url": "https://github.com/NoelOrin"
         },
         "license": {
-            "name": "MIT",
+            "name": "MIT 许可证",
             "url": "https://opensource.org/licenses/MIT"
         },
         "version": "{{.Version}}"
@@ -675,11 +675,11 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8098",
+	Host:             "localhost:8099",
 	BasePath:         "/api/v1",
 	Schemes:          []string{},
-	Title:            "GoRTC API",
-	Description:      "GoRTC - WebRTC Server API",
+	Title:            "GoRTC API 文档",
+	Description:      "GoRTC - WebRTC 服务器端 API 接口文档",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

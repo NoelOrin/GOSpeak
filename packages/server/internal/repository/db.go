@@ -35,8 +35,17 @@ func InitDB() error {
 		return fmt.Errorf("unsupported database type: %s", dbType)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to connect %s: %w", dbType, err)
+		panic(fmt.Sprintf("数据库连接失败 [%s]: %v", dbType, err))
 	}
+
+	sqlDB, err := DB.DB()
+	if err != nil {
+		panic(fmt.Sprintf("获取数据库实例失败 [%s]: %v", dbType, err))
+	}
+	if err = sqlDB.Ping(); err != nil {
+		panic(fmt.Sprintf("数据库 Ping 失败 [%s]: %v", dbType, err))
+	}
+
 	return autoMigrate()
 }
 

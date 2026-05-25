@@ -3,11 +3,13 @@ package router
 import (
 	"go_rtc/internal/handler"
 	"go_rtc/internal/middleware"
+	authRoutes "go_rtc/internal/router/routes/auth"
+	signalRoutes "go_rtc/internal/router/routes/signal"
+	swaggerRoutes "go_rtc/internal/router/routes/swagger"
+	userRoutes "go_rtc/internal/router/routes/user"
 
 	"github.com/gin-gonic/gin"
 	socketio "github.com/googollee/go-socket.io"
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
 
 	_ "go_rtc/docs"
 )
@@ -25,40 +27,16 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 		c.JSON(200, gin.H{"message": "pong"})
 	})
 
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	swaggerRoutes.Register(r)
 
 	api := r.Group("/api/v1")
-	{
-		auth := api.Group("/auth")
-		{
-			auth.POST("/login", h.Auth.Login)
-			auth.POST("/register", h.Auth.Register)
-			auth.POST("/refresh_token", h.Auth.GetRefreshToken)
-		}
+	authRoutes.Register(api.Group("/auth"), h.Auth)
+	signalRoutes.Register(api.Group("/signal"), h.Signal)
 
-		signal := api.Group("/signal")
-		{
-			signal.POST("/token", h.Signal.GetJoinToken)
-			signal.POST("/signal", h.Signal.Signal)
-			signal.GET("/rooms", h.Signal.ListRooms)
-			signal.GET("/participants", h.Signal.ListParticipants)
-		}
-
-		protected := api.Group("")
-		protected.Use(middleware.JWTAuth())
-		{
-			user := protected.Group("/user")
-			{
-				user.GET("/profile", h.User.GetProfile)
-				user.GET("/list", h.User.List)
-				user.GET("/:id", h.User.GetByID)
-				user.DELETE("/:id", h.User.Delete)
-			}
-
-			auth.POST("/logout", h.Auth.Logout)
-			auth.POST("/refresh", h.Auth.RefreshToken)
-		}
-	}
+	protected := api.Group("")
+	protected.Use(middleware.JWTAuth())
+	userRoutes.Register(protected.Group("/user"), h.User)
+	authRoutes.RegisterProtected(protected.Group("/auth"), h.Auth)
 
 	return r
 }

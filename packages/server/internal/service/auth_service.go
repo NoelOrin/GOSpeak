@@ -1,9 +1,11 @@
 package service
 
 import (
+	"errors"
 	"go_rtc/internal/model"
 	"go_rtc/internal/pkg"
 	"go_rtc/internal/repository"
+
 	"gorm.io/gorm"
 )
 
@@ -26,7 +28,7 @@ type RegisterRequest struct {
 }
 
 type AuthResponse struct {
-	Token        string     `json:"token"`
+	Token        string     `json:"access_token"`
 	RefreshToken string     `json:"refresh_token"`
 	User         model.User `json:"user"`
 }
@@ -34,7 +36,7 @@ type AuthResponse struct {
 func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 	user, err := s.userRepo.GetByName(req.Username)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, pkg.NewAppError(pkg.USER_NOT_FOUND, "user not found")
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"go_rtc/internal/model"
+
 	"gorm.io/gorm"
 )
 
@@ -20,19 +21,28 @@ func (r *UserRepository) Create(user *model.User) error {
 func (r *UserRepository) GetByID(id uint) (*model.User, error) {
 	var user model.User
 	err := r.db.First(&user, id).Error
-	return &user, err
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (r *UserRepository) GetByUUID(uuid string) (*model.User, error) {
 	var user model.User
 	err := r.db.Where("uuid = ?", uuid).First(&user).Error
-	return &user, err
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (r *UserRepository) GetByName(name string) (*model.User, error) {
 	var user model.User
 	err := r.db.Where("name = ?", name).First(&user).Error
-	return &user, err
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (r *UserRepository) List(page, pageSize int) ([]model.User, int64, error) {

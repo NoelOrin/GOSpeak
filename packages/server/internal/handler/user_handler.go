@@ -17,9 +17,9 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 }
 
 // GetProfile
-// @Summary      Get user profile
-// @Description  Get the profile of the currently authenticated user
-// @Tags         User
+// @Summary      获取用户资料
+// @Description  获取当前已认证用户的资料信息
+// @Tags         用户
 // @Produce      json
 // @Security     BearerAuth
 // @Success      200  {object}  pkg.Response
@@ -42,12 +42,12 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 }
 
 // GetByID
-// @Summary      Get user by ID
-// @Description  Retrieve a user by their ID
-// @Tags         User
+// @Summary      根据 ID 获取用户
+// @Description  通过用户 ID 获取用户信息
+// @Tags         用户
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id   path      int  true  "User ID"
+// @Param        id   path      int  true  "用户 ID"
 // @Success      200  {object}  pkg.Response
 // @Router       /user/{id} [get]
 func (h *UserHandler) GetByID(c *gin.Context) {
@@ -68,13 +68,13 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 }
 
 // List
-// @Summary      List users
-// @Description  Get a paginated list of users
-// @Tags         User
+// @Summary      获取用户列表
+// @Description  分页获取用户列表
+// @Tags         用户
 // @Produce      json
 // @Security     BearerAuth
-// @Param        page      query  int  false  "Page number (default 1)"
-// @Param        page_size query  int  false  "Items per page (default 20, max 100)"
+// @Param        page      query  int  false  "页码（默认 1）"
+// @Param        page_size query  int  false  "每页条数（默认 20，最大 100）"
 // @Success      200       {object}  pkg.Response
 // @Router       /user/list [get]
 func (h *UserHandler) List(c *gin.Context) {
@@ -95,12 +95,12 @@ func (h *UserHandler) List(c *gin.Context) {
 }
 
 // Delete
-// @Summary      Delete user
-// @Description  Delete a user by their ID
-// @Tags         User
+// @Summary      删除用户
+// @Description  根据用户 ID 删除用户
+// @Tags         用户
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id   path      int  true  "User ID"
+// @Param        id   path      int  true  "用户 ID"
 // @Success      200  {object}  pkg.Response
 // @Router       /user/{id} [delete]
 func (h *UserHandler) Delete(c *gin.Context) {
