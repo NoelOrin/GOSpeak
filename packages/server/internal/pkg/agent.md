@@ -7,8 +7,14 @@
 | 文件 | 职责 |
 |------|------|
 | errors.go | 业务错误码定义（ErrCode）和 AppError 错误类型 |
-| jwt.go | JWT Token 生成与解析，支持 access_token 和 refresh_token |
+| jwt.go | JWT Token 生成与解析，支持 access_token 和 refresh_token，JWT 携带 username + user_uuid |
 | response.go | 统一响应封装：Success/Fail/HandleError |
+
+## 子包
+
+| 包 | 说明 |
+|------|------|
+| oauth/ | OAuth 第三方登录协议实现（GitHub/Google/QQ），提供 Provider 接口和默认端点配置 |
 
 ## 错误码范围
 
@@ -18,5 +24,6 @@
 | 1xxx | 认证相关 |
 | 2xxx | 参数校验 |
 | 3xxx | 资源相关 |
-| 5xxx | 服务端内部 |
+| 5xxx | 服务端内部错误 |
 | 6xxx | LiveKit 相关 |
+| 7xxx | OAuth 相关 |

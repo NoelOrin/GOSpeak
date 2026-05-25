@@ -16,17 +16,22 @@
 [GIN-debug] POST   /api/v1/signal/signal     --> go_rtc/internal/handler.(*SignalHandler).Signal-fm (4 handlers)
 [GIN-debug] GET    /api/v1/signal/rooms      --> go_rtc/internal/handler.(*SignalHandler).ListRooms-fm (4 handlers)
 [GIN-debug] GET    /api/v1/signal/participants --> go_rtc/internal/handler.(*SignalHandler).ListParticipants-fm (4 handlers)
+[GIN-debug] GET    /api/v1/oauth/login/:provider --> go_rtc/internal/handler.(*OAuthHandler).Login-fm (4 handlers)
+[GIN-debug] GET    /api/v1/oauth/callback/:provider --> go_rtc/internal/handler.(*OAuthHandler).Callback-fm (4 handlers)
 [GIN-debug] GET    /api/v1/user/profile      --> go_rtc/internal/handler.(*UserHandler).GetProfile-fm (5 handlers)
 [GIN-debug] GET    /api/v1/user/list         --> go_rtc/internal/handler.(*UserHandler).List-fm (5 handlers)
 [GIN-debug] GET    /api/v1/user/:id          --> go_rtc/internal/handler.(*UserHandler).GetByID-fm (5 handlers)
 [GIN-debug] DELETE /api/v1/user/:id          --> go_rtc/internal/handler.(*UserHandler).Delete-fm (5 handlers)
 [GIN-debug] POST   /api/v1/auth/logout       --> go_rtc/internal/handler.(*AuthHandler).Logout-fm (5 handlers)
 [GIN-debug] POST   /api/v1/auth/refresh      --> go_rtc/internal/handler.(*AuthHandler).RefreshToken-fm (5 handlers)
+[GIN-debug] GET    /api/v1/oauth/admin/providers --> go_rtc/internal/handler.(*OAuthHandler).ListProviders-fm (5 handlers)
+[GIN-debug] POST   /api/v1/oauth/admin/providers --> go_rtc/internal/handler.(*OAuthHandler).CreateProvider-fm (5 handlers)
+[GIN-debug] PUT    /api/v1/oauth/admin/providers --> go_rtc/internal/handler.(*OAuthHandler).UpdateProvider-fm (5 handlers)
+[GIN-debug] DELETE /api/v1/oauth/admin/providers/:id --> go_rtc/internal/handler.(*OAuthHandler).DeleteProvider-fm (5 handlers)
 [GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
 Please check https://github.com/gin-gonic/gin/blob/master/docs/doc.md#dont-trust-all-proxies for details.
 [GIN-debug] Listening and serving HTTP on :8998
-[GIN] 2026/05/25 - 16:03:02 | 200 |    4.910334ms |             ::1 | POST     "/api/v1/auth/register"
-[GIN] 2026/05/25 - 16:03:02 | 200 |       263.5µs |             ::1 | POST     "/api/v1/auth/login"
-[GIN] 2026/05/25 - 16:03:02 | 200 |     699.792µs |             ::1 | GET      "/api/v1/user/profile"
-[GIN] 2026/05/25 - 16:03:02 | 200 |      89.417µs |             ::1 | POST     "/api/v1/auth/refresh"
-[GIN] 2026/05/25 - 16:03:02 | 200 |     119.083µs |             ::1 | POST     "/api/v1/auth/refresh_token"
+[GIN] 2026/05/25 - 17:02:37 | 200 |     811.584µs |             ::1 | POST     "/api/v1/auth/login"
+[GIN] 2026/05/25 - 17:02:37 | 200 |     249.166µs |             ::1 | GET      "/api/v1/oauth/admin/providers"
+[GIN] 2026/05/25 - 17:02:37 | 200 |     1.63625ms |             ::1 | POST     "/api/v1/oauth/admin/providers"
+[GIN] 2026/05/25 - 17:02:37 | 200 |      177.75µs |             ::1 | GET      "/api/v1/oauth/admin/providers"

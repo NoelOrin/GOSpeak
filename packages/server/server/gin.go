@@ -38,14 +38,18 @@ func StartGin(env EnvEnum) {
 
 	userRepo := repository.NewUserRepository(repository.DB)
 	roomRepo := repository.NewRoomRepository(repository.DB)
+	oauthProviderRepo := repository.NewOAuthProviderRepository(repository.DB)
+	oauthAccountRepo := repository.NewOAuthAccountRepository(repository.DB)
 
 	authSvc := service.NewAuthService(userRepo)
 	userSvc := service.NewUserService(userRepo)
+	oauthSvc := service.NewOAuthService(oauthProviderRepo, oauthAccountRepo, userRepo)
 	_ = service.NewRoomService(roomRepo)
 
 	authH := handler.NewAuthHandler(authSvc)
 	userH := handler.NewUserHandler(userSvc)
 	signalH := handler.NewSignalHandler(liveKitSvc)
+	oauthH := handler.NewOAuthHandler(oauthSvc)
 
 	r := gin.Default()
 
@@ -61,6 +65,7 @@ func StartGin(env EnvEnum) {
 		Auth:   authH,
 		User:   userH,
 		Signal: signalH,
+		OAuth:  oauthH,
 	})
 
 	port := os.Getenv("SERVER_PORT")

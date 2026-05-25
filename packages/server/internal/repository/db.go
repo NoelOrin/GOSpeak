@@ -79,7 +79,28 @@ func connectSQLite() (*gorm.DB, error) {
 		}
 		path = "db/app.db"
 	}
-	return gorm.Open(sqlite.Open(path), &gorm.Config{})
+	walEnabled := os.Getenv("DB_WAL") == "true"
+	journalMode := "DELETE"
+	if walEnabled {
+		journalMode = "WAL"
+	}
+	dsn := path + fmt.Sprintf("?_journal_mode=%s&_busy_timeout=5000", journalMode)
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, err
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	sqlDB.Exec(fmt.Sprintf("PRAGMA journal_mode=%s", journalMode))
+	if walEnabled {
+		sqlDB.Exec("PRAGMA synchronous=NORMAL")
+	} else {
+		sqlDB.Exec("PRAGMA synchronous=FULL")
+	}
+	sqlDB.Exec("PRAGMA foreign_keys=ON")
+	return db, nil
 }
 
 func connectMySQL() (*gorm.DB, error) {
@@ -108,5 +129,7 @@ func autoMigrate() error {
 		&model.User{},
 		&model.Room{},
 		&model.UserGroup{},
+		&model.OAuthProvider{},
+		&model.OAuthAccount{},
 	)
 }

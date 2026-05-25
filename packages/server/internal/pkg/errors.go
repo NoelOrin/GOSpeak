@@ -34,6 +34,12 @@ const (
 	// LiveKit errors 6xxx
 	LIVEKIT_NOT_CONFIGURED ErrCode = 6001
 	LIVEKIT_ERROR          ErrCode = 6002
+
+	// OAuth errors 7xxx
+	OAUTH_PROVIDER_NOT_FOUND    ErrCode = 7001
+	OAUTH_PROVIDER_DISABLED     ErrCode = 7002
+	OAUTH_TOKEN_EXCHANGE_FAILED ErrCode = 7003
+	OAUTH_GET_USER_FAILED       ErrCode = 7004
 )
 
 var errMsg = map[ErrCode]string{
@@ -50,6 +56,11 @@ var errMsg = map[ErrCode]string{
 	INTERNAL_ERROR:         "internal server error",
 	LIVEKIT_NOT_CONFIGURED: "livekit not configured",
 	LIVEKIT_ERROR:          "livekit error",
+
+	OAUTH_PROVIDER_NOT_FOUND:    "oauth provider not found",
+	OAUTH_PROVIDER_DISABLED:     "oauth provider is disabled",
+	OAUTH_TOKEN_EXCHANGE_FAILED: "oauth token exchange failed",
+	OAUTH_GET_USER_FAILED:       "oauth get user info failed",
 }
 
 func GetErrMsg(code ErrCode) string {
