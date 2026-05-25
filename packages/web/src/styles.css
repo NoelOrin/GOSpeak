@@ -1,11 +1,13 @@
 @import "tailwindcss";
-/* @import "@/assets/styles/components.css"; */
-/* @import "@/assets/styles/theme.css"; */
+@config "../tailwind.config.ts";
+
+/* biome-ignore lint/correctness/noInvalidPositionAtImportRule: <有毛病你报错> */
+@import "./assets/styles/global.css";
+
 @plugin "daisyui" {
-	themes:all
-		/* acid --default,, */
-		/* dark --prefersdark; */
-	
+	themes: all;
+	/* acid --default,, */
+	/* dark --prefersdark; */
 }
 
 @plugin "daisyui/theme" {
@@ -24,62 +26,3 @@
 	--radius-box: 0.5rem;
 }
 
-@property --light-text-color {
-	syntax: "<color>";
-	inherits: false;
-	initial-value: rgb(55 65 81);
-}
-
-@property --dark-text-color {
-	syntax: "<color>";
-	inherits: false;
-	initial-value: rgb(240 244 246);
-}
-
-@property --light-bg-color_1 {
-	syntax: "<color>";
-	inherits: false;
-	initial-value: rgb(235 238 240);
-}
-
-@property --dark-bg-color_1 {
-	syntax: "<color>";
-	inherits: false;
-	initial-value: rgb(37 36 40);
-}
-
-@property --light-bg-color_2 {
-	syntax: "<color>";
-	inherits: false;
-	initial-value: rgb(235 238 240);
-}
-
-@property --dark-bg-color_2 {
-	syntax: "<color>";
-	inherits: false;
-	initial-value: rgb(48 48 48);
-}
-
-@property --light-card-color {
-	syntax: "<color>";
-	inherits: false;
-	initial-value: rgb(227 227 227);
-}
-
-@property --dark-card-color {
-	syntax: "<color>";
-	inherits: false;
-	initial-value: rgb(62 62 68);
-}
-
-@property --dark-item-color {
-	syntax: "<color>";
-	inherits: false;
-	initial-value: rgb(82 82 91);
-}
-
-@property --light-item-color {
-	syntax: "<color>";
-	inherits: false;
-	initial-value: rgb(243 244 246);
-}

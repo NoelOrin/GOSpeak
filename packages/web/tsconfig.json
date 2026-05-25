@@ -39,11 +39,11 @@
 		/* alias */
 		"paths": {
 			"@/*": ["src/*"],
-			"~/*": [
-        "./src/*"
+			"#/*": [
+        "./types/*"
       ]
 		}
 	},
-	"include": ["src", "types", "redcoast-design", "types", "src/pages/(app)/__root.tsx", "src/pages/(app)/index/index.detail.tsx"],
+	"include": ["src", "types", "redcoast-design", "types", "src/pages/(app)/__root.tsx", "src/pages/(app)/index/index.detail.tsx", "public/icon.min.js"],
 	"exclude": ["node_modules", "dist"]
 }

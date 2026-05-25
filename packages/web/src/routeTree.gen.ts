@@ -9,86 +9,135 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './pages/__root'
+import { Route as appRouteRouteImport } from './pages/(app)/route'
 import { Route as appIndexRouteRouteImport } from './pages/(app)/index/route'
+import { Route as appIndexIndexRouteImport } from './pages/(app)/index/index'
 import { Route as appLinkIndexRouteImport } from './pages/(app)/link/index'
-import { Route as appRoomRoomIdRouteImport } from './pages/(app)/room/$roomId'
+import { Route as appChannelIndexRouteImport } from './pages/(app)/channel/index'
 
-const appIndexRouteRoute = appIndexRouteRouteImport.update({
-  id: '/(app)/',
-  path: '',
+const appRouteRoute = appRouteRouteImport.update({
+  id: '/(app)',
   getParentRoute: () => rootRouteImport,
+} as any)
+const appIndexRouteRoute = appIndexRouteRouteImport.update({
+  id: '/',
+  path: '',
+  getParentRoute: () => appRouteRoute,
+} as any)
+const appIndexIndexRoute = appIndexIndexRouteImport.update({
+  id: '/index/',
+  path: '/index/',
+  getParentRoute: () => appRouteRoute,
 } as any)
 const appLinkIndexRoute = appLinkIndexRouteImport.update({
-  id: '/(app)/link/',
+  id: '/link/',
   path: '/link/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => appRouteRoute,
 } as any)
-const appRoomRoomIdRoute = appRoomRoomIdRouteImport.update({
-  id: '/(app)/room/$roomId',
-  path: '/room/$roomId',
-  getParentRoute: () => rootRouteImport,
+const appChannelIndexRoute = appChannelIndexRouteImport.update({
+  id: '/channel/',
+  path: '/channel/',
+  getParentRoute: () => appRouteRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof appIndexRouteRoute
-  '/room/$roomId': typeof appRoomRoomIdRoute
+  '/channel/': typeof appChannelIndexRoute
+  '/index/': typeof appIndexIndexRoute
   '/link/': typeof appLinkIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof appIndexRouteRoute
-  '/room/$roomId': typeof appRoomRoomIdRoute
+  '/channel': typeof appChannelIndexRoute
+  '/index': typeof appIndexIndexRoute
   '/link': typeof appLinkIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
+  '/(app)': typeof appRouteRouteWithChildren
   '/(app)/': typeof appIndexRouteRoute
-  '/(app)/room/$roomId': typeof appRoomRoomIdRoute
+  '/(app)/channel/': typeof appChannelIndexRoute
+  '/(app)/index/': typeof appIndexIndexRoute
   '/(app)/link/': typeof appLinkIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/room/$roomId' | '/link/'
+  fullPaths: '/' | '/channel/' | '/index/' | '/link/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/room/$roomId' | '/link'
-  id: '__root__' | '/(app)/' | '/(app)/room/$roomId' | '/(app)/link/'
+  to: '/' | '/channel' | '/index' | '/link'
+  id:
+    | '__root__'
+    | '/(app)'
+    | '/(app)/'
+    | '/(app)/channel/'
+    | '/(app)/index/'
+    | '/(app)/link/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  appIndexRouteRoute: typeof appIndexRouteRoute
-  appRoomRoomIdRoute: typeof appRoomRoomIdRoute
-  appLinkIndexRoute: typeof appLinkIndexRoute
+  appRouteRoute: typeof appRouteRouteWithChildren
 }
 
 declare module '@tanstack/solid-router' {
   interface FileRoutesByPath {
+    '/(app)': {
+      id: '/(app)'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof appRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/(app)/': {
       id: '/(app)/'
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof appIndexRouteRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof appRouteRoute
+    }
+    '/(app)/index/': {
+      id: '/(app)/index/'
+      path: '/index'
+      fullPath: '/index/'
+      preLoaderRoute: typeof appIndexIndexRouteImport
+      parentRoute: typeof appRouteRoute
     }
     '/(app)/link/': {
       id: '/(app)/link/'
       path: '/link'
       fullPath: '/link/'
       preLoaderRoute: typeof appLinkIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof appRouteRoute
     }
-    '/(app)/room/$roomId': {
-      id: '/(app)/room/$roomId'
-      path: '/room/$roomId'
-      fullPath: '/room/$roomId'
-      preLoaderRoute: typeof appRoomRoomIdRouteImport
-      parentRoute: typeof rootRouteImport
+    '/(app)/channel/': {
+      id: '/(app)/channel/'
+      path: '/channel'
+      fullPath: '/channel/'
+      preLoaderRoute: typeof appChannelIndexRouteImport
+      parentRoute: typeof appRouteRoute
     }
   }
 }
 
-const rootRouteChildren: RootRouteChildren = {
+interface appRouteRouteChildren {
+  appIndexRouteRoute: typeof appIndexRouteRoute
+  appChannelIndexRoute: typeof appChannelIndexRoute
+  appIndexIndexRoute: typeof appIndexIndexRoute
+  appLinkIndexRoute: typeof appLinkIndexRoute
+}
+
+const appRouteRouteChildren: appRouteRouteChildren = {
   appIndexRouteRoute: appIndexRouteRoute,
-  appRoomRoomIdRoute: appRoomRoomIdRoute,
+  appChannelIndexRoute: appChannelIndexRoute,
+  appIndexIndexRoute: appIndexIndexRoute,
   appLinkIndexRoute: appLinkIndexRoute,
+}
+
+const appRouteRouteWithChildren = appRouteRoute._addFileChildren(
+  appRouteRouteChildren,
+)
+
+const rootRouteChildren: RootRouteChildren = {
+  appRouteRoute: appRouteRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

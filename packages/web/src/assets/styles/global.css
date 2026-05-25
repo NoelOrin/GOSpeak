@@ -1,0 +1,46 @@
+html {
+	line-height: 1.5;
+	-webkit-text-size-adjust: 100%;
+	-moz-tab-size: 4;
+	-o-tab-size: 4;
+	tab-size: 4;
+	/* macOS / iOS */ font-family:
+		-apple-system, BlinkMacSystemFont,
+		/* Windows */ "Segoe UI",
+		/* Android / Chrome OS */ Roboto,
+		/* 老系统通用 sans-serif */ "Helvetica Neue", Arial,
+		/* 中文优先 */ "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+		/* 兜底 */ sans-serif,
+		/* Emoji */ "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji" !important;
+	font-feature-settings: normal;
+	font-variation-settings: normal;
+}
+
+.iconpark-icon {
+	width: 1em;
+	height: 1em;
+}
+
+.cm-split-handler-v {
+	user-select: none;
+	transform: translateX(-3px);
+	background-color: transparent !important;
+	transition: background-color 0.15s ease-out;
+	border: none !important;
+}
+
+.cm-split-handler-v:hover {
+	background-color: rgba(0, 0, 0, 0.317) !important;
+}
+:is(.dark .cm-split-handler-v:hover) {
+	background-color: rgba(255, 255, 255, 0.317) !important;
+}
+
+.border-color {
+	border-spacing: 0;
+	border-collapse: collapse;
+	@apply border-[#c9c9c960] dark:border-[#dddcdc92];
+}
+.list-item{
+	@apply border-0 btn btn-sm btn-ghost;
+}

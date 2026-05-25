@@ -4,8 +4,8 @@
   "private": true,
   "packageManager": "pnpm@10.11.0",
   "scripts": {
-    "dev": "pnpm run dev:web & pnpm run dev:server-web",
-    "prod": "pnpm run prod:web & pnpm run prod:server-web",
+    "dev": "pnpm run dev:web & pnpm run dev:server",
+    "prod": "pnpm run prod:web & pnpm run prod:server",
     "dev:web": "pnpm --filter @go-rtc/web dev",
     "build:web": "pnpm --filter @go-rtc/web build",
     "dev:server": "pnpm --filter @go-rtc/server dev",

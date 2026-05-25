@@ -44,14 +44,17 @@
 			"a11y": {
 				"useKeyWithClickEvents": "off",
 				"noSvgWithoutTitle": "off",
-				"noStaticElementInteractions": "warn"
+				"noStaticElementInteractions": "warn",
+				"useButtonType": "off",
+				"useSemanticElements": "off"
 			},
 			"style": {
 				"useSelfClosingElements": "off",
 				"useDefaultParameterLast": "off"
 			},
 			"complexity": {
-				"noStaticOnlyClass": "off"
+				"noStaticOnlyClass": "off",
+				"noImportantStyles": "off"
 			}
 		}
 	}
