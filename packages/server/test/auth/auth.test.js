@@ -22,7 +22,7 @@ async function testRegister() {
 
   // 注册成功后自动保存 token，供后续带鉴权测试使用
   if (r1.code === 0) {
-    setTokens(r1.data.token, r1.data.refresh_token)
+    setTokens(r1.data.access_token, r1.data.refresh_token)
   }
 
   // 重复注册同一用户名，预期返回用户名已存在
@@ -51,8 +51,8 @@ async function testLogin() {
 
   // 登录成功后保存 token 供后续鉴权测试使用
   if (r1.code === 0) {
-    setTokens(r1.data.token, r1.data.refresh_token)
-    console.log(`       token: ${r1.data.token.slice(0, 40)}...`)
+    setTokens(r1.data.access_token, r1.data.refresh_token)
+    console.log(`       token: ${r1.data.access_token.slice(0, 40)}...`)
     console.log(`       refresh_token: ${r1.data.refresh_token.slice(0, 40)}...`)
   }
 

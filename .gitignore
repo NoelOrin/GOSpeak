@@ -1,23 +1,50 @@
+# ========================
+# 通用
+# ========================
 node_modules
 .DS_Store
-dist
-dist-ssr
 *.local
-.env
-.nitro
-.tanstack
-.wrangler
-
 .idea
 .vscode
 
-# Go
-/main.exe
-/server/logs/*
-/app.db
-/gin.log
+# ========================
+# 前端 (packages/web)
+# ========================
+dist
+dist-ssr
+.nitro
+.tanstack
+.wrangler
+*.tsbuildinfo
 
-# Go workspace
+# TanStack Router 自动生成
+packages/web/src/routeTree.gen.ts
+
+# Vite 临时文件
+vite.config.ts.timestamp*
+
+# ========================
+# 后端 (packages/server)
+# ========================
+
+# 环境变量（保留 .env.copy 作为模板）
+packages/server/.env
+packages/server/.env.dev
+packages/server/.env.prod
+
+# SQLite 数据库
+packages/server/db/
+*.db
+*.db-shm
+*.db-wal
+
+# 日志
+packages/server/logs/
+packages/server/gin.log
+*.log
+
+# Go 编译产物
+gospeak-server
 *.exe
 *.exe~
 *.dll
@@ -25,3 +52,12 @@ dist-ssr
 *.dylib
 *.test
 *.out
+
+# Go 工作区
+go.work
+go.work.sum
+
+# Swagger 自动生成（可选，如需保留则注释掉）
+# packages/server/docs/docs.go
+# packages/server/docs/swagger.json
+# packages/server/docs/swagger.yaml

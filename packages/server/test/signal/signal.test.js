@@ -19,8 +19,8 @@ async function testGetJoinToken() {
   })
   log('获取加入房间 Token', r1)
 
-  if (r1.data?.token) {
-    console.log(`       token: ${r1.data.token.slice(0, 40)}...`)
+  if (r1.data?.access_token) {
+    console.log(`       token: ${r1.data.access_token.slice(0, 40)}...`)
   }
 
   // 空房间和身份，预期参数校验错误

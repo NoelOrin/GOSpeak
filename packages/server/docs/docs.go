@@ -511,7 +511,7 @@ const docTemplate = `{
                     "type": "string",
                     "example": "eyJhbGciOiJIUzI1NiIs..."
                 },
-                "token": {
+                "access_token": {
                     "type": "string",
                     "example": "eyJhbGciOiJIUzI1NiIs..."
                 },

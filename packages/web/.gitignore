@@ -1,12 +1,27 @@
+# Dependencies
 node_modules
-.DS_Store
+
+# Build output
 dist
 dist-ssr
+
+# Environment
 *.local
 .env
-.nitro
-.tanstack
-.wrangler
+.env.*
 
+# TanStack Router 自动生成
+src/routeTree.gen.ts
+
+# Vite 临时文件
+vite.config.ts.timestamp*
+
+# IDE
 .idea
 .vscode
+
+# OS
+.DS_Store
+
+# TypeScript
+*.tsbuildinfo

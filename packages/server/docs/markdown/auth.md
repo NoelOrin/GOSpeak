@@ -41,7 +41,7 @@
   "code": 0,
   "message": "success",
   "data": {
-    "token": "eyJhbGciOiJIUzI1NiIs...",
+    "access_token": "eyJhbGciOiJIUzI1NiIs...",
     "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
     "user": {
       "id": 1,
@@ -93,7 +93,7 @@
   "code": 0,
   "message": "success",
   "data": {
-    "token": "eyJhbGciOiJIUzI1NiIs...",
+    "access_token": "eyJhbGciOiJIUzI1NiIs...",
     "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
     "user": {
       "id": 1,
@@ -143,7 +143,7 @@
   "code": 0,
   "message": "success",
   "data": {
-    "token": "eyJhbGciOiJIUzI1NiIs..."
+    "access_token": "eyJhbGciOiJIUzI1NiIs..."
   }
 }
 ```
@@ -199,7 +199,7 @@
   "code": 0,
   "message": "success",
   "data": {
-    "token": "eyJhbGciOiJIUzI1NiIs..."
+    "access_token": "eyJhbGciOiJIUzI1NiIs..."
   }
 }
 ```

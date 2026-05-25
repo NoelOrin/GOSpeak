@@ -40,7 +40,7 @@
   "code": 0,
   "message": "success",
   "data": {
-    "token": "eyJhbGciOiJIUzI1NiIs...",
+    "access_token": "eyJhbGciOiJIUzI1NiIs...",
     "room": "my-room",
     "identity": "user-123"
   }
