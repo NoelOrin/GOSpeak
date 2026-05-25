@@ -12,6 +12,7 @@ import {
   onCleanup,
 } from "solid-js";
 import DynamicRender from "@/components/common/dynamicRender";
+import Visible from "@/components/common/visible";
 
 const Layout = ({ children }: { children: JSX.Element }) => {
   const [splitWidth, setSplitWidth] = createSignal(
@@ -51,7 +52,8 @@ const Layout = ({ children }: { children: JSX.Element }) => {
       <Header />
       <div class="flex flex-1 h-full">
         <div class="flex flex-1 h-full">
-          <Split min={213} split={splitWidth()} max={425}>
+          
+          <Split min={213} split={splitWidth()} max={525}>
             <Slot name="prev">
               <div class="flex flex-col justify-between h-full" ref={prevRef}>
                 <div class="flex h-full">
@@ -73,6 +75,8 @@ const Layout = ({ children }: { children: JSX.Element }) => {
               </Main>
             </Slot>
           </Split>
+
+          
         </div>
       </div>
       {/* <Footer /> */}

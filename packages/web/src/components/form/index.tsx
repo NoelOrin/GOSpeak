@@ -3,7 +3,6 @@ import { For, Show, Switch, Match, createEffect } from "solid-js";
 
 export type FormInstanceType = ReturnType<typeof createForm>;
 
-// 定义表单字段配置类型
 export interface FormFieldConfig<TFormData> {
   label: string;
   name: keyof TFormData & string;
@@ -18,14 +17,13 @@ export interface FormFieldConfig<TFormData> {
     | "radio";
   placeholder?: string;
   required?: boolean;
-  options?: Array<{ value: string; label: string }>; // 用于 select 和 radio
+  options?: Array<{ value: string; label: string }>;
   validation?: (value: any) => string | undefined;
   className?: string;
 }
 
 export type FieldsType = FormFieldConfig<any>[];
 
-// 表单配置接口
 export interface FormConfig<TFormData> {
   class: string;
   fields: FormFieldConfig<TFormData>[];
@@ -36,130 +34,148 @@ export interface FormConfig<TFormData> {
   setFormIns?: (form: any) => void;
 }
 
-// Input 组件
 const FormInput = <TFormData,>(props: {
   field: FormFieldConfig<TFormData>;
   form: FormInstanceType;
 }) => {
   const { field, form } = props;
   const fieldValue = () => form.getFieldValue(field.name);
-
-  // 生成唯一的ID用于label关联
   const fieldId = `field-${field.name}`;
 
   return (
-    <div class={`mb-4 ${field.className || ""}`}>
-      <label for={fieldId} class="block mb-1 font-medium text-sm">
-        {field.label}
-      </label>
-
-      <Switch
-        fallback={
-          <input
-            id={fieldId}
-            type={field.type}
-            value={(fieldValue() as string) || ""}
-            placeholder={field.placeholder}
-            required={field.required}
-            class="px-3 py-2 border rounded-md w-full"
-            // onBlur={() => form.setFieldTouched(field.name, true)}
-            onInput={(e) => {
-              const value =
-                field.type === "number"
-                  ? (e.target as HTMLInputElement).valueAsNumber
-                  : (e.target as HTMLInputElement).value;
-              form.setFieldValue(field.name, value as any);
-            }}
-          />
-        }
-      >
-        <Match when={field.type === "textarea"}>
-          <textarea
-            id={fieldId}
-            value={(fieldValue() as string) || ""}
-            placeholder={field.placeholder}
-            required={field.required}
-            class="px-3 py-2 border rounded-md w-full"
-            // onBlur={() => form.setFieldTouched(field.name, true)}
-            onInput={(e) =>
-              form.setFieldValue(field.name, e.target.value as any)
-            }
-          />
-        </Match>
-
-        <Match when={field.type === "select"}>
-          <select
-            id={fieldId}
-            value={(fieldValue() as string) || ""}
-            required={field.required}
-            class="px-3 py-2 border rounded-md w-full"
-            // onBlur={() => form.setFieldTouched(field.name, true)}
-            onChange={(e) =>
-              form.setFieldValue(field.name, e.target.value as any)
-            }
-          >
-            <option value="">请选择</option>
-            <For each={field.options}>
-              {(option) => <option value={option.value}>{option.label}</option>}
-            </For>
-          </select>
-        </Match>
-
-        <Match when={field.type === "checkbox"}>
+    <Switch>
+      <Match when={field.type === "checkbox"}>
+        <label class="fieldset-label mb-4 cursor-pointer">
           <input
             id={fieldId}
             type="checkbox"
             checked={(fieldValue() as boolean) || false}
             required={field.required}
-            class="w-4 h-4"
-            // onBlur={() => form.setFieldTouched(field.name, true)}
+            class="checkbox"
             onChange={(e) =>
               form.setFieldValue(field.name, e.target.checked as any)
             }
           />
-        </Match>
+        </label>
+        <Show
+          when={
+            form.state.fieldMeta[field.name]?.isTouched &&
+            (form.state.fieldMeta[field.name]?.errors?.length ?? 0) > 0
+          }
+        >
+          <p class="fieldset-label mb-4 text-error">
+            {form.state.fieldMeta[field.name]?.errors?.join(", ")}
+          </p>
+        </Show>
+      </Match>
 
-        <Match when={field.type === "radio"}>
-          <div class="space-y-2">
-            <For each={field.options}>
-              {(option) => (
-                <label class="flex items-center">
-                  <input
-                    id={`${fieldId}-${option.value}`}
-                    type="radio"
-                    name={field.name}
-                    value={option.value}
-                    checked={fieldValue() === option.value}
-                    required={field.required}
-                    class="mr-2"
-                    // onBlur={() => form.setFieldTouched(field.name, true)}
-                    onChange={(e) =>
-                      form.setFieldValue(field.name, e.target.value as any)
-                    }
-                  />
-                  {option.label}
-                </label>
-              )}
-            </For>
-          </div>
-        </Match>
-      </Switch>
+      <Match when={field.type === "radio"}>
+        <fieldset class={`fieldset mb-4 ${field.className || ""}`}>
+          <legend class="fieldset-legend">{field.label}</legend>
+          <For each={field.options}>
+            {(option) => (
+              <label class="fieldset-label cursor-pointer">
+                <input
+                  id={`${fieldId}-${option.value}`}
+                  type="radio"
+                  name={field.name}
+                  value={option.value}
+                  checked={fieldValue() === option.value}
+                  required={field.required}
+                  class="radio"
+                  onChange={(e) =>
+                    form.setFieldValue(field.name, e.target.value as any)
+                  }
+                />
+                {option.label}
+              </label>
+            )}
+          </For>
+          <Show
+            when={
+              form.state.fieldMeta[field.name]?.isTouched &&
+              (form.state.fieldMeta[field.name]?.errors?.length ?? 0) > 0
+            }
+          >
+            <p class="fieldset-label text-error">
+              {form.state.fieldMeta[field.name]?.errors?.join(", ")}
+            </p>
+          </Show>
+        </fieldset>
+      </Match>
 
-      <Show
-        when={
-          form.state.fieldMeta[field.name]?.isTouched &&
-          (form.state.fieldMeta[field.name]?.errors?.length ?? 0) > 0
-        }
-      >
-        <div class="mt-1 text-red-500 text-sm">
-          {form.state.fieldMeta[field.name]?.errors?.join(", ")}
-        </div>
-      </Show>
-    </div>
+      <Match when={true}>
+        <fieldset class={`fieldset mb-4 ${field.className || ""}`}>
+          <legend class="fieldset-legend">{field.label}</legend>
+
+          <Switch
+            fallback={
+              <input
+                id={fieldId}
+                type={field.type}
+                value={(fieldValue() as string) || ""}
+                placeholder={field.placeholder}
+                required={field.required}
+                class="input"
+                onInput={(e) => {
+                  const value =
+                    field.type === "number"
+                      ? (e.target as HTMLInputElement).valueAsNumber
+                      : (e.target as HTMLInputElement).value;
+                  form.setFieldValue(field.name, value as any);
+                }}
+              />
+            }
+          >
+            <Match when={field.type === "textarea"}>
+              <textarea
+                id={fieldId}
+                value={(fieldValue() as string) || ""}
+                placeholder={field.placeholder}
+                required={field.required}
+                class="textarea h-24"
+                onInput={(e) =>
+                  form.setFieldValue(field.name, e.target.value as any)
+                }
+              />
+            </Match>
+
+            <Match when={field.type === "select"}>
+              <select
+                id={fieldId}
+                value={(fieldValue() as string) || ""}
+                required={field.required}
+                class="select"
+                onChange={(e) =>
+                  form.setFieldValue(field.name, e.target.value as any)
+                }
+              >
+                <option value="">请选择</option>
+                <For each={field.options}>
+                  {(option) => (
+                    <option value={option.value}>{option.label}</option>
+                  )}
+                </For>
+              </select>
+            </Match>
+          </Switch>
+
+          <Show
+            when={
+              form.state.fieldMeta[field.name]?.isTouched &&
+              (form.state.fieldMeta[field.name]?.errors?.length ?? 0) > 0
+            }
+          >
+            <p class="fieldset-label text-error">
+              {form.state.fieldMeta[field.name]?.errors?.join(", ")}
+            </p>
+          </Show>
+        </fieldset>
+      </Match>
+    </Switch>
   );
 };
 
-// 动态表单组件
 export const Form = <TFormData extends Record<string, any>>(
   props: FormConfig<TFormData>
 ) => {
@@ -219,7 +235,7 @@ export const Form = <TFormData extends Record<string, any>>(
       >
         <button
           type="submit"
-          class="bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded-md w-full text-white"
+          class="btn btn-primary mt-4 w-full"
           disabled={form.state.isSubmitting}
         >
           {props.submitButtonText || "提交"}

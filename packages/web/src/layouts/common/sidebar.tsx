@@ -1,7 +1,7 @@
 import OptionSquare from "@/components/common/optionSquare";
 import { useNavigate } from "@tanstack/solid-router";
 import Divider from "@/components/common/divider";
-import SettingModal from "@/components/modal/settingModal";
+import SettingModal from "@/components/modal/settting/settingModal";
 import { createEffect } from "solid-js";
 import SvgIcon from "@/components/svgIcon";
 
