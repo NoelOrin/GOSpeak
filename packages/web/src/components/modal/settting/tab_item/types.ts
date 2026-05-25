@@ -1,7 +1,6 @@
-import type { FieldsType } from "../../../form";
+import type { Component } from "solid-js";
 
 export interface SettingTabConfig {
   label: string
-  fields: FieldsType
-  onSubmit: (values: Record<string, any>) => void
+  component: Component
 }

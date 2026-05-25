@@ -1,8 +1,6 @@
-import { For, Show, createSignal, createResource, createEffect, type Component } from "solid-js";
-import Form, { type FormInstanceType } from "../../form";
-import TABS, { type SettingTabConfig } from "./tab_item";
-import { getAudioDevices } from "../../../hooks/media";
-import { buildAudioFields, getDefaultDeviceValues } from "./tab_item/audio";
+import { For, createSignal, type Component } from "solid-js";
+import { Dynamic } from "solid-js/web";
+import TABS from "./tab_item";
 
 interface SearchModalProps {
   ref: HTMLDialogElement;
@@ -55,57 +53,8 @@ const SettingContext = () => {
       </ul>
 
       <div class="flex-1">
-        <SettingForm tab={TABS[activeTab()]} />
+        <Dynamic component={TABS[activeTab()].component} />
       </div>
-    </div>
-  );
-};
-
-const SettingForm = (props: { tab: SettingTabConfig }) => {
-  const [formIns, setFormIns] = createSignal<FormInstanceType>();
-  const isAudioTab = () => props.tab.label === "音频";
-
-  const [audioDevices] = createResource(isAudioTab, async () => {
-    if (!isAudioTab()) return null;
-    return getAudioDevices();
-  });
-
-  const fields = () => {
-    if (isAudioTab() && audioDevices()) {
-      return buildAudioFields(audioDevices()!);
-    }
-    return props.tab.fields;
-  };
-
-  createEffect(() => {
-    const devices = audioDevices();
-    const f = formIns();
-    if (isAudioTab() && devices && f) {
-      const defaults = getDefaultDeviceValues(devices);
-      for (const [key, value] of Object.entries(defaults)) {
-        f.setFieldValue(key, value as any);
-      }
-    }
-  });
-
-  return (
-    <div class="p-4">
-      <h3 class="mb-4 font-bold text-lg">{props.tab.label}</h3>
-      <Show when={!isAudioTab() || audioDevices()} fallback={
-        <div class="flex justify-center items-center py-12">
-          <span class="loading loading-spinner loading-lg" />
-        </div>
-      }>
-        <Form
-          setFormIns={setFormIns}
-          class="px-4 py-2"
-          fields={fields()}
-          onSubmit={props.tab.onSubmit}
-          showSubmitButton
-          submitButtonText="保存"
-          formClassName="grid grid-cols-2 gap-4 card"
-        />
-      </Show>
     </div>
   );
 };

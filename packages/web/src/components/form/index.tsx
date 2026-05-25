@@ -1,11 +1,8 @@
-import { createForm } from "@tanstack/solid-form";
-import { For, Show, Switch, Match, createEffect } from "solid-js";
+import { For, Show, Switch, Match } from "solid-js";
 
-export type FormInstanceType = ReturnType<typeof createForm>;
-
-export interface FormFieldConfig<TFormData> {
+export interface FormFieldConfig {
   label: string;
-  name: keyof TFormData & string;
+  name: string;
   type:
     | "text"
     | "email"
@@ -22,24 +19,25 @@ export interface FormFieldConfig<TFormData> {
   className?: string;
 }
 
-export type FieldsType = FormFieldConfig<any>[];
+export type FieldsType = FormFieldConfig[];
 
-export interface FormConfig<TFormData> {
-  class: string;
-  fields: FormFieldConfig<TFormData>[];
-  onSubmit: (values: TFormData) => void;
-  submitButtonText?: string;
-  showSubmitButton?: boolean;
+export interface FormProps {
+  form: any;
+  fields: FieldsType;
+  class?: string;
   formClassName?: string;
-  setFormIns?: (form: any) => void;
+  showSubmitButton?: boolean;
+  submitButtonText?: string;
 }
 
-const FormInput = <TFormData,>(props: {
-  field: FormFieldConfig<TFormData>;
-  form: FormInstanceType;
+const FormInput = (props: {
+  field: FormFieldConfig;
+  form: any;
 }) => {
   const { field, form } = props;
   const fieldValue = () => form.getFieldValue(field.name);
+  const fieldErrors = () => form.state.fieldMeta[field.name]?.errors ?? [];
+  const isTouched = () => form.state.fieldMeta[field.name]?.isTouched;
   const fieldId = `field-${field.name}`;
 
   return (
@@ -57,14 +55,9 @@ const FormInput = <TFormData,>(props: {
             }
           />
         </label>
-        <Show
-          when={
-            form.state.fieldMeta[field.name]?.isTouched &&
-            (form.state.fieldMeta[field.name]?.errors?.length ?? 0) > 0
-          }
-        >
+        <Show when={isTouched() && fieldErrors().length > 0}>
           <p class="fieldset-label mb-4 text-error">
-            {form.state.fieldMeta[field.name]?.errors?.join(", ")}
+            {fieldErrors().join(", ")}
           </p>
         </Show>
       </Match>
@@ -91,14 +84,9 @@ const FormInput = <TFormData,>(props: {
               </label>
             )}
           </For>
-          <Show
-            when={
-              form.state.fieldMeta[field.name]?.isTouched &&
-              (form.state.fieldMeta[field.name]?.errors?.length ?? 0) > 0
-            }
-          >
+          <Show when={isTouched() && fieldErrors().length > 0}>
             <p class="fieldset-label text-error">
-              {form.state.fieldMeta[field.name]?.errors?.join(", ")}
+              {fieldErrors().join(", ")}
             </p>
           </Show>
         </fieldset>
@@ -160,14 +148,9 @@ const FormInput = <TFormData,>(props: {
             </Match>
           </Switch>
 
-          <Show
-            when={
-              form.state.fieldMeta[field.name]?.isTouched &&
-              (form.state.fieldMeta[field.name]?.errors?.length ?? 0) > 0
-            }
-          >
+          <Show when={isTouched() && fieldErrors().length > 0}>
             <p class="fieldset-label text-error">
-              {form.state.fieldMeta[field.name]?.errors?.join(", ")}
+              {fieldErrors().join(", ")}
             </p>
           </Show>
         </fieldset>
@@ -176,35 +159,8 @@ const FormInput = <TFormData,>(props: {
   );
 };
 
-export const Form = <TFormData extends Record<string, any>>(
-  props: FormConfig<TFormData>
-) => {
-  const form = createForm(() => ({
-    defaultValues: {} as TFormData,
-    onSubmit: ({ value }) => props.onSubmit(value),
-    validators: {
-      onChange: ({ value }) => {
-        const errors: string[] = [];
-        for (const field of props.fields) {
-          if (
-            field.required &&
-            (!value[field.name] || value[field.name] === "")
-          ) {
-            errors.push(`${field.label} 是必填项`);
-          }
-          if (field.validation) {
-            const error = field.validation(value[field.name]);
-            if (error) errors.push(error);
-          }
-        }
-        return errors.length > 0 ? errors.join(", ") : undefined;
-      },
-    },
-  }));
-
-  createEffect(() => {
-    props.setFormIns?.(form);
-  });
+export const Form = (props: FormProps) => {
+  const form = props.form;
 
   return (
     <form
@@ -217,13 +173,24 @@ export const Form = <TFormData extends Record<string, any>>(
     >
       <div class={props.formClassName || ""}>
         <For each={props.fields}>
-          {(formField) => (
+          {(config) => (
             <form.Field
-              name={formField.name as keyof TFormData & string}
-              children={(field) => (
-                <FormInput field={formField} form={form as any} />
+              name={config.name}
+              validators={{
+                onChange: ({ value }: { value: any }) => {
+                  if (config.required && (!value || value === "")) {
+                    return `${config.label} 是必填项`;
+                  }
+                  if (config.validation) {
+                    return config.validation(value);
+                  }
+                },
+              }}
+            >
+              {(_field: any) => (
+                <FormInput field={config} form={form} />
               )}
-            />
+            </form.Field>
           )}
         </For>
       </div>

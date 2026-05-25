@@ -1,6 +1,6 @@
-import general from "./general"
-import room from "./room"
-import audio from "./audio"
+import general from "./general.tsx"
+import room from "./room.tsx"
+import audio from "./audio.tsx"
 import type { SettingTabConfig } from "./types"
 
 const TABS: SettingTabConfig[] = [general, room, audio]
