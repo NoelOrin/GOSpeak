@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './pages/__root'
 import { Route as appIndexRouteRouteImport } from './pages/(app)/index/route'
 import { Route as appLinkIndexRouteImport } from './pages/(app)/link/index'
-import { Route as appIndexIndexRouteImport } from './pages/(app)/index/index'
 import { Route as appRoomRoomIdRouteImport } from './pages/(app)/room/$roomId'
 
 const appIndexRouteRoute = appIndexRouteRouteImport.update({
@@ -20,54 +19,44 @@ const appIndexRouteRoute = appIndexRouteRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const appLinkIndexRoute = appLinkIndexRouteImport.update({
-  id: '/link/',
+  id: '/(app)/link/',
   path: '/link/',
-  getParentRoute: () => appRouteRoute,
-} as any)
-const appIndexIndexRoute = appIndexIndexRouteImport.update({
-  id: '/(app)/index/',
-  path: '/index/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const appRoomRoomIdRoute = appRoomRoomIdRouteImport.update({
-  id: '/room/$roomId',
+  id: '/(app)/room/$roomId',
   path: '/room/$roomId',
-  getParentRoute: () => appRouteRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
+  '/': typeof appIndexRouteRoute
   '/room/$roomId': typeof appRoomRoomIdRoute
-  '/index': typeof appIndexIndexRoute
-  '/link': typeof appLinkIndexRoute
+  '/link/': typeof appLinkIndexRoute
 }
 export interface FileRoutesByTo {
+  '/': typeof appIndexRouteRoute
   '/room/$roomId': typeof appRoomRoomIdRoute
-  '/index': typeof appIndexIndexRoute
   '/link': typeof appLinkIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/(app)/': typeof appIndexRouteRoute
   '/(app)/room/$roomId': typeof appRoomRoomIdRoute
-  '/(app)/index/': typeof appIndexIndexRoute
   '/(app)/link/': typeof appLinkIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/room/$roomId' | '/index' | '/link'
+  fullPaths: '/' | '/room/$roomId' | '/link/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/room/$roomId' | '/index' | '/link'
-  id:
-    | '__root__'
-    | '/(app)/'
-    | '/(app)/room/$roomId'
-    | '/(app)/index/'
-    | '/(app)/link/'
+  to: '/' | '/room/$roomId' | '/link'
+  id: '__root__' | '/(app)/' | '/(app)/room/$roomId' | '/(app)/link/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   appIndexRouteRoute: typeof appIndexRouteRoute
-  appIndexIndexRoute: typeof appIndexIndexRoute
+  appRoomRoomIdRoute: typeof appRoomRoomIdRoute
+  appLinkIndexRoute: typeof appLinkIndexRoute
 }
 
 declare module '@tanstack/solid-router' {
@@ -75,22 +64,15 @@ declare module '@tanstack/solid-router' {
     '/(app)/': {
       id: '/(app)/'
       path: ''
-      fullPath: ''
+      fullPath: '/'
       preLoaderRoute: typeof appIndexRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/(app)/link/': {
       id: '/(app)/link/'
       path: '/link'
-      fullPath: '/link'
+      fullPath: '/link/'
       preLoaderRoute: typeof appLinkIndexRouteImport
-      parentRoute: typeof appRouteRoute
-    }
-    '/(app)/index/': {
-      id: '/(app)/index/'
-      path: '/index'
-      fullPath: '/index'
-      preLoaderRoute: typeof appIndexIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/(app)/room/$roomId': {
@@ -98,14 +80,15 @@ declare module '@tanstack/solid-router' {
       path: '/room/$roomId'
       fullPath: '/room/$roomId'
       preLoaderRoute: typeof appRoomRoomIdRouteImport
-      parentRoute: typeof appRouteRoute
+      parentRoute: typeof rootRouteImport
     }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   appIndexRouteRoute: appIndexRouteRoute,
-  appIndexIndexRoute: appIndexIndexRoute,
+  appRoomRoomIdRoute: appRoomRoomIdRoute,
+  appLinkIndexRoute: appLinkIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -65,7 +65,7 @@ func StartGin(env EnvEnum) {
 
 	port := os.Getenv("SERVER_PORT")
 	if port == "" {
-		port = "8098"
+		port = "8998"
 	}
 	if err := r.Run(":" + port); err != nil {
 		panic(err)

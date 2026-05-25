@@ -16,9 +16,9 @@ func NewAuthHandler(authService *service.AuthService) *AuthHandler {
 }
 
 // Login
-// @Summary      User login
-// @Description  Authenticate user and return JWT token
-// @Tags         Auth
+// @Summary      用户登录
+// @Description  验证用户并返回 JWT token
+// @Tags         认证
 // @Accept       json
 // @Produce      json
 // @Param        request  body      service.LoginRequest  true  "Login credentials"
@@ -41,9 +41,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 }
 
 // Register
-// @Summary      User registration
-// @Description  Register a new user account
-// @Tags         Auth
+// @Summary      用户注册
+// @Description  注册新用户账号
+// @Tags         认证
 // @Accept       json
 // @Produce      json
 // @Param        request  body      service.RegisterRequest  true  "Registration info"
@@ -67,7 +67,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 // GetRefreshToken
 // @Summary      Refresh JWT token
-// @Description  Get a new access token using refresh token
+// @Summary      刷新 JWT token
+// @Description  使用刷新 token 获取新的访问 token
 // @Tags         Auth
 // @Accept       json
 // @Produce      json
