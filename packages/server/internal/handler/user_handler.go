@@ -25,20 +25,25 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 // @Success      200  {object}  pkg.Response
 // @Router       /user/profile [get]
 func (h *UserHandler) GetProfile(c *gin.Context) {
-	username, _ := c.Get("username")
-	usernameStr, _ := username.(string)
+	userUUID, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
+		return
+	}
 
-	user, err := h.userService.GetByID(0)
+	uuidStr, ok := userUUID.(string)
+	if !ok || uuidStr == "" {
+		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
+		return
+	}
+
+	user, err := h.userService.GetByUUID(uuidStr)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
-	_ = usernameStr
 
-	pkg.Success(c, gin.H{
-		"username": user.Name,
-		"uuid":     user.UUID,
-	})
+	pkg.Success(c, user)
 }
 
 // GetByID

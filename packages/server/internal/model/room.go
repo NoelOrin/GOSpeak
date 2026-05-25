@@ -1,7 +1,7 @@
 package model
 
 import (
-	"github.com/oklog/ulid/v2"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"time"
 )
@@ -17,7 +17,7 @@ type Room struct {
 
 func (r *Room) BeforeCreate(_ *gorm.DB) error {
 	if r.UUID == "" {
-		r.UUID = ulid.MustNew(ulid.Now(), nil).String()
+		r.UUID = uuid.New().String()
 	}
 	return nil
 }

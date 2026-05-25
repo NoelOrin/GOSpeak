@@ -1,9 +1,11 @@
 package service
 
 import (
+	"errors"
 	"go_rtc/internal/model"
 	"go_rtc/internal/pkg"
 	"go_rtc/internal/repository"
+
 	"gorm.io/gorm"
 )
 
@@ -18,7 +20,7 @@ func NewUserService(userRepo *repository.UserRepository) *UserService {
 func (s *UserService) GetByID(id uint) (*model.User, error) {
 	user, err := s.userRepo.GetByID(id)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, pkg.NewAppError(pkg.NOT_FOUND, "user not found")
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -29,8 +31,19 @@ func (s *UserService) GetByID(id uint) (*model.User, error) {
 func (s *UserService) GetByUUID(uuid string) (*model.User, error) {
 	user, err := s.userRepo.GetByUUID(uuid)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, pkg.NewAppError(pkg.NOT_FOUND, "user not found")
+		}
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return user, nil
+}
+
+func (s *UserService) GetByName(name string) (*model.User, error) {
+	user, err := s.userRepo.GetByName(name)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, pkg.NewAppError(pkg.USER_NOT_FOUND)
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}

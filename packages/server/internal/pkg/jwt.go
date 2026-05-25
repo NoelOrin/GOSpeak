@@ -1,19 +1,22 @@
 package pkg
 
 import (
-	"github.com/golang-jwt/jwt/v5"
 	"os"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type Claims struct {
 	Username string `json:"username"`
+	UserUUID string `json:"user_uuid"`
 	jwt.RegisteredClaims
 }
 
-func GenerateToken(username string) (string, error) {
+func GenerateToken(username, userUUID string) (string, error) {
 	claims := Claims{
 		Username: username,
+		UserUUID: userUUID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -39,9 +42,10 @@ func ParseToken(tokenStr string) (*Claims, error) {
 	return nil, jwt.ErrSignatureInvalid
 }
 
-func GenerateRefreshToken(username string) (string, error) {
+func GenerateRefreshToken(username, userUUID string) (string, error) {
 	claims := Claims{
 		Username: username,
+		UserUUID: userUUID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

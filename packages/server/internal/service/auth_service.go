@@ -46,12 +46,12 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, pkg.NewAppError(pkg.INVALID_PASSWORD)
 	}
 
-	token, err := pkg.GenerateToken(user.Name)
+	token, err := pkg.GenerateToken(user.Name, user.UUID)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	refreshToken, err := pkg.GenerateRefreshToken(user.Name)
+	refreshToken, err := pkg.GenerateRefreshToken(user.Name, user.UUID)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -77,12 +77,12 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	token, err := pkg.GenerateToken(user.Name)
+	token, err := pkg.GenerateToken(user.Name, user.UUID)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	refreshToken, err := pkg.GenerateRefreshToken(user.Name)
+	refreshToken, err := pkg.GenerateRefreshToken(user.Name, user.UUID)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -94,8 +94,8 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 	}, nil
 }
 
-func (s *AuthService) RefreshToken(username string) (string, error) {
-	token, err := pkg.GenerateToken(username)
+func (s *AuthService) RefreshToken(username, userUUID string) (string, error) {
+	token, err := pkg.GenerateToken(username, userUUID)
 	if err != nil {
 		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}

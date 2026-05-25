@@ -89,7 +89,7 @@ func (h *AuthHandler) GetRefreshToken(c *gin.Context) {
 		return
 	}
 
-	newToken, err := h.authService.RefreshToken(claims.Username)
+	newToken, err := h.authService.RefreshToken(claims.Username, claims.UserUUID)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -126,7 +126,14 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	token, err := h.authService.RefreshToken(usernameStr)
+	userUUID, _ := c.Get("user_uuid")
+	uuidStr, ok := userUUID.(string)
+	if !ok || uuidStr == "" {
+		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
+		return
+	}
+
+	token, err := h.authService.RefreshToken(usernameStr, uuidStr)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
