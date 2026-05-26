@@ -17,6 +17,10 @@ type Config struct {
 	LiveKitKey  string
 	LiveKitSecret string
 	ServerPort  string
+	RedisHost     string
+	RedisPort     string
+	RedisPassword string
+	RedisDB       string
 }
 
 func Load() *Config {
@@ -33,6 +37,10 @@ func Load() *Config {
 		LiveKitKey:  getEnv("LIVEKIT_KEY", ""),
 		LiveKitSecret: getEnv("LIVEKIT_SECRET", ""),
 		ServerPort:  getEnv("SERVER_PORT", "8098"),
+		RedisHost:     getEnv("REDIS_HOST", ""),
+		RedisPort:     getEnv("REDIS_PORT", "6379"),
+		RedisPassword: getEnv("REDIS_PASSWORD", ""),
+		RedisDB:       getEnv("REDIS_DB", "0"),
 	}
 }
 

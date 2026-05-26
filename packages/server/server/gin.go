@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go_rtc/internal/handler"
 	"go_rtc/internal/livekit"
+	"go_rtc/internal/redis"
 	"go_rtc/internal/repository"
 	"go_rtc/internal/router"
 	"go_rtc/internal/service"
@@ -33,6 +34,8 @@ func StartGin(env EnvEnum) {
 	if err := repository.InitDB(); err != nil {
 		panic(fmt.Sprintf("failed to initialize database: %v", err))
 	}
+
+	cache.InitRedis()
 
 	liveKitSvc := livekit.NewService()
 
