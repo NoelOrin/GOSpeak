@@ -41,6 +41,8 @@ packages/server/db/
 # 日志
 packages/server/logs/
 packages/server/gin.log
+agent_test_logs/
+!agent_test_logs/AGENTS.md
 *.log
 
 # Go 编译产物
@@ -61,3 +63,9 @@ go.work.sum
 # packages/server/docs/docs.go
 # packages/server/docs/swagger.json
 # packages/server/docs/swagger.yaml
+
+# ========================
+# Agents 配置
+# ========================
+.agents/*
+!.agents/AGENTS.md

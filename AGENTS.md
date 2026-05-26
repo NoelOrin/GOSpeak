@@ -298,3 +298,78 @@ pnpm build:server
 6. Wire dependencies in `server/gin.go`
 7. Add tests in `test/`
 8. Regenerate Swagger docs
+
+---
+
+## Test Logging
+
+当 agent 被命令进行测试时，必须将测试总结的结果以 Markdown 格式保存到 `agent_test_logs` 文件夹。
+
+### 命名规范
+
+文件名格式：`{测试内容}-{时间}.md`
+
+示例：
+- `api-auth-test-2026-05-26.md`
+- `role-permission-test-2026-05-26.md`
+- `user-crud-test-2026-05-26-14-30.md`
+
+### 日志内容模板
+
+```markdown
+# {测试标题}
+
+**测试时间**: YYYY-MM-DD HH:MM:SS
+**测试环境**: dev / prod
+**测试人员**: AI Agent
+
+## 测试概要
+
+简要描述本次测试的目的和范围。
+
+## 测试结果
+
+| 测试项 | 状态 | 说明 |
+|--------|------|------|
+| 测试项1 | ✅ 通过 | 成功说明 |
+| 测试项2 | ❌ 失败 | 失败原因 |
+
+## 详细测试记录
+
+### 1. 测试项名称
+
+**请求**:
+```bash
+curl -X POST http://localhost:8998/api/v1/xxx
+```
+
+**响应**:
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": { ... }
+}
+```
+
+**结论**: 测试通过/失败，原因说明。
+
+## 问题与建议
+
+列出测试过程中发现的问题和改进建议。
+
+## 总结
+
+整体测试结论和下一步计划。
+```
+
+### 保存位置
+
+```
+GOSpeak/
+├── agent_test_logs/           # 测试日志目录
+│   ├── api-auth-test-2026-05-26.md
+│   ├── role-permission-test-2026-05-26.md
+│   └── ...
+└── ...
+```
