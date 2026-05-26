@@ -1,4 +1,5 @@
 import { For, Show, Switch, Match } from "solid-js";
+import clsx from "clsx";
 
 export interface FormFieldConfig {
   label: string;
@@ -11,7 +12,8 @@ export interface FormFieldConfig {
     | "select"
     | "checkbox"
     | "textarea"
-    | "radio";
+    | "radio"
+    | "switch";
   placeholder?: string;
   required?: boolean;
   options?: Array<{ value: string; label: string }>;
@@ -30,10 +32,7 @@ export interface FormProps {
   submitButtonText?: string;
 }
 
-const FormInput = (props: {
-  field: FormFieldConfig;
-  form: any;
-}) => {
+const FormInput = (props: { field: FormFieldConfig; form: any }) => {
   const { field, form } = props;
   const fieldValue = () => form.getFieldValue(field.name);
   const fieldErrors = () => form.state.fieldMeta[field.name]?.errors ?? [];
@@ -42,18 +41,42 @@ const FormInput = (props: {
 
   return (
     <Switch>
+      <Match when={field.type === "switch"}>
+        <fieldset
+          class={clsx(
+            "fieldset mb-4 h-full flex items-center",
+            field.className,
+          )}
+        >
+          <legend class="fieldset-legend text-[14px]">{field.label}</legend>
+          <div class="flex flex-1">
+            <input
+              id={fieldId}
+              type="checkbox"
+              checked={(fieldValue() as boolean) || false}
+              required={field.required}
+              class="toggle"
+              onChange={(e) =>
+                form.setFieldValue(field.name, e.target.checked as any)
+              }
+            />
+          </div>
+        </fieldset>
+      </Match>
       <Match when={field.type === "checkbox"}>
         <label class="fieldset-label mb-4 cursor-pointer">
-          <input
-            id={fieldId}
-            type="checkbox"
-            checked={(fieldValue() as boolean) || false}
-            required={field.required}
-            class="checkbox"
-            onChange={(e) =>
-              form.setFieldValue(field.name, e.target.checked as any)
-            }
-          />
+          <div class="flex items-center">
+            <input
+              id={fieldId}
+              type="checkbox"
+              checked={(fieldValue() as boolean) || false}
+              required={field.required}
+              class={clsx("checkbox", field.className)}
+              onChange={(e) =>
+                form.setFieldValue(field.name, e.target.checked as any)
+              }
+            />
+          </div>
         </label>
         <Show when={isTouched() && fieldErrors().length > 0}>
           <p class="fieldset-label mb-4 text-error">
@@ -63,38 +86,38 @@ const FormInput = (props: {
       </Match>
 
       <Match when={field.type === "radio"}>
-        <fieldset class={`fieldset mb-4 ${field.className || ""}`}>
-          <legend class="fieldset-legend">{field.label}</legend>
+        <fieldset class={clsx("fieldset mb-4 -full", field.className)}>
+          <legend class="fieldset-legend text-[14px]">{field.label}</legend>
           <For each={field.options}>
             {(option) => (
-              <label class="fieldset-label cursor-pointer">
-                <input
-                  id={`${fieldId}-${option.value}`}
-                  type="radio"
-                  name={field.name}
-                  value={option.value}
-                  checked={fieldValue() === option.value}
-                  required={field.required}
-                  class="radio"
-                  onChange={(e) =>
-                    form.setFieldValue(field.name, e.target.value as any)
-                  }
-                />
-                {option.label}
-              </label>
+              <div class="flex items-center">
+                <label class="fieldset-label cursor-pointer">
+                  <input
+                    id={`${fieldId}-${option.value}`}
+                    type="radio"
+                    name={field.name}
+                    value={option.value}
+                    checked={fieldValue() === option.value}
+                    required={field.required}
+                    class="radio"
+                    onChange={(e) =>
+                      form.setFieldValue(field.name, e.target.value as any)
+                    }
+                  />
+                  {option.label}
+                </label>
+              </div>
             )}
           </For>
           <Show when={isTouched() && fieldErrors().length > 0}>
-            <p class="fieldset-label text-error">
-              {fieldErrors().join(", ")}
-            </p>
+            <p class="fieldset-label text-error">{fieldErrors().join(", ")}</p>
           </Show>
         </fieldset>
       </Match>
 
       <Match when={true}>
-        <fieldset class={`fieldset mb-4 ${field.className || ""}`}>
-          <legend class="fieldset-legend">{field.label}</legend>
+        <fieldset class={clsx("fieldset mb-4", field.className)}>
+          <legend class="fieldset-legend text-[14px]">{field.label}</legend>
 
           <Switch
             fallback={
@@ -104,7 +127,7 @@ const FormInput = (props: {
                 value={(fieldValue() as string) || ""}
                 placeholder={field.placeholder}
                 required={field.required}
-                class="input"
+                class={clsx("input w-full", field.className)}
                 onInput={(e) => {
                   const value =
                     field.type === "number"
@@ -121,7 +144,7 @@ const FormInput = (props: {
                 value={(fieldValue() as string) || ""}
                 placeholder={field.placeholder}
                 required={field.required}
-                class="textarea h-24"
+                class={clsx("textarea w-full", field.className)}
                 onInput={(e) =>
                   form.setFieldValue(field.name, e.target.value as any)
                 }
@@ -133,12 +156,11 @@ const FormInput = (props: {
                 id={fieldId}
                 value={(fieldValue() as string) || ""}
                 required={field.required}
-                class="select"
+                class={clsx("select w-full", field.className)}
                 onChange={(e) =>
                   form.setFieldValue(field.name, e.target.value as any)
                 }
               >
-                <option value="">请选择</option>
                 <For each={field.options}>
                   {(option) => (
                     <option value={option.value}>{option.label}</option>
@@ -149,9 +171,7 @@ const FormInput = (props: {
           </Switch>
 
           <Show when={isTouched() && fieldErrors().length > 0}>
-            <p class="fieldset-label text-error">
-              {fieldErrors().join(", ")}
-            </p>
+            <p class="fieldset-label text-error">{fieldErrors().join(", ")}</p>
           </Show>
         </fieldset>
       </Match>
@@ -187,9 +207,7 @@ export const Form = (props: FormProps) => {
                 },
               }}
             >
-              {(_field: any) => (
-                <FormInput field={config} form={form} />
-              )}
+              {(_field: any) => <FormInput field={config} form={form} />}
             </form.Field>
           )}
         </For>
