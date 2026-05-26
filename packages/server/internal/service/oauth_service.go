@@ -130,11 +130,11 @@ func (s *OAuthService) HandleCallback(providerName, code string) (*AuthResponse,
 }
 
 func (s *OAuthService) buildAuthResponse(user *model.User) (*AuthResponse, error) {
-	token, err := pkg.GenerateToken(user.Name, user.UUID)
+	token, err := pkg.GenerateToken(user.Name, user.UUID, user.Role)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	refreshToken, err := pkg.GenerateRefreshToken(user.Name, user.UUID)
+	refreshToken, err := pkg.GenerateRefreshToken(user.Name, user.UUID, user.Role)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}

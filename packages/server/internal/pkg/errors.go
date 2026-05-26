@@ -20,6 +20,7 @@ const (
 	INVALID_PASSWORD ErrCode = 1010
 	USER_NOT_FOUND   ErrCode = 1011
 	USERNAME_EXISTS  ErrCode = 1012
+	FORBIDDEN        ErrCode = 1013
 
 	// Parameter errors 2xxx
 	INVALID_PARAMS ErrCode = 2001
@@ -50,6 +51,7 @@ var errMsg = map[ErrCode]string{
 	INVALID_PASSWORD:       "invalid password",
 	USER_NOT_FOUND:         "user not found",
 	USERNAME_EXISTS:        "username already exists",
+	FORBIDDEN:              "forbidden",
 	INVALID_PARAMS:         "invalid parameters",
 	NOT_FOUND:              "resource not found",
 	ALREADY_EXISTS:         "resource already exists",

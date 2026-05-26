@@ -37,8 +37,37 @@ func JWTAuth() gin.HandlerFunc {
 
 		c.Set("username", claims.Username)
 		c.Set("user_uuid", claims.UserUUID)
+		c.Set("role", claims.Role)
 		c.Set("claims", claims)
 		c.Next()
+	}
+}
+
+func RequireRole(roles ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, exists := c.Get("role")
+		if !exists {
+			pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
+			c.Abort()
+			return
+		}
+
+		roleStr, ok := role.(string)
+		if !ok {
+			pkg.Fail(c, pkg.INTERNAL_ERROR)
+			c.Abort()
+			return
+		}
+
+		for _, allowedRole := range roles {
+			if roleStr == allowedRole {
+				c.Next()
+				return
+			}
+		}
+
+		pkg.Fail(c, pkg.FORBIDDEN)
+		c.Abort()
 	}
 }
 

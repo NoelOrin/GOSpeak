@@ -31,14 +31,11 @@
 [GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
 Please check https://github.com/gin-gonic/gin/blob/master/docs/doc.md#dont-trust-all-proxies for details.
 [GIN-debug] Listening and serving HTTP on :8998
-[GIN] 2026/05/25 - 21:22:06 | 404 |       12.25µs |             ::1 | POST     "/api/v1/room/create"
-[GIN] 2026/05/25 - 21:22:07 | 404 |       4.958µs |             ::1 | POST     "/api/v1/room/create"
-[GIN] 2026/05/25 - 21:37:53 | 404 |     491.375µs |             ::1 | POST     "/api/v1/room/create"
-[GIN] 2026/05/25 - 21:37:54 | 404 |       62.25µs |             ::1 | POST     "/api/v1/room/create"
-[GIN] 2026/05/25 - 21:38:39 | 404 |      11.833µs |             ::1 | POST     "/api/v1/room/create"
-[GIN] 2026/05/25 - 21:38:40 | 404 |      21.708µs |             ::1 | POST     "/api/v1/room/create"
-[GIN] 2026/05/25 - 21:50:07 | 404 |        42.5µs |             ::1 | POST     "/api/v1/room/create"
-[GIN] 2026/05/25 - 21:50:08 | 404 |           5µs |             ::1 | POST     "/api/v1/room/create"
-[GIN] 2026/05/25 - 21:50:10 | 404 |        3.75µs |             ::1 | POST     "/api/v1/room/create"
-[GIN] 2026/05/25 - 21:50:11 | 404 |       4.541µs |             ::1 | POST     "/api/v1/room/create"
-[GIN] 2026/05/25 - 21:50:12 | 404 |        5.25µs |             ::1 | POST     "/api/v1/room/create"
+[GIN] 2026/05/26 - 10:54:52 | 200 |     927.459µs |             ::1 | GET      "/swagger/index.html"
+[GIN] 2026/05/26 - 10:54:52 | 200 |    3.018834ms |             ::1 | GET      "/swagger/index.css"
+[GIN] 2026/05/26 - 10:54:52 | 200 |      42.375µs |             ::1 | GET      "/swagger/swagger-initializer.js"
+[GIN] 2026/05/26 - 10:54:52 | 200 |    3.860458ms |             ::1 | GET      "/swagger/swagger-ui.css"
+[GIN] 2026/05/26 - 10:54:52 | 200 |     977.541µs |             ::1 | GET      "/swagger/swagger-ui-standalone-preset.js"
+[GIN] 2026/05/26 - 10:54:52 | 200 |    13.91175ms |             ::1 | GET      "/swagger/swagger-ui-bundle.js"
+[GIN] 2026/05/26 - 10:54:52 | 200 |     343.667µs |             ::1 | GET      "/swagger/doc.json"
+[GIN] 2026/05/26 - 10:54:53 | 200 |      97.041µs |             ::1 | GET      "/swagger/favicon-32x32.png"

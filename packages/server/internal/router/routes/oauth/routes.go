@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"go_rtc/internal/handler"
+	"go_rtc/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -12,8 +13,8 @@ func Register(r *gin.RouterGroup, h *handler.OAuthHandler) {
 }
 
 func RegisterAdmin(r *gin.RouterGroup, h *handler.OAuthHandler) {
-	r.GET("/providers", h.ListProviders)
-	r.POST("/providers", h.CreateProvider)
-	r.PUT("/providers", h.UpdateProvider)
-	r.DELETE("/providers/:id", h.DeleteProvider)
+	r.GET("/providers", middleware.RequireRole("admin"), h.ListProviders)
+	r.POST("/providers", middleware.RequireRole("admin"), h.CreateProvider)
+	r.PUT("/providers", middleware.RequireRole("admin"), h.UpdateProvider)
+	r.DELETE("/providers/:id", middleware.RequireRole("admin"), h.DeleteProvider)
 }

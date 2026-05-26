@@ -72,6 +72,9 @@ func StartGin(env EnvEnum) {
 	if port == "" {
 		port = "8998"
 	}
+
+	fmt.Printf("[Swagger] API 文档地址: http://localhost:%s/swagger/index.html\n", port)
+
 	if err := r.Run(":" + port); err != nil {
 		panic(err)
 	}

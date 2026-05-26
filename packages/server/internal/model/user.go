@@ -11,6 +11,7 @@ type User struct {
 	UUID      string `gorm:"type:uuid;uniqueIndex" json:"uuid"`
 	Name      string `gorm:"uniqueIndex" json:"name"`
 	Password  string `json:"-"`
+	Role      string `gorm:"default:user" json:"role"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

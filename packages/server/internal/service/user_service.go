@@ -84,3 +84,23 @@ func (s *UserService) Delete(id uint) error {
 	}
 	return nil
 }
+
+func (s *UserService) UpdateRole(id uint, role string) error {
+	user, err := s.userRepo.GetByID(id)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return pkg.NewAppError(pkg.NOT_FOUND, "user not found")
+		}
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+
+	if role != "admin" && role != "user" {
+		return pkg.NewAppError(pkg.INVALID_PARAMS, "invalid role, must be admin or user")
+	}
+
+	user.Role = role
+	if err := s.userRepo.Update(user); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return nil
+}

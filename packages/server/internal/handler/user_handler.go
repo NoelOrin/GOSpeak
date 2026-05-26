@@ -123,3 +123,38 @@ func (h *UserHandler) Delete(c *gin.Context) {
 
 	pkg.Success(c, nil)
 }
+
+// UpdateRole
+// @Summary      更新用户角色
+// @Description  管理员更新用户角色（admin/user）
+// @Tags         用户
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      int     true  "用户 ID"
+// @Param        role  body      object  true  "角色信息"
+// @Success      200   {object}  pkg.Response
+// @Router       /user/{id}/role [put]
+func (h *UserHandler) UpdateRole(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "invalid id")
+		return
+	}
+
+	var req struct {
+		Role string `json:"role" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+
+	if err := h.userService.UpdateRole(uint(id), req.Role); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+
+	pkg.Success(c, nil)
+}

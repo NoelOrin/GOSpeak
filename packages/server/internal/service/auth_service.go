@@ -46,12 +46,12 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, pkg.NewAppError(pkg.INVALID_PASSWORD)
 	}
 
-	token, err := pkg.GenerateToken(user.Name, user.UUID)
+	token, err := pkg.GenerateToken(user.Name, user.UUID, user.Role)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	refreshToken, err := pkg.GenerateRefreshToken(user.Name, user.UUID)
+	refreshToken, err := pkg.GenerateRefreshToken(user.Name, user.UUID, user.Role)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -72,17 +72,18 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 	user := &model.User{
 		Name:     req.Username,
 		Password: req.Password,
+		Role:     "user",
 	}
 	if err := s.userRepo.Create(user); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	token, err := pkg.GenerateToken(user.Name, user.UUID)
+	token, err := pkg.GenerateToken(user.Name, user.UUID, user.Role)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	refreshToken, err := pkg.GenerateRefreshToken(user.Name, user.UUID)
+	refreshToken, err := pkg.GenerateRefreshToken(user.Name, user.UUID, user.Role)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -94,8 +95,8 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 	}, nil
 }
 
-func (s *AuthService) RefreshToken(username, userUUID string) (string, error) {
-	token, err := pkg.GenerateToken(username, userUUID)
+func (s *AuthService) RefreshToken(username, userUUID, role string) (string, error) {
+	token, err := pkg.GenerateToken(username, userUUID, role)
 	if err != nil {
 		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
