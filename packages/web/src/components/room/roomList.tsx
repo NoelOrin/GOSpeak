@@ -2,13 +2,14 @@ import { useQuery } from "@tanstack/solid-query";
 import clsx from "clsx";
 import { For, Show } from "solid-js";
 import type { RoomItemType } from "@/types/room";
+import apiClient from "@/api/apiClient";
 import Divider from "../common/divider";
 import MemberInfoWindow from "./roomMemberInfo.tsx";
 
 // 子项
 interface RoomItemPropsType {
   roomItem: RoomItemType;
-  isActive?: boolean; // 可选参数
+  isActive?: boolean;
 }
 
 const RoomItem = ({ roomItem, isActive = false }: RoomItemPropsType) => {
@@ -67,18 +68,7 @@ const RoomItem = ({ roomItem, isActive = false }: RoomItemPropsType) => {
       </button>
 
       <div class="flex flex-col w-full">
-        <For
-          each={
-            roomItem.memberInfoList || [
-              {
-                id: 1,
-                name: "张三",
-                avatar:
-                  "https://img.daisyui.com/images/profile/demo/distracted1@192.webp",
-              },
-            ]
-          }
-        >
+        <For each={roomItem.memberInfoList ?? []}>
           {(memberInfo) => <MemberInfoWindow memberInfo={memberInfo} />}
         </For>
       </div>
@@ -113,46 +103,32 @@ const RoomListHeader = () => {
 interface RoomListPropsType {
   ref?: HTMLDivElement;
 }
-// 列表
-const RoomList = ({ ref }: RoomListPropsType) => {
-  // const { data, isLoading, error, refetch } = useQuery(() => ({
-  //   queryKey: ["user"],
-  //   queryFn: () => fetch("/api/user/123").then((res) => res.json()),
-  //   // 高级配置（useRequest 的所有功能都支持）
-  //   // staleTime: 5000, // 5秒内不重新请求（缓存）
-  //   // retry: 3, // 失败重试3次
-  //   // refetchOnWindowFocus: false,
-  // }));
-  const isLoading = false;
-  const roomItems: RoomItemType[] = [
-    { id: 1, name: "房间1", current: 12, limit: 44 },
-    { id: 2, name: "房间2", current: 8, limit: 44 },
-    { id: 3, name: "房间3", current: 25, limit: 44 },
-    { id: 4, name: "房间4", current: 30, limit: 44 },
-    { id: 5, name: "房间5", current: 15, limit: 44 },
-    { id: 6, name: "房间6", current: 20, limit: 44 },
-    { id: 7, name: "房间7", current: 18, limit: 44 },
-    { id: 8, name: "房间8", current: 22, limit: 44 },
-    { id: 9, name: "房间9", current: 11, limit: 44 },
-    { id: 10, name: "房间10", current: 33, limit: 44 },
-    { id: 11, name: "房间11", current: 5, limit: 44 },
-    { id: 12, name: "房间12", current: 40, limit: 44 },
-  ];
 
-  // console.log(roomItems);
+const RoomList = ({ ref }: RoomListPropsType) => {
+  const roomListQuery = useQuery(() => ({
+    queryKey: ["roomList"],
+    queryFn: async () => {
+      const response = await apiClient.get({
+        url: "/api/v1/room/list",
+        params: { page: 1, page_size: 50 },
+      });
+      return ((response as any).data.data?.list ?? []) as RoomItemType[];
+    },
+  }));
+
   return (
     <div class="box-border flex flex-col px-2 h-full select-none" ref={ref}>
       <RoomListHeader />
       <Divider class="mx-1 my-1" />
       <div class="relative flex-1 min-h-0">
         <div class="box-border absolute inset-0 flex flex-col space-y-1 overflow-y-auto">
-          <Show when={isLoading}>
-            <For each={Array.from({ length: 12 }, (_, i) => i)}>
+          <Show when={roomListQuery.isLoading}>
+            <For each={Array.from({ length: 5 }, (_, i) => i)}>
               {(_) => <RoomItemSkeleton />}
             </For>
           </Show>
-          <Show when={!isLoading}>
-            <For each={roomItems}>
+          <Show when={!roomListQuery.isLoading}>
+            <For each={roomListQuery.data ?? []}>
               {(roomItem) => <RoomItem roomItem={roomItem} isActive={false} />}
             </For>
           </Show>

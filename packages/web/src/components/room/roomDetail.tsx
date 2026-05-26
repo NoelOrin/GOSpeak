@@ -17,7 +17,7 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
           roomName: "test-room",
         },
       });
-      return response.data;
+      return (response as any).data;
     },
   }));
 
@@ -26,7 +26,7 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
     queryKey: ["token"],
     queryFn: async () => {
       const response = await apiClient.post({
-        url: "/api/v1/token",
+        url: "/api/v1/signal/token",
         data: {
           roomName: "test-room",
           identity: `user${Date.now()}`,
@@ -34,7 +34,7 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
           canSubscribe: true,
         },
       });
-      return response.data;
+      return (response as any).data.data as { token: string; serverUrl: string };
     },
     enabled: createRoomQuery.isSuccess,
   }));
@@ -45,36 +45,21 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
     on(
       () => tokenQuery.isSuccess,
       async () => {
-        // 显式追踪所有依赖信号
         const tokenData = tokenQuery.data;
 
         if (tokenData) {
-          console.log("Connecting to room with token:", tokenData.token);
-
           setRoom(
             createRoom({
               token: tokenData.token,
               url: tokenData.serverUrl,
             })
           );
-
-
-          // const p = _room()?.room?.localParticipant;
-          // await p.setCameraEnabled(true);
-          // await p.setMicrophoneEnabled(true);
-
-          // 开始屏幕共享（会弹出选择窗口）
-          // await p.setScreenShareEnabled(true);
-
-          // 关闭摄像头（静音，指示灯关闭）
-          // await p.setCameraEnabled(false);
         }
       }
     )
   );
 
   onCleanup(() => {
-    // 断开房间连接等清理工作
     if (roomIns()) {
       roomIns()?.leaveRoom();
     }
@@ -94,4 +79,5 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
     </div>
   );
 };
+
 export default RoomDetail;
