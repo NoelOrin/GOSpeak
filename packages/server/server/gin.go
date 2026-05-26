@@ -8,7 +8,7 @@ import (
 	"go_rtc/internal/router"
 	"go_rtc/internal/service"
 	"go_rtc/internal/signal"
-	"io"
+	// "io"
 	"log"
 	"os"
 
@@ -109,6 +109,6 @@ func init() {
 	log.SetFlags(log.Llongfile | log.Lmicroseconds | log.Ldate)
 
 	gin.DisableConsoleColor()
-	f, _ := os.Create("gin.log")
-	gin.DefaultWriter = io.MultiWriter(f, os.Stdout)
+	// f, _ := os.Create("gin.log")
+	// gin.DefaultWriter = io.MultiWriter(f, os.Stdout)
 }

@@ -18,7 +18,14 @@ importers:
         specifier: 1.8.5
         version: 1.8.5
 
-  packages/bot: {}
+  packages/bot:
+    dependencies:
+      await-to-js:
+        specifier: ^3.0.0
+        version: 3.0.0
+      hono:
+        specifier: ^4.12.23
+        version: 4.12.23
 
   packages/server: {}
 
@@ -1698,6 +1705,10 @@ packages:
   hasown@2.0.3:
     resolution: {integrity: sha512-ej4AhfhfL2Q2zpMmLo7U1Uv9+PyhIZpgQLGT1F9miIGmiCJIoCgSmczFdrc97mWT4kVY72KA+WnnhJ5pghSvSg==}
     engines: {node: '>= 0.4'}
+
+  hono@4.12.23:
+    resolution: {integrity: sha512-eIaZ9qDgu7XV0pxOCrg7/WhnQ6Ivm22UcxhXx/A3dcbqbbYgBEkc6e/J/s7j2tS96zoB0S9VBdLwQNCWwUo4LA==}
+    engines: {node: '>=16.9.0'}
 
   hosted-git-info@2.8.9:
     resolution: {integrity: sha512-mxIDAb9Lsm6DoOJ7xH+5+X4y1LU/4Hi50L9C5sIswK3JzULS4bwk1FvjdBgvYR4bzT4tuUQiC15FE2f5HbLvYw==}
@@ -4180,6 +4191,8 @@ snapshots:
   hasown@2.0.3:
     dependencies:
       function-bind: 1.1.2
+
+  hono@4.12.23: {}
 
   hosted-git-info@2.8.9: {}
 
