@@ -2,7 +2,9 @@ package handler
 
 import (
 	"go_rtc/internal/pkg"
+	"go_rtc/internal/redis"
 	"go_rtc/internal/service"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -107,6 +109,13 @@ func (h *AuthHandler) GetRefreshToken(c *gin.Context) {
 // @Success      200  {object}  pkg.Response
 // @Router       /auth/logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
+	claims, ok := c.Get("claims")
+	if ok {
+		if cl, ok := claims.(*pkg.Claims); ok && cl.ID != "" {
+			remaining := time.Until(cl.ExpiresAt.Time)
+			_ = redis.BlacklistToken(cl.ID, remaining)
+		}
+	}
 	pkg.Success(c, nil)
 }
 

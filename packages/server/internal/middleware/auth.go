@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"go_rtc/internal/pkg"
+	"go_rtc/internal/redis"
 	"net/http"
 	"strings"
 
@@ -31,6 +32,12 @@ func JWTAuth() gin.HandlerFunc {
 
 		if pkg.IsTokenExpired(claims) {
 			pkg.Fail(c, pkg.TOKEN_EXPIRED)
+			c.Abort()
+			return
+		}
+
+		if redis.IsBlacklisted(claims.ID) {
+			pkg.Fail(c, pkg.TOKEN_REVOKED)
 			c.Abort()
 			return
 		}

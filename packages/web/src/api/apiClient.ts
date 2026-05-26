@@ -4,6 +4,7 @@ import axios, {
 	type AxiosResponse,
 	type AxiosInstance,
 } from "axios";
+import userStore from "@/stores/userStore";
 
 export interface Result<T = any> {
 	code: number;
@@ -21,10 +22,13 @@ const createInstance = (baseURL?: string) => {
 	// 请求拦截
 	axiosInstance.interceptors.request.use(
 		(config) => {
+			const token = userStore.accessToken();
+			if (token) {
+				config.headers.Authorization = `Bearer ${token}`;
+			}
 			return config;
 		},
 		(error) => {
-			// 请求错误时做些什么
 			return Promise.reject(error);
 		},
 	);

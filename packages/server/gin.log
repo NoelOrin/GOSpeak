@@ -45,3 +45,7 @@ Please check https://github.com/gin-gonic/gin/blob/master/docs/doc.md#dont-trust
 [GIN] 2026/05/26 - 11:41:35 | 200 |      43.959µs |             ::1 | DELETE   "/api/v1/user/3"
 [GIN] 2026/05/26 - 11:42:06 | 200 |       435.5µs |             ::1 | POST     "/api/v1/auth/login"
 [GIN] 2026/05/26 - 11:42:06 | 200 |      98.291µs |             ::1 | DELETE   "/api/v1/user/3"
+[GIN] 2026/05/26 - 17:16:45 | 404 |    2.626291ms |             ::1 | POST     "/api/v1/room/create"
+[GIN] 2026/05/26 - 17:16:46 | 404 |      89.917µs |             ::1 | POST     "/api/v1/room/create"
+[GIN] 2026/05/26 - 17:16:47 | 404 |       4.583µs |             ::1 | POST     "/api/v1/room/create"
+[GIN] 2026/05/26 - 17:16:48 | 404 |       7.084µs |             ::1 | POST     "/api/v1/room/create"

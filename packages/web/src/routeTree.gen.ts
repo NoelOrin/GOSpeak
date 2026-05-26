@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './pages/__root'
 import { Route as appRouteRouteImport } from './pages/(app)/route'
+import { Route as LoginIndexRouteImport } from './pages/login/index'
 import { Route as appIndexRouteRouteImport } from './pages/(app)/index/route'
 import { Route as appIndexIndexRouteImport } from './pages/(app)/index/index'
 import { Route as appLinkIndexRouteImport } from './pages/(app)/link/index'
@@ -17,6 +18,11 @@ import { Route as appChannelIndexRouteImport } from './pages/(app)/channel/index
 
 const appRouteRoute = appRouteRouteImport.update({
   id: '/(app)',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginIndexRoute = LoginIndexRouteImport.update({
+  id: '/login/',
+  path: '/login/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const appIndexRouteRoute = appIndexRouteRouteImport.update({
@@ -42,12 +48,14 @@ const appChannelIndexRoute = appChannelIndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof appIndexRouteRoute
+  '/login/': typeof LoginIndexRoute
   '/channel/': typeof appChannelIndexRoute
   '/index/': typeof appIndexIndexRoute
   '/link/': typeof appLinkIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof appIndexRouteRoute
+  '/login': typeof LoginIndexRoute
   '/channel': typeof appChannelIndexRoute
   '/index': typeof appIndexIndexRoute
   '/link': typeof appLinkIndexRoute
@@ -56,19 +64,21 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/(app)': typeof appRouteRouteWithChildren
   '/(app)/': typeof appIndexRouteRoute
+  '/login/': typeof LoginIndexRoute
   '/(app)/channel/': typeof appChannelIndexRoute
   '/(app)/index/': typeof appIndexIndexRoute
   '/(app)/link/': typeof appLinkIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/channel/' | '/index/' | '/link/'
+  fullPaths: '/' | '/login/' | '/channel/' | '/index/' | '/link/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/channel' | '/index' | '/link'
+  to: '/' | '/login' | '/channel' | '/index' | '/link'
   id:
     | '__root__'
     | '/(app)'
     | '/(app)/'
+    | '/login/'
     | '/(app)/channel/'
     | '/(app)/index/'
     | '/(app)/link/'
@@ -76,6 +86,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   appRouteRoute: typeof appRouteRouteWithChildren
+  LoginIndexRoute: typeof LoginIndexRoute
 }
 
 declare module '@tanstack/solid-router' {
@@ -85,6 +96,13 @@ declare module '@tanstack/solid-router' {
       path: ''
       fullPath: ''
       preLoaderRoute: typeof appRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login/': {
+      id: '/login/'
+      path: '/login'
+      fullPath: '/login/'
+      preLoaderRoute: typeof LoginIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/(app)/': {
@@ -138,6 +156,7 @@ const appRouteRouteWithChildren = appRouteRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   appRouteRoute: appRouteRouteWithChildren,
+  LoginIndexRoute: LoginIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

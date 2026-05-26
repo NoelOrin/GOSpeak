@@ -21,6 +21,7 @@ const (
 	USER_NOT_FOUND   ErrCode = 1011
 	USERNAME_EXISTS  ErrCode = 1012
 	FORBIDDEN        ErrCode = 1013
+	TOKEN_REVOKED    ErrCode = 1014
 
 	// Parameter errors 2xxx
 	INVALID_PARAMS ErrCode = 2001
@@ -48,6 +49,7 @@ var errMsg = map[ErrCode]string{
 	TOKEN_NOT_EXIST:        "token does not exist",
 	TOKEN_WRONG:            "token is wrong",
 	TOKEN_EXPIRED:          "token has expired",
+	TOKEN_REVOKED:          "token has been revoked",
 	INVALID_PASSWORD:       "invalid password",
 	USER_NOT_FOUND:         "user not found",
 	USERNAME_EXISTS:        "username already exists",

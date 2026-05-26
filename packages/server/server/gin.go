@@ -35,7 +35,7 @@ func StartGin(env EnvEnum) {
 		panic(fmt.Sprintf("failed to initialize database: %v", err))
 	}
 
-	cache.InitRedis()
+	redis.InitRedis()
 
 	liveKitSvc := livekit.NewService()
 

@@ -6,6 +6,7 @@ import (
 	"go_rtc/internal/pkg"
 	"go_rtc/internal/repository"
 
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -42,7 +43,7 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	if user.Password != req.Password {
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
 		return nil, pkg.NewAppError(pkg.INVALID_PASSWORD)
 	}
 
@@ -69,9 +70,13 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 		return nil, pkg.NewAppError(pkg.USERNAME_EXISTS)
 	}
 
+	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
 	user := &model.User{
 		Name:     req.Username,
-		Password: req.Password,
+		Password: string(hashedPwd),
 		Role:     "user",
 	}
 	if err := s.userRepo.Create(user); err != nil {

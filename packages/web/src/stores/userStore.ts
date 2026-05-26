@@ -1,16 +1,49 @@
-import { get, set, del, clear, keys } from "idb-keyval";
+import { createSignal } from 'solid-js'
+import { get, set, del } from 'idb-keyval'
 
-// 设置
-await set("user", { name: "Alice", age: 30 });
+export interface UserInfo {
+  id: number
+  uuid: string
+  name: string
+  role: string
+}
 
-// 获取
-const user = await get("user"); // { name: 'Alice', age: 30 }
+const [user, setUser] = createSignal<UserInfo | null>(null)
+const [accessToken, setAccessToken] = createSignal('')
+const [refreshToken, setRefreshToken] = createSignal('')
 
-// 删除
-await del("user");
+;(async () => {
+  const [u, at, rt] = await Promise.all([
+    get<UserInfo>('user'),
+    get<string>('accessToken'),
+    get<string>('refreshToken'),
+  ])
+  if (u) setUser(u)
+  if (at) setAccessToken(at)
+  if (rt) setRefreshToken(rt)
+})()
 
-// 清空
-await clear();
+async function loginAction(u: UserInfo, at: string, rt: string) {
+  await Promise.all([set('user', u), set('accessToken', at), set('refreshToken', rt)])
+  setUser(u)
+  setAccessToken(at)
+  setRefreshToken(rt)
+}
 
-// 获取所有 key
-const allKeys = await keys();
+async function logoutAction() {
+  await Promise.all([del('user'), del('accessToken'), del('refreshToken')])
+  setUser(null)
+  setAccessToken('')
+  setRefreshToken('')
+}
+
+const userStore = {
+  user,
+  accessToken,
+  refreshToken,
+  isLoggedIn: () => !!accessToken(),
+  login: loginAction,
+  logout: logoutAction,
+}
+
+export default userStore
