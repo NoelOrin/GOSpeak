@@ -9,7 +9,7 @@ import (
 type Room struct {
 	ID        uint   `gorm:"primaryKey" json:"id"`
 	UUID      string `gorm:"type:uuid;uniqueIndex" json:"uuid"`
-	Name      string `json:"name"`
+	Name      string `gorm:"index" json:"name"`
 	Limit     uint   `json:"limit"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
