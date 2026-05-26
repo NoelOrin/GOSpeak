@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/solid-router'
-import { useForm } from '@tanstack/solid-form'
+import { createForm } from '@tanstack/solid-form'
 import { createSignal, Show } from 'solid-js'
 import { Form } from '@/components/form'
 import { login as loginApi } from '@/api/auth'
@@ -13,7 +13,7 @@ function LoginPage() {
   const navigate = useNavigate()
   const [error, setError] = createSignal('')
 
-  const form = useForm({
+  const form = createForm(() => ({
     defaultValues: { username: '', password: '' },
     onSubmit: async ({ value }) => {
       setError('')
@@ -25,7 +25,7 @@ function LoginPage() {
         setError(e?.message || '登录失败，请重试')
       }
     },
-  })
+  }))
 
   return (
     <div class="flex items-center justify-center w-screen h-screen bg-base-200">
