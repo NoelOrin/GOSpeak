@@ -1,28 +1,5 @@
 basePath: /api/v1
 definitions:
-  handler.AuthResponse:
-    properties:
-      code:
-        allOf:
-        - $ref: '#/definitions/pkg.ErrCode'
-        example: 0
-      data:
-        $ref: '#/definitions/handler.AuthResponseData'
-      message:
-        example: success
-        type: string
-    type: object
-  handler.AuthResponseData:
-    properties:
-      refresh_token:
-        example: eyJhbGciOiJIUzI1NiIs...
-        type: string
-      token:
-        example: eyJhbGciOiJIUzI1NiIs...
-        type: string
-      user:
-        $ref: '#/definitions/model.User'
-    type: object
   handler.JoinRoomRequest:
     properties:
       identity:
@@ -34,38 +11,6 @@ definitions:
     required:
     - identity
     - room
-    type: object
-  handler.LoginRequest:
-    properties:
-      password:
-        example: "123456"
-        type: string
-      username:
-        example: john
-        type: string
-    required:
-    - password
-    - username
-    type: object
-  handler.RefreshTokenRequest:
-    properties:
-      refresh_token:
-        example: eyJ...
-        type: string
-    required:
-    - refresh_token
-    type: object
-  handler.RegisterRequest:
-    properties:
-      password:
-        example: "123456"
-        type: string
-      username:
-        example: john
-        type: string
-    required:
-    - password
-    - username
     type: object
   handler.SignalRequest:
     properties:
@@ -82,57 +27,82 @@ definitions:
     required:
     - type
     type: object
-  model.User:
-    properties:
-      created_at:
-        type: string
-      id:
-        type: integer
-      name:
-        type: string
-      updated_at:
-        type: string
-      uuid:
-        type: string
-    type: object
   pkg.ErrCode:
     enum:
     - 0
-    - 1
     - 1001
     - 1002
     - 1003
+    - 1010
+    - 1011
+    - 1012
+    - 1013
     - 2001
-    - 2002
-    - 2003
+    - 3001
+    - 3002
     - 5001
+    - 6001
+    - 6002
+    - 7001
+    - 7002
+    - 7003
+    - 7004
     type: integer
     x-enum-varnames:
     - SUCCESS
-    - ERROR
     - TOKEN_NOT_EXIST
     - TOKEN_WRONG
-    - TOKEN_RUNTIME
+    - TOKEN_EXPIRED
+    - INVALID_PASSWORD
+    - USER_NOT_FOUND
+    - USERNAME_EXISTS
+    - FORBIDDEN
     - INVALID_PARAMS
-    - UNAUTHORIZED
     - NOT_FOUND
+    - ALREADY_EXISTS
     - INTERNAL_ERROR
+    - LIVEKIT_NOT_CONFIGURED
+    - LIVEKIT_ERROR
+    - OAUTH_PROVIDER_NOT_FOUND
+    - OAUTH_PROVIDER_DISABLED
+    - OAUTH_TOKEN_EXCHANGE_FAILED
+    - OAUTH_GET_USER_FAILED
   pkg.Response:
     properties:
       code:
         $ref: '#/definitions/pkg.ErrCode'
       data: {}
-      message:
+      msg:
         type: string
     type: object
-host: localhost:8098
+  service.LoginRequest:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  service.RegisterRequest:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    required:
+    - password
+    - username
+    type: object
+host: localhost:8998
 info:
   contact:
     name: NoelOrin
     url: https://github.com/NoelOrin
-  description: GoRTC - WebRTC Server API
+  description: GoRTC - WebRTC 服务器端 API 接口文档
   license:
-    name: MIT
+    name: MIT 许可证
     url: https://opensource.org/licenses/MIT
   termsOfService: https://github.com/NoelOrin/GoRTC
   title: GoRTC API
@@ -142,31 +112,27 @@ paths:
     post:
       consumes:
       - application/json
-      description: Authenticate user and return JWT token
+      description: 验证用户并返回 JWT token
       parameters:
-      - description: Login credentials
+      - description: 登录凭据
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/handler.LoginRequest'
+          $ref: '#/definitions/service.LoginRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.AuthResponse'
-        "400":
-          description: Bad Request
-          schema:
             $ref: '#/definitions/pkg.Response'
-      summary: User login
+      summary: 用户登录
       tags:
-      - Auth
+      - 认证
   /auth/logout:
     post:
-      description: Invalidate current session (requires Bearer token)
+      description: 使当前会话失效（需要 Bearer token）
       produces:
       - application/json
       responses:
@@ -176,12 +142,12 @@ paths:
             $ref: '#/definitions/pkg.Response'
       security:
       - BearerAuth: []
-      summary: User logout
+      summary: 用户登出
       tags:
-      - Auth
+      - 认证
   /auth/refresh:
     post:
-      description: Refresh the JWT token for the authenticated user
+      description: 为已认证用户刷新 JWT token
       produces:
       - application/json
       responses:
@@ -191,21 +157,24 @@ paths:
             $ref: '#/definitions/pkg.Response'
       security:
       - BearerAuth: []
-      summary: Refresh current user token
+      summary: 刷新当前用户 token
       tags:
-      - Auth
+      - 认证
   /auth/refresh_token:
     post:
       consumes:
       - application/json
-      description: Get a new access token using refresh token
+      description: 使用刷新 token 获取新的访问 token
       parameters:
-      - description: Refresh token
+      - description: 刷新 token
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/handler.RefreshTokenRequest'
+          properties:
+            refresh_token:
+              type: string
+          type: object
       produces:
       - application/json
       responses:
@@ -213,44 +182,36 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/pkg.Response'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/pkg.Response'
-      summary: Refresh JWT token
+      summary: 刷新 JWT token
       tags:
-      - Auth
+      - 认证
   /auth/register:
     post:
       consumes:
       - application/json
-      description: Register a new user account
+      description: 注册新用户账号
       parameters:
-      - description: Registration info
+      - description: 注册信息
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/handler.RegisterRequest'
+          $ref: '#/definitions/service.RegisterRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.AuthResponse'
-        "400":
-          description: Bad Request
-          schema:
             $ref: '#/definitions/pkg.Response'
-      summary: User registration
+      summary: 用户注册
       tags:
-      - Auth
+      - 认证
   /signal/participants:
     get:
-      description: Get all participants in a specific LiveKit room
+      description: 获取指定 LiveKit 房间中的所有参与者
       parameters:
-      - description: Room name
+      - description: 房间名称
         in: query
         name: room
         required: true
@@ -262,16 +223,12 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/pkg.Response'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/pkg.Response'
-      summary: List room participants
+      summary: 获取房间参与者
       tags:
-      - Signal
+      - 信令
   /signal/rooms:
     get:
-      description: Get all active rooms from LiveKit
+      description: 从 LiveKit 获取所有活跃房间
       produces:
       - application/json
       responses:
@@ -279,20 +236,16 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/pkg.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/pkg.Response'
-      summary: List LiveKit rooms
+      summary: 获取房间列表
       tags:
-      - Signal
+      - 信令
   /signal/signal:
     post:
       consumes:
       - application/json
-      description: Relay WebRTC signaling messages (offer/answer/ICE candidate)
+      description: 中继 WebRTC 信令消息（offer/answer/ICE candidate）
       parameters:
-      - description: Signaling message
+      - description: 信令消息
         in: body
         name: request
         required: true
@@ -305,20 +258,16 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/pkg.Response'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/pkg.Response'
-      summary: Exchange signaling message
+      summary: 交换信令消息
       tags:
-      - Signal
+      - 信令
   /signal/token:
     post:
       consumes:
       - application/json
-      description: Generate a LiveKit access token for joining a room
+      description: 生成用于加入房间的 LiveKit 访问 token
       parameters:
-      - description: Room and identity
+      - description: 房间和身份标识
         in: body
         name: request
         required: true
@@ -331,18 +280,14 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/pkg.Response'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/pkg.Response'
-      summary: Get LiveKit join token
+      summary: 获取 LiveKit 加入 token
       tags:
-      - Signal
+      - 信令
   /user/{id}:
     delete:
-      description: Delete a user by their ID
+      description: 根据用户 ID 删除用户
       parameters:
-      - description: User ID
+      - description: 用户 ID
         in: path
         name: id
         required: true
@@ -354,19 +299,15 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/pkg.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/pkg.Response'
       security:
       - BearerAuth: []
-      summary: Delete user
+      summary: 删除用户
       tags:
-      - User
+      - 用户
     get:
-      description: Retrieve a user by their ID
+      description: 通过用户 ID 获取用户信息
       parameters:
-      - description: User ID
+      - description: 用户 ID
         in: path
         name: id
         required: true
@@ -378,24 +319,49 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/pkg.Response'
-        "404":
-          description: Not Found
+      security:
+      - BearerAuth: []
+      summary: 根据 ID 获取用户
+      tags:
+      - 用户
+  /user/{id}/role:
+    put:
+      consumes:
+      - application/json
+      description: 管理员更新用户角色（admin/user）
+      parameters:
+      - description: 用户 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 角色信息
+        in: body
+        name: role
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
           schema:
             $ref: '#/definitions/pkg.Response'
       security:
       - BearerAuth: []
-      summary: Get user by ID
+      summary: 更新用户角色
       tags:
-      - User
+      - 用户
   /user/list:
     get:
-      description: Get a paginated list of users
+      description: 分页获取用户列表
       parameters:
-      - description: Page number (default 1)
+      - description: 页码（默认 1）
         in: query
         name: page
         type: integer
-      - description: Items per page (default 20, max 100)
+      - description: 每页条数（默认 20，最大 100）
         in: query
         name: page_size
         type: integer
@@ -406,18 +372,14 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/pkg.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/pkg.Response'
       security:
       - BearerAuth: []
-      summary: List users
+      summary: 获取用户列表
       tags:
-      - User
+      - 用户
   /user/profile:
     get:
-      description: Get the profile of the currently authenticated user
+      description: 获取当前已认证用户的资料信息
       produces:
       - application/json
       responses:
@@ -427,9 +389,9 @@ paths:
             $ref: '#/definitions/pkg.Response'
       security:
       - BearerAuth: []
-      summary: Get user profile
+      summary: 获取用户资料
       tags:
-      - User
+      - 用户
 securityDefinitions:
   BearerAuth:
     description: Type "Bearer " followed by your JWT token

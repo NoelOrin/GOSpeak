@@ -25,7 +25,7 @@ const docTemplate = `{
     "paths": {
         "/auth/login": {
             "post": {
-                "description": "Authenticate user and return JWT token",
+                "description": "验证用户并返回 JWT token",
                 "consumes": [
                     "application/json"
                 ],
@@ -33,29 +33,23 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Auth"
+                    "认证"
                 ],
-                "summary": "User login",
+                "summary": "用户登录",
                 "parameters": [
                     {
-                        "description": "Login credentials",
+                        "description": "登录凭据",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handler.LoginRequest"
+                            "$ref": "#/definitions/service.LoginRequest"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handler.AuthResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/pkg.Response"
                         }
@@ -70,14 +64,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Invalidate current session (requires Bearer token)",
+                "description": "使当前会话失效（需要 Bearer token）",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Auth"
+                    "认证"
                 ],
-                "summary": "User logout",
+                "summary": "用户登出",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -95,14 +89,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Refresh the JWT token for the authenticated user",
+                "description": "为已认证用户刷新 JWT token",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Auth"
+                    "认证"
                 ],
-                "summary": "Refresh current user token",
+                "summary": "刷新当前用户 token",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -115,7 +109,7 @@ const docTemplate = `{
         },
         "/auth/refresh_token": {
             "post": {
-                "description": "Get a new access token using refresh token",
+                "description": "使用刷新 token 获取新的访问 token",
                 "consumes": [
                     "application/json"
                 ],
@@ -123,29 +117,28 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Auth"
+                    "认证"
                 ],
-                "summary": "Refresh JWT token",
+                "summary": "刷新 JWT token",
                 "parameters": [
                     {
-                        "description": "Refresh token",
+                        "description": "刷新 token",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handler.RefreshTokenRequest"
+                            "type": "object",
+                            "properties": {
+                                "refresh_token": {
+                                    "type": "string"
+                                }
+                            }
                         }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/pkg.Response"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/pkg.Response"
                         }
@@ -155,7 +148,7 @@ const docTemplate = `{
         },
         "/auth/register": {
             "post": {
-                "description": "Register a new user account",
+                "description": "注册新用户账号",
                 "consumes": [
                     "application/json"
                 ],
@@ -163,29 +156,23 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Auth"
+                    "认证"
                 ],
-                "summary": "User registration",
+                "summary": "用户注册",
                 "parameters": [
                     {
-                        "description": "Registration info",
+                        "description": "注册信息",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handler.RegisterRequest"
+                            "$ref": "#/definitions/service.RegisterRequest"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handler.AuthResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/pkg.Response"
                         }
@@ -195,18 +182,18 @@ const docTemplate = `{
         },
         "/signal/participants": {
             "get": {
-                "description": "Get all participants in a specific LiveKit room",
+                "description": "获取指定 LiveKit 房间中的所有参与者",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Signal"
+                    "信令"
                 ],
-                "summary": "List room participants",
+                "summary": "获取房间参与者",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Room name",
+                        "description": "房间名称",
                         "name": "room",
                         "in": "query",
                         "required": true
@@ -218,35 +205,23 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/pkg.Response"
                         }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/pkg.Response"
-                        }
                     }
                 }
             }
         },
         "/signal/rooms": {
             "get": {
-                "description": "Get all active rooms from LiveKit",
+                "description": "从 LiveKit 获取所有活跃房间",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Signal"
+                    "信令"
                 ],
-                "summary": "List LiveKit rooms",
+                "summary": "获取房间列表",
                 "responses": {
                     "200": {
                         "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/pkg.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/pkg.Response"
                         }
@@ -256,7 +231,7 @@ const docTemplate = `{
         },
         "/signal/signal": {
             "post": {
-                "description": "Relay WebRTC signaling messages (offer/answer/ICE candidate)",
+                "description": "中继 WebRTC 信令消息（offer/answer/ICE candidate）",
                 "consumes": [
                     "application/json"
                 ],
@@ -264,12 +239,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Signal"
+                    "信令"
                 ],
-                "summary": "Exchange signaling message",
+                "summary": "交换信令消息",
                 "parameters": [
                     {
-                        "description": "Signaling message",
+                        "description": "信令消息",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -284,19 +259,13 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/pkg.Response"
                         }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/pkg.Response"
-                        }
                     }
                 }
             }
         },
         "/signal/token": {
             "post": {
-                "description": "Generate a LiveKit access token for joining a room",
+                "description": "生成用于加入房间的 LiveKit 访问 token",
                 "consumes": [
                     "application/json"
                 ],
@@ -304,12 +273,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Signal"
+                    "信令"
                 ],
-                "summary": "Get LiveKit join token",
+                "summary": "获取 LiveKit 加入 token",
                 "parameters": [
                     {
-                        "description": "Room and identity",
+                        "description": "房间和身份标识",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -324,12 +293,6 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/pkg.Response"
                         }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/pkg.Response"
-                        }
                     }
                 }
             }
@@ -341,24 +304,24 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get a paginated list of users",
+                "description": "分页获取用户列表",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "User"
+                    "用户"
                 ],
-                "summary": "List users",
+                "summary": "获取用户列表",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Page number (default 1)",
+                        "description": "页码（默认 1）",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "Items per page (default 20, max 100)",
+                        "description": "每页条数（默认 20，最大 100）",
                         "name": "page_size",
                         "in": "query"
                     }
@@ -366,12 +329,6 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/pkg.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/pkg.Response"
                         }
@@ -386,14 +343,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get the profile of the currently authenticated user",
+                "description": "获取当前已认证用户的资料信息",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "User"
+                    "用户"
                 ],
-                "summary": "Get user profile",
+                "summary": "获取用户资料",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -411,18 +368,18 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Retrieve a user by their ID",
+                "description": "通过用户 ID 获取用户信息",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "User"
+                    "用户"
                 ],
-                "summary": "Get user by ID",
+                "summary": "根据 ID 获取用户",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "User ID",
+                        "description": "用户 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -431,12 +388,6 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/pkg.Response"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/pkg.Response"
                         }
@@ -449,18 +400,18 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Delete a user by their ID",
+                "description": "根据用户 ID 删除用户",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "User"
+                    "用户"
                 ],
-                "summary": "Delete user",
+                "summary": "删除用户",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "User ID",
+                        "description": "用户 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -472,9 +423,49 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/pkg.Response"
                         }
+                    }
+                }
+            }
+        },
+        "/user/{id}/role": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "管理员更新用户角色（admin/user）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户"
+                ],
+                "summary": "更新用户角色",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "用户 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
                     },
-                    "500": {
-                        "description": "Internal Server Error",
+                    {
+                        "description": "角色信息",
+                        "name": "role",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/pkg.Response"
                         }
@@ -484,42 +475,6 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "handler.AuthResponse": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/pkg.ErrCode"
-                        }
-                    ],
-                    "example": 0
-                },
-                "data": {
-                    "$ref": "#/definitions/handler.AuthResponseData"
-                },
-                "message": {
-                    "type": "string",
-                    "example": "success"
-                }
-            }
-        },
-        "handler.AuthResponseData": {
-            "type": "object",
-            "properties": {
-                "refresh_token": {
-                    "type": "string",
-                    "example": "eyJhbGciOiJIUzI1NiIs..."
-                },
-                "access_token": {
-                    "type": "string",
-                    "example": "eyJhbGciOiJIUzI1NiIs..."
-                },
-                "user": {
-                    "$ref": "#/definitions/model.User"
-                }
-            }
-        },
         "handler.JoinRoomRequest": {
             "type": "object",
             "required": [
@@ -534,52 +489,6 @@ const docTemplate = `{
                 "room": {
                     "type": "string",
                     "example": "my-room"
-                }
-            }
-        },
-        "handler.LoginRequest": {
-            "type": "object",
-            "required": [
-                "password",
-                "username"
-            ],
-            "properties": {
-                "password": {
-                    "type": "string",
-                    "example": "123456"
-                },
-                "username": {
-                    "type": "string",
-                    "example": "john"
-                }
-            }
-        },
-        "handler.RefreshTokenRequest": {
-            "type": "object",
-            "required": [
-                "refresh_token"
-            ],
-            "properties": {
-                "refresh_token": {
-                    "type": "string",
-                    "example": "eyJ..."
-                }
-            }
-        },
-        "handler.RegisterRequest": {
-            "type": "object",
-            "required": [
-                "password",
-                "username"
-            ],
-            "properties": {
-                "password": {
-                    "type": "string",
-                    "example": "123456"
-                },
-                "username": {
-                    "type": "string",
-                    "example": "john"
                 }
             }
         },
@@ -604,49 +513,47 @@ const docTemplate = `{
                 }
             }
         },
-        "model.User": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "uuid": {
-                    "type": "string"
-                }
-            }
-        },
         "pkg.ErrCode": {
             "type": "integer",
             "enum": [
                 0,
-                1,
                 1001,
                 1002,
                 1003,
+                1010,
+                1011,
+                1012,
+                1013,
                 2001,
-                2002,
-                2003,
-                5001
+                3001,
+                3002,
+                5001,
+                6001,
+                6002,
+                7001,
+                7002,
+                7003,
+                7004
             ],
             "x-enum-varnames": [
                 "SUCCESS",
-                "ERROR",
                 "TOKEN_NOT_EXIST",
                 "TOKEN_WRONG",
-                "TOKEN_RUNTIME",
+                "TOKEN_EXPIRED",
+                "INVALID_PASSWORD",
+                "USER_NOT_FOUND",
+                "USERNAME_EXISTS",
+                "FORBIDDEN",
                 "INVALID_PARAMS",
-                "UNAUTHORIZED",
                 "NOT_FOUND",
-                "INTERNAL_ERROR"
+                "ALREADY_EXISTS",
+                "INTERNAL_ERROR",
+                "LIVEKIT_NOT_CONFIGURED",
+                "LIVEKIT_ERROR",
+                "OAUTH_PROVIDER_NOT_FOUND",
+                "OAUTH_PROVIDER_DISABLED",
+                "OAUTH_TOKEN_EXCHANGE_FAILED",
+                "OAUTH_GET_USER_FAILED"
             ]
         },
         "pkg.Response": {
@@ -656,7 +563,37 @@ const docTemplate = `{
                     "$ref": "#/definitions/pkg.ErrCode"
                 },
                 "data": {},
-                "message": {
+                "msg": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.LoginRequest": {
+            "type": "object",
+            "required": [
+                "password",
+                "username"
+            ],
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.RegisterRequest": {
+            "type": "object",
+            "required": [
+                "password",
+                "username"
+            ],
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "username": {
                     "type": "string"
                 }
             }
@@ -675,10 +612,10 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8099",
+	Host:             "localhost:8998",
 	BasePath:         "/api/v1",
 	Schemes:          []string{},
-	Title:            "GoRTC API 文档",
+	Title:            "GoRTC API",
 	Description:      "GoRTC - WebRTC 服务器端 API 接口文档",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
