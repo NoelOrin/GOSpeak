@@ -41,7 +41,7 @@ packages/server/db/
 # 日志
 packages/server/logs/
 packages/server/gin.log
-agent_test_logs/
+agent_test_logs/*
 !agent_test_logs/AGENTS.md
 *.log
 
