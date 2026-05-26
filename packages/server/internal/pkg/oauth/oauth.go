@@ -1,3 +1,5 @@
+// Package oauth 提供 OAuth2 第三方登录协议实现（GitHub / Google / QQ）。
+// 通过 Provider 接口抽象统一的认证流程：构造授权 URL → 兑换 access_token → 获取用户信息。
 package oauth
 
 import (
@@ -9,30 +11,37 @@ import (
 	"strings"
 )
 
+// ProviderConfig 第三方 OAuth 应用的配置项，根据平台填写对应值。
 type ProviderConfig struct {
-	ClientID     string
-	ClientSecret string
-	AuthURL      string
-	TokenURL     string
-	UserInfoURL  string
-	RedirectURL  string
-	Scopes       string
+	ClientID     string // OAuth App 的 Client ID
+	ClientSecret string // OAuth App 的 Client Secret
+	AuthURL      string // 用户授权页面 URL
+	TokenURL     string // 用 code 兑换 access_token 的端点
+	UserInfoURL  string // 获取用户信息的 API 端点
+	RedirectURL  string // 授权后回调地址
+	Scopes       string // 请求的权限范围，多个用空格分隔
 }
 
+// UserInfo 统一用户信息模型，屏蔽各平台字段差异。
 type UserInfo struct {
-	Provider    string
-	ProviderUID string
-	Username    string
-	Avatar      string
-	Email       string
+	Provider    string // 平台名（github / google / qq）
+	ProviderUID string // 平台侧用户唯一标识（github=id, google=sub, qq=openid）
+	Username    string // 昵称
+	Avatar      string // 头像 URL
+	Email       string // 邮箱（部分平台可能为空）
 }
 
+// Provider 定义 OAuth2 认证流程的三步接口。
 type Provider interface {
+	// GetAuthURL 构造授权页面 URL，用户浏览器跳转到此 URL 完成授权。
 	GetAuthURL(state string) string
+	// ExchangeToken 用授权回调中的 code 兑换 access_token。
 	ExchangeToken(code string) (string, error)
+	// GetUserInfo 用 access_token 获取用户基本信息。
 	GetUserInfo(accessToken string) (*UserInfo, error)
 }
 
+// NewProvider 根据平台名创建对应的 Provider 实例。不支持的平台返回 nil。
 func NewProvider(name string, cfg *ProviderConfig) Provider {
 	switch name {
 	case "github":
@@ -46,6 +55,7 @@ func NewProvider(name string, cfg *ProviderConfig) Provider {
 	}
 }
 
+// httpPostForm 通用 POST application/x-www-form-urlencoded 请求，读取完整响应体。
 func httpPostForm(url string, data url.Values) ([]byte, error) {
 	resp, err := http.PostForm(url, data)
 	if err != nil {
@@ -55,6 +65,7 @@ func httpPostForm(url string, data url.Values) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
+// httpGet 通用 GET 请求，支持 Bearer Token 鉴权，读取完整响应体。
 func httpGet(url, token string) ([]byte, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -71,6 +82,8 @@ func httpGet(url, token string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
+// GitHubProvider GitHub OAuth2 登录实现。
+// 响应格式：URL 编码键值对（token 端点），JSON（userinfo 端点）。
 type GitHubProvider struct {
 	cfg *ProviderConfig
 }
@@ -128,6 +141,9 @@ func (g *GitHubProvider) GetUserInfo(accessToken string) (*UserInfo, error) {
 	}, nil
 }
 
+// GoogleProvider Google OAuth2 登录实现。
+// 响应格式：JSON（token 端点和 userinfo 端点）。
+// 注意请求中额外携带 response_type=code 和 access_type=offline 参数。
 type GoogleProvider struct {
 	cfg *ProviderConfig
 }
@@ -191,6 +207,9 @@ func (gp *GoogleProvider) GetUserInfo(accessToken string) (*UserInfo, error) {
 	}, nil
 }
 
+// QQProvider QQ OAuth2 登录实现。
+// QQ 的 token 端点同时支持 JSON 和 URL 编码响应（通过 fmt=json 参数控制）。
+// userinfo 端点需将 access_token 以 query 参数形式传递。
 type QQProvider struct {
 	cfg *ProviderConfig
 }
@@ -261,6 +280,8 @@ func (q *QQProvider) GetUserInfo(accessToken string) (*UserInfo, error) {
 	}, nil
 }
 
+// GetDefaultConfig 返回各平台的预设端点配置和默认 scope。
+// ClientID / ClientSecret / RedirectURL 需业务方自行注入。
 func GetDefaultConfig(name string) *ProviderConfig {
 	switch name {
 	case "github":
@@ -289,6 +310,7 @@ func GetDefaultConfig(name string) *ProviderConfig {
 	}
 }
 
+// FormatUsername 将第三方昵称转为统一小写+下划线格式的用户名，用于自动生成系统用户名。
 func FormatUsername(base string) string {
 	base = strings.ToLower(base)
 	base = strings.ReplaceAll(base, " ", "_")

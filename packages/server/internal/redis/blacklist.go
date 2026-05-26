@@ -1,3 +1,5 @@
+// Package redis — Token 黑名单子模块。
+// 基于 Redis Key 过期机制实现 JWT 登出注销，Redis 未连接时静默跳过（best-effort）。
 package redis
 
 import (
@@ -5,10 +7,11 @@ import (
 	"time"
 )
 
+// blacklistPrefix 黑名单 key 前缀，完整 key: jwt:blacklist:<jti>
 const blacklistPrefix = "jwt:blacklist:"
 
-// BlacklistToken marks a JTI as revoked for the duration of its remaining
-// lifetime. No-op when Redis is not connected (logout is best-effort).
+// BlacklistToken 将 JTI 加入黑名单，TTL 设为令牌剩余有效期。
+// Redis 未连接时为 no-op，登出操作采用 best-effort 策略。
 func BlacklistToken(jti string, remaining time.Duration) error {
 	if Client == nil || jti == "" || remaining <= 0 {
 		return nil
@@ -17,8 +20,8 @@ func BlacklistToken(jti string, remaining time.Duration) error {
 	return Client.Set(ctx, blacklistPrefix+jti, "1", remaining).Err()
 }
 
-// IsBlacklisted reports whether the given JTI has been revoked.
-// Returns false when Redis is not connected.
+// IsBlacklisted 检查 JTI 是否已被注销。
+// Redis 未连接时返回 false，保证旧 token 在极端情况下仍能短暂使用。
 func IsBlacklisted(jti string) bool {
 	if Client == nil || jti == "" {
 		return false

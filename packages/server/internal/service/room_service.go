@@ -1,12 +1,15 @@
+// Package service — 房间业务逻辑：房间的 CRUD 操作。
 package service
 
 import (
 	"go_rtc/internal/model"
 	"go_rtc/internal/pkg"
 	"go_rtc/internal/repository"
+
 	"gorm.io/gorm"
 )
 
+// RoomService 房间服务，提供房间的增删改查能力。
 type RoomService struct {
 	roomRepo *repository.RoomRepository
 }
@@ -15,6 +18,7 @@ func NewRoomService(roomRepo *repository.RoomRepository) *RoomService {
 	return &RoomService{roomRepo: roomRepo}
 }
 
+// Create 创建房间，透传 repository 层结果。
 func (s *RoomService) Create(room *model.Room) error {
 	if err := s.roomRepo.Create(room); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -22,6 +26,7 @@ func (s *RoomService) Create(room *model.Room) error {
 	return nil
 }
 
+// GetByID 按主键 ID 查询房间。
 func (s *RoomService) GetByID(id uint) (*model.Room, error) {
 	room, err := s.roomRepo.GetByID(id)
 	if err != nil {
@@ -33,6 +38,7 @@ func (s *RoomService) GetByID(id uint) (*model.Room, error) {
 	return room, nil
 }
 
+// GetByUUID 按 UUID 查询房间。
 func (s *RoomService) GetByUUID(uuid string) (*model.Room, error) {
 	room, err := s.roomRepo.GetByUUID(uuid)
 	if err != nil {
@@ -44,6 +50,7 @@ func (s *RoomService) GetByUUID(uuid string) (*model.Room, error) {
 	return room, nil
 }
 
+// List 分页查询房间列表，默认每页 20 条。
 func (s *RoomService) List(page, pageSize int) ([]model.Room, int64, error) {
 	if page < 1 {
 		page = 1
@@ -58,6 +65,7 @@ func (s *RoomService) List(page, pageSize int) ([]model.Room, int64, error) {
 	return rooms, total, nil
 }
 
+// Update 更新房间信息。
 func (s *RoomService) Update(room *model.Room) error {
 	if err := s.roomRepo.Update(room); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -65,6 +73,7 @@ func (s *RoomService) Update(room *model.Room) error {
 	return nil
 }
 
+// Delete 删除房间：先验证存在性，再执行删除。
 func (s *RoomService) Delete(id uint) error {
 	_, err := s.roomRepo.GetByID(id)
 	if err != nil {

@@ -1,7 +1,9 @@
+// Package service 业务逻辑层，协调 repository 和外部服务完成核心业务。
 package service
 
 import (
 	"errors"
+
 	"go_rtc/internal/model"
 	"go_rtc/internal/pkg"
 	"go_rtc/internal/repository"
@@ -10,6 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// AuthService 认证服务，处理登录、注册和 Token 刷新。
 type AuthService struct {
 	userRepo *repository.UserRepository
 }
@@ -18,22 +21,26 @@ func NewAuthService(userRepo *repository.UserRepository) *AuthService {
 	return &AuthService{userRepo: userRepo}
 }
 
+// LoginRequest 用户名密码登录请求体。
 type LoginRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
 }
 
+// RegisterRequest 新用户注册请求体。
 type RegisterRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
 }
 
+// AuthResponse 认证成功后的统一返回结构，包含双 Token 和用户信息。
 type AuthResponse struct {
 	Token        string     `json:"access_token"`
 	RefreshToken string     `json:"refresh_token"`
 	User         model.User `json:"user"`
 }
 
+// Login 用户名密码登录：查用户 → bcrypt 比对密码 → 生成 Token 对。
 func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 	user, err := s.userRepo.GetByName(req.Username)
 	if err != nil {
@@ -64,6 +71,7 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 	}, nil
 }
 
+// Register 新用户注册：查重名 → bcrypt 哈希密码 → 入库 → 生成 Token 对。
 func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 	existing, _ := s.userRepo.GetByName(req.Username)
 	if existing != nil {
@@ -100,6 +108,7 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 	}, nil
 }
 
+// RefreshToken 用已有身份信息生成新 access_token（不验证旧 token 有效性，由 handler 层控制）。
 func (s *AuthService) RefreshToken(username, userUUID, role string) (string, error) {
 	token, err := pkg.GenerateToken(username, userUUID, role)
 	if err != nil {

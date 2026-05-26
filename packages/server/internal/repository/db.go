@@ -5,7 +5,6 @@ import (
 	"go_rtc/internal/model"
 	"os"
 
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"

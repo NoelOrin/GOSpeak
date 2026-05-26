@@ -1,8 +1,11 @@
+// Package service — OAuth 第三方登录业务逻辑。
+// 处理 OAuth 登录流程的完整闭环：获取授权 URL → 回调 → 创建/绑定用户 + Token 发放。
 package service
 
 import (
 	"errors"
 	"fmt"
+
 	"go_rtc/internal/model"
 	"go_rtc/internal/pkg"
 	"go_rtc/internal/pkg/oauth"
@@ -12,6 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// OAuthService 第三方登录服务，协调三个 repository 完成 OAuth 流程。
 type OAuthService struct {
 	providerRepo *repository.OAuthProviderRepository
 	accountRepo  *repository.OAuthAccountRepository
@@ -30,6 +34,7 @@ func NewOAuthService(
 	}
 }
 
+// GetAuthURL 构造 OAuth 授权页面 URL，供前端跳转。会检查提供商是否启用。
 func (s *OAuthService) GetAuthURL(providerName, state string) (string, error) {
 	provider, err := s.providerRepo.GetByName(providerName)
 	if err != nil {
@@ -55,6 +60,8 @@ func (s *OAuthService) GetAuthURL(providerName, state string) (string, error) {
 	return p.GetAuthURL(state), nil
 }
 
+// HandleCallback 处理 OAuth 授权回调：兑换 access_token → 获取用户信息 →
+// 检查是否已有绑定账号（有则直接登录）→ 无则创建新用户并绑定 OAuth 账号 → 发放 Token 对。
 func (s *OAuthService) HandleCallback(providerName, code string) (*AuthResponse, error) {
 	provider, err := s.providerRepo.GetByName(providerName)
 	if err != nil {
@@ -129,6 +136,7 @@ func (s *OAuthService) HandleCallback(providerName, code string) (*AuthResponse,
 	return s.buildAuthResponse(user)
 }
 
+// buildAuthResponse 统一构造 OAuth 登录成功后的 AuthResponse（与密码登录复用同一结构）。
 func (s *OAuthService) buildAuthResponse(user *model.User) (*AuthResponse, error) {
 	token, err := pkg.GenerateToken(user.Name, user.UUID, user.Role)
 	if err != nil {
@@ -145,10 +153,12 @@ func (s *OAuthService) buildAuthResponse(user *model.User) (*AuthResponse, error
 	}, nil
 }
 
+// ListProviders 获取所有 OAuth 提供商配置（用于管理后台展示）。
 func (s *OAuthService) ListProviders() ([]model.OAuthProvider, error) {
 	return s.providerRepo.List()
 }
 
+// CreateProvider 创建 OAuth 提供商配置，未填写的 URL 和 Scope 自动用默认值补齐。
 func (s *OAuthService) CreateProvider(provider *model.OAuthProvider) error {
 	defaultCfg := oauth.GetDefaultConfig(provider.Name)
 	if defaultCfg != nil {
@@ -168,10 +178,12 @@ func (s *OAuthService) CreateProvider(provider *model.OAuthProvider) error {
 	return s.providerRepo.Create(provider)
 }
 
+// UpdateProvider 更新 OAuth 提供商配置。
 func (s *OAuthService) UpdateProvider(provider *model.OAuthProvider) error {
 	return s.providerRepo.Update(provider)
 }
 
+// DeleteProvider 删除 OAuth 提供商配置。
 func (s *OAuthService) DeleteProvider(id uint) error {
 	return s.providerRepo.Delete(id)
 }
