@@ -26,20 +26,23 @@ packages/server/
 ├── server/
 │   └── gin.go              # DI container, initializes all layers
 ├── internal/
-│   ├── config/             # Config reading from env
+│   ├── config/             # Config reading from env (DB, Redis, SFU, JWT)
 │   ├── model/              # Data models (GORM entities)
 │   ├── repository/         # DAO layer, direct DB access
 │   ├── service/            # Business logic layer
 │   ├── handler/            # HTTP controller (Gin handlers)
-│   ├── middleware/         # JWT auth, CORS
-│   ├── router/             # Route registration
+│   ├── middleware/         # JWT auth, CORS, RBAC (RequireRole)
+│   ├── router/             # Route registration (sub-route modules)
+│   │   └── routes/         # Per-module route groups (auth, user, signal, oauth, swagger)
 │   ├── sfu/                # SFU provider abstraction layer
 │   ├── livekit/            # LiveKit SFU implementation
 │   ├── signal/             # Socket.IO signaling hub
+│   ├── redis/              # Optional Redis client (blacklist, JWT key rotation)
 │   └── pkg/                # Shared utilities
 │       ├── errors.go       # Business error codes + AppError
 │       ├── response.go     # Unified JSON response
-│       └── jwt.go          # JWT token generation/parsing
+│       ├── jwt.go          # JWT token generation/parsing
+│       └── oauth/          # OAuth2 provider abstraction (GitHub, Google, QQ)
 ├── test/                   # API integration tests (Node.js)
 ├── docs/                   # Swagger generated docs
 ├── db/                     # SQLite database storage
@@ -51,8 +54,9 @@ packages/server/
 
 ```
 Request → Router → Middleware → Handler → Service → Repository → DB
-                                          ↓
-                                       LiveKit (独立)
+                  (JWT+RBAC)      ↓         ↓         ↓
+                               OAuth     LiveKit    Redis
+                            (standalone) (standalone) (optional)
                                           ↓
                                        Signal/WS (独立)
 ```
@@ -62,6 +66,8 @@ Each layer communicates **only with the layer directly below it**:
 - **Service** implements business logic, calls Repository and LiveKit
 - **Repository** is pure data access, returns GORM errors
 - **LiveKit** is a standalone package wrapping LiveKit API
+- **OAuth** is a standalone package for third-party login (GitHub, Google, QQ)
+- **Redis** is an optional standalone package for token blacklist and JWT key rotation
 - **Signal** is a standalone WebSocket hub for signaling
 
 ---
@@ -117,8 +123,8 @@ pkg.Fail(c, pkg.INVALID_PARAMS, "custom message")  // msg is optional
 | 3001 | `NOT_FOUND` | resource not found |
 | 3002 | `ALREADY_EXISTS` | resource already exists |
 | 5001 | `INTERNAL_ERROR` | internal server error |
-| 6001 | `LIVEKIT_NOT_CONFIGURED` | livekit not configured |
-| 6002 | `LIVEKIT_ERROR` | livekit error |
+| 6001 | `SFU_NOT_CONFIGURED` | sfu not configured |
+| 6002 | `SFU_ERROR` | sfu error |
 
 ---
 
@@ -177,10 +183,19 @@ if err := c.ShouldBindJSON(&req); err != nil {
 | POST | `/api/v1/auth/login` | No | AuthHandler.Login |
 | POST | `/api/v1/auth/register` | No | AuthHandler.Register |
 | POST | `/api/v1/auth/refresh_token` | No | AuthHandler.GetRefreshToken |
+| POST | `/api/v1/auth/reset_password` | No | AuthHandler.ResetPassword |
 | POST | `/api/v1/auth/logout` | Yes | AuthHandler.Logout |
 | POST | `/api/v1/auth/refresh` | Yes | AuthHandler.RefreshToken |
+| POST | `/api/v1/auth/change_password` | Yes | AuthHandler.ChangePassword |
+| GET | `/api/v1/oauth/login/:provider` | No | OAuthHandler.Login (redirect) |
+| GET | `/api/v1/oauth/callback/:provider` | No | OAuthHandler.Callback |
+| GET | `/api/v1/oauth/admin/providers` | Yes (admin) | OAuthHandler.ListProviders |
+| POST | `/api/v1/oauth/admin/providers` | Yes (admin) | OAuthHandler.CreateProvider |
+| PUT | `/api/v1/oauth/admin/providers` | Yes (admin) | OAuthHandler.UpdateProvider |
+| DELETE | `/api/v1/oauth/admin/providers/:id` | Yes (admin) | OAuthHandler.DeleteProvider |
 | POST | `/api/v1/signal/token` | No | SignalHandler.GetJoinToken |
 | POST | `/api/v1/signal/signal` | No | SignalHandler.Signal |
+| POST | `/api/v1/signal/webhook` | No | SignalHandler.LivekitWebhook |
 | GET | `/api/v1/signal/rooms` | No | SignalHandler.ListRooms |
 | GET | `/api/v1/signal/participants` | No | SignalHandler.ListParticipants |
 | GET | `/api/v1/user/profile` | Yes | UserHandler.GetProfile |
@@ -208,30 +223,324 @@ DB_PASSWORD=""
 DB_PATH=""                # Leave empty for default (db/app.db)
 ```
 
+### SFU Configuration
+
+```
+SFU_PROVIDER="livekit"    # Currently only "livekit" is supported
+LIVEKIT_HOST=""           # LiveKit server URL (wss://...)
+LIVEKIT_KEY=""            # LiveKit API key
+LIVEKIT_SECRET=""         # LiveKit API secret
+```
+
+### Redis Configuration (Optional)
+
+```
+REDIS_HOST=""             # Leave empty to skip Redis (graceful degradation)
+REDIS_PORT="6379"
+REDIS_PASSWORD=""
+REDIS_DB="0"
+JWT_KEY_TTL="24h"         # JWT signing key rotation interval (Redis only)
+```
+
 - Auto-migration is enabled — models are synced on startup in [db.go](file:///Users/noelorin/GOSpeak/packages/server/internal/repository/db.go)
+
+---
+
+## SFU Abstraction Layer
+
+Standalone package at `internal/sfu/`. Provides a provider interface so multiple SFU backends can be plugged in.
+
+### Provider Interface (`internal/sfu/provider.go`)
+
+```go
+type Provider interface {
+    GenerateToken(room, identity string) (string, error)
+    GenerateAdminToken() (string, error)
+    ListRooms() (interface{}, error)
+    ListParticipants(room string) (interface{}, error)
+    MuteParticipant(room, identity, trackSid string, muted bool) error
+    RemoveParticipant(room, identity string) error
+    DeleteRoom(room string) error
+    GetHost() string
+}
+```
+
+### Factory (`internal/sfu/factory.go`)
+
+`sfu.NewProvider(cfg)` reads `cfg.SFUProvider` (from `SFU_PROVIDER` env) and returns the matching implementation. Currently only `"livekit"` is supported.
+
+### Usage in handlers / services
+
+All code that previously imported `internal/livekit` directly now depends only on `sfu.Provider`. To add a new SFU backend, implement `sfu.Provider` and register it in `factory.go`.
 
 ---
 
 ## LiveKit Module
 
-Standalone package at `internal/livekit/`. Handles all LiveKit interactions:
+Standalone package at `internal/livekit/`. Implements `sfu.Provider` using `github.com/livekit/server-sdk-go/v2`.
 
-- `GenerateToken(room, identity)` — Generate room join token
-- `GenerateAdminToken()` — Admin token for room management
-- `ListRooms()` / `ListParticipants(room)` — Room queries
-- `MuteParticipant()` / `RemoveParticipant()` / `DeleteRoom()` — Room control
+Constructor: `livekit.NewService(cfg *config.Config) *Service`
 
-Configure via env: `LIVEKIT_HOST`, `LIVEKIT_KEY`, `LIVEKIT_SECRET`
+| Method | Description |
+|--------|-------------|
+| `GenerateToken(room, identity)` | Room join token (JWT) |
+| `GenerateAdminToken()` | Admin token for server-side room management |
+| `ListRooms()` | List all active rooms via `lksdk.RoomServiceClient` |
+| `ListParticipants(room)` | List participants in a room |
+| `MuteParticipant(room, identity, trackSid, muted)` | Mute/unmute a track |
+| `RemoveParticipant(room, identity)` | Kick a participant |
+| `DeleteRoom(room)` | Delete a room |
+| `GetHost()` | Return configured LiveKit host URL |
+
+Token response shape returned by `GET /signal/token`:
+
+```json
+{
+  "token": "eyJ...",
+  "serverUrl": "wss://...",
+  "room": "room-name",
+  "identity": "user-identity"
+}
+```
 
 ---
 
-## Signal (WebSocket) Module
+## Redis Module (Optional)
 
-Standalone package at `internal/signal/`. Handles WebRTC signaling via Socket.IO:
+Standalone package at `internal/redis/`. Provides optional Redis support — gracefully degrades when `REDIS_HOST` is not set.
 
-- **Events**: `room:join`, `room:leave`, `room:joined`, `room:left`
-- **Connection**: auto on `/socket.io/`
-- Uses `googollee/go-socket.io` library
+### Configuration
+
+```
+REDIS_HOST=""             # Leave empty to skip Redis connection
+REDIS_PORT="6379"
+REDIS_PASSWORD=""
+REDIS_DB="0"
+```
+
+### Key files
+
+| File | Role |
+|------|------|
+| `redis.go` | Client init, `InitRedis()`, `IsConnected()` |
+| `blacklist.go` | JWT token blacklist (logout invalidation) |
+| `jwt_key.go` | JWT signing key rotation via Redis TTL |
+
+### Token Blacklist
+
+Logout adds the token's JTI to Redis with TTL = remaining token lifetime. Middleware checks blacklist before granting access.
+
+```go
+redis.BlacklistToken(jti, remaining)  // add to blacklist
+redis.IsBlacklisted(jti)              // check if blacklisted
+```
+
+When Redis is not connected, blacklist operations are no-ops (best-effort strategy).
+
+### JWT Key Rotation
+
+`redis.GetOrRotateSigningKey()` returns the current signing key:
+- **Redis connected**: key stored in Redis with configurable TTL (`JWT_KEY_TTL`, default 24h). TTL expiry triggers automatic rotation — all old tokens become invalid.
+- **Redis not connected**: falls back to static `JWT_KEY` env var (default `"default-secret"`).
+
+---
+
+## OAuth Module
+
+Provides OAuth2 third-party login (GitHub / Google / QQ). Two layers:
+
+### Provider Abstraction (`internal/pkg/oauth/`)
+
+Defines `Provider` interface for the three-step OAuth2 flow:
+
+```go
+type Provider interface {
+    GetAuthURL(state string) string        // Step 1: build auth URL
+    ExchangeToken(code string) (string, error) // Step 2: code → access_token
+    GetUserInfo(accessToken string) (*UserInfo, error) // Step 3: get user info
+}
+```
+
+Built-in providers: `GitHubProvider`, `GoogleProvider`, `QQProvider`. Factory: `oauth.NewProvider(name, cfg)`.
+
+`oauth.GetDefaultConfig(name)` returns preset endpoint configs for each platform (ClientID/Secret/RedirectURL must be injected).
+
+### Data Layer
+
+| Model | Table | Description |
+|-------|-------|-------------|
+| `OAuthProvider` | `oauth_providers` | Platform config (name, client_id, secret, endpoints, enabled) |
+| `OAuthAccount` | `oauth_accounts` | User ↔ platform binding (user_id, provider, provider_uid) |
+
+Repositories: `OAuthProviderRepo`, `OAuthAccountRepo` — standard CRUD.
+
+### Handler & Routes
+
+| Method | Path | Auth | Handler |
+|--------|------|------|---------|
+| GET | `/api/v1/oauth/login/:provider` | No | OAuthHandler.Login (redirect) |
+| GET | `/api/v1/oauth/callback/:provider` | No | OAuthHandler.Callback |
+| GET | `/api/v1/oauth/admin/providers` | Yes (admin) | OAuthHandler.ListProviders |
+| POST | `/api/v1/oauth/admin/providers` | Yes (admin) | OAuthHandler.CreateProvider |
+| PUT | `/api/v1/oauth/admin/providers` | Yes (admin) | OAuthHandler.UpdateProvider |
+| DELETE | `/api/v1/oauth/admin/providers/:id` | Yes (admin) | OAuthHandler.DeleteProvider |
+
+---
+
+## RBAC Middleware
+
+`middleware.RequireRole("admin")` — checks `role` claim from JWT. Returns `TOKEN_WRONG` (1002) if role doesn't match. Used on admin-only routes (e.g., OAuth provider management).
+
+---
+
+## Signal (Socket.IO) Module
+
+Standalone package at `internal/signal/`. Handles real-time room signaling via Socket.IO (`googollee/go-socket.io v1.7.0`).
+
+### Key files
+
+| File | Role |
+|------|------|
+| `events.go` | 12 event name constants |
+| `types.go` | `RoomRequest`, `MemberInfo`, `RoomInfo` structs |
+| `hub.go` | Hub (global room registry) + Socket.IO event handlers |
+
+### Event Table
+
+| Direction | Event | Payload | Description |
+|-----------|-------|---------|-------------|
+| Client → Server | `room:create` | `{room}` | Create a new room |
+| Client → Server | `room:join` | `{room, identity}` | Join a room |
+| Client → Server | `room:leave` | `{room}` | Leave a room |
+| Client → Server | `room:list` | — | Request room list |
+| Server → Client | `room:created` | `RoomInfo` | A room was created |
+| Server → Client | `room:joined` | `{room, members[]}` | Self joined a room |
+| Server → Client | `room:left` | `{room, identity}` | Self left a room |
+| Server → Client | `room:updated` | `RoomInfo` | Room member count changed |
+| Server → Client | `member:joined` | `MemberInfo` | Another member joined |
+| Server → Client | `member:left` | `{identity}` | A member left |
+| Server → Client | `room:list:result` | `{rooms[]}` | Response to `room:list` |
+| Server → Client | `error` | `{message}` | Error from server |
+
+### Hub API
+
+```go
+hub := signal.NewHub()
+hub.RegisterHandlers(server)   // registers all Socket.IO events
+hub.BroadcastToRoom(namespace, room, event, data)
+```
+
+---
+
+## Frontend Architecture
+
+```
+packages/web/src/
+├── api/            # apiClient (axios wrapper) + auth API
+├── components/
+│   ├── chat/       # Chat input/output components
+│   ├── common/     # shared UI components
+│   ├── form/       # Form components (PasswordChangeForm)
+│   ├── home/       # Home page component
+│   ├── modal/      # Modals (searchModal, settings)
+│   └── room/       # room-related views
+│       ├── roomDetail.tsx     # join/leave + LiveKit + Socket.IO lifecycle
+│       ├── roomList.tsx       # room list from socketStore
+│       └── voiceChat.tsx      # member grid using socketStore.members()
+├── hooks/
+│   └── livekit/    # createRoom hook (LiveKit client)
+├── layouts/        # App layouts (layout.tsx, ErrorComponent)
+├── stores/
+│   ├── socketStore.ts         # Socket.IO global singleton store
+│   ├── userStore.ts           # Auth state (user, tokens) with IndexedDB persistence
+│   ├── themeStore.ts          # Theme switching (light/dark)
+│   ├── audioDeviceStore.ts    # Audio device enumeration with IndexedDB persistence
+│   └── voiceChatStore.ts      # audio device state
+├── types/
+│   └── room.ts                # RoomInfo, MemberInfo, RoomItemType
+└── pages/
+    ├── __root.tsx              # Root route
+    ├── login/                  # Login page
+    └── (app)/                  # Authenticated app routes
+        ├── index/              # Home/index page
+        ├── channel/            # Voice channel page
+        └── link/               # Link page
+```
+
+### socketStore (`src/stores/socketStore.ts`)
+
+Global singleton created with `createRoot`. Manages the Socket.IO connection lifecycle and reactive state for rooms and members.
+
+**State signals:**
+
+| Signal | Type | Description |
+|--------|------|-------------|
+| `connected()` | `boolean` | Socket.IO connection status |
+| `rooms()` | `RoomInfo[]` | Live room list |
+| `currentRoom()` | `string \| null` | Room this client has joined |
+| `members()` | `MemberInfo[]` | Members in current room |
+
+**Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `connect(token?)` | Open Socket.IO connection |
+| `disconnect()` | Close connection |
+| `createRoom(name)` | Emit `room:create` |
+| `joinRoom(room, identity)` | Emit `room:join` |
+| `leaveRoom(room)` | Emit `room:leave` |
+| `listRooms()` | Emit `room:list` |
+
+### userStore (`src/stores/userStore.ts`)
+
+Manages authentication state with IndexedDB persistence (survives page reload).
+
+| Signal | Type | Description |
+|--------|------|-------------|
+| `user()` | `UserInfo \| null` | Current user (id, uuid, name, role) |
+| `accessToken()` | `string` | JWT access token |
+| `refreshToken()` | `string` | JWT refresh token |
+| `isLoggedIn()` | `boolean` | Derived: true if accessToken exists |
+
+| Method | Description |
+|--------|-------------|
+| `login(user, accessToken, refreshToken)` | Persist auth data to IndexedDB + signals |
+| `logout()` | Call server logout API, clear IndexedDB + signals |
+| `updateAccessToken(token)` | Update access token (for auto-refresh) |
+
+### themeStore (`src/stores/themeStore.ts`)
+
+Light/dark theme switching. Persists to localStorage. Themes: `acid` (light), `synthwave` (dark).
+
+### audioDeviceStore (`src/stores/audioDeviceStore.ts`)
+
+Audio input/output device enumeration with IndexedDB persistence. Auto-fetches devices on init.
+
+### Room join data flow
+
+```
+User enters room page
+    ├─ socketStore.connect()
+    ├─ POST /api/v1/signal/token  →  { token, serverUrl, room, identity }
+    ├─ socketStore.joinRoom(room, identity)
+    │      ← room:joined { members: [...] }
+    ├─ createRoom({ token, url })   // LiveKit instance
+    └─ roomIns().joinRoom()         // LiveKit connect
+```
+
+### OAuth login flow
+
+```
+User clicks "Login with GitHub"
+    ├─ Browser → GET /api/v1/oauth/login/github
+    │      ← 302 redirect to GitHub auth page
+    ├─ User authorizes on GitHub
+    │      ← redirect to /api/v1/oauth/callback/github?code=xxx
+    ├─ Server: ExchangeToken(code) → access_token
+    ├─ Server: GetUserInfo(access_token) → UserInfo
+    ├─ Server: find or create User + OAuthAccount
+    └─ Response: { access_token, refresh_token, user }
+```
 
 ---
 
@@ -295,10 +604,18 @@ pnpm build:server
 2. Add repository methods in `internal/repository/`
 3. Add business logic in `internal/service/`
 4. Add HTTP handler in `internal/handler/`
-5. Register route in `internal/router/router.go`
-6. Wire dependencies in `server/gin.go`
-7. Add tests in `test/`
-8. Regenerate Swagger docs
+5. Create route file in `internal/router/routes/<module>/routes.go`
+6. Register route group in `internal/router/router.go`
+7. Wire dependencies in `server/gin.go`
+8. Add tests in `test/`
+9. Regenerate Swagger docs
+
+## Adding a New SFU Backend
+
+1. Create `internal/<provider>/client.go` implementing `sfu.Provider`
+2. Add a case in `internal/sfu/factory.go` for the new `SFU_PROVIDER` value
+3. Set `SFU_PROVIDER="<provider>"` in `.env.dev`
+4. No handler or router changes needed — all SFU calls go through `sfu.Provider`
 
 ---
 
