@@ -8,7 +8,7 @@ import (
 // ─── Integration: Full Room Lifecycle ───
 
 func TestRoomLifecycle_CreateJoinLeave(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 
@@ -35,9 +35,17 @@ func TestRoomLifecycle_CreateJoinLeave(t *testing.T) {
 		t.Fatal("Step 2: room:joined not emitted")
 	}
 	data1, _ := emitted1[0].(map[string]interface{})
-	members1, _ := data1["members"].([]interface{})
-	if len(members1) != 1 {
-		t.Errorf("Step 2: expected 1 member, got %d", len(members1))
+	switch members := data1["members"].(type) {
+	case []interface{}:
+		if len(members) != 1 {
+			t.Errorf("Step 2: expected 1 member, got %d", len(members))
+		}
+	case []MemberInfo:
+		if len(members) != 1 {
+			t.Errorf("Step 2: expected 1 member, got %d", len(members))
+		}
+	default:
+		t.Errorf("Step 2: unexpected members type %T", data1["members"])
 	}
 
 	// Step 3: User 2 joins
@@ -52,9 +60,17 @@ func TestRoomLifecycle_CreateJoinLeave(t *testing.T) {
 		t.Fatal("Step 3: room:joined not emitted to user2")
 	}
 	data2, _ := emitted2[0].(map[string]interface{})
-	members2, _ := data2["members"].([]interface{})
-	if len(members2) != 2 {
-		t.Errorf("Step 3: expected 2 members, got %d", len(members2))
+	switch members := data2["members"].(type) {
+	case []interface{}:
+		if len(members) != 2 {
+			t.Errorf("Step 3: expected 2 members, got %d", len(members))
+		}
+	case []MemberInfo:
+		if len(members) != 2 {
+			t.Errorf("Step 3: expected 2 members, got %d", len(members))
+		}
+	default:
+		t.Errorf("Step 3: unexpected members type %T", data2["members"])
 	}
 
 	// Step 4: List rooms
@@ -104,7 +120,7 @@ func TestRoomLifecycle_CreateJoinLeave(t *testing.T) {
 // ─── Integration: Multiple Rooms with Concurrent Users ───
 
 func TestRoomLifecycle_MultipleRooms(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 
@@ -155,7 +171,7 @@ func TestRoomLifecycle_MultipleRooms(t *testing.T) {
 // ─── Integration: Rejoin After Leave ───
 
 func TestRoomLifecycle_RejoinAfterLeave(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 
@@ -193,7 +209,7 @@ func TestRoomLifecycle_RejoinAfterLeave(t *testing.T) {
 // ─── Integration: Same User in Multiple Rooms ───
 
 func TestRoomLifecycle_SameUserMultipleRooms(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 
@@ -225,7 +241,7 @@ func TestRoomLifecycle_SameUserMultipleRooms(t *testing.T) {
 // ─── Integration: CreatedAt Timestamp ───
 
 func TestRoomLifecycle_CreatedAtTimestamp(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 

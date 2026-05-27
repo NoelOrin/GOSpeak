@@ -60,7 +60,7 @@ func StartGin(env EnvEnum) {
 	authSvc := service.NewAuthService(userRepo)
 	userSvc := service.NewUserService(userRepo)
 	oauthSvc := service.NewOAuthService(oauthProviderRepo, oauthAccountRepo, userRepo)
-	_ = service.NewRoomService(roomRepo)
+	roomSvc := service.NewRoomService(roomRepo)
 
 	authH := handler.NewAuthHandler(authSvc)
 	userH := handler.NewUserHandler(userSvc)
@@ -77,7 +77,7 @@ func StartGin(env EnvEnum) {
 			wsTransport,
 		},
 	})
-	signalHub := signal.NewHub()
+	signalHub := signal.NewHub(roomSvc)
 	signalHub.SetupRoutes(sioServer)
 	signalH := handler.NewSignalHandler(sfuProvider, signalHub)
 

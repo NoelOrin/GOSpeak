@@ -2,6 +2,7 @@ package signal
 
 import (
 	"encoding/json"
+	"go_rtc/internal/model"
 	"log"
 	"sync"
 	"time"
@@ -15,15 +16,28 @@ type Room struct {
 	CreatedAt time.Time
 }
 
-type Hub struct {
-	server *socketio.Server
-	rooms  map[string]*Room // roomName -> Room
-	mu     sync.RWMutex
+// socketServer abstracts the socketio.Server methods used by Hub, enabling testing.
+type socketServer interface {
+	BroadcastToNamespace(namespace string, event string, args ...interface{}) bool
+	BroadcastToRoom(namespace string, room string, event string, args ...interface{}) bool
+	ForEach(namespace string, room string, f socketio.EachFunc) bool
+}
+// roomStore abstracts DB room listing for Hub.
+type roomStore interface {
+	List(page, pageSize int) ([]model.Room, int64, error)
 }
 
-func NewHub() *Hub {
+type Hub struct {
+	server    socketServer
+	rooms     map[string]*Room // roomName -> Room
+	mu        sync.RWMutex
+	roomStore roomStore
+}
+
+func NewHub(store roomStore) *Hub {
 	return &Hub{
-		rooms: make(map[string]*Room),
+		rooms:     make(map[string]*Room),
+		roomStore: store,
 	}
 }
 
@@ -206,11 +220,42 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) {
 // ─── 房间列表 ───
 
 func (h *Hub) OnRoomList(s socketio.Conn) {
-	rooms := h.GetRooms()
+	rooms := h.getMergedRooms()
 	s.Emit(EventRoomListResult, map[string]interface{}{
 		"rooms": rooms,
 		"count": len(rooms),
 	})
+}
+
+// getMergedRooms 合并 DB 持久化房间 + 内存活跃房间。
+func (h *Hub) getMergedRooms() []RoomInfo {
+	// 从 DB 获取所有房间（最多 200 条）
+	dbRooms := make(map[string]RoomInfo)
+	if h.roomStore != nil {
+		if rooms, _, err := h.roomStore.List(1, 200); err == nil {
+			for _, r := range rooms {
+				dbRooms[r.Name] = RoomInfo{
+					Name:      r.Name,
+					Members:   []MemberInfo{},
+					Count:     0,
+					CreatedAt: r.CreatedAt.UnixMilli(),
+				}
+			}
+		}
+	}
+
+	// 用内存活跃数据覆盖（有实时成员信息）
+	h.mu.RLock()
+	for name, room := range h.rooms {
+		dbRooms[name] = h.roomInfoLocked(room.Name)
+	}
+	h.mu.RUnlock()
+
+	result := make([]RoomInfo, 0, len(dbRooms))
+	for _, r := range dbRooms {
+		result = append(result, r)
+	}
+	return result
 }
 
 // ─── 公共方法 ───

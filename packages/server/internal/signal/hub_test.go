@@ -1,14 +1,17 @@
 package signal
 
 import (
-	"encoding/json"
+	"net"
+	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
 	socketio "github.com/googollee/go-socket.io"
 )
 
-// ─── Mock Socket.IO Connection ───
+// ─── Mock socketio.Conn ───
+// Implements the socketio.Conn interface (io.Closer + Namespace).
 
 type mockConn struct {
 	id      string
@@ -26,34 +29,29 @@ func newMockConn(id string) *mockConn {
 	}
 }
 
-func (m *mockConn) ID() string                            { return m.id }
-func (m *mockConn) Close() error                          { return nil }
-func (m *mockConn) URL() string                           { return "" }
-func (m *mockConn) LocalAddr() interface{}                { return nil }
-func (m *mockConn) RemoteAddr() interface{}               { return nil }
-func (m *mockConn) RemoteHeader() interface{}             { return nil }
-func (m *mockConn) Context() interface{}                  { return nil }
-func (m *mockConn) SetContext(v interface{})              {}
-func (m *mockConn) Namespace() string                     { return "/" }
-func (m *mockConn) Leave(room string) error {
-	m.left[room] = true
-	return nil
-}
-func (m *mockConn) Join(room string) error {
-	m.joined[room] = true
-	return nil
-}
-func (m *mockConn) To(room string, ignore ...string) socketio.Broadcast {
-	return nil
-}
+// io.Closer
+func (m *mockConn) Close() error { return nil }
+
+// socketio.Conn
+func (m *mockConn) ID() string                      { return m.id }
+func (m *mockConn) URL() url.URL                    { return url.URL{} }
+func (m *mockConn) LocalAddr() net.Addr             { return nil }
+func (m *mockConn) RemoteAddr() net.Addr            { return nil }
+func (m *mockConn) RemoteHeader() http.Header       { return nil }
+
+// Namespace interface
+func (m *mockConn) Context() interface{}            { return nil }
+func (m *mockConn) SetContext(v interface{})        {}
+func (m *mockConn) Namespace() string               { return "/" }
 func (m *mockConn) Emit(event string, v ...interface{}) {
 	m.emitted[event] = v
 }
-func (m *mockConn) Send(v ...interface{}) error {
-	return nil
-}
+func (m *mockConn) Join(room string)  { m.joined[room] = true }
+func (m *mockConn) Leave(room string) { m.left[room] = true }
+func (m *mockConn) LeaveAll()         {}
+func (m *mockConn) Rooms() []string   { return nil }
 
-// ─── Mock Socket.IO Server ───
+// ─── Mock socketServer ───
 
 type mockServer struct {
 	broadcasts map[string][]interface{}
@@ -67,34 +65,24 @@ func newMockServer() *mockServer {
 	}
 }
 
-func (m *mockServer) OnConnect(namespace string, f func(socketio.Conn) error) {}
-func (m *mockServer) OnDisconnect(namespace string, f func(socketio.Conn, string)) {}
-func (m *mockServer) OnError(namespace string, f func(socketio.Conn, error)) {}
-func (m *mockServer) OnEvent(namespace string, event string, f func(socketio.Conn, ...interface{}) error) {}
-func (m *mockServer) Emit(event string, v ...interface{}) error {
+func (m *mockServer) BroadcastToNamespace(namespace, event string, v ...interface{}) bool {
 	m.broadcasts[event] = v
-	return nil
+	return true
 }
-func (m *mockServer) BroadcastToNamespace(namespace, event string, v ...interface{}) error {
-	m.broadcasts[event] = v
-	return nil
-}
-func (m *mockServer) BroadcastToRoom(namespace, room, event string, v ...interface{}) error {
+func (m *mockServer) BroadcastToRoom(namespace, room, event string, v ...interface{}) bool {
 	if m.roomCasts[room] == nil {
 		m.roomCasts[room] = make(map[string][]interface{})
 	}
 	m.roomCasts[room][event] = v
-	return nil
+	return true
 }
-func (m *mockServer) ForEach(namespace, room string, f func(socketio.Conn)) {}
-func (m *mockServer) Close() error {
-	return nil
-}
+func (m *mockServer) ForEach(namespace, room string, f socketio.EachFunc) bool { return true }
+
 
 // ─── OnRoomCreate Tests ───
 
 func TestHub_OnRoomCreate_Success(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 
@@ -117,9 +105,8 @@ func TestHub_OnRoomCreate_Success(t *testing.T) {
 }
 
 func TestHub_OnRoomCreate_Duplicate(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	conn1 := newMockConn("socket-1")
-	conn2 := newMockConn("socket-2")
 
 	hub.rooms["existing-room"] = &Room{Name: "existing-room", Members: make(map[string]*MemberInfo)}
 
@@ -142,7 +129,7 @@ func TestHub_OnRoomCreate_Duplicate(t *testing.T) {
 }
 
 func TestHub_OnRoomCreate_InvalidJSON(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	conn := newMockConn("socket-1")
 
 	hub.OnRoomCreate(conn, "not json")
@@ -163,7 +150,7 @@ func TestHub_OnRoomCreate_InvalidJSON(t *testing.T) {
 }
 
 func TestHub_OnRoomCreate_MissingRoom(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	conn := newMockConn("socket-1")
 
 	hub.OnRoomCreate(conn, `{}`)
@@ -186,7 +173,7 @@ func TestHub_OnRoomCreate_MissingRoom(t *testing.T) {
 // ─── OnRoomJoin Tests ───
 
 func TestHub_OnRoomJoin_CreateAndJoin(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 
@@ -213,13 +200,22 @@ func TestHub_OnRoomJoin_CreateAndJoin(t *testing.T) {
 		t.Fatal("expected emit data to be a map")
 	}
 
-	if members, ok := emitData["members"].([]interface{}); !ok || len(members) != 1 {
-		t.Errorf("expected 1 member in room, got %v", members)
+	switch members := emitData["members"].(type) {
+	case []interface{}:
+		if len(members) != 1 {
+			t.Errorf("expected 1 member in room, got %d", len(members))
+		}
+	case []MemberInfo:
+		if len(members) != 1 {
+			t.Errorf("expected 1 member in room, got %d", len(members))
+		}
+	default:
+		t.Errorf("expected members slice, got %T: %v", emitData["members"], emitData["members"])
 	}
 }
 
 func TestHub_OnRoomJoin_JoinExisting(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 
@@ -249,14 +245,22 @@ func TestHub_OnRoomJoin_JoinExisting(t *testing.T) {
 		t.Fatal("expected emit data to be a map")
 	}
 
-	members, ok := emitData["members"].([]interface{})
-	if !ok || len(members) != 2 {
-		t.Errorf("expected 2 members, got %d", len(members))
+	switch members := emitData["members"].(type) {
+	case []interface{}:
+		if len(members) != 2 {
+			t.Errorf("expected 2 members, got %d", len(members))
+		}
+	case []MemberInfo:
+		if len(members) != 2 {
+			t.Errorf("expected 2 members, got %d", len(members))
+		}
+	default:
+		t.Errorf("expected members slice, got %T: %v", emitData["members"], emitData["members"])
 	}
 }
 
 func TestHub_OnRoomJoin_DefaultIdentity(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 
@@ -283,7 +287,7 @@ func TestHub_OnRoomJoin_DefaultIdentity(t *testing.T) {
 // ─── OnRoomLeave Tests ───
 
 func TestHub_OnRoomLeave_Success(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 
@@ -294,6 +298,12 @@ func TestHub_OnRoomLeave_Success(t *testing.T) {
 	hub.rooms["test-room"].Members["socket-1"] = &MemberInfo{
 		ID:       "socket-1",
 		Identity: "user-1",
+		JoinedAt: time.Now().UnixMilli(),
+	}
+	// Add a second member so the room isn't deleted after socket-1 leaves
+	hub.rooms["test-room"].Members["socket-2"] = &MemberInfo{
+		ID:       "socket-2",
+		Identity: "user-2",
 		JoinedAt: time.Now().UnixMilli(),
 	}
 
@@ -317,7 +327,7 @@ func TestHub_OnRoomLeave_Success(t *testing.T) {
 }
 
 func TestHub_OnRoomLeave_RemoveEmptyRoom(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 
@@ -344,7 +354,7 @@ func TestHub_OnRoomLeave_RemoveEmptyRoom(t *testing.T) {
 // ─── OnRoomList Tests ───
 
 func TestHub_OnRoomList_Empty(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 
@@ -368,7 +378,7 @@ func TestHub_OnRoomList_Empty(t *testing.T) {
 }
 
 func TestHub_OnRoomList_Multiple(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 
@@ -410,7 +420,7 @@ func TestHub_OnRoomList_Multiple(t *testing.T) {
 // ─── OnDisconnect Tests ───
 
 func TestHub_OnDisconnect_RemoveFromRoom(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 
@@ -442,7 +452,7 @@ func TestHub_OnDisconnect_RemoveFromRoom(t *testing.T) {
 }
 
 func TestHub_OnDisconnect_RemoveEmptyRoom(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 
@@ -465,7 +475,7 @@ func TestHub_OnDisconnect_RemoveEmptyRoom(t *testing.T) {
 }
 
 func TestHub_OnDisconnect_MultipleRooms(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 	server := newMockServer()
 	hub.server = server
 
@@ -502,7 +512,7 @@ func TestHub_OnDisconnect_MultipleRooms(t *testing.T) {
 // ─── GetRooms Tests ───
 
 func TestHub_GetRooms(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 
 	hub.rooms["room-1"] = &Room{
 		Name:      "room-1",
@@ -528,7 +538,7 @@ func TestHub_GetRooms(t *testing.T) {
 // ─── GetRoomMembers Tests ───
 
 func TestHub_GetRoomMembers(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 
 	hub.rooms["test-room"] = &Room{
 		Name: "test-room",
@@ -553,7 +563,7 @@ func TestHub_GetRoomMembers(t *testing.T) {
 }
 
 func TestHub_GetRoomMembers_NotFound(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(nil)
 
 	members := hub.GetRoomMembers("nonexistent")
 	if members != nil {

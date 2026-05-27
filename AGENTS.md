@@ -11,7 +11,8 @@ GOSpeak/
 │   └── web/             # React frontend (Vite + TypeScript)
 ├── package.json         # Root scripts
 ├── pnpm-workspace.yaml  # Workspace config
-└── agent.md             # ← This file
+├── AGENTS.md            # ← This file
+└── agent_test_logs/     # Test log output directory
 ```
 
 ---
@@ -58,7 +59,7 @@ Request → Router → Middleware → Handler → Service → Repository → DB
                                OAuth     LiveKit    Redis
                             (standalone) (standalone) (optional)
                                           ↓
-                                       Signal/WS (独立)
+                                       Signal/WS
 ```
 
 Each layer communicates **only with the layer directly below it**:
@@ -119,12 +120,18 @@ pkg.Fail(c, pkg.INVALID_PARAMS, "custom message")  // msg is optional
 | 1010 | `INVALID_PASSWORD` | invalid password |
 | 1011 | `USER_NOT_FOUND` | user not found |
 | 1012 | `USERNAME_EXISTS` | username already exists |
+| 1013 | `FORBIDDEN` | forbidden |
+| 1014 | `TOKEN_REVOKED` | token has been revoked |
 | 2001 | `INVALID_PARAMS` | invalid parameters |
 | 3001 | `NOT_FOUND` | resource not found |
 | 3002 | `ALREADY_EXISTS` | resource already exists |
 | 5001 | `INTERNAL_ERROR` | internal server error |
 | 6001 | `SFU_NOT_CONFIGURED` | sfu not configured |
 | 6002 | `SFU_ERROR` | sfu error |
+| 7001 | `OAUTH_PROVIDER_NOT_FOUND` | oauth provider not found |
+| 7002 | `OAUTH_PROVIDER_DISABLED` | oauth provider is disabled |
+| 7003 | `OAUTH_TOKEN_EXCHANGE_FAILED` | oauth token exchange failed |
+| 7004 | `OAUTH_GET_USER_FAILED` | oauth get user info failed |
 
 ---
 
@@ -187,6 +194,7 @@ if err := c.ShouldBindJSON(&req); err != nil {
 | POST | `/api/v1/auth/logout` | Yes | AuthHandler.Logout |
 | POST | `/api/v1/auth/refresh` | Yes | AuthHandler.RefreshToken |
 | POST | `/api/v1/auth/change_password` | Yes | AuthHandler.ChangePassword |
+| POST | `/api/v1/auth/first_change_password` | Yes | AuthHandler.FirstChangePassword |
 | GET | `/api/v1/oauth/login/:provider` | No | OAuthHandler.Login (redirect) |
 | GET | `/api/v1/oauth/callback/:provider` | No | OAuthHandler.Callback |
 | GET | `/api/v1/oauth/admin/providers` | Yes (admin) | OAuthHandler.ListProviders |
@@ -201,7 +209,8 @@ if err := c.ShouldBindJSON(&req); err != nil {
 | GET | `/api/v1/user/profile` | Yes | UserHandler.GetProfile |
 | GET | `/api/v1/user/list` | Yes | UserHandler.List |
 | GET | `/api/v1/user/:id` | Yes | UserHandler.GetByID |
-| DELETE | `/api/v1/user/:id` | Yes | UserHandler.Delete |
+| DELETE | `/api/v1/user/:id` | Yes (admin) | UserHandler.Delete |
+| PUT | `/api/v1/user/:id/role` | Yes (admin) | UserHandler.UpdateRole |
 | GET | `/ping` | No | Health check |
 | GET | `/swagger/*any` | No | Swagger UI |
 | WS | `/socket.io/*` | No | Socket.IO signaling |
@@ -242,7 +251,7 @@ REDIS_DB="0"
 JWT_KEY_TTL="24h"         # JWT signing key rotation interval (Redis only)
 ```
 
-- Auto-migration is enabled — models are synced on startup in [db.go](file:///Users/noelorin/GOSpeak/packages/server/internal/repository/db.go)
+- Auto-migration is enabled — models are synced on startup in `repository/db.go`
 
 ---
 
@@ -271,7 +280,7 @@ type Provider interface {
 
 ### Usage in handlers / services
 
-All code that previously imported `internal/livekit` directly now depends only on `sfu.Provider`. To add a new SFU backend, implement `sfu.Provider` and register it in `factory.go`.
+All SFU calls go through `sfu.Provider`. To add a new SFU backend, implement `sfu.Provider` and register it in `factory.go`.
 
 ---
 
@@ -292,7 +301,7 @@ Constructor: `livekit.NewService(cfg *config.Config) *Service`
 | `DeleteRoom(room)` | Delete a room |
 | `GetHost()` | Return configured LiveKit host URL |
 
-Token response shape returned by `GET /signal/token`:
+Token response shape returned by `POST /signal/token`:
 
 ```json
 {
@@ -387,9 +396,35 @@ Repositories: `OAuthProviderRepo`, `OAuthAccountRepo` — standard CRUD.
 
 ---
 
-## RBAC Middleware
+## Middleware
 
-`middleware.RequireRole("admin")` — checks `role` claim from JWT. Returns `TOKEN_WRONG` (1002) if role doesn't match. Used on admin-only routes (e.g., OAuth provider management).
+All middleware is in `internal/middleware/auth.go`.
+
+| Function | Description |
+|----------|-------------|
+| `JWTAuth()` | Validates Bearer token: checks header → signature → expiry → blacklist (JTI) |
+| `RequireRole(roles ...string)` | Checks `role` claim from JWT against allowed roles. Returns `FORBIDDEN` (1013) on mismatch |
+| `CORS()` | Sets `Access-Control-Allow-Origin: *`, handles OPTIONS preflight |
+
+### JWTAuth check order
+
+1. Header exists → `TOKEN_NOT_EXIST` (1001)
+2. Signature valid → `TOKEN_WRONG` (1002)
+3. Not expired → `TOKEN_EXPIRED` (1003)
+4. JTI not blacklisted → `TOKEN_REVOKED` (1014)
+5. Inject `username`, `user_uuid`, `role`, `claims` into context
+
+---
+
+## Models
+
+| Model | Table | Key Fields |
+|-------|-------|------------|
+| `User` | `users` | ID, UUID (auto-gen), Name, Password (`json:"-"`), Role, CreatedAt, UpdatedAt |
+| `Room` | `room` | ID, UUID (auto-gen), Name, Limit, CreatedAt, UpdatedAt |
+| `UserGroup` | `user_groups` | ID, UserID, GroupName, CreatedAt, UpdatedAt |
+| `OAuthProvider` | `oauth_providers` | ID, Name, ClientID, ClientSecret, AuthURL, TokenURL, UserInfoURL, RedirectURL, Scopes, Enabled |
+| `OAuthAccount` | `oauth_accounts` | ID, UserID, Provider, ProviderUID, AccessToken, RefreshToken |
 
 ---
 
@@ -401,7 +436,7 @@ Standalone package at `internal/signal/`. Handles real-time room signaling via S
 
 | File | Role |
 |------|------|
-| `events.go` | 12 event name constants |
+| `events.go` | 14 event name constants |
 | `types.go` | `RoomRequest`, `MemberInfo`, `RoomInfo` structs |
 | `hub.go` | Hub (global room registry) + Socket.IO event handlers |
 
@@ -409,6 +444,8 @@ Standalone package at `internal/signal/`. Handles real-time room signaling via S
 
 | Direction | Event | Payload | Description |
 |-----------|-------|---------|-------------|
+| Lifecycle | `connection` | — | Client connected |
+| Lifecycle | `disconnect` | — | Client disconnected |
 | Client → Server | `room:create` | `{room}` | Create a new room |
 | Client → Server | `room:join` | `{room, identity}` | Join a room |
 | Client → Server | `room:leave` | `{room}` | Leave a room |
@@ -419,8 +456,8 @@ Standalone package at `internal/signal/`. Handles real-time room signaling via S
 | Server → Client | `room:updated` | `RoomInfo` | Room member count changed |
 | Server → Client | `member:joined` | `MemberInfo` | Another member joined |
 | Server → Client | `member:left` | `{identity}` | A member left |
+| Server → Client | `member:updated` | `MemberInfo` | Member state updated |
 | Server → Client | `room:list:result` | `{rooms[]}` | Response to `room:list` |
-| Server → Client | `error` | `{message}` | Error from server |
 
 ### Hub API
 
@@ -436,35 +473,54 @@ hub.BroadcastToRoom(namespace, room, event, data)
 
 ```
 packages/web/src/
-├── api/            # apiClient (axios wrapper) + auth API
+├── api/                # apiClient (axios wrapper) + auth API
+├── assets/             # Static assets (SVG icons, global CSS)
+│   ├── styles/         # Global stylesheets
+│   └── svg.tsx         # SVG icon sprite definitions
 ├── components/
-│   ├── chat/       # Chat input/output components
-│   ├── common/     # shared UI components
-│   ├── form/       # Form components (PasswordChangeForm)
-│   ├── home/       # Home page component
-│   ├── modal/      # Modals (searchModal, settings)
-│   └── room/       # room-related views
-│       ├── roomDetail.tsx     # join/leave + LiveKit + Socket.IO lifecycle
-│       ├── roomList.tsx       # room list from socketStore
-│       └── voiceChat.tsx      # member grid using socketStore.members()
+│   ├── chat/           # Chat input/output components
+│   ├── common/         # Shared UI components (avatar, modal, divider, etc.)
+│   ├── form/           # Form components (Form, PasswordChangeForm)
+│   ├── home/           # Home page component
+│   ├── modal/          # Modals (searchModal, settings)
+│   │   └── settting/   # Settings modal (note: 3 t's typo in dir name)
+│   │       └── tab_item/  # Settings tabs (audio, general, room)
+│   ├── room/           # Room-related views
+│   ├── funcButton.tsx  # FAB action button with search modal
+│   ├── svgIcon.tsx     # SVG icon component (uses svg sprite)
+│   └── userBar.tsx     # User status bar with audio controls
 ├── hooks/
-│   └── livekit/    # createRoom hook (LiveKit client)
-├── layouts/        # App layouts (layout.tsx, ErrorComponent)
+│   ├── livekit/        # LiveKit hooks (createRoom, roomAction, useToken, useSubcribeTrack)
+│   │   ├── index.ts    # Barrel export
+│   │   ├── createRoom.ts  # Room creation hook
+│   │   ├── roomAction.ts  # Join/leave room actions
+│   │   ├── useToken.ts    # Token fetching via TanStack Query
+│   │   └── useSubcribeTrack.ts  # Track subscription (empty)
+│   ├── media.ts        # Audio device enumeration utility
+│   └── useTitle.ts     # Document title hook (empty)
+├── layouts/
+│   ├── layout.tsx      # Root layout
+│   ├── ErrorComponent.tsx  # Error boundary
+│   ├── common/         # Layout primitives
+│   │   ├── header.tsx  # Header with theme toggle + route title
+│   │   ├── footer.tsx  # Footer bar
+│   │   ├── main.tsx    # Main content area wrapper
+│   │   └── sidebar.tsx # Sidebar navigation (home, channel, settings)
+│   └── container/
+│       └── ContextProvider.tsx  # Theme context provider
 ├── stores/
 │   ├── socketStore.ts         # Socket.IO global singleton store
 │   ├── userStore.ts           # Auth state (user, tokens) with IndexedDB persistence
 │   ├── themeStore.ts          # Theme switching (light/dark)
 │   ├── audioDeviceStore.ts    # Audio device enumeration with IndexedDB persistence
-│   └── voiceChatStore.ts      # audio device state
+│   └── voiceChatStore.ts      # Voice chat state (mute, volume) with IndexedDB persistence
 ├── types/
-│   └── room.ts                # RoomInfo, MemberInfo, RoomItemType
-└── pages/
-    ├── __root.tsx              # Root route
-    ├── login/                  # Login page
-    └── (app)/                  # Authenticated app routes
-        ├── index/              # Home/index page
-        ├── channel/            # Voice channel page
-        └── link/               # Link page
+│   ├── room.ts                # RoomInfo, MemberInfo, RoomItemType, RoomMemberInfoType
+│   └── userInfo.ts            # UserInfo, LocalUserInfo, Token types
+├── utils/                     # Utility directory (currently empty)
+├── main.tsx                   # App entry point
+├── styles.css                 # Root CSS
+└── routeTree.gen.ts           # TanStack Router generated route tree
 ```
 
 ### socketStore (`src/stores/socketStore.ts`)
@@ -516,6 +572,34 @@ Light/dark theme switching. Persists to localStorage. Themes: `acid` (light), `s
 
 Audio input/output device enumeration with IndexedDB persistence. Auto-fetches devices on init.
 
+### voiceChatStore (`src/stores/voiceChatStore.ts`)
+
+Manages voice/video chat state with IndexedDB persistence. Uses debounced writes.
+
+**State:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `isInputMute` | `boolean` | Audio input muted |
+| `isOutMute` | `boolean` | Audio output muted |
+| `isVideoMute` | `boolean` | Video output muted |
+| `inputVolume` | `number` | Audio input volume (0-100) |
+| `outputVolume` | `number` | Audio output volume (0-100) |
+| `videoVolume` | `number` | Video output volume (0-100) |
+| `otherMemberState` | `OtherMemberStateType[]` | Per-member voice state |
+
+**Actions:** `setIsInputMute`, `setIsOutMute`, `setIsVideoMute`, `setInputVolume`, `setOutputVolume`, `setVideoVolume`
+
+### LiveKit Hooks (`src/hooks/livekit/`)
+
+| Hook | Description |
+|------|-------------|
+| `createRoom` | Create LiveKit Room instance |
+| `_joinRoom(room, url, token)` | Connect to room + enable microphone |
+| `_leaveRoom(room)` | Disconnect from room |
+| `useToken()` | Fetch join token via TanStack Query (`POST /api/v1/signal/token`) |
+| `useSubcribeTrack` | Track subscription (placeholder, empty) |
+
 ### Room join data flow
 
 ```
@@ -525,7 +609,7 @@ User enters room page
     ├─ socketStore.joinRoom(room, identity)
     │      ← room:joined { members: [...] }
     ├─ createRoom({ token, url })   // LiveKit instance
-    └─ roomIns().joinRoom()         // LiveKit connect
+    └─ _joinRoom(roomIns, url, token)  // LiveKit connect + enable mic
 ```
 
 ### OAuth login flow

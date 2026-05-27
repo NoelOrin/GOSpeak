@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "air",
+    "dev": "./air",
     "prod": "go run main.go server -e prod",
     "build": "go build -o gospeak-server main.go",
     "test": "node test/run.js"

@@ -49,7 +49,9 @@ const _useRoom = ({ token, url }: UseRoomProps) => {
 	});
 
 	// 预热连接（可尽早调用，例如页面加载时）
-	room.prepareConnection(url, token);
+	if (url) {
+		room.prepareConnection(url, token);
+	}
 
 	// 设置事件监听器
 	room
