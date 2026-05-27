@@ -20,7 +20,10 @@ type MemberInfo = {
 };
 
 type RoomInfo = {
+    id: number;
+    uuid: string;
     name: string;
+    limit: number;
     members: MemberInfo[];
     count: number;
     createdAt: number;

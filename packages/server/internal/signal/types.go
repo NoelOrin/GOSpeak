@@ -12,7 +12,10 @@ type MemberInfo struct {
 }
 
 type RoomInfo struct {
+	ID        uint         `json:"id"`
+	UUID      string       `json:"uuid"`
 	Name      string       `json:"name"`
+	Limit     uint         `json:"limit"`
 	Members   []MemberInfo `json:"members"`
 	Count     int          `json:"count"`
 	CreatedAt int64        `json:"createdAt"`

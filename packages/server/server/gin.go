@@ -81,6 +81,13 @@ func StartGin(env EnvEnum) {
 	signalHub.SetupRoutes(sioServer)
 	signalH := handler.NewSignalHandler(sfuProvider, signalHub)
 
+	// 启动 Socket.IO 事件循环（消费 sessions 并处理消息）
+	go func() {
+		if err := sioServer.Serve(); err != nil {
+			fmt.Printf("[Socket.IO] serve error: %v\n", err)
+		}
+	}()
+
 	r.GET("/socket.io/*any", gin.WrapH(sioServer))
 	r.POST("/socket.io/*any", gin.WrapH(sioServer))
 	r.OPTIONS("/socket.io/*any", gin.WrapH(sioServer))

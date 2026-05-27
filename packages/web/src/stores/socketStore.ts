@@ -23,7 +23,10 @@ export interface MemberInfo {
 }
 
 export interface RoomInfo {
+  id: number;
+  uuid: string;
   name: string;
+  limit: number;
   members: MemberInfo[];
   count: number;
   createdAt: number;
@@ -34,6 +37,7 @@ function createSocketStore() {
   const [rooms, setRooms] = createSignal<RoomInfo[]>([]);
   const [currentRoom, setCurrentRoom] = createSignal<string | null>(null);
   const [members, setMembers] = createSignal<MemberInfo[]>([]);
+  const [selectedRoomInfo, setSelectedRoomInfo] = createSignal<RoomInfo | null>(null);
 
   let socket: Socket | null = null;
 
@@ -43,12 +47,18 @@ function createSocketStore() {
       socket.disconnect();
       socket = null;
     }
-    socket = io("/", { transports: ["websocket", "polling"] });
+    const socketUrl = import.meta.env.VITE_SOCKET_URL || "http://localhost:8998";
+    socket = io(socketUrl, { transports: ["websocket", "polling"] });
 
     socket.on("connect", () => {
       setConnected(true);
       console.log("[Socket] connected:", socket?.id);
+      console.log("[Socket] transport:", socket.io.engine.transport.name);
       listRooms();
+    });
+
+    socket.on("connect_error", (err) => {
+      console.error("[Socket] connect_error:", err.message);
     });
 
     socket.on("disconnect", (reason) => {
@@ -141,17 +151,28 @@ function createSocketStore() {
     socket?.emit(EVENTS.ROOM_LIST);
   }
 
+  function selectRoom(room: RoomInfo) {
+    setSelectedRoomInfo(room);
+  }
+
+  function clearSelectedRoom() {
+    setSelectedRoomInfo(null);
+  }
+
   return {
     connected,
     rooms,
     currentRoom,
     members,
+    selectedRoomInfo,
     connect,
     disconnect,
     createRoom,
     joinRoom,
     leaveRoom,
     listRooms,
+    selectRoom,
+    clearSelectedRoom,
   };
 }
 

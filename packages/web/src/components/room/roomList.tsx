@@ -10,13 +10,17 @@ interface RoomItemPropsType {
 }
 
 const RoomItem = ({ room, isActive = false }: RoomItemPropsType) => {
+  const isSelected = () => socketStore.selectedRoomInfo()?.name === room.name;
+
   return (
     <div class="flex flex-col w-full">
       <button
         class={clsx(
           "justify-between items-center px-1.5 border-0 btn btn-ghost btn-sm",
-          isActive ? "btn-active" : ""
+          isActive ? "btn-active" : "",
+          isSelected() && !isActive ? "bg-base-200" : ""
         )}
+        onClick={() => socketStore.selectRoom(room)}
       >
         <div class="flex items-center space-x-1">
           <span>
@@ -58,7 +62,7 @@ const RoomItem = ({ room, isActive = false }: RoomItemPropsType) => {
         </div>
 
         <div class="flex text-[12px]">
-          <div>{room.count}</div>
+          <div>{room.count}/{room.limit}</div>
         </div>
       </button>
 

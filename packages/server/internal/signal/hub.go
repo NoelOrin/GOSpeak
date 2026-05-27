@@ -235,7 +235,10 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 		if rooms, _, err := h.roomStore.List(1, 200); err == nil {
 			for _, r := range rooms {
 				dbRooms[r.Name] = RoomInfo{
+					ID:        r.ID,
+					UUID:      r.UUID,
 					Name:      r.Name,
+					Limit:     r.Limit,
 					Members:   []MemberInfo{},
 					Count:     0,
 					CreatedAt: r.CreatedAt.UnixMilli(),
@@ -244,10 +247,16 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 		}
 	}
 
-	// 用内存活跃数据覆盖（有实时成员信息）
+	// 用内存活跃数据覆盖（有实时成员信息），同时保留 DB 字段
 	h.mu.RLock()
 	for name, room := range h.rooms {
-		dbRooms[name] = h.roomInfoLocked(room.Name)
+		info := h.roomInfoLocked(room.Name)
+		if existing, ok := dbRooms[name]; ok {
+			info.ID = existing.ID
+			info.UUID = existing.UUID
+			info.Limit = existing.Limit
+		}
+		dbRooms[name] = info
 	}
 	h.mu.RUnlock()
 

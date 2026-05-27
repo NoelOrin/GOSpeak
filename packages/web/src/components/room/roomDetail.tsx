@@ -5,19 +5,20 @@ import createRoom, { type RoomReturnType } from "@/hooks/livekit/createRoom";
 import { socketStore } from "@/stores/socketStore";
 import VoiceChat from "./voiceChat";
 
-const ROOM_NAME = "test-room";
-
 const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
   const [isJoined, setIsJoined] = createSignal(false);
+  const selectedRoom = () => socketStore.selectedRoomInfo();
 
-  // 获取访问令牌（不依赖其他查询）
+  // 获取访问令牌（依赖当前选中的房间）
   const tokenQuery = useQuery(() => ({
-    queryKey: ["token", ROOM_NAME],
+    queryKey: ["token", selectedRoom()?.name],
+    enabled: !!selectedRoom(),
     queryFn: async () => {
+      const room = selectedRoom()!;
       const response = await apiClient.post({
         url: "/api/v1/signal/token",
         data: {
-          room: ROOM_NAME,
+          room: room.name,
           identity: `user-${Date.now().toString(36)}`,
         },
       });
@@ -50,12 +51,32 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
     )
   );
 
-  // 连接 Socket.IO（由 roomList 统一处理，此处不重复连接）
+  // 切换房间时重置状态
+  createEffect(
+    on(
+      () => selectedRoom()?.name,
+      () => {
+        // 如果已加入则先离开
+        if (isJoined()) {
+          handleLeave();
+        }
+        setIsJoined(false);
+        setRoomIns(null);
+      }
+    )
+  );
 
   // 加入房间：同时触发 Socket.IO 和 LiveKit
   const handleJoin = async () => {
+    const room = selectedRoom();
     const data = tokenQuery.data;
-    if (!data) return;
+    if (!room || !data) return;
+
+    // 检查房间容量
+    if (room.limit > 0 && room.count >= room.limit) {
+      console.warn("[Room] 房间已满，无法加入");
+      return;
+    }
 
     // Socket.IO 加入房间
     socketStore.joinRoom(data.room, data.identity);
@@ -87,35 +108,57 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
       ref={ref}
     >
       <Show
-        when={tokenQuery.isSuccess}
+        when={selectedRoom()}
         fallback={
-          <div class="loading loading-spinner loading-lg">
-            {!tokenQuery.isSuccess && "加载中..."}
+          <div class="text-base-content/40 text-sm">
+            请从左侧列表选择一个房间
           </div>
         }
       >
         <Show
-          when={isJoined()}
+          when={tokenQuery.isSuccess}
           fallback={
-            <button class="btn btn-primary" onClick={handleJoin}>
-              加入房间
-            </button>
+            <div class="loading loading-spinner loading-lg">
+              {!tokenQuery.isSuccess && "加载中..."}
+            </div>
           }
         >
-          <div class="flex flex-col w-full h-full">
-            <div class="flex justify-between items-center px-4 h-12 border-b border-base-300">
-              <span class="font-bold">{socketStore.currentRoom()}</span>
-              <div class="flex items-center gap-2">
-                <span class="text-sm text-base-content/60">
-                  {socketStore.members().length} 人在线
-                </span>
-                <button class="btn btn-sm btn-ghost" onClick={handleLeave}>
-                  离开
-                </button>
+          <Show
+            when={isJoined()}
+            fallback={
+              <div class="flex flex-col items-center gap-4">
+                <div class="text-lg font-bold">{selectedRoom()?.name}</div>
+                <Show
+                  when={
+                    !selectedRoom()?.limit ||
+                    (socketStore.members().length < selectedRoom()!.limit)
+                  }
+                  fallback={
+                    <div class="text-base-content/40">房间已满</div>
+                  }
+                >
+                  <button class="btn btn-primary" onClick={handleJoin}>
+                    加入房间
+                  </button>
+                </Show>
               </div>
+            }
+          >
+            <div class="flex flex-col w-full h-full">
+              <div class="flex justify-between items-center px-4 h-12 border-b border-base-300">
+                <span class="font-bold">{socketStore.currentRoom()}</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-sm text-base-content/60">
+                    {socketStore.members().length} 人在线
+                  </span>
+                  <button class="btn btn-sm btn-ghost" onClick={handleLeave}>
+                    离开
+                  </button>
+                </div>
+              </div>
+              <VoiceChat />
             </div>
-            <VoiceChat />
-          </div>
+          </Show>
         </Show>
       </Show>
     </div>
