@@ -33,7 +33,7 @@
     "livekit-client": "^2.16.1",
     "lodash-es": "^4.17.22",
     "lucide-solid": "^0.561.0",
-    "socket.io-client": "^4.8.3",
+    "socket.io-client": "2.5.0",
     "solid-js": "^1.9.9",
     "solid-split-pane": "^0.0.5",
     "tailwind-merge": "^3.4.0",

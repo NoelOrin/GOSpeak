@@ -94,6 +94,9 @@ importers:
       lucide-solid:
         specifier: ^0.561.0
         version: 0.561.0(solid-js@1.9.13)
+      socket.io-client:
+        specifier: 2.5.0
+        version: 2.5.0
       solid-js:
         specifier: ^1.9.9
         version: 1.9.13
@@ -140,9 +143,6 @@ importers:
       rollup-plugin-visualizer:
         specifier: ^6.0.11
         version: 6.0.11(rolldown@1.0.0-beta.53(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(rollup@4.60.4)
-      socket.io-client:
-        specifier: ^2.5.0
-        version: 2.5.0
       typescript:
         specifier: ~5.9.3
         version: 5.9.3

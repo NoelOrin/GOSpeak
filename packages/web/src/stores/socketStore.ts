@@ -1,4 +1,5 @@
-import { io, Socket } from "socket.io-client";
+import io from "socket.io-client";
+import type { Socket } from "socket.io-client";
 import { createSignal, createRoot } from "solid-js";
 
 // 事件常量（与后端 signal/events.go 一致）
