@@ -1,25 +1,33 @@
 package livekit
 
 import (
+	"context"
 	"go_rtc/internal/config"
 	"go_rtc/internal/pkg"
 	"time"
 
 	"github.com/livekit/protocol/auth"
+	lksdk "github.com/livekit/server-sdk-go/v2"
+	"github.com/livekit/protocol/livekit"
 )
 
 type Service struct {
 	host      string
 	apiKey    string
 	apiSecret string
+	client    *lksdk.RoomServiceClient
 }
 
 func NewService(cfg *config.Config) *Service {
-	return &Service{
+	s := &Service{
 		host:      cfg.LiveKitHost,
 		apiKey:    cfg.LiveKitKey,
 		apiSecret: cfg.LiveKitSecret,
 	}
+	if cfg.LiveKitHost != "" {
+		s.client = lksdk.NewRoomServiceClient(cfg.LiveKitHost, cfg.LiveKitKey, cfg.LiveKitSecret)
+	}
+	return s
 }
 
 func (s *Service) GenerateToken(room, identity string) (string, error) {
@@ -57,33 +65,68 @@ func (s *Service) GenerateAdminToken() (string, error) {
 }
 
 func (s *Service) ListRooms() (interface{}, error) {
-	if s.host == "" {
+	if s.client == nil {
 		return nil, pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
 	}
-	return nil, nil
+	resp, err := s.client.ListRooms(context.Background(), &livekit.ListRoomsRequest{})
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.SFU_ERROR, err.Error())
+	}
+	return resp.Rooms, nil
 }
 
 func (s *Service) ListParticipants(room string) (interface{}, error) {
-	if s.host == "" {
+	if s.client == nil {
 		return nil, pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
 	}
-	_ = room
-	return nil, nil
+	resp, err := s.client.ListParticipants(context.Background(), &livekit.ListParticipantsRequest{
+		Room: room,
+	})
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.SFU_ERROR, err.Error())
+	}
+	return resp.Participants, nil
 }
 
-func (s *Service) MuteParticipant(room, identity string) error {
-	_ = room
-	_ = identity
+func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) error {
+	if s.client == nil {
+		return pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
+	}
+	_, err := s.client.MutePublishedTrack(context.Background(), &livekit.MuteRoomTrackRequest{
+		Room:     room,
+		Identity: identity,
+		TrackSid: trackSid,
+		Muted:    muted,
+	})
+	if err != nil {
+		return pkg.NewAppError(pkg.SFU_ERROR, err.Error())
+	}
 	return nil
 }
 
 func (s *Service) RemoveParticipant(room, identity string) error {
-	_ = room
-	_ = identity
+	if s.client == nil {
+		return pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
+	}
+	_, err := s.client.RemoveParticipant(context.Background(), &livekit.RoomParticipantIdentity{
+		Room:     room,
+		Identity: identity,
+	})
+	if err != nil {
+		return pkg.NewAppError(pkg.SFU_ERROR, err.Error())
+	}
 	return nil
 }
 
 func (s *Service) DeleteRoom(room string) error {
-	_ = room
+	if s.client == nil {
+		return pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
+	}
+	_, err := s.client.DeleteRoom(context.Background(), &livekit.DeleteRoomRequest{
+		Room: room,
+	})
+	if err != nil {
+		return pkg.NewAppError(pkg.SFU_ERROR, err.Error())
+	}
 	return nil
 }

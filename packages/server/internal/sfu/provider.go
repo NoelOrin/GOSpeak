@@ -15,8 +15,8 @@ type Provider interface {
 	// ListParticipants returns participants in a given room.
 	ListParticipants(room string) (interface{}, error)
 
-	// MuteParticipant mutes a participant in a room.
-	MuteParticipant(room, identity string) error
+	// MuteParticipant mutes/unmutes a participant's track in a room.
+	MuteParticipant(room, identity, trackSid string, muted bool) error
 
 	// RemoveParticipant removes a participant from a room.
 	RemoveParticipant(room, identity string) error

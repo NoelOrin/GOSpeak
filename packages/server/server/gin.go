@@ -16,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	socketio "github.com/googollee/go-socket.io"
+	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -104,9 +105,7 @@ func loadingEnv(env EnvEnum) {
 }
 
 func loadEnvFile(path string) error {
-	// user can choose to use dotenv or export env vars manually
-	_ = path
-	return nil
+	return godotenv.Load(path)
 }
 
 func seedAdminUser(userRepo *repository.UserRepository) {
