@@ -59,7 +59,6 @@ func StartGin(env EnvEnum) {
 
 	authH := handler.NewAuthHandler(authSvc)
 	userH := handler.NewUserHandler(userSvc)
-	signalH := handler.NewSignalHandler(sfuProvider)
 	oauthH := handler.NewOAuthHandler(oauthSvc)
 
 	r := gin.Default()
@@ -67,6 +66,7 @@ func StartGin(env EnvEnum) {
 	sioServer := socketio.NewServer(nil)
 	signalHub := signal.NewHub()
 	signalHub.SetupRoutes(sioServer)
+	signalH := handler.NewSignalHandler(sfuProvider, signalHub)
 
 	r.GET("/socket.io/*any", gin.WrapH(sioServer))
 	r.POST("/socket.io/*any", gin.WrapH(sioServer))

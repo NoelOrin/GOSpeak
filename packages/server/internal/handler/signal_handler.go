@@ -3,16 +3,19 @@ package handler
 import (
 	"go_rtc/internal/pkg"
 	"go_rtc/internal/sfu"
+	"go_rtc/internal/signal"
+	"log"
 
 	"github.com/gin-gonic/gin"
 )
 
 type SignalHandler struct {
 	sfuProvider sfu.Provider
+	hub         *signal.Hub
 }
 
-func NewSignalHandler(provider sfu.Provider) *SignalHandler {
-	return &SignalHandler{sfuProvider: provider}
+func NewSignalHandler(provider sfu.Provider, hub *signal.Hub) *SignalHandler {
+	return &SignalHandler{sfuProvider: provider, hub: hub}
 }
 
 // JoinRoomRequest 加入房间请求
@@ -44,9 +47,10 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 	}
 
 	pkg.Success(c, gin.H{
-		"access_token": token,
-		"room":     req.Room,
-		"identity": req.Identity,
+		"token":     token,
+		"serverUrl": h.sfuProvider.GetHost(),
+		"room":      req.Room,
+		"identity":  req.Identity,
 	})
 }
 
@@ -119,4 +123,25 @@ func (h *SignalHandler) ListParticipants(c *gin.Context) {
 	}
 
 	pkg.Success(c, participants)
+}
+
+// LivekitWebhook
+// @Summary      接收 LiveKit Webhook 事件
+// @Description  接收 LiveKit 服务端推送的事件（参与者加入/离开、Track 发布/取消等）
+// @Tags         信令
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  pkg.Response
+// @Router       /signal/webhook [post]
+func (h *SignalHandler) LivekitWebhook(c *gin.Context) {
+	var event map[string]interface{}
+	if err := c.ShouldBindJSON(&event); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+
+	eventType, _ := event["event"].(string)
+	log.Printf("[Webhook] received event: %s", eventType)
+
+	pkg.Success(c, "ok")
 }

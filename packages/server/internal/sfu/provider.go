@@ -23,4 +23,7 @@ type Provider interface {
 
 	// DeleteRoom removes a room from the SFU.
 	DeleteRoom(room string) error
+
+	// GetHost returns the SFU server URL (e.g. wss://xxx.livekit.cloud).
+	GetHost() string
 }

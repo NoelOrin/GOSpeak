@@ -11,4 +11,5 @@ func Register(r *gin.RouterGroup, h *handler.SignalHandler) {
 	r.POST("/signal", h.Signal)
 	r.GET("/rooms", h.ListRooms)
 	r.GET("/participants", h.ListParticipants)
+	r.POST("/webhook", h.LivekitWebhook)
 }

@@ -130,3 +130,7 @@ func (s *Service) DeleteRoom(room string) error {
 	}
 	return nil
 }
+
+func (s *Service) GetHost() string {
+	return s.host
+}
