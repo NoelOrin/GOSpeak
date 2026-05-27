@@ -39,6 +39,10 @@ function createSocketStore() {
 
   function connect() {
     if (socket?.connected) return;
+    if (socket) {
+      socket.disconnect();
+      socket = null;
+    }
     socket = io("/", { transports: ["websocket", "polling"] });
 
     socket.on("connect", () => {

@@ -12,6 +12,7 @@ import (
 	"go_rtc/internal/service"
 	"go_rtc/internal/signal"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -67,7 +68,15 @@ func StartGin(env EnvEnum) {
 
 	r := gin.Default()
 
-	sioServer := socketio.NewServer(nil)
+	wsTransport := websocket.Default
+	wsTransport.CheckOrigin = func(r *http.Request) bool { return true }
+
+	sioServer := socketio.NewServer(&engineio.Options{
+		Transports: []transport.Transport{
+			polling.Default,
+			wsTransport,
+		},
+	})
 	signalHub := signal.NewHub()
 	signalHub.SetupRoutes(sioServer)
 	signalH := handler.NewSignalHandler(sfuProvider, signalHub)
