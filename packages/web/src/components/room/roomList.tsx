@@ -113,7 +113,6 @@ const RoomList = ({ ref }: RoomListPropsType) => {
   // 进入时加载房间列表
   onMount(() => {
     socketStore.connect();
-    socketStore.listRooms();
   });
 
   return (

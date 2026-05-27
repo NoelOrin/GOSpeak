@@ -48,6 +48,7 @@ function createSocketStore() {
     socket.on("connect", () => {
       setConnected(true);
       console.log("[Socket] connected:", socket?.id);
+      listRooms();
     });
 
     socket.on("disconnect", (reason) => {

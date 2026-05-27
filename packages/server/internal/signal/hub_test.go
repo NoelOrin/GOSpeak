@@ -46,9 +46,8 @@ func (m *mockConn) Join(room string) error {
 func (m *mockConn) To(room string, ignore ...string) socketio.Broadcast {
 	return nil
 }
-func (m *mockConn) Emit(event string, v ...interface{}) error {
+func (m *mockConn) Emit(event string, v ...interface{}) {
 	m.emitted[event] = v
-	return nil
 }
 func (m *mockConn) Send(v ...interface{}) error {
 	return nil
@@ -97,7 +96,7 @@ func (m *mockServer) Close() error {
 func TestHub_OnRoomCreate_Success(t *testing.T) {
 	hub := NewHub()
 	server := newMockServer()
-	hub.SetServer(server)
+	hub.server = server
 
 	conn := newMockConn("socket-1")
 	data := `{"room":"test-room"}`
@@ -189,7 +188,7 @@ func TestHub_OnRoomCreate_MissingRoom(t *testing.T) {
 func TestHub_OnRoomJoin_CreateAndJoin(t *testing.T) {
 	hub := NewHub()
 	server := newMockServer()
-	hub.SetServer(server)
+	hub.server = server
 
 	conn := newMockConn("socket-1")
 	data := `{"room":"test-room","identity":"user-1"}`
@@ -222,7 +221,7 @@ func TestHub_OnRoomJoin_CreateAndJoin(t *testing.T) {
 func TestHub_OnRoomJoin_JoinExisting(t *testing.T) {
 	hub := NewHub()
 	server := newMockServer()
-	hub.SetServer(server)
+	hub.server = server
 
 	hub.rooms["test-room"] = &Room{
 		Name:      "test-room",
@@ -259,7 +258,7 @@ func TestHub_OnRoomJoin_JoinExisting(t *testing.T) {
 func TestHub_OnRoomJoin_DefaultIdentity(t *testing.T) {
 	hub := NewHub()
 	server := newMockServer()
-	hub.SetServer(server)
+	hub.server = server
 
 	conn := newMockConn("socket-1")
 	data := `{"room":"test-room"}`
@@ -286,7 +285,7 @@ func TestHub_OnRoomJoin_DefaultIdentity(t *testing.T) {
 func TestHub_OnRoomLeave_Success(t *testing.T) {
 	hub := NewHub()
 	server := newMockServer()
-	hub.SetServer(server)
+	hub.server = server
 
 	hub.rooms["test-room"] = &Room{
 		Name:    "test-room",
@@ -320,7 +319,7 @@ func TestHub_OnRoomLeave_Success(t *testing.T) {
 func TestHub_OnRoomLeave_RemoveEmptyRoom(t *testing.T) {
 	hub := NewHub()
 	server := newMockServer()
-	hub.SetServer(server)
+	hub.server = server
 
 	hub.rooms["test-room"] = &Room{
 		Name:    "test-room",
@@ -347,7 +346,7 @@ func TestHub_OnRoomLeave_RemoveEmptyRoom(t *testing.T) {
 func TestHub_OnRoomList_Empty(t *testing.T) {
 	hub := NewHub()
 	server := newMockServer()
-	hub.SetServer(server)
+	hub.server = server
 
 	conn := newMockConn("socket-1")
 
@@ -371,7 +370,7 @@ func TestHub_OnRoomList_Empty(t *testing.T) {
 func TestHub_OnRoomList_Multiple(t *testing.T) {
 	hub := NewHub()
 	server := newMockServer()
-	hub.SetServer(server)
+	hub.server = server
 
 	hub.rooms["room-1"] = &Room{
 		Name:      "room-1",
@@ -413,7 +412,7 @@ func TestHub_OnRoomList_Multiple(t *testing.T) {
 func TestHub_OnDisconnect_RemoveFromRoom(t *testing.T) {
 	hub := NewHub()
 	server := newMockServer()
-	hub.SetServer(server)
+	hub.server = server
 
 	hub.rooms["test-room"] = &Room{
 		Name:    "test-room",
@@ -445,7 +444,7 @@ func TestHub_OnDisconnect_RemoveFromRoom(t *testing.T) {
 func TestHub_OnDisconnect_RemoveEmptyRoom(t *testing.T) {
 	hub := NewHub()
 	server := newMockServer()
-	hub.SetServer(server)
+	hub.server = server
 
 	hub.rooms["test-room"] = &Room{
 		Name:    "test-room",
@@ -468,7 +467,7 @@ func TestHub_OnDisconnect_RemoveEmptyRoom(t *testing.T) {
 func TestHub_OnDisconnect_MultipleRooms(t *testing.T) {
 	hub := NewHub()
 	server := newMockServer()
-	hub.SetServer(server)
+	hub.server = server
 
 	hub.rooms["room-1"] = &Room{
 		Name:    "room-1",

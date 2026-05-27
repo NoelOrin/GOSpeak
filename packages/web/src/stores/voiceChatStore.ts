@@ -1,7 +1,7 @@
 import to from "await-to-js";
 import { get, set } from "idb-keyval";
 import { debounce } from "lodash-es";
-import { createEffect, on } from "solid-js";
+import { createEffect, createRoot, on } from "solid-js";
 import { createStore } from "solid-js/store";
 
 type MemberVoiceChatState = {
@@ -86,21 +86,23 @@ const debouncedPersist = debounce((state) => {
 }, 200);
 
 // 监听&防抖持久化
-createEffect(
-	on(
-		() => [
-			store.isInputMute,
-			store.isOutMute,
-			store.isVideoMute,
-			store.inputVolume,
-			store.outputVolume,
-			store.videoVolume,
-		],
-		() => {
-			debouncedPersist(store);
-		},
-	),
-);
+createRoot(() => {
+	createEffect(
+		on(
+			() => [
+				store.isInputMute,
+				store.isOutMute,
+				store.isVideoMute,
+				store.inputVolume,
+				store.outputVolume,
+				store.videoVolume,
+			],
+			() => {
+				debouncedPersist(store);
+			},
+		),
+	);
+});
 
 const VoiceChatStore = {
 	data: store,

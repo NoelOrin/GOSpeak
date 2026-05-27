@@ -1,7 +1,7 @@
 import to from "await-to-js";
 import { get, set } from "idb-keyval";
 import { debounce } from "lodash-es";
-import { createEffect, on } from "solid-js";
+import { createEffect, createRoot, on } from "solid-js";
 import { createStore } from "solid-js/store"
 import { getAudioDevices } from "../hooks/media"
 
@@ -58,14 +58,16 @@ const debouncedPersist = debounce((state: AudioDeviceState) => {
   }
 }, 200)
 
-createEffect(
-  on(
-    () => [audioDeviceStore.audioinputs, audioDeviceStore.audiooutputs],
-    () => {
-      debouncedPersist(audioDeviceStore)
-    },
-  ),
-)
+createRoot(() => {
+  createEffect(
+    on(
+      () => [audioDeviceStore.audioinputs, audioDeviceStore.audiooutputs],
+      () => {
+        debouncedPersist(audioDeviceStore)
+      },
+    ),
+  )
+})
 
 const AudioDeviceStore = {
   state: audioDeviceStore,
