@@ -1,18 +1,15 @@
-import { useQuery } from "@tanstack/solid-query";
 import clsx from "clsx";
-import { For, Show } from "solid-js";
-import type { RoomItemType } from "@/types/room";
-import apiClient from "@/api/apiClient";
+import { For, Show, onMount } from "solid-js";
+import { socketStore, type RoomInfo } from "@/stores/socketStore";
 import Divider from "../common/divider";
-import MemberInfoWindow from "./roomMemberInfo.tsx";
 
 // 子项
 interface RoomItemPropsType {
-  roomItem: RoomItemType;
+  room: RoomInfo;
   isActive?: boolean;
 }
 
-const RoomItem = ({ roomItem, isActive = false }: RoomItemPropsType) => {
+const RoomItem = ({ room, isActive = false }: RoomItemPropsType) => {
   return (
     <div class="flex flex-col w-full">
       <button
@@ -57,19 +54,22 @@ const RoomItem = ({ roomItem, isActive = false }: RoomItemPropsType) => {
               />
             </svg>
           </span>
-          <span class="text-[14px] leading-0">{roomItem.name}</span>
+          <span class="text-[14px] leading-0">{room.name}</span>
         </div>
 
         <div class="flex text-[12px]">
-          <div>
-            {roomItem.current}/{roomItem.limit}
-          </div>
+          <div>{room.count}</div>
         </div>
       </button>
 
       <div class="flex flex-col w-full">
-        <For each={roomItem.memberInfoList ?? []}>
-          {(memberInfo) => <MemberInfoWindow memberInfo={memberInfo} />}
+        <For each={room.members}>
+          {(member) => (
+            <div class="flex items-center px-4 py-0.5 text-xs text-base-content/60">
+              <div class="w-1.5 h-1.5 mr-2 rounded-full bg-success" />
+              {member.identity}
+            </div>
+          )}
         </For>
       </div>
     </div>
@@ -83,7 +83,6 @@ const RoomItemSkeleton = () => {
         <div class="flex items-center space-x-1 w-full">
           <div class="flex-1 h-4 skeleton"></div>
         </div>
-
         <div class="flex items-center text-[12px]">
           <div class="w-8 h-4 skeleton"></div>
         </div>
@@ -96,6 +95,12 @@ const RoomListHeader = () => {
   return (
     <div class="flex justify-between mt-2">
       <h3 class="font-bold">服务器</h3>
+      <button
+        class="btn btn-xs btn-ghost"
+        onClick={() => socketStore.listRooms()}
+      >
+        刷新
+      </button>
     </div>
   );
 };
@@ -105,16 +110,11 @@ interface RoomListPropsType {
 }
 
 const RoomList = ({ ref }: RoomListPropsType) => {
-  const roomListQuery = useQuery(() => ({
-    queryKey: ["roomList"],
-    queryFn: async () => {
-      const response = await apiClient.get({
-        url: "/api/v1/room/list",
-        params: { page: 1, page_size: 50 },
-      });
-      return ((response as any).data.data?.list ?? []) as RoomItemType[];
-    },
-  }));
+  // 进入时加载房间列表
+  onMount(() => {
+    socketStore.connect();
+    socketStore.listRooms();
+  });
 
   return (
     <div class="box-border flex flex-col px-2 h-full select-none" ref={ref}>
@@ -122,15 +122,27 @@ const RoomList = ({ ref }: RoomListPropsType) => {
       <Divider class="mx-1 my-1" />
       <div class="relative flex-1 min-h-0">
         <div class="box-border absolute inset-0 flex flex-col space-y-1 overflow-y-auto">
-          <Show when={roomListQuery.isLoading}>
-            <For each={Array.from({ length: 5 }, (_, i) => i)}>
-              {(_) => <RoomItemSkeleton />}
-            </For>
-          </Show>
-          <Show when={!roomListQuery.isLoading}>
-            <For each={roomListQuery.data ?? []}>
-              {(roomItem) => <RoomItem roomItem={roomItem} isActive={false} />}
-            </For>
+          <Show
+            when={socketStore.connected()}
+            fallback={<RoomItemSkeleton />}
+          >
+            <Show
+              when={socketStore.rooms().length > 0}
+              fallback={
+                <div class="flex justify-center items-center h-20 text-xs text-base-content/40">
+                  暂无房间
+                </div>
+              }
+            >
+              <For each={socketStore.rooms()}>
+                {(room) => (
+                  <RoomItem
+                    room={room}
+                    isActive={socketStore.currentRoom() === room.name}
+                  />
+                )}
+              </For>
+            </Show>
           </Show>
         </div>
       </div>

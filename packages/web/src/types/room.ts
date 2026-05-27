@@ -1,4 +1,4 @@
- type RoomItemType = {
+type RoomItemType = {
 	id: string | number;
 	name: string;
     limit: number;
@@ -12,5 +12,18 @@ type RoomMemberInfoType = {
     avatar: string;
 };
 
+// Socket.IO 信令相关类型
+type MemberInfo = {
+    id: string;
+    identity: string;
+    joinedAt: number;
+};
 
-export type { RoomItemType, RoomMemberInfoType }
+type RoomInfo = {
+    name: string;
+    members: MemberInfo[];
+    count: number;
+    createdAt: number;
+};
+
+export type { RoomItemType, RoomMemberInfoType, MemberInfo, RoomInfo }
