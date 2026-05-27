@@ -18,6 +18,7 @@ export interface LoginData {
   access_token: string
   refresh_token: string
   user: BackendUser
+  need_change_password: boolean
 }
 
 export async function login(req: LoginReq): Promise<LoginData> {
@@ -44,4 +45,24 @@ export async function refreshToken(refreshToken: string): Promise<string> {
 
 export async function logout(): Promise<void> {
   await apiClient.post({ url: '/api/v1/auth/logout' })
+}
+
+export async function changePassword(oldPassword: string, newPassword: string): Promise<void> {
+  const res = (await apiClient.post({
+    url: '/api/v1/auth/change_password',
+    data: { old_password: oldPassword, new_password: newPassword },
+  })) as AxiosResponse<Result>
+
+  const result = res.data
+  if (result.code !== 0) throw new Error(result.msg)
+}
+
+export async function resetPassword(username: string, newPassword: string): Promise<void> {
+  const res = (await apiClient.post({
+    url: '/api/v1/auth/reset_password',
+    data: { username, new_password: newPassword },
+  })) as AxiosResponse<Result>
+
+  const result = res.data
+  if (result.code !== 0) throw new Error(result.msg)
 }

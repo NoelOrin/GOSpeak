@@ -35,9 +35,10 @@ type RegisterRequest struct {
 
 // AuthResponse 认证成功后的统一返回结构，包含双 Token 和用户信息。
 type AuthResponse struct {
-	Token        string     `json:"access_token"`
-	RefreshToken string     `json:"refresh_token"`
-	User         model.User `json:"user"`
+	Token             string     `json:"access_token"`
+	RefreshToken      string     `json:"refresh_token"`
+	User              model.User `json:"user"`
+	NeedChangePassword bool      `json:"need_change_password"`
 }
 
 // Login 用户名密码登录：查用户 → bcrypt 比对密码 → 生成 Token 对。
@@ -64,10 +65,13 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
+	needChange := user.Role == "admin" && bcrypt.CompareHashAndPassword([]byte(user.Password), []byte("admin123")) == nil
+
 	return &AuthResponse{
-		Token:        token,
-		RefreshToken: refreshToken,
-		User:         *user,
+		Token:             token,
+		RefreshToken:      refreshToken,
+		User:              *user,
+		NeedChangePassword: needChange,
 	}, nil
 }
 
@@ -115,4 +119,52 @@ func (s *AuthService) RefreshToken(username, userUUID, role string) (string, err
 		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	return token, nil
+}
+
+// ChangePassword 修改密码（需验证旧密码）。
+func (s *AuthService) ChangePassword(username, oldPassword, newPassword string) error {
+	user, err := s.userRepo.GetByName(username)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return pkg.NewAppError(pkg.USER_NOT_FOUND)
+		}
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(oldPassword)); err != nil {
+		return pkg.NewAppError(pkg.INVALID_PASSWORD)
+	}
+
+	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+
+	user.Password = string(hashedPwd)
+	if err := s.userRepo.Update(user); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return nil
+}
+
+// ResetPassword 重置密码（仅需用户名，用于忘记密码场景）。
+func (s *AuthService) ResetPassword(username, newPassword string) error {
+	user, err := s.userRepo.GetByName(username)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return pkg.NewAppError(pkg.USER_NOT_FOUND)
+		}
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+
+	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+
+	user.Password = string(hashedPwd)
+	if err := s.userRepo.Update(user); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return nil
 }

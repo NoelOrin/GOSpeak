@@ -156,3 +156,65 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 
 	pkg.Success(c, gin.H{"access_token": token})
 }
+
+// ChangePassword
+// @Summary      修改密码
+// @Description  已登录用户修改密码（需验证旧密码）
+// @Tags         认证
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body  object{old_password=string,new_password=string}  true  "密码信息"
+// @Success      200  {object}  pkg.Response
+// @Router       /auth/change_password [post]
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	var req struct {
+		OldPassword string `json:"old_password" binding:"required"`
+		NewPassword string `json:"new_password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+
+	username, _ := c.Get("username")
+	usernameStr, ok := username.(string)
+	if !ok {
+		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
+		return
+	}
+
+	if err := h.authService.ChangePassword(usernameStr, req.OldPassword, req.NewPassword); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+
+	pkg.Success(c, nil)
+}
+
+// ResetPassword
+// @Summary      重置密码
+// @Description  通过用户名重置密码（忘记密码场景，无需旧密码）
+// @Tags         认证
+// @Accept       json
+// @Produce      json
+// @Param        request  body  object{username=string,new_password=string}  true  "用户名和新密码"
+// @Success      200  {object}  pkg.Response
+// @Router       /auth/reset_password [post]
+func (h *AuthHandler) ResetPassword(c *gin.Context) {
+	var req struct {
+		Username    string `json:"username" binding:"required"`
+		NewPassword string `json:"new_password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+
+	if err := h.authService.ResetPassword(req.Username, req.NewPassword); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+
+	pkg.Success(c, nil)
+}
