@@ -33,8 +33,9 @@ packages/server/
 │   ├── handler/            # HTTP controller (Gin handlers)
 │   ├── middleware/         # JWT auth, CORS
 │   ├── router/             # Route registration
-│   ├── livekit/            # LiveKit integration (独立)
-│   ├── signal/             # WebSocket/Socket.IO signaling (独立)
+│   ├── sfu/                # SFU provider abstraction layer
+│   ├── livekit/            # LiveKit SFU implementation
+│   ├── signal/             # Socket.IO signaling hub
 │   └── pkg/                # Shared utilities
 │       ├── errors.go       # Business error codes + AppError
 │       ├── response.go     # Unified JSON response
