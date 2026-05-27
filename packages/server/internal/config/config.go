@@ -13,6 +13,7 @@ type Config struct {
 	DBPath      string
 	DBDSN       string
 	JWTKey      string
+	SFUProvider string
 	LiveKitHost string
 	LiveKitKey  string
 	LiveKitSecret string
@@ -33,6 +34,7 @@ func Load() *Config {
 		DBPath:      getEnv("DB_PATH", "app.db"),
 		DBDSN:       getEnv("DB_DSN", ""),
 		JWTKey:      getEnv("JWT_KEY", "default-secret"),
+		SFUProvider: getEnv("SFU_PROVIDER", "livekit"),
 		LiveKitHost: getEnv("LIVEKIT_HOST", ""),
 		LiveKitKey:  getEnv("LIVEKIT_KEY", ""),
 		LiveKitSecret: getEnv("LIVEKIT_SECRET", ""),

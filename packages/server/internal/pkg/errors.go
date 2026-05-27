@@ -33,9 +33,9 @@ const (
 	// Server errors 5xxx
 	INTERNAL_ERROR ErrCode = 5001
 
-	// LiveKit errors 6xxx
-	LIVEKIT_NOT_CONFIGURED ErrCode = 6001
-	LIVEKIT_ERROR          ErrCode = 6002
+	// SFU errors 6xxx
+	SFU_NOT_CONFIGURED ErrCode = 6001
+	SFU_ERROR          ErrCode = 6002
 
 	// OAuth errors 7xxx
 	OAUTH_PROVIDER_NOT_FOUND    ErrCode = 7001
@@ -58,8 +58,8 @@ var errMsg = map[ErrCode]string{
 	NOT_FOUND:              "resource not found",
 	ALREADY_EXISTS:         "resource already exists",
 	INTERNAL_ERROR:         "internal server error",
-	LIVEKIT_NOT_CONFIGURED: "livekit not configured",
-	LIVEKIT_ERROR:          "livekit error",
+	SFU_NOT_CONFIGURED: "sfu not configured",
+	SFU_ERROR:          "sfu error",
 
 	OAUTH_PROVIDER_NOT_FOUND:    "oauth provider not found",
 	OAUTH_PROVIDER_DISABLED:     "oauth provider is disabled",

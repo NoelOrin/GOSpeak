@@ -2,9 +2,10 @@ package server
 
 import (
 	"fmt"
+	"go_rtc/internal/config"
 	"go_rtc/internal/handler"
-	"go_rtc/internal/livekit"
 	"go_rtc/internal/model"
+	"go_rtc/internal/sfu"
 	"go_rtc/internal/redis"
 	"go_rtc/internal/repository"
 	"go_rtc/internal/router"
@@ -38,7 +39,11 @@ func StartGin(env EnvEnum) {
 
 	redis.InitRedis()
 
-	liveKitSvc := livekit.NewService()
+	cfg := config.Load()
+	sfuProvider, err := sfu.NewProvider(cfg)
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize SFU provider: %v", err))
+	}
 
 	userRepo := repository.NewUserRepository(repository.DB)
 	seedAdminUser(userRepo)
@@ -53,7 +58,7 @@ func StartGin(env EnvEnum) {
 
 	authH := handler.NewAuthHandler(authSvc)
 	userH := handler.NewUserHandler(userSvc)
-	signalH := handler.NewSignalHandler(liveKitSvc)
+	signalH := handler.NewSignalHandler(sfuProvider)
 	oauthH := handler.NewOAuthHandler(oauthSvc)
 
 	r := gin.Default()

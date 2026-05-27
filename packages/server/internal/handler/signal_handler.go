@@ -1,18 +1,18 @@
 package handler
 
 import (
-	"go_rtc/internal/livekit"
 	"go_rtc/internal/pkg"
+	"go_rtc/internal/sfu"
 
 	"github.com/gin-gonic/gin"
 )
 
 type SignalHandler struct {
-	liveKitSvc *livekit.Service
+	sfuProvider sfu.Provider
 }
 
-func NewSignalHandler(liveKitSvc *livekit.Service) *SignalHandler {
-	return &SignalHandler{liveKitSvc: liveKitSvc}
+func NewSignalHandler(provider sfu.Provider) *SignalHandler {
+	return &SignalHandler{sfuProvider: provider}
 }
 
 // JoinRoomRequest 加入房间请求
@@ -37,7 +37,7 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 		return
 	}
 
-	token, err := h.liveKitSvc.GenerateToken(req.Room, req.Identity)
+	token, err := h.sfuProvider.GenerateToken(req.Room, req.Identity)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -88,7 +88,7 @@ func (h *SignalHandler) Signal(c *gin.Context) {
 // @Success      200  {object}  pkg.Response
 // @Router       /signal/rooms [get]
 func (h *SignalHandler) ListRooms(c *gin.Context) {
-	rooms, err := h.liveKitSvc.ListRooms()
+	rooms, err := h.sfuProvider.ListRooms()
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -112,7 +112,7 @@ func (h *SignalHandler) ListParticipants(c *gin.Context) {
 		return
 	}
 
-	participants, err := h.liveKitSvc.ListParticipants(room)
+	participants, err := h.sfuProvider.ListParticipants(room)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
