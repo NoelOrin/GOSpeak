@@ -5,11 +5,29 @@ import axios, {
 	type AxiosInstance,
 } from "axios";
 import userStore from "@/stores/userStore";
+import { refreshToken } from "@/api/auth";
 
 export interface Result<T = any> {
 	code: number;
 	msg: string;
 	data?: T;
+}
+
+// Token 相关错误码
+const TOKEN_ERROR_CODES = new Set([1001, 1002, 1003, 1014]);
+const TOKEN_EXPIRED_CODE = 1003;
+
+// 刷新状态管理
+let isRefreshing = false;
+let refreshSubscribers: Array<(token: string) => void> = [];
+
+function subscribeTokenRefresh(cb: (token: string) => void) {
+	refreshSubscribers.push(cb);
+}
+
+function onTokenRefreshed(newToken: string) {
+	refreshSubscribers.forEach((cb) => cb(newToken));
+	refreshSubscribers = [];
 }
 
 const createInstance = (baseURL?: string) => {
@@ -38,8 +56,65 @@ const createInstance = (baseURL?: string) => {
 		(res: AxiosResponse<Result>) => {
 			return res;
 		},
-		(error: AxiosError<Result>) => {
-			console.error(error.message, "--");
+		async (error: AxiosError<Result>) => {
+			const originalRequest = error.config as AxiosRequestConfig & {
+				_retry?: boolean;
+			};
+
+			// 有响应体且是 token 相关错误
+			if (
+				error.response?.data?.code &&
+				TOKEN_ERROR_CODES.has(error.response.data.code)
+			) {
+				// Token 过期，尝试刷新
+				if (
+					error.response.data.code === TOKEN_EXPIRED_CODE &&
+					!originalRequest._retry &&
+					userStore.refreshToken()
+				) {
+					// 已经在刷新中，排队等待
+					if (isRefreshing) {
+						return new Promise((resolve) => {
+							subscribeTokenRefresh((newToken) => {
+								if (originalRequest.headers) {
+									originalRequest.headers.Authorization =
+										`Bearer ${newToken}`;
+								}
+								resolve(axiosInstance(originalRequest));
+							});
+						});
+					}
+
+					isRefreshing = true;
+					originalRequest._retry = true;
+
+					try {
+						const newToken = await refreshToken(
+							userStore.refreshToken(),
+						);
+						await userStore.updateAccessToken(newToken);
+						onTokenRefreshed(newToken);
+
+						if (originalRequest.headers) {
+							originalRequest.headers.Authorization =
+								`Bearer ${newToken}`;
+						}
+						return axiosInstance(originalRequest);
+					} catch {
+						// 刷新失败，跳转登录
+						await userStore.logout();
+						window.location.href = "/login";
+						return Promise.reject(error);
+					} finally {
+						isRefreshing = false;
+					}
+				}
+
+				// 其他 token 错误（无效、被撤销等），清除状态并跳转登录
+				await userStore.logout();
+				window.location.href = "/login";
+			}
+
 			return Promise.reject(error);
 		},
 	);

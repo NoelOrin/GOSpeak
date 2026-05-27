@@ -1,5 +1,6 @@
 import { createSignal } from 'solid-js'
 import { get, set, del } from 'idb-keyval'
+import { logout as logoutApi } from '@/api/auth'
 
 export interface UserInfo {
   id: number
@@ -30,7 +31,19 @@ async function loginAction(u: UserInfo, at: string, rt: string) {
   setRefreshToken(rt)
 }
 
+async function updateAccessTokenAction(token: string) {
+  await set('accessToken', token)
+  setAccessToken(token)
+}
+
 async function logoutAction() {
+  try {
+    if (accessToken()) {
+      await logoutApi()
+    }
+  } catch {
+    // 即使服务端登出失败，也继续清除本地状态
+  }
   await Promise.all([del('user'), del('accessToken'), del('refreshToken')])
   setUser(null)
   setAccessToken('')
@@ -44,6 +57,7 @@ const userStore = {
   isLoggedIn: () => !!accessToken(),
   login: loginAction,
   logout: logoutAction,
+  updateAccessToken: updateAccessTokenAction,
 }
 
 export default userStore

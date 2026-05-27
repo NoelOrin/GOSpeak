@@ -4,17 +4,18 @@ import (
 	"fmt"
 	"go_rtc/internal/handler"
 	"go_rtc/internal/livekit"
+	"go_rtc/internal/model"
 	"go_rtc/internal/redis"
 	"go_rtc/internal/repository"
 	"go_rtc/internal/router"
 	"go_rtc/internal/service"
 	"go_rtc/internal/signal"
-	// "io"
 	"log"
 	"os"
 
 	"github.com/gin-gonic/gin"
 	socketio "github.com/googollee/go-socket.io"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type EnvEnum string
@@ -40,6 +41,7 @@ func StartGin(env EnvEnum) {
 	liveKitSvc := livekit.NewService()
 
 	userRepo := repository.NewUserRepository(repository.DB)
+	seedAdminUser(userRepo)
 	roomRepo := repository.NewRoomRepository(repository.DB)
 	oauthProviderRepo := repository.NewOAuthProviderRepository(repository.DB)
 	oauthAccountRepo := repository.NewOAuthAccountRepository(repository.DB)
@@ -100,6 +102,34 @@ func loadEnvFile(path string) error {
 	// user can choose to use dotenv or export env vars manually
 	_ = path
 	return nil
+}
+
+func seedAdminUser(userRepo *repository.UserRepository) {
+	_, total, err := userRepo.List(1, 1)
+	if err != nil {
+		fmt.Printf("[Seed] 查询用户表失败: %v\n", err)
+		return
+	}
+	if total > 0 {
+		return
+	}
+
+	hashedPwd, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+	if err != nil {
+		fmt.Printf("[Seed] 生成密码哈希失败: %v\n", err)
+		return
+	}
+
+	admin := &model.User{
+		Name:     "admin",
+		Password: string(hashedPwd),
+		Role:     "admin",
+	}
+	if err := userRepo.Create(admin); err != nil {
+		fmt.Printf("[Seed] 创建默认管理员失败: %v\n", err)
+		return
+	}
+	fmt.Println("[Seed] 已创建默认管理员用户: admin / admin123")
 }
 
 func init() {

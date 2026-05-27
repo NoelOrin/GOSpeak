@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from '@tanstack/solid-router'
+import { createFileRoute, redirect, useNavigate } from '@tanstack/solid-router'
 import { createForm } from '@tanstack/solid-form'
 import { createSignal, Show } from 'solid-js'
 import { Form } from '@/components/form'
@@ -6,6 +6,11 @@ import { login as loginApi } from '@/api/auth'
 import userStore from '@/stores/userStore'
 
 export const Route = createFileRoute('/login/')({
+  beforeLoad: () => {
+    if (userStore.isLoggedIn()) {
+      throw redirect({ to: '/' })
+    }
+  },
   component: LoginPage,
 })
 

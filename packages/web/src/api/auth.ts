@@ -30,3 +30,18 @@ export async function login(req: LoginReq): Promise<LoginData> {
   if (result.code !== 0) throw new Error(result.msg)
   return result.data!
 }
+
+export async function refreshToken(refreshToken: string): Promise<string> {
+  const res = (await apiClient.post({
+    url: '/api/v1/auth/refresh_token',
+    data: { refresh_token: refreshToken },
+  })) as AxiosResponse<Result<{ access_token: string }>>
+
+  const result = res.data
+  if (result.code !== 0) throw new Error(result.msg)
+  return result.data!.access_token
+}
+
+export async function logout(): Promise<void> {
+  await apiClient.post({ url: '/api/v1/auth/logout' })
+}
