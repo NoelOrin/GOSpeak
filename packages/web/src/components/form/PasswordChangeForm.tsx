@@ -2,9 +2,10 @@ import { createForm } from '@tanstack/solid-form'
 import { createSignal, Show } from 'solid-js'
 
 interface PasswordChangeFormProps {
-  onSubmit: (values: { username?: string; oldPassword?: string; newPassword: string }) => Promise<void>
+  onSubmit: (values: { username?: string; oldPassword?: string; newPassword: string; name?: string }) => Promise<void>
   showUsername?: boolean
   showOldPassword?: boolean
+  showName?: boolean
   submitText?: string
 }
 
@@ -17,6 +18,7 @@ export default function PasswordChangeForm(props: PasswordChangeFormProps) {
       oldPassword: '',
       newPassword: '',
       confirmPassword: '',
+      name: '',
     },
     onSubmit: async ({ value }) => {
       setError('')
@@ -29,6 +31,7 @@ export default function PasswordChangeForm(props: PasswordChangeFormProps) {
           username: props.showUsername ? value.username : undefined,
           oldPassword: props.showOldPassword ? value.oldPassword : undefined,
           newPassword: value.newPassword,
+          name: props.showName ? value.name || undefined : undefined,
         })
       } catch (e: any) {
         setError(e?.message || '操作失败，请重试')
@@ -66,6 +69,25 @@ export default function PasswordChangeForm(props: PasswordChangeFormProps) {
               <Show when={field().state.meta.isTouched && field().state.meta.errors.length > 0}>
                 <p class="fieldset-label text-error">{field().state.meta.errors.join(', ')}</p>
               </Show>
+            </fieldset>
+          )}
+        </form.Field>
+      </Show>
+
+      <Show when={props.showName}>
+        <form.Field
+          name="name"
+        >
+          {(field) => (
+            <fieldset class="fieldset mb-3">
+              <legend class="fieldset-legend text-[14px]">用户名（可选）</legend>
+              <input
+                type="text"
+                value={field().state.value}
+                placeholder="留空则保持不变"
+                class="input w-full"
+                onInput={(e) => field().handleChange(e.currentTarget.value)}
+              />
             </fieldset>
           )}
         </form.Field>

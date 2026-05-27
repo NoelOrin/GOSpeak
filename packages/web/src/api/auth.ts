@@ -57,6 +57,17 @@ export async function changePassword(oldPassword: string, newPassword: string): 
   if (result.code !== 0) throw new Error(result.msg)
 }
 
+export async function firstChangePassword(newPassword: string, name?: string): Promise<BackendUser> {
+  const res = (await apiClient.post({
+    url: '/api/v1/auth/first_change_password',
+    data: { new_password: newPassword, name: name || undefined },
+  })) as AxiosResponse<Result<BackendUser>>
+
+  const result = res.data
+  if (result.code !== 0) throw new Error(result.msg)
+  return result.data!
+}
+
 export async function resetPassword(username: string, newPassword: string): Promise<void> {
   const res = (await apiClient.post({
     url: '/api/v1/auth/reset_password',

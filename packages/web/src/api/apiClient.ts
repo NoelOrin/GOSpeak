@@ -15,7 +15,6 @@ export interface Result<T = any> {
 
 // Token 相关错误码
 const TOKEN_ERROR_CODES = new Set([1001, 1002, 1003, 1014]);
-const TOKEN_EXPIRED_CODE = 1003;
 
 // 刷新状态管理
 let isRefreshing = false;
@@ -66,13 +65,8 @@ const createInstance = (baseURL?: string) => {
 				error.response?.data?.code &&
 				TOKEN_ERROR_CODES.has(error.response.data.code)
 			) {
-				// Token 过期，尝试刷新
-				if (
-					error.response.data.code === TOKEN_EXPIRED_CODE &&
-					!originalRequest._retry &&
-					userStore.refreshToken()
-				) {
-					// 已经在刷新中，排队等待
+				// 有 refresh token 且未重试过，尝试刷新
+				if (!originalRequest._retry && userStore.refreshToken()) {
 					if (isRefreshing) {
 						return new Promise((resolve) => {
 							subscribeTokenRefresh((newToken) => {
@@ -101,7 +95,7 @@ const createInstance = (baseURL?: string) => {
 						}
 						return axiosInstance(originalRequest);
 					} catch {
-						// 刷新失败，跳转登录
+						// refresh 也失败，才跳转登录
 						await userStore.logout();
 						window.location.href = "/login";
 						return Promise.reject(error);
@@ -110,7 +104,7 @@ const createInstance = (baseURL?: string) => {
 					}
 				}
 
-				// 其他 token 错误（无效、被撤销等），清除状态并跳转登录
+				// 没有 refresh token，直接跳转登录
 				await userStore.logout();
 				window.location.href = "/login";
 			}

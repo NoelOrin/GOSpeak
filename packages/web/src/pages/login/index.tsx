@@ -2,7 +2,7 @@ import { createFileRoute, redirect, useNavigate } from '@tanstack/solid-router'
 import { createForm } from '@tanstack/solid-form'
 import { createSignal, Show } from 'solid-js'
 import { Form } from '@/components/form'
-import { login as loginApi, changePassword as changePasswordApi, resetPassword as resetPasswordApi } from '@/api/auth'
+import { login as loginApi, firstChangePassword as firstChangePasswordApi, resetPassword as resetPasswordApi } from '@/api/auth'
 import userStore from '@/stores/userStore'
 import PasswordChangeForm from '@/components/form/PasswordChangeForm'
 
@@ -52,6 +52,7 @@ function LoginPage() {
       try {
         const data = await loginApi(value)
         if (data.need_change_password) {
+          await userStore.login(data.user, data.access_token, data.refresh_token)
           setLoginData(data)
           openChangeModal()
           return
@@ -139,13 +140,14 @@ function LoginPage() {
             <h3 class="font-bold text-lg mb-2">修改密码</h3>
             <p class="text-sm text-base-content/60 mb-4">检测到您使用的是默认密码，请修改密码后继续。</p>
             <PasswordChangeForm
-              showOldPassword={true}
+              showOldPassword={false}
+              showName={true}
               submitText="修改密码"
-              onSubmit={async ({ oldPassword, newPassword }) => {
-                await changePasswordApi(oldPassword!, newPassword)
+              onSubmit={async ({ newPassword, name }) => {
+                const updatedUser = await firstChangePasswordApi(newPassword, name)
                 const data = loginData()
                 if (data) {
-                  await userStore.login(data.user, data.access_token, data.refresh_token)
+                  await userStore.login(updatedUser, data.access_token, data.refresh_token)
                 }
                 closeChangeModal()
                 navigate({ to: '/' })

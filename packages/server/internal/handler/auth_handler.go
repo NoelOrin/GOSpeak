@@ -192,6 +192,42 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	pkg.Success(c, nil)
 }
 
+// FirstChangePassword
+// @Summary      首次登录修改密码
+// @Description  管理员首次登录时修改默认密码（无需旧密码），可选同时修改用户名
+// @Tags         认证
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body  object{new_password=string,name=string}  true  "新密码，name可选"
+// @Success      200  {object}  pkg.Response
+// @Router       /auth/first_change_password [post]
+func (h *AuthHandler) FirstChangePassword(c *gin.Context) {
+	var req struct {
+		NewPassword string  `json:"new_password" binding:"required"`
+		Name        *string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+
+	username, _ := c.Get("username")
+	usernameStr, ok := username.(string)
+	if !ok {
+		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
+		return
+	}
+
+	user, err := h.authService.FirstChangePassword(usernameStr, req.NewPassword, req.Name)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+
+	pkg.Success(c, user)
+}
+
 // ResetPassword
 // @Summary      重置密码
 // @Description  通过用户名重置密码（忘记密码场景，无需旧密码）

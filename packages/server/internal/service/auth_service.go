@@ -147,6 +147,46 @@ func (s *AuthService) ChangePassword(username, oldPassword, newPassword string) 
 	return nil
 }
 
+// FirstChangePassword 首次登录修改密码（仅验证用户仍为默认密码，无需旧密码）。
+// name 可选，传入时同时修改用户名。
+func (s *AuthService) FirstChangePassword(username, newPassword string, name *string) (*model.User, error) {
+	user, err := s.userRepo.GetByName(username)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, pkg.NewAppError(pkg.USER_NOT_FOUND)
+		}
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+
+	if user.Role != "admin" {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "仅管理员支持首次登录改密")
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte("admin123")); err != nil {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "当前密码非默认密码，请使用普通改密接口")
+	}
+
+	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+
+	user.Password = string(hashedPwd)
+
+	if name != nil && *name != "" && *name != user.Name {
+		existing, _ := s.userRepo.GetByName(*name)
+		if existing != nil {
+			return nil, pkg.NewAppError(pkg.USERNAME_EXISTS)
+		}
+		user.Name = *name
+	}
+
+	if err := s.userRepo.Update(user); err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return user, nil
+}
+
 // ResetPassword 重置密码（仅需用户名，用于忘记密码场景）。
 func (s *AuthService) ResetPassword(username, newPassword string) error {
 	user, err := s.userRepo.GetByName(username)

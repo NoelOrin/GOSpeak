@@ -17,4 +17,5 @@ func RegisterProtected(r *gin.RouterGroup, h *handler.AuthHandler) {
 	r.POST("/logout", h.Logout)
 	r.POST("/refresh", h.RefreshToken)
 	r.POST("/change_password", h.ChangePassword)
+	r.POST("/first_change_password", h.FirstChangePassword)
 }
