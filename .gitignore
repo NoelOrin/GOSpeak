@@ -68,4 +68,5 @@ go.work.sum
 # Agents 配置
 # ========================
 .agents/*
+!.agents/skills/
 !.agents/AGENTS.md
