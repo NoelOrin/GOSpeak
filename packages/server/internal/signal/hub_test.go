@@ -7,8 +7,31 @@ import (
 	"testing"
 	"time"
 
+	"go_rtc/internal/model"
+
 	socketio "github.com/googollee/go-socket.io"
 )
+
+// ─── Mock roomStore ───
+
+type mockRoomStore struct {
+	rooms []model.Room
+}
+
+func (m *mockRoomStore) List(page, pageSize int) ([]model.Room, int64, error) {
+	return m.rooms, int64(len(m.rooms)), nil
+}
+
+func newMockRoomStore(names ...string) *mockRoomStore {
+	rooms := make([]model.Room, 0, len(names))
+	for _, name := range names {
+		rooms = append(rooms, model.Room{
+			Name:      name,
+			CreatedAt: time.Now(),
+		})
+	}
+	return &mockRoomStore{rooms: rooms}
+}
 
 // ─── Mock socketio.Conn ───
 // Implements the socketio.Conn interface (io.Closer + Namespace).
@@ -568,5 +591,83 @@ func TestHub_GetRoomMembers_NotFound(t *testing.T) {
 	members := hub.GetRoomMembers("nonexistent")
 	if members != nil {
 		t.Errorf("expected nil for nonexistent room, got %v", members)
+	}
+}
+
+// ─── getMergedRooms Tests ───
+
+func TestHub_GetMergedRooms_DBOnly(t *testing.T) {
+	hub := NewHub(newMockRoomStore("综合大厅", "游戏频道", "音乐房间"))
+	server := newMockServer()
+	hub.server = server
+
+	rooms := hub.getMergedRooms()
+	if len(rooms) != 3 {
+		t.Errorf("expected 3 rooms from DB, got %d", len(rooms))
+	}
+
+	names := map[string]bool{}
+	for _, r := range rooms {
+		names[r.Name] = true
+	}
+	for _, name := range []string{"综合大厅", "游戏频道", "音乐房间"} {
+		if !names[name] {
+			t.Errorf("expected room %s in result", name)
+		}
+	}
+}
+
+func TestHub_GetMergedRooms_MemoryOverDB(t *testing.T) {
+	hub := NewHub(newMockRoomStore("房间A", "房间B"))
+	server := newMockServer()
+	hub.server = server
+
+	// 内存中有一个活跃房间（有成员）
+	hub.rooms["房间A"] = &Room{
+		Name:    "房间A",
+		Members: map[string]*MemberInfo{
+			"socket-1": {ID: "socket-1", Identity: "user-1", JoinedAt: time.Now().UnixMilli()},
+		},
+		CreatedAt: time.Now(),
+	}
+
+	rooms := hub.getMergedRooms()
+
+	// 应该有 2 个房间：DB 的 房间B + 内存覆盖的 房间A
+	if len(rooms) != 2 {
+		t.Errorf("expected 2 rooms, got %d", len(rooms))
+	}
+
+	for _, r := range rooms {
+		if r.Name == "房间A" && r.Count != 1 {
+			t.Errorf("expected 房间A to have 1 member (memory version), got %d", r.Count)
+		}
+		if r.Name == "房间B" && r.Count != 0 {
+			t.Errorf("expected 房间B to have 0 members (DB version), got %d", r.Count)
+		}
+	}
+}
+
+func TestHub_OnRoomList_WithDB(t *testing.T) {
+	store := newMockRoomStore("测试房间1", "测试房间2")
+	hub := NewHub(store)
+	server := newMockServer()
+	hub.server = server
+
+	conn := newMockConn("socket-1")
+	hub.OnRoomList(conn)
+
+	emitted, ok := conn.emitted[EventRoomListResult].([]interface{})
+	if !ok || len(emitted) == 0 {
+		t.Fatal("expected room:list:result event")
+	}
+
+	emitData, ok := emitted[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected emit data to be a map")
+	}
+
+	if count, ok := emitData["count"].(int); !ok || count != 2 {
+		t.Errorf("expected count 2, got %v", emitData["count"])
 	}
 }

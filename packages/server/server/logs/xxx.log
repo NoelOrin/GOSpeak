@@ -1,1 +1,8 @@
 2026/05/27 15:00:36.678596 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: participant_joined
+2026/05/27 23:03:34.916406 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: participant_joined
+2026/05/27 23:03:34.918411 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: track_published
+2026/05/27 23:03:34.919063 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: 
+2026/05/27 23:07:04.898014 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: participant_joined
+2026/05/27 23:07:04.899965 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: track_published
+2026/05/27 23:07:04.901367 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: 
+2026/05/27 23:44:34.968605 /Users/noelorin/go/pkg/mod/github.com/googollee/go-socket.io@v1.7.0/engineio/server.go:160: init new session: write: timeout

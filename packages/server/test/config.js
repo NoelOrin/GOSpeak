@@ -73,5 +73,22 @@ function separator(title) {
   console.log(`${'='.repeat(56)}`)
 }
 
+// 登录 helper：自动登录并保存 token，方便各测试模块独立使用
+async function login(username, password) {
+  const res = await request('POST', '/auth/login', {
+    body: { username, password },
+  })
+  if (res.code === 0 && res.data) {
+    setTokens(res.data.access_token, res.data.refresh_token)
+  }
+  return res
+}
+
+// 登出 helper：退出并清空 token
+async function logout() {
+  await request('POST', '/auth/logout', { auth: true })
+  setTokens('', '')
+}
+
 // 导出所有公共方法供各测试模块使用
-module.exports = { request, log, separator, setTokens, getToken, getRefreshToken, BASE_URL }
+module.exports = { request, log, separator, setTokens, getToken, getRefreshToken, login, logout, BASE_URL }

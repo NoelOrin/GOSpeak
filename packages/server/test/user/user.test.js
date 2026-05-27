@@ -6,7 +6,7 @@
 //     GET    /api/v1/user/{id}     - 用户详情
 //     DELETE /api/v1/user/{id}     - 删除用户
 // ============================================================
-const { request, log, separator } = require('../config')
+const { request, log, separator, login, logout } = require('../config')
 
 // ---------- 获取个人信息测试 ----------
 //   已登录 → 未登录（无 Token）
@@ -67,25 +67,26 @@ async function testGetByID() {
 }
 
 // ---------- 删除用户测试 ----------
-//   删除第一个有效用户 → 验证已删除
+//   删除一个非管理员用户 → 验证已删除
 async function testDelete() {
   separator('User /:id (DELETE)')
 
-  // 先获取列表，取第一个有效用户删除
+  // 先获取列表，取第一个非管理员用户删除（避免删除 admin 影响后续测试）
   const r0 = await request('GET', '/user/list', { auth: true })
   const users = r0.data?.list || []
+  const deletableUser = users.find(u => u.role !== 'admin')
 
-  if (users.length > 0) {
-    const id = users[0].id
+  if (deletableUser) {
+    const id = deletableUser.id
     // 执行删除操作
     const r1 = await request('DELETE', `/user/${id}`, { auth: true })
-    log(`删除用户 ID=${id}`, r1)
+    log(`删除用户 ${deletableUser.name} (ID=${id})`, r1)
 
-    // 验证删除结果：再次查询该用户应返回 404
+    // 验证删除结果：再次查询该用户应返回 user not found
     const r2 = await request('GET', `/user/${id}`, { auth: true })
     log(`验证用户 ID=${id} 已删除`, r2)
   } else {
-    console.log('  ⚠️  没有用户数据，跳过删除...')
+    console.log('  ⚠️  没有可删除的非管理员用户，跳过删除...')
   }
 }
 
@@ -94,10 +95,20 @@ async function testDelete() {
 async function run() {
   console.log('\n👤 User 用户管理模块测试\n')
 
+  // 登录管理员账号以获取鉴权 Token
+  const loginRes = await login('admin', 'admin123')
+  if (loginRes.code !== 0) {
+    console.log('  ⚠️  管理员登录失败，用户模块测试跳过')
+    console.log('\n' + '-'.repeat(56))
+    return
+  }
+
   await testGetProfile()
   await testList()
   await testGetByID()
   await testDelete()
+
+  await logout()
 
   console.log('\n' + '-'.repeat(56))
 }

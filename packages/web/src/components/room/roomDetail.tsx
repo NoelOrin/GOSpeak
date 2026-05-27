@@ -50,10 +50,7 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
     )
   );
 
-  // 连接 Socket.IO
-  createEffect(() => {
-    socketStore.connect();
-  });
+  // 连接 Socket.IO（由 roomList 统一处理，此处不重复连接）
 
   // 加入房间：同时触发 Socket.IO 和 LiveKit
   const handleJoin = async () => {
@@ -79,10 +76,9 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
     setIsJoined(false);
   };
 
-  // 清理
+  // 清理（不断开 socket，由 roomList 管理连接生命周期）
   onCleanup(() => {
     handleLeave();
-    socketStore.disconnect();
   });
 
   return (

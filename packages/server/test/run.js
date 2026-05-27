@@ -14,11 +14,15 @@ async function runAll() {
   console.log(`  目标地址: http://localhost:8998/api/v1`)
   console.log(`  开始时间: ${new Date().toLocaleString()}`)
 
-  // 待执行的测试模块列表
+  // 待执行的测试模块列表（按依赖顺序排列）
   const modules = [
     { name: '🔐 Auth 认证模块', file: './auth/auth.test' },
-    { name: '🎥 Signal 信令模块', file: './signal/signal.test' },
+    { name: '🔑 密码管理模块', file: './auth/password.test' },
+    { name: '🎥 Signal HTTP 信令模块', file: './signal/signal.test' },
+    { name: '🔌 Socket.IO WebSocket 模块', file: './signal/websocket.test' },
     { name: '👤 User 用户管理模块', file: './user/user.test' },
+    { name: '👤 用户角色管理模块', file: './user/role.test' },
+    { name: '🔗 OAuth 管理模块', file: './oauth/oauth.test' },
   ]
 
   const results = []

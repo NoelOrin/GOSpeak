@@ -83,6 +83,38 @@ async function testListParticipants() {
   log('缺 room 参数', r2)
 }
 
+// ---------- Webhook 测试 ----------
+//   正常事件 → 空请求体
+async function testWebhook() {
+  separator('Signal /webhook')
+
+  // 模拟 LiveKit participant_joined 事件
+  const r1 = await request('POST', '/signal/webhook', {
+    body: {
+      event: 'participant_joined',
+      room: { name: 'test-room', sid: 'RM_test123' },
+      participant: { sid: 'PA_test456', identity: 'user-1' },
+    },
+  })
+  log('模拟 participant_joined 事件', r1)
+
+  // 模拟 track_published 事件
+  const r2 = await request('POST', '/signal/webhook', {
+    body: {
+      event: 'track_published',
+      room: { name: 'test-room' },
+      track: { sid: 'TR_test789', type: 'audio' },
+    },
+  })
+  log('模拟 track_published 事件', r2)
+
+  // 空请求体
+  const r3 = await request('POST', '/signal/webhook', {
+    body: {},
+  })
+  log('空事件体', r3)
+}
+
 // ---------- 入口 ----------
 //   按顺序执行所有 Signal 测试用例
 async function run() {
@@ -92,6 +124,7 @@ async function run() {
   await testSignal()
   await testListRooms()
   await testListParticipants()
+  await testWebhook()
 
   console.log('\n' + '-'.repeat(56))
 }
