@@ -1,0 +1,823 @@
+{
+  "swagger": "2.0",
+  "schemes": [
+    "http"
+  ],
+  "info": {
+    "contact": {},
+    "description": "统一用户认证 + 权限管理服务 REST API 文档\n\n## 认证方式\n本服务支持三类认证/调用方式：\n1. **JWT 认证**（前端用户）：使用 Authorization header，格式 \"Bearer <token>\"\n2. **Refresh Token 续签**：优先使用 X-Refresh-Token header，也可在 Body 中传 refresh_token\n3. **服务认证**（服务间调用）：/internal 接口使用 X-Service-Id + X-Service-Secret headers\n\n## 公共请求头\n| Header | 必填 | 说明 |\n|--------|------|------|\n| Authorization | 受保护 API 必填 | JWT Token，格式 \"Bearer <token>\" |\n| X-Source | /api/v1 接口必填 | 来源标识，允许值由 config.json 的 allowed_sources 配置 |\n| X-Platform | 否 | 平台标识，如 windows / android / ios |\n| X-Device-Info | 否 | 设备信息，建议传 JSON 字符串或设备描述 |\n| X-Refresh-Token | 续签接口可选 | Refresh Token，优先于 Body 中的 refresh_token |\n| X-Service-Id | /internal 接口必填 | 服务ID（服务间认证时使用，需配合 X-Service-Secret） |\n| X-Service-Secret | /internal 接口必填 | 服务密钥（服务间认证时使用，需配合 X-Service-Id） |\n| X-Request-ID | 否 | 请求唯一标识，不传则服务端自动生成 |\n| X-Trace-ID | 否 | 链路追踪ID，不传则服务端自动生成 |",
+    "title": "User Service API - 租户管理",
+    "version": "1.0"
+  },
+  "host": "119.91.128.215:27147",
+  "basePath": "",
+  "paths": {
+    "/api/v1/tenants": {
+      "get": {
+        "consumes": [
+          "application/json"
+        ],
+        "description": "分页查询租户列表，支持按名称/编码/状态筛选，需要 tenant:read 权限（超级管理员）\n\n**业务错误码** (成功时 code=0, 其它见下表)\n\n| Code | 常量 | 说明 |\n|------|------|------|\n| 1001 | CodeInvalidParam | 参数错误 |\n| 2001 | CodeDBError | 数据库错误 |\n| 1101 | CodeTokenMissing | Token 缺失 |\n| 1102 | CodeTokenInvalid | Token 无效 |\n| 1103 | CodeTokenExpired | Token 已过期 |\n| 1104 | CodeTokenFormatError | Token 格式错误 |\n| 1109 | CodeSourceNotAllowed | X-Source 不在允许列表 |\n| 9001 | CodeSystemError | 系统错误 |\n| 9999 | CodeUnknownError | 未知错误 |\n",
+        "parameters": [
+          {
+            "description": "页码",
+            "in": "query",
+            "name": "page",
+            "type": "integer"
+          },
+          {
+            "description": "每页数量",
+            "in": "query",
+            "name": "size",
+            "type": "integer"
+          },
+          {
+            "description": "租户名称",
+            "in": "query",
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "description": "租户编码",
+            "in": "query",
+            "name": "code",
+            "type": "string"
+          },
+          {
+            "description": "状态",
+            "in": "query",
+            "name": "status",
+            "type": "string"
+          },
+          {
+            "description": "来源标识，允许值由 config.json 的 allowed_sources 配置（如 web-admin / mes-app）",
+            "in": "header",
+            "name": "X-Source",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "平台标识（如 windows / android / ios）",
+            "in": "header",
+            "name": "X-Platform",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "设备信息，建议传 JSON 字符串或设备描述",
+            "in": "header",
+            "name": "X-Device-Info",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "请求唯一标识，不传则服务端自动生成",
+            "in": "header",
+            "name": "X-Request-ID",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "链路追踪ID，不传则服务端自动生成",
+            "in": "header",
+            "name": "X-Trace-ID",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "查询成功",
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/response.Response"
+                },
+                {
+                  "properties": {
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/response.PageData"
+                        },
+                        {
+                          "properties": {
+                            "items": {
+                              "items": {
+                                "$ref": "#/definitions/dto.TenantResponse"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "400": {
+            "description": "参数错误",
+            "schema": {
+              "$ref": "#/definitions/response.Response"
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "租户列表",
+        "tags": [
+          "租户管理"
+        ]
+      },
+      "post": {
+        "consumes": [
+          "application/json"
+        ],
+        "description": "创建新租户，需要 tenant:create 权限（超级管理员）\n\n**业务错误码** (成功时 code=0, 其它见下表)\n\n| Code | 常量 | 说明 |\n|------|------|------|\n| 1001 | CodeInvalidParam | 参数错误 |\n| 2001 | CodeDBError | 数据库错误 |\n| 3202 | CodeTenantCodeExists | 租户 code 已存在 |\n| 1101 | CodeTokenMissing | Token 缺失 |\n| 1102 | CodeTokenInvalid | Token 无效 |\n| 1103 | CodeTokenExpired | Token 已过期 |\n| 1104 | CodeTokenFormatError | Token 格式错误 |\n| 1109 | CodeSourceNotAllowed | X-Source 不在允许列表 |\n| 9001 | CodeSystemError | 系统错误 |\n| 9999 | CodeUnknownError | 未知错误 |\n",
+        "parameters": [
+          {
+            "description": "创建租户请求",
+            "in": "body",
+            "name": "request",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/dto.CreateTenantRequest"
+            }
+          },
+          {
+            "description": "来源标识，允许值由 config.json 的 allowed_sources 配置（如 web-admin / mes-app）",
+            "in": "header",
+            "name": "X-Source",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "平台标识（如 windows / android / ios）",
+            "in": "header",
+            "name": "X-Platform",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "设备信息，建议传 JSON 字符串或设备描述",
+            "in": "header",
+            "name": "X-Device-Info",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "请求唯一标识，不传则服务端自动生成",
+            "in": "header",
+            "name": "X-Request-ID",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "链路追踪ID，不传则服务端自动生成",
+            "in": "header",
+            "name": "X-Trace-ID",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "创建成功",
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/response.Response"
+                },
+                {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/definitions/dto.TenantResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "400": {
+            "description": "参数错误",
+            "schema": {
+              "$ref": "#/definitions/response.Response"
+            }
+          },
+          "409": {
+            "description": "租户编码已存在",
+            "schema": {
+              "$ref": "#/definitions/response.Response"
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "创建租户",
+        "tags": [
+          "租户管理"
+        ]
+      }
+    },
+    "/api/v1/tenants/{id}": {
+      "delete": {
+        "consumes": [
+          "application/json"
+        ],
+        "description": "逻辑删除租户，踢除该租户下所有活跃会话，需要 tenant:delete 权限（超级管理员）\n\n**业务错误码** (成功时 code=0, 其它见下表)\n\n| Code | 常量 | 说明 |\n|------|------|------|\n| 2001 | CodeDBError | 数据库错误 |\n| 3201 | CodeTenantNotFound | 租户不存在 |\n| 1101 | CodeTokenMissing | Token 缺失 |\n| 1102 | CodeTokenInvalid | Token 无效 |\n| 1103 | CodeTokenExpired | Token 已过期 |\n| 1104 | CodeTokenFormatError | Token 格式错误 |\n| 1109 | CodeSourceNotAllowed | X-Source 不在允许列表 |\n| 9001 | CodeSystemError | 系统错误 |\n| 9999 | CodeUnknownError | 未知错误 |\n",
+        "parameters": [
+          {
+            "description": "租户ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "来源标识，允许值由 config.json 的 allowed_sources 配置（如 web-admin / mes-app）",
+            "in": "header",
+            "name": "X-Source",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "平台标识（如 windows / android / ios）",
+            "in": "header",
+            "name": "X-Platform",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "设备信息，建议传 JSON 字符串或设备描述",
+            "in": "header",
+            "name": "X-Device-Info",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "请求唯一标识，不传则服务端自动生成",
+            "in": "header",
+            "name": "X-Request-ID",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "链路追踪ID，不传则服务端自动生成",
+            "in": "header",
+            "name": "X-Trace-ID",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "删除成功",
+            "schema": {
+              "$ref": "#/definitions/response.Response"
+            }
+          },
+          "404": {
+            "description": "租户不存在",
+            "schema": {
+              "$ref": "#/definitions/response.Response"
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "删除租户",
+        "tags": [
+          "租户管理"
+        ]
+      },
+      "get": {
+        "consumes": [
+          "application/json"
+        ],
+        "description": "根据 ID 获取租户详情，需要 tenant:read 权限（超级管理员）\n\n**业务错误码** (成功时 code=0, 其它见下表)\n\n| Code | 常量 | 说明 |\n|------|------|------|\n| 2001 | CodeDBError | 数据库错误 |\n| 3201 | CodeTenantNotFound | 租户不存在 |\n| 1101 | CodeTokenMissing | Token 缺失 |\n| 1102 | CodeTokenInvalid | Token 无效 |\n| 1103 | CodeTokenExpired | Token 已过期 |\n| 1104 | CodeTokenFormatError | Token 格式错误 |\n| 1109 | CodeSourceNotAllowed | X-Source 不在允许列表 |\n| 9001 | CodeSystemError | 系统错误 |\n| 9999 | CodeUnknownError | 未知错误 |\n",
+        "parameters": [
+          {
+            "description": "租户ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "来源标识，允许值由 config.json 的 allowed_sources 配置（如 web-admin / mes-app）",
+            "in": "header",
+            "name": "X-Source",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "平台标识（如 windows / android / ios）",
+            "in": "header",
+            "name": "X-Platform",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "设备信息，建议传 JSON 字符串或设备描述",
+            "in": "header",
+            "name": "X-Device-Info",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "请求唯一标识，不传则服务端自动生成",
+            "in": "header",
+            "name": "X-Request-ID",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "链路追踪ID，不传则服务端自动生成",
+            "in": "header",
+            "name": "X-Trace-ID",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "获取成功",
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/response.Response"
+                },
+                {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/definitions/dto.TenantResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "404": {
+            "description": "租户不存在",
+            "schema": {
+              "$ref": "#/definitions/response.Response"
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "获取租户详情",
+        "tags": [
+          "租户管理"
+        ]
+      },
+      "put": {
+        "consumes": [
+          "application/json"
+        ],
+        "description": "更新租户资料与配置，需要 tenant:update 权限（超级管理员）\n\n**业务错误码** (成功时 code=0, 其它见下表)\n\n| Code | 常量 | 说明 |\n|------|------|------|\n| 1001 | CodeInvalidParam | 参数错误 |\n| 2001 | CodeDBError | 数据库错误 |\n| 3201 | CodeTenantNotFound | 租户不存在 |\n| 3202 | CodeTenantCodeExists | 租户 code 已存在 |\n| 1101 | CodeTokenMissing | Token 缺失 |\n| 1102 | CodeTokenInvalid | Token 无效 |\n| 1103 | CodeTokenExpired | Token 已过期 |\n| 1104 | CodeTokenFormatError | Token 格式错误 |\n| 1109 | CodeSourceNotAllowed | X-Source 不在允许列表 |\n| 9001 | CodeSystemError | 系统错误 |\n| 9999 | CodeUnknownError | 未知错误 |\n",
+        "parameters": [
+          {
+            "description": "租户ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "更新租户请求",
+            "in": "body",
+            "name": "request",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/dto.UpdateTenantRequest"
+            }
+          },
+          {
+            "description": "来源标识，允许值由 config.json 的 allowed_sources 配置（如 web-admin / mes-app）",
+            "in": "header",
+            "name": "X-Source",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "平台标识（如 windows / android / ios）",
+            "in": "header",
+            "name": "X-Platform",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "设备信息，建议传 JSON 字符串或设备描述",
+            "in": "header",
+            "name": "X-Device-Info",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "请求唯一标识，不传则服务端自动生成",
+            "in": "header",
+            "name": "X-Request-ID",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "链路追踪ID，不传则服务端自动生成",
+            "in": "header",
+            "name": "X-Trace-ID",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "更新成功",
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/response.Response"
+                },
+                {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/definitions/dto.TenantResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "400": {
+            "description": "参数错误",
+            "schema": {
+              "$ref": "#/definitions/response.Response"
+            }
+          },
+          "404": {
+            "description": "租户不存在",
+            "schema": {
+              "$ref": "#/definitions/response.Response"
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "更新租户",
+        "tags": [
+          "租户管理"
+        ]
+      }
+    },
+    "/api/v1/tenants/{id}/disable": {
+      "post": {
+        "consumes": [
+          "application/json"
+        ],
+        "description": "禁用租户，踢除该租户下所有活跃会话，需要 tenant:disable 权限（超级管理员）\n\n**业务错误码** (成功时 code=0, 其它见下表)\n\n| Code | 常量 | 说明 |\n|------|------|------|\n| 2001 | CodeDBError | 数据库错误 |\n| 3201 | CodeTenantNotFound | 租户不存在 |\n| 1101 | CodeTokenMissing | Token 缺失 |\n| 1102 | CodeTokenInvalid | Token 无效 |\n| 1103 | CodeTokenExpired | Token 已过期 |\n| 1104 | CodeTokenFormatError | Token 格式错误 |\n| 1109 | CodeSourceNotAllowed | X-Source 不在允许列表 |\n| 9001 | CodeSystemError | 系统错误 |\n| 9999 | CodeUnknownError | 未知错误 |\n",
+        "parameters": [
+          {
+            "description": "租户ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "来源标识，允许值由 config.json 的 allowed_sources 配置（如 web-admin / mes-app）",
+            "in": "header",
+            "name": "X-Source",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "平台标识（如 windows / android / ios）",
+            "in": "header",
+            "name": "X-Platform",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "设备信息，建议传 JSON 字符串或设备描述",
+            "in": "header",
+            "name": "X-Device-Info",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "请求唯一标识，不传则服务端自动生成",
+            "in": "header",
+            "name": "X-Request-ID",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "链路追踪ID，不传则服务端自动生成",
+            "in": "header",
+            "name": "X-Trace-ID",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "禁用成功",
+            "schema": {
+              "$ref": "#/definitions/response.Response"
+            }
+          },
+          "404": {
+            "description": "租户不存在",
+            "schema": {
+              "$ref": "#/definitions/response.Response"
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "禁用租户",
+        "tags": [
+          "租户管理"
+        ]
+      }
+    },
+    "/api/v1/tenants/{id}/enable": {
+      "post": {
+        "consumes": [
+          "application/json"
+        ],
+        "description": "启用已禁用的租户，需要 tenant:enable 权限（超级管理员）\n\n**业务错误码** (成功时 code=0, 其它见下表)\n\n| Code | 常量 | 说明 |\n|------|------|------|\n| 2001 | CodeDBError | 数据库错误 |\n| 3201 | CodeTenantNotFound | 租户不存在 |\n| 1101 | CodeTokenMissing | Token 缺失 |\n| 1102 | CodeTokenInvalid | Token 无效 |\n| 1103 | CodeTokenExpired | Token 已过期 |\n| 1104 | CodeTokenFormatError | Token 格式错误 |\n| 1109 | CodeSourceNotAllowed | X-Source 不在允许列表 |\n| 9001 | CodeSystemError | 系统错误 |\n| 9999 | CodeUnknownError | 未知错误 |\n",
+        "parameters": [
+          {
+            "description": "租户ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "来源标识，允许值由 config.json 的 allowed_sources 配置（如 web-admin / mes-app）",
+            "in": "header",
+            "name": "X-Source",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "平台标识（如 windows / android / ios）",
+            "in": "header",
+            "name": "X-Platform",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "设备信息，建议传 JSON 字符串或设备描述",
+            "in": "header",
+            "name": "X-Device-Info",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "请求唯一标识，不传则服务端自动生成",
+            "in": "header",
+            "name": "X-Request-ID",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "链路追踪ID，不传则服务端自动生成",
+            "in": "header",
+            "name": "X-Trace-ID",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "启用成功",
+            "schema": {
+              "$ref": "#/definitions/response.Response"
+            }
+          },
+          "404": {
+            "description": "租户不存在",
+            "schema": {
+              "$ref": "#/definitions/response.Response"
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "启用租户",
+        "tags": [
+          "租户管理"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "response.Response": {
+      "properties": {
+        "code": {
+          "description": "业务错误码枚举。\n\n所有接口统一返回 HTTP 200，通过响应体 code 字段区分成功(0)与异常(非 0)。\n\n| Code | 常量 | 说明 |\n|------|------|------|\n| 0 | CodeSuccess | 成功 |\n| 1 | CodeError | 通用错误 |\n| 1001 | CodeInvalidParam | 参数错误 |\n| 1002 | CodeUnauthorized | 未授权 |\n| 1003 | CodeForbidden | 禁止访问 |\n| 1004 | CodeNotFound | 资源不存在 |\n| 1005 | CodeTimeout | 请求超时 |\n| 1006 | CodeTooManyReq | 请求过于频繁 |\n| 1101 | CodeTokenMissing | Token 缺失 |\n| 1102 | CodeTokenInvalid | Token 无效 |\n| 1103 | CodeTokenExpired | Token 已过期 |\n| 1104 | CodeTokenFormatError | Token 格式错误 |\n| 1105 | CodeRefreshTokenInvalid | Refresh Token 无效或已过期 |\n| 1106 | CodeSessionKicked | 会话已被踢出 |\n| 1107 | CodeSessionExpired | 会话已过期 |\n| 1108 | CodeAccountLocked | 账号已锁定 |\n| 1109 | CodeSourceNotAllowed | X-Source 不在允许列表 |\n| 1110 | CodeServiceAuthFailed | 内部服务认证失败 |\n| 2001 | CodeDBError | 数据库错误 |\n| 2002 | CodeDBNotFound | 数据不存在 |\n| 2003 | CodeDBDuplicate | 数据重复 |\n| 2004 | CodeDBTransaction | 事务错误 |\n| 3001 | CodeUserNotFound | 用户不存在 |\n| 3002 | CodeUserExists | 用户已存在 |\n| 3003 | CodeUserDisabled | 用户已禁用 |\n| 3004 | CodePasswordError | 密码错误 |\n| 3011 | CodePasswordTooShort | 密码长度不足 |\n| 3012 | CodeOldPasswordError | 原密码错误 |\n| 3013 | CodeCannotDeleteSelf | 不能删除自己 |\n| 3014 | CodeCannotDeleteAdmin | 不能删除超管 |\n| 3101 | CodeRoleNotFound | 角色不存在 |\n| 3102 | CodeRoleCodeExists | 角色 code 已存在 |\n| 3103 | CodeRoleInUse | 角色已被用户使用 |\n| 3104 | CodePresetRoleNoDelete | 预设角色不可删除 |\n| 3105 | CodePresetRoleNoDisable | 预设角色不可禁用 |\n| 3201 | CodeTenantNotFound | 租户不存在 |\n| 3202 | CodeTenantCodeExists | 租户 code 已存在 |\n| 3203 | CodeTenantDisabled | 租户已禁用 |\n| 3301 | CodeSessionFull | 会话数已达上限 |\n| 3302 | CodeSessionNotFound | 会话不存在 |\n| 3401 | CodeProviderNotEnabled | Provider 未启用 |\n| 3402 | CodeProviderAuthFailed | Provider 认证失败 |\n| 3403 | CodeExternalUserCreateFailed | 外部用户自动创建失败 |\n| 3501 | CodeInternalServiceNotFound | 内部服务不存在 |\n| 3502 | CodeInternalServiceExists | 内部服务 ID 已存在 |\n| 3503 | CodeInternalServiceDisabled | 内部服务已禁用 |\n| 9001 | CodeSystemError | 系统错误 |\n| 9002 | CodeServiceError | 服务错误 |\n| 9003 | CodeNetworkError | 网络错误 |\n| 9999 | CodeUnknownError | 未知错误 |\n",
+          "type": "integer"
+        },
+        "data": {},
+        "message": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "response.PageData": {
+      "properties": {
+        "items": {},
+        "pagination": {
+          "$ref": "#/definitions/response.Pagination"
+        }
+      },
+      "type": "object"
+    },
+    "dto.TenantResponse": {
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "config": {
+          "$ref": "#/definitions/model.TenantConfig"
+        },
+        "created_at": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "integer"
+        },
+        "user_count": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "dto.CreateTenantRequest": {
+      "properties": {
+        "code": {
+          "maxLength": 32,
+          "type": "string"
+        },
+        "config": {
+          "$ref": "#/definitions/model.TenantConfig"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "name"
+      ],
+      "type": "object"
+    },
+    "dto.UpdateTenantRequest": {
+      "properties": {
+        "config": {
+          "$ref": "#/definitions/model.TenantConfig"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "response.Pagination": {
+      "properties": {
+        "page": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "model.TenantConfig": {
+      "properties": {
+        "auth_config": {
+          "$ref": "#/definitions/model.TenantAuthConfig"
+        },
+        "max_sessions": {
+          "type": "integer"
+        },
+        "session_full_policy": {
+          "description": "kick_oldest / reject",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "model.TenantAuthConfig": {
+      "properties": {
+        "default_role_code": {
+          "type": "string"
+        },
+        "enabled_providers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "http_config": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "ldap_config": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "oauth2_config": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "securityDefinitions": {
+    "BearerAuth": {
+      "description": "Bearer token，格式: \"Bearer <token>\"",
+      "in": "header",
+      "name": "Authorization",
+      "type": "apiKey"
+    },
+    "ServiceId": {
+      "description": "内部服务ID（服务间认证）",
+      "in": "header",
+      "name": "X-Service-Id",
+      "type": "apiKey"
+    },
+    "ServiceSecret": {
+      "description": "内部服务密钥（服务间认证）",
+      "in": "header",
+      "name": "X-Service-Secret",
+      "type": "apiKey"
+    }
+  }
+}
