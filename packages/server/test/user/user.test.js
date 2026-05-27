@@ -102,6 +102,4 @@ async function run() {
   console.log('\n' + '-'.repeat(56))
 }
 
-run().catch(console.error)
-
 module.exports = run

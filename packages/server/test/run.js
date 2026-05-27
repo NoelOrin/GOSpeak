@@ -11,7 +11,7 @@ async function runAll() {
   console.log('  ║         GoRTC API 接口测试套件               ║')
   console.log('  ╚══════════════════════════════════════════════╝')
   console.log()
-  console.log(`  目标地址: http://localhost:8098/api/v1`)
+  console.log(`  目标地址: http://localhost:8998/api/v1`)
   console.log(`  开始时间: ${new Date().toLocaleString()}`)
 
   // 待执行的测试模块列表
@@ -28,7 +28,8 @@ async function runAll() {
     console.log(`  ▶ 执行: ${mod.name}`)
     console.log(`${'━'.repeat(56)}`)
     try {
-      await require(mod.file)
+      const run = require(mod.file)
+      await run()
       results.push({ name: mod.name, status: '✅ 通过' })
     } catch (err) {
       console.error(`  ❌ ${mod.name} 执行失败:`, err.message)
