@@ -22,6 +22,7 @@ const (
 	USERNAME_EXISTS  ErrCode = 1012
 	FORBIDDEN        ErrCode = 1013
 	TOKEN_REVOKED    ErrCode = 1014
+	USER_BANNED      ErrCode = 1015
 
 	// Parameter errors 2xxx
 	INVALID_PARAMS ErrCode = 2001
@@ -54,6 +55,7 @@ var errMsg = map[ErrCode]string{
 	USER_NOT_FOUND:         "user not found",
 	USERNAME_EXISTS:        "username already exists",
 	FORBIDDEN:              "forbidden",
+	USER_BANNED:            "user has been banned",
 	INVALID_PARAMS:         "invalid parameters",
 	NOT_FOUND:              "resource not found",
 	ALREADY_EXISTS:         "resource already exists",

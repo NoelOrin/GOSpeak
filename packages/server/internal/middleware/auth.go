@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"go_rtc/internal/model"
 	"go_rtc/internal/pkg"
 	"go_rtc/internal/redis"
 	"net/http"
@@ -75,6 +76,27 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 
 		pkg.Fail(c, pkg.FORBIDDEN)
 		c.Abort()
+	}
+}
+
+func BanCheck() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, exists := c.Get("role")
+		if !exists {
+			c.Next()
+			return
+		}
+		roleStr, ok := role.(string)
+		if !ok {
+			c.Next()
+			return
+		}
+		if model.HasBanRole(roleStr) {
+			pkg.Fail(c, pkg.USER_BANNED)
+			c.Abort()
+			return
+		}
+		c.Next()
 	}
 }
 

@@ -126,6 +126,7 @@ func getEnv(key, defaultValue string) string {
 
 func autoMigrate() error {
 	return DB.AutoMigrate(
+		&model.Role{},
 		&model.User{},
 		&model.Room{},
 		&model.UserGroup{},

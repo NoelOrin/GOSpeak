@@ -100,6 +100,9 @@ importers:
       solid-js:
         specifier: ^1.9.9
         version: 1.9.13
+      solid-notifications:
+        specifier: ^1.2.0
+        version: 1.2.0(solid-js@1.9.13)
       solid-split-pane:
         specifier: ^0.0.5
         version: 0.0.5
@@ -2417,6 +2420,11 @@ packages:
 
   solid-js@1.9.13:
     resolution: {integrity: sha512-6hJeJMOcEX8ktqjpDoJZEmld3ijvcvWBDtiXBm7f4332SiFN66QeAQI1REQshvyUoISsSeJ4PHDauKYbwao9JQ==}
+
+  solid-notifications@1.2.0:
+    resolution: {integrity: sha512-tpW7XrStex1Cn4M3hepSvPhKLlAm50hyd7d2HOr08yiZYqn/fOJlB36OST0NOtB2POoeclmApbt/tXL+4j556w==}
+    peerDependencies:
+      solid-js: ^1.9.4
 
   solid-refresh@0.6.3:
     resolution: {integrity: sha512-F3aPsX6hVw9ttm5LYlth8Q15x6MlI/J3Dn+o3EQyRTtTxidepSTwAYdozt01/YA+7ObcciagGEyXIopGZzQtbA==}
@@ -4930,6 +4938,10 @@ snapshots:
       csstype: 3.2.3
       seroval: 1.5.4
       seroval-plugins: 1.5.4(seroval@1.5.4)
+
+  solid-notifications@1.2.0(solid-js@1.9.13):
+    dependencies:
+      solid-js: 1.9.13
 
   solid-refresh@0.6.3(solid-js@1.9.13):
     dependencies:

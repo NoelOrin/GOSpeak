@@ -86,6 +86,18 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
     setIsJoined(true);
   };
 
+  // 点击房间列表项时自动加入房间
+  createEffect(
+    on(
+      () => [tokenQuery.isSuccess, roomIns()] as const,
+      ([tokenReady, room]) => {
+        if (tokenReady && room && !isJoined()) {
+          handleJoin();
+        }
+      }
+    )
+  );
+
   // 离开房间
   const handleLeave = () => {
     if (roomIns()) {
@@ -95,6 +107,12 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
       socketStore.leaveRoom(socketStore.currentRoom()!);
     }
     setIsJoined(false);
+  };
+
+  // 手动离开（清除选中状态）
+  const handleManualLeave = () => {
+    handleLeave();
+    socketStore.clearSelectedRoom();
   };
 
   // 清理（不断开 socket，由 roomList 管理连接生命周期）
@@ -128,19 +146,8 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
             fallback={
               <div class="flex flex-col items-center gap-4">
                 <div class="text-lg font-bold">{selectedRoom()?.name}</div>
-                <Show
-                  when={
-                    !selectedRoom()?.limit ||
-                    (socketStore.members().length < selectedRoom()!.limit)
-                  }
-                  fallback={
-                    <div class="text-base-content/40">房间已满</div>
-                  }
-                >
-                  <button class="btn btn-primary" onClick={handleJoin}>
-                    加入房间
-                  </button>
-                </Show>
+                <div class="loading loading-spinner loading-sm"></div>
+                <div class="text-sm text-base-content/40">正在加入...</div>
               </div>
             }
           >
@@ -151,7 +158,7 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
                   <span class="text-sm text-base-content/60">
                     {socketStore.members().length} 人在线
                   </span>
-                  <button class="btn btn-sm btn-ghost" onClick={handleLeave}>
+                  <button class="btn btn-sm btn-ghost" onClick={handleManualLeave}>
                     离开
                   </button>
                 </div>

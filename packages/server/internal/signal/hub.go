@@ -8,6 +8,7 @@ import (
 	"time"
 
 	socketio "github.com/googollee/go-socket.io"
+	"golang.org/x/sync/errgroup"
 )
 
 type Room struct {
@@ -227,30 +228,49 @@ func (h *Hub) OnRoomList(s socketio.Conn) {
 	})
 }
 
-// getMergedRooms 合并 DB 持久化房间 + 内存活跃房间。
+// getMergedRooms 合并 DB 持久化房间 + 内存活跃房间（并行查询）。
 func (h *Hub) getMergedRooms() []RoomInfo {
-	// 从 DB 获取所有房间（最多 200 条）
-	dbRooms := make(map[string]RoomInfo)
-	if h.roomStore != nil {
-		if rooms, _, err := h.roomStore.List(1, 200); err == nil {
-			for _, r := range rooms {
-				dbRooms[r.Name] = RoomInfo{
-					ID:        r.ID,
-					UUID:      r.UUID,
-					Name:      r.Name,
-					Limit:     r.Limit,
-					Members:   []MemberInfo{},
-					Count:     0,
-					CreatedAt: r.CreatedAt.UnixMilli(),
+	var dbRooms map[string]RoomInfo
+	var memRooms map[string]RoomInfo
+
+	var eg errgroup.Group
+
+	// goroutine 1: 从 DB 获取所有房间（最多 200 条）
+	eg.Go(func() error {
+		dbRooms = make(map[string]RoomInfo)
+		if h.roomStore != nil {
+			if rooms, _, err := h.roomStore.List(1, 200); err == nil {
+				for _, r := range rooms {
+					dbRooms[r.Name] = RoomInfo{
+						ID:        r.ID,
+						UUID:      r.UUID,
+						Name:      r.Name,
+						Limit:     r.Limit,
+						Members:   []MemberInfo{},
+						Count:     0,
+						CreatedAt: r.CreatedAt.UnixMilli(),
+					}
 				}
 			}
 		}
-	}
+		return nil
+	})
 
-	// 用内存活跃数据覆盖（有实时成员信息），同时保留 DB 字段
-	h.mu.RLock()
-	for name, room := range h.rooms {
-		info := h.roomInfoLocked(room.Name)
+	// goroutine 2: 读取内存活跃房间
+	eg.Go(func() error {
+		memRooms = make(map[string]RoomInfo)
+		h.mu.RLock()
+		for name, room := range h.rooms {
+			memRooms[name] = h.roomInfoLocked(room.Name)
+		}
+		h.mu.RUnlock()
+		return nil
+	})
+
+	eg.Wait()
+
+	// 合并：内存活跃数据覆盖 DB 数据，同时保留 DB 字段
+	for name, info := range memRooms {
 		if existing, ok := dbRooms[name]; ok {
 			info.ID = existing.ID
 			info.UUID = existing.UUID
@@ -258,7 +278,6 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 		}
 		dbRooms[name] = info
 	}
-	h.mu.RUnlock()
 
 	result := make([]RoomInfo, 0, len(dbRooms))
 	for _, r := range dbRooms {

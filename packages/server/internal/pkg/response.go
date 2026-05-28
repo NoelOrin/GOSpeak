@@ -24,17 +24,35 @@ func Success(c *gin.Context, data interface{}) {
 	})
 }
 
-// Fail 返回失败响应，通过 AppError 或 ErrCode 指定错误码
+// Fail 返回失败响应，根据业务错误码自动映射 HTTP 状态码
 func Fail(c *gin.Context, code ErrCode, msg ...string) {
 	m := GetErrMsg(code)
 	if len(msg) > 0 && msg[0] != "" {
 		m = msg[0]
 	}
-	c.JSON(http.StatusOK, Response{
+	c.JSON(errToHTTPStatus(code), Response{
 		Code: code,
 		Msg:  m,
 		Data: nil,
 	})
+}
+
+// errToHTTPStatus 将业务错误码映射为 HTTP 状态码
+func errToHTTPStatus(code ErrCode) int {
+	switch {
+	case code == FORBIDDEN || code == USER_BANNED:
+		return http.StatusForbidden // 403
+	case code >= 1001 && code <= 1015:
+		return http.StatusUnauthorized // 401
+	case code >= 2001 && code <= 2999:
+		return http.StatusBadRequest // 400
+	case code == NOT_FOUND:
+		return http.StatusNotFound // 404
+	case code >= 5001 && code <= 5999:
+		return http.StatusInternalServerError // 500
+	default:
+		return http.StatusInternalServerError // 500
+	}
 }
 
 // HandleError 统一处理 service 层返回的错误

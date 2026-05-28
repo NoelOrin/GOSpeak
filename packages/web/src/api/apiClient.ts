@@ -6,6 +6,7 @@ import axios, {
 } from "axios";
 import userStore from "@/stores/userStore";
 import { refreshToken } from "@/api/auth";
+import { showToast } from "solid-notifications";
 
 export interface Result<T = any> {
 	code: number;
@@ -15,6 +16,8 @@ export interface Result<T = any> {
 
 // Token 相关错误码
 const TOKEN_ERROR_CODES = new Set([1001, 1002, 1003, 1014]);
+// 直接登出的错误码（不尝试刷新）
+const FORCE_LOGOUT_CODES = new Set([1015]);
 
 // 刷新状态管理
 let isRefreshing = false;
@@ -59,6 +62,16 @@ const createInstance = (baseURL?: string) => {
 			const originalRequest = error.config as AxiosRequestConfig & {
 				_retry?: boolean;
 			};
+
+			// 被封禁等需要强制登出的错误
+			if (
+				error.response?.data?.code &&
+				FORCE_LOGOUT_CODES.has(error.response.data.code)
+			) {
+				await userStore.logout();
+				window.location.href = "/login?banned=1";
+				return Promise.reject(error);
+			}
 
 			// 有响应体且是 token 相关错误
 			if (
@@ -107,6 +120,14 @@ const createInstance = (baseURL?: string) => {
 				// 没有 refresh token，直接跳转登录
 				await userStore.logout();
 				window.location.href = "/login";
+			}
+
+			// 服务器错误或网络错误，通过 toast 提示
+			const status = error.response?.status;
+			if (!error.response) {
+				showToast("网络连接失败，请检查网络", { type: "error" });
+			} else if (status && status >= 500) {
+				showToast(error.response.data?.msg || "服务器错误，请稍后重试", { type: "error" });
 			}
 
 			return Promise.reject(error);

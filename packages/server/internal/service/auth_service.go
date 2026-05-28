@@ -3,6 +3,7 @@ package service
 
 import (
 	"errors"
+	"sync"
 
 	"go_rtc/internal/model"
 	"go_rtc/internal/pkg"
@@ -55,14 +56,13 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, pkg.NewAppError(pkg.INVALID_PASSWORD)
 	}
 
-	token, err := pkg.GenerateToken(user.Name, user.UUID, user.Role)
-	if err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	if model.HasBanRole(user.Role) {
+		return nil, pkg.NewAppError(pkg.USER_BANNED)
 	}
 
-	refreshToken, err := pkg.GenerateRefreshToken(user.Name, user.UUID, user.Role)
+	token, refreshToken, err := generateTokenPair(user.Name, user.UUID, user.Role)
 	if err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+		return nil, err
 	}
 
 	needChange := user.Role == "admin" && bcrypt.CompareHashAndPassword([]byte(user.Password), []byte("admin123")) == nil
@@ -95,14 +95,9 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	token, err := pkg.GenerateToken(user.Name, user.UUID, user.Role)
+	token, refreshToken, err := generateTokenPair(user.Name, user.UUID, user.Role)
 	if err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-
-	refreshToken, err := pkg.GenerateRefreshToken(user.Name, user.UUID, user.Role)
-	if err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+		return nil, err
 	}
 
 	return &AuthResponse{
@@ -207,4 +202,28 @@ func (s *AuthService) ResetPassword(username, newPassword string) error {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	return nil
+}
+
+// generateTokenPair 并行生成 access_token 和 refresh_token。
+func generateTokenPair(username, userUUID, role string) (string, string, error) {
+	var token, refreshToken string
+	var err1, err2 error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		token, err1 = pkg.GenerateToken(username, userUUID, role)
+	}()
+	go func() {
+		defer wg.Done()
+		refreshToken, err2 = pkg.GenerateRefreshToken(username, userUUID, role)
+	}()
+	wg.Wait()
+	if err1 != nil {
+		return "", "", pkg.NewAppError(pkg.INTERNAL_ERROR, err1.Error())
+	}
+	if err2 != nil {
+		return "", "", pkg.NewAppError(pkg.INTERNAL_ERROR, err2.Error())
+	}
+	return token, refreshToken, nil
 }

@@ -105,8 +105,8 @@ func (s *UserService) UpdateRole(id uint, role string) error {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	if role != "admin" && role != "user" {
-		return pkg.NewAppError(pkg.INVALID_PARAMS, "invalid role, must be admin or user")
+	if !model.IsValidRole(role) {
+		return pkg.NewAppError(pkg.INVALID_PARAMS, "invalid role")
 	}
 
 	user.Role = role

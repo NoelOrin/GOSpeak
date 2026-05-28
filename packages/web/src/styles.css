@@ -3,6 +3,7 @@
 
 /* biome-ignore lint/correctness/noInvalidPositionAtImportRule: <有毛病你报错> */
 @import "./assets/styles/global.css";
+@import "solid-notifications/index.css";
 
 @plugin "daisyui" {
 	themes: all;

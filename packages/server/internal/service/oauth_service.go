@@ -5,6 +5,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	"go_rtc/internal/model"
 	"go_rtc/internal/pkg"
@@ -94,8 +95,25 @@ func (s *OAuthService) HandleCallback(providerName, code string) (*AuthResponse,
 		return nil, pkg.NewAppError(pkg.OAUTH_GET_USER_FAILED, err.Error())
 	}
 
-	oauthAccount, err := s.accountRepo.GetByProviderAndUID(providerName, userInfo.ProviderUID)
-	if err == nil {
+	// 并行查询：OAuth 绑定账户 + 用户名可用性
+	username := oauth.FormatUsername(userInfo.Username)
+	var oauthAccount *model.OAuthAccount
+	var existingUser *model.User
+	var accountErr error
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		oauthAccount, accountErr = s.accountRepo.GetByProviderAndUID(providerName, userInfo.ProviderUID)
+	}()
+	go func() {
+		defer wg.Done()
+		existingUser, _ = s.userRepo.GetByName(username)
+	}()
+	wg.Wait()
+
+	if accountErr == nil {
 		user, err := s.userRepo.GetByID(oauthAccount.UserID)
 		if err != nil {
 			return nil, pkg.NewAppError(pkg.USER_NOT_FOUND)
@@ -105,12 +123,10 @@ func (s *OAuthService) HandleCallback(providerName, code string) (*AuthResponse,
 		return s.buildAuthResponse(user)
 	}
 
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	if !errors.Is(accountErr, gorm.ErrRecordNotFound) {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, accountErr.Error())
 	}
 
-	username := oauth.FormatUsername(userInfo.Username)
-	existingUser, _ := s.userRepo.GetByName(username)
 	if existingUser != nil {
 		username = fmt.Sprintf("%s_%s", username, uuid.New().String()[:8])
 	}
@@ -138,13 +154,9 @@ func (s *OAuthService) HandleCallback(providerName, code string) (*AuthResponse,
 
 // buildAuthResponse 统一构造 OAuth 登录成功后的 AuthResponse（与密码登录复用同一结构）。
 func (s *OAuthService) buildAuthResponse(user *model.User) (*AuthResponse, error) {
-	token, err := pkg.GenerateToken(user.Name, user.UUID, user.Role)
+	token, refreshToken, err := generateTokenPair(user.Name, user.UUID, user.Role)
 	if err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	refreshToken, err := pkg.GenerateRefreshToken(user.Name, user.UUID, user.Role)
-	if err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+		return nil, err
 	}
 	return &AuthResponse{
 		Token:        token,

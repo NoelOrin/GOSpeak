@@ -34,7 +34,7 @@ export default function PasswordChangeForm(props: PasswordChangeFormProps) {
           name: props.showName ? value.name || undefined : undefined,
         })
       } catch (e: any) {
-        setError(e?.message || '操作失败，请重试')
+        setError(e?.response?.data?.msg || e?.message || '操作失败，请重试')
       }
     },
   }))

@@ -38,6 +38,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 
 	protected := api.Group("")
 	protected.Use(middleware.JWTAuth())
+	protected.Use(middleware.BanCheck())
 	userRoutes.Register(protected.Group("/user"), h.User)
 	authRoutes.RegisterProtected(protected.Group("/auth"), h.Auth)
 	oauthRoutes.RegisterAdmin(protected.Group("/oauth/admin"), h.OAuth)

@@ -51,6 +51,9 @@ func StartGin(env EnvEnum) {
 		panic(fmt.Sprintf("failed to initialize SFU provider: %v", err))
 	}
 
+	roleRepo := repository.NewRoleRepository(repository.DB)
+	seedRoles(roleRepo)
+
 	userRepo := repository.NewUserRepository(repository.DB)
 	seedAdminUser(userRepo)
 	roomRepo := repository.NewRoomRepository(repository.DB)
@@ -126,6 +129,21 @@ func loadingEnv(env EnvEnum) {
 
 func loadEnvFile(path string) error {
 	return godotenv.Load(path)
+}
+
+func seedRoles(roleRepo *repository.RoleRepository) {
+	for i := range model.DefaultRoles {
+		if err := roleRepo.CreateIfNotExists(&model.DefaultRoles[i]); err != nil {
+			fmt.Printf("[Seed] 创建角色 %s 失败: %v\n", model.DefaultRoles[i].Name, err)
+		}
+	}
+	roles, err := roleRepo.List()
+	if err != nil {
+		fmt.Printf("[Seed] 加载角色列表失败: %v\n", err)
+		return
+	}
+	model.LoadRoleCache(roles)
+	fmt.Printf("[Seed] 已加载 %d 个角色\n", len(roles))
 }
 
 func seedAdminUser(userRepo *repository.UserRepository) {

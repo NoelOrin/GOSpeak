@@ -1,6 +1,6 @@
 import { createFileRoute, redirect, useNavigate } from '@tanstack/solid-router'
 import { createForm } from '@tanstack/solid-form'
-import { createSignal, Show } from 'solid-js'
+import { createSignal, Show, onMount } from 'solid-js'
 import { Form } from '@/components/form'
 import { login as loginApi, firstChangePassword as firstChangePasswordApi, resetPassword as resetPasswordApi } from '@/api/auth'
 import userStore from '@/stores/userStore'
@@ -18,7 +18,16 @@ export const Route = createFileRoute('/login/')({
 function LoginPage() {
   const navigate = useNavigate()
   const [error, setError] = createSignal('')
+  const [banned, setBanned] = createSignal(false)
   const [showForgotModal, setShowForgotModal] = createSignal(false)
+
+  onMount(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('banned') === '1') {
+      setBanned(true)
+      window.history.replaceState({}, '', '/login')
+    }
+  })
   const [showChangeModal, setShowChangeModal] = createSignal(false)
   const [loginData, setLoginData] = createSignal<Awaited<ReturnType<typeof loginApi>> | null>(null)
 
@@ -60,7 +69,11 @@ function LoginPage() {
         await userStore.login(data.user, data.access_token, data.refresh_token)
         navigate({ to: '/' })
       } catch (e: any) {
-        setError(e?.message || '登录失败，请重试')
+        if (e?.response?.data?.code === 1015) {
+          setBanned(true)
+        } else {
+          setError(e?.response?.data?.msg || e?.message || '登录失败，请重试')
+        }
       }
     },
   }))
@@ -101,6 +114,12 @@ function LoginPage() {
             </button>
           </div>
 
+          <Show when={banned()}>
+            <div class="alert alert-error mt-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <span class="text-sm">您的账号已被封禁，无法登录。如有疑问请联系管理员。</span>
+            </div>
+          </Show>
           <Show when={error()}>
             <p class="text-error text-sm text-center mt-1">{error()}</p>
           </Show>
