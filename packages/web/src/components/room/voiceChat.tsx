@@ -1,6 +1,8 @@
 import SvgIcon from "@/components/svgIcon";
+import { setVolumeByIdentity } from "@/handler_audio";
 import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
 import { socketStore, type MemberInfo } from "@/stores/socketStore";
+import userStore from "@/stores/userStore";
 
 const VoiceChat = ({ ref }: { ref?: HTMLDivElement }) => {
   const [columnCount, setColumnCount] = createSignal(4);
@@ -56,6 +58,14 @@ const VoiceChat = ({ ref }: { ref?: HTMLDivElement }) => {
 
 const MemberCard = ({ member }: { member: MemberInfo }) => {
   const initials = member.identity.slice(0, 2).toUpperCase();
+  const [volume, setVolume] = createSignal(100);
+  const isMe = () => member.identity === userStore.user()?.name;
+
+  const handleVolume = (e: Event) => {
+    const val = Number((e.target as HTMLInputElement).value);
+    setVolume(val);
+    setVolumeByIdentity(member.identity, val / 100);
+  };
 
   return (
     <div class="box-border relative flex flex-col flex-1 rounded-xl w-full aspect-5/4 select-none">
@@ -66,22 +76,37 @@ const MemberCard = ({ member }: { member: MemberInfo }) => {
       </div>
       <div class="flex justify-between items-center px-2 py-1">
         <span class="text-sm font-medium truncate">{member.identity}</span>
-        <div class="dropdown dropdown-end">
-          <button class="dark:text-white btn-square btn btn-xs" tabIndex={0}>
-            <SvgIcon name="more" />
-          </button>
-          <div tabIndex="-1" class="z-1 px-0 py-1 w-24 dropdown-content menu">
-            <div class="flex flex-col bg-base-100 shadow-sm rounded-lg overflow-hidden join">
-              <button type="button" class="list-item">
-                踢出
-              </button>
-              <button type="button" class="list-item">
-                静音
-              </button>
+        <Show when={!isMe()}>
+          <div class="dropdown dropdown-end">
+            <button class="dark:text-white btn-square btn btn-xs" tabIndex={0}>
+              <SvgIcon name="more" />
+            </button>
+            <div tabIndex="-1" class="z-1 px-0 py-1 w-24 dropdown-content menu">
+              <div class="flex flex-col bg-base-100 shadow-sm rounded-lg overflow-hidden join">
+                <button type="button" class="list-item">
+                  踢出
+                </button>
+                <button type="button" class="list-item">
+                  静音
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </Show>
       </div>
+      <Show when={!isMe()}>
+        <div class="flex items-center gap-1 px-2 pb-1">
+          <span class="text-[10px] text-base-content/40">音量</span>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={volume()}
+            onInput={handleVolume}
+            class="range range-xs range-primary w-full"
+          />
+        </div>
+      </Show>
     </div>
   );
 };

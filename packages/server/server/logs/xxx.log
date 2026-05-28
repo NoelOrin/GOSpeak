@@ -5422,3 +5422,162 @@
 2026/05/28 23:03:33.517383 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 9, reason: client namespace disconnect
 2026/05/28 23:03:34.212961 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] a (admin) joined room: 音乐房间
 2026/05/28 23:03:35.823020 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: a in 音乐房间
+2026/05/28 23:10:47.821985 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:231: [Signal] 2 (noel) left room: 游戏频道
+2026/05/28 23:10:47.861646 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:231: [Signal] a (admin) left room: 音乐房间
+2026/05/28 23:14:11.517347 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 2, reason: client namespace disconnect
+2026/05/28 23:14:11.746341 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: b
+2026/05/28 23:14:11.762509 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: c
+2026/05/28 23:14:11.764073 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: b, reason: client namespace disconnect
+2026/05/28 23:14:16.937785 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] c (noel) joined room: 学习自习室
+2026/05/28 23:14:18.655263 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: c in 学习自习室
+2026/05/28 23:14:20.472277 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] a (admin) joined room: 学习自习室
+2026/05/28 23:14:22.217200 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: a in 学习自习室
+2026/05/28 23:14:40.188242 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: a, reason: client namespace disconnect
+2026/05/28 23:14:41.022703 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: d
+2026/05/28 23:14:41.057717 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: e
+2026/05/28 23:14:41.066083 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: d, reason: client namespace disconnect
+2026/05/28 23:14:41.540542 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: e, reason: client namespace disconnect
+2026/05/28 23:14:42.401765 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: f
+2026/05/28 23:14:42.421733 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: g
+2026/05/28 23:14:42.423029 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: f, reason: client namespace disconnect
+2026/05/28 23:14:42.921626 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: g, reason: client namespace disconnect
+2026/05/28 23:14:43.530369 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: h
+2026/05/28 23:14:43.558043 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: i
+2026/05/28 23:14:43.622788 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: h, reason: client namespace disconnect
+2026/05/28 23:14:57.723454 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 1
+2026/05/28 23:14:57.733104 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 1, reason: client namespace disconnect
+2026/05/28 23:14:57.736259 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 2
+2026/05/28 23:14:59.893001 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 3
+2026/05/28 23:14:59.906771 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 4
+2026/05/28 23:14:59.908561 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 3, reason: client namespace disconnect
+2026/05/28 23:15:05.184541 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 2, reason: client namespace disconnect
+2026/05/28 23:15:05.283786 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 5
+2026/05/28 23:15:05.294358 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 5, reason: client namespace disconnect
+2026/05/28 23:15:05.296410 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 6
+2026/05/28 23:15:05.883179 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 6, reason: client namespace disconnect
+2026/05/28 23:15:05.994012 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 7
+2026/05/28 23:15:06.004434 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 7, reason: client namespace disconnect
+2026/05/28 23:15:06.010263 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 8
+2026/05/28 23:15:06.551089 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 4, reason: client namespace disconnect
+2026/05/28 23:15:06.899710 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 9
+2026/05/28 23:15:06.914292 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: a
+2026/05/28 23:15:06.916679 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 9, reason: client namespace disconnect
+2026/05/28 23:15:08.707256 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] a (admin) joined room: 综合大厅
+2026/05/28 23:15:09.887032 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: a in 综合大厅
+2026/05/28 23:15:11.335013 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] 8 (noel) joined room: 综合大厅
+2026/05/28 23:15:12.525425 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: 8 in 综合大厅
+2026/05/28 23:17:23.259912 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:231: [Signal] 8 (noel) left room: 综合大厅
+2026/05/28 23:17:23.269612 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:231: [Signal] a (admin) left room: 综合大厅
+2026/05/28 23:17:46.979745 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 8, reason: client namespace disconnect
+2026/05/28 23:17:46.979827 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: a, reason: client namespace disconnect
+2026/05/28 23:17:47.589446 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: c
+2026/05/28 23:17:47.589435 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: b
+2026/05/28 23:17:47.594114 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: b, reason: client namespace disconnect
+2026/05/28 23:17:47.984617 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: d
+2026/05/28 23:17:48.004225 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: d, reason: client namespace disconnect
+2026/05/28 23:17:48.006505 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: e
+2026/05/28 23:19:00.598739 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: e, reason: client namespace disconnect
+2026/05/28 23:19:00.598880 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: c, reason: client namespace disconnect
+2026/05/28 23:19:00.957292 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: f
+2026/05/28 23:19:01.275323 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: f, reason: client namespace disconnect
+2026/05/28 23:19:01.503420 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: g
+2026/05/28 23:19:01.779981 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: h
+2026/05/28 23:19:01.803044 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: h, reason: client namespace disconnect
+2026/05/28 23:19:01.805159 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: i
+2026/05/28 23:19:05.082721 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: g, reason: client namespace disconnect
+2026/05/28 23:19:05.189291 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: j
+2026/05/28 23:19:05.198824 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: j, reason: client namespace disconnect
+2026/05/28 23:19:05.201231 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: k
+2026/05/28 23:19:07.107246 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] k (noel) joined room: 游戏频道
+2026/05/28 23:19:08.477643 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: k in 游戏频道
+2026/05/28 23:19:09.549310 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] i (admin) joined room: 游戏频道
+2026/05/28 23:19:11.209337 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: i in 游戏频道
+2026/05/28 23:19:12.351251 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: i, reason: client namespace disconnect
+2026/05/28 23:19:40.659429 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 1
+2026/05/28 23:19:40.672115 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 2
+2026/05/28 23:19:40.697176 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 1, reason: client namespace disconnect
+2026/05/28 23:19:41.913508 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 3
+2026/05/28 23:19:44.125896 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 3, reason: client namespace disconnect
+2026/05/28 23:19:44.323009 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 4
+2026/05/28 23:19:44.348815 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 5
+2026/05/28 23:19:44.351457 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 4, reason: client namespace disconnect
+2026/05/28 23:19:45.300982 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] 5 (noel) joined room: 综合大厅
+2026/05/28 23:19:46.547943 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: 5 in 综合大厅
+2026/05/28 23:19:47.665176 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] 2 (admin) joined room: 综合大厅
+2026/05/28 23:19:48.940048 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: 2 in 综合大厅
+2026/05/28 23:20:04.146580 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 2, reason: client namespace disconnect
+2026/05/28 23:20:05.127269 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 6
+2026/05/28 23:20:05.141670 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 7
+2026/05/28 23:20:05.145061 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 6, reason: client namespace disconnect
+2026/05/28 23:21:40.741939 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] 7 (admin) joined room: 综合大厅
+2026/05/28 23:21:42.252895 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: 7 in 综合大厅
+2026/05/28 23:21:54.087936 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:231: [Signal] 5 (noel) left room: 综合大厅
+2026/05/28 23:21:54.168265 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:231: [Signal] 7 (admin) left room: 综合大厅
+2026/05/28 23:23:14.445199 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 7, reason: client namespace disconnect
+2026/05/28 23:23:16.095646 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 8
+2026/05/28 23:23:16.095732 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 9
+2026/05/28 23:23:16.104080 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 8, reason: client namespace disconnect
+2026/05/28 23:23:16.134907 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 5, reason: client namespace disconnect
+2026/05/28 23:23:16.630124 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: a
+2026/05/28 23:23:16.670218 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: b
+2026/05/28 23:23:16.673476 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: a, reason: client namespace disconnect
+2026/05/28 23:23:18.046784 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] b (noel) joined room: 综合大厅
+2026/05/28 23:23:19.412414 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: b in 综合大厅
+2026/05/28 23:23:20.344499 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] 9 (admin) joined room: 综合大厅
+2026/05/28 23:23:22.059743 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: 9 in 综合大厅
+2026/05/28 23:24:50.561699 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: b, reason: client namespace disconnect
+2026/05/28 23:24:50.807611 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: c
+2026/05/28 23:24:50.824982 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: d
+2026/05/28 23:24:50.826346 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: c, reason: client namespace disconnect
+2026/05/28 23:25:04.864423 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 1
+2026/05/28 23:25:06.572733 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 2
+2026/05/28 23:25:06.583173 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 2, reason: client namespace disconnect
+2026/05/28 23:25:06.607015 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 3
+2026/05/28 23:25:18.225913 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] 1 (noel) joined room: 综合大厅
+2026/05/28 23:25:19.496982 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: 1 in 综合大厅
+2026/05/28 23:25:19.795822 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] 3 (admin) joined room: 综合大厅
+2026/05/28 23:25:21.045545 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: 3 in 综合大厅
+2026/05/28 23:25:52.515205 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 1, reason: client namespace disconnect
+2026/05/28 23:25:52.702849 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 4
+2026/05/28 23:25:52.713937 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 4, reason: client namespace disconnect
+2026/05/28 23:25:52.717181 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 5
+2026/05/28 23:25:55.988312 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] 5 (noel) joined room: 综合大厅
+2026/05/28 23:25:58.126994 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: 5 in 综合大厅
+2026/05/28 23:26:14.886526 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:231: [Signal] 3 (admin) left room: 综合大厅
+2026/05/28 23:26:14.901500 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:231: [Signal] 5 (noel) left room: 综合大厅
+2026/05/28 23:26:18.833540 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] 3 (admin) joined room: 学习自习室
+2026/05/28 23:26:20.337723 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: 3 in 学习自习室
+2026/05/28 23:26:22.432936 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] 5 (noel) joined room: 学习自习室
+2026/05/28 23:26:23.751528 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: 5 in 学习自习室
+2026/05/28 23:27:55.537334 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 5, reason: client namespace disconnect
+2026/05/28 23:27:56.371887 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 6
+2026/05/28 23:27:56.466036 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 7
+2026/05/28 23:27:56.557050 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 6, reason: client namespace disconnect
+2026/05/28 23:27:57.565585 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 7, reason: client namespace disconnect
+2026/05/28 23:27:58.646405 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 8
+2026/05/28 23:27:58.941068 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 8, reason: client namespace disconnect
+2026/05/28 23:27:58.949908 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 9
+2026/05/28 23:27:59.986024 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] 9 (noel) joined room: 学习自习室
+2026/05/28 23:28:02.138580 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: 9 in 学习自习室
+2026/05/28 23:28:02.550646 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: 3, reason: client namespace disconnect
+2026/05/28 23:28:04.118320 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: a
+2026/05/28 23:28:04.141212 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: b
+2026/05/28 23:28:04.145973 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: a, reason: client namespace disconnect
+2026/05/28 23:28:05.016703 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] b (admin) joined room: 学习自习室
+2026/05/28 23:28:06.356014 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: b in 学习自习室
+2026/05/28 23:35:08.070954 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: b, reason: client namespace disconnect
+2026/05/28 23:35:11.331354 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: c
+2026/05/28 23:35:11.332378 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: d
+2026/05/28 23:35:11.354278 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: c, reason: client namespace disconnect
+2026/05/28 23:37:36.179859 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: d, reason: client namespace disconnect
+2026/05/28 23:37:38.180473 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: e
+2026/05/28 23:37:38.201743 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: f
+2026/05/28 23:37:38.230265 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: e, reason: client namespace disconnect
+2026/05/28 23:38:08.552659 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: f, reason: client namespace disconnect
+2026/05/28 23:38:10.737187 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: g
+2026/05/28 23:38:10.771260 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: h
+2026/05/28 23:38:10.775694 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:98: [Signal] client disconnected: g, reason: client namespace disconnect
+2026/05/28 23:38:13.199965 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:173: [Signal] h (admin) joined room: 学习自习室
+2026/05/28 23:38:14.609041 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:190: [Signal] livekit confirmed: h in 学习自习室
+2026/05/28 23:38:37.089855 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 1
+2026/05/28 23:38:39.274270 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:68: [Signal] client connected: 2

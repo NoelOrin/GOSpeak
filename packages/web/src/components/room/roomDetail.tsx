@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, on, onCleanup, Show } from "solid-js";
 import apiClient from "@/api/apiClient";
 import createRoom, { type RoomReturnType } from "@/hooks/livekit/createRoom";
+import { setupAudioHandler } from "@/handler_audio";
 import { socketStore } from "@/stores/socketStore";
 import userStore from "@/stores/userStore";
 import VoiceChat from "./voiceChat";
@@ -42,12 +43,12 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
       () => {
         const data = tokenQuery.data;
         if (data) {
-          setRoomIns(
-            createRoom({
-              token: data.token,
-              url: data.serverUrl,
-            })
-          );
+          const room = createRoom({
+            token: data.token,
+            url: data.serverUrl,
+          });
+          setupAudioHandler(room.room);
+          setRoomIns(room);
         }
       }
     )

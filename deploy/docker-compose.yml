@@ -1,0 +1,22 @@
+services:
+  livekit-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  livekit-server:
+    image: livekit/livekit-server:latest
+    restart: unless-stopped
+    ports:
+      - "7880:7880"   # HTTP health
+      - "7881:7881"   # WebRTC (TLS)
+      - "7882:7882"   # WebRTC (TCP)
+      - "7882:7882/udp" # WebRTC (UDP)
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml
+    command: --config /etc/livekit.yaml
+    depends_on:
+      - livekit-redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

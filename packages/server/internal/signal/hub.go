@@ -304,6 +304,7 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 			info.ID = existing.ID
 			info.UUID = existing.UUID
 			info.Limit = existing.Limit
+				info.CreatedAt = existing.CreatedAt
 		}
 		dbRooms[name] = info
 	}
