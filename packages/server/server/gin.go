@@ -68,6 +68,7 @@ func StartGin(env EnvEnum) {
 	authH := handler.NewAuthHandler(authSvc)
 	userH := handler.NewUserHandler(userSvc)
 	oauthH := handler.NewOAuthHandler(oauthSvc)
+	roleH := handler.NewRoleHandler(roleRepo)
 
 	r := gin.Default()
 
@@ -100,6 +101,7 @@ func StartGin(env EnvEnum) {
 		User:   userH,
 		Signal: signalH,
 		OAuth:  oauthH,
+		Role:   roleH,
 	})
 
 	port := os.Getenv("SERVER_PORT")

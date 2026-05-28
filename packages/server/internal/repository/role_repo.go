@@ -29,3 +29,11 @@ func (r *RoleRepository) GetByName(name string) (*model.Role, error) {
 func (r *RoleRepository) CreateIfNotExists(role *model.Role) error {
 	return r.db.Where("name = ?", role.Name).FirstOrCreate(role).Error
 }
+
+func (r *RoleRepository) Create(role *model.Role) error {
+	return r.db.Create(role).Error
+}
+
+func (r *RoleRepository) Delete(id uint) error {
+	return r.db.Delete(&model.Role{}, id).Error
+}
