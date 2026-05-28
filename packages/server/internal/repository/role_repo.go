@@ -35,5 +35,12 @@ func (r *RoleRepository) Create(role *model.Role) error {
 }
 
 func (r *RoleRepository) Delete(id uint) error {
-	return r.db.Delete(&model.Role{}, id).Error
+	result := r.db.Delete(&model.Role{}, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }

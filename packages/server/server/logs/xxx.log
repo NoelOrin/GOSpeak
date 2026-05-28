@@ -4684,3 +4684,28 @@
 2026/05/28 00:43:23.736300 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:65: [Signal] client connected: 7x
 2026/05/28 00:43:23.765424 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:85: [Signal] client disconnected: 7x, reason: client namespace disconnect
 2026/05/28 00:43:23.765487 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:65: [Signal] client connected: 7y
+2026/05/28 14:32:15.941982 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:66: [Signal] client connected: 1
+2026/05/28 14:32:15.995963 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:66: [Signal] client connected: 2
+2026/05/28 14:32:15.999580 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:86: [Signal] client disconnected: 1, reason: client namespace disconnect
+2026/05/28 14:36:27.765719 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:86: [Signal] client disconnected: 2, reason: client namespace disconnect
+2026/05/28 14:36:27.983039 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:66: [Signal] client connected: 3
+2026/05/28 14:36:27.991997 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:86: [Signal] client disconnected: 3, reason: client namespace disconnect
+2026/05/28 14:36:27.993844 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:66: [Signal] client connected: 4
+2026/05/28 14:40:24.761301 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:86: [Signal] client disconnected: 4, reason: client namespace disconnect
+2026/05/28 14:40:25.012759 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:66: [Signal] client connected: 5
+2026/05/28 14:40:25.019916 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:86: [Signal] client disconnected: 5, reason: client namespace disconnect
+2026/05/28 14:40:25.024855 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:66: [Signal] client connected: 6
+2026/05/28 14:41:19.353935 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:86: [Signal] client disconnected: 6, reason: client namespace disconnect
+2026/05/28 17:06:20.344052 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: participant_joined
+2026/05/28 17:06:20.345430 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: track_published
+2026/05/28 17:06:20.345787 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: 
+2026/05/28 17:06:20.350447 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:66: [Signal] client connected: 1
+2026/05/28 17:07:20.349938 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:86: [Signal] client disconnected: 1, reason: client namespace disconnect
+2026/05/28 17:16:17.088167 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: participant_joined
+2026/05/28 17:16:17.088770 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: track_published
+2026/05/28 17:16:17.089281 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: 
+2026/05/28 17:16:17.094154 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:66: [Signal] client connected: 2
+2026/05/28 17:17:17.093249 /Users/noelorin/GOSpeak/packages/server/internal/signal/hub.go:86: [Signal] client disconnected: 2, reason: client namespace disconnect
+2026/05/28 17:22:49.338067 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: participant_joined
+2026/05/28 17:22:49.346025 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: track_published
+2026/05/28 17:22:49.354458 /Users/noelorin/GOSpeak/packages/server/internal/handler/signal_handler.go:144: [Webhook] received event: 
