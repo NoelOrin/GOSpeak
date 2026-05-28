@@ -39,7 +39,7 @@ html {
 .border-color {
 	border-spacing: 0;
 	border-collapse: collapse;
-	@apply border-[#c9c9c960] dark:border-[#dddcdc92];
+	@apply border-[#c9c9c960] dark:border-[#c9c9c938];
 }
 .list-item{
 	@apply border-0 btn btn-sm btn-ghost;
