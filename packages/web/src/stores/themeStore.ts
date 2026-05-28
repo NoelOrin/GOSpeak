@@ -1,7 +1,8 @@
 import { createStore } from "solid-js/store";
 
-const STORAGE_THEME = "theme";
-const STORAGE_DARK = "theme-dark";
+const STORAGE_THEME_LIGHT = "theme-light";
+const STORAGE_THEME_DARK = "theme-dark";
+const STORAGE_DARK = "theme-is-dark";
 
 export interface ThemeOption {
   name: string;
@@ -48,10 +49,7 @@ export const darkThemes: ThemeOption[] = [
   { name: "synthwave", label: "Synthwave" },
 ];
 
-const allThemeNames = new Set([
-  ...lightThemes.map((t) => t.name),
-  ...darkThemes.map((t) => t.name),
-]);
+const darkThemeNames = new Set(darkThemes.map((t) => t.name));
 
 function getInitialDark(): boolean {
   const saved = localStorage.getItem(STORAGE_DARK);
@@ -60,9 +58,10 @@ function getInitialDark(): boolean {
 }
 
 function getInitialTheme(isDark: boolean): string {
-  const saved = localStorage.getItem(STORAGE_THEME);
-  if (saved && allThemeNames.has(saved)) return saved;
-  return isDark ? "synthwave" : "acid";
+  if (isDark) {
+    return localStorage.getItem(STORAGE_THEME_DARK) || "synthwave";
+  }
+  return localStorage.getItem(STORAGE_THEME_LIGHT) || "acid";
 }
 
 const initialDark = getInitialDark();
@@ -80,33 +79,28 @@ function applyTheme() {
 
 function switchTheme(name: string) {
   setStore("theme", name);
-  localStorage.setItem(STORAGE_THEME, name);
+  const storageKey = store.isDark ? STORAGE_THEME_DARK : STORAGE_THEME_LIGHT;
+  localStorage.setItem(storageKey, name);
   applyTheme();
+  console.log("[Theme] theme:", name, "| isDark:", store.isDark);
 }
 
 function toggleDark() {
   const next = !store.isDark;
   setStore("isDark", next);
   localStorage.setItem(STORAGE_DARK, String(next));
+  // 切换到该模式下上次选择的主题
+  const theme = next
+    ? localStorage.getItem(STORAGE_THEME_DARK) || "synthwave"
+    : localStorage.getItem(STORAGE_THEME_LIGHT) || "acid";
+  setStore("theme", theme);
   applyTheme();
+  console.log("[Theme] theme:", theme, "| isDark:", next);
 }
 
 function initTheme() {
   applyTheme();
 }
 
-const ThemeStore = {
-  get theme() {
-    return store.theme;
-  },
-  get isDark() {
-    return store.isDark;
-  },
-  lightThemes,
-  darkThemes,
-  switchTheme,
-  toggleDark,
-  initTheme,
-};
-
-export default ThemeStore;
+export { switchTheme, toggleDark, initTheme };
+export default store;

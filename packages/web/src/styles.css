@@ -9,6 +9,9 @@
 	themes: all;
 	/* acid --default,, */
 	/* dark --prefersdark; */
+	--radius-selector: 1rem;
+	--radius-field: 0.25rem;
+	--radius-box: 0.5rem;
 }
 
 @plugin "daisyui/theme" {

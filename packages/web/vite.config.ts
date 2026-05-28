@@ -4,20 +4,34 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import solidPlugin from 'vite-plugin-solid'
 import tailwindcss from '@tailwindcss/vite'
 import path from "node:path";
+import net from "node:net";
 import { execSync } from "node:child_process";
 import { spawn } from "child_process";
 import { visualizer } from "rollup-plugin-visualizer";
 
+function findAvailablePort(startPort: number): Promise<number> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.listen(startPort, () => {
+      server.close(() => resolve(startPort));
+    });
+    server.on("error", () => resolve(findAvailablePort(startPort + 1)));
+  });
+}
+
 // @ts-ignore
-export default defineConfig(({ mode }) => {
+export default defineConfig(async ({ mode }) => {
 
   const base = "/";
   const isProduction = mode === "production";
+  const devtoolsPort = await findAvailablePort(42069);
 
   return {
     base,
     plugins: [
-      devtools(), 
+      devtools({
+        eventBusConfig: { port: devtoolsPort },
+      }),
      tanstackRouter({
         target: "solid",
         autoCodeSplitting: true,
@@ -49,7 +63,7 @@ export default defineConfig(({ mode }) => {
       // },
       {
         name: "gen-tanstack-route",
-        configureServer(server) {
+        configureServer(server: { httpServer: { on: (arg0: string, arg1: () => void) => void; }; }) {
           if (process.env.NODE_ENV === "development") {
             const tsr = spawn("npx", ["tsr", "watch"], {
               stdio: "inherit", // 让日志输出到控制台
@@ -82,6 +96,7 @@ export default defineConfig(({ mode }) => {
     // 代理
     server: {
       port: 3000,
+      strictPort: false,
       open: true,
       host: true,
       proxy: {
@@ -158,7 +173,7 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 500, // 提高警告阈值 500 KB
       rollupOptions: {
         output: {
-          manualChunks: (id) => {
+          manualChunks: (id: string | string[]) => {
             // 数组映射分包
             const chunkGroups = {
               vendor: ['solid-js', 'solid-js/store', 'solid-js/web'],
@@ -179,7 +194,7 @@ export default defineConfig(({ mode }) => {
             return undefined;
           },
           // 优化文件名
-          assetFileNames: (assetInfo) => {
+          assetFileNames: (assetInfo: { name: string; }) => {
             if (assetInfo.name?.endsWith('.css')) {
               return 'assets/[name].[hash].css';
             }
