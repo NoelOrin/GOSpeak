@@ -59,7 +59,7 @@ function getInitialDark(): boolean {
 
 function getInitialTheme(isDark: boolean): string {
   if (isDark) {
-    return localStorage.getItem(STORAGE_THEME_DARK) || "synthwave";
+    return localStorage.getItem(STORAGE_THEME_DARK) || "dark";
   }
   return localStorage.getItem(STORAGE_THEME_LIGHT) || "acid";
 }
@@ -91,7 +91,7 @@ function toggleDark() {
   localStorage.setItem(STORAGE_DARK, String(next));
   // 切换到该模式下上次选择的主题
   const theme = next
-    ? localStorage.getItem(STORAGE_THEME_DARK) || "synthwave"
+    ? localStorage.getItem(STORAGE_THEME_DARK) || "dark"
     : localStorage.getItem(STORAGE_THEME_LIGHT) || "acid";
   setStore("theme", theme);
   applyTheme();
