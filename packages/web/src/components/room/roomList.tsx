@@ -14,57 +14,65 @@ const RoomItem = ({ room, isActive = false }: RoomItemPropsType) => {
 
   return (
     <div class="flex flex-col w-full">
-      <button
+      <div
         class={clsx(
-          "justify-between items-center px-1.5 border-0 btn btn-ghost btn-sm",
-          isActive ? "btn-active" : "",
-          isSelected() && !isActive ? "bg-base-200" : ""
+          "tooltip tooltip-right w-full",
+          isSelected() && !isActive ? "tooltip-open" : ""
         )}
-        onClick={() => socketStore.selectRoom(room)}
+        data-tip="双击进入房间"
       >
-        <div class="flex items-center space-x-1">
-          <span>
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 48 48"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <rect
-                x="17"
-                y="4"
-                width="14"
-                height="27"
-                rx="7"
+        <button
+          class={clsx(
+            "justify-between items-center px-1.5 border-0 btn btn-ghost btn-sm w-full",
+            isActive ? "btn-active" : "",
+            isSelected() && !isActive ? "bg-base-200" : ""
+          )}
+          onDblClick={() => socketStore.selectRoom(room)}
+        >
+          <div class="flex items-center space-x-1">
+            <span>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 48 48"
                 fill="none"
-                stroke="currentColor"
-                stroke-width="3"
-                stroke-linejoin="round"
-              />
-              <path
-                d="M9 23C9 31.2843 15.7157 38 24 38C32.2843 38 39 31.2843 39 23"
-                stroke="currentColor"
-                stroke-width="3"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path
-                d="M24 38V44"
-                stroke="currentColor"
-                stroke-width="3"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-          </span>
-          <span class="text-[14px] leading-0">{room.name}</span>
-        </div>
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <rect
+                  x="17"
+                  y="4"
+                  width="14"
+                  height="27"
+                  rx="7"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="3"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M9 23C9 31.2843 15.7157 38 24 38C32.2843 38 39 31.2843 39 23"
+                  stroke="currentColor"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M24 38V44"
+                  stroke="currentColor"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </span>
+            <span class="text-[14px] leading-0">{room.name}</span>
+          </div>
 
-        <div class="flex text-[12px]">
-          <div>{room.count}/{room.limit}</div>
-        </div>
-      </button>
+          <div class="flex text-[12px]">
+            <div>{room.count}/{room.limit}</div>
+          </div>
+        </button>
+      </div>
 
       <div class="flex flex-col w-full">
         <For each={room.members}>

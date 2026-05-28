@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "CompileDaemon -build=\"go build -o ./tmp/main .\" -command=./tmp/main -args=\"server -e dev\"",
+    "dev": "go run main.go server -e dev",
     "prod": "go run main.go server -e prod",
     "build": "go build -o gospeak-server main.go",
     "test": "node test/run.js"

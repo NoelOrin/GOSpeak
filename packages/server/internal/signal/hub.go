@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"go_rtc/internal/model"
 	"log"
+	"sort"
 	"sync"
 	"time"
 
@@ -283,6 +284,12 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 	for _, r := range dbRooms {
 		result = append(result, r)
 	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].CreatedAt != result[j].CreatedAt {
+			return result[i].CreatedAt < result[j].CreatedAt
+		}
+		return result[i].ID < result[j].ID
+	})
 	return result
 }
 

@@ -39,7 +39,7 @@ func (r *RoomRepository) List(page, pageSize int) ([]model.Room, int64, error) {
 	var rooms []model.Room
 	var total int64
 	r.db.Model(&model.Room{}).Count(&total)
-	err := r.db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&rooms).Error
+	err := r.db.Order("created_at ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rooms).Error
 	return rooms, total, err
 }
 
