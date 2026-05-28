@@ -1,47 +1,112 @@
 import { createStore } from "solid-js/store";
 
-export const ThemeEnum: Record<string, string> = {
-	light: "acid",
-	dark: "synthwave",
-};
+const STORAGE_THEME = "theme";
+const STORAGE_DARK = "theme-dark";
 
-const [themeStore, setThemeStore] = createStore({
-	themeVar: localStorage.getItem("theme") || "light",
-	theme: ThemeEnum[localStorage.getItem("theme") || "light"],
+export interface ThemeOption {
+  name: string;
+  label: string;
+}
+
+export const lightThemes: ThemeOption[] = [
+  { name: "acid", label: "Acid" },
+  { name: "aqua", label: "Aqua" },
+  { name: "autumn", label: "Autumn" },
+  { name: "bumblebee", label: "Bumblebee" },
+  { name: "caramellatte", label: "Caramel" },
+  { name: "cupcake", label: "Cupcake" },
+  { name: "emerald", label: "Emerald" },
+  { name: "fantasy", label: "Fantasy" },
+  { name: "garden", label: "Garden" },
+  { name: "lemonade", label: "Lemonade" },
+  { name: "light", label: "Light" },
+  { name: "lofi", label: "Lo-Fi" },
+  { name: "nord", label: "Nord" },
+  { name: "pastel", label: "Pastel" },
+  { name: "retro", label: "Retro" },
+  { name: "valentine", label: "Valentine" },
+  { name: "winter", label: "Winter" },
+  { name: "wireframe", label: "Wireframe" },
+];
+
+export const darkThemes: ThemeOption[] = [
+  { name: "abyss", label: "Abyss" },
+  { name: "black", label: "Black" },
+  { name: "business", label: "Business" },
+  { name: "coffee", label: "Coffee" },
+  { name: "cmyk", label: "CMYK" },
+  { name: "cyberpunk", label: "Cyberpunk" },
+  { name: "dark", label: "Dark" },
+  { name: "dim", label: "Dim" },
+  { name: "dracula", label: "Dracula" },
+  { name: "forest", label: "Forest" },
+  { name: "halloween", label: "Halloween" },
+  { name: "luxury", label: "Luxury" },
+  { name: "night", label: "Night" },
+  { name: "palenight", label: "Palenight" },
+  { name: "sunset", label: "Sunset" },
+  { name: "synthwave", label: "Synthwave" },
+];
+
+const allThemeNames = new Set([
+  ...lightThemes.map((t) => t.name),
+  ...darkThemes.map((t) => t.name),
+]);
+
+function getInitialDark(): boolean {
+  const saved = localStorage.getItem(STORAGE_DARK);
+  if (saved !== null) return saved === "true";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function getInitialTheme(isDark: boolean): string {
+  const saved = localStorage.getItem(STORAGE_THEME);
+  if (saved && allThemeNames.has(saved)) return saved;
+  return isDark ? "synthwave" : "acid";
+}
+
+const initialDark = getInitialDark();
+const initialTheme = getInitialTheme(initialDark);
+
+const [store, setStore] = createStore({
+  theme: initialTheme,
+  isDark: initialDark,
 });
 
-const switchTheme = () => {
-	const nextTheme = themeStore.themeVar === "light" ? "dark" : "light";
-	console.log(nextTheme);
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", store.theme);
+  document.documentElement.classList.toggle("dark", store.isDark);
+}
 
-	setThemeStore({ themeVar: nextTheme });
-	localStorage.setItem("theme", nextTheme);
+function switchTheme(name: string) {
+  setStore("theme", name);
+  localStorage.setItem(STORAGE_THEME, name);
+  applyTheme();
+}
 
-	document.documentElement.classList.toggle("dark", nextTheme === "dark");
-	document.documentElement.setAttribute("data-theme", ThemeEnum[nextTheme]);
-};
+function toggleDark() {
+  const next = !store.isDark;
+  setStore("isDark", next);
+  localStorage.setItem(STORAGE_DARK, String(next));
+  applyTheme();
+}
 
-const setThemeVar = (theme: string) => {
-	setThemeStore({ themeVar: theme });
-};
-
-const initTheme = () => {
-	document.documentElement.classList.toggle(
-		"dark",
-		themeStore.themeVar === "dark",
-	);
-	document.documentElement.setAttribute(
-		"data-theme",
-		ThemeEnum[themeStore.themeVar],
-	);
-};
+function initTheme() {
+  applyTheme();
+}
 
 const ThemeStore = {
-	themeVar: themeStore.themeVar,
-	theme: themeStore.theme,
-	setTheme: setThemeVar,
-	switchTheme,
-	initTheme,
+  get theme() {
+    return store.theme;
+  },
+  get isDark() {
+    return store.isDark;
+  },
+  lightThemes,
+  darkThemes,
+  switchTheme,
+  toggleDark,
+  initTheme,
 };
 
 export default ThemeStore;
