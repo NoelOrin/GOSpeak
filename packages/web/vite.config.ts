@@ -178,7 +178,8 @@ export default defineConfig(async ({ mode }) => {
             const chunkGroups = {
               vendor: ['solid-js', 'solid-js/store', 'solid-js/web'],
               router: ['@tanstack/solid-router'],
-              ui: ['cui-solid', 'clsx', 'daisyui','cui-solid-icons'],
+              ui: ['cui-solid', 'clsx', 'daisyui'],
+              socket: ['socket.io-client', 'engine.io-client'],
             };
 
             // 包

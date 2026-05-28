@@ -54,15 +54,15 @@ function createSocketStore() {
     socket.on("connect", () => {
       setConnected(true);
       console.log("[Socket] connected:", socket?.id);
-      console.log("[Socket] transport:", socket.io.engine.transport.name);
+      console.log("[Socket] transport:", socket?.io.engine.transport.name);
       listRooms();
     });
 
-    socket.on("connect_error", (err) => {
+    socket.on("connect_error", (err: Error) => {
       console.error("[Socket] connect_error:", err.message);
     });
 
-    socket.on("disconnect", (reason) => {
+    socket.on("disconnect", (reason: string) => {
       setConnected(false);
       console.log("[Socket] disconnected:", reason);
     });
