@@ -3,6 +3,7 @@ import { createEffect, createSignal, on, onCleanup, Show } from "solid-js";
 import apiClient from "@/api/apiClient";
 import createRoom, { type RoomReturnType } from "@/hooks/livekit/createRoom";
 import { socketStore } from "@/stores/socketStore";
+import userStore from "@/stores/userStore";
 import VoiceChat from "./voiceChat";
 
 const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
@@ -19,10 +20,11 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
         url: "/api/v1/signal/token",
         data: {
           room: room.name,
-          identity: `user-${Date.now().toString(36)}`,
+          identity: userStore.user()?.name || `user-${Date.now().toString(36)}`,
         },
       });
-      return (response as any).data as {
+      console.log(response);
+      return (response as any).data?.data as {
         token: string;
         serverUrl: string;
         room: string;
@@ -83,6 +85,8 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 
     // LiveKit 连接
     await roomIns()?.joinRoom();
+    // LiveKit 连接成功后通知后端广播
+    socketStore.joinRoomLiveKit(data.room, data.identity);
     setIsJoined(true);
   };
 

@@ -15,6 +15,7 @@ export const EVENTS = {
   MEMBER_JOINED: "member:joined",
   MEMBER_LEFT: "member:left",
   ROOM_LIST_RESULT: "room:list:result",
+  ROOM_JOIN_LIVEKIT: "room:join:livekit",
 } as const;
 
 export interface MemberInfo {
@@ -48,7 +49,7 @@ function createSocketStore() {
       socket.disconnect();
       socket = null;
     }
-    const socketUrl = import.meta.env.VITE_SOCKET_URL || "http://localhost:8998";
+    const socketUrl = import.meta.env.VITE_SOCKET_URL || "";
     socket = io(socketUrl, { transports: ["websocket", "polling"] });
 
     socket.on("connect", () => {
@@ -77,7 +78,13 @@ function createSocketStore() {
 
     socket.on(EVENTS.ROOM_UPDATED, (room: RoomInfo) => {
       console.log("[Socket] room:updated", room.name);
-      setRooms((prev) => prev.map((r) => (r.name === room.name ? room : r)));
+      setRooms((prev) =>
+        prev.map((r) =>
+          r.name === room.name
+            ? { ...r, ...room, id: r.id, uuid: r.uuid, limit: r.limit }
+            : r
+        )
+      );
     });
 
     socket.on(
@@ -99,6 +106,7 @@ function createSocketStore() {
       EVENTS.MEMBER_JOINED,
       (data: { room: string; identity: string; id: string }) => {
         console.log("[Socket] member:joined", data.identity);
+        // 更新当前房间成员列表
         setMembers((prev) => {
           if (prev.some((m) => m.id === data.id)) return prev;
           return [
@@ -106,6 +114,20 @@ function createSocketStore() {
             { id: data.id, identity: data.identity, joinedAt: Date.now() },
           ];
         });
+        // 更新侧边栏房间列表的成员数和成员列表
+        setRooms((prev) =>
+          prev.map((r) =>
+            r.name === data.room
+              ? {
+                  ...r,
+                  count: r.count + 1,
+                  members: r.members.some((m) => m.id === data.id)
+                    ? r.members
+                    : [...r.members, { id: data.id, identity: data.identity, joinedAt: Date.now() }],
+                }
+              : r
+          )
+        );
       }
     );
 
@@ -113,7 +135,20 @@ function createSocketStore() {
       EVENTS.MEMBER_LEFT,
       (data: { room: string; identity: string; id: string }) => {
         console.log("[Socket] member:left", data.identity);
+        // 更新当前房间成员列表
         setMembers((prev) => prev.filter((m) => m.id !== data.id));
+        // 更新侧边栏房间列表的成员数和成员列表
+        setRooms((prev) =>
+          prev.map((r) =>
+            r.name === data.room
+              ? {
+                  ...r,
+                  count: Math.max(0, r.count - 1),
+                  members: r.members.filter((m) => m.id !== data.id),
+                }
+              : r
+          )
+        );
       }
     );
 
@@ -148,6 +183,10 @@ function createSocketStore() {
     socket?.emit(EVENTS.ROOM_LEAVE, JSON.stringify({ room }));
   }
 
+  function joinRoomLiveKit(room: string, identity: string) {
+    socket?.emit(EVENTS.ROOM_JOIN_LIVEKIT, JSON.stringify({ room, identity }));
+  }
+
   function listRooms() {
     socket?.emit(EVENTS.ROOM_LIST);
   }
@@ -171,6 +210,7 @@ function createSocketStore() {
     createRoom,
     joinRoom,
     leaveRoom,
+    joinRoomLiveKit,
     listRooms,
     selectRoom,
     clearSelectedRoom,

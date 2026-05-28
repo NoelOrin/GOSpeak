@@ -98,11 +98,12 @@ export default defineConfig(async ({ mode }) => {
       port: 3000,
       strictPort: false,
       open: true,
-      host: true,
+      host: "0.0.0.0",
       proxy: {
         "/api/v1": {
           target: "http://localhost:8998",
           changeOrigin: true,
+          ws: true,
         },
         "/socket.io": {
           target: "http://localhost:8998",

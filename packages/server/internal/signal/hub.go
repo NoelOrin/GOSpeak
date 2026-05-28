@@ -56,6 +56,7 @@ func (h *Hub) SetupRoutes(server *socketio.Server) {
 	server.OnDisconnect("/", h.OnDisconnect)
 	server.OnEvent("/", EventRoomCreate, h.OnRoomCreate)
 	server.OnEvent("/", EventRoomJoin, h.OnRoomJoin)
+	server.OnEvent("/", EventRoomJoinLiveKit, h.OnRoomJoinLiveKit)
 	server.OnEvent("/", EventRoomLeave, h.OnRoomLeave)
 	server.OnEvent("/", EventRoomList, h.OnRoomList)
 }
@@ -69,21 +70,31 @@ func (h *Hub) OnConnect(s socketio.Conn) error {
 }
 
 func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
+	var updatedRooms []string
 	h.mu.Lock()
 	for roomName, room := range h.rooms {
 		if member, ok := room.Members[s.ID()]; ok {
 			delete(room.Members, s.ID())
-			h.broadcastToRoomLocked(roomName, EventMemberLeft, map[string]interface{}{
+			h.server.BroadcastToNamespace("/", EventMemberLeft, map[string]interface{}{
 				"room":     roomName,
 				"identity": member.Identity,
 				"id":       s.ID(),
 			})
+			updatedRooms = append(updatedRooms, roomName)
 			if len(room.Members) == 0 {
 				delete(h.rooms, roomName)
 			}
 		}
 	}
 	h.mu.Unlock()
+
+	for _, name := range updatedRooms {
+		h.mu.RLock()
+		info := h.roomInfoLocked(name)
+		h.mu.RUnlock()
+		h.server.BroadcastToNamespace("/", EventRoomUpdated, info)
+	}
+
 	log.Printf("[Signal] client disconnected: %s, reason: %s", s.ID(), reason)
 }
 
@@ -167,13 +178,27 @@ func (h *Hub) OnRoomJoin(s socketio.Conn, data string) {
 		"members": members,
 		"count":   len(members),
 	})
+}
 
-	// 通知房间内其他人（排除发送者）
-	h.BroadcastToRoomExcept(req.Room, s.ID(), EventMemberJoined, map[string]interface{}{
+// OnRoomJoinLiveKit 在 LiveKit 连接成功后确认加入，广播通知全部连接
+func (h *Hub) OnRoomJoinLiveKit(s socketio.Conn, data string) {
+	var req RoomRequest
+	if err := parseJSON(data, &req); err != nil || req.Room == "" {
+		return
+	}
+
+	log.Printf("[Signal] livekit confirmed: %s in %s", s.ID(), req.Room)
+
+	h.server.BroadcastToNamespace("/", EventMemberJoined, map[string]interface{}{
 		"room":     req.Room,
-		"identity": identity,
+		"identity": req.Identity,
 		"id":       s.ID(),
 	})
+
+	h.mu.RLock()
+	info := h.roomInfoLocked(req.Room)
+	h.mu.RUnlock()
+	h.server.BroadcastToNamespace("/", EventRoomUpdated, info)
 }
 
 // ─── 离开房间 ───
@@ -195,9 +220,6 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) {
 		if member, ok := room.Members[s.ID()]; ok {
 			identity = member.Identity
 			delete(room.Members, s.ID())
-			if len(room.Members) == 0 {
-				delete(h.rooms, req.Room)
-			}
 		}
 	}
 	h.mu.Unlock()
@@ -212,11 +234,17 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) {
 		"room": req.Room,
 	})
 
-	h.BroadcastToRoom(req.Room, EventMemberLeft, map[string]interface{}{
+	h.server.BroadcastToNamespace("/", EventMemberLeft, map[string]interface{}{
 		"room":     req.Room,
 		"identity": identity,
 		"id":       s.ID(),
 	})
+
+	// 广播更新后的房间信息
+	h.mu.RLock()
+	info := h.roomInfoLocked(req.Room)
+	h.mu.RUnlock()
+	h.server.BroadcastToNamespace("/", EventRoomUpdated, info)
 }
 
 // ─── 房间列表 ───
@@ -318,17 +346,6 @@ func (h *Hub) BroadcastToRoom(room string, event string, data interface{}) {
 	}
 }
 
-func (h *Hub) BroadcastToRoomExcept(room string, excludeSocketID string, event string, data interface{}) {
-	if h.server == nil {
-		return
-	}
-	h.server.ForEach("/", room, func(conn socketio.Conn) {
-		if conn.ID() != excludeSocketID {
-			conn.Emit(event, data)
-		}
-	})
-}
-
 // ─── 内部辅助 ───
 
 func (h *Hub) getMembersLocked(roomName string) []MemberInfo {
@@ -351,13 +368,6 @@ func (h *Hub) roomInfoLocked(roomName string) RoomInfo {
 		Count:     len(room.Members),
 		CreatedAt: room.CreatedAt.UnixMilli(),
 	}
-}
-
-func (h *Hub) broadcastToRoomLocked(room string, event string, data interface{}) {
-	if h.server == nil {
-		return
-	}
-	h.server.BroadcastToRoom("/", room, event, data)
 }
 
 func parseJSON(data string, v interface{}) error {

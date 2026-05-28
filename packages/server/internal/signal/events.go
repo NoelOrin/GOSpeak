@@ -9,6 +9,7 @@ const (
 	EventRoomJoin   = "room:join"
 	EventRoomLeave  = "room:leave"
 	EventRoomList   = "room:list"
+	EventRoomJoinLiveKit = "room:join:livekit"
 
 	// 服务端推送
 	EventRoomCreated    = "room:created"
