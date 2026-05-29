@@ -5,7 +5,9 @@ import (
 	"go_rtc/internal/middleware"
 	authRoutes "go_rtc/internal/router/routes/auth"
 	oauthRoutes "go_rtc/internal/router/routes/oauth"
+	permissionRoutes "go_rtc/internal/router/routes/permission"
 	roleRoutes "go_rtc/internal/router/routes/role"
+	roomRoutes "go_rtc/internal/router/routes/room"
 	signalRoutes "go_rtc/internal/router/routes/signal"
 	swaggerRoutes "go_rtc/internal/router/routes/swagger"
 	userRoutes "go_rtc/internal/router/routes/user"
@@ -17,11 +19,13 @@ import (
 )
 
 type Handlers struct {
-	Auth   *handler.AuthHandler
-	User   *handler.UserHandler
-	Signal *handler.SignalHandler
-	OAuth  *handler.OAuthHandler
-	Role   *handler.RoleHandler
+	Auth       *handler.AuthHandler
+	User       *handler.UserHandler
+	Signal     *handler.SignalHandler
+	OAuth      *handler.OAuthHandler
+	Role       *handler.RoleHandler
+	Room       *handler.RoomHandler
+	Permission *handler.PermissionHandler
 }
 
 func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
@@ -45,6 +49,8 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	authRoutes.RegisterProtected(protected.Group("/auth"), h.Auth)
 	oauthRoutes.RegisterAdmin(protected.Group("/oauth/admin"), h.OAuth)
 	roleRoutes.RegisterProtected(protected.Group("/role"), h.Role)
+	roomRoutes.RegisterProtected(protected.Group("/room"), h.Room)
+	permissionRoutes.RegisterProtected(protected.Group("/permission"), h.Permission)
 
 	return r
 }

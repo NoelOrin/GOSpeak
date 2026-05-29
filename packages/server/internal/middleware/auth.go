@@ -10,6 +10,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// permissionChecker 抽象权限查询，便于测试和解耦。
+type permissionChecker interface {
+	HasPermission(roleName, permCode string) bool
+}
+
+var permChecker permissionChecker
+
+// SetPermissionChecker 注入权限查询实现（启动时调用）。
+func SetPermissionChecker(c permissionChecker) {
+	permChecker = c
+}
+
 func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenHeader := c.Request.Header.Get("Authorization")
@@ -72,6 +84,58 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 				c.Next()
 				return
 			}
+		}
+
+		pkg.Fail(c, pkg.FORBIDDEN)
+		c.Abort()
+	}
+}
+
+// RequirePermission 基于权限码的鉴权，替代硬编码角色名。
+func RequirePermission(permCode string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, exists := c.Get("role")
+		if !exists {
+			pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
+			c.Abort()
+			return
+		}
+		roleStr, ok := role.(string)
+		if !ok {
+			pkg.Fail(c, pkg.FORBIDDEN)
+			c.Abort()
+			return
+		}
+
+		if permChecker == nil || !permChecker.HasPermission(roleStr, permCode) {
+			pkg.Fail(c, pkg.FORBIDDEN)
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// RequireOwnerOrPermission 资源归属校验：拥有资源归属 或 拥有指定权限码 即可放行。
+// ownerField 从 gin.Context 中取到的 owner 标识（如 username），
+// 与 JWT 中的 username 比对。
+func RequireOwnerOrPermission(ownerContextKey, permCode string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// 先尝试权限码放行
+		role, _ := c.Get("role")
+		roleStr, _ := role.(string)
+		if permChecker != nil && permChecker.HasPermission(roleStr, permCode) {
+			c.Next()
+			return
+		}
+
+		// 再尝试归属放行
+		owner, _ := c.Get(ownerContextKey)
+		username, _ := c.Get("username")
+		if owner != nil && username != nil && owner.(string) == username.(string) {
+			c.Next()
+			return
 		}
 
 		pkg.Fail(c, pkg.FORBIDDEN)

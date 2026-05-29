@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"go_rtc/internal/pkg"
 	"go_rtc/internal/sfu"
 	"go_rtc/internal/signal"
@@ -37,6 +38,12 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 	var req JoinRoomRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+
+	// 服务端校验房间人数上限
+	if full, limit, count, _ := h.hub.CheckRoomLimit(req.Room); full {
+		pkg.Fail(c, pkg.FORBIDDEN, fmt.Sprintf("room is full (%d/%d)", count, limit))
 		return
 	}
 

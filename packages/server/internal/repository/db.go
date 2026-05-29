@@ -132,5 +132,7 @@ func autoMigrate() error {
 		&model.UserGroup{},
 		&model.OAuthProvider{},
 		&model.OAuthAccount{},
+		&model.Permission{},
+		&model.RolePermission{},
 	)
 }

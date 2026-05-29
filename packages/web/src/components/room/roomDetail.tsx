@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, on, onCleanup, Show } from "solid-js";
+import { showToast } from "solid-notifications";
 import apiClient from "@/api/apiClient";
 import createRoom, { type RoomReturnType } from "@/hooks/livekit/createRoom";
 import { setupAudioHandler } from "@/handler_audio";
@@ -24,7 +25,6 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
           identity: userStore.user()?.name || `user-${Date.now().toString(36)}`,
         },
       });
-      console.log(response);
       return (response as any).data?.data as {
         token: string;
         serverUrl: string;
@@ -32,6 +32,7 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
         identity: string;
       };
     },
+    retry: false,
   }));
 
   const [roomIns, setRoomIns] = createSignal<RoomReturnType | null>(null);
@@ -54,6 +55,18 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
     )
   );
 
+  // Token 获取失败时检测房间已满，toast 通知并返回房间列表
+  createEffect(() => {
+    if (tokenQuery.isError) {
+      const error = tokenQuery.error as any;
+      const msg = error?.response?.data?.msg || "";
+      if (msg.includes("room is full")) {
+        showToast("房间已满，无法加入", { type: "error" });
+        socketStore.clearSelectedRoom();
+      }
+    }
+  });
+
   // 切换房间时重置状态
   createEffect(
     on(
@@ -74,12 +87,6 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
     const room = selectedRoom();
     const data = tokenQuery.data;
     if (!room || !data) return;
-
-    // 检查房间容量
-    if (room.limit > 0 && room.count >= room.limit) {
-      console.warn("[Room] 房间已满，无法加入");
-      return;
-    }
 
     // Socket.IO 加入房间
     socketStore.joinRoom(data.room, data.identity);

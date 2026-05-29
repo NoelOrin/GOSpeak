@@ -50,6 +50,18 @@ func (s *RoomService) GetByUUID(uuid string) (*model.Room, error) {
 	return room, nil
 }
 
+// GetByName 按名称查询房间。
+func (s *RoomService) GetByName(name string) (*model.Room, error) {
+	room, err := s.roomRepo.GetByName(name)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, pkg.NewAppError(pkg.NOT_FOUND, "room not found")
+		}
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return room, nil
+}
+
 // List 分页查询房间列表，默认每页 20 条。
 func (s *RoomService) List(page, pageSize int) ([]model.Room, int64, error) {
 	if page < 1 {

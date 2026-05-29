@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go_rtc/internal/config"
 	"go_rtc/internal/handler"
+	"go_rtc/internal/middleware"
 	"go_rtc/internal/model"
 	"go_rtc/internal/sfu"
 	"go_rtc/internal/redis"
@@ -59,6 +60,15 @@ func StartGin(env EnvEnum) {
 	roomRepo := repository.NewRoomRepository(repository.DB)
 	oauthProviderRepo := repository.NewOAuthProviderRepository(repository.DB)
 	oauthAccountRepo := repository.NewOAuthAccountRepository(repository.DB)
+	permRepo := repository.NewPermissionRepository(repository.DB)
+
+	// 初始化权限系统
+	seedPermissions(permRepo)
+	permSvc := service.NewPermissionService(permRepo)
+	if err := permSvc.LoadCache(); err != nil {
+		panic(fmt.Sprintf("failed to load permission cache: %v", err))
+	}
+	middleware.SetPermissionChecker(permSvc)
 
 	authSvc := service.NewAuthService(userRepo)
 	userSvc := service.NewUserService(userRepo)
@@ -69,6 +79,8 @@ func StartGin(env EnvEnum) {
 	userH := handler.NewUserHandler(userSvc)
 	oauthH := handler.NewOAuthHandler(oauthSvc)
 	roleH := handler.NewRoleHandler(roleRepo)
+	roomH := handler.NewRoomHandler(roomSvc, permSvc)
+	permH := handler.NewPermissionHandler(permSvc)
 
 	r := gin.Default()
 
@@ -97,11 +109,13 @@ func StartGin(env EnvEnum) {
 	r.OPTIONS("/socket.io/*any", gin.WrapH(sioServer))
 
 	router.SetupRoutes(r, &router.Handlers{
-		Auth:   authH,
-		User:   userH,
-		Signal: signalH,
-		OAuth:  oauthH,
-		Role:   roleH,
+		Auth:       authH,
+		User:       userH,
+		Signal:     signalH,
+		OAuth:      oauthH,
+		Role:       roleH,
+		Room:       roomH,
+		Permission: permH,
 	})
 
 	port := os.Getenv("SERVER_PORT")
@@ -131,6 +145,23 @@ func loadingEnv(env EnvEnum) {
 
 func loadEnvFile(path string) error {
 	return godotenv.Load(path)
+}
+
+func seedPermissions(permRepo *repository.PermissionRepository) {
+	// 种子权限定义
+	for i := range model.DefaultPermissions {
+		if err := permRepo.CreateIfNotExists(&model.DefaultPermissions[i]); err != nil {
+			fmt.Printf("[Seed] 创建权限 %s 失败: %v\n", model.DefaultPermissions[i].Code, err)
+		}
+	}
+
+	// 种子角色-权限映射
+	for roleName, codes := range model.DefaultRolePermissions {
+		if err := permRepo.SyncRolePermissions(roleName, codes); err != nil {
+			fmt.Printf("[Seed] 同步角色 %s 权限失败: %v\n", roleName, err)
+		}
+	}
+	fmt.Println("[Seed] 权限系统初始化完成")
 }
 
 func seedRoles(roleRepo *repository.RoleRepository) {

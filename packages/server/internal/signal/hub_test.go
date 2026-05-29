@@ -1,6 +1,7 @@
 package signal
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,6 +21,15 @@ type mockRoomStore struct {
 
 func (m *mockRoomStore) List(page, pageSize int) ([]model.Room, int64, error) {
 	return m.rooms, int64(len(m.rooms)), nil
+}
+
+func (m *mockRoomStore) GetByName(name string) (*model.Room, error) {
+	for _, r := range m.rooms {
+		if r.Name == name {
+			return &r, nil
+		}
+	}
+	return nil, fmt.Errorf("room not found: %s", name)
 }
 
 func newMockRoomStore(names ...string) *mockRoomStore {
@@ -304,6 +314,46 @@ func TestHub_OnRoomJoin_DefaultIdentity(t *testing.T) {
 
 	if member.Identity != "socket-1" {
 		t.Errorf("expected identity to default to socket ID, got %s", member.Identity)
+	}
+}
+
+func TestHub_OnRoomJoin_RoomFull(t *testing.T) {
+	store := newMockRoomStore("limited-room")
+	store.rooms[0].Limit = 1
+	hub := NewHub(store)
+	server := newMockServer()
+	hub.server = server
+
+	// 先让一个用户加入
+	hub.rooms["limited-room"] = &Room{
+		Name:    "limited-room",
+		Members: map[string]*MemberInfo{
+			"socket-1": {ID: "socket-1", Identity: "user-1", JoinedAt: time.Now().UnixMilli()},
+		},
+		CreatedAt: time.Now(),
+	}
+
+	// 第二个用户尝试加入，应该被拒绝
+	conn := newMockConn("socket-2")
+	hub.OnRoomJoin(conn, `{"room":"limited-room","identity":"user-2"}`)
+
+	emitted, ok := conn.emitted[EventRoomJoined].([]interface{})
+	if !ok || len(emitted) == 0 {
+		t.Fatal("expected room:joined event with error")
+	}
+
+	emitData, ok := emitted[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected emit data to be a map")
+	}
+
+	if emitData["error"] != "room is full" {
+		t.Errorf("expected 'room is full' error, got %v", emitData["error"])
+	}
+
+	// socket-2 不应该被加入房间
+	if conn.joined["limited-room"] {
+		t.Fatal("expected socket NOT to join room when full")
 	}
 }
 

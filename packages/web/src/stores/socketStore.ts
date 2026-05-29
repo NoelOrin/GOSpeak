@@ -89,8 +89,12 @@ function createSocketStore() {
 
     socket.on(
       EVENTS.ROOM_JOINED,
-      (data: { room: string; members: MemberInfo[]; count: number }) => {
+      (data: { room: string; members: MemberInfo[]; count: number; error?: string; limit?: number }) => {
         console.log("[Socket] room:joined", data.room, data.members);
+        if (data.error) {
+          console.warn("[Socket] room:join failed:", data.error);
+          return;
+        }
         setCurrentRoom(data.room);
         setMembers(data.members);
       }

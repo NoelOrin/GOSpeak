@@ -27,6 +27,7 @@ type socketServer interface {
 // roomStore abstracts DB room listing for Hub.
 type roomStore interface {
 	List(page, pageSize int) ([]model.Room, int64, error)
+	GetByName(name string) (*model.Room, error)
 }
 
 type Hub struct {
@@ -141,6 +142,26 @@ func (h *Hub) OnRoomJoin(s socketio.Conn, data string) {
 			"error": "room name is required",
 		})
 		return
+	}
+
+	// 服务端校验房间人数上限
+	if h.roomStore != nil {
+		if dbRoom, err := h.roomStore.GetByName(req.Room); err == nil && dbRoom.Limit > 0 {
+			h.mu.RLock()
+			var currentCount int
+			if room, ok := h.rooms[req.Room]; ok {
+				currentCount = len(room.Members)
+			}
+			h.mu.RUnlock()
+			if currentCount >= int(dbRoom.Limit) {
+				s.Emit(EventRoomJoined, map[string]interface{}{
+					"error": "room is full",
+					"limit": dbRoom.Limit,
+					"count": currentCount,
+				})
+				return
+			}
+		}
 	}
 
 	s.Join(req.Room)
@@ -333,6 +354,24 @@ func (h *Hub) GetRooms() []RoomInfo {
 		result = append(result, h.roomInfoLocked(room.Name))
 	}
 	return result
+}
+
+// CheckRoomLimit 检查房间是否已满，返回 (已满, 限制人数, 当前人数, 错误)
+func (h *Hub) CheckRoomLimit(roomName string) (bool, uint, int, error) {
+	if h.roomStore == nil {
+		return false, 0, 0, nil
+	}
+	dbRoom, err := h.roomStore.GetByName(roomName)
+	if err != nil || dbRoom.Limit == 0 {
+		return false, 0, 0, err
+	}
+	h.mu.RLock()
+	var currentCount int
+	if room, ok := h.rooms[roomName]; ok {
+		currentCount = len(room.Members)
+	}
+	h.mu.RUnlock()
+	return currentCount >= int(dbRoom.Limit), dbRoom.Limit, currentCount, nil
 }
 
 func (h *Hub) GetRoomMembers(roomName string) []MemberInfo {

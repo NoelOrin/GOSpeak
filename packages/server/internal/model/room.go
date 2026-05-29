@@ -11,6 +11,7 @@ type Room struct {
 	UUID      string `gorm:"type:uuid;uniqueIndex" json:"uuid"`
 	Name      string `gorm:"index" json:"name"`
 	Limit     uint   `json:"limit"`
+	CreatedBy string `gorm:"index;size:64" json:"created_by"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
