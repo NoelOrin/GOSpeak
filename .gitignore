@@ -75,3 +75,4 @@ go.work.sum
 .agents/*
 !.agents/skills/
 !.agents/AGENTS.md
+packages/server/server/logs/xxx.log
