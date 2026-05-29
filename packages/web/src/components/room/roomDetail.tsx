@@ -10,6 +10,7 @@ import VoiceChat from "./voiceChat";
 
 const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
   const [isJoined, setIsJoined] = createSignal(false);
+  const [isLeaving, setIsLeaving] = createSignal(false);
   const selectedRoom = () => socketStore.selectedRoomInfo();
 
   // 获取访问令牌（依赖当前选中的房间）
@@ -71,70 +72,66 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
   createEffect(
     on(
       () => selectedRoom()?.name,
-      () => {
-        // 如果已加入则先离开
+      async () => {
         if (isJoined()) {
-          handleLeave();
+          await handleLeave();
         }
-        setIsJoined(false);
         setRoomIns(null);
       }
     )
   );
 
-  // 加入房间：同时触发 Socket.IO 和 LiveKit
+  // 加入房间
   const handleJoin = async () => {
     const room = selectedRoom();
     const data = tokenQuery.data;
-    if (!room || !data) return;
+    if (!room || !data || isJoined() || isLeaving()) return;
 
-    // Socket.IO 加入房间
     socketStore.joinRoom(data.room, data.identity);
-
-    // LiveKit 连接
     await roomIns()?.joinRoom();
-    // LiveKit 连接成功后通知后端广播
     socketStore.joinRoomLiveKit(data.room, data.identity);
     setIsJoined(true);
   };
 
-  // 点击房间列表项时自动加入房间
+  // 自动加入：token + room 实例就绪且未加入时
   createEffect(
     on(
       () => [tokenQuery.isSuccess, roomIns()] as const,
-      ([tokenReady, room]) => {
-        if (tokenReady && room && !isJoined()) {
-          handleJoin();
+      async ([tokenReady, room]) => {
+        if (tokenReady && room && !isJoined() && !isLeaving()) {
+          await handleJoin();
         }
       }
     )
   );
 
-  // 离开房间
-  const handleLeave = () => {
-    if (roomIns()) {
-      roomIns()?.leaveRoom();
+  // 离开房间（等待 LiveKit 完全断开）
+  const handleLeave = async () => {
+    setIsLeaving(true);
+    const room = roomIns();
+    if (room) {
+      await room.leaveRoom();
     }
     if (socketStore.currentRoom()) {
       socketStore.leaveRoom(socketStore.currentRoom()!);
     }
     setIsJoined(false);
+    setIsLeaving(false);
   };
 
-  // 手动离开（清除选中状态）
-  const handleManualLeave = () => {
-    handleLeave();
+  // 手动离开
+  const handleManualLeave = async () => {
+    await handleLeave();
     socketStore.clearSelectedRoom();
   };
 
-  // 清理（不断开 socket，由 roomList 管理连接生命周期）
   onCleanup(() => {
     handleLeave();
   });
 
   return (
     <div
-      class="flex flex-1 flex-col justify-center items-center w-full h-full select-none"
+      class="flex flex-1 flex-col justify-center items-center w-full h-full select-none bg-base-200"
       ref={ref}
     >
       <Show
