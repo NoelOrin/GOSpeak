@@ -102,6 +102,7 @@ docs/
 │   ├── AGENTS-stores.md        # 状态管理模式
 │   └── AGENTS-hooks.md         # Hooks 与 LiveKit 架构
 ├── lib/                        # 第三方库参考文档
-│   └── tanstack-router.md      # TanStack Router 使用指南与 API
+│   ├── tanstack-router.md      # TanStack Router 使用指南与 API
+│   └── openapi.yaml            # GOSpeak API OpenAPI 3.0 规范
 └── plan/                       # 规划与方案文档
 ```
