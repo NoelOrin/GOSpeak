@@ -32,9 +32,6 @@ packages/server/.env
 packages/server/.env.dev
 packages/server/.env.prod
 
-# 热更新工具配置（air 已移至 CompileDaemon）
-packages/server/.air.toml
-packages/server/air
 
 # 编译输出
 packages/server/tmp/
