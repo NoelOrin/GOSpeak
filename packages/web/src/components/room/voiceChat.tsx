@@ -38,11 +38,11 @@ const VoiceChat = ({ ref }: { ref?: HTMLDivElement }) => {
   });
 
   return (
-    <div class="relative flex-1 w-full min-h-0 overflow-y-auto">
+    <div class="relative w-full h-full overflow-y-auto">
       <div
-        class="box-border grid gap-3 p-4 w-full select-none"
+        class="box-border absolute inset-0 justify-center items-center place-content-center gap-2 grid p-4 w-full select-none"
         style={{
-          "grid-template-columns": `repeat(auto-fill, minmax(180px, 1fr))`,
+          "grid-template-columns": `repeat(auto-fit, minmax(190px, 1fr))`,
         }}
         ref={(el) => {
           containerRef = el;
@@ -78,9 +78,9 @@ const MemberCard = ({ member }: { member: MemberInfo }) => {
   };
 
   return (
-    <div class="box-border flex flex-col rounded-xl w-full min-w-0 overflow-hidden select-none">
-      <div class="flex justify-center items-center p-4 rounded-xl h-full overflow-hidden bg-gradient-to-br from-primary/20 to-secondary/20">
-        <div class="flex shrink-0 justify-center items-center w-14 h-14 rounded-full bg-primary/30 text-primary-content text-lg font-bold">
+    <div class="box-border relative flex flex-col flex-1 rounded-xl w-full aspect-5/4 select-none">
+      <div class="flex justify-center items-center rounded-xl h-full overflow-hidden bg-gradient-to-br from-primary/20 to-secondary/20">
+        <div class="flex justify-center items-center w-20 h-20 rounded-full bg-primary/30 text-primary-content text-2xl font-bold">
           {initials()}
         </div>
       </div>

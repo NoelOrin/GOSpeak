@@ -144,8 +144,8 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
               </div>
             }
           >
-            <div class="flex flex-col flex-1 w-full min-h-0">
-              <div class="flex justify-between items-center px-4 h-12 border-b border-base-300 shrink-0">
+            <div class="flex flex-col w-full h-full">
+              <div class="flex justify-between items-center px-4 h-12 border-b border-base-300">
                 <span class="font-bold">{socketStore.currentRoom()}</span>
                 <div class="flex items-center gap-2">
                   <span class="text-sm text-base-content/60">
