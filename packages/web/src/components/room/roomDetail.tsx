@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/solid-query";
-import { createEffect, createSignal, on, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import apiClient from "@/api/apiClient";
 import createRoom, { type RoomReturnType } from "@/hooks/livekit/createRoom";
@@ -10,7 +10,6 @@ import VoiceChat from "./voiceChat";
 
 const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
   const [isJoined, setIsJoined] = createSignal(false);
-  const [isLeaving, setIsLeaving] = createSignal(false);
   const selectedRoom = () => socketStore.selectedRoomInfo();
 
   // 获取访问令牌（依赖当前选中的房间）
@@ -39,24 +38,19 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
   const [roomIns, setRoomIns] = createSignal<RoomReturnType | null>(null);
 
   // Token 获取成功后初始化 LiveKit Room 实例
-  createEffect(
-    on(
-      () => tokenQuery.isSuccess,
-      () => {
-        const data = tokenQuery.data;
-        if (data) {
-          const room = createRoom({
-            token: data.token,
-            url: data.serverUrl,
-          });
-          setupAudioHandler(room.room);
-          setRoomIns(room);
-        }
-      }
-    )
-  );
+  createEffect(() => {
+    const data = tokenQuery.data;
+    if (data) {
+      const room = createRoom({
+        token: data.token,
+        url: data.serverUrl,
+      });
+      setupAudioHandler(room.room);
+      setRoomIns(room);
+    }
+  });
 
-  // Token 获取失败时检测房间已满，toast 通知并返回房间列表
+  // Token 获取失败时检测房间已满
   createEffect(() => {
     if (tokenQuery.isError) {
       const error = tokenQuery.error as any;
@@ -68,24 +62,11 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
     }
   });
 
-  // 切换房间时重置状态
-  createEffect(
-    on(
-      () => selectedRoom()?.name,
-      async () => {
-        if (isJoined()) {
-          await handleLeave();
-        }
-        setRoomIns(null);
-      }
-    )
-  );
-
   // 加入房间
   const handleJoin = async () => {
     const room = selectedRoom();
     const data = tokenQuery.data;
-    if (!room || !data || isJoined() || isLeaving()) return;
+    if (!room || !data || isJoined()) return;
 
     socketStore.joinRoom(data.room, data.identity);
     await roomIns()?.joinRoom();
@@ -93,21 +74,8 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
     setIsJoined(true);
   };
 
-  // 自动加入：token + room 实例就绪且未加入时
-  createEffect(
-    on(
-      () => [tokenQuery.isSuccess, roomIns()] as const,
-      async ([tokenReady, room]) => {
-        if (tokenReady && room && !isJoined() && !isLeaving()) {
-          await handleJoin();
-        }
-      }
-    )
-  );
-
-  // 离开房间（等待 LiveKit 完全断开）
+  // 离开房间
   const handleLeave = async () => {
-    setIsLeaving(true);
     const room = roomIns();
     if (room) {
       await room.leaveRoom();
@@ -116,18 +84,34 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
       socketStore.leaveRoom(socketStore.currentRoom()!);
     }
     setIsJoined(false);
-    setIsLeaving(false);
   };
+
+  // 防止 leave/join 重入
+  let switching = false;
+
+  // 自动加入：token + room 实例就绪时，先离开旧房间再加入新房间
+  createEffect(async () => {
+    const data = tokenQuery.data;
+    const room = roomIns();
+
+    if (!data || !room || switching) return;
+
+    if (isJoined()) {
+      switching = true;
+      await handleLeave();
+      switching = false;
+    }
+
+    switching = true;
+    await handleJoin();
+    switching = false;
+  });
 
   // 手动离开
   const handleManualLeave = async () => {
     await handleLeave();
     socketStore.clearSelectedRoom();
   };
-
-  onCleanup(() => {
-    handleLeave();
-  });
 
   return (
     <div
