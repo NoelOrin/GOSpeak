@@ -5,6 +5,7 @@ import { Form } from '@/components/form'
 import { login as loginApi, firstChangePassword as firstChangePasswordApi, resetPassword as resetPasswordApi } from '@/api/auth'
 import userStore from '@/stores/userStore'
 import PasswordChangeForm from '@/components/form/PasswordChangeForm'
+import { showToast } from 'solid-notifications'
 
 export const Route = createFileRoute('/login/')({
   beforeLoad: () => {
@@ -17,7 +18,6 @@ export const Route = createFileRoute('/login/')({
 
 function LoginPage() {
   const navigate = useNavigate()
-  const [error, setError] = createSignal('')
   const [banned, setBanned] = createSignal(false)
   const [showForgotModal, setShowForgotModal] = createSignal(false)
 
@@ -57,7 +57,6 @@ function LoginPage() {
   const form = createForm(() => ({
     defaultValues: { username: '', password: '' },
     onSubmit: async ({ value }) => {
-      setError('')
       try {
         const data = await loginApi(value)
         if (data.need_change_password) {
@@ -72,7 +71,7 @@ function LoginPage() {
         if (e?.response?.data?.code === 1015) {
           setBanned(true)
         } else {
-          setError(e?.response?.data?.msg || e?.message || '登录失败，请重试')
+          showToast(e?.response?.data?.msg || e?.message || '登录失败，请重试', { type: 'error' })
         }
       }
     },
@@ -119,9 +118,6 @@ function LoginPage() {
               <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               <span class="text-sm">您的账号已被封禁，无法登录。如有疑问请联系管理员。</span>
             </div>
-          </Show>
-          <Show when={error()}>
-            <p class="text-error text-sm text-center mt-1">{error()}</p>
           </Show>
         </div>
       </div>
