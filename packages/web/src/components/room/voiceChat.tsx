@@ -78,7 +78,7 @@ const MemberCard = ({ member }: { member: MemberInfo }) => {
   };
 
   return (
-    <div class="box-border relative flex flex-col flex-1 rounded-xl w-full aspect-5/4 select-none">
+    <div class="box-border relative flex flex-col flex-1 rounded-xl w-full aspect-5/4 select-none max-h-[80vh]">
       <div class="flex justify-center items-center rounded-xl h-full overflow-hidden bg-gradient-to-br from-primary/20 to-secondary/20">
         <div class="flex justify-center items-center w-20 h-20 rounded-full bg-primary/30 text-primary-content text-2xl font-bold">
           {initials()}

@@ -123,11 +123,9 @@ export default defineConfig(async ({ mode }) => {
         "solid-js",
         "solid-js/store",
         "solid-js/web",
-        "@tanstack/solid-router",
         "@tanstack/router-plugin/vite",
         "cui-solid",
         "clsx",
-        "daisyui",
       ],
       exclude: ['fsevents'],
       rolldownOptions: {
