@@ -91,7 +91,15 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 
 	for _, name := range updatedRooms {
 		h.mu.RLock()
-		info := h.roomInfoLocked(name)
+		room, exists := h.rooms[name]
+		h.mu.RUnlock()
+		if !exists {
+			// 房间已空被删除，广播房间列表更新
+			h.server.BroadcastToNamespace("/", EventRoomList, h.GetRooms())
+			continue
+		}
+		h.mu.RLock()
+		info := h.roomInfoLocked(room)
 		h.mu.RUnlock()
 		h.server.BroadcastToNamespace("/", EventRoomUpdated, info)
 	}
@@ -124,7 +132,7 @@ func (h *Hub) OnRoomCreate(s socketio.Conn, data string) {
 		Members:   make(map[string]*MemberInfo),
 		CreatedAt: time.Now(),
 	}
-	roomInfo := h.roomInfoLocked(req.Room)
+	roomInfo := h.roomInfoLocked(h.rooms[req.Room])
 	h.mu.Unlock()
 
 	log.Printf("[Signal] room created: %s by %s", req.Room, s.ID())
@@ -217,7 +225,7 @@ func (h *Hub) OnRoomJoinLiveKit(s socketio.Conn, data string) {
 	})
 
 	h.mu.RLock()
-	info := h.roomInfoLocked(req.Room)
+	info := h.roomInfoLocked(h.rooms[req.Room])
 	h.mu.RUnlock()
 	h.server.BroadcastToNamespace("/", EventRoomUpdated, info)
 }
@@ -263,7 +271,7 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) {
 
 	// 广播更新后的房间信息
 	h.mu.RLock()
-	info := h.roomInfoLocked(req.Room)
+	info := h.roomInfoLocked(h.rooms[req.Room])
 	h.mu.RUnlock()
 	h.server.BroadcastToNamespace("/", EventRoomUpdated, info)
 }
@@ -311,7 +319,7 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 		memRooms = make(map[string]RoomInfo)
 		h.mu.RLock()
 		for name, room := range h.rooms {
-			memRooms[name] = h.roomInfoLocked(room.Name)
+			memRooms[name] = h.roomInfoLocked(room)
 		}
 		h.mu.RUnlock()
 		return nil
@@ -351,7 +359,7 @@ func (h *Hub) GetRooms() []RoomInfo {
 
 	result := make([]RoomInfo, 0, len(h.rooms))
 	for _, room := range h.rooms {
-		result = append(result, h.roomInfoLocked(room.Name))
+		result = append(result, h.roomInfoLocked(room))
 	}
 	return result
 }
@@ -400,11 +408,10 @@ func (h *Hub) getMembersLocked(roomName string) []MemberInfo {
 	return members
 }
 
-func (h *Hub) roomInfoLocked(roomName string) RoomInfo {
-	room := h.rooms[roomName]
+func (h *Hub) roomInfoLocked(room *Room) RoomInfo {
 	return RoomInfo{
 		Name:      room.Name,
-		Members:   h.getMembersLocked(roomName),
+		Members:   h.getMembersLocked(room.Name),
 		Count:     len(room.Members),
 		CreatedAt: room.CreatedAt.UnixMilli(),
 	}
