@@ -6,6 +6,7 @@ export interface UserInfo {
   id: number
   uuid: string
   name: string
+  display_name: string
   avatar: string
   role: string
 }

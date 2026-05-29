@@ -91,7 +91,7 @@ func (h *AuthHandler) GetRefreshToken(c *gin.Context) {
 		return
 	}
 
-	newToken, err := h.authService.RefreshToken(claims.Username, claims.UserUUID, claims.Role)
+	newToken, err := h.authService.RefreshToken(claims.Username, claims.DisplayName, claims.UserUUID, claims.Role)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -148,7 +148,10 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		roleStr = "user"
 	}
 
-	token, err := h.authService.RefreshToken(usernameStr, uuidStr, roleStr)
+	displayName, _ := c.Get("display_name")
+	displayNameStr, _ := displayName.(string)
+
+	token, err := h.authService.RefreshToken(usernameStr, displayNameStr, uuidStr, roleStr)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return

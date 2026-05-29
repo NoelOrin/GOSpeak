@@ -154,7 +154,7 @@ func (s *OAuthService) HandleCallback(providerName, code string) (*AuthResponse,
 
 // buildAuthResponse 统一构造 OAuth 登录成功后的 AuthResponse（与密码登录复用同一结构）。
 func (s *OAuthService) buildAuthResponse(user *model.User) (*AuthResponse, error) {
-	token, refreshToken, err := generateTokenPair(user.Name, user.UUID, user.Role)
+	token, refreshToken, err := generateTokenPair(user.Name, user.DisplayName, user.UUID, user.Role)
 	if err != nil {
 		return nil, err
 	}

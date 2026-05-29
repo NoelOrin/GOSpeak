@@ -14,7 +14,8 @@ const UserBar = ({ ...props }: UserBarPropsType) => {
     VoiceChatStore;
 
   const user = () => userStore.user();
-  const initial = () => user()?.name?.charAt(0).toUpperCase() ?? "?";
+  const displayName = () => user()?.display_name || user()?.name || "?";
+  const initial = () => displayName().charAt(0).toUpperCase();
 
   return (
     <div
@@ -40,7 +41,7 @@ const UserBar = ({ ...props }: UserBarPropsType) => {
             </div>
           </Show>
           <div class="flex flex-col items-start">
-            <div class="font-bold text-[14px]">{user()?.name ?? "-"}</div>
+            <div class="font-bold text-[14px]">{displayName()}</div>
             <div class="text-xs text-base-content/50">{user()?.role ?? ""}</div>
           </div>
         </button>

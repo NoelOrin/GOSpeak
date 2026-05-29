@@ -11,6 +11,7 @@ export interface BackendUser {
   id: number
   uuid: string
   name: string
+  display_name: string
   avatar: string
   role: string
 }

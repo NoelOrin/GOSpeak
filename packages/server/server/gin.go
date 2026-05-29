@@ -192,9 +192,10 @@ func seedAdminUser(userRepo *repository.UserRepository) {
 	}
 
 	admin := &model.User{
-		Name:     "admin",
-		Password: string(hashedPwd),
-		Role:     "admin",
+		Name:        "admin",
+		DisplayName: "管理员",
+		Password:    string(hashedPwd),
+		Role:        "admin",
 	}
 	if err := userRepo.Create(admin); err != nil {
 		fmt.Printf("[Seed] 创建管理员用户失败: %v\n", err)

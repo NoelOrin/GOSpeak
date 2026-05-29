@@ -60,7 +60,7 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, pkg.NewAppError(pkg.USER_BANNED)
 	}
 
-	token, refreshToken, err := generateTokenPair(user.Name, user.UUID, user.Role)
+	token, refreshToken, err := generateTokenPair(user.Name, user.DisplayName, user.UUID, user.Role)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	token, refreshToken, err := generateTokenPair(user.Name, user.UUID, user.Role)
+	token, refreshToken, err := generateTokenPair(user.Name, user.DisplayName, user.UUID, user.Role)
 	if err != nil {
 		return nil, err
 	}
@@ -108,8 +108,8 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 }
 
 // RefreshToken 用已有身份信息生成新 access_token（不验证旧 token 有效性，由 handler 层控制）。
-func (s *AuthService) RefreshToken(username, userUUID, role string) (string, error) {
-	token, err := pkg.GenerateToken(username, userUUID, role)
+func (s *AuthService) RefreshToken(username, displayName, userUUID, role string) (string, error) {
+	token, err := pkg.GenerateToken(username, displayName, userUUID, role)
 	if err != nil {
 		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -205,18 +205,18 @@ func (s *AuthService) ResetPassword(username, newPassword string) error {
 }
 
 // generateTokenPair 并行生成 access_token 和 refresh_token。
-func generateTokenPair(username, userUUID, role string) (string, string, error) {
+func generateTokenPair(username, displayName, userUUID, role string) (string, string, error) {
 	var token, refreshToken string
 	var err1, err2 error
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		token, err1 = pkg.GenerateToken(username, userUUID, role)
+		token, err1 = pkg.GenerateToken(username, displayName, userUUID, role)
 	}()
 	go func() {
 		defer wg.Done()
-		refreshToken, err2 = pkg.GenerateRefreshToken(username, userUUID, role)
+		refreshToken, err2 = pkg.GenerateRefreshToken(username, displayName, userUUID, role)
 	}()
 	wg.Wait()
 	if err1 != nil {

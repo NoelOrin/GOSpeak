@@ -10,17 +10,19 @@ import (
 )
 
 type Claims struct {
-	Username string `json:"username"`
-	UserUUID string `json:"user_uuid"`
-	Role     string `json:"role"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	UserUUID    string `json:"user_uuid"`
+	Role        string `json:"role"`
 	jwt.RegisteredClaims
 }
 
-func GenerateToken(username, userUUID, role string) (string, error) {
+func GenerateToken(username, displayName, userUUID, role string) (string, error) {
 	claims := Claims{
-		Username: username,
-		UserUUID: userUUID,
-		Role:     role,
+		Username:    username,
+		DisplayName: displayName,
+		UserUUID:    userUUID,
+		Role:        role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -45,11 +47,12 @@ func ParseToken(tokenStr string) (*Claims, error) {
 	return nil, jwt.ErrSignatureInvalid
 }
 
-func GenerateRefreshToken(username, userUUID, role string) (string, error) {
+func GenerateRefreshToken(username, displayName, userUUID, role string) (string, error) {
 	claims := Claims{
-		Username: username,
-		UserUUID: userUUID,
-		Role:     role,
+		Username:    username,
+		DisplayName: displayName,
+		UserUUID:    userUUID,
+		Role:        role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
