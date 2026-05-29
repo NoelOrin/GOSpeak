@@ -1,11 +1,12 @@
 import { createSignal } from 'solid-js'
 import { get, set, del } from 'idb-keyval'
-import { logout as logoutApi } from '@/api/auth'
+import { logout as logoutApi, getProfile } from '@/api/auth'
 
 export interface UserInfo {
   id: number
   uuid: string
   name: string
+  avatar: string
   role: string
 }
 
@@ -42,6 +43,17 @@ async function updateAccessTokenAction(token: string) {
   setAccessToken(token)
 }
 
+async function fetchProfileAction() {
+  try {
+    const profile = await getProfile()
+    const updated = { ...user(), ...profile } as UserInfo
+    localStorage.setItem(STORAGE_USER, JSON.stringify(updated))
+    setUser(updated)
+  } catch {
+    // 静默失败，不影响已有状态
+  }
+}
+
 async function logoutAction() {
   try {
     if (accessToken()) {
@@ -66,6 +78,7 @@ const userStore = {
   login: loginAction,
   logout: logoutAction,
   updateAccessToken: updateAccessTokenAction,
+  fetchProfile: fetchProfileAction,
 }
 
 export default userStore

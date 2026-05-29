@@ -11,6 +11,7 @@ export interface BackendUser {
   id: number
   uuid: string
   name: string
+  avatar: string
   role: string
 }
 
@@ -76,4 +77,14 @@ export async function resetPassword(username: string, newPassword: string): Prom
 
   const result = res.data
   if (result.code !== 0) throw new Error(result.msg)
+}
+
+export async function getProfile(): Promise<BackendUser> {
+  const res = (await apiClient.get({
+    url: '/api/v1/user/profile',
+  })) as AxiosResponse<Result<BackendUser>>
+
+  const result = res.data
+  if (result.code !== 0) throw new Error(result.msg)
+  return result.data!
 }
