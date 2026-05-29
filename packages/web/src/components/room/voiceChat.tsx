@@ -1,10 +1,19 @@
 import SvgIcon from "@/components/svgIcon";
 import { setVolumeByIdentity } from "@/handler_audio";
-import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
+import { For, Show, createMemo, createSignal, onMount, onCleanup } from "solid-js";
 import { socketStore, type MemberInfo } from "@/stores/socketStore";
 import userStore from "@/stores/userStore";
 
 const VoiceChat = ({ ref }: { ref?: HTMLDivElement }) => {
+  const sortedMembers = createMemo(() => {
+    const members = socketStore.members();
+    const myName = userStore.user()?.name;
+    return [...members].sort((a, b) => {
+      if (a.identity === myName) return -1;
+      if (b.identity === myName) return 1;
+      return 0;
+    });
+  });
   const [columnCount, setColumnCount] = createSignal(4);
   let containerRef: HTMLDivElement | undefined;
 
@@ -47,7 +56,7 @@ const VoiceChat = ({ ref }: { ref?: HTMLDivElement }) => {
             </div>
           }
         >
-          <For each={socketStore.members()}>
+          <For each={sortedMembers()}>
             {(member) => <MemberCard member={member} />}
           </For>
         </Show>

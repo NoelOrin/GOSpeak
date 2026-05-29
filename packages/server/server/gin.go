@@ -180,18 +180,14 @@ func seedRoles(roleRepo *repository.RoleRepository) {
 }
 
 func seedAdminUser(userRepo *repository.UserRepository) {
-	_, total, err := userRepo.List(1, 1)
+	hashedPwd, err := bcrypt.GenerateFromPassword([]byte("123123"), bcrypt.DefaultCost)
 	if err != nil {
-		fmt.Printf("[Seed] 查询用户表失败: %v\n", err)
-		return
-	}
-	if total > 0 {
+		fmt.Printf("[Seed] 生成密码哈希失败: %v\n", err)
 		return
 	}
 
-	hashedPwd, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
-	if err != nil {
-		fmt.Printf("[Seed] 生成密码哈希失败: %v\n", err)
+	existing, _ := userRepo.GetByName("admin")
+	if existing != nil {
 		return
 	}
 
@@ -201,10 +197,10 @@ func seedAdminUser(userRepo *repository.UserRepository) {
 		Role:     "admin",
 	}
 	if err := userRepo.Create(admin); err != nil {
-		fmt.Printf("[Seed] 创建默认管理员失败: %v\n", err)
+		fmt.Printf("[Seed] 创建管理员用户失败: %v\n", err)
 		return
 	}
-	fmt.Println("[Seed] 已创建默认管理员用户: admin / admin123")
+	fmt.Println("[Seed] 已创建管理员用户: admin / 123123")
 }
 
 func init() {
