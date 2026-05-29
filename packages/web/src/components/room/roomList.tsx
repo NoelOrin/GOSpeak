@@ -1,7 +1,6 @@
 import clsx from "clsx";
 import { For, Show, onMount } from "solid-js";
 import { socketStore, type RoomInfo } from "@/stores/socketStore";
-import { resumeAudioContext } from "@/handler_audio";
 import Divider from "../common/divider";
 
 // 子项
@@ -29,7 +28,6 @@ const RoomItem = ({ room, isActive = false }: RoomItemPropsType) => {
             isSelected() && !isActive ? "bg-base-200" : ""
           )}
           onDblClick={() => {
-            resumeAudioContext();
             socketStore.selectRoom(room);
           }}
         >
