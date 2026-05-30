@@ -7,6 +7,7 @@ import {
   VideoPresets,
 } from "livekit-client";
 import { _joinRoom, _leaveRoom } from "./roomAction";
+import AudioDeviceStore from "@/stores/audioDeviceStore";
 
 interface UseRoomProps {
   token: string;
@@ -15,6 +16,8 @@ interface UseRoomProps {
 }
 
 const _useRoom = ({ token, url, onConnected }: UseRoomProps) => {
+  const s = AudioDeviceStore.state;
+
   const room = new Room({
     adaptiveStream: true,
     dynacast: true,
@@ -24,11 +27,19 @@ const _useRoom = ({ token, url, onConnected }: UseRoomProps) => {
       resolution: VideoPresets.h720.resolution,
     },
     audioCaptureDefaults: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
+      echoCancellation: s.echoCancellation,
+      noiseSuppression: s.noiseSuppression,
+      autoGainControl: s.autoGainControl,
+      voiceIsolation: s.voiceIsolation,
+      sampleRate: s.sampleRate,
+      channelCount: s.stereo ? 2 : 1,
     },
-    publishDefaults: {},
+    publishDefaults: {
+      audioPreset: { maxBitrate: s.audioBitrate },
+      dtx: s.dtx,
+      red: s.red,
+      forceStereo: s.stereo,
+    },
     webAudioMix: true,
     reconnectPolicy: {
       nextRetryDelayInMs: () => 300,

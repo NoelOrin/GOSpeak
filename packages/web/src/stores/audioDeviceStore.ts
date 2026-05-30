@@ -10,16 +10,39 @@ interface AudioDeviceInfo {
   label: string
 }
 
+export type AudioBitrate = 32000 | 48000 | 64000 | 96000
+export type AudioSampleRate = 44100 | 48000
+
 interface AudioDeviceState {
   audioinputs: AudioDeviceInfo[]
   audiooutputs: AudioDeviceInfo[]
   loaded: boolean
+  // 发布层
+  audioBitrate: AudioBitrate
+  stereo: boolean
+  dtx: boolean
+  red: boolean
+  // 采集层
+  sampleRate: AudioSampleRate
+  echoCancellation: boolean
+  noiseSuppression: boolean
+  autoGainControl: boolean
+  voiceIsolation: boolean
 }
 
 const initialState: AudioDeviceState = {
   audioinputs: [],
   audiooutputs: [],
   loaded: false,
+  audioBitrate: 64000,
+  stereo: true,
+  dtx: true,
+  red: true,
+  sampleRate: 48000,
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+  voiceIsolation: false,
 }
 
 const loadPersistedState = async (): Promise<AudioDeviceState> => {
@@ -49,6 +72,19 @@ async function fetchAudioDevices() {
   })
 }
 
+function setAudioBitrate(bitrate: AudioBitrate) {
+  setAudioDeviceStore("audioBitrate", bitrate)
+}
+
+function setStereo(v: boolean) { setAudioDeviceStore("stereo", v) }
+function setDtx(v: boolean) { setAudioDeviceStore("dtx", v) }
+function setRed(v: boolean) { setAudioDeviceStore("red", v) }
+function setSampleRate(rate: AudioSampleRate) { setAudioDeviceStore("sampleRate", rate) }
+function setEchoCancellation(v: boolean) { setAudioDeviceStore("echoCancellation", v) }
+function setNoiseSuppression(v: boolean) { setAudioDeviceStore("noiseSuppression", v) }
+function setAutoGainControl(v: boolean) { setAudioDeviceStore("autoGainControl", v) }
+function setVoiceIsolation(v: boolean) { setAudioDeviceStore("voiceIsolation", v) }
+
 const debouncedPersist = debounce((state: AudioDeviceState) => {
   try {
     const cleanState = JSON.parse(JSON.stringify(state))
@@ -61,10 +97,15 @@ const debouncedPersist = debounce((state: AudioDeviceState) => {
 createRoot(() => {
   createEffect(
     on(
-      () => [audioDeviceStore.audioinputs, audioDeviceStore.audiooutputs],
-      () => {
-        debouncedPersist(audioDeviceStore)
-      },
+      () => [
+        audioDeviceStore.audioinputs, audioDeviceStore.audiooutputs,
+        audioDeviceStore.audioBitrate, audioDeviceStore.stereo,
+        audioDeviceStore.dtx, audioDeviceStore.red,
+        audioDeviceStore.sampleRate, audioDeviceStore.echoCancellation,
+        audioDeviceStore.noiseSuppression, audioDeviceStore.autoGainControl,
+        audioDeviceStore.voiceIsolation,
+      ],
+      () => { debouncedPersist(audioDeviceStore) },
     ),
   )
 })
@@ -72,6 +113,15 @@ createRoot(() => {
 const AudioDeviceStore = {
   state: audioDeviceStore,
   fetchAudioDevices,
+  setAudioBitrate,
+  setStereo,
+  setDtx,
+  setRed,
+  setSampleRate,
+  setEchoCancellation,
+  setNoiseSuppression,
+  setAutoGainControl,
+  setVoiceIsolation,
 }
 
 export default AudioDeviceStore

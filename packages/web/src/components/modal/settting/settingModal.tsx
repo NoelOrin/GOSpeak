@@ -35,8 +35,8 @@ const SettingContext = () => {
   const [activeTab, setActiveTab] = createSignal(0)
 
   return (
-    <div class="flex w-full h-full select-none">
-      <ul class="bg-base-200 p-0 min-w-40 menu-lg menu join">
+    <div class="flex w-full h-full select-none overflow-hidden">
+      <ul class="bg-base-200 p-0 min-w-40 menu-lg menu join sticky">
         <For each={TABS}>
           {(tab, index) => (
             <li
@@ -52,7 +52,7 @@ const SettingContext = () => {
         </For>
       </ul>
 
-      <div class="flex-1">
+      <div class="flex-1 overflow-auto">
         <Dynamic component={TABS[activeTab()].component} />
       </div>
     </div>
