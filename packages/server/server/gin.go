@@ -98,9 +98,19 @@ func StartGin(env EnvEnum) {
 	signalH := handler.NewSignalHandler(sfuProvider, signalHub)
 
 	// 启动 Socket.IO 事件循环（消费 sessions 并处理消息）
+	// go-socket.io v1.7.0 在 websocket 断开后 NextReader 会 panic，用 recover 防止进程崩溃
 	go func() {
-		if err := sioServer.Serve(); err != nil {
-			fmt.Printf("[Socket.IO] serve error: %v\n", err)
+		for {
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						fmt.Printf("[Socket.IO] recovered from panic: %v\n", r)
+					}
+				}()
+				if err := sioServer.Serve(); err != nil {
+					fmt.Printf("[Socket.IO] serve error: %v\n", err)
+				}
+			}()
 		}
 	}()
 

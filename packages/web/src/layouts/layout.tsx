@@ -6,21 +6,28 @@ import Header from "@/layouts/common/header";
 import FuncButton from "@/components/funcButton";
 import UserBar from "@/components/userBar";
 import { Slot, Split } from "cui-solid";
-import {
-  createEffect,
-  createSignal,
-  onCleanup,
-} from "solid-js";
+import { createEffect, createSignal, onCleanup } from "solid-js";
 import DynamicRender from "@/components/common/dynamicRender";
 import Visible from "@/components/common/visible";
+import RoomDetail from "@/components/room/roomDetail";
+import { useLocation } from "@tanstack/solid-router";
 
 const Layout = ({ children }: { children: JSX.Element }) => {
+  const location = useLocation();
+  const isChannel = () => location().pathname.startsWith("/channel");
   const [splitWidth, setSplitWidth] = createSignal(
-    localStorage.getItem("splitWidth") || "190px"
+    localStorage.getItem("splitWidth") || "190px",
   );
-  let prevRef!: HTMLDivElement;
 
+  const MIN_SPLIT_WIDTH = 333;
+  const MAX_SPLIT_WIDTH = 525;
+
+  let prevRef!: HTMLDivElement;
   createEffect(() => {
+    
+    console.log(splitWidth());
+    console.log(isChannel());
+
     if (!prevRef) return;
     // Observer监听split变化
     const resizeObserver = new ResizeObserver((entries) => {
@@ -52,8 +59,11 @@ const Layout = ({ children }: { children: JSX.Element }) => {
       <Header />
       <div class="flex flex-1 h-full">
         <div class="flex flex-1 h-full">
-          
-          <Split min={213} split={splitWidth()} max={525}>
+          <Split
+            min={MIN_SPLIT_WIDTH}
+            split={splitWidth()}
+            max={MAX_SPLIT_WIDTH}
+          >
             <Slot name="prev">
               <div class="flex flex-col justify-between h-full" ref={prevRef}>
                 <div class="flex h-full">
@@ -68,15 +78,22 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 
             <Slot name="next">
               <Main>
-                <div class="flex-1 border-color border-t w-full h-full">
+                <div
+                  class="flex-1 border-color border-t w-full h-full"
+                  style={{ display: isChannel() ? "none" : undefined }}
+                >
                   {children}
+                </div>
+                <div
+                  class="flex-1 border-color border-t w-full h-full"
+                  style={{ display: isChannel() ? undefined : "none" }}
+                >
+                  <RoomDetail />
                 </div>
                 <FuncButton />
               </Main>
             </Slot>
           </Split>
-
-          
         </div>
       </div>
       {/* <Footer /> */}

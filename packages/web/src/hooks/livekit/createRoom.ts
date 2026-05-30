@@ -11,9 +11,10 @@ import { _joinRoom, _leaveRoom } from "./roomAction";
 interface UseRoomProps {
   token: string;
   url: string;
+  onConnected?: () => void;
 }
 
-const _useRoom = ({ token, url }: UseRoomProps) => {
+const _useRoom = ({ token, url, onConnected }: UseRoomProps) => {
   const room = new Room({
     adaptiveStream: true,
     dynacast: true,
@@ -38,9 +39,20 @@ const _useRoom = ({ token, url }: UseRoomProps) => {
     room.prepareConnection(url, token);
   }
 
+  let notified = false;
   room
+    .on(RoomEvent.LocalTrackPublished, () => {
+      // 本地轨道首次发布成功后触发一次，代表真正进入房间
+      if (!notified) {
+        notified = true;
+        onConnected?.();
+      }
+    })
     .on(RoomEvent.ActiveSpeakersChanged, handleActiveSpeakerChange)
-    .on(RoomEvent.Disconnected, handleDisconnect)
+    .on(RoomEvent.Disconnected, () => {
+      notified = false;
+      handleDisconnect();
+    })
     .on(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);
 
   const joinRoom = () => _joinRoom(room, url, token);

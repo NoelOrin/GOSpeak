@@ -11,7 +11,7 @@ tmp_dir = "tmp"
   exclude_regex = ["_test.go"]
   exclude_unchanged = true
   delay = 1000
-  stop_on_error = true
+  stop_on_error = false
 
 [log]
   main_only = false

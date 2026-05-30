@@ -10,8 +10,13 @@ interface UserBarPropsType {
 }
 
 const UserBar = ({ ...props }: UserBarPropsType) => {
-  const { data, setOutputVolume, setInputVolume, setIsInputMute, setIsOutMute } =
-    VoiceChatStore;
+  const {
+    data,
+    setOutputVolume,
+    setInputVolume,
+    setIsInputMute,
+    setIsOutMute,
+  } = VoiceChatStore;
 
   const user = () => userStore.user();
   const displayName = () => user()?.display_name || user()?.name || "?";
@@ -21,7 +26,7 @@ const UserBar = ({ ...props }: UserBarPropsType) => {
     <div
       class={clsx(
         "flex justify-between items-center px-1.5 pb-1.5 dark:text-white select-none",
-        props.class
+        props.class,
       )}
     >
       <div class="flex justify-between items-center p-2 border border-color rounded-xl w-full">
@@ -29,7 +34,7 @@ const UserBar = ({ ...props }: UserBarPropsType) => {
           <Show
             when={user()?.avatar}
             fallback={
-              <div class="flex justify-center items-center rounded-full size-10 bg-gradient-to-br from-primary to-secondary text-primary-content text-base font-bold">
+              <div class="flex justify-center items-center rounded-full size-10 bg-linear-to-br from-primary to-secondary text-primary-content text-base font-bold text-opacity-10">
                 {initial()}
               </div>
             }
