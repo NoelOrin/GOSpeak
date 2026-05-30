@@ -121,7 +121,7 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 
   return (
     <div
-      class="flex flex-1 flex-col justify-center items-center w-full h-full select-none bg-base-200"
+      class="flex flex-1 flex-col justify-center items-center w-full h-full select-none"
       ref={ref}
     >
       <Show

@@ -79,13 +79,13 @@ const Layout = ({ children }: { children: JSX.Element }) => {
             <Slot name="next">
               <Main>
                 <div
-                  class="flex-1 border-color border-t w-full h-full"
+                  class="flex-1 border-color border-t w-full h-full  bg-base-200"
                   style={{ display: isChannel() ? "none" : undefined }}
                 >
                   {children}
                 </div>
                 <div
-                  class="flex-1 border-color border-t w-full h-full"
+                  class="flex-1 border-color border-t w-full h-full  bg-base-200"
                   style={{ display: isChannel() ? undefined : "none" }}
                 >
                   <RoomDetail />
