@@ -1,5 +1,5 @@
 import { onMount } from "solid-js"
-import AudioDeviceStore, { type AudioBitrate, type AudioSampleRate } from "../../../../stores/audioDeviceStore"
+import AudioDeviceStore, { type AudioBitrate, type AudioSampleRate, type AudioSampleSize } from "../../../../stores/audioDeviceStore"
 import type { SettingTabConfig } from "./types"
 
 const BITRATE_OPTIONS: { value: AudioBitrate; label: string }[] = [
@@ -12,6 +12,13 @@ const BITRATE_OPTIONS: { value: AudioBitrate; label: string }[] = [
 const SAMPLE_RATE_OPTIONS: { value: AudioSampleRate; label: string }[] = [
   { value: 44100, label: "44100 Hz（CD）" },
   { value: 48000, label: "48000 Hz（推荐）" },
+]
+
+const SAMPLE_SIZE_OPTIONS: { value: AudioSampleSize; label: string }[] = [
+  { value: 8, label: "8 bit" },
+  { value: 16, label: "16 bit（推荐）" },
+  { value: 24, label: "24 bit" },
+  { value: 32, label: "32 bit" },
 ]
 
 const Toggle = (props: { label: string; desc: string; checked: boolean; onChange: (v: boolean) => void }) => (
@@ -90,6 +97,23 @@ const AudioForm = () => {
           }
         >
           {SAMPLE_RATE_OPTIONS.map((o) => (
+            <option value={String(o.value)}>{o.label}</option>
+          ))}
+        </select>
+      </fieldset>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend text-[14px]">位深</legend>
+        <select
+          class="select w-full"
+          value={String(AudioDeviceStore.state.sampleSize)}
+          onChange={(e) =>
+            AudioDeviceStore.setSampleSize(
+              Number(e.target.value) as AudioSampleSize,
+            )
+          }
+        >
+          {SAMPLE_SIZE_OPTIONS.map((o) => (
             <option value={String(o.value)}>{o.label}</option>
           ))}
         </select>

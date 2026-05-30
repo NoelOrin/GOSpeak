@@ -109,12 +109,12 @@ const RoomListHeader = () => {
   return (
     <div class="flex justify-between mt-2">
       <h3 class="font-bold">服务器</h3>
-      <button
+      {/* <button
         class="btn btn-xs btn-ghost"
         onClick={() => socketStore.listRooms()}
       >
         刷新
-      </button>
+      </button> */}
     </div>
   );
 };

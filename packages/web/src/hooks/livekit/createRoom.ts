@@ -32,6 +32,7 @@ const _useRoom = ({ token, url, onConnected }: UseRoomProps) => {
       autoGainControl: s.autoGainControl,
       voiceIsolation: s.voiceIsolation,
       sampleRate: s.sampleRate,
+      sampleSize: s.sampleSize,
       channelCount: s.stereo ? 2 : 1,
     },
     publishDefaults: {

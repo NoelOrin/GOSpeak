@@ -12,6 +12,7 @@ interface AudioDeviceInfo {
 
 export type AudioBitrate = 32000 | 48000 | 64000 | 96000
 export type AudioSampleRate = 44100 | 48000
+export type AudioSampleSize = 8 | 16 | 24 | 32
 
 interface AudioDeviceState {
   audioinputs: AudioDeviceInfo[]
@@ -24,6 +25,7 @@ interface AudioDeviceState {
   red: boolean
   // 采集层
   sampleRate: AudioSampleRate
+  sampleSize: AudioSampleSize
   echoCancellation: boolean
   noiseSuppression: boolean
   autoGainControl: boolean
@@ -35,10 +37,11 @@ const initialState: AudioDeviceState = {
   audiooutputs: [],
   loaded: false,
   audioBitrate: 64000,
-  stereo: true,
+  stereo: false,
   dtx: true,
   red: true,
   sampleRate: 48000,
+  sampleSize: 16,
   echoCancellation: true,
   noiseSuppression: true,
   autoGainControl: true,
@@ -80,6 +83,7 @@ function setStereo(v: boolean) { setAudioDeviceStore("stereo", v) }
 function setDtx(v: boolean) { setAudioDeviceStore("dtx", v) }
 function setRed(v: boolean) { setAudioDeviceStore("red", v) }
 function setSampleRate(rate: AudioSampleRate) { setAudioDeviceStore("sampleRate", rate) }
+function setSampleSize(size: AudioSampleSize) { setAudioDeviceStore("sampleSize", size) }
 function setEchoCancellation(v: boolean) { setAudioDeviceStore("echoCancellation", v) }
 function setNoiseSuppression(v: boolean) { setAudioDeviceStore("noiseSuppression", v) }
 function setAutoGainControl(v: boolean) { setAudioDeviceStore("autoGainControl", v) }
@@ -101,7 +105,8 @@ createRoot(() => {
         audioDeviceStore.audioinputs, audioDeviceStore.audiooutputs,
         audioDeviceStore.audioBitrate, audioDeviceStore.stereo,
         audioDeviceStore.dtx, audioDeviceStore.red,
-        audioDeviceStore.sampleRate, audioDeviceStore.echoCancellation,
+        audioDeviceStore.sampleRate, audioDeviceStore.sampleSize,
+        audioDeviceStore.echoCancellation,
         audioDeviceStore.noiseSuppression, audioDeviceStore.autoGainControl,
         audioDeviceStore.voiceIsolation,
       ],
@@ -118,6 +123,7 @@ const AudioDeviceStore = {
   setDtx,
   setRed,
   setSampleRate,
+  setSampleSize,
   setEchoCancellation,
   setNoiseSuppression,
   setAutoGainControl,
