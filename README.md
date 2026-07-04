@@ -3,10 +3,10 @@
   <p><strong>开箱即用的游戏语音平台 · 自部署 Discord 语音平替</strong></p>
 
   <p>
-    <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go" alt="Go" />
-    <img src="https://img.shields.io/badge/SolidJS-1.9-2C4F7C?style=flat&logo=solid" alt="SolidJS" />
-    <img src="https://img.shields.io/badge/License-Apache%202.0-blue?style=flat" alt="License" />
-    <img src="https://img.shields.io/badge/SFU-LiveKit%20%7C%20SRS%20%7C%20MediaSoup%20%7C%20Agora%20%7C%20Daily-blue?style=flat" alt="SFU" />
+    <a href="https://go.dev" target="_blank"><img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go" alt="Go" /></a>
+    <a href="https://www.solidjs.com" target="_blank"><img src="https://img.shields.io/badge/SolidJS-1.9-2C4F7C?style=flat&logo=solid" alt="SolidJS" /></a>
+    <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank"><img src="https://img.shields.io/badge/License-Apache%202.0-blue?style=flat" alt="License" /></a>
+    <a href="./docs/sfu-provider-maturity.md"><img src="https://img.shields.io/badge/SFU-LiveKit%20%7C%20SRS%20%7C%20MediaSoup%20%7C%20Agora%20%7C%20Daily-blue?style=flat" alt="SFU" /></a>
   </p>
 
   <p>
@@ -24,9 +24,7 @@
 
 ---
 
-**GOSpeak** 是一个自托管的游戏语音平台。类似自部署版 Discord 语音频道，音视频数据不经过第三方，完全掌控语音服务器。
-
-支持多种 SFU 后端（LiveKit / SRS / MediaSoup / Agora / Daily），运行时一键切换。提供房间管理、发言检测、成员音量独立调节、权限控制等游戏语音场景功能。
+**GOSpeak** 是一个自托管的游戏语音平台。支持多种 SFU 后端（LiveKit / SRS / MediaSoup / Agora / Daily），运行时一键切换。提供房间管理、发言检测、成员音量独立调节、权限控制等游戏语音场景功能。
 
 ---
 
@@ -59,21 +57,21 @@
 git clone https://github.com/<your>/GOSpeak.git
 cd GOSpeak
 
-# 2. 安装前端依赖
+# 2. 安装依赖
 pnpm install
 
-# 3. 配置文件
-cp packages/server/.env.example packages/server/.env.dev
-# 编辑 .env.dev，填入 LiveKit 凭证（见下方配置说明）
+# 3. 复制配置模板
+cp app/server/.env.example app/server/.env
+# 编辑 app/server/.env，填入 LiveKit 凭证（见下方配置说明）
 
-# 4. 启动依赖服务（LiveKit + Redis + MinIO）
+# 4. 启动依赖服务（LiveKit / Redis / MinIO）
 docker compose -f deploy/docker-compose.example.yml up -d
 
 # 5. 启动开发服务（后端 air 热重载 + 前端 vite）
 pnpm start:dev
 ```
 
-### 最小配置示例（.env.dev）
+### 最小配置示例（app/server/.env）
 
 ```env
 # 数据库 — SQLite 零依赖
@@ -128,8 +126,12 @@ REDIS_HOST=redis
 # 构建一体镜像
 docker build -t gospeak .
 
-# 运行（端口 8998）
-docker run -d --env-file packages/server/.env.prod -p 8998:8998 gospeak
+# 运行（端口 8998，挂载数据库 + 上传目录）
+docker run -d \
+  --env-file app/server/.env.prod \
+  -p 8998:8998 \
+  -v gospeak-data:/app/packages/server/db \
+  gospeak
 ```
 
 ### nginx 反代
@@ -137,64 +139,6 @@ docker run -d --env-file packages/server/.env.prod -p 8998:8998 gospeak
 参考 [`deploy/nginx.conf`](./deploy/nginx.conf) 配置 WebSocket 代理和 TLS。
 
 完整部署指南：[`docs/deployment-guide.md`](./docs/deployment-guide.md)
-
----
-
-## 技术栈
-
-| 层 | 技术 |
-|----|------|
-| 后端 | Go + Gin + GORM + go-socket.io |
-| 前端 | SolidJS + TypeScript + Vite + TanStack Router + Tailwind v4 |
-| SFU | LiveKit（主）/ SRS / MediaSoup / Agora / Daily |
-| 数据库 | SQLite / PostgreSQL / MySQL |
-| 缓存 | Redis（可选，缺失优雅降级）|
-| 存储 | Local / S3（MinIO / R2）|
-| 认证 | JWT + OAuth2（GitHub / Google / QQ）|
-
----
-
-## 架构
-
-### 分层调用
-
-```
-请求 → Router → Middleware(JWT+RBAC) → Handler → Service → Repository → DB
-                                           ↓         ↓
-                                        OAuth       SFU Provider
-                                           ↓         ↓
-                                       第三方登录   音视频引擎
-                                                     ↓
-                                                  Signal(WS)
-```
-
-### 目录结构
-
-```
-packages/
-├── server/                  # Go 后端
-│   ├── main.go              # 入口
-│   ├── server/gin.go        # DI 容器
-│   └── internal/
-│       ├── handler/         # HTTP 控制器
-│       ├── service/         # 业务逻辑
-│       ├── repository/      # 数据访问
-│       ├── signal/          # Socket.IO 信令 Hub（房间/成员/麦控）
-│       ├── sfu/             # SFU Provider 抽象层
-│       ├── livekit/         # LiveKit 实现
-│       ├── model/           # GORM 实体
-│       └── pkg/             # JWT/响应/错误/OAuth
-├── web/                     # SolidJS 前端
-│   └── src/
-│       ├── components/room/ # 语音房间（VoiceChat 组件）
-│       ├── stores/          # 状态管理
-│       └── utils/
-├── sfu-client/              # 前端 SFU 客户端抽象
-├── mediasoup-worker/        # MediaSoup Node 服务
-└── deploy/                  # Docker Compose + 配置
-```
-
-详见 [`ARCHITECTURE.md`](./ARCHITECTURE.md)。
 
 ---
 
@@ -235,7 +179,70 @@ AGORA_APP_CERTIFICATE="xxx"
 SFU_PROVIDER="daily"
 ```
 
-仅改 `.env`，无需代码改动。Provider 成熟度：[`docs/sfu-provider-maturity.md`](./docs/sfu-provider-maturity.md)
+仅改 `.env`，无需代码改动。SFU Provider 成熟度：[`docs/sfu-provider-maturity.md`](./docs/sfu-provider-maturity.md)
+
+> 注意：env 注入的 SFU 提供商环境变量，仅在初次启动时生效，启动后无法通过 env 切换，需要修改数据库中 `sfu_config` 表的 `provider` 字段。
+
+---
+
+## 技术栈
+
+| 层 | 技术 |
+|----|------|
+| 后端 | Go + Gin + GORM + go-socket.io |
+| 前端 | SolidJS + TypeScript + Vite + TanStack Router + Tailwind v4 |
+| SFU | LiveKit（主）/ SRS / MediaSoup / Agora / Daily |
+| 数据库 | SQLite / PostgreSQL / MySQL |
+| 缓存 | Redis（可选，缺失优雅降级）|
+| 存储 | Local / S3（MinIO / R2）|
+| 认证 | JWT + OAuth2（GitHub / Google / QQ）|
+
+---
+
+## 架构
+
+### 分层调用
+
+```
+请求 → Router → Middleware(JWT+RBAC) → Handler → Service → Repository → DB
+                                           ↓         ↓
+                                        OAuth       SFU Provider
+                                           ↓         ↓
+                                       第三方登录   音视频引擎
+                                                     ↓
+                                                  Signal(WS)
+```
+
+### 目录结构
+
+```
+app/
+├── server/                  # Go 后端
+│   ├── main.go              # 入口
+│   ├── server/gin.go        # DI 容器
+│   └── internal/
+│       ├── handler/         # HTTP 控制器
+│       ├── service/         # 业务逻辑
+│       ├── repository/      # 数据访问
+│       ├── signal/          # Socket.IO 信令 Hub（房间/成员/麦控）
+│       ├── sfu/             # SFU Provider 抽象层
+│       ├── livekit/         # LiveKit 实现
+│       ├── model/           # GORM 实体
+│       └── pkg/             # JWT/响应/错误/OAuth
+│── web/                     # SolidJS 前端
+│   └── src/
+│       ├── components/room/ # 语音房间（VoiceChat 组件）
+│       ├── stores/          # 状态管理
+│       └── utils/
+│── packages/
+│   ├── sfu-client/          # 前端 SFU 客户端抽象
+│   └── mediasoup-worker/   # MediaSoup Node 服务
+└── deploy/                  # Docker Compose + 配置
+```
+
+详见 [`ARCHITECTURE.md`](./ARCHITECTURE.md)。
+
+---
 
 ## 开发
 
@@ -263,7 +270,7 @@ pnpm format             # 格式化（biome）
 
 ### 用户数有限制吗？
 
-无内置限制。受限于 SFU 后端与服务器带宽。
+无内置限制。受限于 SFU 后端与服务器带宽。理论上2C4G-30Mbps服务器可轻松支持50人以上的语音房间。
 
 ### 如何添加新 SFU 后端？
 
