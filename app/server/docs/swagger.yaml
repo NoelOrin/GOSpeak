@@ -1,0 +1,1240 @@
+basePath: /api/v1
+definitions:
+  handler.CreateRoomRequest:
+    properties:
+      allow_audience:
+        type: boolean
+      audio_only:
+        type: boolean
+      description:
+        type: string
+      limit:
+        type: integer
+      name:
+        type: string
+      password:
+        type: string
+    required:
+    - name
+    type: object
+  handler.JoinRoomRequest:
+    properties:
+      identity:
+        example: user-123
+        type: string
+      password:
+        type: string
+      room:
+        example: my-room
+        type: string
+    required:
+    - identity
+    - room
+    type: object
+  handler.SignalRequest:
+    properties:
+      data: {}
+      identity:
+        example: user-123
+        type: string
+      room:
+        example: my-room
+        type: string
+      type:
+        example: offer
+        type: string
+    required:
+    - type
+    type: object
+  handler.SyncRolePermissionsRequest:
+    properties:
+      permissions:
+        items:
+          type: string
+        type: array
+      role:
+        type: string
+    required:
+    - permissions
+    - role
+    type: object
+  handler.UpdateRoomRequest:
+    properties:
+      allow_audience:
+        type: boolean
+      audio_only:
+        type: boolean
+      description:
+        type: string
+      id:
+        type: integer
+      limit:
+        type: integer
+      name:
+        type: string
+    required:
+    - id
+    type: object
+  handler.confirmUploadRequest:
+    properties:
+      object_key:
+        type: string
+    required:
+    - object_key
+    type: object
+  handler.presignUploadRequest:
+    properties:
+      category:
+        type: string
+      content_type:
+        type: string
+      file_name:
+        type: string
+      file_size:
+        type: integer
+    required:
+    - category
+    - content_type
+    - file_name
+    - file_size
+    type: object
+  pkg.ErrCode:
+    enum:
+    - 0
+    - 1001
+    - 1002
+    - 1003
+    - 1010
+    - 1011
+    - 1012
+    - 1013
+    - 1014
+    - 1015
+    - 1016
+    - 2001
+    - 3001
+    - 3002
+    - 5001
+    - 6001
+    - 6002
+    - 7001
+    - 7002
+    - 7003
+    - 7004
+    - 8001
+    - 8002
+    - 8003
+    - 8004
+    - 8005
+    - 8006
+    - 8007
+    - 8008
+    - 8009
+    - 8010
+    - 8101
+    - 8102
+    - 8103
+    - 8104
+    type: integer
+    x-enum-varnames:
+    - SUCCESS
+    - TOKEN_NOT_EXIST
+    - TOKEN_WRONG
+    - TOKEN_EXPIRED
+    - INVALID_PASSWORD
+    - USER_NOT_FOUND
+    - USERNAME_EXISTS
+    - FORBIDDEN
+    - TOKEN_REVOKED
+    - USER_BANNED
+    - USER_MUTED
+    - INVALID_PARAMS
+    - NOT_FOUND
+    - ALREADY_EXISTS
+    - INTERNAL_ERROR
+    - SFU_NOT_CONFIGURED
+    - SFU_ERROR
+    - OAUTH_PROVIDER_NOT_FOUND
+    - OAUTH_PROVIDER_DISABLED
+    - OAUTH_TOKEN_EXCHANGE_FAILED
+    - OAUTH_GET_USER_FAILED
+    - EMAIL_ALREADY_EXISTS
+    - EMAIL_CODE_INVALID
+    - EMAIL_CODE_EXPIRED
+    - EMAIL_CODE_ALREADY_USED
+    - EMAIL_SEND_TOO_FREQUENT
+    - EMAIL_SEND_FAILED
+    - EMAIL_NOT_VERIFIED
+    - EMAIL_CODE_MAX_ATTEMPTS
+    - EMAIL_NOT_CONFIGURED
+    - PASSWORD_RESET_DISABLED
+    - STORAGE_NOT_CONFIGURED
+    - STORAGE_ERROR
+    - STORAGE_FILE_TOO_LARGE
+    - STORAGE_FILE_TYPE_NOT_ALLOWED
+  pkg.Response:
+    properties:
+      code:
+        $ref: '#/definitions/pkg.ErrCode'
+      data: {}
+      msg:
+        type: string
+    type: object
+  service.LoginRequest:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  service.RegisterRequest:
+    properties:
+      email:
+        type: string
+      email_code:
+        type: string
+      password:
+        type: string
+      username:
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  service.UpdateStorageConfigRequest:
+    properties:
+      access_key:
+        type: string
+      allowed_types:
+        type: string
+      bucket:
+        type: string
+      endpoint:
+        type: string
+      max_file_size:
+        type: integer
+      path_prefix:
+        type: string
+      provider_type:
+        type: string
+      public_base_url:
+        type: string
+      region:
+        type: string
+      secret_key:
+        type: string
+    type: object
+host: localhost:8998
+info:
+  contact:
+    name: NoelOrin
+    url: https://github.com/NoelOrin
+  description: GoRTC - WebRTC 服务器端 API 接口文档
+  license:
+    name: MIT 许可证
+    url: https://opensource.org/licenses/MIT
+  termsOfService: https://github.com/NoelOrin/GoRTC
+  title: GoRTC API
+  version: "1.0"
+paths:
+  /auth/change_password:
+    post:
+      consumes:
+      - application/json
+      description: 已登录用户修改密码（需验证旧密码）
+      parameters:
+      - description: 密码信息
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            new_password:
+              type: string
+            old_password:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 修改密码
+      tags:
+      - 认证
+  /auth/first_change_password:
+    post:
+      consumes:
+      - application/json
+      description: 管理员首次登录时修改默认密码（无需旧密码），可选同时修改用户名
+      parameters:
+      - description: 新密码，name可选
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            name:
+              type: string
+            new_password:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 首次登录修改密码
+      tags:
+      - 认证
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: 验证用户并返回 JWT token
+      parameters:
+      - description: 登录凭据
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: 用户登录
+      tags:
+      - 认证
+  /auth/logout:
+    post:
+      description: 使当前会话失效（需要 Bearer token）
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 用户登出
+      tags:
+      - 认证
+  /auth/refresh:
+    post:
+      description: 为已认证用户刷新 JWT token
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 刷新当前用户 token
+      tags:
+      - 认证
+  /auth/refresh_token:
+    post:
+      consumes:
+      - application/json
+      description: 使用刷新 token 获取新的访问 token
+      parameters:
+      - description: 刷新 token
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            refresh_token:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: 刷新 JWT token
+      tags:
+      - 认证
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: 注册新用户账号
+      parameters:
+      - description: 注册信息
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: 用户注册
+      tags:
+      - 认证
+  /auth/reset_password:
+    post:
+      consumes:
+      - application/json
+      description: 通过邮箱验证码重置密码；未启用邮箱配置时该能力禁用
+      parameters:
+      - description: 邮箱验证码和新密码
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            code:
+              type: string
+            email:
+              type: string
+            new_password:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: 重置密码
+      tags:
+      - 认证
+  /mute/cancel:
+    post:
+      consumes:
+      - application/json
+      description: 取消用户的禁言
+      parameters:
+      - description: 用户 ID
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            user_id:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 取消禁言
+      tags:
+      - 禁言
+  /mute/create:
+    post:
+      consumes:
+      - application/json
+      description: 对用户进行定时或永久禁言
+      parameters:
+      - description: 禁言参数
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            duration:
+              format: int64
+              type: integer
+            permanent:
+              type: boolean
+            reason:
+              type: string
+            user_id:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 禁言用户
+      tags:
+      - 禁言
+  /mute/list:
+    post:
+      description: 获取所有生效禁言记录
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 禁言列表
+      tags:
+      - 禁言
+  /mute/status:
+    post:
+      consumes:
+      - application/json
+      description: 查询指定用户是否被禁言
+      parameters:
+      - description: 用户 ID
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            user_id:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 查询禁言状态
+      tags:
+      - 禁言
+  /permission/list:
+    post:
+      description: 列出系统中所有可用的权限码
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取所有权限定义
+      tags:
+      - 权限
+  /permission/role:
+    post:
+      consumes:
+      - application/json
+      description: 获取指定角色的权限码列表
+      parameters:
+      - description: 角色名称
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            role:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取角色权限
+      tags:
+      - 权限
+  /permission/sync:
+    post:
+      consumes:
+      - application/json
+      description: 全量覆盖指定角色的权限列表
+      parameters:
+      - description: 角色和权限码列表
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.SyncRolePermissionsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 同步角色权限
+      tags:
+      - 权限
+  /role/create:
+    post:
+      consumes:
+      - application/json
+      description: 创建新角色
+      parameters:
+      - description: 角色名称
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            name:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建角色
+      tags:
+      - 角色
+  /role/delete:
+    post:
+      consumes:
+      - application/json
+      description: 根据角色 ID 删除角色
+      parameters:
+      - description: 角色 ID
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            id:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除角色
+      tags:
+      - 角色
+  /role/list:
+    post:
+      description: 获取所有角色
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取角色列表
+      tags:
+      - 角色
+  /role/update:
+    post:
+      consumes:
+      - application/json
+      description: 更新角色名称
+      parameters:
+      - description: 角色 ID 和名称
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新角色
+      tags:
+      - 角色
+  /room/create:
+    post:
+      consumes:
+      - application/json
+      description: 创建新房间
+      parameters:
+      - description: 房间信息
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateRoomRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建房间
+      tags:
+      - 房间
+  /room/delete:
+    post:
+      consumes:
+      - application/json
+      description: 根据 ID 删除房间
+      parameters:
+      - description: 房间 ID
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            id:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除房间
+      tags:
+      - 房间
+  /room/get:
+    post:
+      consumes:
+      - application/json
+      description: 根据 ID 获取房间信息
+      parameters:
+      - description: 房间 ID
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            id:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取房间详情
+      tags:
+      - 房间
+  /room/list:
+    post:
+      consumes:
+      - application/json
+      description: 分页获取房间列表
+      parameters:
+      - description: 分页参数
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            page:
+              type: integer
+            page_size:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 房间列表
+      tags:
+      - 房间
+  /room/update:
+    post:
+      consumes:
+      - application/json
+      description: 根据 ID 更新房间信息
+      parameters:
+      - description: 更新内容
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateRoomRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新房间
+      tags:
+      - 房间
+  /signal/participants:
+    get:
+      description: 获取指定 LiveKit 房间中的所有参与者
+      parameters:
+      - description: 房间名称
+        in: query
+        name: room
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: 获取房间参与者
+      tags:
+      - 信令
+  /signal/rooms:
+    get:
+      description: 从 LiveKit 获取所有活跃房间
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: 获取房间列表
+      tags:
+      - 信令
+  /signal/signal:
+    post:
+      consumes:
+      - application/json
+      description: 中继 WebRTC 信令消息（offer/answer/ICE candidate）
+      parameters:
+      - description: 信令消息
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.SignalRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: 交换信令消息
+      tags:
+      - 信令
+  /signal/token:
+    post:
+      consumes:
+      - application/json
+      description: 生成用于加入房间的 LiveKit 访问 token
+      parameters:
+      - description: 房间和身份标识
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.JoinRoomRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: 获取 LiveKit 加入 token
+      tags:
+      - 信令
+  /signal/webhook:
+    post:
+      consumes:
+      - application/json
+      description: 接收 LiveKit 服务端推送的事件（参与者加入/离开、Track 发布/取消等）
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: 接收 LiveKit Webhook 事件
+      tags:
+      - 信令
+  /storage/config:
+    post:
+      description: 管理员获取存储配置（AK/SK 脱敏）
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取存储配置
+      tags:
+      - 存储
+  /storage/confirm:
+    post:
+      consumes:
+      - application/json
+      description: S3 直传完成后调用，确认文件已上传并返回公开 URL
+      parameters:
+      - description: 确认请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.confirmUploadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 确认 S3 上传完成
+      tags:
+      - 存储
+  /storage/delete:
+    post:
+      consumes:
+      - application/json
+      description: 管理员删除存储中的文件
+      parameters:
+      - description: 对象键
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            key:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除存储对象
+      tags:
+      - 存储
+  /storage/presign:
+    post:
+      consumes:
+      - application/json
+      description: 获取文件上传的预签名 URL（S3 模式直传，本地模式返回 object_key）
+      parameters:
+      - description: 上传请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.presignUploadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取预签名上传 URL
+      tags:
+      - 存储
+  /storage/update-config:
+    post:
+      consumes:
+      - application/json
+      description: 管理员更新存储配置
+      parameters:
+      - description: 配置请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateStorageConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新存储配置
+      tags:
+      - 存储
+  /storage/upload:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 本地存储模式下通过服务器中转上传文件
+      parameters:
+      - description: 上传文件
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: 对象键
+        in: formData
+        name: object_key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 本地模式中转上传
+      tags:
+      - 存储
+  /user/delete:
+    post:
+      consumes:
+      - application/json
+      description: 根据用户 ID 删除用户
+      parameters:
+      - description: 用户 ID
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            id:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除用户
+      tags:
+      - 用户
+  /user/get:
+    post:
+      consumes:
+      - application/json
+      description: 通过用户 ID 获取用户信息
+      parameters:
+      - description: 用户 ID
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            id:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 根据 ID 获取用户
+      tags:
+      - 用户
+  /user/list:
+    post:
+      consumes:
+      - application/json
+      description: 分页获取用户列表
+      parameters:
+      - description: 分页参数
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            page:
+              type: integer
+            page_size:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取用户列表
+      tags:
+      - 用户
+  /user/profile:
+    post:
+      description: 获取当前已认证用户的资料信息
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取用户资料
+      tags:
+      - 用户
+  /user/update-profile:
+    post:
+      consumes:
+      - application/json
+      description: 更新当前已认证用户的显示名称和头像
+      parameters:
+      - description: 用户资料
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新当前用户资料
+      tags:
+      - 用户
+  /user/update-role:
+    post:
+      consumes:
+      - application/json
+      description: 管理员更新用户角色（admin/user）
+      parameters:
+      - description: 用户 ID 和角色
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            id:
+              type: integer
+            role:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新用户角色
+      tags:
+      - 用户
+  /user/upload-avatar:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 上传当前用户的头像图片文件
+      parameters:
+      - description: 头像文件（支持 jpeg、png、gif、webp，最大 5MB）
+        in: formData
+        name: avatar
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 上传头像
+      tags:
+      - 用户
+securityDefinitions:
+  BearerAuth:
+    description: Type "Bearer " followed by your JWT token
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

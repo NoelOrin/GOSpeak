@@ -1,0 +1,26 @@
+{
+  "name": "gospeak-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "dev:web": "pnpm --filter @gospeak/web dev",
+    "build:web": "pnpm --filter @gospeak/web build",
+    "dev:server": "pnpm --filter @gospeak/server dev",
+    "prod:server": "pnpm --filter @gospeak/server prod",
+    "build:server": "pnpm --filter @gospeak/server build",
+    "test:server": "pnpm --filter @gospeak/server test",
+    "start:dev": "pnpm run dev:server & pnpm run dev:web",
+    "start:prod": "pnpm run prod:server",
+    "format": "pnpm -r format"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^17.7.2",
+    "@commitlint/config-conventional": "^17.7.0",
+    "lefthook": "1.8.5",
+    "turbo": "^2.10.0"
+  }
+}

@@ -1,0 +1,211 @@
+# =============================================================================
+# GOSpeak Docker Compose — 渐进式数据库方案
+# =============================================================================
+# 三档配置, 按 DB 需求组合. 应用 DB/Redis 通过 .env 切换.
+#
+# ── 数据库渐进档 ──────────────────────────────────────────────────────────
+#  (A) 单 SQLite       : 默认, 零外部 DB.            .env DB_TYPE=SQLite       REDIS_HOST=""
+#  (B) 单 PostgreSQL   : --profile postgres
+#                         .env DB_TYPE=PostgresSQL DB_HOST=postgres ...       REDIS_HOST=""
+#  (C) PostgreSQL+Redis: --profile postgres-redis
+#                         .env DB_TYPE=PostgresSQL DB_HOST=postgres ...       REDIS_HOST=redis
+#
+# ── 应用层 Redis 复用规则 ────────────────────────────────────────────────
+#  • 用 LiveKit 时 → LiveKit 自身需要 redis 服务, 应用直接复用 (REDIS_HOST=redis)
+#      (livekit-redis 即下方 `redis`, 两者共用, 不另起)
+#  • 不用 LiveKit (纯 mediasoup/srs) 又要应用 Redis → 起独立 `--profile redis`
+#      (此时下方 `redis` 不被 LiveKit 拉起, 改用 app-redis; REDIS_HOST=app-redis)
+#
+# ── SFU 渐进档 (与 DB 正交, 取消注释启用) ─────────────────────────────────
+#  默认 LiveKit. MediaSoup/SRS 见文件底部注释区块.
+#
+# ── 应用启动 ──────────────────────────────────────────────────────────────
+#  docker build -t gospeak ..
+#  docker run -d --env-file ../app/server/.env.prod -p 8998:8998 gospeak
+# =============================================================================
+# profile 说明:
+#   postgres       → 起 PostgreSQL
+#   redis          → 起"独立应用 Redis" (仅纯 mediasoup/srs + 要应用 Redis 时用)
+#   postgres-redis → 起 PostgreSQL (应用 Redis 走下方 `redis` 共用 LiveKit)
+#   (无 profile)   → 仅 SQLite
+# =============================================================================
+
+services:
+
+  # ===========================================================================
+  # Redis — LiveKit 与应用共用
+  # ===========================================================================
+  # 用 LiveKit 时占此服务, 应用 C 档复用: REDIS_HOST=redis
+  # 不用 LiveKit 且要应用 Redis → 改用 --profile redis 的 app-redis
+  redis:
+    image: redis:7-alpine
+    container_name: gospeak-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ===========================================================================
+  # 独立应用 Redis (仅纯 mediasoup/srs + 要应用 Redis)
+  # ===========================================================================
+  # 启用: --profile redis   应用: REDIS_HOST=app-redis
+  # 与上方 redis 分开, 避免与 LiveKit 无关时多占资源
+  app-redis:
+    image: redis:7-alpine
+    container_name: gospeak-app-redis
+    restart: unless-stopped
+    profiles: ["redis"]
+    ports:
+      - "6380:6379"          # 避让本机 6379
+    volumes:
+      - app-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ===========================================================================
+  # 数据库 — PostgreSQL (档 B/C)
+  # ===========================================================================
+  # 启用: --profile postgres  或  --profile postgres-redis
+  # 应用 .env: DB_TYPE=PostgresSQL DB_HOST=postgres DB_PORT=5432 DB_USER=gospeak DB_PASSWORD=gospeak
+  postgres:
+    image: postgres:16-alpine
+    container_name: gospeak-postgres
+    restart: unless-stopped
+    profiles: ["postgres", "postgres-redis"]
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: gospeak
+      POSTGRES_PASSWORD: gospeak
+      POSTGRES_DB: gospeak
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gospeak"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ===========================================================================
+  # MinIO — S3 兼容对象存储 (头像/文件上传)
+  # ===========================================================================
+  minio:
+    image: minio/minio:latest
+    container_name: gospeak-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"     # S3 API
+      - "9001:9001"     # Console
+    volumes:
+      - minio-data:/data
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================================================
+  # SFU Provider: LiveKit (默认)
+  # ===========================================================================
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: gospeak-livekit
+    restart: unless-stopped
+    ports:
+      - "7880:7880"       # HTTP health
+      - "7881:7881"       # WebRTC (TLS)
+      - "7882:7882"       # WebRTC (TCP)
+      - "7882:7882/udp"   # WebRTC (UDP)
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml
+    command: --config /etc/livekit.yaml
+    depends_on:
+      redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ===========================================================================
+  # SFU Provider: MediaSoup Worker (备选)
+  # ===========================================================================
+  # 启用: 取消下方注释 + .env 设 SFU_PROVIDER=mediasoup
+  # mediasoup-worker:
+  #   build:
+  #     context: ..
+  #     dockerfile: deploy/mediasoup-worker/Dockerfile
+  #   container_name: gospeak-mediasoup-worker
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3012:3012"
+  #     - "40000-49999:40000-49999/udp"
+  #   environment:
+  #     PORT: 3012
+  #     RTC_MIN_PORT: 40000
+  #     RTC_MAX_PORT: 49999
+  #     LISTEN_IP: 0.0.0.0
+  #     ANNOUNCED_IP: 127.0.0.1
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+
+  # ===========================================================================
+  # SFU Provider: SRS (备选)
+  # ===========================================================================
+  # 启用: 取消下方注释 + .env 设 SFU_PROVIDER=srs
+  # srs:
+  #   image: ossrs/srs:5
+  #   container_name: gospeak-srs
+  #   restart: unless-stopped
+  #   ports:
+  #     - "1935:1935"
+  #     - "1985:1985"
+  #     - "8080:8080"
+  #     - "8000:8000/udp"
+  #   volumes:
+  #     - ./srs/srs.conf:/usr/local/srs/conf/srs.conf
+  #   command: ./objs/srs -c conf/srs.conf
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+
+
+  # ===========================================================================
+  # GOSpeak 应用服务（生产）
+  # ===========================================================================
+  # 默认注释：镜像需先构建（docker build -t gospeak ..），且依赖上方 DB/Redis/SFU。
+  # 取消注释后 `docker compose up -d gospeak` 启动。
+  # restart: unless-stopped 确保进程 panic/异常退出后自动重启（go-socket.io v1.7.0
+  # 偶发 gorilla websocket panic 的兜底）。
+  # gospeak:
+  #   image: gospeak:latest
+  #   container_name: gospeak-app
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8998:8998"
+  #   env_file:
+  #     - ../app/server/.env.prod
+  #   depends_on:
+  #     - redis
+  #   volumes:
+  #     - gospeak-db:/app/app/server/db
+  #     - gospeak-logs:/app/logs
+
+
+volumes:
+  redis-data:
+  app-redis-data:
+  postgres-data:
+  minio-data:
+  gospeak-db:
+  gospeak-logs:

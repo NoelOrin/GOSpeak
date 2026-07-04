@@ -1,0 +1,37 @@
+{
+	"name": "@gospeak/sfu-client",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"main": "./src/index.ts",
+	"module": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"import": "./src/index.ts"
+		},
+		"./client": {
+			"types": "./src/factory.ts",
+			"import": "./src/factory.ts"
+		},
+		"./types": {
+			"types": "./src/types.ts",
+			"import": "./src/types.ts"
+		}
+	},
+	"scripts": {
+		"build": "tsc",
+		"lint": "biome check",
+		"dev": "tsc --watch"
+	},
+	"dependencies": {
+		"@daily-co/daily-js": "^0.82.0",
+		"agora-rtc-sdk-ng": "^4.24.5",
+		"livekit-client": "^2.16.1",
+		"mediasoup-client": "^3.21.0"
+	},
+	"devDependencies": {
+		"typescript": "^5.9.3"
+	}
+}

@@ -1,0 +1,30 @@
+# =============================================================================
+# GOSpeak — LiveKit Server Config 
+# =============================================================================
+
+port: 7880
+bind_addresses:
+  - ""
+
+rtc:
+  tcp_port: 7882
+  udp_port: 7882
+  use_external_ip: false
+  stun_servers:
+    - stun.l.google.com:19302
+
+keys:
+  API7ar5gCTyVkfY: xtpW2PGUKPugyVzEvX4OaPaHtNGm5bRUmrIXe6NMIqb
+
+redis:
+  address: livekit-redis:6379
+
+turn:
+  enabled: true
+  udp_port: 3478
+  external_tls: false
+  # TURN 端口映射：WebRTC 在 NAT 场景下的候选路径
+  # 本地开发不建议直接用 external_ip，TURN relay 走内网即可
+
+webhook:
+  urls: []

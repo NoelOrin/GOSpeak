@@ -1,0 +1,42 @@
+package signal
+
+const (
+	EventConnect    = "connection"
+	EventDisconnect = "disconnect"
+
+	// 房间管理（客户端 → 服务端）
+	EventRoomCreate  = "room:create"
+	EventRoomJoin    = "room:join"
+	EventRoomLeave   = "room:leave"
+	EventRoomList    = "room:list"
+	EventRoomJoinSFU = "room:join:sfu"
+
+	// SFU 媒体协商（当前由 mediasoup 使用）
+	EventSFUGetRouterCapabilities = "sfu:get-router-capabilities"
+	EventSFUCreateTransport       = "sfu:create-transport"
+	EventSFUConnectTransport      = "sfu:connect-transport"
+	EventSFUProduce               = "sfu:produce"
+	EventSFUConsume               = "sfu:consume"
+	EventSFUProducerReady         = "sfu:producer-ready"
+	EventSFUProducerClosed        = "sfu:producer-closed"
+
+	// 服务端推送
+	EventRoomCreated    = "room:created"
+	EventRoomLeft       = "room:left"
+	EventRoomUpdated    = "room:updated"
+	EventMemberJoined   = "member:joined"
+	EventMemberLeft     = "member:left"
+	EventMemberUpdated  = "member:updated"
+	EventRoomListResult = "room:list:result"
+
+	// 管理操作（客户端 → 服务端）
+	EventMemberMicState = "member:mic-state"
+	EventRoomKick = "room:kick"
+
+	// 管理操作推送
+	EventRoomKicked = "room:kicked"
+
+	// 禁言事件
+	EventUserMuted   = "user:muted"
+	EventUserUnmuted = "user:unmuted"
+)

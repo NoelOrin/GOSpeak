@@ -1,0 +1,29 @@
+@import "tailwindcss";
+@import "./assets/styles/global.css";
+@import "solid-notifications/index.css";
+@config "../tailwind.config.ts";
+
+@plugin "daisyui" {
+	themes: all;
+	/* acid --default,, */
+	/* dark --prefersdark; */
+	--radius-selector: 1rem;
+	--radius-field: 0.25rem;
+	--radius-box: 0.5rem;
+}
+
+@plugin "daisyui/theme" {
+	name: "acid";
+	default: true;
+	--radius-selector: 1rem;
+	--radius-field: 0.25rem;
+	--radius-box: 0.5rem;
+}
+
+@plugin "daisyui/theme" {
+	name: "abyss";
+	/* default: true; */
+	--radius-selector: 1rem;
+	--radius-field: 0.25rem;
+	--radius-box: 0.5rem;
+}

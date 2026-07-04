@@ -1,0 +1,89 @@
+# ========================
+# 通用
+# ========================
+node_modules
+.DS_Store
+*.local
+.idea
+.vscode
+
+# 本地工具缓存
+.pnpm-store/
+.superpowers/
+.cache/
+
+# ========================
+# 前端 (app/web)
+# ========================
+dist
+dist-ssr
+.nitro
+.tanstack
+.wrangler
+*.tsbuildinfo
+
+# TanStack Router 自动生成
+app/web/src/routeTree.gen.ts
+
+# Vite 临时文件
+vite.config.ts.timestamp*
+
+# ========================
+# 后端 (app/server)
+# ========================
+
+# 环境变量（真实配置，模板 .env.example 保留追踪）
+app/server/.env
+app/server/.env.dev
+app/server/.env.prod
+
+# 编译输出
+app/server/tmp/
+app/server/build-errors.log
+
+# SQLite 数据库
+app/server/db/
+*.db
+*.db-shm
+*.db-wal
+
+# 日志
+app/server/logs/
+app/server/gin.log
+*.log
+
+# Go 编译产物
+gospeak-server
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go 工作区
+go.work
+go.work.sum
+
+# Swagger 自动生成（可选，如需保留则注释掉）
+# app/server/docs/docs.go
+# app/server/docs/swagger.json
+# app/server/docs/swagger.yaml
+
+# ========================
+# 测试日志
+# ========================
+agent_test_logs/*
+!agent_test_logs/AGENTS.md
+
+# ========================
+# Agents 配置
+# ========================
+.agents/*
+!.agents/skills/
+!.agents/AGENTS.md
+
+# 临时/构建目录
+tmp/
+build/

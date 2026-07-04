@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>{{.BrandName}} 验证码</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;">
+	<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7;padding:32px 0;">
+		<tr>
+			<td align="center">
+				<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+					<!-- Header -->
+					<tr>
+						<td style="padding:32px 40px 24px;text-align:center;background:linear-gradient(135deg,#5b6ee0,#7b6cd9);">
+							<h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:600;letter-spacing:1px;">{{.BrandName}}</h1>
+						</td>
+					</tr>
+					<!-- Body -->
+					<tr>
+						<td style="padding:32px 40px 16px;">
+							<p style="margin:0 0 8px;color:#1a1a2e;font-size:16px;line-height:1.6;">您好，</p>
+							<p style="margin:0 0 24px;color:#555;font-size:15px;line-height:1.6;">
+								您正在进行 <strong style="color:#5b6ee0;">{{.SceneLabel}}</strong> 操作，请使用以下验证码完成验证：
+							</p>
+							<!-- Code -->
+							<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+								<tr>
+									<td style="text-align:center;background-color:#f0f1ff;border-radius:10px;padding:20px;border:2px dashed #5b6ee0;">
+										<span style="font-size:36px;font-weight:700;letter-spacing:10px;color:#5b6ee0;font-family:'SF Mono','Fira Code','Courier New',monospace;">{{.Code}}</span>
+									</td>
+								</tr>
+							</table>
+							<!-- TTL -->
+							<p style="margin:0 0 8px;color:#999;font-size:13px;line-height:1.5;">
+								验证码有效期为 <strong style="color:#e8554e;">{{.TTL}}</strong>，过期后请重新获取。
+							</p>
+							<p style="margin:0;color:#999;font-size:13px;line-height:1.5;">
+								如果这不是您本人的操作，请忽略此邮件，您的账号安全不受影响。
+							</p>
+						</td>
+					</tr>
+					<!-- Divider -->
+					<tr>
+						<td style="padding:0 40px;">
+							<hr style="border:none;border-top:1px solid #f0f0f0;margin:0;">
+						</td>
+					</tr>
+					<!-- Footer -->
+					<tr>
+						<td style="padding:20px 40px 32px;text-align:center;">
+							<p style="margin:0 0 4px;color:#bbb;font-size:12px;">此邮件由系统自动发送，请勿回复。</p>
+							<p style="margin:0;color:#bbb;font-size:12px;">&copy; {{.Year}} {{.BrandName}}. All rights reserved.</p>
+						</td>
+					</tr>
+				</table>
+			</td>
+		</tr>
+	</table>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="color-scheme" content="light dark">
+	<meta name="supported-color-schemes" content="light dark">
+	<title>{{.BrandName}} 验证码</title>
+</head>
+</html>
+<!-- KEEP THIS FILE AS PLAIN HTML: it doubles as a browser-previewable design source. -->
+<!-- Go uses html/template to inject {{.Code}}, {{.SceneLabel}}, {{.TTL}}, {{.BrandName}}, {{.Year}}. -->
+<!-- Email clients ignore <style> in many cases, so ALL styling is inline. -->
+<html lang="zh-CN" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style>
+		body { margin:0 !important; padding:0 !important; }
+		@media (prefers-color-scheme: dark) {
+			.email-root { background-color:#1a1b26 !important; }
+			.email-card { background-color:#262b3d !important; }
+			.email-hero { background:linear-gradient(135deg,#6366f1,#8b5cf6) !important; }
+			.email-body-text { color:#e2e8f0 !important; }
+			.email-muted { color:#94a3b8 !important; }
+			.email-code-box { background-color:#312e5f !important; border-color:#8b5cf6 !important; }
+			.email-code { color:#c4b5fd !important; }
+			.email-accent { color:#a78bfa !important; }
+			.email-divider { border-color:#3e3f54 !important; }
+			.email-footer { color:#64748b !important; }
+		}
+		@media only screen and (max-width:520px) {
+			.email-card { width:100% !important; border-radius:0 !important; }
+			.email-hero { padding:28px 24px !important; }
+			.email-body { padding:28px 24px 16px !important; }
+			.email-code { font-size:28px !important; letter-spacing:6px !important; }
+			.email-footer { padding:16px 24px 28px !important; }
+		}
+	</style>
+</head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;-webkit-font-smoothing:antialiased;">
+	<div class="email-root" style="background-color:#f1f5f9;padding:32px 0;">
+		<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" align="center">
+			<tr>
+				<td align="center" style="padding:0;">
+					<table role="presentation" class="email-card" width="500" cellpadding="0" cellspacing="0" border="0" style="max-width:500px;width:100%;background-color:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+						<!-- Hero -->
+						<tr>
+							<td class="email-hero" style="padding:36px 40px 28px;text-align:center;background:linear-gradient(135deg,#6366f1,#8b5cf6);">
+								<img src="data:image/svg+xml,%3Csvg %20width%3D%2248%22%20height%3D%2248%22%20viewBox%3D%220%200%2048%2048%22%20fill%3D%22none%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Crect%20width%3D%2248%22%20height%3D%2248%22%20rx%3D%2212%22%20fill%3D%22white%22%20fill-opacity%3D%220.2%22/%3E%3Cpath%20d%3D%22M24%2012L36%2018V30L24%2036L12%2030V18L24%2012Z%22%20stroke%3D%22white%22%20stroke-width%3D%222.5%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M19%2024L23%2028L30%2020%22%20stroke%3D%22white%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E" alt="" width="48" height="48" style="display:block;margin:0 auto 10px;border:0;outline:none;text-decoration:none;">
+								<h1 style="margin:0;color:#ffffff;font-size:21px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">{{.BrandName}}</h1>
+							</td>
+						</tr>
+						<!-- Body -->
+						<tr>
+							<td class="email-body" style="padding:32px 40px 16px;">
+								<p class="email-body-text" style="margin:0 0 6px;color:#1e293b;font-size:16px;line-height:1.7;font-weight:500;">您好，</p>
+								<p class="email-body-text" style="margin:0 0 26px;color:#475569;font-size:15px;line-height:1.7;">
+									您正在进行<strong style="color:#6366f1;">{{.SceneLabel}}</strong>操作，请使用下方验证码完成验证。
+								</p>
+								<!-- Code -->
+								<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 26px;">
+									<tr>
+										<td class="email-code-box" style="text-align:center;background-color:#eef2ff;border-radius:12px;padding:22px 16px;border:2px solid #6366f1;">
+											<span class="email-code" style="font-size:34px;font-weight:800;letter-spacing:9px;color:#6366f1;font-family:'SF Mono','Fira Code','JetBrains Mono','Courier New',monospace;">{{.Code}}</span>
+										</td>
+									</tr>
+								</table>
+								<!-- Info -->
+								<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+									<tr>
+										<td style="background-color:#f8fafc;border-radius:8px;padding:12px 16px;">
+											<p class="email-muted" style="margin:0 0 4px;color:#64748b;font-size:13px;line-height:1.5;">
+												验证码有效期：<strong style="color:#ef4444;">{{.TTL}}</strong>
+											</p>
+											<p class="email-muted" style="margin:0;color:#64748b;font-size:13px;line-height:1.5;">
+												过期后请重新获取验证码。
+											</p>
+										</td>
+									</tr>
+								</table>
+							</td>
+						</tr>
+						<!-- Security note -->
+						<tr>
+							<td style="padding:0 40px 20px;">
+								<p class="email-muted" style="margin:0;color:#94a3b8;font-size:13px;line-height:1.6;">
+									如果这不是您本人的操作，请忽略此邮件，您的账号安全不会受到影响。
+								</p>
+							</td>
+						</tr>
+						<!-- Divider -->
+						<tr>
+							<td style="padding:0 40px;">
+								<hr class="email-divider" style="border:none;border-top:1px solid #e2e8f0;margin:0;">
+							</td>
+						</tr>
+						<!-- Footer -->
+						<tr>
+							<td class="email-footer" style="padding:20px 40px 32px;text-align:center;">
+								<p style="margin:0 0 3px;color:#94a3b8;font-size:12px;line-height:1.5;">此邮件由系统自动发送，请勿直接回复。</p>
+								<p style="margin:0;color:#cbd5e1;font-size:12px;line-height:1.5;">&copy; {{.Year}} {{.BrandName}}. All rights reserved.</p>
+							</td>
+						</tr>
+					</table>
+				</td>
+			</tr>
+		</table>
+	</div>
+</body>
+</html>

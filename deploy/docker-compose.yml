@@ -1,0 +1,54 @@
+services:
+  livekit-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  livekit-server:
+    image: livekit/livekit-server:latest
+    restart: unless-stopped
+    ports:
+      - "7880:7880"   # HTTP health
+      - "7881:7881"   # WebRTC (TLS)
+      - "7882:7882"   # WebRTC (TCP)
+      - "7882:7882/udp" # WebRTC (UDP)
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml
+    command: --config /etc/livekit.yaml
+    depends_on:
+      - livekit-redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  srs:
+    image: ossrs/srs:5
+    restart: unless-stopped
+    ports:
+      - "1935:1935"
+      - "1985:1985"
+      - "8080:8080"
+      - "8000:8000/udp"
+    volumes:
+      - ./srs/srs.conf:/usr/local/srs/conf/srs.conf
+    command: ./objs/srs -c conf/srs.conf
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    ports:
+      - "9000:9000"     # S3 API
+      - "9001:9001"     # Console
+    volumes:
+      - minio-data:/data
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  minio-data:

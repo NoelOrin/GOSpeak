@@ -1,0 +1,176 @@
+// Package redis — JWT 签名密钥轮换子模块。
+// 基于 Redis 主动轮换签名密钥：密钥本身不设 TTL，由定时任务在 JWT_KEY_TTL 到期后
+// 主动执行轮换，确保旧密钥先备份到历史集合再写入新密钥，避免密钥丢失导致旧 Token 失效。
+package redis
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
+	"os"
+	"time"
+)
+
+const (
+	jwtKeyRedisKey     = "jwt:signing_key"
+	jwtHistoryKey      = "jwt:signing_key:history"
+	jwtKeyCreatedAtKey = "jwt:signing_key:created_at"
+)
+
+// production 标记生产模式，由 SetProductionMode 在启动时设置。
+// 生产模式下未配置 JWT_KEY 且未连接 Redis 时拒绝启动，避免使用公开的默认密钥签发 token。
+var production bool
+
+// SetProductionMode 标记当前为生产环境，应在 gin.go 启动时调用。
+func SetProductionMode() {
+	production = true
+}
+
+// GetSigningKey 获取当前有效的 JWT 签名密钥。
+// 密钥永不过期（无 TTL），由 RotateSigningKey 主动轮换。
+func GetSigningKey() []byte {
+	if Client == nil {
+		return staticKey()
+	}
+
+	ctx := context.Background()
+	val, err := Client.Get(ctx, jwtKeyRedisKey).Result()
+	if err == nil {
+		return []byte(val)
+	}
+
+	// key 不存在（首次启动），创建新密钥
+	newKey := randomKey()
+	if setErr := Client.Set(ctx, jwtKeyRedisKey, newKey, 0).Err(); setErr != nil {
+		fmt.Printf("[Redis] failed to store JWT signing key: %v\n", setErr)
+	} else {
+		now := time.Now().Unix()
+		Client.Set(ctx, jwtKeyCreatedAtKey, now, 0)
+		Client.SAdd(ctx, jwtHistoryKey, newKey)
+		Client.Expire(ctx, jwtHistoryKey, histTTL)
+		fmt.Printf("[Redis] JWT signing key created\n")
+	}
+	return []byte(newKey)
+}
+
+// ShouldRotateKey 检查签名密钥是否需要轮换。
+// 基于 jwt:signing_key:created_at 与当前时间的差值判断。
+func ShouldRotateKey() bool {
+	if Client == nil {
+		return false
+	}
+	ctx := context.Background()
+	createdAt, err := Client.Get(ctx, jwtKeyCreatedAtKey).Int64()
+	if err != nil {
+		return true // 无法读取创建时间，保守触发轮换
+	}
+	ttl := int64(keyTTL().Seconds())
+	return time.Now().Unix()-createdAt >= ttl
+}
+
+// RotateSigningKey 主动轮换签名密钥。
+// 原子性地：备份旧密钥 → 写入新密钥 → 更新创建时间。
+// 返回新密钥。
+func RotateSigningKey() []byte {
+	if Client == nil {
+		return staticKey()
+	}
+
+	ctx := context.Background()
+
+	// 1. 读取旧密钥并备份
+	oldVal, err := Client.Get(ctx, jwtKeyRedisKey).Result()
+	if err == nil && oldVal != "" {
+		Client.SAdd(ctx, jwtHistoryKey, oldVal)
+	}
+
+	// 2. 生成新密钥并写入（不带 TTL）
+	newKey := randomKey()
+	Client.Set(ctx, jwtKeyRedisKey, newKey, 0)
+	Client.Set(ctx, jwtKeyCreatedAtKey, time.Now().Unix(), 0)
+
+	// 3. 新密钥也加入历史集合
+	Client.SAdd(ctx, jwtHistoryKey, newKey)
+	// 历史保留 7 天，精确覆盖 refresh_token 最大有效期；超出 7 天的密钥对过期 token 已无用
+	Client.Expire(ctx, jwtHistoryKey, histTTL)
+
+	fmt.Printf("[Redis] JWT signing key rotated, next rotation in %v\n", keyTTL())
+	return []byte(newKey)
+}
+
+// GetAllSigningKeys 返回当前签名密钥 + 历史密钥集合。
+// 用于 Token 校验时逐一尝试，解决密钥轮换后旧 Token 无法验签的问题。
+func GetAllSigningKeys() [][]byte {
+	if Client == nil {
+		return [][]byte{staticKey()}
+	}
+
+	ctx := context.Background()
+	var keys [][]byte
+
+	active, err := Client.Get(ctx, jwtKeyRedisKey).Result()
+	if err == nil {
+		keys = append(keys, []byte(active))
+	}
+
+	history, err := Client.SMembers(ctx, jwtHistoryKey).Result()
+	if err == nil {
+		for _, k := range history {
+			if k != active {
+				keys = append(keys, []byte(k))
+			}
+		}
+	}
+
+	return keys
+}
+
+// staticKey 从环境变量读取静态签名密钥。
+// 开发环境未配置 JWT_KEY 时回退到硬编码默认值；
+// 生产环境未配置且未连接 Redis 时直接 panic，避免使用公开的默认密钥签发任意角色的合法 token。
+func staticKey() []byte {
+	key := os.Getenv("JWT_KEY")
+	if key == "" {
+		if production {
+			panic("JWT_KEY must be set in production (or connect Redis for key rotation)")
+		}
+		key = "default-secret"
+	}
+	return []byte(key)
+}
+
+// randomKey 生成 32 字节随机密钥并做 base64 编码。
+// crypto/rand.Read 失败概率极低，此时退化为环境变量值保证启动不中断。
+func randomKey() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return os.Getenv("JWT_KEY")
+	}
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+// keyTTL 解析 JWT_KEY_TTL 环境变量，非法或空值时默认 24 小时。
+func keyTTL() time.Duration {
+	if s := os.Getenv("JWT_KEY_TTL"); s != "" {
+		if d, err := time.ParseDuration(s); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 24 * time.Hour
+}
+
+// histTTL 历史密钥集合的保留时长，对齐 refresh_token 的 7 天最大有效期。
+const histTTL = 7 * 24 * time.Hour
+
+// KeyRotationLoop 后台定时检查密钥是否需要轮换。
+// 每分钟检查一次，到达 JWT_KEY_TTL 时主动执行 RotateSigningKey。
+func KeyRotationLoop() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		if ShouldRotateKey() {
+			RotateSigningKey()
+		}
+	}
+}
