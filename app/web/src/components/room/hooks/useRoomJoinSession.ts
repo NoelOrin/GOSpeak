@@ -11,7 +11,7 @@ import {
 import { showToast } from "solid-notifications";
 import { getJoinToken } from "@/api/sfu";
 import AudioDeviceStore from "@/stores/audioDeviceStore";
-import { socketStore } from "@/stores/socketStore";
+import { type MemberInfo, socketStore } from "@/stores/socketStore";
 import userStore from "@/stores/userStore";
 import { loadSfuClient, rememberSfuProvider } from "../services/loadSfuClient";
 import { resolveJoinSession } from "../services/sfuSession";
@@ -202,6 +202,8 @@ export function useRoomJoinSession() {
 								sessionMeta.connectTarget,
 								data.identity,
 								data.room,
+								data.stream,
+								data.streamToken,
 							),
 							signal,
 						);
@@ -213,11 +215,21 @@ export function useRoomJoinSession() {
 						);
 						if (abortIfCancelled(createdClient)) return;
 
-						await raceAbort(
-							socketStore.joinRoomSFU(data.room, data.identity),
+						const ack = await raceAbort(
+							socketStore.joinRoomSFU(data.room, data.identity, data.stream),
 							signal,
 						);
 						if (abortIfCancelled(createdClient)) return;
+						const members: MemberInfo[] = ack?.members ?? [];
+						const peers = members
+							.filter((m) => m.identity !== data.identity && m.stream)
+							.map((m) => ({
+								identity: m.identity,
+								stream: m.stream as string,
+							}));
+						if (peers.length) {
+							createdClient.subscribePeers?.(peers);
+						}
 
 						// join 全部成功后才挂断连/重连回调，避免连接阶段瞬态误报
 						createdClient.onDisconnected(() => {
