@@ -39,13 +39,46 @@ VITE_SFU_PROVIDER=srs
 pnpm dev:web
 ```
 
-## 4. 双标签双向音频验证
+## 4. 多流双向音频验证
+
+多流模式下,每客户端独立 publish stream (`gs-<hash>`),不再共享 `livestream`。WHEP 订阅由 `member:joined`/`member:left` 事件自动触发。
+
+### 4.1 基本流程
 
 1. 浏览器开 `http://localhost:<vite端口>`(终端输出实际端口)
 2. 标签 A 注册/登录,创建/加入房间 R
 3. 标签 B(同浏览器不同标签或无痕)登录另一账号,加入房间 R
-4. A 说话 → B 听到;B 说话 → A 听到
-5. 任一方离场 → 另一方收到 track removed
+4. **A 说话 → B 听到;B 说话 → A 听到** (每方订阅对方的独立 stream,不订阅自身 → 无回声)
+5. 标签 C (第三账号)加入房间 R
+6. A 和 B 应自动收到 C 的音频 (member:joined 触发的 subscribePeers)
+7. 任一方关闭标签或离场 → 其他人收到 track removed (member:left 触发的 unsubscribePeer)
+
+### 4.2 流调试
+
+SRS 日志可观察每客户端的独立 publish stream:
+
+```bash
+# 查看当前活跃的 WHIP publish 流 (每客户端一行)
+docker logs gospeak-srs 2>&1 | grep "RTC whip publish"
+
+# 期望输出(示例):
+# [RTC] whip publish stream=gs-6ccajt9uage8, client_id=xxx
+# [RTC] whip publish stream=gs-a1b2c3d4e5f6, client_id=yyy
+# 注意: 每客户端 stream 不同,不再有共享 livestream
+
+# 查看 http_hooks callback 命中情况
+docker logs gospeak-srs 2>&1 | grep "on_publish\|on_play\|on_unpublish\|on_stop"
+
+# 期望输出:
+# http: on_publish ok, ... stream=gs-xxx, response={"code":0}
+# http: on_play ok, ... stream=gs-yyy, response={"code":0}
+# http: on_unpublish ok, ... stream=gs-xxx, response={"code":0}
+```
+
+如果 on_publish 返回 `{"code":403}`,排查顺序:
+1. 确认 `SRS_SECRET` 与 backend `.env.dev` 一致
+2. 确认 backend 起在 8998,`host.docker.internal` 可达
+3. 检查 SRS → backend 网络:`docker exec gospeak-srs curl -s http://host.docker.internal:8998/api/v1/srs/callback` 应可达
 
 ## 排查表
 
@@ -57,6 +90,7 @@ pnpm dev:web
 | 前端仍连 livekit | env 没生效 | 重启 `pnpm dev:web`,确认 `.env.local` 在 app/web 下 |
 | `curl /api/v1/streams` 空 | 还没人 publish | 正常,publish 后才出现 stream |
 | WHEP 收不到 track | join 顺序 | 任一方 publish 后另一方才能 WHEP subscribe |
+| curl callback 返回 403 但 token 正确 | `param` 值含 `&` 未 URL-encode | 用 `curl --data-urlencode 'param=...'`,不要手动拼接 `-d 'key=val&key2=val2'` |
 | SRS WHIP/WHEP 被 403 拒 | callback 不可达或 streamToken 错 | 确认 backend 起在 8998,SRS→host.docker.internal 网络;`SRS_SECRET` 与 server 一致 |
 
 ## LAN 部署
