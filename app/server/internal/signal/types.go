@@ -4,6 +4,7 @@ type RoomRequest struct {
 	Room     string `json:"room"`
 	Password string `json:"password,omitempty"`
 	Identity string `json:"identity,omitempty"`
+	Stream   string `json:"stream,omitempty"`
 }
 
 type MemberInfo struct {
@@ -15,6 +16,7 @@ type MemberInfo struct {
 	IsMuted     bool   `json:"isMuted"`
 	IsMicMuted  bool   `json:"isMicMuted"`
 	JoinedAt    int64  `json:"joinedAt"`
+	Stream      string `json:"stream,omitempty"`
 }
 
 type RoomInfo struct {

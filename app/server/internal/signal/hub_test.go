@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -747,5 +748,66 @@ func TestHub_OnRoomList_WithDB(t *testing.T) {
 
 	if count, ok := emitData["count"].(int); !ok || count != 2 {
 		t.Errorf("expected count 2, got %v", emitData["count"])
+	}
+}
+
+func TestOnRoomJoinSFU_StoresAndBroadcastsStream(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	server := newMockServer()
+	hub.server = server
+
+	creator := newMockConn("creator-socket")
+	hub.OnRoomCreate(creator, `{"room":"r1"}`)
+
+	member := newMockConn("mem-1")
+	ackRaw, err := hub.OnRoomJoinSFU(member, `{"room":"r1","identity":"alice","stream":"gs-aaa"}`)
+	if err != nil {
+		t.Fatalf("OnRoomJoinSFU error: %v", err)
+	}
+	var ack struct {
+		OK      bool         `json:"ok"`
+		Members []MemberInfo `json:"members"`
+	}
+	if err := json.Unmarshal([]byte(ackRaw), &ack); err != nil {
+		t.Fatalf("parse ack: %v", err)
+	}
+	if !ack.OK {
+		t.Fatal("ack should be ok")
+	}
+	if len(ack.Members) != 1 || ack.Members[0].Stream != "gs-aaa" {
+		t.Fatalf("ack members should carry stream, got %+v", ack.Members)
+	}
+
+	hub.mu.RLock()
+	stored := hub.rooms["r1"].Members["mem-1"].Stream
+	hub.mu.RUnlock()
+	if stored != "gs-aaa" {
+		t.Fatalf("MemberInfo.Stream should be stored, got %q", stored)
+	}
+
+	broadcasted := false
+	if vals, ok := server.broadcasts[EventMemberJoined]; ok && len(vals) > 0 {
+		payload, _ := json.Marshal(vals[0])
+		if strings.Contains(string(payload), "gs-aaa") {
+			broadcasted = true
+		}
+	}
+	if !broadcasted {
+		t.Fatal("member:joined should broadcast stream")
+	}
+}
+
+func TestStreamRegistry(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	if hub.IsStreamActive("gs-x") {
+		t.Fatal("unknown stream should not be active")
+	}
+	hub.RegisterStream("gs-x")
+	if !hub.IsStreamActive("gs-x") {
+		t.Fatal("registered stream should be active")
+	}
+	hub.UnregisterStream("gs-x")
+	if hub.IsStreamActive("gs-x") {
+		t.Fatal("unregistered stream should not be active")
 	}
 }
