@@ -121,6 +121,7 @@ func StartGin(env EnvEnum) {
 	}
 	signalHub.SetupRoutes(sioServer)
 	signalH := handler.NewSignalHandler(sfuProvider, signalHub)
+	srsCallbackH := handler.NewSRSCallbackHandler(signalHub, cfg.SRSSecret)
 
 	authH := handler.NewAuthHandler(authSvc)
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)
@@ -164,6 +165,7 @@ func StartGin(env EnvEnum) {
 		Email:       emailH,
 		EmailConfig: emailConfigH,
 		Monitor:     monitorH,
+		SRSCallback: srsCallbackH,
 	})
 
 	port := os.Getenv("SERVER_PORT")

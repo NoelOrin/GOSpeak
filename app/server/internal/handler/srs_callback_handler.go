@@ -1,0 +1,69 @@
+package handler
+
+import (
+	"net/http"
+	"strings"
+
+	"GOSpeak/internal/signal"
+	"GOSpeak/internal/srs"
+
+	"github.com/gin-gonic/gin"
+)
+
+type SRSCallbackHandler struct {
+	hub    *signal.Hub
+	secret string
+}
+
+func NewSRSCallbackHandler(hub *signal.Hub, secret string) *SRSCallbackHandler {
+	return &SRSCallbackHandler{hub: hub, secret: secret}
+}
+
+func (h *SRSCallbackHandler) HandleCallback(c *gin.Context) {
+	action := c.PostForm("action")
+	rawStream := c.PostForm("stream")
+	stream := stripAppPrefix(rawStream)
+	params := parseCallbackParams(c.PostForm("param"))
+
+	switch action {
+	case "on_publish":
+		token := params["token"]
+		if token == "" || !srs.ValidateStreamToken(stream, token, h.secret) {
+			c.JSON(http.StatusOK, gin.H{"code": 403})
+			return
+		}
+		h.hub.RegisterStream(stream)
+		c.JSON(http.StatusOK, gin.H{"code": 0})
+	case "on_unpublish", "on_stop":
+		h.hub.UnregisterStream(stream)
+		c.JSON(http.StatusOK, gin.H{"code": 0})
+	case "on_play":
+		if !h.hub.IsStreamActive(stream) {
+			c.JSON(http.StatusOK, gin.H{"code": 403})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"code": 0})
+	default:
+		c.JSON(http.StatusOK, gin.H{"code": 0})
+	}
+}
+
+func stripAppPrefix(s string) string {
+	if i := strings.LastIndex(s, "/"); i >= 0 {
+		return s[i+1:]
+	}
+	return s
+}
+
+func parseCallbackParams(param string) map[string]string {
+	out := map[string]string{}
+	if param == "" {
+		return out
+	}
+	for _, kv := range strings.Split(param, "&") {
+		if i := strings.Index(kv, "="); i >= 0 {
+			out[kv[:i]] = kv[i+1:]
+		}
+	}
+	return out
+}

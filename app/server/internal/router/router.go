@@ -13,6 +13,7 @@ import (
 	roomRoutes "GOSpeak/internal/router/routes/room"
 	sfuConfigRoutes "GOSpeak/internal/router/routes/sfu_config"
 	signalRoutes "GOSpeak/internal/router/routes/signal"
+	srsRoutes "GOSpeak/internal/router/routes/srs"
 	storageRoutes "GOSpeak/internal/router/routes/storage"
 	swaggerRoutes "GOSpeak/internal/router/routes/swagger"
 	systemRoutes "GOSpeak/internal/router/routes/system"
@@ -38,6 +39,7 @@ type Handlers struct {
 	Email       *handler.EmailVerificationHandler
 	EmailConfig *handler.EmailConfigHandler
 	Monitor     *handler.MonitorHandler
+	SRSCallback *handler.SRSCallbackHandler
 }
 
 func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
@@ -56,6 +58,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	emailRoutes.Register(api.Group("/email"), h.Email)
 	signalRoutes.Register(api.Group("/signal"), h.Signal)
 	oauthRoutes.Register(api.Group("/oauth"), h.OAuth)
+	srsRoutes.Register(api.Group("/srs"), h.SRSCallback)
 	systemRoutes.Register(api.Group("/system"), h.Monitor)
 
 	protected := api.Group("")
