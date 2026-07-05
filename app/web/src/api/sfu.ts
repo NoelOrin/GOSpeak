@@ -28,6 +28,8 @@ export interface JoinTokenResponse {
 	bridgeUrl?: string;
 	whipUrl?: string;
 	dailyDomain?: string;
+	stream?: string;
+	streamToken?: string;
 }
 
 export const SFU_PROVIDER_CAPABILITIES: Record<

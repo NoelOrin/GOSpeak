@@ -89,8 +89,11 @@ func StartGin(env EnvEnum) {
 	roomSvc := service.NewRoomService(roomRepo)
 	muteSvc := service.NewMuteService(muteRepo, userRepo)
 	sfuConfigSvc := service.NewSFUConfigService(sfuConfigRepo, cfg)
+	if err := sfuConfigSvc.SyncFromEnv(); err != nil {
+		panic(fmt.Sprintf("failed to sync sfu config from env: %v", err))
+	}
 	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
-	sfuProvider := sfu.NewDynamicProvider(sfuConfigSvc.ResolveConfig)
+	var sfuProvider sfu.Provider = sfu.NewDynamicProvider(sfuConfigSvc.ResolveConfig)
 	resolvedSFUCfg, err := sfuConfigSvc.ResolveConfig()
 	if err != nil {
 		panic(fmt.Sprintf("failed to resolve sfu config: %v", err))
@@ -111,6 +114,9 @@ func StartGin(env EnvEnum) {
 
 	signalHub := signal.NewHub(roomSvc, muteSvc, userRepo, permSvc)
 	signalHub.SetSFU(sfuProvider)
+	if snr, ok := sfuProvider.(signal.StreamNameResolver); ok {
+		signalHub.SetStreamResolver(snr)
+	}
 	if resolvedSFUCfg.SFUProvider == "mediasoup" {
 		msService := mediasoup.NewService(resolvedSFUCfg)
 		msSignal := mediasoup.NewMediasoupSignal(msService.Bridge, signalHub.BroadcastToRoom)
@@ -118,6 +124,7 @@ func StartGin(env EnvEnum) {
 	}
 	signalHub.SetupRoutes(sioServer)
 	signalH := handler.NewSignalHandler(sfuProvider, signalHub)
+	srsCallbackH := handler.NewSRSCallbackHandler(signalHub, cfg.SRSSecret)
 
 	authH := handler.NewAuthHandler(authSvc)
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)
@@ -161,6 +168,7 @@ func StartGin(env EnvEnum) {
 		Email:       emailH,
 		EmailConfig: emailConfigH,
 		Monitor:     monitorH,
+		SRSCallback: srsCallbackH,
 	})
 
 	port := os.Getenv("SERVER_PORT")

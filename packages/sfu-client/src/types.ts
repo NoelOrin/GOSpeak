@@ -28,6 +28,11 @@ export interface RemoteTrackInfo {
 	track: RemoteAudioTrackLike;
 }
 
+export interface PeerStream {
+	identity: string;
+	stream: string;
+}
+
 export interface SFUAudioCaptureOptions {
 	echoCancellation?: boolean;
 	noiseSuppression?: boolean;
@@ -90,6 +95,8 @@ export interface SFUClient {
 		url: string,
 		identity: string,
 		room?: string,
+		stream?: string,
+		streamToken?: string,
 	): Promise<void>;
 	/** Stops publishing, disconnects from the media session, and releases provider state. */
 	leaveRoom(): Promise<void>;
@@ -108,6 +115,8 @@ export interface SFUClient {
 	 * 仅靠 `onRemoteAudioTrack` 事件会漏掉它们，导致全局静音/音量对这部分 track 失效。
 	 */
 	getExistingRemoteAudioTracks(): RemoteTrackInfo[];
+	subscribePeers?(peers: PeerStream[]): void;
+	unsubscribePeer?(identity: string): void;
 	/** Subscribes to unexpected media-session disconnect notifications (not triggered by explicit leave). */
 	onDisconnected(cb: () => void): void;
 	/** Subscribes to media-session reconnect-start notifications. Optional: providers without transient reconnect never fire it. */

@@ -16,6 +16,7 @@ export interface MemberInfo {
 	isMuted: boolean;
 	isMicMuted: boolean;
 	joinedAt: number;
+	stream?: string;
 }
 
 export interface RoomInfo {
@@ -161,7 +162,12 @@ export const socketStore = createRoot(() => {
 
 		adapter.onServerEvent(
 			EVENTS.MEMBER_JOINED as string,
-			(data: { room: string; identity: string; id: string }) => {
+			(data: {
+				room: string;
+				identity: string;
+				id: string;
+				stream?: string;
+			}) => {
 				console.log("[Socket] member:joined", data.identity);
 				// 即时追加 shell 成员，富化字段由后续 room:updated 覆盖。
 				setRooms((prev) =>
@@ -183,6 +189,7 @@ export const socketStore = createRoot(() => {
 													isMuted: false,
 													isMicMuted: false,
 													joinedAt: Date.now(),
+													stream: data.stream,
 												},
 											],
 								}
@@ -352,43 +359,45 @@ export const socketStore = createRoot(() => {
 		return signalEmit(EVENTS.ROOM_LEAVE, { room });
 	}
 
-	function joinRoomSFU(room: string, identity: string) {
-		return signalEmit(EVENTS.ROOM_JOIN_SFU, { room, identity }).then((data) => {
-			// ack 返回完整成员列表，即时 upsert rooms[]（不等 room:updated）
-			if (data.members) {
-				const ackMembers: MemberInfo[] = data.members;
-				setRooms((prev) => {
-					const exists = prev.some((r) => r.name === data.room);
-					if (!exists) {
-						return [
-							...prev,
-							{
-								id: 0,
-								uuid: "",
-								name: data.room,
-								hasPassword: false,
-								limit: 0,
-								members: ackMembers,
-								count: ackMembers.length,
-								createdAt: Date.now(),
-							},
-						];
-					}
-					return prev.map((r) =>
-						r.name === data.room
-							? { ...r, members: ackMembers, count: ackMembers.length }
-							: r,
-					);
+	function joinRoomSFU(room: string, identity: string, stream?: string) {
+		return signalEmit(EVENTS.ROOM_JOIN_SFU, { room, identity, stream }).then(
+			(data) => {
+				// ack 返回完整成员列表，即时 upsert rooms[]（不等 room:updated）
+				if (data.members) {
+					const ackMembers: MemberInfo[] = data.members;
+					setRooms((prev) => {
+						const exists = prev.some((r) => r.name === data.room);
+						if (!exists) {
+							return [
+								...prev,
+								{
+									id: 0,
+									uuid: "",
+									name: data.room,
+									hasPassword: false,
+									limit: 0,
+									members: ackMembers,
+									count: ackMembers.length,
+									createdAt: Date.now(),
+								},
+							];
+						}
+						return prev.map((r) =>
+							r.name === data.room
+								? { ...r, members: ackMembers, count: ackMembers.length }
+								: r,
+						);
+					});
+				}
+				emitActivity({
+					type: "room_joined",
+					room: data.room,
+					identity: data.identity,
+					timestamp: Date.now(),
 				});
-			}
-			emitActivity({
-				type: "room_joined",
-				room: data.room,
-				identity: data.identity,
-				timestamp: Date.now(),
-			});
-			return data;
-		});
+				return data;
+			},
+		);
 	}
 
 	function sfuEmit(

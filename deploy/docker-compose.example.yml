@@ -163,21 +163,22 @@ services:
   # ===========================================================================
   # SFU Provider: SRS (备选)
   # ===========================================================================
-  # 启用: 取消下方注释 + .env 设 SFU_PROVIDER=srs
-  # srs:
-  #   image: ossrs/srs:5
-  #   container_name: gospeak-srs
-  #   restart: unless-stopped
-  #   ports:
-  #     - "1935:1935"
-  #     - "1985:1985"
-  #     - "8080:8080"
-  #     - "8000:8000/udp"
-  #   volumes:
-  #     - ./srs/srs.conf:/usr/local/srs/conf/srs.conf
-  #   command: ./objs/srs -c conf/srs.conf
-  #   extra_hosts:
-  #     - "host.docker.internal:host-gateway"
+  # 启用: app/server/.env.dev 设 SFU_PROVIDER=srs + app/web/.env.local 设 VITE_SFU_PROVIDER=srs
+  srs:
+    image: ossrs/srs:5
+    container_name: gospeak-srs
+    restart: unless-stopped
+    ports:
+      - "1935:1935"
+      - "1985:1985"
+      - "8000:8000/udp"
+    environment:
+      CANDIDATE: "127.0.0.1"
+    volumes:
+      - ./srs/srs.conf:/usr/local/srs/conf/srs.conf
+    command: ./objs/srs -c conf/srs.conf
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 
   # ===========================================================================

@@ -39,7 +39,7 @@ func NewService(cfg *config.Config) *Service {
 		apiPort:   apiPort,
 		whipPort:  whipPort,
 		secret:    cfg.SRSSecret,
-		whipURL:   serverURL + "/rtc/v1/whip/",
+		whipURL:   "/rtc/v1/whip/",
 		serverURL: serverURL,
 	}
 }
@@ -92,6 +92,16 @@ func (s *Service) GetHost() string {
 
 func (s *Service) ProviderName() string {
 	return "srs"
+}
+
+func (s *Service) StreamName(room, identity string) string {
+	return GenerateStreamName(room, identity)
+}
+
+func (s *Service) StreamInfo(room, identity string) (stream, token string) {
+	stream = GenerateStreamName(room, identity)
+	token = GenerateStreamToken(stream, s.secret)
+	return
 }
 
 func (s *Service) ClientInfo() map[string]interface{} {

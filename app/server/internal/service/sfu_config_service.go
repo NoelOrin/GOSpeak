@@ -65,6 +65,16 @@ func (s *SFUConfigService) Update(cfg *model.SFUConfig) (*model.SFUConfig, error
 	return cfg, nil
 }
 
+// SyncFromEnv 在每次初始化时把当前 env 覆盖写入 DB (singleton ID=1)。
+// env 是唯一真相源: 启动后 DB 行 = env 值, API Update 的改动重启后会被 env 覆盖。
+func (s *SFUConfigService) SyncFromEnv() error {
+	cfg := s.defaultConfig()
+	if err := s.repo.Save(cfg); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return nil
+}
+
 // UpdateFromDTO updates SFU config from a handler-level DTO.
 func (s *SFUConfigService) UpdateFromDTO(req *UpdateSFUConfigRequest) (*model.SFUConfig, error) {
 	if req.Provider != "livekit" && req.Provider != "agora" && req.Provider != "mediasoup" && req.Provider != "srs" && req.Provider != "daily" {

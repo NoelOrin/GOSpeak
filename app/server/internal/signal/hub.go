@@ -58,13 +58,19 @@ type SFUSignalHandler interface {
 	RegisterRoutes(server *socketio.Server)
 }
 
-// BroadcastFn 供 provider 模块广播房间事件，无需依赖 Hub 具体类型。
+// broadcastFn 供 provider 模块广播房间事件，无需依赖 Hub 具体类型。
 type BroadcastFn func(room, event string, data interface{})
+
+// StreamNameResolver 计算给定 room+identity 的预期 stream 名，用于服务端覆写客户端提报值。
+type StreamNameResolver interface {
+	StreamName(room, identity string) string
+}
 
 type Hub struct {
 	server           socketServer
 	sfuProvider      sfu.Provider
 	sfuProviderName  string
+	streamResolver   StreamNameResolver
 	rooms            map[string]*Room // roomName -> Room
 	mu               sync.RWMutex
 	roomStore        roomStore
@@ -72,15 +78,17 @@ type Hub struct {
 	userStore        userStore
 	permChecker      permChecker
 	sfuSignalHandler SFUSignalHandler
+	activeStreams    map[string]struct{}
 }
 
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
 	return &Hub{
-		rooms:       make(map[string]*Room),
-		roomStore:   store,
-		muteStore:   mStore,
-		userStore:   uStore,
-		permChecker: pChecker,
+		rooms:         make(map[string]*Room),
+		roomStore:     store,
+		muteStore:     mStore,
+		userStore:     uStore,
+		permChecker:   pChecker,
+		activeStreams: make(map[string]struct{}),
 	}
 }
 
@@ -97,6 +105,10 @@ func (h *Hub) SetSFU(provider sfu.Provider) {
 
 func (h *Hub) SetSFUSignalHandler(handler SFUSignalHandler) {
 	h.sfuSignalHandler = handler
+}
+
+func (h *Hub) SetStreamResolver(r StreamNameResolver) {
+	h.streamResolver = r
 }
 
 // ─── 事件注册 ───
@@ -319,10 +331,16 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 		identity = s.ID()
 	}
 
+	// 服务端覆写 stream：客户端提报值不可信，使用服务端基于 room+identity 计算的预期值
+	if h.streamResolver != nil {
+		req.Stream = h.streamResolver.StreamName(req.Room, identity)
+	}
+
 	member := &MemberInfo{
 		ID:       s.ID(),
 		Identity: identity,
 		JoinedAt: time.Now().UnixMilli(),
+		Stream:   req.Stream,
 	}
 
 	h.mu.Lock()
@@ -372,6 +390,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 		"room":     req.Room,
 		"identity": req.Identity,
 		"id":       s.ID(),
+		"stream":   req.Stream,
 	})
 
 	h.mu.RLock()
@@ -732,6 +751,25 @@ func (h *Hub) IsIdentityMuted(identity string) (bool, *model.Mute, error) {
 		return false, nil, nil
 	}
 	return h.muteStore.IsMutedByIdentity(identity)
+}
+
+func (h *Hub) RegisterStream(stream string) {
+	h.mu.Lock()
+	h.activeStreams[stream] = struct{}{}
+	h.mu.Unlock()
+}
+
+func (h *Hub) UnregisterStream(stream string) {
+	h.mu.Lock()
+	delete(h.activeStreams, stream)
+	h.mu.Unlock()
+}
+
+func (h *Hub) IsStreamActive(stream string) bool {
+	h.mu.RLock()
+	_, ok := h.activeStreams[stream]
+	h.mu.RUnlock()
+	return ok
 }
 
 func (h *Hub) BroadcastToRoom(room string, event string, data interface{}) {

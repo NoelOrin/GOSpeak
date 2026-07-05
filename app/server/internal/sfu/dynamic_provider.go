@@ -95,6 +95,30 @@ func (p *DynamicProvider) ProviderName() string {
 	return cfg.SFUProvider
 }
 
+func (p *DynamicProvider) StreamName(room, identity string) string {
+	provider, err := p.current()
+	if err != nil {
+		return ""
+	}
+	if sn, ok := provider.(interface{ StreamName(room, identity string) string }); ok {
+		return sn.StreamName(room, identity)
+	}
+	return ""
+}
+
+func (p *DynamicProvider) StreamInfo(room, identity string) (stream, token string) {
+	provider, err := p.current()
+	if err != nil {
+		return "", ""
+	}
+	if sp, ok := provider.(interface {
+		StreamInfo(room, identity string) (string, string)
+	}); ok {
+		return sp.StreamInfo(room, identity)
+	}
+	return "", ""
+}
+
 func (p *DynamicProvider) ClientInfo() map[string]interface{} {
 	provider, err := p.current()
 	if err != nil {

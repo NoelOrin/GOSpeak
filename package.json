@@ -15,7 +15,8 @@
     "test:server": "pnpm --filter @gospeak/server test",
     "start:dev": "pnpm run dev:server & pnpm run dev:web",
     "start:prod": "pnpm run prod:server",
-    "format": "pnpm -r format"
+    "format": "pnpm -r format",
+    "prepare": "lefthook install"
   },
   "devDependencies": {
     "@commitlint/cli": "^17.7.2",
