@@ -171,7 +171,6 @@ services:
     ports:
       - "1935:1935"
       - "1985:1985"
-      - "8082:8080"
       - "8000:8000/udp"
     environment:
       CANDIDATE: "127.0.0.1"
