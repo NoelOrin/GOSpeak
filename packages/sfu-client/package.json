@@ -23,7 +23,8 @@
 	"scripts": {
 		"build": "tsc",
 		"lint": "biome check",
-		"dev": "tsc --watch"
+		"dev": "tsc --watch",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@daily-co/daily-js": "^0.82.0",
@@ -32,6 +33,7 @@
 		"mediasoup-client": "^3.21.0"
 	},
 	"devDependencies": {
-		"typescript": "^5.9.3"
+		"typescript": "^5.9.3",
+		"vitest": "^4.1.9"
 	}
 }
