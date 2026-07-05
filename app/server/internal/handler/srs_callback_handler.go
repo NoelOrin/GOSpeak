@@ -20,12 +20,15 @@ func NewSRSCallbackHandler(hub *signal.Hub, secret string) *SRSCallbackHandler {
 }
 
 func (h *SRSCallbackHandler) HandleCallback(c *gin.Context) {
-	action := c.PostForm("action")
-	rawStream := c.PostForm("stream")
-	stream := stripAppPrefix(rawStream)
-	params := parseCallbackParams(c.PostForm("param"))
+	var p srsCallbackPayload
+	if err := c.ShouldBind(&p); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 403})
+		return
+	}
+	stream := stripAppPrefix(p.Stream)
+	params := parseCallbackParams(p.Param)
 
-	switch action {
+	switch p.Action {
 	case "on_publish":
 		token := params["token"]
 		if token == "" || !srs.ValidateStreamToken(stream, token, h.secret) {
@@ -46,6 +49,12 @@ func (h *SRSCallbackHandler) HandleCallback(c *gin.Context) {
 	default:
 		c.JSON(http.StatusOK, gin.H{"code": 0})
 	}
+}
+
+type srsCallbackPayload struct {
+	Action string `json:"action" form:"action"`
+	Stream string `json:"stream" form:"stream"`
+	Param  string `json:"param" form:"param"`
 }
 
 func stripAppPrefix(s string) string {

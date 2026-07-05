@@ -1,9 +1,10 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -23,12 +24,13 @@ func srsStreamTokenForTest(stream, secret string) string {
 	return srs.GenerateStreamToken(stream, secret)
 }
 
-func postForm(t *testing.T, h *SRSCallbackHandler, form url.Values) *httptest.ResponseRecorder {
+func postJSON(t *testing.T, h *SRSCallbackHandler, payload map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
 	r := gin.New()
 	r.POST("/cb", h.HandleCallback)
-	req := httptest.NewRequest(http.MethodPost, "/cb", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/cb", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w
@@ -40,12 +42,12 @@ func TestSrsCallback_OnPublish_ValidToken_RegistersStream(t *testing.T) {
 
 	stream := "gs-aaa"
 	tok := srsStreamTokenForTest(stream, "secret")
-	form := url.Values{
-		"action": {"on_publish"},
-		"stream": {"live/" + stream},
-		"param":  {"app=live&stream=" + stream + "&token=" + tok},
+	payload := map[string]string{
+		"action": "on_publish",
+		"stream": "live/" + stream,
+		"param":  "app=live&stream=" + stream + "&token=" + tok,
 	}
-	w := postForm(t, h, form)
+	w := postJSON(t, h, payload)
 	if !strings.Contains(w.Body.String(), `"code":0`) {
 		t.Fatalf("valid on_publish should return code 0, got %s", w.Body.String())
 	}
@@ -57,12 +59,12 @@ func TestSrsCallback_OnPublish_ValidToken_RegistersStream(t *testing.T) {
 func TestSrsCallback_OnPublish_InvalidToken_Rejects(t *testing.T) {
 	hub := newCallbackHub()
 	h := NewSRSCallbackHandler(hub, "secret")
-	form := url.Values{
-		"action": {"on_publish"},
-		"stream": {"live/gs-aaa"},
-		"param":  {"app=live&stream=gs-aaa&token=wrong"},
+	payload := map[string]string{
+		"action": "on_publish",
+		"stream": "live/gs-aaa",
+		"param":  "app=live&stream=gs-aaa&token=wrong",
 	}
-	w := postForm(t, h, form)
+	w := postJSON(t, h, payload)
 	if !strings.Contains(w.Body.String(), `"code":403`) {
 		t.Fatalf("invalid token should return 403, got %s", w.Body.String())
 	}
@@ -75,12 +77,12 @@ func TestSrsCallback_OnPlay_ActiveStream_Allows(t *testing.T) {
 	hub := newCallbackHub()
 	hub.RegisterStream("gs-bbb")
 	h := NewSRSCallbackHandler(hub, "secret")
-	form := url.Values{
-		"action": {"on_play"},
-		"stream": {"gs-bbb"},
-		"param":  {"app=live&stream=gs-bbb"},
+	payload := map[string]string{
+		"action": "on_play",
+		"stream": "gs-bbb",
+		"param":  "app=live&stream=gs-bbb",
 	}
-	w := postForm(t, h, form)
+	w := postJSON(t, h, payload)
 	if !strings.Contains(w.Body.String(), `"code":0`) {
 		t.Fatalf("on_play active stream should return 0, got %s", w.Body.String())
 	}
@@ -89,12 +91,12 @@ func TestSrsCallback_OnPlay_ActiveStream_Allows(t *testing.T) {
 func TestSrsCallback_OnPlay_InactiveStream_Rejects(t *testing.T) {
 	hub := newCallbackHub()
 	h := NewSRSCallbackHandler(hub, "secret")
-	form := url.Values{
-		"action": {"on_play"},
-		"stream": {"gs-ccc"},
-		"param":  {"app=live&stream=gs-ccc"},
+	payload := map[string]string{
+		"action": "on_play",
+		"stream": "gs-ccc",
+		"param":  "app=live&stream=gs-ccc",
 	}
-	w := postForm(t, h, form)
+	w := postJSON(t, h, payload)
 	if !strings.Contains(w.Body.String(), `"code":403`) {
 		t.Fatalf("on_play inactive stream should return 403, got %s", w.Body.String())
 	}
@@ -104,12 +106,12 @@ func TestSrsCallback_OnUnpublish_UnregistersStream(t *testing.T) {
 	hub := newCallbackHub()
 	hub.RegisterStream("gs-ddd")
 	h := NewSRSCallbackHandler(hub, "secret")
-	form := url.Values{
-		"action": {"on_unpublish"},
-		"stream": {"gs-ddd"},
-		"param":  {"app=live&stream=gs-ddd"},
+	payload := map[string]string{
+		"action": "on_unpublish",
+		"stream": "gs-ddd",
+		"param":  "app=live&stream=gs-ddd",
 	}
-	postForm(t, h, form)
+	postJSON(t, h, payload)
 	if hub.IsStreamActive("gs-ddd") {
 		t.Fatal("stream should be unregistered after on_unpublish")
 	}
