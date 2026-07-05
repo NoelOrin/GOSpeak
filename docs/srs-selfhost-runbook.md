@@ -1,5 +1,7 @@
 # SRS 自部署端到端 Runbook
 
+注意: SRS 默认不校验 WHIP Bearer,token 为装饰性 JWT,安全靠网络边界。
+
 dev 环境(浏览器与 docker 同宿主)。LAN 部署见末节。
 
 ## 1. 起 SRS

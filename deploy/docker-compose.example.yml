@@ -163,7 +163,7 @@ services:
   # ===========================================================================
   # SFU Provider: SRS (备选)
   # ===========================================================================
-  # 启用: .env 设 SFU_PROVIDER=srs + app/web/.env.local 设 VITE_SFU_PROVIDER=srs
+  # 启用: app/server/.env.dev 设 SFU_PROVIDER=srs + app/web/.env.local 设 VITE_SFU_PROVIDER=srs
   srs:
     image: ossrs/srs:5
     container_name: gospeak-srs

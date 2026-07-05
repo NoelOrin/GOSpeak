@@ -53,7 +53,7 @@ Provider 方法返回 `ErrNotSupported` 是合理设计——Mediasoup 的参与
 
 SRS WHIP 不支持参与者列表和轨道静音。`RemoveParticipant` 已实现（kick），`DeleteRoom` 已实现。
 
-> 自部署 e2e 已验证(2026-07-05):docker compose + WHIP/WHEP 双向音频通,runbook 见 `docs/srs-selfhost-runbook.md`。
+> 自部署 e2e 已验证(2026-07-05): docker compose + WHIP/WHEP 双向音频通,runbook 见 `docs/srs-selfhost-runbook.md`。
 
 #### Daily — `internal/daily/provider.go`
 
