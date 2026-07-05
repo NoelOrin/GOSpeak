@@ -118,6 +118,15 @@ export default defineConfig(async ({ mode }) => {
           changeOrigin: true,
           ws: true,
         },
+        "/rtc/v1": {
+          target: "http://localhost:1985",
+          changeOrigin: true,
+          configure: (proxy) => {
+            proxy.on("proxyReq", (proxyReq) => {
+              proxyReq.setHeader("Connection", "close");
+            });
+          },
+        },
       },
       // 监听 symlinked workspace 包源码以实现 HMR
       watch: {
