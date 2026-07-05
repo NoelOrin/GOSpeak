@@ -94,6 +94,12 @@ func (s *Service) ProviderName() string {
 	return "srs"
 }
 
+func (s *Service) StreamInfo(room, identity string) (stream, token string) {
+	stream = GenerateStreamName(room, identity)
+	token = GenerateStreamToken(stream, s.secret)
+	return
+}
+
 func (s *Service) ClientInfo() map[string]interface{} {
 	return map[string]interface{}{
 		"whipUrl": s.whipURL,
