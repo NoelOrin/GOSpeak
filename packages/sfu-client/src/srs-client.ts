@@ -12,6 +12,7 @@ interface PeerSub {
 	resourceUrl: string;
 	retryCount: number;
 	retryTimer: ReturnType<typeof setTimeout> | null;
+	connecting: boolean;
 }
 
 function appendStream(
@@ -178,11 +179,12 @@ export class SRSSFUClient implements SFUClient {
 	}
 
 	private subscribePeer(identity: string, stream: string): void {
+		if (!this.hasJoined || this.leaving) return;
 		if (identity === this.identity || stream === this.ownStream) return;
 
 		const existing = this.peerSubs.get(identity);
-		// Already actively subscribed (has a live PC)
-		if (existing && existing.pc !== null) return;
+		// Already actively subscribed (has a live PC) or connecting
+		if (existing && (existing.pc !== null || existing.connecting)) return;
 
 		// Clear pending retry timer
 		if (existing?.retryTimer) {
@@ -197,6 +199,7 @@ export class SRSSFUClient implements SFUClient {
 			resourceUrl: "",
 			retryCount: existing?.retryCount ?? 0,
 			retryTimer: null,
+			connecting: true,
 		};
 		this.peerSubs.set(identity, sub);
 
@@ -212,6 +215,11 @@ export class SRSSFUClient implements SFUClient {
 			event.track.addEventListener("ended", () => {
 				remoteTrack.detach();
 				this.remoteTracks.delete(identity);
+				const s = this.peerSubs.get(identity);
+				if (!s || this.leaving || !this.hasJoined) return;
+				if (s.retryTimer) clearTimeout(s.retryTimer);
+				this.peerSubs.delete(identity);
+				this.scheduleRetry(identity, stream);
 			});
 		};
 
@@ -244,17 +252,17 @@ export class SRSSFUClient implements SFUClient {
 					return;
 				}
 				s.pc = pc;
+				s.connecting = false;
 				s.resourceUrl = resourceUrl;
 				s.retryCount = 0;
 			})
 			.catch(() => {
-				// Remove the placeholder entry so next retry can create a fresh one
 				const s = this.peerSubs.get(identity);
-				const prevRetryCount = s?.retryCount ?? 0;
-				if (s && s.pc === null) {
-					this.peerSubs.delete(identity);
-				}
-				pc.close();
+				if (!s) { pc.close(); return; } // cleanup already happened (unsubscribePeer)
+				if (s.pc !== null) { pc.close(); return; } // a successful sub completed; this catch is stale
+				const prevRetryCount = s.retryCount;
+				if (s.retryTimer) clearTimeout(s.retryTimer);
+				this.peerSubs.delete(identity);
 				this.scheduleRetry(identity, stream, prevRetryCount);
 			});
 	}
@@ -305,6 +313,7 @@ export class SRSSFUClient implements SFUClient {
 				resourceUrl: "",
 				retryCount: prevRetryCount ?? 0,
 				retryTimer: null,
+				connecting: false,
 			};
 			this.peerSubs.set(identity, sub);
 		}
@@ -336,10 +345,7 @@ export class SRSSFUClient implements SFUClient {
 	}
 
 	async leaveRoom(): Promise<void> {
-		this.leaving = true;
-		this.hasJoined = false;
-		this.isReconnecting = false;
-
+		// Remove socket listeners BEFORE setting leaving flag
 		if (this.socket) {
 			if (this.socketMemberJoinedBound) {
 				this.socket.off(
@@ -353,6 +359,10 @@ export class SRSSFUClient implements SFUClient {
 		}
 		this.socketMemberJoinedBound = undefined;
 		this.socketMemberLeftBound = undefined;
+
+		this.leaving = true;
+		this.hasJoined = false;
+		this.isReconnecting = false;
 
 		// Unsubscribe all peers (callbacks suppressed via leaving flag)
 		for (const [identity] of this.peerSubs) {
@@ -446,23 +456,30 @@ export class SRSSFUClient implements SFUClient {
 		if (token) {
 			headers["Authorization"] = `Bearer ${token}`;
 		}
-		const resp = await fetch(endpoint, {
-			method: "POST",
-			headers,
-			body: offer.sdp || "",
-		});
-		if (!resp.ok) {
-			throw new Error(
-				`SRS ${publishing ? "WHIP" : "WHEP"} request failed: ${resp.status}`,
-			);
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), 15_000);
+		try {
+			const resp = await fetch(endpoint, {
+				method: "POST",
+				headers,
+				body: offer.sdp || "",
+				signal: controller.signal,
+			});
+			if (!resp.ok) {
+				throw new Error(
+					`SRS ${publishing ? "WHIP" : "WHEP"} request failed: ${resp.status}`,
+				);
+			}
+			const location = resp.headers.get("Location") || "";
+			const answer = await resp.text();
+			await pc.setRemoteDescription({
+				type: "answer",
+				sdp: answer,
+			});
+			return location;
+		} finally {
+			clearTimeout(timer);
 		}
-		const location = resp.headers.get("Location") || "";
-		const answer = await resp.text();
-		await pc.setRemoteDescription({
-			type: "answer",
-			sdp: answer,
-		});
-		return location;
 	}
 
 	private async waitForPublishIceConnected(
