@@ -6,6 +6,8 @@ dev 环境(浏览器与 docker 同宿主)。LAN 部署见末节。
 
 ## 1. 起 SRS
 
+> SRS http_hooks 已配 callback 到 backend:8998,backend 必须先于 SRS publish 启动,否则 SRS fail-closed 拒所有 publish。
+
 ```bash
 docker compose -f deploy/docker-compose.example.yml up -d srs
 curl -s http://localhost:1985/api/v1/versions   # 期望 {"code":0,...}
@@ -55,6 +57,7 @@ pnpm dev:web
 | 前端仍连 livekit | env 没生效 | 重启 `pnpm dev:web`,确认 `.env.local` 在 app/web 下 |
 | `curl /api/v1/streams` 空 | 还没人 publish | 正常,publish 后才出现 stream |
 | WHEP 收不到 track | join 顺序 | 任一方 publish 后另一方才能 WHEP subscribe |
+| SRS WHIP/WHEP 被 403 拒 | callback 不可达或 streamToken 错 | 确认 backend 起在 8998,SRS→host.docker.internal 网络;`SRS_SECRET` 与 server 一致 |
 
 ## LAN 部署
 
