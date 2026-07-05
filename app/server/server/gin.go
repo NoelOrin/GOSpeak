@@ -89,6 +89,9 @@ func StartGin(env EnvEnum) {
 	roomSvc := service.NewRoomService(roomRepo)
 	muteSvc := service.NewMuteService(muteRepo, userRepo)
 	sfuConfigSvc := service.NewSFUConfigService(sfuConfigRepo, cfg)
+	if err := sfuConfigSvc.SyncFromEnv(); err != nil {
+		panic(fmt.Sprintf("failed to sync sfu config from env: %v", err))
+	}
 	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
 	sfuProvider := sfu.NewDynamicProvider(sfuConfigSvc.ResolveConfig)
 	resolvedSFUCfg, err := sfuConfigSvc.ResolveConfig()
