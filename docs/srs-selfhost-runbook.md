@@ -1,6 +1,6 @@
 # SRS 自部署端到端 Runbook
 
-注意: SRS 默认不校验 WHIP Bearer,token 为装饰性 JWT,安全靠网络边界。
+注意: SRS 默认不校验 WHIP Bearer,token 安全靠网络边界。但 `SRS_SECRET` 必须非空 — 否则 token 退化为 `room:identity` 明文,房间名/用户名含中文等非 latin1 字符时,`fetch` 的 `Authorization` header 会报 `String contains non ISO-8859-1 code point`。设了 secret 即走 JWT (HS256, base64url, header 安全)。
 
 dev 环境(浏览器与 docker 同宿主)。LAN 部署见末节。
 
@@ -16,8 +16,9 @@ curl -s http://localhost:1985/api/v1/versions   # 期望 {"code":0,...}
 编辑 `app/server/.env.dev`:
 - 注释 `SFU_PROVIDER="livekit"` 行
 - 取消注释(或新增)`SFU_PROVIDER="srs"`
+- `SRS_SECRET` 设非空值 (生成: `openssl rand -hex 32`)
 
-server config 已有 `SRS_HOST=localhost SRS_API_PORT=1985 SRS_WHIP_PORT=1985 SRS_SECRET=` 默认值,无需另设。
+server config 已有 `SRS_HOST=localhost SRS_API_PORT=1985 SRS_WHIP_PORT=1985` 默认值。`SRS_SECRET` 留空会触发明文 token 的 latin1 报错,必须设。
 
 启动:
 ```bash
@@ -50,6 +51,7 @@ pnpm dev:web
 |------|------|-----|
 | ICE failed / 无声 | candidate 错 | `docker exec gospeak-srs printenv CANDIDATE` 应为 `127.0.0.1` |
 | WHIP 401 | (dev 不应发生)SRS auth 开了 | 确认 srs.conf 无 `http_api auth` |
+| `String contains non ISO-8859-1 code point` (fetch headers) | `SRS_SECRET` 空,明文 token `room:identity` 含非 latin1 (中文房间名/用户名) | `.env.dev` 设 `SRS_SECRET=$(openssl rand -hex 32)`,重启 server |
 | 前端仍连 livekit | env 没生效 | 重启 `pnpm dev:web`,确认 `.env.local` 在 app/web 下 |
 | `curl /api/v1/streams` 空 | 还没人 publish | 正常,publish 后才出现 stream |
 | WHEP 收不到 track | join 顺序 | 任一方 publish 后另一方才能 WHEP subscribe |
