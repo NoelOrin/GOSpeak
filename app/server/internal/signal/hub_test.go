@@ -113,6 +113,12 @@ func (m *mockServer) BroadcastToRoom(namespace, room, event string, v ...interfa
 }
 func (m *mockServer) ForEach(namespace, room string, f socketio.EachFunc) bool { return true }
 
+type fakeStreamResolver struct{}
+
+func (fakeStreamResolver) StreamName(room, identity string) string {
+	return "server-computed-" + room + "-" + identity
+}
+
 func decodeAck(t *testing.T, ack string) map[string]interface{} {
 	t.Helper()
 	var data map[string]interface{}
@@ -794,6 +800,61 @@ func TestOnRoomJoinSFU_StoresAndBroadcastsStream(t *testing.T) {
 	}
 	if !broadcasted {
 		t.Fatal("member:joined should broadcast stream")
+	}
+}
+
+func TestOnRoomJoinSFU_ServerRecomputesStream(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	server := newMockServer()
+	hub.server = server
+
+	// 注入 fake resolver 模拟 SRS 服务端流名计算
+	hub.SetStreamResolver(fakeStreamResolver{})
+
+	creator := newMockConn("creator-socket")
+	hub.OnRoomCreate(creator, `{"room":"r1"}`)
+
+	// 客户端提报错误 stream，服务端应覆写
+	member := newMockConn("mem-1")
+	ackRaw, err := hub.OnRoomJoinSFU(member, `{"room":"r1","identity":"alice","stream":"client-supplied-bad"}`)
+	if err != nil {
+		t.Fatalf("OnRoomJoinSFU error: %v", err)
+	}
+	var ack struct {
+		OK      bool         `json:"ok"`
+		Members []MemberInfo `json:"members"`
+	}
+	if err := json.Unmarshal([]byte(ackRaw), &ack); err != nil {
+		t.Fatalf("parse ack: %v", err)
+	}
+	if !ack.OK {
+		t.Fatal("ack should be ok")
+	}
+
+	// 成员列表中的 stream 应为服务端计算值
+	expected := "server-computed-r1-alice"
+	if len(ack.Members) != 1 || ack.Members[0].Stream != expected {
+		t.Fatalf("expected stream %q in ack members, got %+v", expected, ack.Members)
+	}
+
+	// Hub 中存储的 stream 也应为服务端计算值
+	hub.mu.RLock()
+	stored := hub.rooms["r1"].Members["mem-1"].Stream
+	hub.mu.RUnlock()
+	if stored != expected {
+		t.Fatalf("MemberInfo.Stream should be %q, got %q", expected, stored)
+	}
+
+	// 广播中的 stream 也应为服务端计算值
+	broadcasted := false
+	if vals, ok := server.broadcasts[EventMemberJoined]; ok && len(vals) > 0 {
+		payload, _ := json.Marshal(vals[0])
+		if expectedInJSON := `"stream":"` + expected + `"`; strings.Contains(string(payload), expectedInJSON) {
+			broadcasted = true
+		}
+	}
+	if !broadcasted {
+		t.Fatal("member:joined should broadcast server-computed stream")
 	}
 }
 

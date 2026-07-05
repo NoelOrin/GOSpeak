@@ -116,3 +116,21 @@ func TestSrsCallback_OnUnpublish_UnregistersStream(t *testing.T) {
 		t.Fatal("stream should be unregistered after on_unpublish")
 	}
 }
+
+func TestSrsCallback_OnStop_DoesNotUnregister(t *testing.T) {
+	hub := newCallbackHub()
+	hub.RegisterStream("gs-eee")
+	h := NewSRSCallbackHandler(hub, "secret")
+	payload := map[string]string{
+		"action": "on_stop",
+		"stream": "gs-eee",
+		"param":  "app=live&stream=gs-eee",
+	}
+	w := postJSON(t, h, payload)
+	if !strings.Contains(w.Body.String(), `"code":0`) {
+		t.Fatalf("on_stop should return code 0, got %s", w.Body.String())
+	}
+	if !hub.IsStreamActive("gs-eee") {
+		t.Fatal("stream should remain registered after on_stop")
+	}
+}

@@ -61,10 +61,16 @@ type SFUSignalHandler interface {
 // broadcastFn 供 provider 模块广播房间事件，无需依赖 Hub 具体类型。
 type BroadcastFn func(room, event string, data interface{})
 
+// StreamNameResolver 计算给定 room+identity 的预期 stream 名，用于服务端覆写客户端提报值。
+type StreamNameResolver interface {
+	StreamName(room, identity string) string
+}
+
 type Hub struct {
 	server           socketServer
 	sfuProvider      sfu.Provider
 	sfuProviderName  string
+	streamResolver   StreamNameResolver
 	rooms            map[string]*Room // roomName -> Room
 	mu               sync.RWMutex
 	roomStore        roomStore
@@ -99,6 +105,10 @@ func (h *Hub) SetSFU(provider sfu.Provider) {
 
 func (h *Hub) SetSFUSignalHandler(handler SFUSignalHandler) {
 	h.sfuSignalHandler = handler
+}
+
+func (h *Hub) SetStreamResolver(r StreamNameResolver) {
+	h.streamResolver = r
 }
 
 // ─── 事件注册 ───
@@ -319,6 +329,11 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 	identity := req.Identity
 	if identity == "" {
 		identity = s.ID()
+	}
+
+	// 服务端覆写 stream：客户端提报值不可信，使用服务端基于 room+identity 计算的预期值
+	if h.streamResolver != nil {
+		req.Stream = h.streamResolver.StreamName(req.Room, identity)
 	}
 
 	member := &MemberInfo{

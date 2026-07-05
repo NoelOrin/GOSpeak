@@ -37,8 +37,10 @@ func (h *SRSCallbackHandler) HandleCallback(c *gin.Context) {
 		}
 		h.hub.RegisterStream(stream)
 		c.JSON(http.StatusOK, gin.H{"code": 0})
-	case "on_unpublish", "on_stop":
+	case "on_unpublish":
 		h.hub.UnregisterStream(stream)
+		c.JSON(http.StatusOK, gin.H{"code": 0})
+	case "on_stop":
 		c.JSON(http.StatusOK, gin.H{"code": 0})
 	case "on_play":
 		if !h.hub.IsStreamActive(stream) {

@@ -218,6 +218,10 @@ export class SRSSFUClient implements SFUClient {
 				const s = this.peerSubs.get(identity);
 				if (!s || this.leaving || !this.hasJoined) return;
 				if (s.retryTimer) clearTimeout(s.retryTimer);
+				if (s.pc) {
+					s.pc.close();
+				}
+				this.deleteResource(s.resourceUrl);
 				this.peerSubs.delete(identity);
 				this.scheduleRetry(identity, stream);
 			});
@@ -333,10 +337,7 @@ export class SRSSFUClient implements SFUClient {
 			return;
 		}
 
-		const delay =
-			sub.retryCount === 0
-				? 1000
-				: Math.pow(2, sub.retryCount - 1) * 1000;
+		const delay = Math.pow(2, sub.retryCount) * 1000;
 
 		sub.retryTimer = setTimeout(() => {
 			this.subscribePeer(identity, stream);
