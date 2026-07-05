@@ -76,24 +76,32 @@ export class SRSSFUClient implements SFUClient {
 		for (const track of this.localStream.getAudioTracks()) {
 			this.publishPc.addTrack(track, this.localStream);
 		}
-		await this.exchangeSdp(this.publishPc, url, token, true);
+		try {
+			await this.exchangeSdp(this.publishPc, url, token, true);
+			// 等 publish PC ICE 连通后再 WHEP：SRS 源未激活时 WHEP 撞 "no play relations"(5018)，关连接不回 HTTP
+			await this.waitForPublishIceConnected();
 
-		this.subscribePc = new RTCPeerConnection();
-		this.subscribePc.addTransceiver("audio", { direction: "recvonly" });
-		this.subscribePc.ontrack = (event) => {
-			const stream = event.streams[0];
-			if (!stream) return;
-			const key = event.track.id || `remote-${this.remoteTracks.size}`;
-			const remoteTrack = new SRSRemoteAudioTrack(stream);
-			this.remoteTracks.set(key, remoteTrack);
-			this.onRemoteAudioTrackCb?.({ identity: key, track: remoteTrack });
-			event.track.addEventListener("ended", () => {
-				remoteTrack.detach();
-				this.remoteTracks.delete(key);
-				this.onRemoteAudioTrackRemovedCb?.(key);
-			});
-		};
-		await this.exchangeSdp(this.subscribePc, url.replace(/\/whip\/?$/, "/whep/"), token, false);
+			this.subscribePc = new RTCPeerConnection();
+			this.subscribePc.addTransceiver("audio", { direction: "recvonly" });
+			this.subscribePc.ontrack = (event) => {
+				const stream = event.streams[0];
+				if (!stream) return;
+				const key = event.track.id || `remote-${this.remoteTracks.size}`;
+				const remoteTrack = new SRSRemoteAudioTrack(stream);
+				this.remoteTracks.set(key, remoteTrack);
+				this.onRemoteAudioTrackCb?.({ identity: key, track: remoteTrack });
+				event.track.addEventListener("ended", () => {
+					remoteTrack.detach();
+					this.remoteTracks.delete(key);
+					this.onRemoteAudioTrackRemovedCb?.(key);
+				});
+			};
+			await this.exchangeSdp(this.subscribePc, url.replace(/\/whip\/?$/, "/whep/"), token, false);
+		} catch (err) {
+			// 失败必须清理已建 publish session，否则 SRS 流孤儿，retry 撞 RtcStreamBusy(5020)
+			await this.cleanupPartialJoin();
+			throw err;
+		}
 		this.startAudioLevelLoop();
 		this.hasJoined = true;
 		this.onPcStateChangeBound = () => {
@@ -120,6 +128,51 @@ export class SRSSFUClient implements SFUClient {
 		};
 		this.publishPc?.addEventListener("iceconnectionstatechange", this.onPcStateChangeBound);
 		this.subscribePc?.addEventListener("iceconnectionstatechange", this.onPcStateChangeBound);
+	}
+
+	private async waitForPublishIceConnected(timeoutMs = 10_000): Promise<void> {
+		const pc = this.publishPc;
+		if (!pc) return;
+		const state = pc.iceConnectionState;
+		if (state === "connected" || state === "completed") return;
+		if (state === "failed" || state === "closed") {
+			throw new Error(`SRS publish ICE ${state}`);
+		}
+		await new Promise<void>((resolve, reject) => {
+			const onState = () => {
+				const s = pc.iceConnectionState;
+				if (s === "connected" || s === "completed") {
+					cleanup();
+					resolve();
+				} else if (s === "failed" || s === "closed") {
+					cleanup();
+					reject(new Error(`SRS publish ICE ${s}`));
+				}
+			};
+			const timer = setTimeout(() => {
+				cleanup();
+				reject(new Error("SRS publish ICE connect timeout"));
+			}, timeoutMs);
+			const cleanup = () => {
+				clearTimeout(timer);
+				pc.removeEventListener("iceconnectionstatechange", onState);
+			};
+			pc.addEventListener("iceconnectionstatechange", onState);
+		});
+	}
+
+	private async cleanupPartialJoin(): Promise<void> {
+		await this.deleteResource(this.publishResourceUrl);
+		this.publishResourceUrl = "";
+		this.subscribeResourceUrl = "";
+		this.publishPc?.close();
+		this.subscribePc?.close();
+		this.publishPc = null;
+		this.subscribePc = null;
+		if (this.localStream) {
+			this.localStream.getTracks().forEach((track) => track.stop());
+			this.localStream = null;
+		}
 	}
 
 	async leaveRoom(): Promise<void> {
