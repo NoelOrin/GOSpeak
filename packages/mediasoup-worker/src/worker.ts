@@ -122,7 +122,7 @@ class MediasoupWorker {
 		const room = this.rooms.get(roomId);
 		if (!room) return;
 		room.producers.set(producer.id, producer);
-		const identity = (producer.appData as { identity?: string } | null)?.identity;
+		const identity = (producer.appData as { identity?: string })?.identity;
 		if (identity) {
 			let participant = room.participants.get(identity);
 			if (!participant) {
@@ -175,7 +175,7 @@ class MediasoupWorker {
 		}));
 	}
 
-	async closeParticipant(roomId: string, identity: string): Promise<string[]> {
+	closeParticipant(roomId: string, identity: string): string[] {
 		const room = this.rooms.get(roomId);
 		if (!room) return [];
 		const participant = room.participants.get(identity);
@@ -212,8 +212,9 @@ class MediasoupWorker {
 
 	pauseParticipant(roomId: string, identity: string): void {
 		const room = this.rooms.get(roomId);
-		const participant = room?.participants.get(identity);
-		if (!room || !participant) return;
+		if (!room) return;
+		const participant = room.participants.get(identity);
+		if (!participant) return;
 		for (const pid of participant.producerIds) {
 			const producer = room.producers.get(pid);
 			if (producer && !producer.closed) producer.pause();
@@ -222,8 +223,9 @@ class MediasoupWorker {
 
 	resumeParticipant(roomId: string, identity: string): void {
 		const room = this.rooms.get(roomId);
-		const participant = room?.participants.get(identity);
-		if (!room || !participant) return;
+		if (!room) return;
+		const participant = room.participants.get(identity);
+		if (!participant) return;
 		for (const pid of participant.producerIds) {
 			const producer = room.producers.get(pid);
 			if (producer && !producer.closed) producer.resume();
