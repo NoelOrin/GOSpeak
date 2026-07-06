@@ -66,6 +66,12 @@ type StreamNameResolver interface {
 	StreamName(room, identity string) string
 }
 
+// ParticipantCleanupHandler 处理参与者离开时的 SFU 专属清理(如 mediasoup 广播 producer-closed + 关 transport)。
+// 仅 mediasoup 实现;其它 provider 不实现此接口,Hub OnDisconnect 类型断言跳过。
+type ParticipantCleanupHandler interface {
+	OnParticipantLeft(room, identity string)
+}
+
 type Hub struct {
 	server           socketServer
 	sfuProvider      sfu.Provider
@@ -79,6 +85,7 @@ type Hub struct {
 	permChecker      permChecker
 	sfuSignalHandler SFUSignalHandler
 	activeStreams    map[string]struct{}
+	participantCleanup  ParticipantCleanupHandler
 }
 
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
@@ -105,6 +112,9 @@ func (h *Hub) SetSFU(provider sfu.Provider) {
 
 func (h *Hub) SetSFUSignalHandler(handler SFUSignalHandler) {
 	h.sfuSignalHandler = handler
+	if ch, ok := handler.(ParticipantCleanupHandler); ok {
+		h.participantCleanup = ch
+	}
 }
 
 func (h *Hub) SetStreamResolver(r StreamNameResolver) {
@@ -175,6 +185,9 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 				h.removeParticipantSafe(c.room, c.identity)
 				if c.deleted {
 					h.deleteRoomSafe(c.room)
+				}
+				if h.participantCleanup != nil {
+					h.participantCleanup.OnParticipantLeft(c.room, c.identity)
 				}
 			}
 		}(cleanups)
