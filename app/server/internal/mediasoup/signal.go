@@ -4,15 +4,31 @@ import (
 	"encoding/json"
 	"log"
 	"runtime/debug"
+	"sync"
 
 	socketio "github.com/googollee/go-socket.io"
 )
 
 type BroadcastFn func(room, event string, data interface{})
 
+type participantBridge interface {
+	GetRouterCapabilities(roomID string) (json.RawMessage, error)
+	CreateTransport(roomID, identity, direction string) (*TransportParams, error)
+	ConnectTransport(roomID, transportID string, dtlsParameters json.RawMessage) error
+	Produce(roomID, transportID, kind string, rtpParameters, appData json.RawMessage) (*ProduceResult, error)
+	Consume(roomID, transportID, producerID string, rtpCapabilities json.RawMessage) (*ConsumeResult, error)
+	CloseParticipant(roomID, identity string) ([]string, error)
+}
+
+type participantEntry struct {
+	room     string
+	identity string
+}
+
 type MediasoupSignal struct {
-	bridge    *BridgeClient
-	broadcast BroadcastFn
+	bridge      participantBridge
+	broadcast   BroadcastFn
+	socketIndex sync.Map
 }
 
 func NewMediasoupSignal(bridge *BridgeClient, broadcast BroadcastFn) *MediasoupSignal {
@@ -97,6 +113,11 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 		if err != nil {
 			return errorJSON(err), nil
 		}
+		var appDataMap map[string]interface{}
+		_ = json.Unmarshal(req.AppData, &appDataMap)
+		if id, ok := appDataMap["identity"].(string); ok && id != "" {
+			m.socketIndex.Store(s.ID(), participantEntry{room: req.Room, identity: id})
+		}
 		if m.broadcast != nil {
 			m.broadcast(req.Room, "sfu:producer-ready", map[string]interface{}{
 				"room":       req.Room,
@@ -124,6 +145,30 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 		}
 		return marshalJSON(result), nil
 	}))
+
+	server.OnEvent("/", "sfu:close-transport", safeHandler(func(s socketio.Conn, payload string) (string, error) {
+		var req struct {
+			Room     string `json:"room"`
+			Identity string `json:"identity"`
+		}
+		if err := json.Unmarshal([]byte(payload), &req); err != nil || req.Room == "" || req.Identity == "" {
+			return `{"error":"room and identity required"}`, nil
+		}
+		m.OnParticipantLeft(req.Room, req.Identity)
+		return `{"ok":true}`, nil
+	}))
+}
+
+func (m *MediasoupSignal) OnParticipantLeft(room, identity string) {
+	if m.broadcast != nil {
+		m.broadcast(room, "sfu:producer-closed", map[string]interface{}{
+			"room":     room,
+			"identity": identity,
+		})
+	}
+	go func() {
+		_, _ = m.bridge.CloseParticipant(room, identity)
+	}()
 }
 
 // marshalJSON 序列化 v；失败时记录错误并返回占位 JSON，避免向客户端发送空串或无效 JSON。
