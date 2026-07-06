@@ -4,6 +4,8 @@
 
 dev 环境(浏览器与 docker 同宿主)。LAN 部署见末节。
 
+浏览器侧 WHIP/WHEP 走同源反向代理:前端拿到的 `whipUrl` 是 `/rtc/v1/whip/`,实际由 Vite dev proxy 或 nginx 转发到 SRS HTTP API `:1985`。不要让浏览器直接连接 `http://srs:1985` 或 `http://localhost:1985`,否则生产环境会遇到跨域、HTTPS mixed content 或内网地址不可达问题。
+
 ## 1. 起 SRS
 
 > SRS http_hooks 已配 callback 到 backend:8998,backend 必须先于 SRS publish 启动,否则 SRS fail-closed 拒所有 publish。
@@ -38,6 +40,33 @@ VITE_SFU_PROVIDER=srs
 ```bash
 pnpm dev:web
 ```
+
+开发环境 `app/web/vite.config.ts` 已配置 `/rtc/v1 -> http://localhost:1985` 代理。浏览器 Network 里 WHIP 请求应为同源地址:
+
+```text
+POST http://localhost:<vite端口>/rtc/v1/whip/?app=live&stream=gs-...&token=...
+```
+
+## 3.1 生产 nginx 反代
+
+生产部署参考 `deploy/nginx.conf`,必须包含 `/rtc/v1/` 代理到 SRS HTTP API:
+
+```nginx
+upstream gospeak_srs_http_api {
+    server 127.0.0.1:1985;
+}
+
+location /rtc/v1/ {
+    proxy_pass http://gospeak_srs_http_api;
+    proxy_http_version 1.1;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    proxy_read_timeout 120s;
+    proxy_send_timeout 120s;
+}
+```
+
+若 nginx 与 SRS 不在同一宿主,把 upstream 改成 SRS 容器名、内网 IP 或服务发现地址。该 location 必须放在 SPA `location /` 之前。
 
 ## 4. 多流双向音频验证
 
@@ -85,6 +114,8 @@ docker logs gospeak-srs 2>&1 | grep "on_publish\|on_play\|on_unpublish\|on_stop"
 | 症状 | 原因 | 修 |
 |------|------|-----|
 | ICE failed / 无声 | candidate 错 | `docker exec gospeak-srs printenv CANDIDATE` 应为 `127.0.0.1` |
+| WHIP 404 且响应像前端页面 | `/rtc/v1/` 没进代理,被 SPA 兜底吃掉 | 检查 nginx/Vite proxy,`location /rtc/v1/` 必须在 `location /` 前 |
+| WHIP 502/504 | 代理到 SRS 不通 | 确认 SRS `1985` 可达:`curl http://<srs-host>:1985/api/v1/versions` |
 | WHIP 401 | (dev 不应发生)SRS auth 开了 | 确认 srs.conf 无 `http_api auth` |
 | `String contains non ISO-8859-1 code point` (fetch headers) | `SRS_SECRET` 空,明文 token `room:identity` 含非 latin1 (中文房间名/用户名) | `.env.dev` 设 `SRS_SECRET=$(openssl rand -hex 32)`,重启 server |
 | 前端仍连 livekit | env 没生效 | 重启 `pnpm dev:web`,确认 `.env.local` 在 app/web 下 |
