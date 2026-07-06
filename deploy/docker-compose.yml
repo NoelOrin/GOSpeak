@@ -28,10 +28,26 @@ services:
       - "1935:1935"
       - "1985:1985"
       - "8080:8080"
-      - "8000:8000/udp"
+      # 8000/udp 由 nginx 反代处理, SRS 不对外暴露
+    environment:
+      CANDIDATE: "${SRS_CANDIDATE:-host.docker.internal}"
     volumes:
       - ./srs/srs.conf:/usr/local/srs/conf/srs.conf
     command: ./objs/srs -c conf/srs.conf
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  nginx:
+    image: nginx:alpine
+    container_name: gospeak-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "8000:8000/udp"
+    volumes:
+      - ./nginx-docker.conf:/etc/nginx/conf.d/gospeak.conf:ro
+    depends_on:
+      - srs
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
