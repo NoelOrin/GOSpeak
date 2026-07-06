@@ -15,6 +15,7 @@ const MEDIASOUP_EVENTS = {
 	CONSUME: "sfu:consume",
 	PRODUCER_READY: "sfu:producer-ready",
 	PRODUCER_CLOSED: "sfu:producer-closed",
+	CLOSE_TRANSPORT: "sfu:close-transport",
 } as const;
 
 class MediaSoupRemoteAudioTrack implements RemoteAudioTrackLike {
@@ -227,6 +228,13 @@ export class MediaSoupSFUClient implements SFUClient {
 			this.activeSpeakerTimer = null;
 		}
 		this.isReconnecting = false;
+		if (this.socket && this.roomId && this.identity) {
+			try {
+				await this.sfuEmit(MEDIASOUP_EVENTS.CLOSE_TRANSPORT, { room: this.roomId, identity: this.identity });
+			} catch {
+				// 离开时忽略清理错误,socket 可能已断
+			}
+		}
 		if (this.socket) {
 			if (this.onProducerReadyBound) {
 				this.socket.off(MEDIASOUP_EVENTS.PRODUCER_READY, this.onProducerReadyBound);
