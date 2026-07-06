@@ -12,11 +12,18 @@ export interface ProducerInfo {
 	appData: unknown;
 }
 
+interface ParticipantState {
+	sendTransportId?: string;
+	recvTransportId?: string;
+	producerIds: Set<string>;
+}
+
 interface RoomState {
 	router: Router;
 	transports: Map<string, WebRtcTransport>;
 	producers: Map<string, Producer>;
 	consumers: Map<string, Consumer>;
+	participants: Map<string, ParticipantState>;
 }
 
 class MediasoupWorker {
@@ -57,6 +64,7 @@ class MediasoupWorker {
 			transports: new Map(),
 			producers: new Map(),
 			consumers: new Map(),
+			participants: new Map(),
 		};
 		this.rooms.set(roomId, state);
 		router.observer.on("close", () => this.rooms.delete(roomId));
@@ -75,7 +83,7 @@ class MediasoupWorker {
 		return Array.from(this.rooms.keys());
 	}
 
-	async createTransport(roomId: string): Promise<WebRtcTransport> {
+	async createTransport(roomId: string, identity?: string, direction?: "send" | "recv"): Promise<WebRtcTransport> {
 		const room = this.rooms.get(roomId);
 		if (!room) throw new Error("room not found");
 		const announcedIp = process.env.ANNOUNCED_IP || undefined;
@@ -94,6 +102,15 @@ class MediasoupWorker {
 		});
 		room.transports.set(transport.id, transport);
 		transport.observer.on("close", () => room.transports.delete(transport.id));
+		if (identity) {
+			let participant = room.participants.get(identity);
+			if (!participant) {
+				participant = { producerIds: new Set() };
+				room.participants.set(identity, participant);
+			}
+			if (direction === "send") participant.sendTransportId = transport.id;
+			else if (direction === "recv") participant.recvTransportId = transport.id;
+		}
 		return transport;
 	}
 
@@ -105,7 +122,21 @@ class MediasoupWorker {
 		const room = this.rooms.get(roomId);
 		if (!room) return;
 		room.producers.set(producer.id, producer);
-		producer.observer.on("close", () => room.producers.delete(producer.id));
+		const identity = (producer.appData as { identity?: string } | null)?.identity;
+		if (identity) {
+			let participant = room.participants.get(identity);
+			if (!participant) {
+				participant = { producerIds: new Set() };
+				room.participants.set(identity, participant);
+			}
+			participant.producerIds.add(producer.id);
+		}
+		producer.observer.on("close", () => {
+			room.producers.delete(producer.id);
+			if (identity) {
+				room.participants.get(identity)?.producerIds.delete(producer.id);
+			}
+		});
 	}
 
 	getProducer(roomId: string, producerId: string): Producer | undefined {
@@ -127,6 +158,76 @@ class MediasoupWorker {
 			kind: producer.kind,
 			appData: producer.appData,
 		}));
+	}
+
+	getParticipant(roomId: string, identity: string): ParticipantState | undefined {
+		return this.rooms.get(roomId)?.participants.get(identity);
+	}
+
+	listParticipants(roomId: string): Array<{ identity: string; producerCount: number; hasSendTransport: boolean; hasRecvTransport: boolean }> {
+		const room = this.rooms.get(roomId);
+		if (!room) return [];
+		return Array.from(room.participants.entries()).map(([identity, p]) => ({
+			identity,
+			producerCount: p.producerIds.size,
+			hasSendTransport: p.sendTransportId !== undefined,
+			hasRecvTransport: p.recvTransportId !== undefined,
+		}));
+	}
+
+	async closeParticipant(roomId: string, identity: string): Promise<string[]> {
+		const room = this.rooms.get(roomId);
+		if (!room) return [];
+		const participant = room.participants.get(identity);
+		if (!participant) return [];
+		const closedProducerIds: string[] = [];
+		for (const pid of participant.producerIds) {
+			const producer = room.producers.get(pid);
+			if (producer && !producer.closed) {
+				producer.close();
+				closedProducerIds.push(pid);
+			}
+		}
+		if (participant.sendTransportId) {
+			const t = room.transports.get(participant.sendTransportId);
+			if (t && !t.closed) t.close();
+		}
+		if (participant.recvTransportId) {
+			const t = room.transports.get(participant.recvTransportId);
+			if (t && !t.closed) t.close();
+		}
+		room.participants.delete(identity);
+		return closedProducerIds;
+	}
+
+	pauseProducer(roomId: string, producerId: string): void {
+		const producer = this.rooms.get(roomId)?.producers.get(producerId);
+		if (producer && !producer.closed) producer.pause();
+	}
+
+	resumeProducer(roomId: string, producerId: string): void {
+		const producer = this.rooms.get(roomId)?.producers.get(producerId);
+		if (producer && !producer.closed) producer.resume();
+	}
+
+	pauseParticipant(roomId: string, identity: string): void {
+		const room = this.rooms.get(roomId);
+		const participant = room?.participants.get(identity);
+		if (!room || !participant) return;
+		for (const pid of participant.producerIds) {
+			const producer = room.producers.get(pid);
+			if (producer && !producer.closed) producer.pause();
+		}
+	}
+
+	resumeParticipant(roomId: string, identity: string): void {
+		const room = this.rooms.get(roomId);
+		const participant = room?.participants.get(identity);
+		if (!room || !participant) return;
+		for (const pid of participant.producerIds) {
+			const producer = room.producers.get(pid);
+			if (producer && !producer.closed) producer.resume();
+		}
 	}
 
 	async closeRouter(roomId: string): Promise<void> {
