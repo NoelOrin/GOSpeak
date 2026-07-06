@@ -55,11 +55,12 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 		var req struct {
 			Room      string `json:"room"`
 			Direction string `json:"direction,omitempty"`
+			Identity  string `json:"identity,omitempty"`
 		}
 		if err := json.Unmarshal([]byte(payload), &req); err != nil || req.Room == "" {
 			return `{"error":"room required"}`, nil
 		}
-		params, err := m.bridge.CreateTransport(req.Room)
+		params, err := m.bridge.CreateTransport(req.Room, req.Identity, req.Direction)
 		if err != nil {
 			return errorJSON(err), nil
 		}
