@@ -21,11 +21,17 @@ class MediaSoupRemoteAudioTrack implements RemoteAudioTrackLike {
 	private elements: HTMLAudioElement[] = [];
 	private audioContext: AudioContext;
 	private gainNode: GainNode;
+	private analyser: AnalyserNode;
+	private levelBuffer: Uint8Array;
 
 	constructor(private consumer: mediasoupTypes.Consumer) {
 		this.audioContext = new AudioContext();
 		this.gainNode = this.audioContext.createGain();
 		this.gainNode.gain.value = 1;
+		this.analyser = this.audioContext.createAnalyser();
+		this.analyser.fftSize = 512;
+		this.levelBuffer = new Uint8Array(this.analyser.fftSize);
+		this.analyser.connect(this.gainNode);
 		this.gainNode.connect(this.audioContext.destination);
 	}
 
@@ -35,7 +41,7 @@ class MediaSoupRemoteAudioTrack implements RemoteAudioTrackLike {
 		const source = this.audioContext.createMediaStreamSource(
 			new MediaStream([this.consumer.track]),
 		);
-		source.connect(this.gainNode);
+		source.connect(this.analyser);
 		this.elements.push(audioElement);
 		return audioElement;
 	}
@@ -52,6 +58,16 @@ class MediaSoupRemoteAudioTrack implements RemoteAudioTrackLike {
 
 	setVolume(volume: number): void {
 		this.gainNode.gain.value = Math.max(0, Math.min(1, volume));
+	}
+
+	getLevel(): number {
+		this.analyser.getByteTimeDomainData(this.levelBuffer as Uint8Array<ArrayBuffer>);
+		let sumSquares = 0;
+		for (let i = 0; i < this.levelBuffer.length; i++) {
+			const v = (this.levelBuffer[i] - 128) / 128;
+			sumSquares += v * v;
+		}
+		return Math.sqrt(sumSquares / this.levelBuffer.length);
 	}
 
 	stop(): void {
@@ -84,6 +100,7 @@ export class MediaSoupSFUClient implements SFUClient {
 	private onProducerClosedBound?: (info: any) => void;
 	private onSendConnStateChangeBound?: (state: string) => void;
 	private onRecvConnStateChangeBound?: (state: string) => void;
+	private activeSpeakerTimer: ReturnType<typeof setInterval> | null = null;
 
 	constructor(private options: SFUClientOptions = {}) {
 		this.socket = options.socket;
@@ -186,10 +203,29 @@ export class MediaSoupSFUClient implements SFUClient {
 		this.onRecvConnStateChangeBound = handleConnState;
 		this.sendTransport?.on("connectionstatechange", this.onSendConnStateChangeBound);
 		this.recvTransport?.on("connectionstatechange", this.onRecvConnStateChangeBound);
+		this.activeSpeakerTimer = setInterval(() => {
+			if (this.remoteTracks.size === 0) return;
+			let loudest: { identity: string; level: number } | null = null;
+			for (const [identity, track] of this.remoteTracks) {
+				const level = track.getLevel();
+				if (!loudest || level > loudest.level) {
+					loudest = { identity, level };
+				}
+			}
+			if (loudest && loudest.level > 0.01) {
+				this.onActiveSpeakersCb?.([loudest.identity]);
+			} else {
+				this.onActiveSpeakersCb?.([]);
+			}
+		}, 500);
 	}
 
 	async leaveRoom(): Promise<void> {
 		this.hasJoined = false;
+		if (this.activeSpeakerTimer) {
+			clearInterval(this.activeSpeakerTimer);
+			this.activeSpeakerTimer = null;
+		}
 		this.isReconnecting = false;
 		if (this.socket) {
 			if (this.onProducerReadyBound) {
@@ -279,7 +315,7 @@ export class MediaSoupSFUClient implements SFUClient {
 
 	private async createSendTransport(): Promise<mediasoupTypes.Transport> {
 		if (!this.device || !this.socket) throw new Error("mediasoup device or socket not initialized");
-		const data = await this.sfuEmit(MEDIASOUP_EVENTS.CREATE_TRANSPORT, { room: this.roomId, direction: "send" });
+		const data = await this.sfuEmit(MEDIASOUP_EVENTS.CREATE_TRANSPORT, { room: this.roomId, direction: "send", identity: this.identity });
 		const transport = this.device.createSendTransport(data as never);
 		transport.on("connect", ({ dtlsParameters }, callback, errback) => {
 			if (!this.socket) return;
@@ -306,7 +342,7 @@ export class MediaSoupSFUClient implements SFUClient {
 
 	private async createRecvTransport(): Promise<mediasoupTypes.Transport> {
 		if (!this.device || !this.socket) throw new Error("mediasoup device or socket not initialized");
-		const data = await this.sfuEmit(MEDIASOUP_EVENTS.CREATE_TRANSPORT, { room: this.roomId, direction: "recv" });
+		const data = await this.sfuEmit(MEDIASOUP_EVENTS.CREATE_TRANSPORT, { room: this.roomId, direction: "recv", identity: this.identity });
 		const transport = this.device.createRecvTransport(data as never);
 		transport.on("connect", ({ dtlsParameters }, callback, errback) => {
 			if (!this.socket) return;
@@ -347,7 +383,6 @@ export class MediaSoupSFUClient implements SFUClient {
 			const track = new MediaSoupRemoteAudioTrack(consumer);
 			this.remoteTracks.set(identity, track);
 			this.onRemoteAudioTrackCb?.({ identity, track });
-			this.onActiveSpeakersCb?.(Array.from(this.remoteTracks.keys())); // FIXME: mediasoup active speaker not implemented
 		} catch (err) {
 			console.warn("[MediaSoup] consumeProducer failed:", err);
 			this.onRemoteAudioTrackRemovedCb?.(identity);
