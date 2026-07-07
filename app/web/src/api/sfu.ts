@@ -64,7 +64,6 @@ export const SFU_PROVIDER_CAPABILITIES: Record<
 };
 
 export interface SFUConfig {
-	id: number;
 	provider: SFUProvider;
 	livekit_host: string;
 	livekit_key: string;
@@ -88,15 +87,69 @@ export interface SFUConfig {
 
 export type UpdateSFUConfigParams = Omit<
 	SFUConfig,
-	"id" | "created_at" | "updated_at"
+	"created_at" | "updated_at"
 >;
 
+export interface SFUProvidersListResponse {
+	providers: SFUConfig[];
+	active: SFUProvider;
+}
+
+/** 获取当前激活 provider 的配置 */
 export async function getSFUConfig(): Promise<SFUConfig> {
 	const res = (await apiClient.post({
 		url: "/api/v1/sfu/config",
 	})) as AxiosResponse<Result<SFUConfig>>;
 
 	if (!(res as any).data.data) throw new Error("sfu config is missing");
+	return (res as any).data.data;
+}
+
+/** 获取指定 provider 的配置（新） */
+export async function getSFUConfigByProvider(
+	provider: SFUProvider,
+): Promise<SFUConfig> {
+	const res = (await apiClient.post({
+		url: `/api/v1/sfu/config/${provider}`,
+	})) as AxiosResponse<Result<SFUConfig>>;
+
+	if (!(res as any).data.data) throw new Error("sfu config is missing");
+	return (res as any).data.data;
+}
+
+/** 更新指定 provider 的配置并激活为当前（语义不变，但后端已改为 per-provider 行） */
+export async function updateSFUConfig(
+	params: UpdateSFUConfigParams,
+): Promise<SFUConfig> {
+	const res = (await apiClient.post({
+		url: "/api/v1/sfu/update-config",
+		data: params,
+	})) as AxiosResponse<Result<SFUConfig>>;
+
+	if (!(res as any).data.data) throw new Error("sfu config is missing");
+	return (res as any).data.data;
+}
+
+/** 切换激活的 provider，不修改配置（新） */
+export async function switchSFUProvider(
+	provider: SFUProvider,
+): Promise<SFUConfig> {
+	const res = (await apiClient.post({
+		url: "/api/v1/sfu/switch-provider",
+		data: { provider },
+	})) as AxiosResponse<Result<SFUConfig>>;
+
+	if (!(res as any).data.data) throw new Error("sfu config is missing");
+	return (res as any).data.data;
+}
+
+/** 获取所有已配置 provider 列表 + 当前激活的 provider（新） */
+export async function listSFUProviders(): Promise<SFUProvidersListResponse> {
+	const res = (await apiClient.post({
+		url: "/api/v1/sfu/providers",
+	})) as AxiosResponse<Result<SFUProvidersListResponse>>;
+
+	if (!(res as any).data.data) throw new Error("sfu providers list is missing");
 	return (res as any).data.data;
 }
 
@@ -128,16 +181,4 @@ export function getSFUProviderCapabilities(
 	provider: SFUProvider,
 ): SFUProviderCapabilities {
 	return SFU_PROVIDER_CAPABILITIES[provider];
-}
-
-export async function updateSFUConfig(
-	params: UpdateSFUConfigParams,
-): Promise<SFUConfig> {
-	const res = (await apiClient.post({
-		url: "/api/v1/sfu/update-config",
-		data: params,
-	})) as AxiosResponse<Result<SFUConfig>>;
-
-	if (!(res as any).data.data) throw new Error("sfu config is missing");
-	return (res as any).data.data;
 }
