@@ -38,7 +38,7 @@ MediaSoup 已实现全部 participant 相关方法:
 - `MuteRoomParticipant` — 批量 pause/resume 该 identity 所有 producer
 - `RemoveParticipant` — close 该 identity 的 transport(级联关 producer)
 
-MediaSoup 仍通过自有信令路径([signal.go](/Users/noelorin/GOSpeak/app/server/internal/mediasoup/signal.go))协商媒体,并实现 `ParticipantCleanupHandler` 接口,在 Hub OnDisconnect 时广播 `sfu:producer-closed` + 清理 worker transport。active speaker 由前端 WebAudio AnalyserNode 检测(sfu-client),非服务端 observer。
+MediaSoup 仍通过自有信令路径([signal.go](/Users/noelorin/GOSpeak/app/server/internal/mediasoup/signal.go))协商媒体,通过 Socket.IO 提供:`sfu:get-router-capabilities`、`sfu:create-transport`、`sfu:connect-transport`、`sfu:produce`、`sfu:consume`、`sfu:close-transport`。并实现 `ParticipantCleanupHandler` 接口,在 Hub OnDisconnect 时广播 `sfu:producer-closed` + 清理 worker transport。active speaker 由前端 WebAudio AnalyserNode 检测(sfu-client),非服务端 observer。
 
 #### SRS — `internal/srs/provider.go`
 
@@ -68,11 +68,7 @@ Daily API 权限模型可能不支持服务端 mute/kick。`GenerateAdminToken` 
 
 ### 前端 SFU 客户端（`packages/sfu-client`）
 
-五端均已实现（LiveKit、Agora、MediaSoup、SRS、Daily）。已知标记：
-
-| 文件 | 问题 |
-|------|------|
-| [mediasoup-client.ts:271](/Users/noelorin/GOSpeak/packages/sfu-client/src/mediasoup-client.ts:271) | `FIXME`：活跃发言者回退为列出全部远端音轨，非实际检测 |
+五端均已实现（LiveKit、Agora、MediaSoup、SRS、Daily）。无已知标记。
 
 ### 关于 Mute 语义的说明
 
