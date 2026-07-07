@@ -56,7 +56,7 @@ func TestCloseParticipant(t *testing.T) {
 	}
 }
 
-func TestCloseParticipant_NotFoundIsNil(t *testing.T) {
+func TestCloseParticipant_NotFoundReturnsError(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rooms/r1/participants/ghost/close", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -64,12 +64,9 @@ func TestCloseParticipant_NotFoundIsNil(t *testing.T) {
 	})
 	b := newMockWorker(t, mux.ServeHTTP)
 
-	got, err := b.CloseParticipant("r1", "ghost")
-	if err != nil {
-		t.Fatalf("404 should map to nil error, got: %v", err)
-	}
-	if got != nil {
-		t.Fatalf("expected nil closedProducerIds, got %v", got)
+	_, err := b.CloseParticipant("r1", "ghost")
+	if err != ErrParticipantNotFound {
+		t.Fatalf("expected ErrParticipantNotFound, got: %v", err)
 	}
 }
 

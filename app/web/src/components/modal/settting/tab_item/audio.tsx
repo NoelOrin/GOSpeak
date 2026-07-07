@@ -3,7 +3,7 @@ import AudioDeviceStore, {
 	type AudioBitrate,
 	type AudioSampleRate,
 	type AudioSampleSize,
-} from "../../../../stores/audioDeviceStore";
+} from "@/stores/audioDeviceStore";
 import type { SettingTabConfig } from "./types";
 
 const BITRATE_OPTIONS: { value: AudioBitrate; label: string }[] = [

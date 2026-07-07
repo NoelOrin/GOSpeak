@@ -5,13 +5,17 @@ import (
 	"log"
 	"runtime/debug"
 	"sync"
+	"time"
 
 	socketio "github.com/googollee/go-socket.io"
 )
 
+const recentCloseTTL = 5 * time.Minute
+
 type BroadcastFn func(room, event string, data interface{})
 
 type participantBridge interface {
+	CreateRouter(roomID string) error
 	GetRouterCapabilities(roomID string) (json.RawMessage, error)
 	CreateTransport(roomID, identity, direction string) (*TransportParams, error)
 	ConnectTransport(roomID, transportID string, dtlsParameters json.RawMessage) error
@@ -28,8 +32,12 @@ type MediasoupSignal struct {
 	// close-transport event may also call OnParticipantLeft before disconnect. Without a guard this is
 	// up to 3 redundant HTTP round-trips + 2 broadcasts per leave. LoadOrStore marks first call wins.
 	// Cleared on sfu:produce so a rejoining identity (same room+identity, new socket) cleans up again.
+	// TTL-cleared by AfterFunc so an identity that leaves without rejoining doesn't leak its marker
+	// forever — pointer equality guards against deleting a newer marker set by a rejoin.
 	recentClose sync.Map
 }
+
+type dedupMarker struct{}
 
 func NewMediasoupSignal(bridge *BridgeClient, broadcast BroadcastFn) *MediasoupSignal {
 	return &MediasoupSignal{bridge: bridge, broadcast: broadcast}
@@ -59,6 +67,11 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 		}
 		if err := json.Unmarshal([]byte(payload), &req); err != nil || req.Room == "" {
 			return `{"error":"room required"}`, nil
+		}
+		// 确保 router 存在（worker.createRouter 幂等）：get-router-capabilities 是 mediasoup 客户端首调，
+		// router 此前仅由 GenerateToken 副作用创建，移除副作用后在此懒建，避免 404。
+		if err := m.bridge.CreateRouter(req.Room); err != nil {
+			return errorJSON(err), nil
 		}
 		rtpCaps, err := m.bridge.GetRouterCapabilities(req.Room)
 		if err != nil {
@@ -161,9 +174,15 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 
 func (m *MediasoupSignal) OnParticipantLeft(room, identity string) {
 	key := room + "\x00" + identity
-	if _, loaded := m.recentClose.LoadOrStore(key, struct{}{}); loaded {
+	marker := &dedupMarker{}
+	if _, loaded := m.recentClose.LoadOrStore(key, marker); loaded {
 		return
 	}
+	time.AfterFunc(recentCloseTTL, func() {
+		if actual, ok := m.recentClose.Load(key); ok && actual == marker {
+			m.recentClose.Delete(key)
+		}
+	})
 	if m.broadcast != nil {
 		m.broadcast(room, "sfu:producer-closed", map[string]interface{}{
 			"room":     room,
@@ -171,7 +190,9 @@ func (m *MediasoupSignal) OnParticipantLeft(room, identity string) {
 		})
 	}
 	go func() {
-		_, _ = m.bridge.CloseParticipant(room, identity)
+		if _, err := m.bridge.CloseParticipant(room, identity); err != nil {
+			log.Printf("[mediasoup] CloseParticipant error: %v", err)
+		}
 	}()
 }
 

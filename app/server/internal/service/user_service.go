@@ -12,6 +12,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// ErrUserNotFound is returned when a user query finds no matching row.
+var ErrUserNotFound = pkg.NewAppError(pkg.NOT_FOUND, "user not found")
+
 // UserService 用户服务，支持按 ID / UUID / 用户名查询以及 CRUD 操作。
 type UserService struct {
 	userRepo *repository.UserRepository
@@ -26,7 +29,7 @@ func (s *UserService) GetByID(id uint) (*model.User, error) {
 	user, err := s.userRepo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, pkg.NewAppError(pkg.NOT_FOUND, "user not found")
+			return nil, ErrUserNotFound
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -38,7 +41,7 @@ func (s *UserService) GetByUUID(uuid string) (*model.User, error) {
 	user, err := s.userRepo.GetByUUID(uuid)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, pkg.NewAppError(pkg.NOT_FOUND, "user not found")
+			return nil, ErrUserNotFound
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -80,12 +83,11 @@ func (s *UserService) Update(user *model.User) error {
 	return nil
 }
 
-// Delete 删除用户：先验证存在性，再执行删除。
+// Delete 删除用户。
 func (s *UserService) Delete(id uint) error {
-	_, err := s.userRepo.GetByID(id)
-	if err != nil {
+	if _, err := s.userRepo.GetByID(id); err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return pkg.NewAppError(pkg.NOT_FOUND, "user not found")
+			return ErrUserNotFound
 		}
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -100,7 +102,7 @@ func (s *UserService) UpdateRole(id uint, role string) error {
 	user, err := s.userRepo.GetByID(id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return pkg.NewAppError(pkg.NOT_FOUND, "user not found")
+			return ErrUserNotFound
 		}
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -121,7 +123,7 @@ func (s *UserService) UpdateProfile(uuid, displayName, avatar string) (*model.Us
 	user, err := s.userRepo.GetByUUID(uuid)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, pkg.NewAppError(pkg.NOT_FOUND, "user not found")
+			return nil, ErrUserNotFound
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}

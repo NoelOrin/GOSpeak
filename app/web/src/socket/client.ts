@@ -3,6 +3,7 @@ import io from "socket.io-client";
 export function createSocketClient() {
 	let socket: ReturnType<typeof io> | null = null;
 	const connectedCbs: Array<() => void> = [];
+	const serverEventCleanups: Array<() => void> = [];
 	const disconnectedCbs: Array<(reason: string) => void> = [];
 	const connectErrorCbs: Array<(err: Error) => void> = [];
 
@@ -29,6 +30,7 @@ export function createSocketClient() {
 	}
 
 	function disconnect() {
+		offAllServerEvents();
 		if (socket) {
 			socket.disconnect();
 			socket = null;
@@ -73,9 +75,14 @@ export function createSocketClient() {
 		cb: (...args: any[]) => void,
 	): () => void {
 		socket?.on(event, cb);
-		return () => {
-			socket?.off(event, cb);
-		};
+		const cleanup = () => { socket?.off(event, cb); };
+		serverEventCleanups.push(cleanup);
+		return cleanup;
+	}
+
+	function offAllServerEvents() {
+		for (const cleanup of serverEventCleanups) cleanup();
+		serverEventCleanups.length = 0;
 	}
 
 	function getSocket() {
@@ -116,6 +123,7 @@ export function createSocketClient() {
 		emitFireAndForget,
 		emitAck,
 		onServerEvent,
+		offAllServerEvents,
 		getSocket,
 		isConnected,
 		onConnected,

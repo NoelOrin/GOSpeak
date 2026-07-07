@@ -21,7 +21,7 @@ type sfuClientInfoProvider interface {
 }
 
 type streamInfoProvider interface {
-	StreamInfo(room, identity string) (stream, token string)
+	StreamInfo(room, identity string) (stream, token string, err error)
 }
 
 func NewSignalHandler(provider sfu.Provider, hub *signal.Hub) *SignalHandler {
@@ -99,7 +99,11 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 	}
 
 	if sp, ok := h.sfuProvider.(streamInfoProvider); ok {
-		stream, streamToken := sp.StreamInfo(req.Room, req.Identity)
+		stream, streamToken, err := sp.StreamInfo(req.Room, req.Identity)
+		if err != nil {
+			pkg.HandleError(c, err)
+			return
+		}
 		data["stream"] = stream
 		data["streamToken"] = streamToken
 	}

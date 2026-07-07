@@ -23,7 +23,7 @@ class MediaSoupRemoteAudioTrack implements RemoteAudioTrackLike {
 	private audioContext: AudioContext;
 	private gainNode: GainNode;
 	private analyser: AnalyserNode;
-	private levelBuffer: Uint8Array;
+	private levelBuffer: Uint8Array<ArrayBuffer>;
 
 	constructor(private consumer: mediasoupTypes.Consumer) {
 		this.audioContext = new AudioContext();
@@ -62,7 +62,7 @@ class MediaSoupRemoteAudioTrack implements RemoteAudioTrackLike {
 	}
 
 	getLevel(): number {
-		this.analyser.getByteTimeDomainData(this.levelBuffer as Uint8Array<ArrayBuffer>);
+		this.analyser.getByteTimeDomainData(this.levelBuffer);
 		let sumSquares = 0;
 		for (let i = 0; i < this.levelBuffer.length; i++) {
 			const v = (this.levelBuffer[i] - 128) / 128;
@@ -139,7 +139,7 @@ export class MediaSoupSFUClient implements SFUClient {
 
 		this.device = new Device();
 		const { rtpCapabilities } = await this.sfuEmit(MEDIASOUP_EVENTS.GET_ROUTER_CAPABILITIES, { room: this.roomId });
-		await this.device.load({ routerRtpCapabilities: rtpCapabilities as never });
+		await this.device.load({ routerRtpCapabilities: rtpCapabilities as unknown as mediasoupTypes.RtpCapabilities });
 
 		this.sendTransport = await this.createSendTransport();
 		this.recvTransport = await this.createRecvTransport();
@@ -324,7 +324,7 @@ export class MediaSoupSFUClient implements SFUClient {
 	private async createSendTransport(): Promise<mediasoupTypes.Transport> {
 		if (!this.device || !this.socket) throw new Error("mediasoup device or socket not initialized");
 		const data = await this.sfuEmit(MEDIASOUP_EVENTS.CREATE_TRANSPORT, { room: this.roomId, direction: "send", identity: this.identity });
-		const transport = this.device.createSendTransport(data as never);
+		const transport = this.device.createSendTransport(data as unknown as mediasoupTypes.TransportOptions);
 		transport.on("connect", ({ dtlsParameters }, callback, errback) => {
 			if (!this.socket) return;
 			this.sfuEmit(MEDIASOUP_EVENTS.CONNECT_TRANSPORT, {
@@ -351,7 +351,7 @@ export class MediaSoupSFUClient implements SFUClient {
 	private async createRecvTransport(): Promise<mediasoupTypes.Transport> {
 		if (!this.device || !this.socket) throw new Error("mediasoup device or socket not initialized");
 		const data = await this.sfuEmit(MEDIASOUP_EVENTS.CREATE_TRANSPORT, { room: this.roomId, direction: "recv", identity: this.identity });
-		const transport = this.device.createRecvTransport(data as never);
+		const transport = this.device.createRecvTransport(data as unknown as mediasoupTypes.TransportOptions);
 		transport.on("connect", ({ dtlsParameters }, callback, errback) => {
 			if (!this.socket) return;
 			this.sfuEmit(MEDIASOUP_EVENTS.CONNECT_TRANSPORT, {
@@ -387,7 +387,7 @@ export class MediaSoupSFUClient implements SFUClient {
 				producerId,
 				rtpCapabilities: this.device.rtpCapabilities,
 			});
-			const consumer = await this.recvTransport.consume(consumerData as never);
+			const consumer = await this.recvTransport.consume(consumerData as unknown as mediasoupTypes.ConsumerOptions);
 			const track = new MediaSoupRemoteAudioTrack(consumer);
 			this.remoteTracks.set(identity, track);
 			this.onRemoteAudioTrackCb?.({ identity, track });

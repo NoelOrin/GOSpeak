@@ -10,6 +10,9 @@ import (
 	"time"
 )
 
+// ErrParticipantNotFound is returned when CloseParticipant gets a 404 from the bridge.
+var ErrParticipantNotFound = fmt.Errorf("participant not found")
+
 type BridgeClient struct {
 	baseURL string
 	client  *http.Client
@@ -161,7 +164,7 @@ func (b *BridgeClient) CloseParticipant(roomID, identity string) ([]string, erro
 	err := b.do(http.MethodPost, "/rooms/"+roomID+"/participants/"+identity+"/close", bytes.NewReader([]byte("{}")), &result)
 	if err != nil {
 		if isNotFound(err) {
-			return nil, nil
+			return nil, ErrParticipantNotFound
 		}
 		return nil, err
 	}

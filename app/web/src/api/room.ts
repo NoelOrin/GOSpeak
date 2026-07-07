@@ -31,8 +31,6 @@ export async function createRoom(req: CreateRoomReq): Promise<RoomRecord> {
 		data: req,
 	})) as AxiosResponse<Result<RoomRecord>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("room data is missing");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("room data is missing");
+	return (res as any).data.data;
 }

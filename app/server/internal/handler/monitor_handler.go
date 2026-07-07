@@ -61,7 +61,9 @@ func (h *MonitorHandler) HealthStream(c *gin.Context) {
 		case <-ticker.C:
 			snap := h.collect()
 			data, _ := json.Marshal(snap)
-			_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+			if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data); err != nil {
+				return
+			}
 			c.Writer.Flush()
 		}
 	}

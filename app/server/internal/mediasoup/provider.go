@@ -1,6 +1,7 @@
 package mediasoup
 
 import (
+	"errors"
 	"fmt"
 
 	"GOSpeak/internal/config"
@@ -32,9 +33,6 @@ func NewService(cfg *config.Config) *Service {
 }
 
 func (s *Service) GenerateToken(room, identity string) (string, error) {
-	if err := s.Bridge.CreateRouter(room); err != nil {
-		return "", pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
-	}
 	return fmt.Sprintf("%s:%s", room, identity), nil
 }
 
@@ -94,6 +92,9 @@ func (s *Service) MuteRoomParticipant(room, identity string, muted bool) error {
 
 func (s *Service) RemoveParticipant(room, identity string) error {
 	if _, err := s.partBridge.CloseParticipant(room, identity); err != nil {
+		if errors.Is(err, ErrParticipantNotFound) {
+			return nil
+		}
 		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
 	}
 	return nil

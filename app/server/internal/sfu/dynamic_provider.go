@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"sync"
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
 )
@@ -9,6 +10,7 @@ type ConfigResolver func() (*config.Config, error)
 
 type DynamicProvider struct {
 	resolve     ConfigResolver
+	mu           sync.RWMutex
 	roomRegistry pkg.RoomRegistry
 }
 
@@ -19,7 +21,9 @@ func NewDynamicProvider(resolve ConfigResolver) *DynamicProvider {
 // SetRoomRegistry 注入 Hub 聚合视图，转发给每次 current() 重建的底层 provider。
 // 因 current() 每次 NewProvider，setter 必须在重建后重放，否则注入丢失。
 func (p *DynamicProvider) SetRoomRegistry(r pkg.RoomRegistry) {
+	p.mu.Lock()
 	p.roomRegistry = r
+	p.mu.Unlock()
 }
 
 func (p *DynamicProvider) GenerateToken(room, identity string) (string, error) {
@@ -113,17 +117,17 @@ func (p *DynamicProvider) StreamName(room, identity string) string {
 	return ""
 }
 
-func (p *DynamicProvider) StreamInfo(room, identity string) (stream, token string) {
+func (p *DynamicProvider) StreamInfo(room, identity string) (stream, token string, err error) {
 	provider, err := p.current()
 	if err != nil {
-		return "", ""
+		return "", "", err
 	}
 	if sp, ok := provider.(interface {
-		StreamInfo(room, identity string) (string, string)
+		StreamInfo(room, identity string) (string, string, error)
 	}); ok {
 		return sp.StreamInfo(room, identity)
 	}
-	return "", ""
+	return "", "", nil
 }
 
 func (p *DynamicProvider) ClientInfo() map[string]interface{} {
@@ -147,9 +151,12 @@ func (p *DynamicProvider) current() (Provider, error) {
 		return nil, pkg.NewAppError(pkg.SFU_ERROR, err.Error())
 	}
 	// 每次重建后重放 roomRegistry 注入（SRS 等实现 pkg.RoomRegistrySetter）。
-	if p.roomRegistry != nil {
+	p.mu.RLock()
+	registry := p.roomRegistry
+	p.mu.RUnlock()
+	if registry != nil {
 		if rs, ok := provider.(pkg.RoomRegistrySetter); ok {
-			rs.SetRoomRegistry(p.roomRegistry)
+			rs.SetRoomRegistry(registry)
 		}
 	}
 	return provider, nil

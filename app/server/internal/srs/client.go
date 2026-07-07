@@ -18,13 +18,6 @@ type apiResponse struct {
 	Code int `json:"code"`
 }
 
-type streamsResponse struct {
-	Code    int `json:"code"`
-	Streams []struct {
-		Name string `json:"name"`
-	} `json:"streams"`
-}
-
 type clientsResponseClient struct {
 	ID      string `json:"client"`
 	Stream  string `json:"stream"`
@@ -45,31 +38,6 @@ func NewClient(baseURL string) *Client {
 			Timeout: 5 * time.Second,
 		},
 	}
-}
-
-func (c *Client) ListRooms() ([]string, error) {
-	resp, err := c.http.Get(c.baseURL + "/api/v1/streams")
-	if err != nil {
-		return nil, fmt.Errorf("srs list streams: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var result streamsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("srs decode streams: %w", err)
-	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("srs api error: code=%d", result.Code)
-	}
-
-	rooms := make([]string, 0, len(result.Streams))
-	for _, stream := range result.Streams {
-		if stream.Name == "" {
-			continue
-		}
-		rooms = append(rooms, stream.Name)
-	}
-	return rooms, nil
 }
 
 func (c *Client) fetchClients() ([]clientsResponseClient, error) {

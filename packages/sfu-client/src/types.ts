@@ -1,10 +1,3 @@
-export interface ProducerReadyInfo {
-	room?: string;
-	producerId: string;
-	kind?: string;
-	appData?: { identity?: string };
-}
-
 /**
  * Minimal playback surface required by the web app after a remote track has
  * already been subscribed.

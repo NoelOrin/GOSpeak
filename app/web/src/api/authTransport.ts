@@ -14,8 +14,6 @@ export async function requestAccessTokenByRefreshToken(
 		refresh_token: refreshToken,
 	})) as AxiosResponse<Result<{ access_token: string }>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data?.access_token) throw new Error("access_token is missing");
-	return result.data.access_token;
+	if (!(res as any).data.data?.access_token) throw new Error("access_token is missing");
+	return (res as any).data.data.access_token;
 }

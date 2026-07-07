@@ -8,7 +8,6 @@
 export { createSFUClient } from "./factory";
 export { preloadSFUClient } from "./factory";
 export type {
-	ProducerReadyInfo,
 	RemoteAudioTrackLike,
 	RemoteTrackInfo,
 	SFUAudioCaptureOptions,

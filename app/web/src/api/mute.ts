@@ -28,10 +28,8 @@ export async function createMute(params: CreateMuteParams): Promise<MuteRecord> 
 		data: params,
 	})) as AxiosResponse<Result<MuteRecord>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("mute record is missing");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("mute record is missing");
+	return (res as any).data.data;
 }
 
 export async function cancelMute(userId: number): Promise<void> {
@@ -40,21 +38,6 @@ export async function cancelMute(userId: number): Promise<void> {
 		data: { user_id: userId },
 	})) as AxiosResponse<Result>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-}
-
-export async function getMuteStatus(
-	userId: number,
-): Promise<MuteRecord | null> {
-	const res = (await apiClient.post({
-		url: "/api/v1/mute/status",
-		data: { user_id: userId },
-	})) as AxiosResponse<Result<MuteRecord | null>>;
-
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	return result.data ?? null;
 }
 
 export async function listMutes(): Promise<MuteRecord[]> {
@@ -62,7 +45,5 @@ export async function listMutes(): Promise<MuteRecord[]> {
 		url: "/api/v1/mute/list",
 	})) as AxiosResponse<Result<MuteRecord[]>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	return result.data || [];
+	return (res as any).data.data || [];
 }
