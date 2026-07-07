@@ -113,7 +113,7 @@ func StartGin(env EnvEnum) {
 		},
 	})
 
-	signalHub := signal.NewHub(roomSvc, muteSvc, userRepo, permSvc)
+	signalHub := signal.NewHub(roomSvc, muteSvc, userSvc, permSvc)
 	signalHub.SetSFU(sfuProvider)
 	if snr, ok := sfuProvider.(signal.StreamNameResolver); ok {
 		signalHub.SetStreamResolver(snr)
@@ -128,7 +128,8 @@ func StartGin(env EnvEnum) {
 		signalHub.SetSFUSignalHandler(msSignal)
 	}
 	signalHub.SetupRoutes(sioServer)
-	signalH := handler.NewSignalHandler(sfuProvider, signalHub)
+	sfuSvc := service.NewSFUService(sfuProvider, signalHub)
+	signalH := handler.NewSignalHandler(sfuSvc)
 	srsCallbackH := handler.NewSRSCallbackHandler(signalHub, cfg.SRSSecret)
 
 	authH := handler.NewAuthHandler(authSvc)

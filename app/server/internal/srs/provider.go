@@ -88,8 +88,17 @@ func (s *Service) MuteRoomParticipant(room, identity string, muted bool) error {
 
 func (s *Service) RemoveParticipant(room, identity string) error {
 	// SRS client id 由 SRS 内部生成，无法从 identity 推导，必须 list-then-kick。
-	// 用 stream 桥接：算 room+identity → stream → KickByStreams。
-	stream := GenerateStreamName(room, identity)
+	// stream 优先查 registry 实际登记值（join 时按 identity 记录，命名约定变更后仍可查），
+	// 未登记（registry 缺失或旧连接）降级反算 GenerateStreamName 保持兼容。
+	stream := ""
+	if s.registry != nil {
+		if st, ok := s.registry.StreamForIdentity(room, identity); ok {
+			stream = st
+		}
+	}
+	if stream == "" {
+		stream = GenerateStreamName(room, identity)
+	}
 	kicked, remaining, err := s.client.KickByStreams([]string{stream})
 	if err != nil {
 		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())

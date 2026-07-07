@@ -249,8 +249,11 @@ export class SRSSFUClient implements SFUClient {
 		this.exchangeSdp(pc, whepUrl, "", false)
 			.then((resourceUrl) => {
 				const s = this.peerSubs.get(identity);
-				// If the entry was removed (unsubscribed) during exchange, discard
-				if (!s) {
+				// Stale 守卫：交换期间条目若被移除(unsubscribePeer)或被新订阅替换
+				// (retry 后 member:joined 再订阅)，则丢弃本次成功，避免覆盖新 sub 的 pc。
+				// 比较 sub 引用而非 s.pc：连接中 s.pc 为 null，仅靠 s.pc!==null 无法捕获
+				// "新订阅尚在 connecting" 的 stale 成功(会把新 sub.pc 误置为旧 pc)。
+				if (s !== sub) {
 					pc.close();
 					this.deleteResource(resourceUrl);
 					return;
@@ -262,7 +265,12 @@ export class SRSSFUClient implements SFUClient {
 			})
 			.catch(() => {
 				const s = this.peerSubs.get(identity);
-				if (!s) { pc.close(); return; } // cleanup already happened (unsubscribePeer)
+				// Stale 守卫：新订阅已接管(s!==sub，含已成功与尚在 connecting)或条目已移除，
+				// 仅关闭失败的旧 pc，不删条目不重试，避免孤立新 pc 与无谓断连重连。
+				if (s !== sub) {
+					pc.close();
+					return;
+				}
 				pc.close();
 				const prevRetryCount = s.retryCount;
 				if (s.retryTimer) clearTimeout(s.retryTimer);
