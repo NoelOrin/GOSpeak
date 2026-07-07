@@ -35,17 +35,17 @@ Scope: `feature/srs-sfu` branch (49 commits ahead of main)。review 最近 5 com
 | `daily-client.ts:58` | 未用构造参数 `_options` | 删 |
 | `factory.ts:4-10` | `preloadSFUClient` 与 `createSFUClient` 重复映射 | 合并简化 |
 
-### 2.2 Go Backend (`app/server/internal/`) — 9 项全修
+### 2.2 Go Backend (`app/server/internal/`) — 8 项（6 修 + 2 回退保留）
 
 | 文件 | 问题 | 操作 |
 |------|------|------|
 | `mediasoup/bridge.go:164` | `CloseParticipant` 404 返 `nil,nil` | 加 `ErrParticipantNotFound` sentinel |
 | `mediasoup/signal.go:187` | goroutine 吞 error | 改 `log.Printf` |
-| `service/user_service.go:85` | Delete 调 GetByID 丢弃结果 | 直接 `repo.Delete` |
-| `service/room_service.go:108` | 同上 | 同上 |
-| `service/user_service.go:29` | `ErrUserNotFound` 拼写 4 次 | 抽 sentinel |
-| `service/room_service.go:52` | `ErrRoomNotFound` 拼写 3 次 | 抽 sentinel |
-| `signal/hub.go:280` | 丢弃 `IsMutedByIdentity` error | 改 `log.Printf` |
+| `service/user_service.go:87` | Delete 调 GetByID 丢弃结果 | **回退保留 pre-check**（§13 §7.2：保留 GetByID pre-check 返 NOT_FOUND，未改直接 repo.Delete——GORM Delete 对不存在行静默成功，pre-check 保语义） |
+| `service/room_service.go:110` | 同上 | **回退保留 pre-check**（同上） |
+| `service/user_service.go:29` | `ErrUserNotFound` 拼写 4 次 | 抽 sentinel（1 定义 + 5 用） |
+| `service/room_service.go:52` | `ErrRoomNotFound` 拼写 3 次 | 抽 sentinel（1 定义 + 4 用） |
+| `signal/hub.go:280` | 丢弃 `IsMutedByIdentity` error | 改 `log.Printf`（WARNING fail-open） |
 | `storage/provider.go:15` | `Name()` 接口方法未用 | 删接口+实现 |
 
 ### 2.3 Web Frontend (`app/web/src/`) — ~16 项
@@ -58,7 +58,6 @@ Scope: `feature/srs-sfu` branch (49 commits ahead of main)。review 最近 5 com
 | `stores/socketStore.ts` | `sfuEmit`/`signalEmit` 互相包装无意义 | 删 `sfuEmit`，调用点改 `signalEmit` |
 | `api/storage.ts:111` | 多余 `}`（agent 删 deleteObject 遗留） | 删 |
 | `packages/sfu-client/src/mediasoup-client.ts` | `Uint8Array` 缺泛型参数导致 TS 编译错 | 改 `Uint8Array<ArrayBuffer>` |
-| `api/apiClient.ts:51,108,125` | `Authoriztion` 拼写（缺 t） | 实际已正，无需改 |
 
 **死代码删除**
 | 文件 | 操作 |
@@ -67,9 +66,7 @@ Scope: `feature/srs-sfu` branch (49 commits ahead of main)。review 最近 5 com
 | `api/storage.ts:deleteObject` | 删 |
 | `api/email.ts:verifyEmailCode` | 删 |
 | `api/storage.ts:ConfirmResult/UploadResult` | 删类型定义 |
-| `components/room/roomDetail.tsx:64-74` | 删注释 JSX |
 | `components/funcButton.tsx:61-65` | 删僵死 Label A/B 按钮 |
-| `api/apiClient.ts:197` | 删注释 export |
 | `components/modal/settting/tab_item/room.tsx` | 写空（需手动 `rm`） |
 | `components/modal/settting/tab_item/general.tsx` | 写空（需手动 `rm`） |
 
@@ -83,17 +80,17 @@ Scope: `feature/srs-sfu` branch (49 commits ahead of main)。review 最近 5 com
 
 ## 3. 未修项记录 (Minor/可搁置)
 
-**Reviewer 发现但用户要求只修上述范围**:
+**Reviewer 发现但用户要求只修上述范围**。下表为初版判定；§13 批量复核后部分已修，状态列标注。✅=已修（附 §13 修复号），⏸️=搁置。
 
-| 文件 | 问题 | 建议 |
-|------|------|------|
-| `srs/client.go:145-156` | `KickByStreams` remaining 计数可能不准 | 区分请求失败 vs API 返回 |
-| `srs/provider.go:109-119` | `DeleteRoom` partial failure 仍 `ClearRoom` | 移入 err==nil 分支 |
-| `srs/stream.go:60` | `var _ = hex.EncodeToString` 无用 import 保留 | 删 |
-| `srs/client.go:96-115` | `ListParticipants` 返 `[]map[string]interface{}` | 定义 SRSParticipant struct |
-| `service/mute_service.go:121` | `GetMuteStatus` 返 `nil,nil` | 加 boolean 或 sentinel |
-| `storage/local.go:36` | `PresignUpload` 返 `nil,nil` | 加 NOT_SUPPORTED error |
-| `handler/monitor_handler.go:64` | `_, _ = fmt.Fprintf` 吞 SSE write error | 检查并 break |
+| 文件 | 问题 | 初版建议 | 状态 |
+|------|------|---------|------|
+| `srs/client.go:145-156` | `KickByStreams` remaining 计数可能不准 | 区分请求失败 vs API 返回 | ⏸️ 搁置（当前可辩护） |
+| `srs/provider.go:109-119` | `DeleteRoom` partial failure 仍 `ClearRoom` | 移入 err==nil 分支 | ✅ B3（`provider.go:115` ClearRoom 移入 err==nil 分支） |
+| `srs/stream.go:60` | `var _ = hex.EncodeToString` 无用 import 保留 | 删 | ✅ 已删（`stream.go` 删 `encoding/hex` import + hack） |
+| `srs/client.go:96-115` | `ListParticipants` 返 `[]map[string]interface{}` | 定义 SRSParticipant struct | ⏸️ 搁置（被 §7.4 `interface{}` 收紧阻塞） |
+| `service/mute_service.go:121` | `GetMuteStatus` 返 `nil,nil` | 加 boolean 或 sentinel | ⏸️ 搁置（handler 契约清晰 null=未禁言） |
+| `storage/local.go:36` | `PresignUpload` 返 `nil,nil` | 加 NOT_SUPPORTED error | ✅ B2（改返 `&PresignedResult{ObjectKey:key}`，前端走中转上传，避 nil panic） |
+| `handler/monitor_handler.go:64` | `_, _ = fmt.Fprintf` 吞 SSE write error | 检查并 break | ✅ B4（`monitor_handler.go:85` 循环 write 检 err return；初始 write 仍吞，连接刚建可接受） |
 
 ---
 
@@ -108,9 +105,11 @@ Scope: `feature/srs-sfu` branch (49 commits ahead of main)。review 最近 5 com
 
 ## 5. 后续建议
 
-1. 手动删 `room.tsx`、`general.tsx` 文件（已写空内容）
-2. 检查 `apiClient.ts:51,108,125` `Authorization` 拼写在修改版本中是否确实正确
-3. 确认无 `SRS_SECRET` 的环境（dev/CI）能处理 `StreamInfo` 返回 error 后的降级逻辑
+复核对 3 项均闭环：
+
+1. ✅ 删 `room.tsx`、`general.tsx` 空文件（`git rm`）+ 清 `index.ts` 注释 import
+2. ✅ `apiClient.ts:51,108,125` `Authorization` 拼写确认正确（无 `Authoriztion` 缺 t）
+3. ✅ 无 `SRS_SECRET` 环境：`signal_handler.go:102-105` `StreamInfo` 返 err 走 `HandleError` 拒绝，前端不拿空 token 推流
 
 ---
 
@@ -278,29 +277,35 @@ provider 类型泄漏到组装层。新增 provider 改 factory.go + gin.go + sf
 
 **修复**：provider 自注册（`init()` `Register(name, factory)`），signal 事件注册走 provider 接口回调。
 
-### 7.11 全项目零事务
+### 7.11 全项目零事务 ✅ 已修（§14）
 
 `app/server/internal/auth_service.go:164-168` + `oauth_service.go:165,175`
 
-全项目无一处 `db.Transaction`。改密 `Update` + `IncrementTokenVersion` 两独立写无事务——Update 成功版本未增，旧 token 仍有效。建 user + oauth_account 无事务，第二写失败产孤儿用户。SQLite 下并发低不易显，Postgres/MySQL 生产必踩数据不一致。
+全项目无一处 `db.Transaction`（注：permission_repo / mute_repo 后续已加 2 处，§14 复核时存在）。改密 `Update` + `IncrementTokenVersion` 两独立写无事务——Update 成功版本未增，旧 token 仍有效。建 user + oauth_account 无事务，第二写失败产孤儿用户。SQLite 下并发低不易显，Postgres/MySQL 生产必踩数据不一致。
 
-**修复**：service 跨 repo 操作包 `db.Transaction(func(tx) {...})`，repo 接 `tx` 参数。
+**修复**：repo 内自包含 `db.Transaction`（与 permission/mute repo 模式一致，无接口污染）。
+- `user_repo.go` 加 `UpdatePasswordAndInvalidate(user)`——`Save` + `UpdateColumn(token_version+1)` 单事务；删原 `IncrementTokenVersion`（无调用，事务内直接 tx 调）。
+- `oauth_account_repo.go` 加 `CreateWithUser(user, account)`——两表 Create 单事务，account.UserID 事务内回填。
+- `auth_service.go` 三处改密（ChangePassword / FirstChangePassword / ResetPassword）改调 `UpdatePasswordAndInvalidate`；删 `invalidateTokens` 死码。
+- `oauth_service.go` 建 user+account 改调 `CreateWithUser`。
 
-### 7.12 apiClientAuth 缺省 no-op 静默失败
+验证：`go build/vet/test -race` ✅。
+
+### 7.12 apiClientAuth 缺省 no-op 静默失败 ✅ 已修（§13）
 
 `app/web/src/api/apiClientAuth.ts:8-13`
 
 `bindings` 缺省全 no-op。初始化前发请求 token 恒空，无错误提示静默失败。
 
-**修复**：缺省 `getAccessToken` 改 `throw new Error("APIClientAuth not initialized")`。
+**修复**：缺省 `getAccessToken` 改 `throw new Error("APIClientAuth not initialized")`（§13 复核：`apiClientAuth.ts:9` 已 throw，属实）。
 
-### 7.13 前端 factory default 静默回落 LiveKit
+### 7.13 前端 factory default 静默回落 LiveKit ✅ 已修（§13）
 
 `packages/sfu-client/src/factory.ts:52-57`
 
 未知 provider 走 `default` 分支静默回落 LiveKit，不报错挂错 SFU，无声通话难排查。
 
-**修复**：`default: throw new Error("unknown provider: " + provider)`。
+**修复**：`default: throw new Error("unknown provider: " + provider)`（§13/§14 复核：`factory.ts:58-59` 已 throw `\`unknown SFU provider: ${provider}\``，属实）。
 
 ### 7.14 SRS stream.go 保留无用 hex import hack `[上文已记 §3]`
 
@@ -430,6 +435,8 @@ var ErrRoomNotFound = pkg.NewAppError(pkg.NOT_FOUND, "room not found")
 
 §6.1 描述的 pc1/pc2 双并发场景在当前架构结构性不可达。§2.1 删除正确，无 race。
 
+> **§15 追注**：工作树后续在 `srs-client.ts:252,268` 的 `.then`/`.catch` 加 `if (s !== sub)` 守卫（比较 sub 引用而非 `s.pc`）。比原 `s.pc !== null` 更强——覆盖"新订阅 retry 后尚在 connecting(s.pc 仍 null)"的 stale 成功/失败路径，避免旧 pc 误覆盖新 sub.pc 或误删条目误重试。§6.1 裁决（假阳性，结构性不可达）仍成立；此守卫为纵深防御，非修复必需。
+
 ## 本批真·修复
 
 ### B1. §6.2 mediasoup GenerateToken 副作用移除致回归 🔴
@@ -466,3 +473,82 @@ registry==nil 时回退 `/api/v1/streams` 返 stream 名（非 room 名）。reg
 - `go vet ./...` ✅
 - `go test ./...` ✅（mediasoup/srs/signal/service/repository/middleware 全绿）
 - `pnpm build` ✅（4/4 tasks）
+
+---
+
+# §14 二次复核 — 2026-07-07
+
+对 §1/§2.1/§2.2/§2.3/§3/§5 全量代码亲读验证（非盲信文档）。修正文档与工作树不符处。
+
+## 验证结果
+
+| 条目 | 文档原判 | 代码实证 | 裁决 |
+|------|---------|---------|------|
+| §1.1 recentClose 泄漏 | 已修 | `signal.go:40` `dedupMarker` + `:175` OnParticipantLeft + `:181` `time.AfterFunc(recentCloseTTL)` | ✅ 属实 |
+| §1.2 StreamInfo 空 token | 已修 | 签名 `(stream, token string, err error)` 见 `dynamic_provider.go:120`/`srs/provider.go:137`/`signal_handler.go:24,102`；handler err→`HandleError`；2 测试在 `srs/provider_test.go` | ✅ 属实 |
+| §2.1 SFU client 7 项 | 全修 | types 删 ProducerReadyInfo / mediasoup `as never`→`as unknown as` 4 处(142,327,354,390) / srs `s.pc!==null` 删 / agora `removeAllListeners` / daily 删 options / factory 单 `providerLoaders` record 共享 | ✅ 7/7 属实 |
+| §2.2 item 3/4 Delete 直接 repo.Delete | 全修 | **未应用** — `user_service.go:88`/`room_service.go:111` 仍保留 `GetByID` pre-check | ⚠️ 文档不准，已改标"回退保留 pre-check"（§13 §7.2 已记回退理由：GORM Delete 静默成功） |
+| §2.2 余 6 项 | 全修 | bridge `ErrParticipantNotFound` sentinel / signal.go `log.Printf` / ErrUserNotFound+ErrRoomNotFound sentinel 各 1 定义多引用 / hub.go:278 WARNING log / provider.go Name() 已删 | ✅ 6/6 属实 |
+| §2.3 死代码删除 | 全删 | mute.ts getMuteStatus / storage.ts deleteObject+ConfirmResult+UploadResult / email.ts verifyEmailCode / funcButton Label A/B 全无残留 | ✅ 属实 |
+| §3 B2 PresignUpload nil | 未修→B2 | `local.go:31` 返 `&PresignedResult{ObjectKey:key}` | ✅ 属实 |
+| §3 B3 DeleteRoom ClearRoom | 未修→B3 | `provider.go:115` ClearRoom 在 err==nil 分支 | ✅ 属实 |
+| §3 B4 SSE write err | 未修→B4 | `monitor_handler.go:85` 循环 write 检 err return（初始 write line 70 仍吞，连接刚建可接受） | ✅ 属实 |
+| §3 hex import | 未修 | `stream.go` 删 `encoding/hex` + hack | ✅ 属实 |
+| §5 item 1 删空文件 | open | 本次 `git rm` room.tsx+general.tsx，清 index.ts 注释 | ✅ 闭环 |
+| §5 item 2 Authorization 拼写 | 待查 | `apiClient.ts:51,108,125` 全正确 | ✅ 闭环 |
+| §5 item 3 SRS_SECRET 降级 | 待查 | `signal_handler.go:102-105` err→HandleError | ✅ 闭环 |
+
+## 文档修正
+
+- §2.2 标题 "9 项全修" → "8 项（6 修 + 2 回退保留）"；item 3/4 标回退保留 pre-check + 理由
+- §3 加"状态"列：B2/B3/B4/hex 标 ✅（附 §13 修复号），余 3 项标 ⏸️ 搁置
+- §5 3 项全标 ✅ 闭环
+
+## 工作树改动
+
+- `git rm` `tab_item/room.tsx` + `tab_item/general.tsx`（空文件 `export {}`，index.ts 已注释引用）
+- `tab_item/index.ts` 清注释 import + 单行格式化
+
+## 验证（本次）
+
+- `go build ./...` ✅
+- `go vet ./...` ✅
+- `go test ./...` ✅
+- `tsc --noEmit`（app/web）✅
+- `biome check tab_item/` ✅
+
+---
+
+# §15 三次复核 + §7.11 事务修复 — 2026-07-07
+
+用户点验 §7.11/§7.12/§7.13。§7.12/§7.13 §13 已修确认属实；§7.11 本批修复。
+
+## §7.11 零事务 — 已修
+
+3 处独立写改单事务（repo 内自包含 `db.Transaction`，与 permission/mute repo 模式一致，无接口污染）：
+
+| 位置 | 原状 | 修复 |
+|------|------|------|
+| `auth_service.go` ChangePassword / FirstChangePassword / ResetPassword | `Update` + `IncrementTokenVersion` 两独立写 | 改调 `UserRepository.UpdatePasswordAndInvalidate(user)` 单事务（Save + UpdateColumn(token_version+1) 原子） |
+| `oauth_service.go` 建用户 | `userRepo.Create` + `accountRepo.Create` 两独立写 | 改调 `OAuthAccountRepository.CreateWithUser(user, account)` 单事务（两表 Create 原子，UserID 事务内回填） |
+
+**死码清理**：
+- 删 `UserRepository.IncrementTokenVersion`（无调用，事务内直接 tx 调）
+- 删 `AuthService.invalidateTokens`（原唯一包装 IncrementTokenVersion，三处改密改调新方法后无调用）
+
+**改动文件**：
+- `app/server/internal/repository/user_repo.go` — 加 `UpdatePasswordAndInvalidate`，删 `IncrementTokenVersion`
+- `app/server/internal/repository/oauth_account_repo.go` — 加 `CreateWithUser`
+- `app/server/internal/service/auth_service.go` — 三处改密改调，删 `invalidateTokens`
+- `app/server/internal/service/oauth_service.go` — 建用户改调 `CreateWithUser`
+
+## §6.1 srs-client 守卫加固（工作树既存，非本会话改）
+
+工作树 `srs-client.ts` `.then`/`.catch` 含 `if (s !== sub)` 守卫（引用比较），比 §6.1 裁决时更强。§6.1 裁决段已补注。非本批修复，记录归档。
+
+## 验证
+
+- `go build ./...` ✅
+- `go vet ./...` ✅
+- `go test ./...` ✅（service/repository 全绿）
+- `go test -race ./internal/service/... ./internal/repository/...` ✅
