@@ -8,11 +8,18 @@ import (
 type ConfigResolver func() (*config.Config, error)
 
 type DynamicProvider struct {
-	resolve ConfigResolver
+	resolve     ConfigResolver
+	roomRegistry pkg.RoomRegistry
 }
 
 func NewDynamicProvider(resolve ConfigResolver) *DynamicProvider {
 	return &DynamicProvider{resolve: resolve}
+}
+
+// SetRoomRegistry 注入 Hub 聚合视图，转发给每次 current() 重建的底层 provider。
+// 因 current() 每次 NewProvider，setter 必须在重建后重放，否则注入丢失。
+func (p *DynamicProvider) SetRoomRegistry(r pkg.RoomRegistry) {
+	p.roomRegistry = r
 }
 
 func (p *DynamicProvider) GenerateToken(room, identity string) (string, error) {
@@ -138,6 +145,12 @@ func (p *DynamicProvider) current() (Provider, error) {
 	provider, err := NewProvider(cfg)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.SFU_ERROR, err.Error())
+	}
+	// 每次重建后重放 roomRegistry 注入（SRS 等实现 pkg.RoomRegistrySetter）。
+	if p.roomRegistry != nil {
+		if rs, ok := provider.(pkg.RoomRegistrySetter); ok {
+			rs.SetRoomRegistry(p.roomRegistry)
+		}
 	}
 	return provider, nil
 }

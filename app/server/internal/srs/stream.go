@@ -3,6 +3,7 @@ package srs
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/hex"
 	"math/big"
 )
 
@@ -13,15 +14,23 @@ func GenerateStreamName(room, identity string) string {
 	return streamNamePrefix + base36(h[:])[:12]
 }
 
-func GenerateStreamToken(stream, secret string) string {
+func GenerateStreamToken(stream, secret string) (string, error) {
+	if secret == "" {
+		return "", errSecretRequired
+	}
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(stream))
-	sum := mac.Sum(nil)
-	return base36(sum)[:16]
+	return base36(mac.Sum(nil))[:16], nil
 }
 
 func ValidateStreamToken(stream, token, secret string) bool {
-	expected := GenerateStreamToken(stream, secret)
+	if secret == "" {
+		return false
+	}
+	expected, err := GenerateStreamToken(stream, secret)
+	if err != nil {
+		return false
+	}
 	return hmac.Equal([]byte(expected), []byte(token))
 }
 
@@ -47,3 +56,5 @@ func toBase36(v int64) byte {
 	}
 	return byte('a' + v - 10)
 }
+
+var _ = hex.EncodeToString // keep encoding/hex import only if used elsewhere

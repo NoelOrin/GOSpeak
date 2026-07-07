@@ -2,10 +2,11 @@ package srs
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"GOSpeak/internal/pkg"
 )
 
 type tokenClaims struct {
@@ -14,9 +15,11 @@ type tokenClaims struct {
 	jwt.RegisteredClaims
 }
 
+var errSecretRequired = pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "SRS_SECRET is not configured: set SRS_SECRET to a non-empty value")
+
 func GenerateToken(room, identity, secret string) (string, error) {
 	if secret == "" {
-		return room + ":" + identity, nil
+		return "", errSecretRequired
 	}
 	claims := tokenClaims{
 		Room:     room,
@@ -32,13 +35,8 @@ func GenerateToken(room, identity, secret string) (string, error) {
 
 func ParseToken(tokenStr, secret string) (room, identity string, err error) {
 	if secret == "" {
-		parts := strings.SplitN(tokenStr, ":", 2)
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return "", "", fmt.Errorf("invalid plain token format")
-		}
-		return parts[0], parts[1], nil
+		return "", "", errSecretRequired
 	}
-
 	token, err := jwt.ParseWithClaims(tokenStr, &tokenClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return []byte(secret), nil
 	})
