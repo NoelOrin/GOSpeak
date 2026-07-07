@@ -72,7 +72,7 @@ func (m *mockConn) ID() string                { return m.id }
 func (m *mockConn) URL() url.URL              { return url.URL{} }
 func (m *mockConn) LocalAddr() net.Addr       { return nil }
 func (m *mockConn) RemoteAddr() net.Addr      { return nil }
-func (m *mockConn) RemoteHeader() http.Header { return nil }
+func (m *mockConn) RemoteHeader() http.Header { return http.Header{} }
 
 // Namespace interface
 func (m *mockConn) Context() interface{}     { return nil }

@@ -7,14 +7,18 @@ export function createSocketClient() {
 	const disconnectedCbs: Array<(reason: string) => void> = [];
 	const connectErrorCbs: Array<(err: Error) => void> = [];
 
-	function connect(url: string) {
+	function connect(url: string, token?: string) {
 		if (socket?.connected) return;
 		if (socket) {
 			(socket as any).io.reconnection(false);
 			socket.disconnect();
 			socket = null;
 		}
-		socket = io(url, { transports: ["websocket"] });
+		const opts: Record<string, unknown> = { transports: ["websocket"] };
+		if (token) {
+			opts.extraHeaders = { Authorization: `Bearer ${token}` };
+		}
+		socket = io(url, opts);
 
 		socket.on("connect", () => {
 			for (const cb of connectedCbs) cb();
