@@ -1,6 +1,6 @@
 ## SFU Provider 实现完整度矩阵
 
-**评估时间**: 2026-07-02
+**评估时间**: 2026-07-06
 **接口**: `sfu.Provider`（[provider.go](/Users/noelorin/GOSpeak/app/server/internal/sfu/provider.go)）
 
 ### 方法覆盖
@@ -10,10 +10,10 @@
 | `GenerateToken` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `GenerateAdminToken` | ✅ | ⚠️ | ⚠️ | ✅ | ⚠️ |
 | `ListRooms` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `ListParticipants` | ✅ | ✅ | ❌ | ❌ | ✅ |
-| `MuteParticipant` | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `MuteRoomParticipant` | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `RemoveParticipant` | ✅ | ❌ | ❌ | ✅ | ❌ |
+| `ListParticipants` | ✅ | ✅ | ✅ | ❌ | ✅ |
+| `MuteParticipant` | ✅ | ❌ | ✅ | ❌ | ❌ |
+| `MuteRoomParticipant` | ✅ | ❌ | ✅ | ❌ | ❌ |
+| `RemoveParticipant` | ✅ | ❌ | ✅ | ✅ | ❌ |
 | `DeleteRoom` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `GetHost` | ✅ | ✅ | ✅ | ✅ | ✅ |
 
@@ -32,16 +32,13 @@
 
 #### MediaSoup — `internal/mediasoup/provider.go`
 
-| 方法 | 严重程度 | 当前行为 | 说明 |
-|------|----------|----------|------|
-| `ListParticipants` | 中 | `notSupportedErr()` | Mediasoup bridge 无参与者列表端点 |
-| `MuteParticipant` | 中 | `notSupportedErr()` | 已正确返回错误 |
-| `MuteRoomParticipant` | 中 | `notSupportedErr()` | 已正确返回错误 |
-| `RemoveParticipant` | 中 | `notSupportedErr()` | 已正确返回错误 |
+MediaSoup 已实现全部 participant 相关方法:
+- `ListParticipants` — bridge 转发 worker participant 索引
+- `MuteParticipant` — producer pause/resume(trackSid 当 producerId;空则批量)
+- `MuteRoomParticipant` — 批量 pause/resume 该 identity 所有 producer
+- `RemoveParticipant` — close 该 identity 的 transport(级联关 producer)
 
-MediaSoup 拥有自己的信令路径（[signal.go](/Users/noelorin/GOSpeak/app/server/internal/mediasoup/signal.go)），通过 Socket.IO 提供：
-`sfu:get-router-capabilities`、`sfu:create-transport`、`sfu:connect-transport`、`sfu:produce`、`sfu:consume`。
-Provider 方法返回 `ErrNotSupported` 是合理设计——Mediasoup 的参与者管理需通过其他路径。
+MediaSoup 仍通过自有信令路径([signal.go](/Users/noelorin/GOSpeak/app/server/internal/mediasoup/signal.go))协商媒体,并实现 `ParticipantCleanupHandler` 接口,在 Hub OnDisconnect 时广播 `sfu:producer-closed` + 清理 worker transport。active speaker 由前端 WebAudio AnalyserNode 检测(sfu-client),非服务端 observer。
 
 #### SRS — `internal/srs/provider.go`
 
