@@ -58,12 +58,6 @@ const FuncButton = ({
 
 				{/* buttons that show up when FAB is open */}
 				<div>
-					Label A <button class="btn btn-lg btn-circle">A</button>
-				</div>
-				<div>
-					Label B <button class="btn btn-lg btn-circle">B</button>
-				</div>
-				<div>
 					连接服务器
 					<button
 						class="dark:text-white btn btn-lg btn-circle btn-accent"

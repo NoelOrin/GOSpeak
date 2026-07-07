@@ -316,6 +316,12 @@ export const socketStore = createRoot(() => {
 	}
 
 	function disconnect() {
+		producerReadyListeners.clear();
+		producerClosedListeners.clear();
+		activityListeners.clear();
+		presenceListeners.clear();
+		kickedListeners.clear();
+		adapter.offAllServerEvents();
 		adapter.disconnect();
 		setConnecting(false);
 		setConnected(false);
@@ -400,19 +406,12 @@ export const socketStore = createRoot(() => {
 		);
 	}
 
-	function sfuEmit(
-		event: string,
-		payload: Record<string, unknown>,
-	): Promise<any> {
-		return signalEmit(event, payload);
-	}
-
 	function getRouterCapabilities(room: string) {
-		return sfuEmit(EVENTS.SFU_GET_ROUTER_CAPABILITIES, { room });
+		return signalEmit(EVENTS.SFU_GET_ROUTER_CAPABILITIES, { room });
 	}
 
 	function createTransport(room: string, direction: "send" | "recv") {
-		return sfuEmit(EVENTS.SFU_CREATE_TRANSPORT, { room, direction });
+		return signalEmit(EVENTS.SFU_CREATE_TRANSPORT, { room, direction });
 	}
 
 	function connectTransport(
@@ -420,7 +419,7 @@ export const socketStore = createRoot(() => {
 		transportId: string,
 		dtlsParameters: unknown,
 	) {
-		return sfuEmit(EVENTS.SFU_CONNECT_TRANSPORT, {
+		return signalEmit(EVENTS.SFU_CONNECT_TRANSPORT, {
 			room,
 			transportId,
 			dtlsParameters,
@@ -434,7 +433,7 @@ export const socketStore = createRoot(() => {
 		rtpParameters: unknown,
 		appData: unknown,
 	) {
-		return sfuEmit(EVENTS.SFU_PRODUCE, {
+		return signalEmit(EVENTS.SFU_PRODUCE, {
 			room,
 			transportId,
 			kind,
@@ -449,7 +448,7 @@ export const socketStore = createRoot(() => {
 		producerId: string,
 		rtpCapabilities: unknown,
 	) {
-		return sfuEmit(EVENTS.SFU_CONSUME, {
+		return signalEmit(EVENTS.SFU_CONSUME, {
 			room,
 			transportId,
 			producerId,

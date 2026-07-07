@@ -45,10 +45,8 @@ export async function getEmailConfig(): Promise<EmailConfigView> {
 	const res = (await apiClient.post({
 		url: "/api/v1/email/config",
 	})) as AxiosResponse<Result<EmailConfigView>>;
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("email config is missing");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("email config is missing");
+	return (res as any).data.data;
 }
 
 export async function updateEmailConfig(config: EmailConfigInput): Promise<EmailConfigView> {
@@ -56,10 +54,8 @@ export async function updateEmailConfig(config: EmailConfigInput): Promise<Email
 		url: "/api/v1/email/update-config",
 		data: config,
 	})) as AxiosResponse<Result<EmailConfigView>>;
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("email config is missing");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("email config is missing");
+	return (res as any).data.data;
 }
 
 export async function sendEmailCode(input: SendEmailCodeInput): Promise<SendEmailCodeResult> {
@@ -67,19 +63,6 @@ export async function sendEmailCode(input: SendEmailCodeInput): Promise<SendEmai
 		url: "/api/v1/email/send_code",
 		data: input,
 	})) as AxiosResponse<Result<SendEmailCodeResult>>;
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("send email code response is missing");
-	return result.data;
-}
-
-export async function verifyEmailCode(input: VerifyEmailCodeInput): Promise<{ verified: boolean }> {
-	const res = (await apiClient.post({
-		url: "/api/v1/email/verify_code",
-		data: input,
-	})) as AxiosResponse<Result<{ verified: boolean }>>;
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("verify email code response is missing");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("send email code response is missing");
+	return (res as any).data.data;
 }

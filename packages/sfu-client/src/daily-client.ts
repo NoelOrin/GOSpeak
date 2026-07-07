@@ -55,7 +55,7 @@ export class DailySFUClient implements SFUClient {
 	private onReconnectedCb?: () => void;
 	private hasJoined = false;
 
-	constructor(private readonly _options: SFUClientOptions = {}) {}
+	constructor() {}
 
 	async joinRoom(token: string, url: string, identity: string, room?: string): Promise<void> {
 		const dailyModule = await import("@daily-co/daily-js");

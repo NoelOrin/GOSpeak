@@ -102,6 +102,7 @@ export class AgoraSFUClient implements SFUClient {
 		this.remoteAudioTracks.clear();
 		this.onReconnectingCb = undefined;
 		this.onReconnectedCb = undefined;
+		this.client?.removeAllListeners?.();
 		await this.client.leave();
 	}
 

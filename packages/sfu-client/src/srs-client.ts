@@ -263,7 +263,7 @@ export class SRSSFUClient implements SFUClient {
 			.catch(() => {
 				const s = this.peerSubs.get(identity);
 				if (!s) { pc.close(); return; } // cleanup already happened (unsubscribePeer)
-				if (s.pc !== null) { pc.close(); return; } // a successful sub completed; this catch is stale
+				pc.close();
 				const prevRetryCount = s.retryCount;
 				if (s.retryTimer) clearTimeout(s.retryTimer);
 				this.peerSubs.delete(identity);

@@ -60,19 +60,6 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 							<div class="flex justify-between items-center px-4 h-12 border-b border-base-300">
 								<div class="min-w-0">
 									<div class="font-bold truncate">{currentRoom()}</div>
-									<div class="flex items-center gap-1 mt-1 text-[11px] text-base-content/55">
-										{/* <Show when={selectedRoom()?.audioOnly}>
-                      <span class="badge badge-ghost badge-xs">语音</span>
-                    </Show>
-                    <Show when={selectedRoom()?.allowAudience === false}>
-                      <span class="badge badge-ghost badge-xs">仅成员</span>
-                    </Show> */}
-										{/* <Show when={selectedRoom()?.description}>
-                      <span class="truncate">
-                        {selectedRoom()?.description}
-                      </span>
-                    </Show> */}
-									</div>
 								</div>
 								<div class="flex items-center gap-2">
 									<span class="text-sm text-base-content/60">

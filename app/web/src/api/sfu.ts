@@ -96,10 +96,8 @@ export async function getSFUConfig(): Promise<SFUConfig> {
 		url: "/api/v1/sfu/config",
 	})) as AxiosResponse<Result<SFUConfig>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("sfu config is missing");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("sfu config is missing");
+	return (res as any).data.data;
 }
 
 export async function getJoinToken(
@@ -112,10 +110,8 @@ export async function getJoinToken(
 		signal,
 	})) as AxiosResponse<Result<JoinTokenResponse>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("join token response is missing");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("join token response is missing");
+	return (res as any).data.data;
 }
 
 export function resolveSFUProvider(
@@ -142,8 +138,6 @@ export async function updateSFUConfig(
 		data: params,
 	})) as AxiosResponse<Result<SFUConfig>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("sfu config is missing");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("sfu config is missing");
+	return (res as any).data.data;
 }

@@ -27,9 +27,7 @@ export async function listPermissions(): Promise<PermissionItem[]> {
 		url: "/api/v1/permission/list",
 	})) as AxiosResponse<Result<PermissionItem[]>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	return result.data || [];
+	return (res as any).data.data || [];
 }
 
 export async function listRoles(): Promise<RoleItem[]> {
@@ -37,9 +35,7 @@ export async function listRoles(): Promise<RoleItem[]> {
 		url: "/api/v1/role/list",
 	})) as AxiosResponse<Result<RoleItem[]>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	return result.data || [];
+	return (res as any).data.data || [];
 }
 
 export async function getRolePermissions(
@@ -50,11 +46,9 @@ export async function getRolePermissions(
 		data: { role },
 	})) as AxiosResponse<Result<RolePermissionsData>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
 	return {
 		role,
-		permissions: result.data?.permissions || [],
+		permissions: (res as any).data.data?.permissions || [],
 	};
 }
 
@@ -67,10 +61,8 @@ export async function syncRolePermissions(
 		data: { role, permissions },
 	})) as AxiosResponse<Result<RolePermissionsData>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("role permissions data is missing");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("role permissions data is missing");
+	return (res as any).data.data;
 }
 
 export async function createRole(name: string): Promise<RoleItem> {
@@ -79,10 +71,8 @@ export async function createRole(name: string): Promise<RoleItem> {
 		data: { name },
 	})) as AxiosResponse<Result<RoleItem>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("role data is missing");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("role data is missing");
+	return (res as any).data.data;
 }
 
 export async function deleteRole(id: number): Promise<void> {
@@ -91,8 +81,6 @@ export async function deleteRole(id: number): Promise<void> {
 		data: { id },
 	})) as AxiosResponse<Result>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
 }
 
 export async function updateRole(id: number, name: string): Promise<RoleItem> {
@@ -101,8 +89,6 @@ export async function updateRole(id: number, name: string): Promise<RoleItem> {
 		data: { id, name },
 	})) as AxiosResponse<Result<RoleItem>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("role data is missing");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("role data is missing");
+	return (res as any).data.data;
 }

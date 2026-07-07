@@ -12,6 +12,10 @@ type stubBridge struct {
 	closed   chan struct{}
 }
 
+func (s *stubBridge) CreateRouter(roomID string) error {
+	return nil
+}
+
 func (s *stubBridge) GetRouterCapabilities(roomID string) (json.RawMessage, error) {
 	return nil, nil
 }

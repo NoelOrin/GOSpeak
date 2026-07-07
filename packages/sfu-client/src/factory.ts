@@ -10,22 +10,7 @@ const providerLoaders: Record<SFUProvider, () => Promise<unknown>> = {
 };
 
 export async function preloadSFUClient(provider: SFUProvider): Promise<void> {
-	switch (provider) {
-		case "daily":
-			await providerLoaders.daily();
-			return;
-		case "agora":
-			await providerLoaders.agora();
-			return;
-		case "mediasoup":
-			await providerLoaders.mediasoup();
-			return;
-		case "srs":
-			await providerLoaders.srs();
-			return;
-		default:
-			await providerLoaders.livekit();
-	}
+	await (providerLoaders[provider] ?? providerLoaders.livekit)();
 }
 
 /**
@@ -64,11 +49,14 @@ export async function createSFUClient(
 			};
 			return new SRSSFUClient(options);
 		}
-		default: {
+		case "livekit": {
 			const { LiveKitSFUClient } = (await providerLoaders.livekit()) as {
 				LiveKitSFUClient: new (o?: SFUClientOptions) => SFUClient;
 			};
 			return new LiveKitSFUClient(options);
+		}
+		default: {
+			throw new Error(`unknown SFU provider: ${provider}`);
 		}
 	}
 }

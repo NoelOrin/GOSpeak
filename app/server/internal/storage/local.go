@@ -26,14 +26,9 @@ func NewLocalProvider(basePath string, urlPrefix string, publicBaseURL string) *
 	return &LocalProvider{basePath: basePath, urlPrefix: urlPrefix, publicBaseURL: publicBaseURL}
 }
 
-// Name 返回提供者名称
-func (p *LocalProvider) Name() string {
-	return "local"
-}
-
-// PresignUpload 本地模式不支持预签名，返回 nil
+// PresignUpload 本地模式无预签名直传，返回 object_key 供前端走中转上传（/storage/upload）。
 func (p *LocalProvider) PresignUpload(key string, contentType string, maxSize int64) (*PresignedResult, error) {
-	return nil, nil
+	return &PresignedResult{ObjectKey: key}, nil
 }
 
 // UploadFromReader 从 reader 读取数据写入本地文件

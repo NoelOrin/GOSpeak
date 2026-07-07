@@ -75,7 +75,6 @@ type ParticipantCleanupHandler interface {
 type Hub struct {
 	server           socketServer
 	sfuProvider      sfu.Provider
-	sfuProviderName  string
 	streamResolver   StreamNameResolver
 	rooms            map[string]*Room // roomName -> Room
 	mu               sync.RWMutex
@@ -112,9 +111,6 @@ func (h *Hub) SetServer(server *socketio.Server) {
 
 func (h *Hub) SetSFU(provider sfu.Provider) {
 	h.sfuProvider = provider
-	if pn, ok := provider.(interface{ ProviderName() string }); ok {
-		h.sfuProviderName = pn.ProviderName()
-	}
 }
 
 func (h *Hub) SetSFUSignalHandler(handler SFUSignalHandler) {
@@ -277,7 +273,11 @@ func (h *Hub) OnRoomJoin(s socketio.Conn, data string) (string, error) {
 
 	// 禁言检查
 	if h.muteStore != nil && req.Identity != "" {
-		if muted, mute, _ := h.muteStore.IsMutedByIdentity(req.Identity); muted {
+		muted, mute, err := h.muteStore.IsMutedByIdentity(req.Identity)
+		if err != nil {
+			log.Printf("[signal] WARNING IsMutedByIdentity error - mute check fail-open: identity=%q err=%v", req.Identity, err)
+		}
+		if muted {
 			remaining := int64(0)
 			if !mute.Permanent && mute.ExpiresAt != nil {
 				remaining = int64(time.Until(*mute.ExpiresAt).Seconds())

@@ -11,6 +11,7 @@ node_modules
 .pnpm-store/
 .superpowers/
 .cache/
+.turbo/
 
 # ========================
 # 前端 (app/web)

@@ -3,7 +3,6 @@ package srs
 import (
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/hex"
 	"math/big"
 )
 
@@ -57,4 +56,3 @@ func toBase36(v int64) byte {
 	return byte('a' + v - 10)
 }
 
-var _ = hex.EncodeToString // keep encoding/hex import only if used elsewhere

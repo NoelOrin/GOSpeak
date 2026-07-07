@@ -57,9 +57,6 @@ func newSRSTestServer() *srsTestServer {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"code": 0})
 		}
 	})
-	mux.HandleFunc("/api/v1/streams", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(streamsResponse{Code: 0})
-	})
 	ts.srv = httptest.NewServer(mux)
 	return ts
 }
@@ -113,22 +110,13 @@ func TestListRooms_WithRegistry_NilReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestListRooms_NoRegistry_Fallback(t *testing.T) {
-	ts := newSRSTestServer()
-	defer ts.close()
-	s := newServiceWithURL(ts.srv.URL)
-	// registry 为 nil，降级走 /api/v1/streams
+func TestListRooms_NoRegistry_ReturnsError(t *testing.T) {
+	s := newServiceWithURL("http://srs.example")
+	// registry 为 nil：拒绝返回语义错误的 stream 名（/api/v1/streams 返 stream 非 room），返配置错误
 
-	got, err := s.ListRooms()
-	if err != nil {
-		t.Fatalf("ListRooms fallback: %v", err)
-	}
-	rooms, ok := got.([]string)
-	if !ok {
-		t.Fatalf("expected []string, got %T", got)
-	}
-	if len(rooms) != 0 {
-		t.Fatalf("expected empty streams, got %v", rooms)
+	_, err := s.ListRooms()
+	if err == nil {
+		t.Fatal("expected error when registry not configured, got nil")
 	}
 }
 
@@ -227,5 +215,32 @@ func TestRemoveParticipant_NotFound(t *testing.T) {
 	err := s.RemoveParticipant("room-r", "nobody")
 	if err == nil {
 		t.Fatal("expected not found error")
+	}
+}
+
+func TestStreamInfo_EmptySecretReturnsError(t *testing.T) {
+	s := newServiceWithURL("http://srs.example")
+	// secret 未配置 → GenerateStreamToken 拒签，StreamInfo 必须返回 error 而非空 token
+	stream, token, err := s.StreamInfo("room-a", "alice")
+	if err == nil {
+		t.Fatal("expected error when secret empty, got nil")
+	}
+	if token != "" {
+		t.Fatalf("expected empty token on error, got %q", token)
+	}
+	if stream == "" {
+		t.Fatal("stream name should still be returned for diagnostics")
+	}
+}
+
+func TestStreamInfo_WithSecretSucceeds(t *testing.T) {
+	s := newServiceWithURL("http://srs.example")
+	s.secret = "test-secret"
+	stream, token, err := s.StreamInfo("room-a", "alice")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stream == "" || token == "" {
+		t.Fatalf("expected non-empty stream+token, got stream=%q token=%q", stream, token)
 	}
 }
