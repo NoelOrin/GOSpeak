@@ -27,6 +27,7 @@ type MediasoupSignal struct {
 	// OnDisconnect fires removeParticipantSafe (CloseParticipant) and OnParticipantLeft (CloseParticipant);
 	// close-transport event may also call OnParticipantLeft before disconnect. Without a guard this is
 	// up to 3 redundant HTTP round-trips + 2 broadcasts per leave. LoadOrStore marks first call wins.
+	// Cleared on sfu:produce so a rejoining identity (same room+identity, new socket) cleans up again.
 	recentClose sync.Map
 }
 
@@ -111,6 +112,11 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 		result, err := m.bridge.Produce(req.Room, req.TransportID, req.Kind, req.RTPParameters, req.AppData)
 		if err != nil {
 			return errorJSON(err), nil
+		}
+		var appDataMap map[string]interface{}
+		_ = json.Unmarshal(req.AppData, &appDataMap)
+		if id, ok := appDataMap["identity"].(string); ok && id != "" {
+			m.recentClose.Delete(req.Room + "\x00" + id)
 		}
 		if m.broadcast != nil {
 			m.broadcast(req.Room, "sfu:producer-ready", map[string]interface{}{

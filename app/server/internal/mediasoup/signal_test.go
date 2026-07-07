@@ -71,3 +71,62 @@ func TestOnParticipantLeft_BroadcastsAndCloses(t *testing.T) {
 		t.Fatalf("broadcast got room=%q evt=%q id=%q", gotRoom, gotEvt, gotId)
 	}
 }
+
+func TestOnParticipantLeft_DedupsSecondCall(t *testing.T) {
+	var (
+		mu      sync.Mutex
+		bcasts  int
+	)
+	bcast := func(room, event string, data interface{}) {
+		mu.Lock()
+		bcasts++
+		mu.Unlock()
+	}
+	stub := &stubBridge{closed: make(chan struct{}, 4)}
+	sig := &MediasoupSignal{bridge: stub, broadcast: bcast}
+
+	sig.OnParticipantLeft("r1", "alice")
+	<-stub.closed
+	sig.OnParticipantLeft("r1", "alice")
+
+	stub.mu.Lock()
+	stub.closedId = ""
+	stub.mu.Unlock()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if bcasts != 1 {
+		t.Fatalf("expected 1 broadcast, got %d", bcasts)
+	}
+}
+
+func TestOnParticipantLeft_RejoinClearsDedup(t *testing.T) {
+	var (
+		mu     sync.Mutex
+		bcasts int
+	)
+	bcast := func(room, event string, data interface{}) {
+		mu.Lock()
+		bcasts++
+		mu.Unlock()
+	}
+	stub := &stubBridge{closed: make(chan struct{}, 4)}
+	sig := &MediasoupSignal{bridge: stub, broadcast: bcast}
+
+	sig.OnParticipantLeft("r1", "alice")
+	<-stub.closed
+
+	mu.Lock()
+	bcasts = 0
+	mu.Unlock()
+
+	sig.recentClose.Delete("r1\x00alice")
+	sig.OnParticipantLeft("r1", "alice")
+	<-stub.closed
+
+	mu.Lock()
+	defer mu.Unlock()
+	if bcasts != 1 {
+		t.Fatalf("after rejoin-clear, expected 1 broadcast, got %d", bcasts)
+	}
+}
