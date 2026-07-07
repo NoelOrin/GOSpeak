@@ -162,10 +162,10 @@ func (s *AuthService) ChangePassword(username, oldPassword, newPassword string) 
 	}
 
 	user.Password = string(hashedPwd)
-	if err := s.userRepo.Update(user); err != nil {
+	if err := s.userRepo.UpdatePasswordAndInvalidate(user); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	return s.invalidateTokens(user.ID)
+	return nil
 }
 
 // FirstChangePassword 首次登录修改密码（仅验证用户仍为默认密码，无需旧密码）。
@@ -202,10 +202,7 @@ func (s *AuthService) FirstChangePassword(username, newPassword string, name *st
 		user.Name = *name
 	}
 
-	if err := s.userRepo.Update(user); err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	if err := s.userRepo.IncrementTokenVersion(user.ID); err != nil {
+	if err := s.userRepo.UpdatePasswordAndInvalidate(user); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
@@ -251,10 +248,10 @@ func (s *AuthService) ResetPassword(email, code, newPassword string) error {
 	}
 
 	user.Password = string(hashedPwd)
-	if err := s.userRepo.Update(user); err != nil {
+	if err := s.userRepo.UpdatePasswordAndInvalidate(user); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	return s.invalidateTokens(user.ID)
+	return nil
 }
 
 // BlacklistToken 将 JWT token 加入黑名单，使该 token 在有效期内不可再使用。
@@ -267,11 +264,6 @@ func (s *AuthService) BlacklistToken(claims *pkg.Claims) error {
 		return nil
 	}
 	return redis.BlacklistToken(claims.ID, remaining)
-}
-
-// invalidateTokens 递增用户的 TokenVersion，使该用户所有已签发的 access/refresh token 立即失效。
-func (s *AuthService) invalidateTokens(userID uint) error {
-	return s.userRepo.IncrementTokenVersion(userID)
 }
 
 // GetTokenVersionByUUID 查询用户的当前 TokenVersion，供中间件校验 token 版本。
