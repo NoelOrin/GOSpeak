@@ -20,15 +20,14 @@ type participantBridge interface {
 	CloseParticipant(roomID, identity string) ([]string, error)
 }
 
-type participantEntry struct {
-	room     string
-	identity string
-}
-
 type MediasoupSignal struct {
-	bridge      participantBridge
-	broadcast   BroadcastFn
-	socketIndex sync.Map
+	bridge    participantBridge
+	broadcast BroadcastFn
+	// recentClose dedups CloseParticipant + producer-closed broadcast per (room,identity):
+	// OnDisconnect fires removeParticipantSafe (CloseParticipant) and OnParticipantLeft (CloseParticipant);
+	// close-transport event may also call OnParticipantLeft before disconnect. Without a guard this is
+	// up to 3 redundant HTTP round-trips + 2 broadcasts per leave. LoadOrStore marks first call wins.
+	recentClose sync.Map
 }
 
 func NewMediasoupSignal(bridge *BridgeClient, broadcast BroadcastFn) *MediasoupSignal {
@@ -113,11 +112,6 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 		if err != nil {
 			return errorJSON(err), nil
 		}
-		var appDataMap map[string]interface{}
-		_ = json.Unmarshal(req.AppData, &appDataMap)
-		if id, ok := appDataMap["identity"].(string); ok && id != "" {
-			m.socketIndex.Store(s.ID(), participantEntry{room: req.Room, identity: id})
-		}
 		if m.broadcast != nil {
 			m.broadcast(req.Room, "sfu:producer-ready", map[string]interface{}{
 				"room":       req.Room,
@@ -160,6 +154,10 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 }
 
 func (m *MediasoupSignal) OnParticipantLeft(room, identity string) {
+	key := room + "\x00" + identity
+	if _, loaded := m.recentClose.LoadOrStore(key, struct{}{}); loaded {
+		return
+	}
 	if m.broadcast != nil {
 		m.broadcast(room, "sfu:producer-closed", map[string]interface{}{
 			"room":     room,
