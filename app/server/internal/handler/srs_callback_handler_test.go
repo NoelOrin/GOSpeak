@@ -21,7 +21,11 @@ func newCallbackHub() *signal.Hub {
 }
 
 func srsStreamTokenForTest(stream, secret string) string {
-	return srs.GenerateStreamToken(stream, secret)
+	tok, err := srs.GenerateStreamToken(stream, secret)
+	if err != nil {
+		panic("srs.GenerateStreamToken failed in test: " + err.Error())
+	}
+	return tok
 }
 
 func postJSON(t *testing.T, h *SRSCallbackHandler, payload map[string]string) *httptest.ResponseRecorder {

@@ -9,8 +9,8 @@
 |------|---------|-------|-----------|-----|-------|
 | `GenerateToken` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `GenerateAdminToken` | ✅ | ⚠️ | ⚠️ | ✅ | ⚠️ |
-| `ListRooms` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `ListParticipants` | ✅ | ✅ | ✅ | ❌ | ✅ |
+| `ListRooms` | ✅ | ✅ | ✅ | ⚠️ | ✅ |
+| `ListParticipants` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `MuteParticipant` | ✅ | ❌ | ✅ | ❌ | ❌ |
 | `MuteRoomParticipant` | ✅ | ❌ | ✅ | ❌ | ❌ |
 | `RemoveParticipant` | ✅ | ❌ | ✅ | ✅ | ❌ |
@@ -44,11 +44,11 @@ MediaSoup 仍通过自有信令路径([signal.go](/Users/noelorin/GOSpeak/app/se
 
 | 方法 | 严重程度 | 当前行为 |
 |------|----------|----------|
-| `ListParticipants` | 中 | `notSupportedErr()` |
-| `MuteParticipant` | 中 | `notSupportedErr()` |
-| `MuteRoomParticipant` | 中 | `notSupportedErr()` |
+| `ListRooms` | 中 | ⚠️ 返回 `/api/v1/streams` 的活跃流名，非真正房间维度。同一 room 下 N 个 identity → N 个"房间"。P1 走 Hub room→streams 映射聚合(待做)。 |
+| `MuteParticipant` | 中 | `NewErrSFUNotSupported()` — SRS 无服务端轨道静音，前端关 PeerConnection track 实现。 |
+| `MuteRoomParticipant` | 中 | `NewErrSFUNotSupported()` — 同上。 |
 
-SRS WHIP 不支持参与者列表和轨道静音。`RemoveParticipant` 已实现（kick），`DeleteRoom` 已实现。
+`ListParticipants` 已实现(查 `/api/v1/clients/`，按 stream 过滤到 room)；`RemoveParticipant` kick 端点 `/api/v1/clients/{id}`；`DeleteRoom` 删 `/api/v1/streams/{name}`。SRS HTTP client 设 5s 超时。`GenerateToken`/`GenerateStreamToken` 在 `SRS_SECRET` 空时返回 `SFU_NOT_CONFIGURED`，不再降级明文。
 
 > 自部署 e2e 已验证(2026-07-05): docker compose + WHIP/WHEP 双向音频通,runbook 见 `docs/srs-selfhost-runbook.md`。
 

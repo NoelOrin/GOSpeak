@@ -85,17 +85,24 @@ type Hub struct {
 	permChecker      permChecker
 	sfuSignalHandler SFUSignalHandler
 	activeStreams    map[string]struct{}
+	// roomStreams 维护 room→stream 集合的聚合视图，供无原生 room 维度的 provider（SRS）查询。
+	// 由 WS join/leave 与 SRS on_publish/on_unpublish 回调双源同步。
+	roomStreams map[string]map[string]struct{}
+	// streamRoomCache 维护 stream→room 反查，供 SRS callback（仅给 stream 名）反查 room 同步 roomStreams。
+	streamRoomCache map[string]string
 	participantCleanup  ParticipantCleanupHandler
 }
 
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
 	return &Hub{
-		rooms:         make(map[string]*Room),
-		roomStore:     store,
-		muteStore:     mStore,
-		userStore:     uStore,
-		permChecker:   pChecker,
-		activeStreams: make(map[string]struct{}),
+		rooms:           make(map[string]*Room),
+		roomStore:       store,
+		muteStore:       mStore,
+		userStore:       uStore,
+		permChecker:     pChecker,
+		activeStreams:   make(map[string]struct{}),
+		roomStreams:     make(map[string]map[string]struct{}),
+		streamRoomCache: make(map[string]string),
 	}
 }
 
@@ -162,14 +169,16 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 	for roomName, room := range h.rooms {
 		if member, ok := room.Members[s.ID()]; ok {
 			identity := member.Identity
+			stream := member.Stream
 			delete(room.Members, s.ID())
+			h.unregisterStreamLocked(roomName, stream)
 			h.server.BroadcastToNamespace("/", EventMemberLeft, map[string]interface{}{
 				"room":     roomName,
 				"identity": identity,
 				"id":       s.ID(),
 			})
 			updatedRooms = append(updatedRooms, roomName)
-			deleted := h.deleteRoomIfEmpty(roomName)
+			deleted := h.deleteRoomIfEmptyLocked(roomName)
 			cleanups = append(cleanups, disconnectCleanup{roomName, identity, deleted})
 		}
 	}
@@ -379,6 +388,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 		h.rooms[req.Room] = room
 	}
 	room.Members[s.ID()] = member
+	h.registerStreamLocked(req.Room, req.Stream)
 	memberList := h.getMembersLocked(req.Room)
 	h.mu.Unlock()
 
@@ -445,9 +455,11 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 	if room, exists := h.rooms[req.Room]; exists {
 		if member, ok := room.Members[s.ID()]; ok {
 			identity = member.Identity
+			stream := member.Stream
 			delete(room.Members, s.ID())
+			h.unregisterStreamLocked(req.Room, stream)
 			// 成员清空则删除房间，与 OnDisconnect 行为一致
-			roomDeleted = h.deleteRoomIfEmpty(req.Room)
+			roomDeleted = h.deleteRoomIfEmptyLocked(req.Room)
 		}
 	}
 	h.mu.Unlock()
@@ -549,9 +561,11 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 	for sid, m := range room.Members {
 		if m.Identity == req.TargetIdentity {
 			targetSocketID = sid
+			stream := m.Stream
 			delete(room.Members, sid)
+			h.unregisterStreamLocked(req.Room, stream)
 			// 踢出最后一人也删房，与 OnRoomLeave / OnDisconnect 行为一致
-			roomDeleted = h.deleteRoomIfEmpty(req.Room)
+			roomDeleted = h.deleteRoomIfEmptyLocked(req.Room)
 			break
 		}
 	}
@@ -769,12 +783,27 @@ func (h *Hub) IsIdentityMuted(identity string) (bool, *model.Mute, error) {
 func (h *Hub) RegisterStream(stream string) {
 	h.mu.Lock()
 	h.activeStreams[stream] = struct{}{}
+	// SRS callback 仅给 stream，反查 streamRoomCache 同步 roomStreams 聚合视图。
+	if room, ok := h.streamRoomCache[stream]; ok {
+		if h.roomStreams[room] == nil {
+			h.roomStreams[room] = make(map[string]struct{})
+		}
+		h.roomStreams[room][stream] = struct{}{}
+	}
 	h.mu.Unlock()
 }
 
 func (h *Hub) UnregisterStream(stream string) {
 	h.mu.Lock()
 	delete(h.activeStreams, stream)
+	if room, ok := h.streamRoomCache[stream]; ok {
+		if streams, ok := h.roomStreams[room]; ok {
+			delete(streams, stream)
+			if len(streams) == 0 {
+				delete(h.roomStreams, room)
+			}
+		}
+	}
 	h.mu.Unlock()
 }
 
@@ -898,14 +927,80 @@ func (h *Hub) duplicateIdentityLocked(roomName, identity, socketID string) bool 
 	return false
 }
 
-// deleteRoomIfEmpty 在房间无成员时删除并返回 true。调用方须持有 h.mu（写）。
-func (h *Hub) deleteRoomIfEmpty(roomName string) bool {
+// deleteRoomIfEmptyLocked 在房间无成员时删除并返回 true。调用方须持有 h.mu（写）。
+func (h *Hub) deleteRoomIfEmptyLocked(roomName string) bool {
 	room, exists := h.rooms[roomName]
 	if !exists || len(room.Members) != 0 {
 		return false
 	}
 	delete(h.rooms, roomName)
 	return true
+}
+
+// registerStreamLocked 在 WS join 时登记 stream→room 反查 + room→streams 聚合。
+// 调用方须持有 h.mu（写）。stream 为空则跳过（provider 无 stream 概念）。
+func (h *Hub) registerStreamLocked(room, stream string) {
+	if stream == "" {
+		return
+	}
+	h.streamRoomCache[stream] = room
+	if h.roomStreams[room] == nil {
+		h.roomStreams[room] = make(map[string]struct{})
+	}
+	h.roomStreams[room][stream] = struct{}{}
+}
+
+// unregisterStreamLocked 在 WS leave/disconnect 时清除 stream 映射。
+// 调用方须持有 h.mu（写）。stream 为空则跳过。
+func (h *Hub) unregisterStreamLocked(room, stream string) {
+	if stream == "" {
+		return
+	}
+	delete(h.streamRoomCache, stream)
+	if streams, ok := h.roomStreams[room]; ok {
+		delete(streams, stream)
+		if len(streams) == 0 {
+			delete(h.roomStreams, room)
+		}
+	}
+}
+
+// Rooms 返回当前有活跃成员的 room 列表（RoomRegistry 实现）。
+func (h *Hub) Rooms() []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	out := make([]string, 0, len(h.roomStreams))
+	for room := range h.roomStreams {
+		out = append(out, room)
+	}
+	return out
+}
+
+// Streams 返回指定 room 下登记的 stream 名集合（RoomRegistry 实现）。
+func (h *Hub) Streams(room string) []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	streams, ok := h.roomStreams[room]
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(streams))
+	for s := range streams {
+		out = append(out, s)
+	}
+	return out
+}
+
+// ClearRoom 清除指定 room 的 stream 聚合登记（RoomRegistry 实现）。
+func (h *Hub) ClearRoom(room string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if streams, ok := h.roomStreams[room]; ok {
+		for s := range streams {
+			delete(h.streamRoomCache, s)
+		}
+		delete(h.roomStreams, room)
+	}
 }
 
 func parseJSON(data string, v interface{}) error {

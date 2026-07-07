@@ -6,6 +6,7 @@ import (
 	"GOSpeak/internal/mediasoup"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/redis"
 	"GOSpeak/internal/repository"
 	"GOSpeak/internal/router"
@@ -116,6 +117,10 @@ func StartGin(env EnvEnum) {
 	signalHub.SetSFU(sfuProvider)
 	if snr, ok := sfuProvider.(signal.StreamNameResolver); ok {
 		signalHub.SetStreamResolver(snr)
+	}
+	// 注入 Hub room 聚合视图给 SRS 等无原生 room 维度的 provider（pkg.RoomRegistrySetter）。
+	if rs, ok := sfuProvider.(pkg.RoomRegistrySetter); ok {
+		rs.SetRoomRegistry(signalHub)
 	}
 	if resolvedSFUCfg.SFUProvider == "mediasoup" {
 		msService := mediasoup.NewService(resolvedSFUCfg)

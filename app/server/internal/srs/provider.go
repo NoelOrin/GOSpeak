@@ -16,6 +16,11 @@ type Service struct {
 	secret    string
 	whipURL   string
 	serverURL string
+	registry  pkg.RoomRegistry
+}
+
+func (s *Service) SetRoomRegistry(r pkg.RoomRegistry) {
+	s.registry = r
 }
 
 func NewService(cfg *config.Config) *Service {
@@ -53,6 +58,15 @@ func (s *Service) GenerateAdminToken() (string, error) {
 }
 
 func (s *Service) ListRooms() (interface{}, error) {
+	// registry 注入后走 Hub room 聚合视图，避免把 N 个 stream 当 N 个假房间。
+	if s.registry != nil {
+		rooms := s.registry.Rooms()
+		if rooms == nil {
+			rooms = []string{}
+		}
+		return rooms, nil
+	}
+	// 降级：registry 未注入时回退 SRS /api/v1/streams（语义为 stream 名非 room）。
 	rooms, err := s.client.ListRooms()
 	if err != nil {
 		return nil, pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
@@ -61,7 +75,11 @@ func (s *Service) ListRooms() (interface{}, error) {
 }
 
 func (s *Service) ListParticipants(room string) (interface{}, error) {
-	return nil, pkg.NewErrSFUNotSupported()
+	participants, err := s.client.ListParticipants(room)
+	if err != nil {
+		return nil, pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
+	}
+	return participants, nil
 }
 
 func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) error {
@@ -73,13 +91,34 @@ func (s *Service) MuteRoomParticipant(room, identity string, muted bool) error {
 }
 
 func (s *Service) RemoveParticipant(room, identity string) error {
-	if err := s.client.RemoveParticipant(room, identity); err != nil {
+	// SRS client id 由 SRS 内部生成，无法从 identity 推导，必须 list-then-kick。
+	// 用 stream 桥接：算 room+identity → stream → KickByStreams。
+	stream := GenerateStreamName(room, identity)
+	kicked, remaining, err := s.client.KickByStreams([]string{stream})
+	if err != nil {
 		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
+	}
+	if kicked == 0 && remaining == 0 {
+		return pkg.NewAppError(pkg.NOT_FOUND, "srs participant not found")
 	}
 	return nil
 }
 
 func (s *Service) DeleteRoom(room string) error {
+	// registry 注入后：聚合 kick 该 room 下所有 stream 的 client，再清聚合视图。
+	if s.registry != nil {
+		streams := s.registry.Streams(room)
+		kicked, remaining, err := s.client.KickByStreams(streams)
+		s.registry.ClearRoom(room)
+		if err != nil {
+			return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
+		}
+		if kicked == 0 && remaining == 0 && len(streams) == 0 {
+			return pkg.NewAppError(pkg.NOT_FOUND, "srs room not found or empty")
+		}
+		return nil
+	}
+	// 降级：registry 未注入时走旧 DELETE /api/v1/streams/{name}（SRS5 返 2048，仍保留以兼容）。
 	if err := s.client.DeleteRoom(room); err != nil {
 		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
 	}
@@ -100,8 +139,11 @@ func (s *Service) StreamName(room, identity string) string {
 
 func (s *Service) StreamInfo(room, identity string) (stream, token string) {
 	stream = GenerateStreamName(room, identity)
-	token = GenerateStreamToken(stream, s.secret)
-	return
+	t, err := GenerateStreamToken(stream, s.secret)
+	if err != nil {
+		return stream, ""
+	}
+	return stream, t
 }
 
 func (s *Service) ClientInfo() map[string]interface{} {

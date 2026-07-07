@@ -52,7 +52,10 @@ func TestGenerateStreamName_ASCIISafe(t *testing.T) {
 func TestGenerateStreamToken_AndValidate(t *testing.T) {
 	stream := GenerateStreamName("room-1", "alice")
 	secret := "deadbeef"
-	tok := GenerateStreamToken(stream, secret)
+	tok, err := GenerateStreamToken(stream, secret)
+	if err != nil {
+		t.Fatalf("expected token, got error: %v", err)
+	}
 	if tok == "" {
 		t.Fatal("token should not be empty")
 	}
@@ -61,16 +64,30 @@ func TestGenerateStreamToken_AndValidate(t *testing.T) {
 	}
 }
 
+func TestGenerateStreamToken_EmptySecretRejected(t *testing.T) {
+	stream := GenerateStreamName("room-1", "alice")
+	tok, err := GenerateStreamToken(stream, "")
+	if err == nil {
+		t.Fatalf("empty secret should error, got token %q", tok)
+	}
+	if tok != "" {
+		t.Fatalf("expected empty token on error, got %q", tok)
+	}
+	if ValidateStreamToken(stream, "anything", "") {
+		t.Fatal("empty secret should never validate")
+	}
+}
+
 func TestValidateStreamToken_WrongSecret(t *testing.T) {
 	stream := GenerateStreamName("room-1", "alice")
-	tok := GenerateStreamToken(stream, "secret-a")
+	tok, _ := GenerateStreamToken(stream, "secret-a")
 	if ValidateStreamToken(stream, tok, "secret-b") {
 		t.Fatal("token with wrong secret should not validate")
 	}
 }
 
 func TestValidateStreamToken_WrongStream(t *testing.T) {
-	tok := GenerateStreamToken("gs-aaa", "secret")
+	tok, _ := GenerateStreamToken("gs-aaa", "secret")
 	if ValidateStreamToken("gs-bbb", tok, "secret") {
 		t.Fatal("token bound to different stream should not validate")
 	}

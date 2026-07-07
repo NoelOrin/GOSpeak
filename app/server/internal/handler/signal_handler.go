@@ -147,7 +147,7 @@ func (h *SignalHandler) Signal(c *gin.Context) {
 func (h *SignalHandler) ListRooms(c *gin.Context) {
 	rooms, err := h.sfuProvider.ListRooms()
 	if err != nil {
-		pkg.Success(c, []interface{}{})
+		pkg.HandleError(c, err)
 		return
 	}
 

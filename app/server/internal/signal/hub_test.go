@@ -872,3 +872,108 @@ func TestStreamRegistry(t *testing.T) {
 		t.Fatal("unregistered stream should not be active")
 	}
 }
+
+// TestHub_RoomRegistry_JoinLeave 验证 WS join/leave 同步 room→streams 聚合视图，
+// 供 SRS 等无原生 room 维度的 provider 查询。
+func TestHub_RoomRegistry_JoinLeave(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.server = newMockServer()
+	hub.SetStreamResolver(fakeStreamResolver{})
+
+	conn := newMockConn("sock-1")
+	hub.OnRoomCreate(conn, `{"room":"room-a"}`)
+	if _, err := hub.OnRoomJoinSFU(conn, `{"room":"room-a","identity":"alice"}`); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+
+	// join 后 registry 应聚合出 room
+	rooms := hub.Rooms()
+	if len(rooms) != 1 || rooms[0] != "room-a" {
+		t.Fatalf("expected [room-a], got %v", rooms)
+	}
+	streams := hub.Streams("room-a")
+	if len(streams) != 1 || streams[0] != "server-computed-room-a-alice" {
+		t.Fatalf("expected computed stream, got %v", streams)
+	}
+
+	// leave 后聚合清空
+	if _, err := hub.OnRoomLeave(conn, `{"room":"room-a"}`); err != nil {
+		t.Fatalf("leave: %v", err)
+	}
+	if got := hub.Rooms(); len(got) != 0 {
+		t.Fatalf("expected no rooms after leave, got %v", got)
+	}
+	if got := hub.Streams("room-a"); got != nil {
+		t.Fatalf("expected nil streams after leave, got %v", got)
+	}
+}
+
+// TestHub_RoomRegistry_CallbackReverseLookup 验证 SRS on_publish 回调
+// 仅给 stream 名时，经 streamRoomCache 反查 room 同步 roomStreams。
+func TestHub_RoomRegistry_CallbackReverseLookup(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.server = newMockServer()
+	hub.SetStreamResolver(fakeStreamResolver{})
+
+	conn := newMockConn("sock-1")
+	hub.OnRoomCreate(conn, `{"room":"room-b"}`)
+	hub.OnRoomJoinSFU(conn, `{"room":"room-b","identity":"bob"}`)
+
+	stream := "server-computed-room-b-bob"
+	// on_publish 回调登记（模拟 SRS 推流确认）
+	hub.RegisterStream(stream)
+
+	// activeStreams 与 roomStreams 双登记
+	if !hub.IsStreamActive(stream) {
+		t.Fatal("stream should be active")
+	}
+	if got := hub.Streams("room-b"); len(got) != 1 || got[0] != stream {
+		t.Fatalf("roomStreams should contain stream after callback, got %v", got)
+	}
+
+	// on_unpublish 清两表
+	hub.UnregisterStream(stream)
+	if hub.IsStreamActive(stream) {
+		t.Fatal("stream should be inactive after unpublish")
+	}
+	// room 仍有 WS 成员，roomStreams 应保留（成员仍在）
+	if got := hub.Streams("room-b"); len(got) != 0 {
+		t.Fatalf("roomStreams should be empty after unpublish (stream removed), got %v", got)
+	}
+}
+
+// TestHub_RoomRegistry_Disconnect 验证 OnDisconnect 清成员 stream 映射。
+func TestHub_RoomRegistry_Disconnect(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.server = newMockServer()
+	hub.SetStreamResolver(fakeStreamResolver{})
+
+	conn := newMockConn("sock-1")
+	hub.OnRoomCreate(conn, `{"room":"room-c"}`)
+	hub.OnRoomJoinSFU(conn, `{"room":"room-c","identity":"carol"}`)
+
+	hub.OnDisconnect(conn, "transport close")
+
+	if got := hub.Rooms(); len(got) != 0 {
+		t.Fatalf("expected no rooms after disconnect, got %v", got)
+	}
+}
+
+// TestHub_RoomRegistry_ClearRoom 验证 ClearRoom 重置 room 聚合状态。
+func TestHub_RoomRegistry_ClearRoom(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.server = newMockServer()
+	hub.SetStreamResolver(fakeStreamResolver{})
+
+	conn := newMockConn("sock-1")
+	hub.OnRoomCreate(conn, `{"room":"room-d"}`)
+	hub.OnRoomJoinSFU(conn, `{"room":"room-d","identity":"dan"}`)
+
+	hub.ClearRoom("room-d")
+	if got := hub.Streams("room-d"); got != nil {
+		t.Fatalf("expected nil streams after ClearRoom, got %v", got)
+	}
+	if got := hub.Rooms(); len(got) != 0 {
+		t.Fatalf("expected no rooms after ClearRoom, got %v", got)
+	}
+}
