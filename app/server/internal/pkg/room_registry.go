@@ -10,6 +10,9 @@ type RoomRegistry interface {
 	Streams(room string) []string
 	// ClearRoom 清除指定 room 的所有 stream 登记（room 维度状态重置）。
 	ClearRoom(room string)
+	// StreamForIdentity 返回 join 时实际登记的 stream 名（基于 identity→stream 映射），
+	// 优于反算命名约定：命名函数变更后旧连接的 stream 仍可查到。未登记返 ok=false。
+	StreamForIdentity(room, identity string) (stream string, ok bool)
 }
 
 // RoomRegistrySetter 由支持 room 聚合的 provider 实现可选接口。

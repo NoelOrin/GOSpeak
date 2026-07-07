@@ -89,6 +89,9 @@ type Hub struct {
 	roomStreams map[string]map[string]struct{}
 	// streamRoomCache 维护 stream→room 反查，供 SRS callback（仅给 stream 名）反查 room 同步 roomStreams。
 	streamRoomCache map[string]string
+	// streamByIdentity 维护 room→identity→stream 映射，供 SRS RemoveParticipant
+	// 按 identity 查实际登记的 stream，避免反算命名约定（命名函数变更后旧连接仍可查）。
+	streamByIdentity map[string]map[string]string
 	participantCleanup  ParticipantCleanupHandler
 }
 
@@ -99,9 +102,10 @@ func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permCh
 		muteStore:       mStore,
 		userStore:       uStore,
 		permChecker:     pChecker,
-		activeStreams:   make(map[string]struct{}),
-		roomStreams:     make(map[string]map[string]struct{}),
-		streamRoomCache: make(map[string]string),
+		activeStreams:     make(map[string]struct{}),
+		roomStreams:       make(map[string]map[string]struct{}),
+		streamRoomCache:   make(map[string]string),
+		streamByIdentity:  make(map[string]map[string]string),
 	}
 }
 
@@ -167,7 +171,7 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 			identity := member.Identity
 			stream := member.Stream
 			delete(room.Members, s.ID())
-			h.unregisterStreamLocked(roomName, stream)
+			h.unregisterStreamLocked(roomName, identity, stream)
 			h.server.BroadcastToNamespace("/", EventMemberLeft, map[string]interface{}{
 				"room":     roomName,
 				"identity": identity,
@@ -388,7 +392,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 		h.rooms[req.Room] = room
 	}
 	room.Members[s.ID()] = member
-	h.registerStreamLocked(req.Room, req.Stream)
+	h.registerStreamLocked(req.Room, identity, req.Stream)
 	memberList := h.getMembersLocked(req.Room)
 	h.mu.Unlock()
 
@@ -457,7 +461,7 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 			identity = member.Identity
 			stream := member.Stream
 			delete(room.Members, s.ID())
-			h.unregisterStreamLocked(req.Room, stream)
+			h.unregisterStreamLocked(req.Room, identity, stream)
 			// 成员清空则删除房间，与 OnDisconnect 行为一致
 			roomDeleted = h.deleteRoomIfEmptyLocked(req.Room)
 		}
@@ -563,7 +567,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 			targetSocketID = sid
 			stream := m.Stream
 			delete(room.Members, sid)
-			h.unregisterStreamLocked(req.Room, stream)
+			h.unregisterStreamLocked(req.Room, m.Identity, stream)
 			// 踢出最后一人也删房，与 OnRoomLeave / OnDisconnect 行为一致
 			roomDeleted = h.deleteRoomIfEmptyLocked(req.Room)
 			break
@@ -809,6 +813,15 @@ func (h *Hub) IsIdentityMuted(identity string) (bool, *model.Mute, error) {
 	return h.muteStore.IsMutedByIdentity(identity)
 }
 
+// IsMuted 是 JoinPolicy 接口适配：仅返 bool/error，剥离 *model.Mute（pkg.JoinPolicy 不依赖 model）。
+func (h *Hub) IsMuted(identity string) (bool, error) {
+	muted, _, err := h.IsIdentityMuted(identity)
+	return muted, err
+}
+
+// 编译期断言：Hub 实现 pkg.JoinPolicy，供 SFUService 经接口注入。
+var _ pkg.JoinPolicy = (*Hub)(nil)
+
 func (h *Hub) RegisterStream(stream string) {
 	h.mu.Lock()
 	h.activeStreams[stream] = struct{}{}
@@ -966,9 +979,9 @@ func (h *Hub) deleteRoomIfEmptyLocked(roomName string) bool {
 	return true
 }
 
-// registerStreamLocked 在 WS join 时登记 stream→room 反查 + room→streams 聚合。
+// registerStreamLocked 在 WS join 时登记 stream→room 反查 + room→streams 聚合 + identity→stream 映射。
 // 调用方须持有 h.mu（写）。stream 为空则跳过（provider 无 stream 概念）。
-func (h *Hub) registerStreamLocked(room, stream string) {
+func (h *Hub) registerStreamLocked(room, identity, stream string) {
 	if stream == "" {
 		return
 	}
@@ -977,11 +990,17 @@ func (h *Hub) registerStreamLocked(room, stream string) {
 		h.roomStreams[room] = make(map[string]struct{})
 	}
 	h.roomStreams[room][stream] = struct{}{}
+	if identity != "" {
+		if h.streamByIdentity[room] == nil {
+			h.streamByIdentity[room] = make(map[string]string)
+		}
+		h.streamByIdentity[room][identity] = stream
+	}
 }
 
-// unregisterStreamLocked 在 WS leave/disconnect 时清除 stream 映射。
+// unregisterStreamLocked 在 WS leave/disconnect 时清除 stream 映射 + identity→stream 映射。
 // 调用方须持有 h.mu（写）。stream 为空则跳过。
-func (h *Hub) unregisterStreamLocked(room, stream string) {
+func (h *Hub) unregisterStreamLocked(room, identity, stream string) {
 	if stream == "" {
 		return
 	}
@@ -990,6 +1009,14 @@ func (h *Hub) unregisterStreamLocked(room, stream string) {
 		delete(streams, stream)
 		if len(streams) == 0 {
 			delete(h.roomStreams, room)
+		}
+	}
+	if identity != "" {
+		if identities, ok := h.streamByIdentity[room]; ok {
+			delete(identities, identity)
+			if len(identities) == 0 {
+				delete(h.streamByIdentity, room)
+			}
 		}
 	}
 }
@@ -1030,6 +1057,20 @@ func (h *Hub) ClearRoom(room string) {
 		}
 		delete(h.roomStreams, room)
 	}
+	delete(h.streamByIdentity, room)
+}
+
+// StreamForIdentity 返回 join 时按 identity 实际登记的 stream 名（RoomRegistry 实现）。
+// 未登记返 ok=false，调用方（SRS RemoveParticipant）降级反算命名约定保持兼容。
+func (h *Hub) StreamForIdentity(room, identity string) (string, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if identities, ok := h.streamByIdentity[room]; ok {
+		if s, ok := identities[identity]; ok {
+			return s, true
+		}
+	}
+	return "", false
 }
 
 func parseJSON(data string, v interface{}) error {

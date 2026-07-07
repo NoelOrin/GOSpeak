@@ -12,9 +12,10 @@ import (
 
 // stubRegistry 模拟 pkg.RoomRegistry 用于 SRS provider 测试。
 type stubRegistry struct {
-	rooms   []string
-	streams map[string][]string
-	cleared []string
+	rooms           []string
+	streams         map[string][]string
+	cleared         []string
+	identityStreams map[string]string // "room\x00identity" -> stream
 }
 
 func (s *stubRegistry) Rooms() []string      { return s.rooms }
@@ -24,6 +25,13 @@ func (s *stubRegistry) Streams(room string) []string {
 func (s *stubRegistry) ClearRoom(room string) {
 	s.cleared = append(s.cleared, room)
 	delete(s.streams, room)
+}
+func (s *stubRegistry) StreamForIdentity(room, identity string) (string, bool) {
+	if s.identityStreams == nil {
+		return "", false
+	}
+	st, ok := s.identityStreams[room+"\x00"+identity]
+	return st, ok
 }
 
 // srsTestServer 用 httptest 模拟 SRS HTTP API（/api/v1/clients/ + kick）。
@@ -215,6 +223,30 @@ func TestRemoveParticipant_NotFound(t *testing.T) {
 	err := s.RemoveParticipant("room-r", "nobody")
 	if err == nil {
 		t.Fatal("expected not found error")
+	}
+}
+
+func TestRemoveParticipant_RegistryIdentityStream(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.close()
+	// registry 登记的 stream 与反算值不同：验证优先用 registry 实际登记值，
+	// 模拟命名约定变更后旧连接仍可按 identity 查到真实 stream。
+	registryStream := "gs-legacy-stream"
+	ts.mu.Lock()
+	ts.clients = []clientsResponseClient{{ID: "cid-9", Stream: registryStream}}
+	ts.mu.Unlock()
+
+	s := newServiceWithURL(ts.srv.URL)
+	s.registry = &stubRegistry{
+		identityStreams: map[string]string{"room-r\x00alice": registryStream},
+	}
+	if err := s.RemoveParticipant("room-r", "alice"); err != nil {
+		t.Fatalf("RemoveParticipant: %v", err)
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if len(ts.kickedIDs) != 1 || ts.kickedIDs[0] != "cid-9" {
+		t.Fatalf("expected cid-9 (registry stream) kicked, got %v", ts.kickedIDs)
 	}
 }
 

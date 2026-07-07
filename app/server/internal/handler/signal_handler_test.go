@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -61,7 +62,7 @@ func (m *mockSFU) GetHost() string {
 func setupRouter(sfu *mockSFU) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	h := NewSignalHandler(sfu, nil)
+	h := NewSignalHandler(service.NewSFUService(sfu, nil))
 	r.POST("/token", h.GetJoinToken)
 	r.POST("/signal", h.Signal)
 	r.GET("/rooms", h.ListRooms)

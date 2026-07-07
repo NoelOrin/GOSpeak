@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"strings"
 	"sync"
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
@@ -9,20 +10,40 @@ import (
 type ConfigResolver func() (*config.Config, error)
 
 type DynamicProvider struct {
-	resolve     ConfigResolver
+	resolve ConfigResolver
 	mu           sync.RWMutex
 	roomRegistry pkg.RoomRegistry
+	// 缓存底层 provider：LiveKit NewService 建 gRPC client，每次调用重建开销大。
+	// 按 SFU 连接字段指纹失效——SFUConfigHandler 改 DB 后 ResolveConfig 返新值，指纹变即重建。
+	cachedFingerprint string
+	cachedProvider    Provider
 }
 
 func NewDynamicProvider(resolve ConfigResolver) *DynamicProvider {
 	return &DynamicProvider{resolve: resolve}
 }
 
-// SetRoomRegistry 注入 Hub 聚合视图，转发给每次 current() 重建的底层 provider。
-// 因 current() 每次 NewProvider，setter 必须在重建后重放，否则注入丢失。
+// fingerprint 取 SFU 连接相关字段：provider 类型 + 各后端 host/key/secret/port。
+// 仅这些决定 NewProvider 构建的 client 连接，其余 cfg 字段不影响。
+func fingerprint(cfg *config.Config) string {
+	return strings.Join([]string{
+		cfg.SFUProvider, cfg.LiveKitHost, cfg.LiveKitKey, cfg.LiveKitSecret,
+		cfg.AgoraAppID, cfg.AgoraAppCertificate, cfg.AgoraHost, cfg.AgoraCustomerID, cfg.AgoraCustomerSecret,
+		cfg.MediaSoupBridgeURL, cfg.MediaSoupHost,
+		cfg.SRSHost, cfg.SRSApiPort, cfg.SRSWHIPPort, cfg.SRSSecret,
+		cfg.DailyAPIKey, cfg.DailyDomain,
+	}, "|")
+}
+
+// SetRoomRegistry 注入 Hub 聚合视图，转发给已缓存的底层 provider。
 func (p *DynamicProvider) SetRoomRegistry(r pkg.RoomRegistry) {
 	p.mu.Lock()
 	p.roomRegistry = r
+	if p.cachedProvider != nil {
+		if rs, ok := p.cachedProvider.(pkg.RoomRegistrySetter); ok {
+			rs.SetRoomRegistry(r)
+		}
+	}
 	p.mu.Unlock()
 }
 
@@ -146,18 +167,31 @@ func (p *DynamicProvider) current() (Provider, error) {
 	if err != nil {
 		return nil, err
 	}
+	fp := fingerprint(cfg)
+
+	p.mu.RLock()
+	cached := p.cachedProvider
+	cachedFp := p.cachedFingerprint
+	p.mu.RUnlock()
+	if cached != nil && cachedFp == fp {
+		return cached, nil
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cachedProvider != nil && p.cachedFingerprint == fp {
+		return p.cachedProvider, nil
+	}
 	provider, err := NewProvider(cfg)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.SFU_ERROR, err.Error())
 	}
-	// 每次重建后重放 roomRegistry 注入（SRS 等实现 pkg.RoomRegistrySetter）。
-	p.mu.RLock()
-	registry := p.roomRegistry
-	p.mu.RUnlock()
-	if registry != nil {
+	if p.roomRegistry != nil {
 		if rs, ok := provider.(pkg.RoomRegistrySetter); ok {
-			rs.SetRoomRegistry(registry)
+			rs.SetRoomRegistry(p.roomRegistry)
 		}
 	}
+	p.cachedProvider = provider
+	p.cachedFingerprint = fp
 	return provider, nil
 }
