@@ -72,7 +72,7 @@ export function useRoomJoinSession() {
 			return getJoinToken(
 				{
 					room: room.name,
-					identity: userStore.user()?.name || `user-${Date.now().toString(36)}`,
+					identity: userStore.user()?.name ?? "",
 					password: room._password,
 				},
 				signal,

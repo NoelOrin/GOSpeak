@@ -120,9 +120,14 @@ export const socketStore = createRoot(() => {
 
 	function connect() {
 		if (adapter.isConnected() || connecting()) return;
+		const token = userStore.accessToken();
+		if (!token) {
+			showToast("请先登录", { type: "warning" });
+			return;
+		}
 		const socketUrl = import.meta.env.VITE_SOCKET_URL || "";
 		setConnecting(true);
-		adapter.connect(socketUrl);
+		adapter.connect(socketUrl, token);
 
 		adapter.onServerEvent(
 			EVENTS.ROOM_CREATED,

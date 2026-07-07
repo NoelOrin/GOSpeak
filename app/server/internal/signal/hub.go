@@ -5,6 +5,8 @@ import (
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
+	"GOSpeak/internal/redis"
+	"strings"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -152,7 +154,26 @@ func (h *Hub) SetupRoutes(server *socketio.Server) {
 // ─── 连接/断开 ───
 
 func (h *Hub) OnConnect(s socketio.Conn) error {
-	s.SetContext("")
+	// JWT 鉴权：从 HTTP 升级请求头提取 Bearer token 并校验
+	authHeader := s.RemoteHeader().Get("Authorization")
+	if authHeader == "" {
+		return fmt.Errorf("authorization token required")
+	}
+	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+	if tokenStr == authHeader {
+		tokenStr = authHeader
+	}
+	claims, err := pkg.ParseToken(tokenStr)
+	if err != nil {
+		return fmt.Errorf("invalid token: %w", err)
+	}
+	if pkg.IsTokenExpired(claims) {
+		return fmt.Errorf("token expired")
+	}
+	if redis.IsBlacklisted(claims.ID) {
+		return fmt.Errorf("token revoked")
+	}
+	s.SetContext(claims)
 	log.Printf("[Signal] client connected: %s", s.ID())
 	return nil
 }
