@@ -713,6 +713,35 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 
 // ─── 公共方法 ───
 
+// HubStats 信令面实时统计，用于监控面板。
+type HubStats struct {
+	RoomCount       int `json:"room_count"`
+	ParticipantCount int `json:"participant_count"`
+	OnlineUserCount int `json:"online_user_count"`
+}
+
+// GetStats 返回信令面房间数、参与者总数、去重在线用户数。
+func (h *Hub) GetStats() HubStats {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	identities := make(map[string]struct{}, len(h.rooms))
+	participants := 0
+	for _, room := range h.rooms {
+		participants += len(room.Members)
+		for _, m := range room.Members {
+			if m.Identity != "" {
+				identities[m.Identity] = struct{}{}
+			}
+		}
+	}
+	return HubStats{
+		RoomCount:        len(h.rooms),
+		ParticipantCount: participants,
+		OnlineUserCount:  len(identities),
+	}
+}
+
 func (h *Hub) GetSFURooms() []RoomInfo {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

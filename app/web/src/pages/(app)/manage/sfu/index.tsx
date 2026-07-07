@@ -14,6 +14,40 @@ import {
 import { DEFAULT_SFU_PROVIDER, PROVIDER_LABELS } from "@gospeak/sfu-client";
 import type { SFUProvider } from "@gospeak/sfu-client/types";
 
+type FieldErrors = Partial<Record<keyof UpdateSFUConfigParams, string>>;
+
+// trim 尾部/首部空白、引号、反斜杠 — 防止粘贴带脏字符 (如 ws://host:7880")
+const clean = (v: string): string =>
+	v.trim().replace(/^["'\\\s]+|["'\\\s]+$/g, "");
+
+const isPort = (v: string): boolean => {
+	const n = Number(v);
+	return /^\d+$/.test(v.trim()) && n >= 1 && n <= 65535;
+};
+
+// 校验 URL: scheme 必须在允许列表, 整体能被 URL 解析
+const isUrl = (v: string, schemes: string[]): boolean => {
+	const s = clean(v);
+	if (!s) return false;
+	try {
+		const u = new URL(s);
+		return schemes.includes(u.protocol.replace(":", ""));
+	} catch {
+		return false;
+	}
+};
+
+// host: 无 scheme, 无路径, 无尾部标点
+const isHost = (v: string): boolean => {
+	const s = clean(v);
+	if (!s) return false;
+	if (/[/\\]"'/.test(s)) return false;
+	if (s.includes("://")) return false;
+	if (s.includes("/")) return false;
+	// 合法: 域名 或 IP:port 或 纯域名
+	return /^[a-zA-Z0-9.\-_:]+$/.test(s);
+};
+
 export const Route = createFileRoute("/(app)/manage/sfu/")({
 	beforeLoad: () => {
 		if (userStore.user()?.role !== "admin") {
@@ -60,6 +94,7 @@ const DISABLED_PROVIDERS: SFUProvider[] = ["mediasoup"];
 function SFUPage() {
 	const [config, { refetch }] = createResource(getSFUConfig);
 	const [form, setForm] = createSignal<UpdateSFUConfigParams>(emptyForm);
+	const [errors, setErrors] = createSignal<FieldErrors>({});
 	const [saving, setSaving] = createSignal(false);
 	const selectedProvider = () => form().provider;
 	const capabilities = () => getSFUProviderCapabilities(selectedProvider());
@@ -95,12 +130,73 @@ function SFUPage() {
 		value: UpdateSFUConfigParams[K],
 	) => {
 		setForm((current) => ({ ...current, [key]: value }));
+		// 输入时清该字段错误
+		setErrors((cur) => {
+			if (!cur[key]) return cur;
+			const next = { ...cur };
+			delete next[key];
+			return next;
+		});
+	};
+
+	const validate = (): FieldErrors => {
+		const f = form();
+		const e: FieldErrors = {};
+		const p = f.provider;
+
+		// 通用必填 (当前 provider 的核心字段)
+		const require = (key: keyof UpdateSFUConfigParams, msg: string) => {
+			if (!clean(String(f[key] ?? ""))) e[key] = msg;
+		};
+
+		if (p === "livekit") {
+			if (!isUrl(f.livekit_host, ["ws", "wss"]))
+				e.livekit_host = "需为 ws:// 或 wss:// 开头的合法 URL";
+			require("livekit_key", "API Key 必填");
+			require("livekit_secret", "API Secret 必填");
+		} else if (p === "agora") {
+			require("agora_app_id", "App ID 必填");
+			require("agora_app_certificate", "App Certificate 必填");
+			require("agora_customer_id", "Customer ID 必填");
+			require("agora_customer_secret", "Customer Secret 必填");
+			if (f.agora_host && !isUrl(f.agora_host, ["http", "https"]))
+				e.agora_host = "需为 http(s):// 开头的合法 URL";
+		} else if (p === "mediasoup") {
+			if (!isUrl(f.mediasoup_bridge_url, ["http", "https"]))
+				e.mediasoup_bridge_url = "需为 http(s):// 开头的合法 URL";
+			if (!isUrl(f.mediasoup_host, ["ws", "wss"]))
+				e.mediasoup_host = "需为 ws:// 或 wss:// 开头的合法 URL";
+		} else if (p === "srs") {
+			if (!isHost(f.srs_host))
+				e.srs_host = "需为域名或 IP, 不含 scheme / 路径 / 引号";
+			if (!isPort(f.srs_api_port)) e.srs_api_port = "1-65535 数字";
+			if (!isPort(f.srs_whip_port)) e.srs_whip_port = "1-65535 数字";
+			require("srs_secret", "Secret 必填");
+		} else if (p === "daily") {
+			require("daily_api_key", "API Key 必填");
+			if (!isHost(f.daily_domain))
+				e.daily_domain = "需为域名, 不含 scheme / 路径 / 引号";
+		}
+		return e;
 	};
 
 	const handleSave = async () => {
+		const e = validate();
+		setErrors(e);
+		if (Object.keys(e).length > 0) {
+			showToast("请修正配置错误", { type: "error" });
+			return;
+		}
 		setSaving(true);
 		try {
-			const saved = await updateSFUConfig(form());
+			// 提交前 clean 所有字符串字段, 去除粘贴带入的引号/反斜杠/空白
+			const cleaned = { ...form() };
+			for (const k of Object.keys(cleaned) as (keyof UpdateSFUConfigParams)[]) {
+				if (typeof cleaned[k] === "string") {
+					cleaned[k] = clean(cleaned[k] as string) as never;
+				}
+			}
+			const saved = await updateSFUConfig(cleaned);
 			setForm({
 				provider: saved.provider,
 				livekit_host: saved.livekit_host || "",
@@ -229,10 +325,11 @@ function SFUPage() {
 
         <Show when={selectedProvider() === "livekit"}>
           <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <Field label="Host">
+            <Field label="Host" error={errors().livekit_host}>
               <input
                 type="text"
                 class="input input-bordered input-sm w-full"
+                classList={{ "input-error": !!errors().livekit_host }}
                 placeholder="wss://livekit.example.com"
                 value={form().livekit_host}
                 onInput={(event) =>
@@ -242,10 +339,11 @@ function SFUPage() {
               />
             </Field>
             <div />
-            <Field label="API Key">
+            <Field label="API Key" error={errors().livekit_key}>
               <input
                 type="text"
                 class="input input-bordered input-sm w-full"
+                classList={{ "input-error": !!errors().livekit_key }}
                 placeholder="API key"
                 value={form().livekit_key}
                 onInput={(event) =>
@@ -254,10 +352,11 @@ function SFUPage() {
                 disabled={saving()}
               />
             </Field>
-            <Field label="API Secret">
+            <Field label="API Secret" error={errors().livekit_secret}>
               <input
                 type="password"
                 class="input input-bordered input-sm w-full"
+                classList={{ "input-error": !!errors().livekit_secret }}
                 placeholder="API secret"
                 value={form().livekit_secret}
                 onInput={(event) =>
@@ -271,10 +370,11 @@ function SFUPage() {
 
         <Show when={selectedProvider() === "agora"}>
           <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <Field label="App ID">
+            <Field label="App ID" error={errors().agora_app_id}>
               <input
                 type="text"
                 class="input input-bordered input-sm w-full"
+                classList={{ "input-error": !!errors().agora_app_id }}
                 placeholder="Agora App ID"
                 value={form().agora_app_id}
                 onInput={(event) =>
@@ -283,10 +383,11 @@ function SFUPage() {
                 disabled={saving()}
               />
             </Field>
-            <Field label="REST Host">
+            <Field label="REST Host" error={errors().agora_host}>
               <input
                 type="text"
                 class="input input-bordered input-sm w-full"
+                classList={{ "input-error": !!errors().agora_host }}
                 placeholder="https://api.agora.io"
                 value={form().agora_host}
                 onInput={(event) =>
@@ -295,10 +396,11 @@ function SFUPage() {
                 disabled={saving()}
               />
             </Field>
-            <Field label="App Certificate">
+            <Field label="App Certificate" error={errors().agora_app_certificate}>
               <input
                 type="password"
                 class="input input-bordered input-sm w-full"
+                classList={{ "input-error": !!errors().agora_app_certificate }}
                 placeholder="App certificate"
                 value={form().agora_app_certificate}
                 onInput={(event) =>
@@ -310,10 +412,11 @@ function SFUPage() {
                 disabled={saving()}
               />
             </Field>
-            <Field label="Customer Secret">
+            <Field label="Customer Secret" error={errors().agora_customer_secret}>
               <input
                 type="password"
                 class="input input-bordered input-sm w-full"
+                classList={{ "input-error": !!errors().agora_customer_secret }}
                 placeholder="Customer secret"
                 value={form().agora_customer_secret}
                 onInput={(event) =>
@@ -325,10 +428,11 @@ function SFUPage() {
                 disabled={saving()}
               />
             </Field>
-            <Field label="Customer ID">
+            <Field label="Customer ID" error={errors().agora_customer_id}>
               <input
                 type="text"
                 class="input input-bordered input-sm w-full"
+                classList={{ "input-error": !!errors().agora_customer_id }}
                 placeholder="Customer ID"
                 value={form().agora_customer_id}
                 onInput={(event) =>
@@ -371,40 +475,44 @@ function SFUPage() {
 
 		<Show when={selectedProvider() === "srs"}>
 		  <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-			<Field label="Host">
+			<Field label="Host" error={errors().srs_host}>
 			  <input
 				type="text"
 				class="input input-bordered input-sm w-full"
+				classList={{ "input-error": !!errors().srs_host }}
 				placeholder="srs.example.com"
 				value={form().srs_host}
 				onInput={(event) => updateField("srs_host", event.currentTarget.value)}
 				disabled={saving()}
 			  />
 			</Field>
-			<Field label="API Port">
+			<Field label="API Port" error={errors().srs_api_port}>
 			  <input
 				type="text"
 				class="input input-bordered input-sm w-full"
+				classList={{ "input-error": !!errors().srs_api_port }}
 				placeholder="1985"
 				value={form().srs_api_port}
 				onInput={(event) => updateField("srs_api_port", event.currentTarget.value)}
 				disabled={saving()}
 			  />
 			</Field>
-			<Field label="WHIP Port">
+			<Field label="WHIP Port" error={errors().srs_whip_port}>
 			  <input
 				type="text"
 				class="input input-bordered input-sm w-full"
+				classList={{ "input-error": !!errors().srs_whip_port }}
 				placeholder="1985"
 				value={form().srs_whip_port}
 				onInput={(event) => updateField("srs_whip_port", event.currentTarget.value)}
 				disabled={saving()}
 			  />
 			</Field>
-			<Field label="Secret">
+			<Field label="Secret" error={errors().srs_secret}>
 			  <input
 				type="password"
 				class="input input-bordered input-sm w-full"
+				classList={{ "input-error": !!errors().srs_secret }}
 				placeholder="Bearer secret"
 				value={form().srs_secret}
 				onInput={(event) => updateField("srs_secret", event.currentTarget.value)}
@@ -416,20 +524,22 @@ function SFUPage() {
 
 		<Show when={selectedProvider() === "daily"}>
 		  <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-			<Field label="API Key">
+			<Field label="API Key" error={errors().daily_api_key}>
 			  <input
 				type="password"
 				class="input input-bordered input-sm w-full"
+				classList={{ "input-error": !!errors().daily_api_key }}
 				placeholder="Daily API key"
 				value={form().daily_api_key}
 				onInput={(event) => updateField("daily_api_key", event.currentTarget.value)}
 				disabled={saving()}
 			  />
 			</Field>
-			<Field label="Domain">
+			<Field label="Domain" error={errors().daily_domain}>
 			  <input
 				type="text"
 				class="input input-bordered input-sm w-full"
+				classList={{ "input-error": !!errors().daily_domain }}
 				placeholder="your-team.daily.co"
 				value={form().daily_domain}
 				onInput={(event) => updateField("daily_domain", event.currentTarget.value)}
@@ -459,6 +569,7 @@ function SFUPage() {
 
 interface FieldProps {
 	label: string;
+	error?: string;
 	children: any;
 }
 
@@ -466,6 +577,9 @@ const Field = (props: FieldProps) => (
 	<fieldset class="fieldset">
 		<legend class="fieldset-legend text-[14px]">{props.label}</legend>
 		{props.children}
+		<Show when={props.error}>
+			<p class="mt-1 text-xs text-error">{props.error}</p>
+		</Show>
 	</fieldset>
 );
 

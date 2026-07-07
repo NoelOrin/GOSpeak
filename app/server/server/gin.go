@@ -143,7 +143,7 @@ func StartGin(env EnvEnum) {
 	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc)
 	storageH := handler.NewStorageHandler(storageSvc)
 
-	monitorH := handler.NewMonitorHandler()
+	monitorH := handler.NewMonitorHandler(signalHub, cfg)
 
 	// 启动签名密钥轮换检查
 	go redis.KeyRotationLoop()
