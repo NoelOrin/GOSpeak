@@ -1,0 +1,38 @@
+{
+	"name": "@gospeak/bot",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"main": "./src/index.ts",
+	"module": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"import": "./src/index.ts"
+		},
+		"./core": {
+			"types": "./src/core/index.ts",
+			"import": "./src/core/index.ts"
+		},
+		"./filters": {
+			"types": "./src/filters/index.ts",
+			"import": "./src/filters/index.ts"
+		},
+		"./decorators": {
+			"types": "./src/decorators/index.ts",
+			"import": "./src/decorators/index.ts"
+		}
+	},
+	"scripts": {
+		"build": "tsc",
+		"lint": "biome check",
+		"dev": "tsc --watch",
+		"test": "vitest run"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^1.9.4",
+		"typescript": "^5.9.3",
+		"vitest": "^4.1.9"
+	}
+}
