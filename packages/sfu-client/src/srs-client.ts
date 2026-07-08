@@ -1,4 +1,5 @@
 import type {
+	JoinParams,
 	RemoteAudioTrackLike,
 	RemoteTrackInfo,
 	SFUClient,
@@ -89,14 +90,8 @@ export class SRSSFUClient implements SFUClient {
 		this.socket = options.socket;
 	}
 
-	async joinRoom(
-		token: string,
-		url: string,
-		identity: string,
-		room?: string,
-		stream?: string,
-		streamToken?: string,
-	): Promise<void> {
+	async joinRoom(params: JoinParams): Promise<void> {
+		const { token, serverUrl: url, identity, room, stream, streamToken } = params;
 		this.identity = identity;
 		this.ownStream = stream || "";
 		this.streamToken = streamToken || "";
@@ -447,8 +442,12 @@ export class SRSSFUClient implements SFUClient {
 		this.onReconnectedCb = cb;
 	}
 
-	destroy(): void {
-		void this.leaveRoom();
+	isConnected(): boolean {
+		return this.hasJoined && !this.leaving;
+	}
+
+	async destroy(): Promise<void> {
+		await this.leaveRoom();
 	}
 
 	private async exchangeSdp(

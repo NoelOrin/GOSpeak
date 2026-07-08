@@ -1,6 +1,7 @@
 import { Device } from "mediasoup-client";
 import type { types as mediasoupTypes } from "mediasoup-client";
 import type {
+	JoinParams,
 	RemoteAudioTrackLike,
 	RemoteTrackInfo,
 	SFUClient,
@@ -125,12 +126,8 @@ export class MediaSoupSFUClient implements SFUClient {
 		});
 	}
 
-	async joinRoom(
-		token: string,
-		_url: string,
-		identity: string,
-		room?: string,
-	): Promise<void> {
+	async joinRoom(params: JoinParams): Promise<void> {
+		const { token, serverUrl: _url, identity, room } = params;
 		if (!this.socket) throw new Error("mediasoup client requires a socket.io socket");
 
 		const [tokenRoom, tokenIdentity] = token.split(":", 2);
@@ -311,6 +308,10 @@ export class MediaSoupSFUClient implements SFUClient {
 
 	onReconnected(cb: () => void): void {
 		this.onReconnectedCb = cb;
+	}
+
+	isConnected(): boolean {
+		return this.hasJoined;
 	}
 
 	async destroy(): Promise<void> {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { SRSSFUClient } from "./srs-client";
+import type { JoinParams } from "./types";
 
 // RTCPeerConnection mock
 function makeMockPc() {
@@ -96,14 +97,15 @@ describe("SRSSFUClient subscribePeers", () => {
 		const client = new SRSSFUClient({});
 		const onTrack = vi.fn();
 		client.onRemoteAudioTrack(onTrack);
-		await client.joinRoom(
-			"tok",
-			"http://h:1985/rtc/v1/whip/",
-			"alice",
-			"room1",
-			"gs-alice",
-			"st",
-		);
+		const joinParams: JoinParams = {
+			token: "tok",
+			serverUrl: "http://h:1985/rtc/v1/whip/",
+			identity: "alice",
+			room: "room1",
+			stream: "gs-alice",
+			streamToken: "st",
+		};
+		await client.joinRoom(joinParams);
 		(client as any).subscribePeers([{ identity: "bob", stream: "gs-bob" }]);
 		await new Promise((r) => setTimeout(r, 50));
 		expect(onTrack).toHaveBeenCalledWith(
@@ -119,14 +121,15 @@ describe("SRSSFUClient subscribePeers", () => {
 			const client = new SRSSFUClient({});
 			const removed = vi.fn();
 			client.onRemoteAudioTrackRemoved(removed);
-			await client.joinRoom(
-				"tok",
-				"http://h:1985/rtc/v1/whip/",
-				"alice",
-				"room1",
-				"gs-alice",
-				"st",
-			);
+			const joinParams: JoinParams = {
+				token: "tok",
+				serverUrl: "http://h:1985/rtc/v1/whip/",
+				identity: "alice",
+				room: "room1",
+				stream: "gs-alice",
+				streamToken: "st",
+			};
+			await client.joinRoom(joinParams);
 			(client as any).subscribePeers([
 				{ identity: "bob", stream: "gs-bob" },
 			]);
@@ -142,14 +145,15 @@ describe("SRSSFUClient subscribePeers", () => {
 		const client = new SRSSFUClient({});
 		const removed = vi.fn();
 		client.onRemoteAudioTrackRemoved(removed);
-		await client.joinRoom(
-			"tok",
-			"http://h:1985/rtc/v1/whip/",
-			"alice",
-			"room1",
-			"gs-alice",
-			"st",
-		);
+		const joinParams: JoinParams = {
+			token: "tok",
+			serverUrl: "http://h:1985/rtc/v1/whip/",
+			identity: "alice",
+			room: "room1",
+			stream: "gs-alice",
+			streamToken: "st",
+		};
+		await client.joinRoom(joinParams);
 		(client as any).subscribePeers([{ identity: "bob", stream: "gs-bob" }]);
 		await new Promise((r) => setTimeout(r, 50));
 		(client as any).unsubscribePeer("bob");
@@ -162,14 +166,15 @@ describe("SRSSFUClient subscribePeers", () => {
 		const client = new SRSSFUClient({});
 		const onTrack = vi.fn();
 		client.onRemoteAudioTrack(onTrack);
-		await client.joinRoom(
-			"tok",
-			"http://h:1985/rtc/v1/whip/",
-			"alice",
-			"room1",
-			"gs-alice",
-			"st",
-		);
+		const joinParams: JoinParams = {
+			token: "tok",
+			serverUrl: "http://h:1985/rtc/v1/whip/",
+			identity: "alice",
+			room: "room1",
+			stream: "gs-alice",
+			streamToken: "st",
+		};
+		await client.joinRoom(joinParams);
 		(client as any).subscribePeers([
 			{ identity: "alice", stream: "gs-alice" },
 		]);
