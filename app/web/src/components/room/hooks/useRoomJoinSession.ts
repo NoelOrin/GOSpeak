@@ -1,4 +1,4 @@
-import type { SFUClient } from "@gospeak/sfu-client/types";
+import type { JoinParams, SFUClient } from "@gospeak/sfu-client/types";
 import { useQuery } from "@tanstack/solid-query";
 import {
 	createEffect,
@@ -98,10 +98,10 @@ export function useRoomJoinSession() {
 	// 仅拆 SFU client（不动 socket 业务房，不碰 session）
 	const teardownClient = async (client: SFUClient) => {
 		if (leaving.has(client)) return;
-		leaving.add(client);
-		await client.leaveRoom().catch(() => {});
-		client.destroy();
-	};
+	leaving.add(client);
+	await client.leaveRoom().catch(() => {});
+	await client.destroy().catch(() => {});
+};
 
 	// 完整拆除 session：SFU client + 业务房 + 清 session + 清成员状态
 	const teardownSession = async (sess: Session) => {
@@ -196,15 +196,16 @@ export function useRoomJoinSession() {
 						);
 						if (abortIfCancelled(createdClient)) return;
 
+						const joinParams: JoinParams = {
+							token: data.token,
+							serverUrl: sessionMeta.connectTarget,
+							identity: data.identity,
+							room: data.room,
+							stream: data.stream,
+							streamToken: data.streamToken,
+						};
 						await raceAbort(
-							createdClient.joinRoom(
-								data.token,
-								sessionMeta.connectTarget,
-								data.identity,
-								data.room,
-								data.stream,
-								data.streamToken,
-							),
+							createdClient.joinRoom(joinParams),
 							signal,
 						);
 						if (abortIfCancelled(createdClient)) return;
