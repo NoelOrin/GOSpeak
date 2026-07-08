@@ -5,6 +5,7 @@ import (
 
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/sfu"
 )
 
 type Service struct {
@@ -40,27 +41,31 @@ func (s *Service) GenerateAdminToken() (string, error) {
 	return "", nil
 }
 
-func (s *Service) ListRooms() (interface{}, error) {
+func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
 	rooms, err := s.restClient().ListRooms()
 	if err != nil {
 		return nil, s.mapRESTError(err)
 	}
-	return rooms, nil
+	out := make([]sfu.RoomSummary, 0, len(rooms))
+	for _, name := range rooms {
+		out = append(out, sfu.RoomSummary{Name: name})
+	}
+	return out, nil
 }
 
-func (s *Service) ListParticipants(room string) (interface{}, error) {
+func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
 	users, err := s.restClient().GetChannelUsers(room)
 	if err != nil {
 		return nil, s.mapRESTError(err)
 	}
-	return users, nil
+	out := make([]sfu.ParticipantSummary, 0, len(users))
+	for _, uid := range users {
+		out = append(out, sfu.ParticipantSummary{Identity: uid})
+	}
+	return out, nil
 }
 
 func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) error {
-	return nil
-}
-
-func (s *Service) MuteRoomParticipant(room, identity string, muted bool) error {
 	return nil
 }
 

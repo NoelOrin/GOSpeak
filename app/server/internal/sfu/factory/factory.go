@@ -1,19 +1,18 @@
-package sfu
+package factory
 
 import (
-	"GOSpeak/internal/agora"
 	"GOSpeak/internal/config"
+	"fmt"
+
+	"GOSpeak/internal/agora"
 	"GOSpeak/internal/daily"
 	"GOSpeak/internal/livekit"
 	"GOSpeak/internal/mediasoup"
+	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/srs"
-	"fmt"
 )
 
-// NewProvider directly constructs the SFU provider based on config.
-// All providers built in, selected at runtime.
-// Supported: "livekit", "agora", "mediasoup", "srs", "daily".
-func NewProvider(cfg *config.Config) (Provider, error) {
+func NewProvider(cfg *config.Config) (sfu.Provider, error) {
 	name := cfg.SFUProvider
 	if name == "" {
 		name = "livekit"

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"sync"
 	"testing"
+
 )
 
 // stubRegistry 模拟 pkg.RoomRegistry 用于 SRS provider 测试。
@@ -92,13 +93,13 @@ func TestListRooms_WithRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRooms: %v", err)
 	}
-	rooms, ok := got.([]string)
-	if !ok {
-		t.Fatalf("expected []string, got %T", got)
+	names := make([]string, len(got))
+	for i, r := range got {
+		names[i] = r.Name
 	}
-	sort.Strings(rooms)
-	if !reflect.DeepEqual(rooms, []string{"room-a", "room-b"}) {
-		t.Fatalf("expected [room-a room-b], got %v", rooms)
+	sort.Strings(names)
+	if !reflect.DeepEqual(names, []string{"room-a", "room-b"}) {
+		t.Fatalf("expected [room-a room-b], got %v", names)
 	}
 }
 
@@ -112,9 +113,8 @@ func TestListRooms_WithRegistry_NilReturnsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRooms: %v", err)
 	}
-	rooms, ok := got.([]string)
-	if !ok || len(rooms) != 0 {
-		t.Fatalf("expected empty []string, got %T %v", got, got)
+	if len(got) != 0 {
+		t.Fatalf("expected empty slice, got %v", got)
 	}
 }
 
