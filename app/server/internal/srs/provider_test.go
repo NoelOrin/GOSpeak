@@ -8,7 +8,6 @@ import (
 	"sort"
 	"sync"
 	"testing"
-
 )
 
 // stubRegistry 模拟 pkg.RoomRegistry 用于 SRS provider 测试。
@@ -19,7 +18,7 @@ type stubRegistry struct {
 	identityStreams map[string]string // "room\x00identity" -> stream
 }
 
-func (s *stubRegistry) Rooms() []string      { return s.rooms }
+func (s *stubRegistry) Rooms() []string { return s.rooms }
 func (s *stubRegistry) Streams(room string) []string {
 	return s.streams[room]
 }

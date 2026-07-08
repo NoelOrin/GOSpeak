@@ -87,11 +87,7 @@ export interface JoinParams {
  */
 export interface SFUClient {
 	/**
-	 * Establishes the media session for the current provider.
-	 *
-	 * `url` is a historical parameter name. Depending on the provider, it may carry
-	 * a server URL, an app ID, or another provider-specific connect target.
-	 */
+	/** Establishes the media session for the current provider. */
 	joinRoom(params: JoinParams): Promise<void>;
 	/** Stops publishing, disconnects from the media session, and releases provider state. */
 	leaveRoom(): Promise<void>;
