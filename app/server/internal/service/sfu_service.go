@@ -58,12 +58,10 @@ func (s *SFUService) GetJoinToken(room, identity, password string) (*JoinTokenRe
 	if p, ok := s.provider.(interface{ ProviderName() string }); ok {
 		res.Provider = p.ProviderName()
 	}
-	if p, ok := s.provider.(interface{ ClientInfo() map[string]interface{} }); ok {
+	if p, ok := s.provider.(sfu.ClientInfoProvider); ok {
 		res.ClientInfo = p.ClientInfo()
 	}
-	if p, ok := s.provider.(interface {
-		StreamInfo(room, identity string) (string, string, error)
-	}); ok {
+	if p, ok := s.provider.(sfu.StreamProvider); ok {
 		st, stok, err := p.StreamInfo(room, identity)
 		if err != nil {
 			return nil, err
@@ -74,10 +72,10 @@ func (s *SFUService) GetJoinToken(room, identity, password string) (*JoinTokenRe
 	return res, nil
 }
 
-func (s *SFUService) ListRooms() (interface{}, error) {
+func (s *SFUService) ListRooms() ([]sfu.RoomSummary, error) {
 	return s.provider.ListRooms()
 }
 
-func (s *SFUService) ListParticipants(room string) (interface{}, error) {
+func (s *SFUService) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
 	return s.provider.ListParticipants(room)
 }
