@@ -3,6 +3,7 @@ package sfu
 import (
 	"strings"
 	"sync"
+
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
 )
@@ -10,11 +11,9 @@ import (
 type ConfigResolver func() (*config.Config, error)
 
 type DynamicProvider struct {
-	resolve ConfigResolver
-	mu           sync.RWMutex
-	roomRegistry pkg.RoomRegistry
-	// 缓存底层 provider：LiveKit NewService 建 gRPC client，每次调用重建开销大。
-	// 按 SFU 连接字段指纹失效——SFUConfigHandler 改 DB 后 ResolveConfig 返新值，指纹变即重建。
+	resolve           ConfigResolver
+	mu                sync.RWMutex
+	roomRegistry      pkg.RoomRegistry
 	cachedFingerprint string
 	cachedProvider    Provider
 }
@@ -23,8 +22,6 @@ func NewDynamicProvider(resolve ConfigResolver) *DynamicProvider {
 	return &DynamicProvider{resolve: resolve}
 }
 
-// fingerprint 取 SFU 连接相关字段：provider 类型 + 各后端 host/key/secret/port。
-// 仅这些决定 NewProvider 构建的 client 连接，其余 cfg 字段不影响。
 func fingerprint(cfg *config.Config) string {
 	return strings.Join([]string{
 		cfg.SFUProvider, cfg.LiveKitHost, cfg.LiveKitKey, cfg.LiveKitSecret,
@@ -35,7 +32,6 @@ func fingerprint(cfg *config.Config) string {
 	}, "|")
 }
 
-// SetRoomRegistry 注入 Hub 聚合视图，转发给已缓存的底层 provider。
 func (p *DynamicProvider) SetRoomRegistry(r pkg.RoomRegistry) {
 	p.mu.Lock()
 	p.roomRegistry = r
@@ -63,7 +59,7 @@ func (p *DynamicProvider) GenerateAdminToken() (string, error) {
 	return provider.GenerateAdminToken()
 }
 
-func (p *DynamicProvider) ListRooms() (interface{}, error) {
+func (p *DynamicProvider) ListRooms() ([]RoomSummary, error) {
 	provider, err := p.current()
 	if err != nil {
 		return nil, err
@@ -71,7 +67,7 @@ func (p *DynamicProvider) ListRooms() (interface{}, error) {
 	return provider.ListRooms()
 }
 
-func (p *DynamicProvider) ListParticipants(room string) (interface{}, error) {
+func (p *DynamicProvider) ListParticipants(room string) ([]ParticipantSummary, error) {
 	provider, err := p.current()
 	if err != nil {
 		return nil, err
@@ -85,14 +81,6 @@ func (p *DynamicProvider) MuteParticipant(room, identity, trackSid string, muted
 		return err
 	}
 	return provider.MuteParticipant(room, identity, trackSid, muted)
-}
-
-func (p *DynamicProvider) MuteRoomParticipant(room, identity string, muted bool) error {
-	provider, err := p.current()
-	if err != nil {
-		return err
-	}
-	return provider.MuteRoomParticipant(room, identity, muted)
 }
 
 func (p *DynamicProvider) RemoveParticipant(room, identity string) error {
@@ -132,8 +120,8 @@ func (p *DynamicProvider) StreamName(room, identity string) string {
 	if err != nil {
 		return ""
 	}
-	if sn, ok := provider.(interface{ StreamName(room, identity string) string }); ok {
-		return sn.StreamName(room, identity)
+	if sp, ok := provider.(StreamProvider); ok {
+		return sp.StreamName(room, identity)
 	}
 	return ""
 }
@@ -143,9 +131,7 @@ func (p *DynamicProvider) StreamInfo(room, identity string) (stream, token strin
 	if err != nil {
 		return "", "", err
 	}
-	if sp, ok := provider.(interface {
-		StreamInfo(room, identity string) (string, string, error)
-	}); ok {
+	if sp, ok := provider.(StreamProvider); ok {
 		return sp.StreamInfo(room, identity)
 	}
 	return "", "", nil
@@ -156,8 +142,8 @@ func (p *DynamicProvider) ClientInfo() map[string]interface{} {
 	if err != nil {
 		return map[string]interface{}{}
 	}
-	if infoProvider, ok := provider.(interface{ ClientInfo() map[string]interface{} }); ok {
-		return infoProvider.ClientInfo()
+	if cp, ok := provider.(ClientInfoProvider); ok {
+		return cp.ClientInfo()
 	}
 	return map[string]interface{}{}
 }
