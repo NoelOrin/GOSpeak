@@ -9,7 +9,7 @@ import {
 	Track,
 	VideoPresets,
 } from "livekit-client";
-import type { RemoteTrackInfo, SFUClient, SFUClientOptions } from "./types";
+import type { JoinParams, RemoteTrackInfo, SFUClient, SFUClientOptions } from "./types";
 
 export class LiveKitSFUClient implements SFUClient {
 	private room: Room;
@@ -88,12 +88,8 @@ export class LiveKitSFUClient implements SFUClient {
 			);
 	}
 
-	async joinRoom(
-		token: string,
-		url: string,
-		_identity: string,
-		_room?: string,
-	): Promise<void> {
+	async joinRoom(params: JoinParams): Promise<void> {
+		const { token, serverUrl: url, identity } = params;
 		await this.room.prepareConnection(url, token);
 		await this.room.connect(url, token);
 		await this.room.localParticipant.setMicrophoneEnabled(true);
@@ -160,6 +156,10 @@ export class LiveKitSFUClient implements SFUClient {
 
 	onReconnected(cb: () => void): void {
 		this.onReconnectedCb = cb;
+	}
+
+	isConnected(): boolean {
+		return !this.hasLeft && this.room.state === "connected";
 	}
 
 	async destroy(): Promise<void> {

@@ -4,6 +4,7 @@ import AgoraRTC, {
 	type IRemoteAudioTrack,
 } from "agora-rtc-sdk-ng";
 import type {
+	JoinParams,
 	RemoteAudioTrackLike,
 	RemoteTrackInfo,
 	SFUClient,
@@ -64,12 +65,8 @@ export class AgoraSFUClient implements SFUClient {
 		this.registerClientEvents();
 	}
 
-	async joinRoom(
-		token: string,
-		appId: string,
-		identity: string,
-		room?: string,
-	): Promise<void> {
+	async joinRoom(params: JoinParams): Promise<void> {
+		const { token, serverUrl: appId, identity, room } = params;
 		const channelName = room || appId;
 		const resolvedAppId = appId || this.envAgoraAppId();
 		if (!resolvedAppId) {
@@ -141,8 +138,12 @@ export class AgoraSFUClient implements SFUClient {
 		this.onReconnectedCb = cb;
 	}
 
-	destroy(): void {
-		void this.leaveRoom();
+	isConnected(): boolean {
+		return this.hasJoined;
+	}
+
+	async destroy(): Promise<void> {
+		await this.leaveRoom();
 		this.client.removeAllListeners();
 	}
 
