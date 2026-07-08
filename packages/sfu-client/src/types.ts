@@ -61,6 +61,15 @@ export interface SFUClientOptions {
 	socket?: /** raw socket */ any;
 }
 
+export interface JoinParams {
+	token: string;
+	serverUrl: string;
+	identity: string;
+	room?: string;
+	stream?: string;
+	streamToken?: string;
+}
+
 /**
  * `SFUClient` is the frontend media-session interface.
  *
@@ -84,13 +93,7 @@ export interface SFUClient {
 	 * a server URL, an app ID, or another provider-specific connect target.
 	 */
 	joinRoom(
-		token: string,
-		url: string,
-		identity: string,
-		room?: string,
-		stream?: string,
-		streamToken?: string,
-	): Promise<void>;
+	joinRoom(params: JoinParams): Promise<void>;
 	/** Stops publishing, disconnects from the media session, and releases provider state. */
 	leaveRoom(): Promise<void>;
 	/** Enables or disables local microphone publishing for the current client only. */
@@ -116,8 +119,10 @@ export interface SFUClient {
 	onReconnecting?(cb: () => void): void;
 	/** Subscribes to media-session reconnect-success notifications. Optional: providers without transient reconnect never fire it. */
 	onReconnected?(cb: () => void): void;
+	/** Returns true if the media session is currently connected and joined. */
+	isConnected(): boolean;
 	/** Final cleanup hook for any remaining provider resources. */
-	destroy(): void;
+	destroy(): Promise<void>;
 }
 
 export type { SFUProvider } from "./provider";
