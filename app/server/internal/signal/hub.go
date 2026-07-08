@@ -6,6 +6,7 @@ import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/redis"
+	"net/http"
 	"strings"
 	"encoding/json"
 	"errors"
@@ -154,14 +155,23 @@ func (h *Hub) SetupRoutes(server *socketio.Server) {
 // ─── 连接/断开 ───
 
 func (h *Hub) OnConnect(s socketio.Conn) error {
-	// JWT 鉴权：从 HTTP 升级请求头提取 Bearer token 并校验
+	// JWT 鉴权：优先从 HTTP 升级请求头提取 Bearer token，
+	// 纯 WebSocket 连接不支持自定义 header，fallback 到 cookie。
+	tokenStr := ""
 	authHeader := s.RemoteHeader().Get("Authorization")
-	if authHeader == "" {
-		return fmt.Errorf("authorization token required")
+	if authHeader != "" {
+		tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
+		if tokenStr == authHeader {
+			tokenStr = authHeader
+		}
 	}
-	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-	if tokenStr == authHeader {
-		tokenStr = authHeader
+	if tokenStr == "" {
+		if cookie, err := (&http.Request{Header: s.RemoteHeader()}).Cookie("gospeak_token"); err == nil {
+			tokenStr = cookie.Value
+		}
+	}
+	if tokenStr == "" {
+		return fmt.Errorf("authorization token required")
 	}
 	claims, err := pkg.ParseToken(tokenStr)
 	if err != nil {
@@ -246,6 +256,10 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 // OnError 兜底处理 socket.io 层 error（含 OnConnect 返回的 panic error）。
 // 仅记录日志，不做断连等副作用——连接级错误由库自行处理。
 func (h *Hub) OnError(s socketio.Conn, err error) {
+	if s == nil {
+		log.Printf("[Signal] socket error: err=%v", err)
+		return
+	}
 	log.Printf("[Signal] socket error: conn=%s err=%v", s.ID(), err)
 }
 

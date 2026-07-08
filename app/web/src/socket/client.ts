@@ -16,7 +16,7 @@ export function createSocketClient() {
 		}
 		const opts: Record<string, unknown> = { transports: ["websocket"] };
 		if (token) {
-			opts.extraHeaders = { Authorization: `Bearer ${token}` };
+			document.cookie = `gospeak_token=${token}; path=/; SameSite=Lax; max-age=3600`;
 		}
 		socket = io(url, opts);
 
