@@ -4,10 +4,12 @@ import {
 	type RemoteParticipant,
 	type RemoteTrack,
 	type RemoteTrackPublication,
+	LogLevel,
 	Room,
 	RoomEvent,
 	Track,
 	VideoPresets,
+	setLogLevel,
 } from "livekit-client";
 import type { JoinParams, RemoteTrackInfo, SFUClient, SFUClientOptions } from "./types";
 
@@ -22,6 +24,7 @@ export class LiveKitSFUClient implements SFUClient {
 	private hasLeft = false;
 
 	constructor(options: SFUClientOptions = {}) {
+		setLogLevel(LogLevel.warn);
 		this.room = new Room({
 			adaptiveStream: true,
 			dynacast: true,
@@ -92,7 +95,10 @@ export class LiveKitSFUClient implements SFUClient {
 		const { token, serverUrl: url, identity: _identity } = params;
 		await this.room.prepareConnection(url, token);
 		await this.room.connect(url, token);
-		await this.room.localParticipant.setMicrophoneEnabled(true);
+		// connect 失败会抛异常，此处仅防御性检查 room 仍 connected 才启麦
+		if (this.room.state === "connected") {
+			await this.room.localParticipant.setMicrophoneEnabled(true);
+		}
 	}
 
 	async leaveRoom(): Promise<void> {
