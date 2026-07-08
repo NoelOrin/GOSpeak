@@ -144,7 +144,6 @@ export class AgoraSFUClient implements SFUClient {
 
 	async destroy(): Promise<void> {
 		await this.leaveRoom();
-		this.client.removeAllListeners();
 	}
 
 	private registerClientEvents(): void {

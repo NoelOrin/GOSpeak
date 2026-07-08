@@ -89,7 +89,7 @@ export class LiveKitSFUClient implements SFUClient {
 	}
 
 	async joinRoom(params: JoinParams): Promise<void> {
-		const { token, serverUrl: url, identity } = params;
+		const { token, serverUrl: url, identity: _identity } = params;
 		await this.room.prepareConnection(url, token);
 		await this.room.connect(url, token);
 		await this.room.localParticipant.setMicrophoneEnabled(true);

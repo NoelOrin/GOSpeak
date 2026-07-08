@@ -98,10 +98,10 @@ export function useRoomJoinSession() {
 	// 仅拆 SFU client（不动 socket 业务房，不碰 session）
 	const teardownClient = async (client: SFUClient) => {
 		if (leaving.has(client)) return;
-	leaving.add(client);
-	await client.leaveRoom().catch(() => {});
-	await client.destroy().catch(() => {});
-};
+		leaving.add(client);
+		await client.leaveRoom().catch(() => {});
+		await client.destroy().catch(() => {});
+	};
 
 	// 完整拆除 session：SFU client + 业务房 + 清 session + 清成员状态
 	const teardownSession = async (sess: Session) => {

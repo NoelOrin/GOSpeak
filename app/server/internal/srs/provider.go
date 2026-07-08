@@ -77,9 +77,9 @@ func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error
 	}
 	out := make([]sfu.ParticipantSummary, 0, len(participants))
 	for _, p := range participants {
-		out = append(out, sfu.ParticipantSummary{
-			Identity: p["id"].(string),
-		})
+		if id, ok := p["id"].(string); ok {
+			out = append(out, sfu.ParticipantSummary{Identity: id})
+		}
 	}
 	return out, nil
 }
