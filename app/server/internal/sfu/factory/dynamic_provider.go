@@ -1,4 +1,4 @@
-package sfu
+package factory
 
 import (
 	"strings"
@@ -6,6 +6,7 @@ import (
 
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/sfu"
 )
 
 type ConfigResolver func() (*config.Config, error)
@@ -15,7 +16,7 @@ type DynamicProvider struct {
 	mu                sync.RWMutex
 	roomRegistry      pkg.RoomRegistry
 	cachedFingerprint string
-	cachedProvider    Provider
+	cachedProvider    sfu.Provider
 }
 
 func NewDynamicProvider(resolve ConfigResolver) *DynamicProvider {
@@ -59,7 +60,7 @@ func (p *DynamicProvider) GenerateAdminToken() (string, error) {
 	return provider.GenerateAdminToken()
 }
 
-func (p *DynamicProvider) ListRooms() ([]RoomSummary, error) {
+func (p *DynamicProvider) ListRooms() ([]sfu.RoomSummary, error) {
 	provider, err := p.current()
 	if err != nil {
 		return nil, err
@@ -67,7 +68,7 @@ func (p *DynamicProvider) ListRooms() ([]RoomSummary, error) {
 	return provider.ListRooms()
 }
 
-func (p *DynamicProvider) ListParticipants(room string) ([]ParticipantSummary, error) {
+func (p *DynamicProvider) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
 	provider, err := p.current()
 	if err != nil {
 		return nil, err
@@ -120,7 +121,7 @@ func (p *DynamicProvider) StreamName(room, identity string) string {
 	if err != nil {
 		return ""
 	}
-	if sp, ok := provider.(StreamProvider); ok {
+	if sp, ok := provider.(sfu.StreamProvider); ok {
 		return sp.StreamName(room, identity)
 	}
 	return ""
@@ -131,7 +132,7 @@ func (p *DynamicProvider) StreamInfo(room, identity string) (stream, token strin
 	if err != nil {
 		return "", "", err
 	}
-	if sp, ok := provider.(StreamProvider); ok {
+	if sp, ok := provider.(sfu.StreamProvider); ok {
 		return sp.StreamInfo(room, identity)
 	}
 	return "", "", nil
@@ -142,13 +143,13 @@ func (p *DynamicProvider) ClientInfo() map[string]interface{} {
 	if err != nil {
 		return map[string]interface{}{}
 	}
-	if cp, ok := provider.(ClientInfoProvider); ok {
+	if cp, ok := provider.(sfu.ClientInfoProvider); ok {
 		return cp.ClientInfo()
 	}
 	return map[string]interface{}{}
 }
 
-func (p *DynamicProvider) current() (Provider, error) {
+func (p *DynamicProvider) current() (sfu.Provider, error) {
 	cfg, err := p.resolve()
 	if err != nil {
 		return nil, err

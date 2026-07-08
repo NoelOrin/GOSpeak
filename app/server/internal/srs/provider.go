@@ -6,6 +6,7 @@ import (
 
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/sfu"
 )
 
 type Service struct {
@@ -57,32 +58,33 @@ func (s *Service) GenerateAdminToken() (string, error) {
 	return GenerateToken("__admin", "__admin", s.secret)
 }
 
-func (s *Service) ListRooms() (interface{}, error) {
+func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
 	if s.registry == nil {
-		// registry 未注入：/api/v1/streams 返回 stream 名非 room 名，语义错。
-		// registry 由 Hub 始终注入（gin.go SetRoomRegistry），缺失视为配置错误，不降级返错语义数据。
 		return nil, pkg.NewAppError(pkg.SFU_ERROR, "srs room registry not configured")
 	}
 	rooms := s.registry.Rooms()
-	if rooms == nil {
-		rooms = []string{}
+	out := make([]sfu.RoomSummary, 0, len(rooms))
+	for _, name := range rooms {
+		out = append(out, sfu.RoomSummary{Name: name})
 	}
-	return rooms, nil
+	return out, nil
 }
 
-func (s *Service) ListParticipants(room string) (interface{}, error) {
+func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
 	participants, err := s.client.ListParticipants(room)
 	if err != nil {
 		return nil, pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
 	}
-	return participants, nil
+	out := make([]sfu.ParticipantSummary, 0, len(participants))
+	for _, p := range participants {
+		out = append(out, sfu.ParticipantSummary{
+			Identity: p["id"].(string),
+		})
+	}
+	return out, nil
 }
 
 func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) error {
-	return pkg.NewErrSFUNotSupported()
-}
-
-func (s *Service) MuteRoomParticipant(room, identity string, muted bool) error {
 	return pkg.NewErrSFUNotSupported()
 }
 

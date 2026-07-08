@@ -12,6 +12,7 @@ import (
 	"GOSpeak/internal/router"
 	"GOSpeak/internal/service"
 	"GOSpeak/internal/sfu"
+	"GOSpeak/internal/sfu/factory"
 	"GOSpeak/internal/signal"
 	"context"
 	"fmt"
@@ -94,7 +95,7 @@ func StartGin(env EnvEnum) {
 		panic(fmt.Sprintf("failed to sync sfu config from env: %v", err))
 	}
 	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
-	var sfuProvider sfu.Provider = sfu.NewDynamicProvider(sfuConfigSvc.ResolveConfig)
+	var sfuProvider sfu.Provider = factory.NewDynamicProvider(sfuConfigSvc.ResolveConfig)
 	resolvedSFUCfg, err := sfuConfigSvc.ResolveConfig()
 	if err != nil {
 		panic(fmt.Sprintf("failed to resolve sfu config: %v", err))

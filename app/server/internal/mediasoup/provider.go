@@ -6,6 +6,7 @@ import (
 
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/sfu"
 )
 
 type providerBridge interface {
@@ -40,20 +41,28 @@ func (s *Service) GenerateAdminToken() (string, error) {
 	return "mediasoup-admin", nil
 }
 
-func (s *Service) ListRooms() (interface{}, error) {
+func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
 	rooms, err := s.Bridge.ListRouters()
 	if err != nil {
 		return nil, pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
 	}
-	return rooms, nil
+	out := make([]sfu.RoomSummary, 0, len(rooms))
+	for _, name := range rooms {
+		out = append(out, sfu.RoomSummary{Name: name})
+	}
+	return out, nil
 }
 
-func (s *Service) ListParticipants(room string) (interface{}, error) {
+func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
 	participants, err := s.partBridge.ListParticipants(room)
 	if err != nil {
 		return nil, pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
 	}
-	return participants, nil
+	out := make([]sfu.ParticipantSummary, 0, len(participants))
+	for _, p := range participants {
+		out = append(out, sfu.ParticipantSummary{Identity: p.Identity})
+	}
+	return out, nil
 }
 
 func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) error {
@@ -70,19 +79,6 @@ func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) e
 		} else {
 			err = s.partBridge.ResumeParticipant(room, identity)
 		}
-	}
-	if err != nil {
-		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
-	}
-	return nil
-}
-
-func (s *Service) MuteRoomParticipant(room, identity string, muted bool) error {
-	var err error
-	if muted {
-		err = s.partBridge.PauseParticipant(room, identity)
-	} else {
-		err = s.partBridge.ResumeParticipant(room, identity)
 	}
 	if err != nil {
 		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())

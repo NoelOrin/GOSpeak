@@ -2,6 +2,7 @@ package livekit
 
 import (
 	"GOSpeak/internal/config"
+	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/pkg"
 	"context"
 	"time"
@@ -64,7 +65,7 @@ func (s *Service) GenerateAdminToken() (string, error) {
 	return token, nil
 }
 
-func (s *Service) ListRooms() (interface{}, error) {
+func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
 	if s.client == nil {
 		return nil, pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
 	}
@@ -72,10 +73,17 @@ func (s *Service) ListRooms() (interface{}, error) {
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.SFU_ERROR, err.Error())
 	}
-	return resp.Rooms, nil
+	out := make([]sfu.RoomSummary, 0, len(resp.Rooms))
+	for _, r := range resp.Rooms {
+		out = append(out, sfu.RoomSummary{
+			Name:        r.Name,
+			MemberCount: int(r.NumParticipants),
+		})
+	}
+	return out, nil
 }
 
-func (s *Service) ListParticipants(room string) (interface{}, error) {
+func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
 	if s.client == nil {
 		return nil, pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
 	}
@@ -85,31 +93,32 @@ func (s *Service) ListParticipants(room string) (interface{}, error) {
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.SFU_ERROR, err.Error())
 	}
-	return resp.Participants, nil
+	out := make([]sfu.ParticipantSummary, 0, len(resp.Participants))
+	for _, p := range resp.Participants {
+		out = append(out, sfu.ParticipantSummary{
+			Identity: p.Identity,
+			JoinedAt: p.JoinedAt,
+		})
+	}
+	return out, nil
 }
 
 func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) error {
 	if s.client == nil {
 		return pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
 	}
-	_, err := s.client.MutePublishedTrack(context.Background(), &livekit.MuteRoomTrackRequest{
-		Room:     room,
-		Identity: identity,
-		TrackSid: trackSid,
-		Muted:    muted,
-	})
-	if err != nil {
-		return pkg.NewAppError(pkg.SFU_ERROR, err.Error())
+	if trackSid != "" {
+		_, err := s.client.MutePublishedTrack(context.Background(), &livekit.MuteRoomTrackRequest{
+			Room:     room,
+			Identity: identity,
+			TrackSid: trackSid,
+			Muted:    muted,
+		})
+		if err != nil {
+			return pkg.NewAppError(pkg.SFU_ERROR, err.Error())
+		}
+		return nil
 	}
-	return nil
-}
-
-// MuteRoomParticipant mutes/unmutes all tracks of a participant.
-func (s *Service) MuteRoomParticipant(room, identity string, muted bool) error {
-	if s.client == nil {
-		return pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
-	}
-	// List participants to discover track SIDs
 	resp, err := s.client.ListParticipants(context.Background(), &livekit.ListParticipantsRequest{
 		Room: room,
 	})

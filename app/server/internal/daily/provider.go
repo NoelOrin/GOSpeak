@@ -5,6 +5,7 @@ import (
 
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/sfu"
 )
 
 type Service struct {
@@ -42,7 +43,7 @@ func (s *Service) GenerateAdminToken() (string, error) {
 	return s.GenerateToken("admin", "admin")
 }
 
-func (s *Service) ListRooms() (interface{}, error) {
+func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
 	if s.apiKey == "" {
 		return nil, pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "DAILY_API_KEY is required")
 	}
@@ -50,10 +51,14 @@ func (s *Service) ListRooms() (interface{}, error) {
 	if err != nil {
 		return nil, pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
 	}
-	return rooms, nil
+	out := make([]sfu.RoomSummary, 0, len(rooms))
+	for _, r := range rooms {
+		out = append(out, sfu.RoomSummary{Name: r.Name})
+	}
+	return out, nil
 }
 
-func (s *Service) ListParticipants(room string) (interface{}, error) {
+func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
 	if s.apiKey == "" {
 		return nil, pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "DAILY_API_KEY is required")
 	}
@@ -61,14 +66,16 @@ func (s *Service) ListParticipants(room string) (interface{}, error) {
 	if err != nil {
 		return nil, pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
 	}
-	return participants, nil
+	out := make([]sfu.ParticipantSummary, 0, len(participants))
+	for _, p := range participants {
+		if id, ok := p["user_name"].(string); ok {
+			out = append(out, sfu.ParticipantSummary{Identity: id})
+		}
+	}
+	return out, nil
 }
 
 func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) error {
-	return pkg.NewErrSFUNotSupported()
-}
-
-func (s *Service) MuteRoomParticipant(room, identity string, muted bool) error {
 	return pkg.NewErrSFUNotSupported()
 }
 
