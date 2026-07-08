@@ -66,7 +66,7 @@ func TestListParticipants_Delegates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if len(got.([]ParticipantInfo)) != 1 {
+	if len(got) != 1 || got[0].Identity != "alice" {
 		t.Fatalf("got %v", got)
 	}
 }
