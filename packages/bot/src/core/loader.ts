@@ -1,5 +1,5 @@
 import { Plugin, type PluginMetadata } from "./plugin";
-import { bindPluginInstance, registerPlugin } from "./registry";
+import { bindPluginInstance, registerPlugin, bindHandlerInstances } from "./registry";
 import type { BotContext } from "./context";
 
 export interface LoadedPlugin {
@@ -42,4 +42,5 @@ export function initPlugin(
 	buildContext: (pluginName: string) => BotContext,
 ): void {
 	loaded.instance.init(buildContext(loaded.metadata.name));
+	bindHandlerInstances(loaded.instance);
 }

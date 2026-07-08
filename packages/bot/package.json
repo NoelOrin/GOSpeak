@@ -22,17 +22,27 @@
 		"./decorators": {
 			"types": "./src/decorators/index.ts",
 			"import": "./src/decorators/index.ts"
+		},
+		"./runtime": {
+			"types": "./src/runtime/index.ts",
+			"import": "./src/runtime/index.ts"
 		}
 	},
 	"scripts": {
 		"build": "tsc",
 		"lint": "biome check",
 		"dev": "tsc --watch",
-		"test": "vitest run"
+		"test": "vitest run",
+		"start": "tsx src/main.ts",
+		"start:prod": "node dist/main.js"
+	},
+	"dependencies": {
+		"socket.io-client": "^2.5.0"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^1.9.4",
+		"tsx": "^4.19.2",
 		"typescript": "^5.9.3",
+		"@types/node": "^22.0.0",
 		"vitest": "^4.1.9"
 	}
 }

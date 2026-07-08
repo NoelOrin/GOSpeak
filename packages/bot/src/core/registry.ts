@@ -62,3 +62,15 @@ export function clearRegistry(): void {
 	pluginMap.clear();
 	pluginInstances.clear();
 }
+
+export function bindHandlerInstances(instance: Plugin): void {
+	const modulePath = (instance.constructor as any).__modulePath ?? instance.constructor.name;
+	for (const h of handlerRegistry) {
+		if (h.modulePath !== modulePath) continue;
+		// Bind from the original unbound handler — re-binding an already-bound
+		// function would not change `this`, so we cache the original first.
+		const original = (h as any).__originalHandler ?? h.handler;
+		(h as any).__originalHandler = original;
+		h.handler = (original as any).bind(instance);
+	}
+}

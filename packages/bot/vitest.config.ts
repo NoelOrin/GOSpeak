@@ -6,12 +6,4 @@ export default defineConfig({
 		include: ["src/**/*.test.ts"],
 		globals: false,
 	},
-	esbuild: {
-		tsconfigRaw: {
-			compilerOptions: {
-				experimentalDecorators: true,
-				useDefineForClassFields: false,
-			},
-		},
-	},
 });
