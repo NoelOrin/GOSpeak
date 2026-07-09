@@ -3,6 +3,7 @@ package handler
 import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/redis"
+	"strings"
 	"GOSpeak/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -54,6 +55,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	var req service.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+
+	if strings.HasPrefix(req.Username, "bot_") {
+		pkg.Fail(c, pkg.USERNAME_EXISTS, "username prefix 'bot_' is reserved")
 		return
 	}
 
