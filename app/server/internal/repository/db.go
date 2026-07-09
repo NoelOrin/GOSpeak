@@ -167,3 +167,4 @@ func autoMigrate() error {
 		&model.StorageConfig{},
 	)
 }
+		&model.BotToken{},
