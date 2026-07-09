@@ -136,16 +136,13 @@ func migrateOldSFUConfig(db *gorm.DB) error {
 	if !db.Migrator().HasTable("sfu_configs") {
 		return nil
 	}
-	// Check PK column via PRAGMA (works with SQLite, no-op for other DBs on error)
 	var pkColumn string
 	if err := db.Raw("SELECT name FROM pragma_table_info(?) WHERE pk = 1", "sfu_configs").Scan(&pkColumn).Error; err != nil {
-		return nil // Non-SQLite or other error, skip migration
+		return nil
 	}
 	if pkColumn != "id" {
-		return nil // Already new schema (provider PK) or unexpected structure
+		return nil
 	}
-	// Old schema (id PK) — drop the table; AutoMigrate will recreate with provider as PK.
-	// SyncFromEnv (called after InitDB) will seed all providers from env vars.
 	return db.Migrator().DropTable("sfu_configs")
 }
 
@@ -165,6 +162,6 @@ func autoMigrate() error {
 		&model.RolePermission{},
 		&model.Mute{},
 		&model.StorageConfig{},
+		&model.BotToken{},
 	)
 }
-		&model.BotToken{},
