@@ -67,8 +67,26 @@ export interface PluginErrorEvent {
 	timestamp: number;
 }
 
+export interface LifecycleEvent {
+	eventType: EventType.OnBotLoaded | EventType.OnPluginLoaded | EventType.OnPluginUnloaded | EventType.OnPluginError;
+	pluginName?: string;
+	timestamp: number;
+}
+
 export type BotEvent =
 	| MessageEvent
 	| RoomEvent
 	| MemberStateEvent
-	| PluginErrorEvent;
+	| PluginErrorEvent
+	| LifecycleEvent;
+
+export function createBotEvent(
+	eventType: LifecycleEvent["eventType"],
+	pluginName?: string,
+): LifecycleEvent {
+	return {
+		eventType,
+		pluginName,
+		timestamp: Date.now(),
+	};
+}

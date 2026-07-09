@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { EventBus } from "../core/eventBus";
-import { EventType } from "../core/types";
+import { EventType, createBotEvent, type LifecycleEvent } from "../core/types";
 import type { BotContext, Logger as ILogger } from "../core/context";
 import { Plugin } from "../core/plugin";
 import {
@@ -32,6 +32,8 @@ export interface BotConfig {
 	displayName: string;
 	/** Directory to scan for plugin modules */
 	pluginDir?: string;
+	/** Per-plugin configuration map, keyed by plugin name */
+	pluginConfigs?: Record<string, Record<string, unknown>>;
 }
 
 export interface BotStatus {
@@ -122,7 +124,7 @@ export class BotRunner {
 
 		this.bus = new EventBus({
 			buildContext: (pluginName) => this.buildPluginCtx(pluginName),
-			getPluginConfig: (_pluginName) => ({}),
+			getPluginConfig: (pluginName) => this.config.pluginConfigs?.[pluginName] ?? {},
 		});
 
 		this.socket = new GOSpeakSocketClient({
@@ -170,21 +172,26 @@ export class BotRunner {
 
 	async reloadPlugin(name: string): Promise<void> {
 		const old = this._plugins.find((p) => p.name === name);
-		if (old) {
-			const modulePath = `user_plugins/${name}`;
-			removeHandlersByModule(modulePath);
-			await old.instance.onUnload?.();
-			this._plugins = this._plugins.filter((p) => p.name !== name);
-			this._loadedPaths.clear();
-			await this.loadAllPlugins();
-			this.logger.info(`Reloaded plugin: ${name}`);
+		if (!old) return;
+		const absPath = [...this._loadedPaths].find((p) =>
+			path.basename(p, path.extname(p)) === name,
+		);
+		if (!absPath) {
+			this.logger.warn(`Cannot reload plugin ${name}: module path not tracked`);
+			return;
 		}
+		const modulePath = `user_plugins/${name}`;
+		removeHandlersByModule(modulePath);
+		await old.instance.onUnload?.();
+		this._plugins = this._plugins.filter((p) => p.name !== name);
+		await this.loadSinglePlugin(absPath);
+		this.logger.info(`Reloaded plugin: ${name}`);
 	}
 
 	private buildPluginCtx(pluginName: string): BotContext {
 		return {
 			logger: this.logger,
-			config: {},
+			config: this.config.pluginConfigs?.[pluginName] ?? {},
 			pluginName,
 			chat: this.api,
 			rooms: this.api,
@@ -233,21 +240,9 @@ export class BotRunner {
 	}
 
 	private async fireLifecycleEvent(
-		eventType: EventType,
+		eventType: LifecycleEvent["eventType"],
 		pluginName?: string,
 	): Promise<void> {
-		await this.bus.dispatch({
-			eventType,
-			messageId: "",
-			room: { id: "", name: "" },
-			sender: {
-				identity: this.config.identity,
-				name: pluginName ?? this.config.displayName,
-				role: "admin",
-			},
-			content: "",
-			isCommand: false,
-			timestamp: Date.now(),
-		} as any);
+		await this.bus.dispatch(createBotEvent(eventType, pluginName));
 	}
 }
