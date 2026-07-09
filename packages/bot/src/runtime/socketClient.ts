@@ -31,6 +31,7 @@ export class GOSpeakSocketClient {
 	private onEvent: ((event: BotEvent) => void) | null = null;
 	private connected = false;
 	private logger: Logger;
+	private joinedRooms: Map<string, { identity: string }> = new Map();
 
 	constructor(opts: SocketClientOptions) {
 		this.opts = opts;
@@ -39,6 +40,14 @@ export class GOSpeakSocketClient {
 
 	get isConnected(): boolean {
 		return this.connected;
+	}
+
+	get rooms(): string[] {
+		return [...this.joinedRooms.keys()];
+	}
+
+	isInRoom(room: string): boolean {
+		return this.joinedRooms.has(room);
 	}
 
 	setEventHandler(cb: (event: BotEvent) => void): void {
@@ -64,18 +73,43 @@ export class GOSpeakSocketClient {
 			this.socket = null;
 		}
 		this.connected = false;
+		this.joinedRooms.clear();
 	}
 
 	joinRoom(room: string, identity: string): void {
+		if (this.joinedRooms.has(room)) {
+			this.logger.debug(`Already in room ${room}, skipping join`);
+			return;
+		}
 		this.socket?.emit("room:join", { room, identity });
+		this.joinedRooms.set(room, { identity });
 	}
 
 	leaveRoom(room: string): void {
 		this.socket?.emit("room:leave", { room });
+		this.joinedRooms.delete(room);
 	}
 
 	listRooms(): void {
 		this.socket?.emit("room:list");
+	}
+
+	joinRoomSFU(room: string, identity: string, stream?: string): Promise<{ ok: boolean; members: unknown[] }> {
+		return new Promise((resolve, reject) => {
+			if (!this.socket) {
+				reject(new Error("socket not connected"));
+				return;
+			}
+			this.socket.emit("room:join:sfu", { room, identity, stream }, (ack: unknown) => {
+				const resp = ack as Record<string, unknown>;
+				if (resp?.error) {
+					reject(new Error(String(resp.error)));
+				} else {
+					this.joinedRooms.set(room, { identity });
+					resolve(resp as { ok: boolean; members: unknown[] });
+				}
+			});
+		});
 	}
 
 	kickMember(room: string, targetIdentity: string): void {
