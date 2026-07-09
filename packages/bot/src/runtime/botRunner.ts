@@ -139,7 +139,7 @@ export class BotRunner {
 		});
 
 		await this.loadAllPlugins();
-		this.socket.connect();
+		await this.socket.connect();
 
 		this._running = true;
 		this.logger.info(
@@ -172,6 +172,9 @@ export class BotRunner {
 
 	async joinRoom(roomName: string, opts?: { sfu?: boolean }): Promise<void> {
 		const identity = this.config.identity;
+		if (!this.socket.isConnected) {
+			this.logger.warn("socket not connected; cannot join room");
+		}
 
 		if (opts?.sfu) {
 			const sfuToken = await this.api.getSFUToken(roomName, identity);
@@ -213,11 +216,14 @@ export class BotRunner {
 			config: this.config.pluginConfigs?.[pluginName] ?? {},
 			pluginName,
 			chat: this.api,
-			rooms: Object.assign(this.api, {
+			rooms: {
+				listRooms: () => this.api.listRooms(),
+				getMembers: (roomId: string) => this.api.getMembers(roomId),
+				createRoom: (name: string, limit?: number) => this.api.createRoom(name, limit),
 				join: (name: string, o?: { sfu?: boolean }) => this.joinRoom(name, o),
 				leave: (name: string) => this.leaveRoom(name),
 				joined: () => this.joinedRooms,
-			}) as BotContext['rooms'],
+			},
 			voice: this.api,
 			kv: createKVStore(),
 			hasPermission: (_level, _member) => true,

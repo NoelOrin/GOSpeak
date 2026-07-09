@@ -32,6 +32,7 @@ export class GOSpeakSocketClient {
 	private connected = false;
 	private logger: Logger;
 	private joinedRooms: Map<string, { identity: string }> = new Map();
+	private connectResolve: ((value: void | PromiseLike<void>) => void) | null = null;
 
 	constructor(opts: SocketClientOptions) {
 		this.opts = opts;
@@ -54,16 +55,21 @@ export class GOSpeakSocketClient {
 		this.onEvent = cb;
 	}
 
-	connect(): void {
-		if (this.socket) return;
-		void import("socket.io-client").then(({ io }) => {
-			const opts: Record<string, unknown> = {};
-			if (this.opts.token) opts.query = { token: this.opts.token };
+	connect(): Promise<void> {
+		if (this.socket) return Promise.resolve();
+		return new Promise((resolve, reject) => {
+			this.connectResolve = resolve;
+			void import("socket.io-client").then(({ io }) => {
+				const opts: Record<string, unknown> = {};
+				if (this.opts.token) opts.query = { token: this.opts.token };
 
-			this.socket = io(this.opts.url, opts) as SocketIONamespace;
-			this.setupListeners();
-		}).catch((err) => {
-			this.logger.error("Failed to load socket.io-client:", err);
+				this.socket = io(this.opts.url, opts) as SocketIONamespace;
+				this.setupListeners();
+			}).catch((err) => {
+				this.logger.error("Failed to load socket.io-client:", err);
+				this.connectResolve = null;
+				reject(err);
+			});
 		});
 	}
 
@@ -77,6 +83,10 @@ export class GOSpeakSocketClient {
 	}
 
 	joinRoom(room: string, identity: string): void {
+		if (!this.connected) {
+			this.logger.warn("socket not connected; cannot join room");
+			return;
+		}
 		if (this.joinedRooms.has(room)) {
 			this.logger.debug(`Already in room ${room}, skipping join`);
 			return;
@@ -86,6 +96,10 @@ export class GOSpeakSocketClient {
 	}
 
 	leaveRoom(room: string): void {
+		if (!this.connected) {
+			this.joinedRooms.delete(room);
+			return;
+		}
 		this.socket?.emit("room:leave", { room });
 		this.joinedRooms.delete(room);
 	}
@@ -95,6 +109,10 @@ export class GOSpeakSocketClient {
 	}
 
 	joinRoomSFU(room: string, identity: string, stream?: string): Promise<{ ok: boolean; members: unknown[] }> {
+		if (this.joinedRooms.has(room)) {
+			this.logger.debug(`Already in room ${room}, skipping SFU join`);
+			return Promise.resolve({ ok: true, members: [] });
+		}
 		return new Promise((resolve, reject) => {
 			if (!this.socket) {
 				reject(new Error("socket not connected"));
@@ -140,11 +158,14 @@ export class GOSpeakSocketClient {
 
 		this.socket.on("connect", () => {
 			this.connected = true;
+			this.connectResolve?.();
+			this.connectResolve = null;
 			this.logger.info("Socket.IO connected");
 		});
 
 		this.socket.on("disconnect", (reason: string) => {
 			this.connected = false;
+			this.joinedRooms.clear();
 			this.logger.info("Socket.IO disconnected:", reason);
 		});
 
@@ -172,6 +193,9 @@ export class GOSpeakSocketClient {
 
 		// room:left → { room: string }
 		this.socket.on("room:left", (raw: any) => {
+			// clear room from joinedRooms on server confirmation
+			const roomName = typeof raw === "string" ? raw : raw?.room;
+			if (roomName) this.joinedRooms.delete(roomName);
 			this.emit({
 				eventType: EventType.OnRoomLeft,
 				room: GOSpeakSocketClient.parseRoomRef(raw),
@@ -242,6 +266,8 @@ export class GOSpeakSocketClient {
 
 		// room:kicked → { room, targetIdentity }
 		this.socket.on("room:kicked", (raw: any) => {
+			const roomName = typeof raw === "string" ? raw : raw?.room;
+			if (roomName) this.joinedRooms.delete(roomName);
 			this.emit({
 				eventType: EventType.OnRoomLeft,
 				room: GOSpeakSocketClient.parseRoomRef(raw),

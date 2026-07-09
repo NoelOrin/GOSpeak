@@ -9,12 +9,13 @@ import { loadPlugin, initPlugin } from "./core/loader";
 import type { BotContext, MessageEvent } from "./core/index";
 
 function makeCtx(): BotContext {
+  const joinedRooms: string[] = [];
   return {
     logger: { debug() {}, info() {}, warn() {}, error() {} },
     config: {},
     pluginName: "test",
     chat: { send: async () => {}, reply: async (_e, _c) => {} },
-    rooms: { listRooms: async () => [], getMembers: async () => [], createRoom: async () => ({ id: "r", name: "r" }), join: async () => {}, leave: () => {}, joined: () => [] },
+    rooms: { listRooms: async () => [], getMembers: async () => [], createRoom: async () => ({ id: "r", name: "r" }), join: async () => { joinedRooms.push("dummy"); }, leave: () => { joinedRooms.pop(); }, joined: () => joinedRooms.slice() },
     voice: { muteMember: async () => {}, removeMember: async () => {}, setMemberVolume: async () => {} },
     kv: { get: async () => undefined, set: async () => {}, delete: async () => {} },
     hasPermission: () => true,

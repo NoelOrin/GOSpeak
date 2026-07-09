@@ -72,10 +72,10 @@ export class GOSpeakApiClient implements ChatClient, RoomClient, VoiceClient {
 
 	// join/leave/joined are implemented by BotRunner via socketClient, not here.
 	async join(_name: string, _opts?: { sfu?: boolean }): Promise<void> {
-		this.logger.warn("RoomClient.join should be called via BotRunner, not apiClient");
+		throw new Error("RoomClient.join should be called via BotRunner, not apiClient");
 	}
 	leave(_name: string): void {
-		this.logger.warn("RoomClient.leave should be called via BotRunner, not apiClient");
+		throw new Error("RoomClient.leave should be called via BotRunner, not apiClient");
 	}
 	joined(): string[] {
 		return [];
