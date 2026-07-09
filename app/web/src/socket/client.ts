@@ -16,7 +16,7 @@ export function createSocketClient() {
 		}
 		const opts: Record<string, unknown> = { transports: ["websocket"] };
 		if (token) {
-			opts.extraHeaders = { Authorization: `Bearer ${token}` };
+			opts.query = { token };
 		}
 		socket = io(url, opts);
 

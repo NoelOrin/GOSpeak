@@ -1,12 +1,11 @@
 package signal
 
 import (
+	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
-	"GOSpeak/internal/redis"
-	"strings"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -154,24 +153,15 @@ func (h *Hub) SetupRoutes(server *socketio.Server) {
 // ─── 连接/断开 ───
 
 func (h *Hub) OnConnect(s socketio.Conn) error {
-	// JWT 鉴权：从 HTTP 升级请求头提取 Bearer token 并校验
-	authHeader := s.RemoteHeader().Get("Authorization")
-	if authHeader == "" {
+	// JWT 鉴权（第二道门控）：从 URL query 提取 token，复用 middleware.VerifyToken 完整校验链。
+	u := s.URL()
+	tokenStr := u.Query().Get("token")
+	if tokenStr == "" {
 		return fmt.Errorf("authorization token required")
 	}
-	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-	if tokenStr == authHeader {
-		tokenStr = authHeader
-	}
-	claims, err := pkg.ParseToken(tokenStr)
-	if err != nil {
-		return fmt.Errorf("invalid token: %w", err)
-	}
-	if pkg.IsTokenExpired(claims) {
-		return fmt.Errorf("token expired")
-	}
-	if redis.IsBlacklisted(claims.ID) {
-		return fmt.Errorf("token revoked")
+	claims, code := middleware.VerifyToken(tokenStr)
+	if code != pkg.SUCCESS {
+		return fmt.Errorf("invalid token: %d", code)
 	}
 	s.SetContext(claims)
 	log.Printf("[Signal] client connected: %s", s.ID())
@@ -338,10 +328,7 @@ func (h *Hub) OnRoomJoin(s socketio.Conn, data string) (string, error) {
 		}
 	}
 
-	identity := req.Identity
-	if identity == "" {
-		identity = s.ID()
-	}
+	identity := resolveIdentity(s, req.Identity)
 
 	// 提前拦截重复身份：已通过 OnRoomJoinSFU 写入 h.rooms 的在线用户，新 socket 在 OnRoomJoin 阶段即阻断。
 	// 并发场景由 OnRoomJoinSFU 的 duplicate check 兜底，此处为提前拦截以节省媒体连接开销。
@@ -373,10 +360,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 		return marshalAck(map[string]interface{}{"error": "room name is required"})
 	}
 
-	identity := req.Identity
-	if identity == "" {
-		identity = s.ID()
-	}
+	identity := resolveIdentity(s, req.Identity)
 
 	// 服务端覆写 stream：客户端提报值不可信，使用服务端基于 room+identity 计算的预期值
 	if h.streamResolver != nil {
@@ -1096,4 +1080,16 @@ func (h *Hub) StreamForIdentity(room, identity string) (string, bool) {
 
 func parseJSON(data string, v interface{}) error {
 	return json.Unmarshal([]byte(data), v)
+}
+
+// resolveIdentity 优先从请求体取 identity，其次从 JWT claims 取 username，最后回退到 socket ID。
+// 确保前端未传 identity 时仍使用稳定的用户名而非易变的 socket ID。
+func resolveIdentity(s socketio.Conn, reqIdentity string) string {
+	if reqIdentity != "" {
+		return reqIdentity
+	}
+	if claims, ok := s.Context().(*pkg.Claims); ok && claims.Username != "" {
+		return claims.Username
+	}
+	return s.ID()
 }
