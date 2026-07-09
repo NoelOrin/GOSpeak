@@ -22,6 +22,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   srs:
+    container_name: gospeak-srs
     image: ossrs/srs:5
     restart: unless-stopped
     ports:
@@ -38,14 +39,14 @@ services:
       - "host.docker.internal:host-gateway"
 
   nginx:
-    image: nginx:alpine
     container_name: gospeak-nginx
+    image: nginx:alpine
     restart: unless-stopped
     ports:
       - "80:80"
       - "8000:8000/udp"
     volumes:
-      - ./nginx-docker.conf:/etc/nginx/conf.d/gospeak.conf:ro
+      - ./nginx-docker.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - srs
     extra_hosts:

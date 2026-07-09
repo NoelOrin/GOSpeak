@@ -45,7 +45,7 @@ func NewService(cfg *config.Config) *Service {
 		apiPort:   apiPort,
 		whipPort:  whipPort,
 		secret:    cfg.SRSSecret,
-		whipURL:   "/rtc/v1/whip/",
+		whipURL:   serverURL + "/rtc/v1/whip/",
 		serverURL: serverURL,
 	}
 }

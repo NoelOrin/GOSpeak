@@ -49,10 +49,14 @@ function raceAbort<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
 	});
 }
 
+let _joiningRoom: string | null = null;
+
 export function useRoomJoinSession() {
 	const [session, setSession] = createSignal<Session | null>(null);
 	const selectedRoom = () => socketStore.selectedRoomInfo();
 	let joinAbortController: AbortController | null = null;
+	// 活跃 join client 引用，供同房重触发时正确 teardown（setSession 会清 client:null）
+	let activeJoinClient: SFUClient | null = null;
 	// 幂等守卫：同一 client 的 leaveRoom 并发只执行一次
 	const leaving = new WeakSet<SFUClient>();
 
@@ -79,6 +83,7 @@ export function useRoomJoinSession() {
 			);
 		},
 		retry: false,
+		staleTime: 5 * 60 * 1000, // 5 min — 避免频繁 refetch 触发重复 WHIP
 	}));
 
 	const isJoined = createMemo(() => {
@@ -132,8 +137,12 @@ export function useRoomJoinSession() {
 
 				abortCurrentJoin();
 
+				// 同房已在加入中则跳过，防止 SolidJS effect 双发引发的重复 WHIP POST
+				if (_joiningRoom === data.room) return;
+
 				const controller = new AbortController();
 				joinAbortController = controller;
+				_joiningRoom = data.room;
 				const { signal } = controller;
 
 				const sessionMeta = resolveJoinSession(data);
@@ -143,6 +152,8 @@ export function useRoomJoinSession() {
 				const audioSettings = AudioDeviceStore.state;
 				const newRoom = data.room;
 				const prev = session();
+				// setSession 会清 client:null，用 activeJoinClient 追踪真实活跃 client
+				const prevClient = activeJoinClient;
 
 				// 切房：立即退旧业务房（信令面马上发，不阻塞新 join）。
 				// SFU client 拆除仍需串行 await，避免与新房 createOffer 竞态。
@@ -158,7 +169,7 @@ export function useRoomJoinSession() {
 					status: "connecting",
 				});
 
-				void (async () => {
+				const joinPromise = (async () => {
 					let createdClient: SFUClient | null = null;
 					try {
 						// abort 触发时清理已创建的 client 并短路
@@ -167,9 +178,11 @@ export function useRoomJoinSession() {
 							if (client) void teardownClient(client);
 							return true;
 						};
-						// 串行拆旧 SFU client（保证 createOffer 不竞态）
-						if (prev?.client && prev.roomName !== newRoom) {
-							await teardownClient(prev.client);
+						// 串行拆旧 SFU client（保证 createOffer 不竞态）。
+						// 同房重触发时必须先退旧 client，否则 SRS WHIP 报 5020 stream busy。
+						if (prevClient) {
+							await teardownClient(prevClient);
+							activeJoinClient = null;
 						}
 						if (abortIfCancelled(createdClient)) return;
 
@@ -194,6 +207,7 @@ export function useRoomJoinSession() {
 							}),
 							signal,
 						);
+						activeJoinClient = createdClient;
 						if (abortIfCancelled(createdClient)) return;
 
 						const joinParams: JoinParams = {
@@ -286,7 +300,10 @@ export function useRoomJoinSession() {
 						});
 					} catch (err) {
 						if (signal.aborted) {
-							if (createdClient) void teardownClient(createdClient);
+							if (createdClient) {
+								void teardownClient(createdClient);
+								activeJoinClient = null;
+							}
 							return;
 						}
 						console.error(
@@ -302,6 +319,9 @@ export function useRoomJoinSession() {
 						}
 					}
 				})();
+				joinPromise.finally(() => {
+					_joiningRoom = null;
+				});
 			},
 			{ defer: false },
 		),
@@ -319,6 +339,7 @@ export function useRoomJoinSession() {
 
 	const handleManualLeave = async () => {
 		abortCurrentJoin();
+		_joiningRoom = null;
 		const sess = session();
 		if (sess) await teardownSession(sess);
 		// 兜底：teardownSession 失败时 currentRoom 仍可能残留

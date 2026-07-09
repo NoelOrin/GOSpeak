@@ -8,6 +8,8 @@ import (
 	"sort"
 	"sync"
 	"testing"
+
+	"GOSpeak/internal/config"
 )
 
 // stubRegistry 模拟 pkg.RoomRegistry 用于 SRS provider 测试。
@@ -76,6 +78,20 @@ func newServiceWithURL(baseURL string) *Service {
 		client:    NewClient(baseURL),
 		whipURL:   "/rtc/v1/whip/",
 		serverURL: baseURL,
+	}
+}
+
+func TestClientInfo_ReturnsAbsoluteWHIPURL(t *testing.T) {
+	s := NewService(&config.Config{
+		SRSHost:     "srs.example.com",
+		SRSApiPort:  "1985",
+		SRSWHIPPort: "1986",
+	})
+
+	got, _ := s.ClientInfo()["whipUrl"].(string)
+	want := "http://srs.example.com:1986/rtc/v1/whip/"
+	if got != want {
+		t.Fatalf("whipUrl = %q, want %q", got, want)
 	}
 }
 
