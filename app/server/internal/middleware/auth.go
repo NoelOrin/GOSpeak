@@ -36,6 +36,40 @@ func SetTokenVersionChecker(tvc tokenVersionChecker) {
 	tokenVersionCheck = tvc
 }
 
+// VerifyToken 执行完整的 token 校验链：签名解析 → 过期 → 黑名单 → 版本。
+// 供 JWTAuth / WSAuth / signal.OnConnect 共用，保证校验口径一致。
+func VerifyToken(tokenStr string) (*pkg.Claims, pkg.ErrCode) {
+	claims, err := pkg.ParseToken(tokenStr)
+	if err != nil {
+		return nil, pkg.TOKEN_WRONG
+	}
+	if pkg.IsTokenExpired(claims) {
+		return nil, pkg.TOKEN_EXPIRED
+	}
+	if redis.IsBlacklisted(claims.ID) {
+		return nil, pkg.TOKEN_REVOKED
+	}
+	if tokenVersionCheck != nil && claims.UserUUID != "" {
+		currentVersion, err := tokenVersionCheck.GetTokenVersionByUUID(claims.UserUUID)
+		if err != nil {
+			return nil, pkg.INTERNAL_ERROR
+		}
+		if currentVersion != claims.TokenVersion {
+			return nil, pkg.TOKEN_REVOKED
+		}
+	}
+	return claims, pkg.SUCCESS
+}
+
+func setClaimsContext(c *gin.Context, claims *pkg.Claims) {
+	c.Set("username", claims.Username)
+	c.Set("display_name", claims.DisplayName)
+	c.Set("user_uuid", claims.UserUUID)
+	c.Set("role", claims.Role)
+	c.Set("claims", claims)
+	c.Set("auth_type", "jwt")
+}
+
 func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenHeader := c.Request.Header.Get("Authorization")
@@ -50,40 +84,37 @@ func JWTAuth() gin.HandlerFunc {
 			tokenStr = tokenHeader
 		}
 
-		claims, err := pkg.ParseToken(tokenStr)
-		if err != nil {
-			pkg.Fail(c, pkg.TOKEN_WRONG)
+		claims, code := VerifyToken(tokenStr)
+		if code != pkg.SUCCESS {
+			pkg.Fail(c, code)
 			c.Abort()
 			return
 		}
 
-		if pkg.IsTokenExpired(claims) {
-			pkg.Fail(c, pkg.TOKEN_EXPIRED)
+		setClaimsContext(c, claims)
+		c.Next()
+	}
+}
+
+// WSAuth 为 Socket.IO 路由提供 WebSocket 鉴权门控。
+// 与 JWTAuth 共用 VerifyToken，从 URL query 读取 token（浏览器 WS 握手不支持自定义头）。
+func WSAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenStr := c.Query("token")
+		if tokenStr == "" {
+			pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 			c.Abort()
 			return
 		}
 
-		if redis.IsBlacklisted(claims.ID) {
-			pkg.Fail(c, pkg.TOKEN_REVOKED)
+		claims, code := VerifyToken(tokenStr)
+		if code != pkg.SUCCESS {
+			pkg.Fail(c, code)
 			c.Abort()
 			return
 		}
 
-		// 校验 token 版本：改密/重置后用户 TokenVersion 递增，旧 token 返回 TOKEN_REVOKED。
-		if tokenVersionCheck != nil && claims.UserUUID != "" {
-			currentVersion, err := tokenVersionCheck.GetTokenVersionByUUID(claims.UserUUID)
-			if err != nil || currentVersion != claims.TokenVersion {
-				pkg.Fail(c, pkg.TOKEN_REVOKED)
-				c.Abort()
-				return
-			}
-		}
-
-		c.Set("username", claims.Username)
-		c.Set("display_name", claims.DisplayName)
-		c.Set("user_uuid", claims.UserUUID)
-		c.Set("role", claims.Role)
-		c.Set("claims", claims)
+		setClaimsContext(c, claims)
 		c.Next()
 	}
 }
@@ -132,13 +163,18 @@ func RequirePermission(permCode string) gin.HandlerFunc {
 			return
 		}
 
-		if permChecker == nil || !permChecker.HasPermission(roleStr, permCode) {
-			pkg.Fail(c, pkg.FORBIDDEN)
-			c.Abort()
+		if permChecker != nil && permChecker.HasPermission(roleStr, permCode) {
+			c.Next()
 			return
 		}
 
-		c.Next()
+		if checkBotPermissions(c, permCode) {
+			c.Next()
+			return
+		}
+
+		pkg.Fail(c, pkg.FORBIDDEN)
+		c.Abort()
 	}
 }
 
@@ -151,6 +187,10 @@ func RequireOwnerOrPermission(ownerContextKey, permCode string) gin.HandlerFunc 
 		role, _ := c.Get("role")
 		roleStr, _ := role.(string)
 		if permChecker != nil && permChecker.HasPermission(roleStr, permCode) {
+			c.Next()
+			return
+		}
+		if checkBotPermissions(c, permCode) {
 			c.Next()
 			return
 		}
@@ -209,4 +249,71 @@ func CORS() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// checkBotPermissions 当请求由 Bot API Key 鉴权时，按注入的权限集合判断是否满足 permCode。
+func checkBotPermissions(c *gin.Context, permCode string) bool {
+	v, ok := c.Get("bot_permissions")
+	if !ok {
+		return false
+	}
+	perms, ok := v.([]string)
+	if !ok {
+		return false
+	}
+	for _, p := range perms {
+		if p == permCode {
+			return true
+		}
+	}
+	return false
+}
+
+// BotKeyAuth 鉴权中间件：支持 Bot API Key 与 JWT 两种身份。
+// 若 Authorization 头以 gk_ 前缀开头，按 Bot API Key 校验并注入受限权限集合；
+// 否则回退到标准 JWT 校验。两者均不通过时返回 TOKEN 类错误。
+func BotKeyAuth(botKeyResolver BotKeyResolver) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenHeader := c.Request.Header.Get("Authorization")
+		if tokenHeader == "" {
+			pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
+			c.Abort()
+			return
+		}
+
+		tokenStr := strings.TrimPrefix(tokenHeader, "Bearer ")
+		if tokenStr == tokenHeader {
+			tokenStr = tokenHeader
+		}
+
+		if strings.HasPrefix(tokenStr, "gk_") {
+			perms, ok := botKeyResolver.Resolve(tokenStr)
+			if !ok {
+				pkg.Fail(c, pkg.TOKEN_WRONG)
+				c.Abort()
+				return
+			}
+			c.Set("auth_type", "bot")
+			c.Set("bot_permissions", perms)
+			c.Set("username", "bot")
+			c.Set("role", "")
+			c.Set("user_uuid", "")
+			c.Next()
+			return
+		}
+
+		claims, code := VerifyToken(tokenStr)
+		if code != pkg.SUCCESS {
+			pkg.Fail(c, code)
+			c.Abort()
+			return
+		}
+		setClaimsContext(c, claims)
+		c.Next()
+	}
+}
+
+// BotKeyResolver 由 service 实现，按明文 key 解析有效权限集合。
+type BotKeyResolver interface {
+	Resolve(plain string) ([]string, bool)
 }

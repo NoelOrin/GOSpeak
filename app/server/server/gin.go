@@ -72,6 +72,7 @@ func StartGin(env EnvEnum) {
 	muteRepo := repository.NewMuteRepository(repository.DB)
 	sfuConfigRepo := repository.NewSFUConfigRepository(repository.DB)
 	storageConfigRepo := repository.NewStorageConfigRepository(repository.DB)
+	botKeyRepo := repository.NewBotAPIKeyRepository(repository.DB)
 
 	// 初始化权限系统
 	seedPermissions(permRepo)
@@ -95,6 +96,7 @@ func StartGin(env EnvEnum) {
 		panic(fmt.Sprintf("failed to sync sfu config from env: %v", err))
 	}
 	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
+	botKeySvc := service.NewBotAPIKeyService(botKeyRepo)
 	var sfuProvider sfu.Provider = factory.NewDynamicProvider(sfuConfigSvc.ResolveConfig)
 	resolvedSFUCfg, err := sfuConfigSvc.ResolveConfig()
 	if err != nil {
@@ -144,6 +146,7 @@ func StartGin(env EnvEnum) {
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
 	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc)
 	storageH := handler.NewStorageHandler(storageSvc)
+	botKeyH := handler.NewBotAPIKeyHandler(botKeySvc)
 
 	monitorH := handler.NewMonitorHandler(signalHub, cfg)
 
@@ -157,9 +160,11 @@ func StartGin(env EnvEnum) {
 		}
 	}()
 
-	r.GET("/socket.io/*any", gin.WrapH(sioServer))
-	r.POST("/socket.io/*any", gin.WrapH(sioServer))
-	r.OPTIONS("/socket.io/*any", gin.WrapH(sioServer))
+	wsAuth := middleware.WSAuth()
+	cors := middleware.CORS()
+	r.GET("/socket.io/*any", cors, wsAuth, gin.WrapH(sioServer))
+	r.POST("/socket.io/*any", cors, wsAuth, gin.WrapH(sioServer))
+	r.OPTIONS("/socket.io/*any", cors, wsAuth, gin.WrapH(sioServer))
 
 	router.SetupRoutes(r, &router.Handlers{
 		Auth:        authH,
@@ -176,7 +181,8 @@ func StartGin(env EnvEnum) {
 		EmailConfig: emailConfigH,
 		Monitor:     monitorH,
 		SRSCallback: srsCallbackH,
-	})
+		Bot:         botKeyH,
+	}, botKeySvc)
 
 	port := os.Getenv("SERVER_PORT")
 	if port == "" {
