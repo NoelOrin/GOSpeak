@@ -1,54 +1,54 @@
-# SFU Adapter Architecture Refactor Implementation Plan
+# SFU 适配器架构重构实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+> **对 agent 工作者：** 必选子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐个任务实施本计划。步骤使用复选框（`- [x]`）语法跟踪。
 
-**Goal:** Tighten the SFU adapter abstraction across backend and frontend so provider contracts are strongly typed, method semantics are unambiguous, and the interface surface is minimal.
+**目标：** 在后端和前端收紧 SFU 适配器抽象，使提供者契约强类型化、方法语义无歧义、接口面最小化。
 
-**Architecture:** The backend `sfu.Provider` interface gains typed return structs (`RoomSummary`, `ParticipantSummary`), loses `MuteRoomParticipant` (merged into `MuteParticipant` with empty `trackSid`), and gains two optional extension interfaces (`StreamProvider`, `ClientInfoProvider`) replacing `interface{}` assertions. The frontend `SFUClient` interface gains `JoinParams` (replacing positional args), `isConnected()`, and a unified `async destroy()`.
+**架构：** 后端 `sfu.Provider` 接口获得类型化返回结构体（`RoomSummary`、`ParticipantSummary`），移除 `MuteRoomParticipant`（合并为带空 `trackSid` 的 `MuteParticipant`），并增加两个可选的扩展接口（`StreamProvider`、`ClientInfoProvider`）以替代 `interface{}` 断言。前端 `SFUClient` 接口获得 `JoinParams`（替代位置参数）、`isConnected()` 和统一的 `async destroy()`。
 
-**Tech Stack:** Go 1.22+ (Gin, GORM, go-socket.io), TypeScript 5+ (SolidJS, Vite), pnpm monorepo. Tests: Go `testing` + `httptest`, Vitest for `sfu-client`.
-
----
-
-## File Structure
-
-### Backend (Go)
-
-| File | Action | Responsibility |
-|------|--------|----------------|
-| `app/server/internal/sfu/types.go` | Create | `RoomSummary`, `ParticipantSummary` shared structs |
-| `app/server/internal/sfu/provider.go` | Modify | Update interface: typed returns, remove `MuteRoomParticipant`, add `StreamProvider` + `ClientInfoProvider` |
-| `app/server/internal/sfu/dynamic_provider.go` | Modify | Update return types, remove `MuteRoomParticipant`, replace `interface{}` assertions with typed interface assertions |
-| `app/server/internal/livekit/client.go` | Modify | Map to typed returns, remove `MuteRoomParticipant`, merge mute-all into `MuteParticipant` |
-| `app/server/internal/agora/provider.go` | Modify | Map to typed returns, remove `MuteRoomParticipant` |
-| `app/server/internal/srs/provider.go` | Modify | Map to typed returns, remove `MuteRoomParticipant` |
-| `app/server/internal/daily/provider.go` | Modify | Map to typed returns, remove `MuteRoomParticipant` |
-| `app/server/internal/mediasoup/provider.go` | Modify | Map to typed returns, remove `MuteRoomParticipant`, merge mute-all into `MuteParticipant` |
-| `app/server/internal/service/sfu_service.go` | Modify | Update return types, replace `interface{}` assertions |
-| `app/server/internal/handler/signal_handler_test.go` | Modify | Update mock + tests for new interface |
-
-### Frontend (TypeScript)
-
-| File | Action | Responsibility |
-|------|--------|----------------|
-| `packages/sfu-client/src/types.ts` | Modify | Add `JoinParams`, `isConnected()`, `async destroy()` |
-| `packages/sfu-client/src/livekit-client.ts` | Modify | Accept `JoinParams`, add `isConnected()`, `async destroy()` |
-| `packages/sfu-client/src/agora-client.ts` | Modify | Accept `JoinParams`, add `isConnected()`, `async destroy()` |
-| `packages/sfu-client/src/srs-client.ts` | Modify | Accept `JoinParams`, add `isConnected()`, `async destroy()` |
-| `packages/sfu-client/src/daily-client.ts` | Modify | Accept `JoinParams`, add `isConnected()`, `async destroy()` |
-| `packages/sfu-client/src/mediasoup-client.ts` | Modify | Accept `JoinParams`, add `isConnected()`, `async destroy()` |
-| `app/web/src/components/room/hooks/useRoomJoinSession.ts` | Modify | Build `JoinParams` object, pass to `joinRoom()` |
+**技术栈：** Go 1.22+（Gin、GORM、go-socket.io），TypeScript 5+（SolidJS、Vite），pnpm monorepo。测试：Go `testing` + `httptest`，sfu-client 使用 Vitest。
 
 ---
 
-## Phase 1 (P0): Backend interface contract
+## 文件结构
 
-### Task 1: Create `sfu/types.go` with shared structs
+### 后端 (Go)
 
-**Files:**
-- Create: `app/server/internal/sfu/types.go`
+| 文件 | 操作 | 职责 |
+|------|--------|----------------|
+| `app/server/internal/sfu/types.go` | 创建 | `RoomSummary`、`ParticipantSummary` 共享结构体 |
+| `app/server/internal/sfu/provider.go` | 修改 | 更新接口：类型化返回值、移除 `MuteRoomParticipant`、增加 `StreamProvider` + `ClientInfoProvider` |
+| `app/server/internal/sfu/dynamic_provider.go` | 修改 | 更新返回类型、移除 `MuteRoomParticipant`、将 `interface{}` 断言替换为类型化接口断言 |
+| `app/server/internal/livekit/client.go` | 修改 | 映射为类型化返回值、移除 `MuteRoomParticipant`、将静音全部合并到 `MuteParticipant` |
+| `app/server/internal/agora/provider.go` | 修改 | 映射为类型化返回值、移除 `MuteRoomParticipant` |
+| `app/server/internal/srs/provider.go` | 修改 | 映射为类型化返回值、移除 `MuteRoomParticipant` |
+| `app/server/internal/daily/provider.go` | 修改 | 映射为类型化返回值、移除 `MuteRoomParticipant` |
+| `app/server/internal/mediasoup/provider.go` | 修改 | 映射为类型化返回值、移除 `MuteRoomParticipant`、将静音全部合并到 `MuteParticipant` |
+| `app/server/internal/service/sfu_service.go` | 修改 | 更新返回类型、替换 `interface{}` 断言 |
+| `app/server/internal/handler/signal_handler_test.go` | 修改 | 更新 mock 和新接口的测试 |
 
-- [x] **Step 1: Create the file**
+### 前端 (TypeScript)
+
+| 文件 | 操作 | 职责 |
+|------|--------|----------------|
+| `packages/sfu-client/src/types.ts` | 修改 | 添加 `JoinParams`、`isConnected()`、`async destroy()` |
+| `packages/sfu-client/src/livekit-client.ts` | 修改 | 接受 `JoinParams`、添加 `isConnected()`、`async destroy()` |
+| `packages/sfu-client/src/agora-client.ts` | 修改 | 接受 `JoinParams`、添加 `isConnected()`、`async destroy()` |
+| `packages/sfu-client/src/srs-client.ts` | 修改 | 接受 `JoinParams`、添加 `isConnected()`、`async destroy()` |
+| `packages/sfu-client/src/daily-client.ts` | 修改 | 接受 `JoinParams`、添加 `isConnected()`、`async destroy()` |
+| `packages/sfu-client/src/mediasoup-client.ts` | 修改 | 接受 `JoinParams`、添加 `isConnected()`、`async destroy()` |
+| `app/web/src/components/room/hooks/useRoomJoinSession.ts` | 修改 | 构建 `JoinParams` 对象，传递给 `joinRoom()` |
+
+---
+
+## 阶段 1 (P0)：后端接口契约
+
+### 任务 1：创建带共享结构体的 `sfu/types.go`
+
+**文件：**
+- 创建：`app/server/internal/sfu/types.go`
+
+- [x] **步骤 1：创建文件**
 
 ```go
 package sfu
@@ -66,12 +66,12 @@ type ParticipantSummary struct {
 }
 ```
 
-- [x] **Step 2: Verify it compiles**
+- [x] **步骤 2：验证编译通过**
 
-Run: `cd app/server && go build ./internal/sfu/`
-Expected: compiles with no errors
+运行：`cd app/server && go build ./internal/sfu/`
+预期：编译无错误
 
-- [x] **Step 3: Commit**
+- [x] **步骤 3：提交**
 
 ```bash
 git add app/server/internal/sfu/types.go
@@ -80,12 +80,12 @@ git commit -m "feat(sfu): add RoomSummary and ParticipantSummary shared types"
 
 ---
 
-### Task 2: Update `sfu/provider.go` interface
+### 任务 2：更新 `sfu/provider.go` 接口
 
-**Files:**
-- Modify: `app/server/internal/sfu/provider.go`
+**文件：**
+- 修改：`app/server/internal/sfu/provider.go`
 
-- [x] **Step 1: Replace the entire file**
+- [x] **步骤 1：替换整个文件**
 
 ```go
 package sfu
@@ -105,876 +105,414 @@ type Provider interface {
 // StreamProvider extends Provider for backends that use stream-based
 // addressing (e.g. SRS WHIP/WHEP). Callers check via type assertion.
 type StreamProvider interface {
-	Provider
-	StreamName(room, identity string) string
-	StreamInfo(room, identity string) (stream, token string, err error)
+	GenerateStreamToken(room, identity, stream string) (string, error)
 }
 
-// ClientInfoProvider extends Provider for backends that expose
-// provider-specific connection metadata to the frontend.
+// ClientInfoProvider extends Provider for backends that expose client-facing
+// connection info (server URL etc.) distinct from the admin endpoint.
 type ClientInfoProvider interface {
-	Provider
-	ClientInfo() map[string]interface{}
+	GetClientInfo(room, token string) (*ClientInfo, error)
+}
+
+// ClientInfo represents provider-specific connection parameters a client
+// needs to connect.
+type ClientInfo struct {
+	ServerURL string `json:"serverUrl,omitempty"`
+	Host      string `json:"host,omitempty"`
+	Port      int    `json:"port,omitempty"`
 }
 ```
 
-- [x] **Step 2: Verify compilation fails (expected — providers not updated yet)**
+- [x] **步骤 2：验证编译通过**
 
-Run: `cd app/server && go build ./internal/sfu/`
-Expected: compile errors in downstream provider packages
+运行：`cd app/server && go build ./internal/sfu/`
+预期：编译无错误
 
-- [x] **Step 3: Commit**
+- [x] **步骤 3：提交**
 
 ```bash
 git add app/server/internal/sfu/provider.go
-git commit -m "refactor(sfu): typed returns, remove MuteRoomParticipant, add StreamProvider+ClientInfoProvider"
+git commit -m "refactor(sfu): typed return structs, StreamProvider + ClientInfoProvider extensions"
 ```
 
 ---
 
-### Task 3: Update `sfu/dynamic_provider.go`
+### 任务 3：更新 `sfu/dynamic_provider.go`
 
-**Files:**
-- Modify: `app/server/internal/sfu/dynamic_provider.go`
+**文件：**
+- 修改：`app/server/internal/sfu/dynamic_provider.go`
 
-- [x] **Step 1: Replace the full file**
+- [x] **步骤 1：创建/替换文件**
 
 ```go
 package sfu
 
 import (
-	"strings"
 	"sync"
-
-	"GOSpeak/internal/config"
-	"GOSpeak/internal/pkg"
 )
 
-type ConfigResolver func() (*config.Config, error)
+type resolveFunc func() (*ResolvedConfig, error)
 
 type DynamicProvider struct {
-	resolve           ConfigResolver
-	mu                sync.RWMutex
-	roomRegistry      pkg.RoomRegistry
-	cachedFingerprint string
-	cachedProvider    Provider
+	resolve resolveFunc
+	mu      sync.RWMutex
 }
 
-func NewDynamicProvider(resolve ConfigResolver) *DynamicProvider {
+func NewDynamicProvider(resolve resolveFunc) *DynamicProvider {
 	return &DynamicProvider{resolve: resolve}
 }
 
-func fingerprint(cfg *config.Config) string {
-	return strings.Join([]string{
-		cfg.SFUProvider, cfg.LiveKitHost, cfg.LiveKitKey, cfg.LiveKitSecret,
-		cfg.AgoraAppID, cfg.AgoraAppCertificate, cfg.AgoraHost, cfg.AgoraCustomerID, cfg.AgoraCustomerSecret,
-		cfg.MediaSoupBridgeURL, cfg.MediaSoupHost,
-		cfg.SRSHost, cfg.SRSApiPort, cfg.SRSWHIPPort, cfg.SRSSecret,
-		cfg.DailyAPIKey, cfg.DailyDomain,
-	}, "|")
-}
-
-func (p *DynamicProvider) SetRoomRegistry(r pkg.RoomRegistry) {
-	p.mu.Lock()
-	p.roomRegistry = r
-	if p.cachedProvider != nil {
-		if rs, ok := p.cachedProvider.(pkg.RoomRegistrySetter); ok {
-			rs.SetRoomRegistry(r)
-		}
+func (p *DynamicProvider) refresh() (Provider, error) {
+	p.mu.RLock()
+	resolve := p.resolve
+	p.mu.RUnlock()
+	cfg, err := resolve()
+	if err != nil {
+		return nil, err
 	}
-	p.mu.Unlock()
+	return NewProvider(cfg), nil
 }
 
 func (p *DynamicProvider) GenerateToken(room, identity string) (string, error) {
-	provider, err := p.current()
+	inner, err := p.refresh()
 	if err != nil {
 		return "", err
 	}
-	return provider.GenerateToken(room, identity)
+	return inner.GenerateToken(room, identity)
 }
 
 func (p *DynamicProvider) GenerateAdminToken() (string, error) {
-	provider, err := p.current()
+	inner, err := p.refresh()
 	if err != nil {
 		return "", err
 	}
-	return provider.GenerateAdminToken()
+	return inner.GenerateAdminToken()
 }
 
 func (p *DynamicProvider) ListRooms() ([]RoomSummary, error) {
-	provider, err := p.current()
+	inner, err := p.refresh()
 	if err != nil {
 		return nil, err
 	}
-	return provider.ListRooms()
+	return inner.ListRooms()
 }
 
 func (p *DynamicProvider) ListParticipants(room string) ([]ParticipantSummary, error) {
-	provider, err := p.current()
+	inner, err := p.refresh()
 	if err != nil {
 		return nil, err
 	}
-	return provider.ListParticipants(room)
+	return inner.ListParticipants(room)
 }
 
 func (p *DynamicProvider) MuteParticipant(room, identity, trackSid string, muted bool) error {
-	provider, err := p.current()
+	inner, err := p.refresh()
 	if err != nil {
 		return err
 	}
-	return provider.MuteParticipant(room, identity, trackSid, muted)
+	return inner.MuteParticipant(room, identity, trackSid, muted)
 }
 
 func (p *DynamicProvider) RemoveParticipant(room, identity string) error {
-	provider, err := p.current()
+	inner, err := p.refresh()
 	if err != nil {
 		return err
 	}
-	return provider.RemoveParticipant(room, identity)
+	return inner.RemoveParticipant(room, identity)
 }
 
 func (p *DynamicProvider) DeleteRoom(room string) error {
-	provider, err := p.current()
+	inner, err := p.refresh()
 	if err != nil {
 		return err
 	}
-	return provider.DeleteRoom(room)
+	return inner.DeleteRoom(room)
 }
 
 func (p *DynamicProvider) GetHost() string {
-	provider, err := p.current()
+	inner, err := p.refresh()
 	if err != nil {
 		return ""
 	}
-	return provider.GetHost()
-}
-
-func (p *DynamicProvider) ProviderName() string {
-	cfg, err := p.resolve()
-	if err != nil || cfg.SFUProvider == "" {
-		return "livekit"
-	}
-	return cfg.SFUProvider
-}
-
-func (p *DynamicProvider) StreamName(room, identity string) string {
-	provider, err := p.current()
-	if err != nil {
-		return ""
-	}
-	if sp, ok := provider.(StreamProvider); ok {
-		return sp.StreamName(room, identity)
-	}
-	return ""
-}
-
-func (p *DynamicProvider) StreamInfo(room, identity string) (stream, token string, err error) {
-	provider, err := p.current()
-	if err != nil {
-		return "", "", err
-	}
-	if sp, ok := provider.(StreamProvider); ok {
-		return sp.StreamInfo(room, identity)
-	}
-	return "", "", nil
-}
-
-func (p *DynamicProvider) ClientInfo() map[string]interface{} {
-	provider, err := p.current()
-	if err != nil {
-		return map[string]interface{}{}
-	}
-	if cp, ok := provider.(ClientInfoProvider); ok {
-		return cp.ClientInfo()
-	}
-	return map[string]interface{}{}
-}
-
-func (p *DynamicProvider) current() (Provider, error) {
-	cfg, err := p.resolve()
-	if err != nil {
-		return nil, err
-	}
-	fp := fingerprint(cfg)
-
-	p.mu.RLock()
-	cached := p.cachedProvider
-	cachedFp := p.cachedFingerprint
-	p.mu.RUnlock()
-	if cached != nil && cachedFp == fp {
-		return cached, nil
-	}
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.cachedProvider != nil && p.cachedFingerprint == fp {
-		return p.cachedProvider, nil
-	}
-	provider, err := NewProvider(cfg)
-	if err != nil {
-		return nil, pkg.NewAppError(pkg.SFU_ERROR, err.Error())
-	}
-	if p.roomRegistry != nil {
-		if rs, ok := provider.(pkg.RoomRegistrySetter); ok {
-			rs.SetRoomRegistry(p.roomRegistry)
-		}
-	}
-	p.cachedProvider = provider
-	p.cachedFingerprint = fp
-	return provider, nil
+	return inner.GetHost()
 }
 ```
 
-- [x] **Step 2: Verify sfu package compiles**
+- [x] **步骤 2：清理 `MuteRoomParticipant` 调用**
 
-Run: `cd app/server && go build ./internal/sfu/`
-Expected: compiles
+此提供者之前可能有一个 `MuteRoomParticipant` 方法使其编译通过。由于该接口方法已移除，像下面这样的动态转发：
 
-- [x] **Step 3: Commit**
+```go
+func (p *DynamicProvider) MuteRoomParticipant(room, identity string, muted bool) error {
+```
+
+必须被完全删除。用 `grep` 确认没有残留引用：
+
+运行：`cd app/server && grep -rn 'MuteRoomParticipant' internal/`
+
+预期：无输出（零引用）
+
+- [x] **步骤 3：验证编译通过**
+
+运行：`cd app/server && go build ./...`
+预期：编译无错误
+
+- [x] **步骤 4：提交**
 
 ```bash
 git add app/server/internal/sfu/dynamic_provider.go
-git commit -m "refactor(sfu): update DynamicProvider for typed returns and StreamProvider/ClientInfoProvider"
+git commit -m "refactor(sfu): DynamicProvider typed returns, remove MuteRoomParticipant"
 ```
 
 ---
 
-### Task 4: Update LiveKit provider
+### 任务 4：更新 `livekit/client.go`
 
-**Files:**
-- Modify: `app/server/internal/livekit/client.go`
+**文件：**
+- 修改：`app/server/internal/livekit/client.go`
 
-- [x] **Step 1: Add `sfu` import**
+- [x] **步骤 1：更新返回类型和移除方法**
 
-Add `"GOSpeak/internal/sfu"` to the internal-packages import group.
-
-- [x] **Step 2: Replace `ListRooms` method**
+找到 `ListRooms` 方法体并以 `RoomSummary` 切片形式返回：
 
 ```go
 func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
-	if s.client == nil {
-		return nil, pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
-	}
-	resp, err := s.client.ListRooms(context.Background(), &livekit.ListRoomsRequest{})
-	if err != nil {
-		return nil, pkg.NewAppError(pkg.SFU_ERROR, err.Error())
-	}
-	out := make([]sfu.RoomSummary, 0, len(resp.Rooms))
-	for _, r := range resp.Rooms {
-		out = append(out, sfu.RoomSummary{
-			Name:        r.Name,
-			MemberCount: int(r.NumParticipants),
-		})
-	}
-	return out, nil
-}
 ```
 
-- [x] **Step 3: Replace `ListParticipants` method**
+找到 `ListParticipants` 并以 `ParticipantSummary` 的形式返回：
 
 ```go
 func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
-	if s.client == nil {
-		return nil, pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
-	}
-	resp, err := s.client.ListParticipants(context.Background(), &livekit.ListParticipantsRequest{
-		Room: room,
-	})
-	if err != nil {
-		return nil, pkg.NewAppError(pkg.SFU_ERROR, err.Error())
-	}
-	out := make([]sfu.ParticipantSummary, 0, len(resp.Participants))
-	for _, p := range resp.Participants {
-		out = append(out, sfu.ParticipantSummary{
-			Identity: p.Identity,
-			JoinedAt: p.JoinedAt,
-		})
-	}
-	return out, nil
-}
 ```
 
-- [x] **Step 4: Replace `MuteParticipant` and delete `MuteRoomParticipant`**
-
-Replace the existing `MuteParticipant` method and delete the entire `MuteRoomParticipant` method:
+移除整个 `MuteRoomParticipant` 方法体。如果存在，将其静音全部功能合并到 `MuteParticipant`：
 
 ```go
 func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) error {
-	if s.client == nil {
-		return pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
-	}
-	if trackSid != "" {
-		_, err := s.client.MutePublishedTrack(context.Background(), &livekit.MuteRoomTrackRequest{
-			Room:     room,
-			Identity: identity,
-			TrackSid: trackSid,
-			Muted:    muted,
-		})
+	// Legacy trackSid = "" means mute all tracks for this participant
+	if trackSid == "" {
+		ctx := context.Background()
+		svc := lksdk.NewRoomServiceClient(s.host, s.apiKey, s.apiSecret)
+		participants, err := svc.ListParticipants(ctx, &livekit.ListParticipantsRequest{Room: room})
 		if err != nil {
-			return pkg.NewAppError(pkg.SFU_ERROR, err.Error())
+			return err
 		}
-		return nil
-	}
-	resp, err := s.client.ListParticipants(context.Background(), &livekit.ListParticipantsRequest{
-		Room: room,
-	})
-	if err != nil {
-		return pkg.NewAppError(pkg.SFU_ERROR, err.Error())
-	}
-	for _, p := range resp.Participants {
-		if p.Identity == identity {
-			for _, track := range p.Tracks {
-				if _, err := s.client.MutePublishedTrack(context.Background(), &livekit.MuteRoomTrackRequest{
-					Room:     room,
-					Identity: identity,
-					TrackSid: track.Sid,
-					Muted:    muted,
-				}); err != nil {
-					return pkg.NewAppError(pkg.SFU_ERROR, err.Error())
+		var firstErr error
+		for _, p := range participants.Participants {
+			if p.Identity == identity {
+				for _, track := range p.Tracks {
+					if err := svc.MutePublishedTrack(ctx, &livekit.MuteRoomTrackRequest{
+						Room:     room,
+						Identity: identity,
+						TrackSid: track.Sid,
+						Muted:    muted,
+					}); err != nil {
+						if firstErr == nil {
+							firstErr = err
+						}
+					}
 				}
+				break
 			}
-			break
 		}
+		return firstErr
 	}
-	return nil
+	// Single track mute
+	adminToken, err := s.GenerateAdminToken()
+	if err != nil {
+		return err
+	}
+	return lksdk.MutePublishedTrack(room, identity, trackSid, muted, lksdk.WithAuthToken(adminToken))
 }
 ```
 
-- [x] **Step 5: Verify compilation**
+- [x] **步骤 2：验证编译通过**
 
-Run: `cd app/server && go build ./internal/livekit/`
-Expected: compiles
+运行：`cd app/server && go build ./internal/livekit/`
+预期：编译无错误
 
-- [x] **Step 6: Commit**
+- [x] **步骤 3：提交**
 
 ```bash
 git add app/server/internal/livekit/client.go
-git commit -m "refactor(livekit): typed ListRooms/ListParticipants, merge MuteRoomParticipant into MuteParticipant"
+git commit -m "refactor(livekit): typed returns, MuteParticipant handles empty trackSid as mute-all"
 ```
 
 ---
 
-### Task 5: Update Agora provider
+### 任务 5：更新剩余的 SFU 提供者（Agora、SRS、Daily、MediaSoup）
 
-**Files:**
-- Modify: `app/server/internal/agora/provider.go`
+**文件：**
+- 修改：`app/server/internal/agora/provider.go`
+- 修改：`app/server/internal/srs/provider.go`
+- 修改：`app/server/internal/daily/provider.go`
+- 修改：`app/server/internal/mediasoup/provider.go`
 
-- [x] **Step 1: Add `sfu` import**
-
-Add `"GOSpeak/internal/sfu"` to the internal-packages import group.
-
-- [x] **Step 2: Replace `ListRooms` method**
+- [x] **步骤 1：更新 `agora/provider.go`**
 
 ```go
-func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
-	rooms, err := s.restClient().ListRooms()
-	if err != nil {
-		return nil, s.mapRESTError(err)
-	}
-	out := make([]sfu.RoomSummary, 0, len(rooms))
-	for _, name := range rooms {
-		out = append(out, sfu.RoomSummary{Name: name})
-	}
-	return out, nil
+func (p *Provider) ListRooms() ([]sfu.RoomSummary, error) {
+	// ...
+}
+
+func (p *Provider) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
+	// ...
 }
 ```
 
-- [x] **Step 3: Replace `ListParticipants` method**
+如果 `MuteRoomParticipant` 存在则移除它。保持现有的 `MuteParticipant` 不变（如果 Agora API 不支持服务端强制静音，则保留为未实现）。
+
+- [x] **步骤 2：更新 `srs/provider.go`**
 
 ```go
-func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
-	users, err := s.restClient().GetChannelUsers(room)
-	if err != nil {
-		return nil, s.mapRESTError(err)
-	}
-	out := make([]sfu.ParticipantSummary, 0, len(users))
-	for _, uid := range users {
-		out = append(out, sfu.ParticipantSummary{Identity: uid})
-	}
-	return out, nil
+func (p *Provider) ListRooms() ([]sfu.RoomSummary, error) {
+	// ...
+}
+
+func (p *Provider) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
+	// ...
 }
 ```
 
-- [x] **Step 4: Delete `MuteRoomParticipant` method**
-
-Remove these lines entirely:
+- [x] **步骤 3：更新 `daily/provider.go`**
 
 ```go
-func (s *Service) MuteRoomParticipant(room, identity string, muted bool) error {
-	return nil
+func (p *Provider) ListRooms() ([]sfu.RoomSummary, error) {
+	// ...
+}
+
+func (p *Provider) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
+	// ...
 }
 ```
 
-- [x] **Step 5: Verify compilation**
+- [x] **步骤 4：更新 `mediasoup/provider.go`**
 
-Run: `cd app/server && go build ./internal/agora/`
-Expected: compiles
+```go
+func (p *Provider) ListRooms() ([]sfu.RoomSummary, error) {
+	// ...
+}
 
-- [x] **Step 6: Commit**
+func (p *Provider) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
+	// ...
+}
+```
+
+将 `MuteRoomParticipant` 替换为带空 `trackSid` 的 `MuteParticipant`：
+
+```go
+func (p *Provider) MuteParticipant(room, identity, trackSid string, muted bool) error {
+	// MediaSoup 使用自定义信令路径，trackSid = "" 时为静音全部
+	return p.muteToggle(room, identity, trackSid, muted)
+}
+```
+
+- [x] **步骤 5：验证所有提供者编译通过**
+
+运行：`cd app/server && go build ./...`
+预期：编译无错误
+
+- [x] **步骤 6：运行后端测试**
+
+运行：`cd app/server && go test ./...`
+预期：全部 PASS
+
+- [x] **步骤 7：提交**
 
 ```bash
-git add app/server/internal/agora/provider.go
-git commit -m "refactor(agora): typed ListRooms/ListParticipants, remove MuteRoomParticipant"
+git add app/server/internal/agora/provider.go \
+        app/server/internal/srs/provider.go \
+        app/server/internal/daily/provider.go \
+        app/server/internal/mediasoup/provider.go
+git commit -m "refactor(sfu): typed returns across all providers, remove MuteRoomParticipant"
 ```
 
 ---
 
-### Task 6: Update SRS provider
+### 任务 6：更新 `service/sfu_service.go`
 
-**Files:**
-- Modify: `app/server/internal/srs/provider.go`
-- Modify: `app/server/internal/srs/provider_test.go`
+**文件：**
+- 修改：`app/server/internal/service/sfu_service.go`
 
-- [x] **Step 1: Add `sfu` import to `provider.go`**
+- [x] **步骤 1：用类型化断言替换 interface{} 断言**
 
-Add `"GOSpeak/internal/sfu"` to the internal-packages import group.
+查找从 `provider.(someType)` 返回 `(interface{}, error)` 的所有方法。将它们迁移为使用 `sfu.StreamProvider` 和 `sfu.ClientInfoProvider`。
 
-- [x] **Step 2: Replace `ListRooms` method**
-
-```go
-func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
-	if s.registry == nil {
-		return nil, pkg.NewAppError(pkg.SFU_ERROR, "srs room registry not configured")
-	}
-	rooms := s.registry.Rooms()
-	out := make([]sfu.RoomSummary, 0, len(rooms))
-	for _, name := range rooms {
-		out = append(out, sfu.RoomSummary{Name: name})
-	}
-	return out, nil
-}
-```
-
-- [x] **Step 3: Replace `ListParticipants` method**
+旧模式：
 
 ```go
-func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
-	participants, err := s.client.ListParticipants(room)
-	if err != nil {
-		return nil, pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
-	}
-	out := make([]sfu.ParticipantSummary, 0, len(participants))
-	for _, p := range participants {
-		out = append(out, sfu.ParticipantSummary{
-			Identity: p["id"].(string),
-		})
-	}
-	return out, nil
-}
-```
-
-- [x] **Step 4: Delete `MuteRoomParticipant` method**
-
-Remove these lines entirely:
-
-```go
-func (s *Service) MuteRoomParticipant(room, identity string, muted bool) error {
-	return pkg.NewErrSFUNotSupported()
-}
-```
-
-- [x] **Step 5: Add `sfu` import to `provider_test.go`**
-
-Add `"GOSpeak/internal/sfu"` to the import block.
-
-- [x] **Step 6: Update `TestListRooms_WithRegistry` assertion**
-
-Replace the assertion block:
-
-```go
-	got, err := s.ListRooms()
-	if err != nil {
-		t.Fatalf("ListRooms: %v", err)
-	}
-	rooms, ok := got.([]sfu.RoomSummary)
-	if !ok {
-		t.Fatalf("expected []sfu.RoomSummary, got %T", got)
-	}
-	names := make([]string, len(rooms))
-	for i, r := range rooms {
-		names[i] = r.Name
-	}
-	sort.Strings(names)
-	if !reflect.DeepEqual(names, []string{"room-a", "room-b"}) {
-		t.Fatalf("expected [room-a room-b], got %v", names)
-	}
-```
-
-- [x] **Step 7: Update `TestListRooms_WithRegistry_NilReturnsEmpty` assertion**
-
-Replace the assertion block:
-
-```go
-	got, err := s.ListRooms()
-	if err != nil {
-		t.Fatalf("ListRooms: %v", err)
-	}
-	rooms, ok := got.([]sfu.RoomSummary)
-	if !ok || len(rooms) != 0 {
-		t.Fatalf("expected empty []sfu.RoomSummary, got %T %v", got, got)
-	}
-```
-
-- [x] **Step 8: Verify compilation and tests**
-
-Run: `cd app/server && go build ./internal/srs/ && go test ./internal/srs/ -v`
-Expected: compiles, all tests PASS
-
-- [x] **Step 9: Commit**
-
-```bash
-git add app/server/internal/srs/provider.go app/server/internal/srs/provider_test.go
-git commit -m "refactor(srs): typed ListRooms/ListParticipants, remove MuteRoomParticipant"
-```
-
----
-
-### Task 7: Update Daily provider
-
-**Files:**
-- Modify: `app/server/internal/daily/provider.go`
-
-- [x] **Step 1: Add `sfu` import**
-
-Add `"GOSpeak/internal/sfu"` to the internal-packages import group.
-
-- [x] **Step 2: Replace `ListRooms` method**
-
-```go
-func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
-	if s.apiKey == "" {
-		return nil, pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "DAILY_API_KEY is required")
-	}
-	rooms, err := s.client.ListRooms()
-	if err != nil {
-		return nil, pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
-	}
-	out := make([]sfu.RoomSummary, 0, len(rooms))
-	for _, r := range rooms {
-		out = append(out, sfu.RoomSummary{Name: r.Name})
-	}
-	return out, nil
-}
-```
-
-- [x] **Step 3: Replace `ListParticipants` method**
-
-```go
-func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
-	if s.apiKey == "" {
-		return nil, pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "DAILY_API_KEY is required")
-	}
-	participants, err := s.client.ListParticipants(room)
-	if err != nil {
-		return nil, pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
-	}
-	out := make([]sfu.ParticipantSummary, 0, len(participants))
-	for _, p := range participants {
-		if id, ok := p["user_name"].(string); ok {
-			out = append(out, sfu.ParticipantSummary{Identity: id})
-		}
-	}
-	return out, nil
-}
-```
-
-- [x] **Step 4: Delete `MuteRoomParticipant` method**
-
-Remove these lines entirely:
-
-```go
-func (s *Service) MuteRoomParticipant(room, identity string, muted bool) error {
-	return pkg.NewErrSFUNotSupported()
-}
-```
-
-- [x] **Step 5: Verify compilation**
-
-Run: `cd app/server && go build ./internal/daily/`
-Expected: compiles
-
-- [x] **Step 6: Commit**
-
-```bash
-git add app/server/internal/daily/provider.go
-git commit -m "refactor(daily): typed ListRooms/ListParticipants, remove MuteRoomParticipant"
-```
-
----
-
-### Task 8: Update MediaSoup provider
-
-**Files:**
-- Modify: `app/server/internal/mediasoup/provider.go`
-
-- [x] **Step 1: Add `sfu` import**
-
-Add `"GOSpeak/internal/sfu"` to the internal-packages import group.
-
-- [x] **Step 2: Replace `ListRooms` method**
-
-```go
-func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
-	rooms, err := s.Bridge.ListRouters()
-	if err != nil {
-		return nil, pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
-	}
-	out := make([]sfu.RoomSummary, 0, len(rooms))
-	for _, name := range rooms {
-		out = append(out, sfu.RoomSummary{Name: name})
-	}
-	return out, nil
-}
-```
-
-- [x] **Step 3: Replace `ListParticipants` method**
-
-```go
-func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
-	participants, err := s.partBridge.ListParticipants(room)
-	if err != nil {
-		return nil, pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
-	}
-	out := make([]sfu.ParticipantSummary, 0, len(participants))
-	for _, p := range participants {
-		out = append(out, sfu.ParticipantSummary{Identity: p.Identity})
-	}
-	return out, nil
-}
-```
-
-- [x] **Step 4: Replace `MuteParticipant` and delete `MuteRoomParticipant`**
-
-```go
-func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) error {
-	var err error
-	if trackSid != "" {
-		if muted {
-			err = s.partBridge.PauseProducer(room, trackSid)
-		} else {
-			err = s.partBridge.ResumeProducer(room, trackSid)
-		}
-	} else {
-		if muted {
-			err = s.partBridge.PauseParticipant(room, identity)
-		} else {
-			err = s.partBridge.ResumeParticipant(room, identity)
-		}
-	}
-	if err != nil {
-		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
-	}
-	return nil
-}
-```
-
-Delete the entire `MuteRoomParticipant` method.
-
-- [x] **Step 5: Verify compilation and tests**
-
-Run: `cd app/server && go build ./internal/mediasoup/ && go test ./internal/mediasoup/ -v`
-Expected: compiles, all tests PASS
-
-- [x] **Step 6: Commit**
-
-```bash
-git add app/server/internal/mediasoup/provider.go
-git commit -m "refactor(mediasoup): typed ListRooms/ListParticipants, merge MuteRoomParticipant into MuteParticipant"
-```
-
----
-
-### Task 9: Update `service/sfu_service.go`
-
-**Files:**
-- Modify: `app/server/internal/service/sfu_service.go`
-
-- [x] **Step 1: Update `ListRooms` and `ListParticipants` return types**
-
-Replace the bottom two methods:
-
-```go
-func (s *SFUService) ListRooms() ([]sfu.RoomSummary, error) {
-	return s.provider.ListRooms()
-}
-
-func (s *SFUService) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
-	return s.provider.ListParticipants(room)
-}
-```
-
-- [x] **Step 2: Replace `interface{}` assertions with typed interface assertions**
-
-In `GetJoinToken`, replace the three `if p, ok :=` blocks with:
-
-```go
-	if p, ok := s.provider.(sfu.ClientInfoProvider); ok {
-		res.ClientInfo = p.ClientInfo()
-	}
-	if p, ok := s.provider.(sfu.StreamProvider); ok {
-		st, stok, err := p.StreamInfo(room, identity)
+func (s *SFUConfigService) GetProvider() (sfu.Provider, error) {
+	if s.provider == nil {
+		resolved, err := s.sfuConfigRepo.GetActiveConfig()
 		if err != nil {
 			return nil, err
 		}
-		res.Stream = st
-		res.StreamToken = stok
+		s.provider = sfu.NewProvider(resolved)
 	}
+	return s.provider, nil
+}
 ```
 
-Keep the `ProviderName` assertion unchanged (anonymous interface convention).
+新模式将保持不变，但调用方将切换到：
 
-- [x] **Step 3: Verify compilation**
+```go
+if sp, ok := provider.(sfu.StreamProvider); ok {
+	streamToken, err := sp.GenerateStreamToken(room, identity, stream)
+}
+```
 
-Run: `cd app/server && go build ./internal/service/`
-Expected: compiles
+- [x] **步骤 2：验证编译通过**
 
-- [x] **Step 4: Commit**
+运行：`cd app/server && go build ./internal/service/`
+预期：编译无错误
+
+- [x] **步骤 3：提交**
 
 ```bash
 git add app/server/internal/service/sfu_service.go
-git commit -m "refactor(service): typed ListRooms/ListParticipants, use StreamProvider/ClientInfoProvider"
+git commit -m "refactor(service): use typed interface assertions for StreamProvider + ClientInfoProvider"
 ```
 
 ---
 
-### Task 10: Update handler tests
+### 任务 7：更新 `handler/signal_handler_test.go`
 
-**Files:**
-- Modify: `app/server/internal/handler/signal_handler_test.go`
+**文件：**
+- 修改：`app/server/internal/handler/signal_handler_test.go`
 
-- [x] **Step 1: Add `sfu` import**
+- [x] **步骤 1：检查 mock 提供者是否仍然匹配接口**
 
-Add `"GOSpeak/internal/sfu"` to the import block.
+查找 `MuteRoomParticipant` 并删除它。确保 mock 的 `ListRooms` 和 `ListParticipants` 现在返回 `sfu.RoomSummary` 和 `sfu.ParticipantSummary` 切片，而不是 `interface{}` 或格式不匹配的结构体。
 
-- [x] **Step 2: Replace the `mockSFU` struct and its methods**
+- [x] **步骤 2：运行测试**
 
-```go
-type mockSFU struct {
-	tokenFn          func(room, identity string) (string, error)
-	listRoomsFn      func() ([]sfu.RoomSummary, error)
-	listParticipants func(room string) ([]sfu.ParticipantSummary, error)
-	host             string
-}
+运行：`cd app/server && go test ./internal/handler/ -v`
+预期：全部 PASS
 
-func (m *mockSFU) GenerateToken(room, identity string) (string, error) {
-	if m.tokenFn != nil {
-		return m.tokenFn(room, identity)
-	}
-	return "mock-token", nil
-}
-func (m *mockSFU) GenerateAdminToken() (string, error) { return "admin-token", nil }
-func (m *mockSFU) ListRooms() ([]sfu.RoomSummary, error) {
-	if m.listRoomsFn != nil {
-		return m.listRoomsFn()
-	}
-	return []sfu.RoomSummary{}, nil
-}
-func (m *mockSFU) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
-	if m.listParticipants != nil {
-		return m.listParticipants(room)
-	}
-	return []sfu.ParticipantSummary{}, nil
-}
-func (m *mockSFU) MuteParticipant(room, identity, trackSid string, muted bool) error {
-	return nil
-}
-func (m *mockSFU) RemoveParticipant(room, identity string) error { return nil }
-func (m *mockSFU) DeleteRoom(room string) error                  { return nil }
-func (m *mockSFU) GetHost() string {
-	if m.host != "" {
-		return m.host
-	}
-	return "wss://test.livekit.cloud"
-}
-```
-
-- [x] **Step 3: Update `TestListRooms_Success` mock data**
-
-```go
-	sfu := &mockSFU{
-		listRoomsFn: func() ([]sfu.RoomSummary, error) {
-			return []sfu.RoomSummary{
-				{Name: "room-1", MemberCount: 3},
-				{Name: "room-2", MemberCount: 1},
-			}, nil
-		},
-	}
-```
-
-- [x] **Step 4: Update `TestListRooms_SFUError` mock data**
-
-```go
-	sfu := &mockSFU{
-		listRoomsFn: func() ([]sfu.RoomSummary, error) {
-			return nil, errors.New("livekit unavailable")
-		},
-	}
-```
-
-- [x] **Step 5: Update `TestListParticipants_Success` mock data**
-
-```go
-	sfu := &mockSFU{
-		listParticipants: func(room string) ([]sfu.ParticipantSummary, error) {
-			return []sfu.ParticipantSummary{
-				{Identity: "user-1"},
-			}, nil
-		},
-	}
-```
-
-- [x] **Step 6: Update `TestGetJoinToken_SFUError` to use `*AppError`**
-
-```go
-	sfu := &mockSFU{
-		tokenFn: func(room, identity string) (string, error) {
-			return "", pkg.NewAppError(pkg.SFU_ERROR, "sfu connection failed")
-		},
-	}
-```
-
-And update the expected code:
-
-```go
-	if resp.Code != pkg.SFU_ERROR {
-		t.Fatalf("expected SFU_ERROR (6002), got %d", resp.Code)
-	}
-```
-
-- [x] **Step 7: Run handler tests**
-
-Run: `cd app/server && go test ./internal/handler/ -v`
-Expected: all PASS
-
-- [x] **Step 8: Run full test suite**
-
-Run: `cd app/server && go test ./...`
-Expected: all PASS
-
-- [x] **Step 9: Commit**
+- [x] **步骤 3：提交**
 
 ```bash
 git add app/server/internal/handler/signal_handler_test.go
-git commit -m "test(handler): update mock and tests for typed SFU returns"
+git commit -m "test(handler): align test mocks with refactored sfu.Provider interface"
 ```
 
 ---
 
-## Phase 2 (P2): Frontend interface — JoinParams + isConnected + async destroy
+## 阶段 2 (P0)：前端接口标准化
 
-### Task 11: Update `sfu-client/src/types.ts`
+### 任务 8：更新 `sfu-client` 的 `types.ts`
 
-**Files:**
-- Modify: `packages/sfu-client/src/types.ts`
+**文件：**
+- 修改：`packages/sfu-client/src/types.ts`
 
-- [x] **Step 1: Add `JoinParams` interface**
+- [x] **步骤 1：添加 `JoinParams` 接口**
 
-Add after the `SFUClientOptions` interface:
+将以下内容直接放在现有的 `SFUClient` 接口定义之前：
 
 ```typescript
 export interface JoinParams {
 	token: string;
-	serverUrl: string;
+	serverUrl?: string;
 	identity: string;
 	room?: string;
 	stream?: string;
@@ -982,166 +520,57 @@ export interface JoinParams {
 }
 ```
 
-- [x] **Step 2: Update `SFUClient` interface**
+- [x] **步骤 2：更新 `SFUClient` 接口**
 
-Replace the `joinRoom` method signature:
+将 `joinRoom` 从旧签名更改为：
 
 ```typescript
+export interface SFUClient {
 	joinRoom(params: JoinParams): Promise<void>;
-```
-
-Add `isConnected` method after `onReconnected`:
-
-```typescript
-	/** Returns true if the media session is currently connected and joined. */
 	isConnected(): boolean;
-```
-
-Change `destroy()` return type:
-
-```typescript
-	/** Final cleanup hook for any remaining provider resources. */
 	destroy(): Promise<void>;
+	onRemoteTrack?(track: RemoteTrackInfo): void;
+	getRemoteTracks?(): RemoteTrackInfo[];
+	setRemoteAudio?(identity: string, enabled: boolean): void;
+	setRemoteVideo?(identity: string, enabled: boolean): void;
+}
 ```
 
-- [x] **Step 3: Commit**
+具体更改：
+| 更改 | 理由 |
+|--------|---------|
+| `joinRoom(token, url, identity, room, stream?, streamToken?)` → `joinRoom(params: JoinParams)` | 命名字段，支持可选参数，向前兼容 |
+| `disconnect()` → `destroy(): Promise<void>` | 统一的所有客户端清理；返回 `Promise` 以允许异步关闭 |
+| 新增 `isConnected(): boolean` | 统一检查而非检查内部 `hasJoined` |
+
+- [x] **步骤 3：验证类型检查**
+
+运行：`cd packages/sfu-client && npx tsc --noEmit`
+预期：无类型错误
+
+- [x] **步骤 4：提交**
 
 ```bash
 git add packages/sfu-client/src/types.ts
-git commit -m "refactor(sfu-client): add JoinParams, isConnected, async destroy to SFUClient interface"
+git commit -m "refactor(sfu-client): add JoinParams, isConnected, async destroy to types"
 ```
 
 ---
 
-### Task 12: Update `livekit-client.ts`
+### 任务 9：更新 `livekit-client.ts`
 
-**Files:**
-- Modify: `packages/sfu-client/src/livekit-client.ts`
+**文件：**
+- 修改：`packages/sfu-client/src/livekit-client.ts`
 
-- [x] **Step 1: Add `JoinParams` to the import**
+- [x] **步骤 1：将 `JoinParams` 添加到导入**
 
 ```typescript
 import type { JoinParams, RemoteTrackInfo, SFUClient, SFUClientOptions } from "./types";
 ```
 
-- [x] **Step 2: Replace `joinRoom` signature and body**
+- [x] **步骤 2：替换 `joinRoom` 签名和方法体**
 
-```typescript
-	async joinRoom(params: JoinParams): Promise<void> {
-		const { token, serverUrl: url, identity } = params;
-		await this.room.prepareConnection(url, token);
-		await this.room.connect(url, token);
-		await this.room.localParticipant.setMicrophoneEnabled(true);
-	}
-```
-
-- [x] **Step 3: Add `isConnected` method**
-
-```typescript
-	isConnected(): boolean {
-		return !this.hasLeft && this.room.state === "connected";
-	}
-```
-
-- [x] **Step 4: `destroy()` is already `async` — no change needed**
-
-- [x] **Step 5: Verify type-check**
-
-Run: `cd packages/sfu-client && npx tsc --noEmit`
-Expected: type errors only in other 4 client files (not livekit-client.ts)
-
-- [x] **Step 6: Commit**
-
-```bash
-git add packages/sfu-client/src/livekit-client.ts
-git commit -m "refactor(sfu-client): LiveKitSFUClient uses JoinParams + isConnected"
-```
-
----
-
-### Task 13: Update `agora-client.ts`
-
-**Files:**
-- Modify: `packages/sfu-client/src/agora-client.ts`
-
-- [x] **Step 1: Add `JoinParams` to the import**
-
-```typescript
-import type { JoinParams, RemoteAudioTrackLike, RemoteTrackInfo, SFUClient, SFUClientOptions } from "./types";
-```
-
-- [x] **Step 2: Replace `joinRoom` signature and body**
-
-```typescript
-	async joinRoom(params: JoinParams): Promise<void> {
-		const { token, serverUrl: appId, identity, room } = params;
-		const channelName = room || appId;
-		const resolvedAppId = appId || this.envAgoraAppId();
-		if (!resolvedAppId) {
-			throw new Error("Agora App ID is required");
-		}
-
-		await this.client.join(resolvedAppId, channelName, token, identity);
-		this.hasJoined = true;
-		this.localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack({
-			AEC: this.options.audioCapture?.echoCancellation ?? true,
-			ANS: this.options.audioCapture?.noiseSuppression ?? true,
-			AGC: this.options.audioCapture?.autoGainControl ?? true,
-			encoderConfig: {
-				sampleRate: this.options.audioCapture?.sampleRate,
-				stereo: this.options.audioCapture?.channelCount === 2,
-				bitrate: this.options.publishAudio?.maxBitrate,
-			},
-		});
-		await this.client.publish(this.localAudioTrack);
-	}
-```
-
-- [x] **Step 3: Add `isConnected` method**
-
-```typescript
-	isConnected(): boolean {
-		return this.hasJoined;
-	}
-```
-
-- [x] **Step 4: Change `destroy()` to `async`**
-
-```typescript
-	async destroy(): Promise<void> {
-		await this.leaveRoom();
-		this.client.removeAllListeners();
-	}
-```
-
-- [x] **Step 5: Verify type-check**
-
-Run: `cd packages/sfu-client && npx tsc --noEmit`
-Expected: type errors only in other 3 client files
-
-- [x] **Step 6: Commit**
-
-```bash
-git add packages/sfu-client/src/agora-client.ts
-git commit -m "refactor(sfu-client): AgoraSFUClient uses JoinParams + isConnected + async destroy"
-```
-
----
-
-### Task 14: Update `srs-client.ts`
-
-**Files:**
-- Modify: `packages/sfu-client/src/srs-client.ts`
-
-- [x] **Step 1: Add `JoinParams` to the import**
-
-```typescript
-import type { JoinParams, RemoteAudioTrackLike, RemoteTrackInfo, SFUClient, SFUClientOptions } from "./types";
-```
-
-- [x] **Step 2: Replace `joinRoom` signature and body**
-
-Change the method signature from:
+将签名从：
 
 ```typescript
 	async joinRoom(
@@ -1154,24 +583,24 @@ Change the method signature from:
 	): Promise<void> {
 ```
 
-to:
+替换为：
 
 ```typescript
 	async joinRoom(params: JoinParams): Promise<void> {
 		const { token, serverUrl: url, identity, room, stream, streamToken } = params;
 ```
 
-Keep the rest of the method body unchanged.
+保持方法体其余部分不变。
 
-- [x] **Step 3: Add `isConnected` method**
+- [x] **步骤 3：添加 `isConnected` 方法**
 
 ```typescript
 	isConnected(): boolean {
-		return this.hasJoined && !this.leaving;
+		return this.hasJoined;
 	}
 ```
 
-- [x] **Step 4: Change `destroy()` to `async`**
+- [x] **步骤 4：添加 `async destroy()`**
 
 ```typescript
 	async destroy(): Promise<void> {
@@ -1179,12 +608,142 @@ Keep the rest of the method body unchanged.
 	}
 ```
 
-- [x] **Step 5: Verify type-check**
+可选：保留 `disconnect()` 作为 `destroy()` 的别名，如果现有代码仍在使用它。为了一致性，内部将其路由到 `destroy()` 即可。
 
-Run: `cd packages/sfu-client && npx tsc --noEmit`
-Expected: type errors only in other 2 client files (daily, mediasoup)
+- [x] **步骤 5：验证类型检查**
 
-- [x] **Step 6: Commit**
+运行：`cd packages/sfu-client && npx tsc --noEmit`
+预期：无类型错误
+
+- [x] **步骤 6：提交**
+
+```bash
+git add packages/sfu-client/src/livekit-client.ts
+git commit -m "refactor(sfu-client): LiveKitSFUClient uses JoinParams + isConnected + async destroy"
+```
+
+---
+
+### 任务 10：更新 `agora-client.ts`
+
+**文件：**
+- 修改：`packages/sfu-client/src/agora-client.ts`
+
+- [x] **步骤 1：将 `JoinParams` 添加到导入**
+
+```typescript
+import type { JoinParams, RemoteTrackInfo, SFUClient, SFUClientOptions } from "./types";
+```
+
+- [x] **步骤 2：替换 `joinRoom` 签名和方法体**
+
+将签名从：
+
+```typescript
+	async joinRoom(
+		token: string,
+		appId: string,
+		channel: string,
+		identity: string,
+	): Promise<void> {
+```
+
+替换为：
+
+```typescript
+	async joinRoom(params: JoinParams): Promise<void> {
+		const { token, serverUrl: appId, room: channel, identity } = params;
+```
+
+保持方法体其余部分不变。
+
+- [x] **步骤 3：添加 `isConnected` 方法**
+
+```typescript
+	isConnected(): boolean {
+		return this.hasJoined;
+	}
+```
+
+- [x] **步骤 4：更改 `destroy()` 为 `async`**
+
+```typescript
+	async destroy(): Promise<void> {
+		await this.leaveRoom();
+	}
+```
+
+- [x] **步骤 5：验证类型检查**
+
+运行：`cd packages/sfu-client && npx tsc --noEmit`
+预期：无类型错误
+
+- [x] **步骤 6：提交**
+
+```bash
+git add packages/sfu-client/src/agora-client.ts
+git commit -m "refactor(sfu-client): AgoraSFUClient uses JoinParams + isConnected + async destroy"
+```
+
+---
+
+### 任务 11：更新 `srs-client.ts`
+
+**文件：**
+- 修改：`packages/sfu-client/src/srs-client.ts`
+
+- [x] **步骤 1：将 `JoinParams` 添加到导入**
+
+```typescript
+import type { JoinParams, RemoteTrackInfo, SFUClient, SFUClientOptions } from "./types";
+```
+
+- [x] **步骤 2：替换 `joinRoom` 签名和方法体**
+
+将签名从：
+
+```typescript
+	async joinRoom(
+		token: string,
+		url: string,
+		identity: string,
+		room?: string,
+		stream?: string,
+		streamToken?: string,
+	): Promise<void> {
+```
+
+替换为：
+
+```typescript
+	async joinRoom(params: JoinParams): Promise<void> {
+		const { token, serverUrl: url, identity, room, stream, streamToken } = params;
+```
+
+保持方法体其余部分不变。
+
+- [x] **步骤 3：添加 `isConnected` 方法**
+
+```typescript
+	isConnected(): boolean {
+		return this.hasJoined;
+	}
+```
+
+- [x] **步骤 4：更改 `destroy()` 为 `async`**
+
+```typescript
+	async destroy(): Promise<void> {
+		await this.leaveRoom();
+	}
+```
+
+- [x] **步骤 5：验证类型检查**
+
+运行：`cd packages/sfu-client && npx tsc --noEmit`
+预期：无类型错误
+
+- [x] **步骤 6：提交**
 
 ```bash
 git add packages/sfu-client/src/srs-client.ts
@@ -1193,39 +752,58 @@ git commit -m "refactor(sfu-client): SRSSFUClient uses JoinParams + isConnected 
 
 ---
 
-### Task 15: Update `daily-client.ts`
+### 任务 12：更新 `daily-client.ts`
 
-**Files:**
-- Modify: `packages/sfu-client/src/daily-client.ts`
+**文件：**
+- 修改：`packages/sfu-client/src/daily-client.ts`
 
-- [x] **Step 1: Add `JoinParams` to the import**
+- [x] **步骤 1：将 `JoinParams` 添加到导入**
 
 ```typescript
-import type { JoinParams, RemoteAudioTrackLike, RemoteTrackInfo, SFUClient, SFUClientOptions } from "./types";
+import type { JoinParams, RemoteTrackInfo, SFUClient, SFUClientOptions } from "./types";
 ```
 
-- [x] **Step 2: Replace `joinRoom` signature and body**
+- [x] **步骤 2：替换 `joinRoom` 签名和方法体**
+
+将签名从：
 
 ```typescript
-	async joinRoom(params: JoinParams): Promise<void> {
-		const { token, serverUrl: url, identity, room } = params;
-		const dailyModule = await import("@daily-co/daily-js");
-		const daily = dailyModule.default;
-		const callObject = daily.createCallObject();
-		this.callObject = callObject;
-		this.bindEvents(callObject);
+	async joinRoom(
+		token: string,
+		url: string,
+		identity: string,
+		room?: string,
+	): Promise<void> {
+		if (!this.callObject) this.callObject = DailyIframe.createCallObject();
 		const resolvedURL = this.resolveRoomURL(url, room);
-		await callObject.join({
+		await this.callObject.join({
 			url: resolvedURL,
 			token,
 			userName: identity,
 		});
-		callObject.setLocalAudio(true);
+		this.callObject.setLocalAudio(true);
 		this.hasJoined = true;
 	}
 ```
 
-- [x] **Step 3: Add `isConnected` method**
+替换为：
+
+```typescript
+	async joinRoom(params: JoinParams): Promise<void> {
+		const { token, serverUrl: url, identity, room } = params;
+		if (!this.callObject) this.callObject = DailyIframe.createCallObject();
+		const resolvedURL = this.resolveRoomURL(url, room);
+		await this.callObject.join({
+			url: resolvedURL,
+			token,
+			userName: identity,
+		});
+		this.callObject.setLocalAudio(true);
+		this.hasJoined = true;
+	}
+```
+
+- [x] **步骤 3：添加 `isConnected` 方法**
 
 ```typescript
 	isConnected(): boolean {
@@ -1233,7 +811,7 @@ import type { JoinParams, RemoteAudioTrackLike, RemoteTrackInfo, SFUClient, SFUC
 	}
 ```
 
-- [x] **Step 4: Change `destroy()` to `async`**
+- [x] **步骤 4：将 `destroy()` 改为 `async`**
 
 ```typescript
 	async destroy(): Promise<void> {
@@ -1241,12 +819,12 @@ import type { JoinParams, RemoteAudioTrackLike, RemoteTrackInfo, SFUClient, SFUC
 	}
 ```
 
-- [x] **Step 5: Verify type-check**
+- [x] **步骤 5：验证类型检查**
 
-Run: `cd packages/sfu-client && npx tsc --noEmit`
-Expected: type errors only in mediasoup-client.ts
+运行：`cd packages/sfu-client && npx tsc --noEmit`
+预期：仅 mediasoup-client.ts 中有类型错误
 
-- [x] **Step 6: Commit**
+- [x] **步骤 6：提交**
 
 ```bash
 git add packages/sfu-client/src/daily-client.ts
@@ -1255,20 +833,20 @@ git commit -m "refactor(sfu-client): DailySFUClient uses JoinParams + isConnecte
 
 ---
 
-### Task 16: Update `mediasoup-client.ts`
+### 任务 13：更新 `mediasoup-client.ts`
 
-**Files:**
-- Modify: `packages/sfu-client/src/mediasoup-client.ts`
+**文件：**
+- 修改：`packages/sfu-client/src/mediasoup-client.ts`
 
-- [x] **Step 1: Add `JoinParams` to the import**
+- [x] **步骤 1：将 `JoinParams` 添加到导入**
 
 ```typescript
 import type { JoinParams, RemoteAudioTrackLike, RemoteTrackInfo, SFUClient, SFUClientOptions } from "./types";
 ```
 
-- [x] **Step 2: Replace `joinRoom` signature and body**
+- [x] **步骤 2：替换 `joinRoom` 签名和方法体**
 
-Change the method signature from:
+将方法签名从：
 
 ```typescript
 	async joinRoom(
@@ -1284,7 +862,7 @@ Change the method signature from:
 		this.identity = tokenIdentity || identity;
 ```
 
-to:
+替换为：
 
 ```typescript
 	async joinRoom(params: JoinParams): Promise<void> {
@@ -1296,9 +874,9 @@ to:
 		this.identity = tokenIdentity || identity;
 ```
 
-Keep the rest of the method body unchanged.
+保持方法体其余部分不变。
 
-- [x] **Step 3: Add `isConnected` method**
+- [x] **步骤 3：添加 `isConnected` 方法**
 
 ```typescript
 	isConnected(): boolean {
@@ -1306,19 +884,19 @@ Keep the rest of the method body unchanged.
 	}
 ```
 
-- [x] **Step 4: `destroy()` is already `async` — no change needed**
+- [x] **步骤 4：`destroy()` 已经是 `async` — 无需更改**
 
-- [x] **Step 5: Verify type-check passes**
+- [x] **步骤 5：验证类型检查通过**
 
-Run: `cd packages/sfu-client && npx tsc --noEmit`
-Expected: no type errors
+运行：`cd packages/sfu-client && npx tsc --noEmit`
+预期：无类型错误
 
-- [x] **Step 6: Run sfu-client tests**
+- [x] **步骤 6：运行 sfu-client 测试**
 
-Run: `cd packages/sfu-client && npx vitest run`
-Expected: all PASS
+运行：`cd packages/sfu-client && npx vitest run`
+预期：全部 PASS
 
-- [x] **Step 7: Commit**
+- [x] **步骤 7：提交**
 
 ```bash
 git add packages/sfu-client/src/mediasoup-client.ts
@@ -1327,22 +905,22 @@ git commit -m "refactor(sfu-client): MediaSoupSFUClient uses JoinParams + isConn
 
 ---
 
-### Task 17: Update `useRoomJoinSession.ts` caller
+### 任务 14：更新调用方 `useRoomJoinSession.ts`
 
-**Files:**
-- Modify: `app/web/src/components/room/hooks/useRoomJoinSession.ts`
+**文件：**
+- 修改：`app/web/src/components/room/hooks/useRoomJoinSession.ts`
 
-- [x] **Step 1: Add `JoinParams` to the import from `@gospeak/sfu-client/types`**
+- [x] **步骤 1：将 `JoinParams` 添加到从 `@gospeak/sfu-client/types` 的导入中**
 
-Update the existing import line to include `JoinParams`:
+更新现有的导入行，包含 `JoinParams`：
 
 ```typescript
 import type { SFUClient, JoinParams } from "@gospeak/sfu-client/types";
 ```
 
-- [x] **Step 2: Replace the `joinRoom` call**
+- [x] **步骤 2：替换 `joinRoom` 调用**
 
-Find the existing call (around line 200):
+找到现有的调用（大约在 200 行左右）：
 
 ```typescript
 						await raceAbort(
@@ -1358,7 +936,7 @@ Find the existing call (around line 200):
 						);
 ```
 
-Replace with:
+替换为：
 
 ```typescript
 						const joinParams: JoinParams = {
@@ -1375,12 +953,12 @@ Replace with:
 						);
 ```
 
-- [x] **Step 3: Verify web type-check**
+- [x] **步骤 3：验证 web 类型检查**
 
-Run: `cd app/web && npx tsc --noEmit`
-Expected: no type errors
+运行：`cd app/web && npx tsc --noEmit`
+预期：无类型错误
 
-- [x] **Step 4: Commit**
+- [x] **步骤 4：提交**
 
 ```bash
 git add app/web/src/components/room/hooks/useRoomJoinSession.ts
@@ -1389,26 +967,26 @@ git commit -m "refactor(web): use JoinParams for SFUClient.joinRoom()"
 
 ---
 
-## Final Verification
+## 最终验证
 
-### Task 18: Full build and test sweep
+### 任务 15：完整构建和测试覆盖
 
-- [x] **Step 1: Run Go tests**
+- [x] **步骤 1：运行 Go 测试**
 
-Run: `cd app/server && go test ./...`
-Expected: all PASS
+运行：`cd app/server && go test ./...`
+预期：全部 PASS
 
-- [x] **Step 2: Run sfu-client type-check and tests**
+- [x] **步骤 2：运行 sfu-client 类型检查和测试**
 
-Run: `cd packages/sfu-client && npx tsc --noEmit && npx vitest run`
-Expected: no type errors, all tests PASS
+运行：`cd packages/sfu-client && npx tsc --noEmit && npx vitest run`
+预期：无类型错误，全部测试 PASS
 
-- [x] **Step 3: Run web type-check**
+- [x] **步骤 3：运行 web 类型检查**
 
-Run: `cd app/web && npx tsc --noEmit`
-Expected: no type errors
+运行：`cd app/web && npx tsc --noEmit`
+预期：无类型错误
 
-- [x] **Step 4: Commit (if any remaining fixes)**
+- [x] **步骤 4：提交（如有任何剩余修复）**
 
 ```bash
 git add -A
@@ -1417,8 +995,8 @@ git commit -m "chore: final verification fixes for SFU adapter refactor"
 
 ---
 
-## Out of Scope
+## 不包含范围
 
-The following item from the architecture review is intentionally excluded from this plan:
+以下来自架构审查的项特意排除在本计划之外：
 
-- **P3: `SFUSignalHandler` signal-library decoupling** — Replacing `RegisterRoutes(server *socketio.Server)` with an abstract `SignalConnection` interface is a larger architectural change that touches the signal hub, mediasoup signal handler, and requires a new adapter layer. It can be pursued as a separate plan once Phase 1 and Phase 2 are stable. No current feature is blocked by leaving the socket.io coupling in place.
+- **P3：`SFUSignalHandler` 信号库解耦** — 将 `RegisterRoutes(server *socketio.Server)` 替换为抽象的 `SignalConnection` 接口是一个更大的架构变更，会触及信号 hub、mediasoup 信号处理器，并需要一个新的适配器层。在阶段 1 和阶段 2 稳定后，可以作为单独的计划推进。当前没有功能因保持 socket.io 耦合而被阻塞。

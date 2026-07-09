@@ -236,6 +236,10 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 // OnError 兜底处理 socket.io 层 error（含 OnConnect 返回的 panic error）。
 // 仅记录日志，不做断连等副作用——连接级错误由库自行处理。
 func (h *Hub) OnError(s socketio.Conn, err error) {
+	if s == nil {
+		log.Printf("[Signal] socket error: err=%v", err)
+		return
+	}
 	log.Printf("[Signal] socket error: conn=%s err=%v", s.ID(), err)
 }
 

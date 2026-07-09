@@ -1,61 +1,61 @@
-# Optional NATS Signal Event Bus Implementation Plan
+# 可选的 NATS 信号事件总线实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **对 agent 工作者：** 必选子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐个任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Introduce an optional NATS-backed signal event bus for GOSpeak so Socket.IO room events can stay single-node by default and replicate cleanly across instances when `NATS_URL` is configured.
+**目标：** 为 GOSpeak 引入一个可选的 NATS 后端信号事件总线，使 Socket.IO 房间事件默认保持单节点运行，并在配置了 `NATS_URL` 时跨实例干净地复制。
 
-**Architecture:** Keep room membership, mute state, and SRS stream presence in-process for now; only extract the event fan-out path behind a new `signal.EventBus` interface. The default implementation remains a thin local adapter over `socketio.Server`, while the optional NATS implementation delivers locally and republishes envelopes to other nodes with same-node de-duplication.
+**架构：** 房间成员、静音状态和 SRS 流状态暂时保持在进程内；仅将事件扇出路径提取到新的 `signal.EventBus` 接口后面。默认实现保持为 `socketio.Server` 上的一个薄本地适配器，而可选的 NATS 实现在本地投递并通过同节点去重将信封重新发布到其他节点。
 
-**Tech Stack:** Go 1.26, Gin, go-socket.io, NATS Go client (`github.com/nats-io/nats.go`), Docker Compose, Go `testing`.
+**技术栈：** Go 1.26, Gin, go-socket.io, NATS Go 客户端 (`github.com/nats-io/nats.go`), Docker Compose, Go `testing`。
 
 ---
 
-## Scope Check
+## 范围检查
 
-This plan intentionally covers **one subsystem only**: optional NATS-based **signal event fan-out**.
+本计划仅涵盖**一个子系统**：可选的基于 NATS 的**信号事件扇出**。
 
-It does **not** attempt to distribute these independent concerns in the same change:
+它**不会**在同一更改中尝试分发这些独立关注点：
 
-- room membership state (`Hub.rooms`)
-- SRS stream presence registry (`activeStreams`, `roomStreams`, `streamByIdentity`)
-- SFU provider state reconciliation
+- 房间成员状态 (`Hub.rooms`)
+- SRS 流存在注册表 (`activeStreams`, `roomStreams`, `streamByIdentity`)
+- SFU 提供者状态协调
 
-Those should be separate plans if needed. This plan still produces working, testable software on its own because a single instance keeps using the local event bus, and multi-instance deployments gain replicated `room:*`, `member:*`, and `user:*` broadcasts.
+如果需要，这些应该有单独的计划。本计划仍然可以独立地产生可工作、可测试的软件，因为单实例继续使用本地事件总线，而多实例部署获得复制的 `room:*`、`member:*` 和 `user:*` 广播。
 
-## File Structure
+## 文件结构
 
-| File | Action | Responsibility |
+| 文件 | 操作 | 职责 |
 |------|--------|----------------|
-| `app/server/internal/signal/event_bus.go` | Create | Event bus interface + shared NATS event envelope |
-| `app/server/internal/signal/local_event_bus.go` | Create | Local bus that wraps `socketServer` namespace/room broadcasts |
-| `app/server/internal/signal/local_event_bus_test.go` | Create | Unit tests for local namespace/room publishing |
-| `app/server/internal/signal/event_bus_test_helpers_test.go` | Create | Shared test doubles: `recordingEventBus`, `fakeNATSClient` |
-| `app/server/internal/signal/nats_event_bus.go` | Create | Optional replicated bus: local delivery + NATS publish/subscribe |
-| `app/server/internal/signal/nats_event_bus_test.go` | Create | Unit tests for envelope encoding, remote delivery, self-message ignore |
-| `app/server/internal/signal/hub.go` | Modify | Replace direct `server.Broadcast*` calls with `EventBus` helper methods |
-| `app/server/internal/signal/hub_event_bus_test.go` | Create | Hub tests proving configured event bus is used |
-| `app/server/internal/config/config.go` | Modify | Add `NATSURL` and `NATSSubjectPrefix` env-backed settings |
-| `app/server/internal/signal/nats_client.go` | Create | Real NATS client adapter used by the bus factory |
-| `app/server/internal/signal/bus_factory.go` | Create | Build local or NATS-backed bus from config |
-| `app/server/internal/signal/bus_factory_test.go` | Create | Tests for config-driven bus selection |
-| `app/server/server/gin.go` | Modify | Wire event bus into Hub startup and graceful shutdown |
-| `app/server/go.mod` | Modify | Promote `github.com/nats-io/nats.go` to a direct dependency |
-| `app/server/go.sum` | Modify | Dependency checksum updates after `go mod tidy` |
-| `deploy/docker-compose.example.yml` | Modify | Optional NATS service for local multi-instance testing |
-| `ARCHITECTURE.md` | Modify | Document the new optional event bus and env variables |
+| `app/server/internal/signal/event_bus.go` | 创建 | 事件总线接口 + 共享 NATS 事件信封 |
+| `app/server/internal/signal/local_event_bus.go` | 创建 | 包装 `socketServer` 命名空间/房间广播的本地总线 |
+| `app/server/internal/signal/local_event_bus_test.go` | 创建 | 本地命名空间/房间发布的单元测试 |
+| `app/server/internal/signal/event_bus_test_helpers_test.go` | 创建 | 共享测试替身：`recordingEventBus`、`fakeNATSClient` |
+| `app/server/internal/signal/nats_event_bus.go` | 创建 | 可选复制总线：本地投递 + NATS 发布/订阅 |
+| `app/server/internal/signal/nats_event_bus_test.go` | 创建 | 信封编码、远程投递、自消息忽略的单元测试 |
+| `app/server/internal/signal/hub.go` | 修改 | 将直接的 `server.Broadcast*` 调用替换为 `EventBus` 辅助方法 |
+| `app/server/internal/signal/hub_event_bus_test.go` | 创建 | 证明配置的事件总线被使用的 Hub 测试 |
+| `app/server/internal/config/config.go` | 修改 | 添加 `NATSURL` 和 `NATSSubjectPrefix` 环境变量支持的设置 |
+| `app/server/internal/signal/nats_client.go` | 创建 | 总线工厂使用的真实 NATS 客户端适配器 |
+| `app/server/internal/signal/bus_factory.go` | 创建 | 根据配置构建本地或 NATS 后端总线 |
+| `app/server/internal/signal/bus_factory_test.go` | 创建 | 配置驱动总线选择的测试 |
+| `app/server/server/gin.go` | 修改 | 将事件总线接入 Hub 启动和优雅关闭 |
+| `app/server/go.mod` | 修改 | 将 `github.com/nats-io/nats.go` 提升为直接依赖 |
+| `app/server/go.sum` | 修改 | `go mod tidy` 后的依赖校验和更新 |
+| `deploy/docker-compose.example.yml` | 修改 | 本地多实例测试的可选 NATS 服务 |
+| `ARCHITECTURE.md` | 修改 | 记录新的可选事件总线和环境变量 |
 
 ---
 
-### Task 1: Create the signal event bus contract and local implementation
+### 任务 1：创建信号事件总线契约和本地实现
 
-**Files:**
-- Create: `app/server/internal/signal/event_bus.go`
-- Create: `app/server/internal/signal/local_event_bus.go`
-- Test: `app/server/internal/signal/local_event_bus_test.go`
+**文件：**
+- 创建：`app/server/internal/signal/event_bus.go`
+- 创建：`app/server/internal/signal/local_event_bus.go`
+- 测试：`app/server/internal/signal/local_event_bus_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **步骤 1：编写会失败的测试**
 
-Create `app/server/internal/signal/local_event_bus_test.go`:
+创建 `app/server/internal/signal/local_event_bus_test.go`：
 
 ```go
 package signal
@@ -98,52 +98,46 @@ func TestLocalEventBus_PublishRoom_BroadcastsToRoom(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("expected 1 room payload, got %d", len(got))
 	}
-	data, ok := got[0].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected map payload, got %T", got[0])
-	}
-	if data["identity"] != "alice" {
-		t.Fatalf("expected identity alice, got %#v", data["identity"])
+	if got[0].(map[string]interface{})["identity"] != "alice" {
+		t.Fatalf("expected identity alice, got %#v", got[0])
 	}
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **步骤 2：运行测试确认其失败**
 
-Run: `cd app/server && go test ./internal/signal -run TestLocalEventBus -v`
+运行：`cd app/server && go test ./internal/signal -run TestLocalEventBus -v`
 
-Expected: FAIL with `undefined: NewLocalEventBus`
+预期：FAIL，报 `undefined: NewLocalEventBus` 等
 
-- [ ] **Step 3: Write the minimal implementation**
+- [ ] **步骤 3：编写最小化实现**
 
-Create `app/server/internal/signal/event_bus.go`:
+创建 `app/server/internal/signal/event_bus.go`：
 
 ```go
 package signal
 
-import "encoding/json"
-
-type EventBus interface {
-	PublishNamespace(event string, data interface{}) error
-	PublishRoom(room, event string, data interface{}) error
-	Close() error
-}
+const (
+	EventScopeNamespace = "namespace"
+	EventScopeRoom      = "room"
+)
 
 type EventEnvelope struct {
-	NodeID string          `json:"nodeId"`
+	NodeID string          `json:"node_id"`
 	Scope  string          `json:"scope"`
 	Room   string          `json:"room,omitempty"`
 	Event  string          `json:"event"`
 	Data   json.RawMessage `json:"data"`
 }
 
-const (
-	EventScopeNamespace = "namespace"
-	EventScopeRoom      = "room"
-)
+type EventBus interface {
+	PublishNamespace(event string, data interface{}) error
+	PublishRoom(room, event string, data interface{}) error
+	Close() error
+}
 ```
 
-Create `app/server/internal/signal/local_event_bus.go`:
+创建 `app/server/internal/signal/local_event_bus.go`：
 
 ```go
 package signal
@@ -175,33 +169,33 @@ func (b *LocalEventBus) Close() error {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **步骤 4：运行测试确认通过**
 
-Run: `cd app/server && go test ./internal/signal -run TestLocalEventBus -v`
+运行：`cd app/server && go test ./internal/signal -run TestLocalEventBus -v`
 
-Expected: PASS
+预期：PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add app/server/internal/signal/event_bus.go \
         app/server/internal/signal/local_event_bus.go \
         app/server/internal/signal/local_event_bus_test.go
-git commit -m "feat(signal): add local event bus abstraction"
+git commit -m "feat(signal): add event bus interface and local implementation"
 ```
 
 ---
 
-### Task 2: Add the NATS-backed replicated event bus
+### 任务 2：创建 NATS 事件总线实现
 
-**Files:**
-- Create: `app/server/internal/signal/event_bus_test_helpers_test.go`
-- Create: `app/server/internal/signal/nats_event_bus.go`
-- Test: `app/server/internal/signal/nats_event_bus_test.go`
+**文件：**
+- 创建：`app/server/internal/signal/event_bus_test_helpers_test.go`
+- 创建：`app/server/internal/signal/nats_event_bus.go`
+- 测试：`app/server/internal/signal/nats_event_bus_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **步骤 1：编写会失败的测试**
 
-Create `app/server/internal/signal/event_bus_test_helpers_test.go`:
+创建 `app/server/internal/signal/event_bus_test_helpers_test.go`：
 
 ```go
 package signal
@@ -303,7 +297,7 @@ func (c *fakeNATSClient) Close() error {
 }
 ```
 
-Create `app/server/internal/signal/nats_event_bus_test.go`:
+创建 `app/server/internal/signal/nats_event_bus_test.go`：
 
 ```go
 package signal
@@ -421,15 +415,15 @@ func TestNATSEventBus_IgnoresOwnMessages(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **步骤 2：运行测试确认其失败**
 
-Run: `cd app/server && go test ./internal/signal -run TestNATSEventBus -v`
+运行：`cd app/server && go test ./internal/signal -run TestNATSEventBus -v`
 
-Expected: FAIL with `undefined: NewNATSEventBus`
+预期：FAIL，报 `undefined: NewNATSEventBus`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [ ] **步骤 3：编写最小化实现**
 
-Create `app/server/internal/signal/nats_event_bus.go`:
+创建 `app/server/internal/signal/nats_event_bus.go`：
 
 ```go
 package signal
@@ -572,13 +566,13 @@ func (b *NATSEventBus) roomSubject() string {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **步骤 4：运行测试确认通过**
 
-Run: `cd app/server && go test ./internal/signal -run TestNATSEventBus -v`
+运行：`cd app/server && go test ./internal/signal -run TestNATSEventBus -v`
 
-Expected: PASS
+预期：PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add app/server/internal/signal/event_bus_test_helpers_test.go \
@@ -589,15 +583,15 @@ git commit -m "feat(signal): add optional nats-backed replicated event bus"
 
 ---
 
-### Task 3: Teach `signal.Hub` to publish through the event bus
+### 任务 3：让 `signal.Hub` 通过事件总线发布
 
-**Files:**
-- Modify: `app/server/internal/signal/hub.go`
-- Test: `app/server/internal/signal/hub_event_bus_test.go`
+**文件：**
+- 修改：`app/server/internal/signal/hub.go`
+- 测试：`app/server/internal/signal/hub_event_bus_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **步骤 1：编写会失败的测试**
 
-Create `app/server/internal/signal/hub_event_bus_test.go`:
+创建 `app/server/internal/signal/hub_event_bus_test.go`：
 
 ```go
 package signal
@@ -648,15 +642,15 @@ func TestHub_OnMemberMicState_UsesConfiguredEventBus(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **步骤 2：运行测试确认其失败**
 
-Run: `cd app/server && go test ./internal/signal -run 'TestHub_.*ConfiguredEventBus' -v`
+运行：`cd app/server && go test ./internal/signal -run 'TestHub_.*ConfiguredEventBus' -v`
 
-Expected: FAIL with `hub.SetEventBus undefined` or missing event bus behavior
+预期：FAIL，报 `hub.SetEventBus undefined` 或缺少事件总线行为
 
-- [ ] **Step 3: Add the new Hub field, setter, and helper methods**
+- [ ] **步骤 3：添加新的 Hub 字段、setter 和辅助方法**
 
-In `app/server/internal/signal/hub.go`, add the `eventBus` field to `Hub`:
+在 `app/server/internal/signal/hub.go` 中，向 `Hub` 添加 `eventBus` 字段：
 
 ```go
 type Hub struct {
@@ -679,7 +673,7 @@ type Hub struct {
 }
 ```
 
-Add the setter below `SetServer`:
+在 `SetServer` 下方添加 setter：
 
 ```go
 func (h *Hub) SetEventBus(bus EventBus) {
@@ -687,7 +681,7 @@ func (h *Hub) SetEventBus(bus EventBus) {
 }
 ```
 
-Add the publish helpers near the existing `BroadcastToRoom` method:
+在现有的 `BroadcastToRoom` 方法附近添加发布辅助方法：
 
 ```go
 func (h *Hub) publishNamespace(event string, data interface{}) {
@@ -721,7 +715,7 @@ func (h *Hub) BroadcastToRoom(room string, event string, data interface{}) {
 }
 ```
 
-Update `BroadcastMute` and `BroadcastUnmute` to use the helper:
+更新 `BroadcastMute` 和 `BroadcastUnmute` 以使用辅助方法：
 
 ```go
 func (h *Hub) BroadcastMute(userID uint, info *MuteInfo) {
@@ -747,11 +741,11 @@ func (h *Hub) BroadcastUnmute(userID uint) {
 }
 ```
 
-- [ ] **Step 4: Replace direct Hub broadcasts with helper calls**
+- [ ] **步骤 4：将 Hub 中的直接广播调用替换为辅助方法**
 
-In `app/server/internal/signal/hub.go`, replace each direct namespace/room broadcast in Hub logic with the helper methods below.
+在 `app/server/internal/signal/hub.go` 中，将 Hub 逻辑中每个直接的命名空间/房间广播替换为下面的辅助方法。
 
-Replace:
+替换：
 
 ```go
 h.server.BroadcastToNamespace("/", EventMemberLeft, map[string]interface{}{
@@ -761,7 +755,7 @@ h.server.BroadcastToNamespace("/", EventMemberLeft, map[string]interface{}{
 })
 ```
 
-With:
+改为：
 
 ```go
 h.publishNamespace(EventMemberLeft, map[string]interface{}{
@@ -771,31 +765,31 @@ h.publishNamespace(EventMemberLeft, map[string]interface{}{
 })
 ```
 
-Replace:
+替换：
 
 ```go
 h.server.BroadcastToNamespace("/", EventRoomList, h.GetRooms())
 ```
 
-With:
+改为：
 
 ```go
 h.publishNamespace(EventRoomList, h.GetRooms())
 ```
 
-Replace:
+替换：
 
 ```go
 h.server.BroadcastToNamespace("/", EventRoomUpdated, info)
 ```
 
-With:
+改为：
 
 ```go
 h.publishNamespace(EventRoomUpdated, info)
 ```
 
-Replace:
+替换：
 
 ```go
 h.server.BroadcastToRoom("/", req.Room, EventRoomKicked, map[string]interface{}{
@@ -804,7 +798,7 @@ h.server.BroadcastToRoom("/", req.Room, EventRoomKicked, map[string]interface{}{
 })
 ```
 
-With:
+改为：
 
 ```go
 h.publishRoom(req.Room, EventRoomKicked, map[string]interface{}{
@@ -813,7 +807,7 @@ h.publishRoom(req.Room, EventRoomKicked, map[string]interface{}{
 })
 ```
 
-Then replace the remaining direct calls exactly as follows:
+然后按以下方式替换其余的直接调用：
 
 ```go
 // OnDisconnect
@@ -868,15 +862,15 @@ h.server.BroadcastToNamespace("/", EventRoomUpdated, info)
 // => h.publishNamespace(EventRoomUpdated, info)
 ```
 
-After these replacements, the only direct broadcast calls left in `hub.go` should be the local fallback inside `publishNamespace` and `publishRoom`.
+这些替换完成后，`hub.go` 中留给直接的广播调用的只有在 `publishNamespace` 和 `publishRoom` 内部的本地回退。
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [ ] **步骤 5：运行测试确认通过**
 
-Run: `cd app/server && go test ./internal/signal -run 'TestHub_.*ConfiguredEventBus' -v`
+运行：`cd app/server && go test ./internal/signal -run 'TestHub_.*ConfiguredEventBus' -v`
 
-Expected: PASS
+预期：PASS
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```bash
 git add app/server/internal/signal/hub.go \
@@ -886,19 +880,19 @@ git commit -m "refactor(signal): route hub broadcasts through event bus"
 
 ---
 
-### Task 4: Add config-driven event bus construction and the real NATS client adapter
+### 任务 4：添加配置驱动的事件总线构建和真实 NATS 客户端适配器
 
-**Files:**
-- Modify: `app/server/internal/config/config.go`
-- Create: `app/server/internal/signal/nats_client.go`
-- Create: `app/server/internal/signal/bus_factory.go`
-- Test: `app/server/internal/signal/bus_factory_test.go`
-- Modify: `app/server/go.mod`
-- Modify: `app/server/go.sum`
+**文件：**
+- 修改：`app/server/internal/config/config.go`
+- 创建：`app/server/internal/signal/nats_client.go`
+- 创建：`app/server/internal/signal/bus_factory.go`
+- 测试：`app/server/internal/signal/bus_factory_test.go`
+- 修改：`app/server/go.mod`
+- 修改：`app/server/go.sum`
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **步骤 1：编写会失败的测试**
 
-Create `app/server/internal/signal/bus_factory_test.go`:
+创建 `app/server/internal/signal/bus_factory_test.go`：
 
 ```go
 package signal
@@ -969,29 +963,29 @@ func TestBuildEventBus_WithNATS_ReturnsReplicatedBus(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **步骤 2：运行测试确认其失败**
 
-Run: `cd app/server && go test ./internal/signal -run TestBuildEventBus -v`
+运行：`cd app/server && go test ./internal/signal -run TestBuildEventBus -v`
 
-Expected: FAIL with `undefined: BuildEventBus` and missing config fields
+预期：FAIL，报 `undefined: BuildEventBus` 和缺失配置字段
 
-- [ ] **Step 3: Implement config fields, the real NATS client, and the factory**
+- [ ] **步骤 3：实现配置字段、真实 NATS 客户端和工厂**
 
-In `app/server/internal/config/config.go`, add the new fields to `Config`:
+在 `app/server/internal/config/config.go` 中，向 `Config` 添加新字段：
 
 ```go
 	NATSURL            string
 	NATSSubjectPrefix  string
 ```
 
-In the `Load()` return struct, add:
+在 `Load()` 返回的结构体中添加：
 
 ```go
 		NATSURL:            getEnv("NATS_URL", ""),
 		NATSSubjectPrefix:  getEnv("NATS_SUBJECT_PREFIX", "gospeak"),
 ```
 
-Create `app/server/internal/signal/nats_client.go`:
+创建 `app/server/internal/signal/nats_client.go`：
 
 ```go
 package signal
@@ -1046,7 +1040,7 @@ func (c *realNATSClient) Close() error {
 }
 ```
 
-Create `app/server/internal/signal/bus_factory.go`:
+创建 `app/server/internal/signal/bus_factory.go`：
 
 ```go
 package signal
@@ -1076,19 +1070,19 @@ func BuildEventBus(cfg *config.Config, server socketServer, nodeID string, dial 
 }
 ```
 
-- [ ] **Step 4: Promote the NATS dependency to a direct module dependency**
+- [ ] **步骤 4：将 NATS 依赖提升为直接模块依赖**
 
-Run: `cd app/server && go mod tidy`
+运行：`cd app/server && go mod tidy`
 
-Expected: `app/server/go.mod` keeps `github.com/nats-io/nats.go` as a direct dependency and updates `go.sum` if needed
+预期：`app/server/go.mod` 保持 `github.com/nats-io/nats.go` 为直接依赖，并按需更新 `go.sum`
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [ ] **步骤 5：运行测试确认通过**
 
-Run: `cd app/server && go test ./internal/signal -run TestBuildEventBus -v`
+运行：`cd app/server && go test ./internal/signal -run TestBuildEventBus -v`
 
-Expected: PASS
+预期：PASS
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```bash
 git add app/server/internal/config/config.go \
@@ -1102,28 +1096,28 @@ git commit -m "feat(signal): build local or nats event bus from config"
 
 ---
 
-### Task 5: Wire the bus into server startup and document deployment
+### 任务 5：将总线接入服务器启动并编写部署文档
 
-**Files:**
-- Modify: `app/server/server/gin.go`
-- Modify: `deploy/docker-compose.example.yml`
-- Modify: `ARCHITECTURE.md`
+**文件：**
+- 修改：`app/server/server/gin.go`
+- 修改：`deploy/docker-compose.example.yml`
+- 修改：`ARCHITECTURE.md`
 
-- [ ] **Step 1: Wire the event bus into server startup and shutdown**
+- [ ] **步骤 1：将事件总线接入服务器启动和关闭**
 
-In `app/server/server/gin.go`, add the UUID import:
+在 `app/server/server/gin.go` 中，添加 UUID 导入：
 
 ```go
 	"github.com/google/uuid"
 ```
 
-Right after `sioServer := socketio.NewServer(...)`, define a close function default:
+在 `sioServer := socketio.NewServer(...)` 之后，定义一个关闭函数的默认值：
 
 ```go
 	closeEventBus := func() error { return nil }
 ```
 
-Then replace the current Hub setup block with the following exact sequence:
+然后将当前的 Hub 设置块替换为以下精确顺序：
 
 ```go
 	signalHub := signal.NewHub(roomSvc, muteSvc, userSvc, permSvc)
@@ -1148,7 +1142,7 @@ Then replace the current Hub setup block with the following exact sequence:
 	signalHub.SetupRoutes(sioServer)
 ```
 
-In the graceful shutdown goroutine, close the event bus after closing Socket.IO:
+在优雅关闭的 goroutine 中，在关闭 Socket.IO 后关闭事件总线：
 
 ```go
 		if err := sioServer.Close(); err != nil {
@@ -1161,9 +1155,9 @@ In the graceful shutdown goroutine, close the event bus after closing Socket.IO:
 		}
 ```
 
-- [ ] **Step 2: Add an optional NATS service to local deployment**
+- [ ] **步骤 2：为本地部署添加可选的 NATS 服务**
 
-In `deploy/docker-compose.example.yml`, add the service directly below `services:`:
+在 `deploy/docker-compose.example.yml` 中，直接在 `services:` 下方添加服务：
 
 ```yaml
   nats:
@@ -1175,35 +1169,35 @@ In `deploy/docker-compose.example.yml`, add the service directly below `services
       - "8222:8222"
 ```
 
-- [ ] **Step 3: Document the new optional runtime path**
+- [ ] **步骤 3：编写新的可选运行时路径文档**
 
-In `ARCHITECTURE.md`, add this section near the backend runtime/deployment section:
+在 `ARCHITECTURE.md` 中，在后端运行时/部署部分附近添加此章节：
 
 ````markdown
-## Optional NATS Signal Event Bus
+## 可选的 NATS 信号事件总线
 
-GOSpeak now supports an optional NATS-backed signal event bus.
+GOSpeak 现在支持一个可选的基于 NATS 的信号事件总线。
 
-- Default behavior stays unchanged: if `NATS_URL` is empty, Socket.IO events are broadcast only inside the current process.
-- If `NATS_URL` is set, the server still delivers events to its own local sockets first, then republishes a JSON envelope to NATS so peer GOSpeak instances can replay the same event to their own Socket.IO clients.
-- This change does **not** distribute `Hub.rooms`, mute state, or SRS stream presence yet. It only extracts the broadcast path.
+- 默认行为保持不变：如果 `NATS_URL` 为空，Socket.IO 事件仅在当前进程内广播。
+- 如果设置了 `NATS_URL`，服务器仍然先将事件投递到自己的本地 Socket，然后将 JSON 信封重新发布到 NATS，以便对等 GOSpeak 实例可以将同一事件重放到它们自己的 Socket.IO 客户端。
+- 此更改**尚未**分发 `Hub.rooms`、静音状态或 SRS 流状态。它仅提取了广播路径。
 
-Environment variables:
+环境变量：
 
 ```env
-NATS_URL=""                    # empty disables NATS; single-instance default
-NATS_SUBJECT_PREFIX="gospeak"  # namespace prefix for signal subjects
+NATS_URL=""                    # 空值禁用 NATS；单实例默认值
+NATS_SUBJECT_PREFIX="gospeak"  # 信号主题的命名空间前缀
 ```
 
-Subject layout:
+主题布局：
 
 - `gospeak.signal.namespace`
 - `gospeak.signal.room`
 ````
 
-- [ ] **Step 4: Run the verification commands**
+- [ ] **步骤 4：运行验证命令**
 
-Run:
+运行：
 
 ```bash
 cd app/server && go test ./internal/signal -run 'Test(LocalEventBus|NATSEventBus|BuildEventBus|Hub_.*ConfiguredEventBus)' -v
@@ -1211,13 +1205,13 @@ cd app/server && go build ./...
 cd deploy && docker compose -f docker-compose.example.yml config >/tmp/gospeak-compose.txt
 ```
 
-Expected:
+预期：
 
-- targeted signal tests PASS
-- `go build ./...` succeeds
-- `docker compose config` exits 0 and includes the `nats` service
+- 目标信号测试全部 PASS
+- `go build ./...` 成功
+- `docker compose config` 退出码 0 且输出中包含 `nats` 服务
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add app/server/server/gin.go \
@@ -1228,34 +1222,34 @@ git commit -m "feat(signal): wire optional nats event bus into server runtime"
 
 ---
 
-## Self-Review
+## 自我审查
 
-### 1. Spec coverage
+### 1. 规范覆盖范围
 
-This plan covers:
+本计划涵盖：
 
-- extracting signal event fan-out behind a stable interface
-- preserving the current single-node path as the default
-- adding optional NATS replication with same-node de-duplication
-- wiring configuration, startup, shutdown, and deployment docs
+- 将信号事件扇出提取到稳定接口后面
+- 保持当前单节点路径作为默认行为
+- 添加可选的 NATS 复制（带同节点去重）
+- 接入配置、启动、关闭和部署文档
 
-Intentionally excluded by design:
+设计上特意排除：
 
-- distributed room membership state
-- distributed SRS active stream registry
-- cross-instance moderation state reconciliation
+- 分布式房间成员状态
+- 分布式 SRS 活动流注册表
+- 跨实例的审核状态协调
 
-Those are separate subsystems and should get their own plans.
+这些是独立的子系统，应该有自己的计划。
 
-### 2. Placeholder scan
+### 2. 占位符检查
 
-Checked for: `TBD`, `TODO`, `implement later`, `appropriate error handling`, `similar to Task N`.
+检查了：`TBD`、`TODO`、`implement later`、`appropriate error handling`、`similar to Task N`。
 
-Result: none remain.
+结果：无残留占位符。
 
-### 3. Type consistency
+### 3. 类型一致性
 
-Verified consistent names across tasks:
+验证了跨任务的一致命名：
 
 - `EventBus`
 - `EventEnvelope`
