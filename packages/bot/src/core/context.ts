@@ -21,6 +21,9 @@ export interface RoomClient {
 	listRooms(): Promise<RoomRef[]>;
 	getMembers(roomId: string): Promise<MemberRef[]>;
 	createRoom(name: string, limit?: number): Promise<RoomRef>;
+	join(name: string, opts?: { sfu?: boolean }): Promise<void>;
+	leave(name: string): void;
+	joined(): string[];
 }
 
 export interface VoiceClient {
