@@ -14,6 +14,7 @@ type User struct {
 	Avatar        string    `gorm:"default:''" json:"avatar"`
 	Email         string    `gorm:"size:128;index" json:"email"`
 	EmailVerified bool      `gorm:"default:false" json:"email_verified"`
+	IsBot         bool      `gorm:"default:false" json:"is_bot"`
 	Password      string    `json:"-"`
 	Role          string    `gorm:"default:user" json:"role"`
 	TokenVersion  uint      `gorm:"default:0" json:"token_version"`
