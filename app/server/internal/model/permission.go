@@ -34,6 +34,8 @@ const (
 	PermSignalKick = permcode.PermSignalKick
 	PermMuteManage = permcode.PermMuteManage
 	PermSFUManage  = permcode.PermSFUManage
+
+	PermBotManage = permcode.PermBotManage
 )
 
 // DefaultPermissions 种子权限列表
@@ -53,6 +55,7 @@ var DefaultPermissions = []Permission{
 	{Code: PermSignalKick, Name: "踢出房间", Description: "将用户从语音房间中踢出"},
 	{Code: PermMuteManage, Name: "管理禁言", Description: "对用户进行全局禁言/取消禁言/查看禁言列表"},
 	{Code: PermSFUManage, Name: "管理 SFU", Description: "查看和修改 SFU 提供商配置"},
+	{Code: PermBotManage, Name: "管理 Bot 密钥", Description: "创建、查看、吊销 Bot 专用 API Key"},
 }
 
 // RolePermission 角色-权限关联表
@@ -72,7 +75,7 @@ var DefaultRolePermissions = map[string][]string{
 		PermRoomCreate, PermRoomRead, PermRoomUpdate, PermRoomDelete,
 		PermUserRead, PermUserUpdate, PermUserDelete,
 		PermRoleRead, PermRoleManage,
-		PermSignalKick, PermMuteManage, PermSFUManage,
+		PermSignalKick, PermMuteManage, PermSFUManage, PermBotManage,
 	},
 	"user": {
 		PermRoomCreate, PermRoomRead,
