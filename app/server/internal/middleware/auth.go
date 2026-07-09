@@ -168,11 +168,6 @@ func RequirePermission(permCode string) gin.HandlerFunc {
 			return
 		}
 
-		if checkBotPermissions(c, permCode) {
-			c.Next()
-			return
-		}
-
 		pkg.Fail(c, pkg.FORBIDDEN)
 		c.Abort()
 	}
@@ -183,19 +178,13 @@ func RequirePermission(permCode string) gin.HandlerFunc {
 // 与 JWT 中的 username 比对。
 func RequireOwnerOrPermission(ownerContextKey, permCode string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 先尝试权限码放行
 		role, _ := c.Get("role")
 		roleStr, _ := role.(string)
 		if permChecker != nil && permChecker.HasPermission(roleStr, permCode) {
 			c.Next()
 			return
 		}
-		if checkBotPermissions(c, permCode) {
-			c.Next()
-			return
-		}
 
-		// 再尝试归属放行
 		owner, ownerOK := c.Get(ownerContextKey)
 		username, usernameOK := c.Get("username")
 		ownerStr, ownerIsString := owner.(string)
@@ -249,71 +238,4 @@ func CORS() gin.HandlerFunc {
 
 		c.Next()
 	}
-}
-
-// checkBotPermissions 当请求由 Bot API Key 鉴权时，按注入的权限集合判断是否满足 permCode。
-func checkBotPermissions(c *gin.Context, permCode string) bool {
-	v, ok := c.Get("bot_permissions")
-	if !ok {
-		return false
-	}
-	perms, ok := v.([]string)
-	if !ok {
-		return false
-	}
-	for _, p := range perms {
-		if p == permCode {
-			return true
-		}
-	}
-	return false
-}
-
-// BotKeyAuth 鉴权中间件：支持 Bot API Key 与 JWT 两种身份。
-// 若 Authorization 头以 gk_ 前缀开头，按 Bot API Key 校验并注入受限权限集合；
-// 否则回退到标准 JWT 校验。两者均不通过时返回 TOKEN 类错误。
-func BotKeyAuth(botKeyResolver BotKeyResolver) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		tokenHeader := c.Request.Header.Get("Authorization")
-		if tokenHeader == "" {
-			pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
-			c.Abort()
-			return
-		}
-
-		tokenStr := strings.TrimPrefix(tokenHeader, "Bearer ")
-		if tokenStr == tokenHeader {
-			tokenStr = tokenHeader
-		}
-
-		if strings.HasPrefix(tokenStr, "gk_") {
-			perms, ok := botKeyResolver.Resolve(tokenStr)
-			if !ok {
-				pkg.Fail(c, pkg.TOKEN_WRONG)
-				c.Abort()
-				return
-			}
-			c.Set("auth_type", "bot")
-			c.Set("bot_permissions", perms)
-			c.Set("username", "bot")
-			c.Set("role", "")
-			c.Set("user_uuid", "")
-			c.Next()
-			return
-		}
-
-		claims, code := VerifyToken(tokenStr)
-		if code != pkg.SUCCESS {
-			pkg.Fail(c, code)
-			c.Abort()
-			return
-		}
-		setClaimsContext(c, claims)
-		c.Next()
-	}
-}
-
-// BotKeyResolver 由 service 实现，按明文 key 解析有效权限集合。
-type BotKeyResolver interface {
-	Resolve(plain string) ([]string, bool)
 }
