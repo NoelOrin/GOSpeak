@@ -7,18 +7,25 @@ import {
 	LogLevel,
 	Room,
 	RoomEvent,
+	DisconnectReason,
 	Track,
 	VideoPresets,
 	setLogLevel,
 } from "livekit-client";
-import type { JoinParams, RemoteTrackInfo, SFUClient, SFUClientOptions } from "./types";
+import type {
+	JoinParams,
+	RemoteTrackInfo,
+	SFUClient,
+	SFUClientOptions,
+	SFUDisconnectInfo,
+} from "./types";
 
 export class LiveKitSFUClient implements SFUClient {
 	private room: Room;
 	private onActiveSpeakersCb?: (ids: string[]) => void;
 	private onRemoteAudioTrackCb?: (info: RemoteTrackInfo) => void;
 	private onRemoteAudioTrackRemovedCb?: (identity: string) => void;
-	private onDisconnectedCb?: () => void;
+	private onDisconnectedCb?: (info?: SFUDisconnectInfo) => void;
 	private onReconnectingCb?: () => void;
 	private onReconnectedCb?: () => void;
 	private hasLeft = false;
@@ -52,8 +59,26 @@ export class LiveKitSFUClient implements SFUClient {
 		});
 
 		this.room
-			.on(RoomEvent.Disconnected, () => {
-				this.onDisconnectedCb?.();
+			.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
+				if (this.hasLeft) return;
+				const unrecoverable = isUnrecoverableDisconnect(reason);
+				if (unrecoverable) {
+					// 不可恢复断连（如重复身份）：立即强制断开，阻止 LiveKit 用同一 token 自动重连
+					// 再次创建 duplicate participant 进而形成踢人风暴。close() 异步，提前置 hasLeft
+					// 防止 WebSocket onClose 触发的 handleDisconnect 竞态重连。
+					this.hasLeft = true;
+					this.room.removeAllListeners();
+					this.onReconnectingCb = undefined;
+					this.onReconnectedCb = undefined;
+					this.onActiveSpeakersCb = undefined;
+					this.onRemoteAudioTrackCb = undefined;
+					this.onRemoteAudioTrackRemovedCb = undefined;
+					void this.room.disconnect().catch(() => {});
+				}
+				this.onDisconnectedCb?.({
+					reason: reasonName(reason),
+					unrecoverable,
+				});
 			})
 			.on(RoomEvent.Reconnecting, () => {
 				this.onReconnectingCb?.();
@@ -152,7 +177,7 @@ export class LiveKitSFUClient implements SFUClient {
 		return out;
 	}
 
-	onDisconnected(cb: () => void): void {
+	onDisconnected(cb: (info?: SFUDisconnectInfo) => void): void {
 		this.onDisconnectedCb = cb;
 	}
 
@@ -171,4 +196,35 @@ export class LiveKitSFUClient implements SFUClient {
 	async destroy(): Promise<void> {
 		await this.leaveRoom();
 	}
+}
+
+const UNRECOVERABLE_DISCONNECT_REASONS = new Set<DisconnectReason>([
+	DisconnectReason.DUPLICATE_IDENTITY,
+	DisconnectReason.PARTICIPANT_REMOVED,
+	DisconnectReason.ROOM_DELETED,
+	DisconnectReason.JOIN_FAILURE,
+	DisconnectReason.ROOM_CLOSED,
+	DisconnectReason.USER_UNAVAILABLE,
+	DisconnectReason.USER_REJECTED,
+]);
+
+function isUnrecoverableDisconnect(reason?: DisconnectReason): boolean {
+	return !!reason && UNRECOVERABLE_DISCONNECT_REASONS.has(reason);
+}
+
+const DISCONNECT_REASON_NAMES: Partial<Record<DisconnectReason, string>> = {
+	[DisconnectReason.UNKNOWN_REASON]: "UNKNOWN_REASON",
+	[DisconnectReason.CLIENT_INITIATED]: "CLIENT_INITIATED",
+	[DisconnectReason.DUPLICATE_IDENTITY]: "DUPLICATE_IDENTITY",
+	[DisconnectReason.PARTICIPANT_REMOVED]: "PARTICIPANT_REMOVED",
+	[DisconnectReason.ROOM_DELETED]: "ROOM_DELETED",
+	[DisconnectReason.JOIN_FAILURE]: "JOIN_FAILURE",
+	[DisconnectReason.ROOM_CLOSED]: "ROOM_CLOSED",
+	[DisconnectReason.USER_UNAVAILABLE]: "USER_UNAVAILABLE",
+	[DisconnectReason.USER_REJECTED]: "USER_REJECTED",
+};
+
+function reasonName(reason?: DisconnectReason): string | undefined {
+	if (reason == null || reason === DisconnectReason.CLIENT_INITIATED) return undefined;
+	return DISCONNECT_REASON_NAMES[reason] ?? "UNKNOWN_REASON";
 }
