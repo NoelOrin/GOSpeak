@@ -111,7 +111,7 @@ export class GOSpeakSocketClient {
 	joinRoomSFU(room: string, identity: string, stream?: string): Promise<{ ok: boolean; members: unknown[] }> {
 		if (this.joinedRooms.has(room)) {
 			this.logger.debug(`Already in room ${room}, skipping SFU join`);
-			return Promise.resolve({ ok: true, members: [] });
+			return Promise.reject(new Error(`already in room ${room}`));
 		}
 		return new Promise((resolve, reject) => {
 			if (!this.socket) {
@@ -131,6 +131,10 @@ export class GOSpeakSocketClient {
 	}
 
 	kickMember(room: string, targetIdentity: string): void {
+		if (!this.connected) {
+			this.logger.warn("socket not connected; cannot kick member");
+			return;
+		}
 		this.socket?.emit("room:kick", { room, targetIdentity });
 	}
 
@@ -185,7 +189,7 @@ export class GOSpeakSocketClient {
 		// room:updated → RoomInfo (member count changed)
 		this.socket.on("room:updated", (raw: any) => {
 			this.emit({
-				eventType: EventType.OnRoomCreated,
+				eventType: EventType.OnRoomUpdated,
 				room: GOSpeakSocketClient.parseRoomRef(raw),
 				timestamp: Date.now(),
 			} as RoomEvent);

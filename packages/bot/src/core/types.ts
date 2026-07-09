@@ -5,6 +5,7 @@ export enum EventType {
 	OnMessageSent = "OnMessageSent",
 	OnRoomCreated = "OnRoomCreated",
 	OnRoomJoined = "OnRoomJoined",
+	OnRoomUpdated = "OnRoomUpdated",
 	OnRoomLeft = "OnRoomLeft",
 	OnMemberStateChanged = "OnMemberStateChanged",
 	OnPluginLoaded = "OnPluginLoaded",

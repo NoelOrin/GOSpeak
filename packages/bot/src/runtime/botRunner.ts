@@ -174,6 +174,7 @@ export class BotRunner {
 		const identity = this.config.identity;
 		if (!this.socket.isConnected) {
 			this.logger.warn("socket not connected; cannot join room");
+			return;
 		}
 
 		if (opts?.sfu) {
