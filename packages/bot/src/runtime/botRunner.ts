@@ -170,6 +170,25 @@ export class BotRunner {
 		await this.api.send(roomId, content);
 	}
 
+	async joinRoom(roomName: string, opts?: { sfu?: boolean }): Promise<void> {
+		const identity = this.config.identity;
+
+		if (opts?.sfu) {
+			const sfuToken = await this.api.getSFUToken(roomName, identity);
+			await this.socket.joinRoomSFU(roomName, identity, sfuToken.stream);
+		} else {
+			this.socket.joinRoom(roomName, identity);
+		}
+	}
+
+	leaveRoom(roomName: string): void {
+		this.socket.leaveRoom(roomName);
+	}
+
+	get joinedRooms(): string[] {
+		return this.socket.rooms;
+	}
+
 	async reloadPlugin(name: string): Promise<void> {
 		const old = this._plugins.find((p) => p.name === name);
 		if (!old) return;
@@ -194,7 +213,11 @@ export class BotRunner {
 			config: this.config.pluginConfigs?.[pluginName] ?? {},
 			pluginName,
 			chat: this.api,
-			rooms: this.api,
+			rooms: Object.assign(this.api, {
+				join: (name: string, o?: { sfu?: boolean }) => this.joinRoom(name, o),
+				leave: (name: string) => this.leaveRoom(name),
+				joined: () => this.joinedRooms,
+			}) as BotContext['rooms'],
 			voice: this.api,
 			kv: createKVStore(),
 			hasPermission: (_level, _member) => true,
