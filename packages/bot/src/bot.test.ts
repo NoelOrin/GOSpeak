@@ -14,7 +14,7 @@ function makeCtx(): BotContext {
     config: {},
     pluginName: "test",
     chat: { send: async () => {}, reply: async (_e, _c) => {} },
-    rooms: { listRooms: async () => [], getMembers: async () => [], createRoom: async () => ({ id: "r", name: "r" }) },
+    rooms: { listRooms: async () => [], getMembers: async () => [], createRoom: async () => ({ id: "r", name: "r" }), join: async () => {}, leave: () => {}, joined: () => [] },
     voice: { muteMember: async () => {}, removeMember: async () => {}, setMemberVolume: async () => {} },
     kv: { get: async () => undefined, set: async () => {}, delete: async () => {} },
     hasPermission: () => true,

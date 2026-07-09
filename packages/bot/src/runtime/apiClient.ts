@@ -70,6 +70,17 @@ export class GOSpeakApiClient implements ChatClient, RoomClient, VoiceClient {
 		return { id: data.id, name: data.name };
 	}
 
+	// join/leave/joined are implemented by BotRunner via socketClient, not here.
+	async join(_name: string, _opts?: { sfu?: boolean }): Promise<void> {
+		this.logger.warn("RoomClient.join should be called via BotRunner, not apiClient");
+	}
+	leave(_name: string): void {
+		this.logger.warn("RoomClient.leave should be called via BotRunner, not apiClient");
+	}
+	joined(): string[] {
+		return [];
+	}
+
 	// ── VoiceClient ──
 	async muteMember(roomId: string, identity: string, muted: boolean): Promise<void> {
 		await this.request("POST", "/api/v1/sfu/mute", { room: roomId, identity, muted });
@@ -81,7 +92,38 @@ export class GOSpeakApiClient implements ChatClient, RoomClient, VoiceClient {
 
 	async setMemberVolume(roomId: string, identity: string, volume: number): Promise<void> {
 		this.logger.warn("setMemberVolume is a client-local operation, not a server API");
-		// no-op on server side; handled client-local in web
+	}
+
+	// ── 用户查询 ──
+	async getUserByIdentity(identity: string): Promise<{ id: number; name: string; role: string; uuid: string }> {
+		return this.request("POST", "/api/v1/user/info", { identity });
+	}
+
+	// ── 禁言管理 ──
+	async muteUser(userId: number, duration: number, permanent: boolean, reason?: string): Promise<void> {
+		await this.request("POST", "/api/v1/mute/create", {
+			user_id: userId,
+			duration,
+			permanent,
+			reason: reason ?? "",
+		});
+	}
+
+	async unmuteUser(userId: number): Promise<void> {
+		await this.request("POST", "/api/v1/mute/cancel", { user_id: userId });
+	}
+
+	async listMutes(): Promise<unknown[]> {
+		return this.request("POST", "/api/v1/mute/list");
+	}
+
+	async getMuteStatus(userId: number): Promise<unknown | null> {
+		return this.request("POST", "/api/v1/mute/status", { user_id: userId });
+	}
+
+	// ── SFU Token ──
+	async getSFUToken(room: string, identity: string): Promise<{ token: string; serverUrl: string; stream?: string }> {
+		return this.request("POST", "/api/v1/signal/token", { room, identity });
 	}
 
 	/** Allow token refresh for long-lived bot sessions */
