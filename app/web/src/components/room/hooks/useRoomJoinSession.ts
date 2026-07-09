@@ -233,22 +233,26 @@ export function useRoomJoinSession() {
 						}
 
 						// join 全部成功后才挂断连/重连回调，避免连接阶段瞬态误报
-						createdClient.onDisconnected(() => {
-							if (signal.aborted) return;
-							const cur = session();
-							// 仅当当前 session 仍指向该 client 且处于活跃态（joined/reconnecting）才视为异常断连
-							if (cur?.client !== createdClient) return;
-							if (cur?.status !== "joined" && cur?.status !== "reconnecting")
-								return;
-							console.warn("[RoomDetail] SFU disconnected unexpectedly");
-							setSession((s) =>
-								s && s.client === createdClient
-									? { ...s, status: "failed" }
-									: s,
-							);
-							showToast("连接已断开", { type: "error" });
-							void teardownSession(cur);
-						});
+					createdClient.onDisconnected((info) => {
+						if (signal.aborted) return;
+						const cur = session();
+						// 仅当当前 session 仍指向该 client 且处于活跃态（joined/reconnecting）才视为异常断连
+						if (cur?.client !== createdClient) return;
+						if (cur?.status !== "joined" && cur?.status !== "reconnecting")
+							return;
+						console.warn("[RoomDetail] SFU disconnected unexpectedly", info);
+						setSession((s) =>
+							s && s.client === createdClient
+								? { ...s, status: "failed" }
+								: s,
+						);
+						const disconnectedMsg =
+							info?.reason === "DUPLICATE_IDENTITY"
+								? "该账号已在其他设备加入此房间"
+								: "连接已断开";
+						showToast(disconnectedMsg, { type: "error" });
+						void teardownSession(cur);
+					});
 						createdClient.onReconnecting?.(() => {
 							if (signal.aborted) return;
 							const cur = session();

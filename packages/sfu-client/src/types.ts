@@ -70,6 +70,11 @@ export interface JoinParams {
 	streamToken?: string;
 }
 
+export interface SFUDisconnectInfo {
+	reason?: string;
+	unrecoverable?: boolean;
+}
+
 /**
  * `SFUClient` is the frontend media-session interface.
  *
@@ -109,7 +114,7 @@ export interface SFUClient {
 	subscribePeers?(peers: PeerStream[]): void;
 	unsubscribePeer?(identity: string): void;
 	/** Subscribes to unexpected media-session disconnect notifications (not triggered by explicit leave). */
-	onDisconnected(cb: () => void): void;
+	onDisconnected(cb: (info?: SFUDisconnectInfo) => void): void;
 	/** Subscribes to media-session reconnect-start notifications. Optional: providers without transient reconnect never fire it. */
 	onReconnecting?(cb: () => void): void;
 	/** Subscribes to media-session reconnect-success notifications. Optional: providers without transient reconnect never fire it. */
