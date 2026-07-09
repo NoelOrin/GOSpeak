@@ -18,4 +18,6 @@ const (
 	PermSignalKick = "signal:kick"
 	PermMuteManage = "mute:manage"
 	PermSFUManage  = "sfu:manage"
+
+	PermBotManage = "bot:manage"
 )

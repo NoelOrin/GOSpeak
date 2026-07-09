@@ -165,5 +165,6 @@ func autoMigrate() error {
 		&model.RolePermission{},
 		&model.Mute{},
 		&model.StorageConfig{},
+		&model.BotAPIKey{},
 	)
 }

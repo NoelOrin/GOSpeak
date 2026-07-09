@@ -8,6 +8,7 @@ import Ban from "lucide-solid/icons/ban";
 import HardDrive from "lucide-solid/icons/hard-drive";
 import Mail from "lucide-solid/icons/mail";
 import Activity from "lucide-solid/icons/activity";
+import KeyRound from "lucide-solid/icons/key-round";
 
 const MANAGE_TABS = [
 	{ path: "permission", label: "权限", icon: ShieldCheck },
@@ -18,6 +19,7 @@ const MANAGE_TABS = [
 	{ path: "storage", label: "存储", icon: HardDrive },
 	{ path: "email", label: "邮箱", icon: Mail },
 	{ path: "monitor", label: "服务监控", icon: Activity },
+	{ path: "apikey", label: "Bot 密钥", icon: KeyRound },
 ] as const;
 
 const ManageNav = () => {

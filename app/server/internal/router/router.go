@@ -4,6 +4,7 @@ import (
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/middleware"
 	authRoutes "GOSpeak/internal/router/routes/auth"
+	botRoutes "GOSpeak/internal/router/routes/bot"
 	emailRoutes "GOSpeak/internal/router/routes/email"
 	emailConfigRoutes "GOSpeak/internal/router/routes/email_config"
 	muteRoutes "GOSpeak/internal/router/routes/mute"
@@ -18,6 +19,7 @@ import (
 	swaggerRoutes "GOSpeak/internal/router/routes/swagger"
 	systemRoutes "GOSpeak/internal/router/routes/system"
 	userRoutes "GOSpeak/internal/router/routes/user"
+	"GOSpeak/internal/service"
 
 	"github.com/gin-gonic/gin"
 	socketio "github.com/googollee/go-socket.io"
@@ -40,9 +42,10 @@ type Handlers struct {
 	EmailConfig *handler.EmailConfigHandler
 	Monitor     *handler.MonitorHandler
 	SRSCallback *handler.SRSCallbackHandler
+	Bot         *handler.BotAPIKeyHandler
 }
 
-func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
+func SetupRoutes(r *gin.Engine, h *Handlers, botKeySvc *service.BotAPIKeyService) *gin.Engine {
 	r.Use(middleware.CORS())
 
 	r.GET("/ping", func(c *gin.Context) {
@@ -62,7 +65,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	systemRoutes.Register(api.Group("/system"), h.Monitor)
 
 	protected := api.Group("")
-	protected.Use(middleware.JWTAuth())
+	protected.Use(middleware.BotKeyAuth(botKeySvc))
 	protected.Use(middleware.BanCheck())
 	userRoutes.Register(protected.Group("/user"), h.User)
 	authRoutes.RegisterProtected(protected.Group("/auth"), h.Auth)
@@ -75,6 +78,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	sfuConfigRoutes.RegisterProtected(protected.Group("/sfu"), h.SFUConfig)
 	storageRoutes.Register(protected.Group("/storage"), h.Storage)
 	emailConfigRoutes.RegisterProtected(protected.Group("/email"), h.EmailConfig)
+	botRoutes.RegisterProtected(protected.Group("/bot"), h.Bot)
 
 	return r
 }
