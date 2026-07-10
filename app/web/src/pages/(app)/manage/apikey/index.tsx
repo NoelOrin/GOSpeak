@@ -6,7 +6,7 @@ import KeyRound from "lucide-solid/icons/key-round";
 import Copy from "lucide-solid/icons/copy";
 import Trash2 from "lucide-solid/icons/trash-2";
 import {
-  BOT_PERMISSION_OPTIONS,
+  BOT_ROLE_OPTIONS,
   createBotKey,
   listBotKeys,
   revokeBotKey,
@@ -19,6 +19,8 @@ const EXPIRY_OPTIONS = [
   { value: "720h", label: "30 天" },
   { value: "", label: "永不过期" },
 ];
+
+const PERMANENT_YEAR = 2125;
 
 export const Route = createFileRoute("/(app)/manage/apikey/")({
   beforeLoad: () => {
@@ -37,20 +39,21 @@ function ApiKeyPage() {
   const [keysData, { refetch }] = createResource(() => listBotKeys());
 
   const [name, setName] = createSignal("");
-  const [selectedPerms, setSelectedPerms] = createSignal<string[]>([]);
+  const [selectedRole, setSelectedRole] = createSignal("user");
   const [expiry, setExpiry] = createSignal("720h");
   const [creating, setCreating] = createSignal(false);
   const [newPlainKey, setNewPlainKey] = createSignal("");
   const [revokingUuid, setRevokingUuid] = createSignal<string | null>(null);
 
-  const togglePerm = (code: string) => {
-    setSelectedPerms((prev) =>
-      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code],
-    );
-  };
+  const roleLabel = (code: string) =>
+    BOT_ROLE_OPTIONS.find((r) => r.value === code)?.label || code;
 
-  const permLabel = (code: string) =>
-    BOT_PERMISSION_OPTIONS.find((p) => p.code === code)?.label || code;
+  const formatExpiry = (value: string) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "-";
+    if (d.getFullYear() >= PERMANENT_YEAR) return "永不过期";
+    return d.toLocaleString();
+  };
 
   const handleCreate = async () => {
     if (!name().trim()) {
@@ -61,7 +64,7 @@ function ApiKeyPage() {
     try {
       const res = await createBotKey({
         name: name().trim(),
-        permissions: selectedPerms(),
+        role: selectedRole(),
         expires_in: expiry() || undefined,
       });
       if (res.code !== 0) {
@@ -69,9 +72,9 @@ function ApiKeyPage() {
         return;
       }
       showToast("Bot 密钥已创建，请妥善保存明文 Key", { type: "success" });
-      setNewPlainKey(res.data?.plain_key || "");
+      setNewPlainKey(res.data?.token || "");
       setName("");
-      setSelectedPerms([]);
+      setSelectedRole("user");
       setExpiry("720h");
       refetch();
     } catch (e: any) {
@@ -132,22 +135,16 @@ function ApiKeyPage() {
           </fieldset>
 
           <fieldset class="fieldset">
-            <legend class="fieldset-legend text-[14px]">权限（admin 专属权限不可授予）</legend>
-            <div class="flex flex-wrap gap-2">
-              <For each={BOT_PERMISSION_OPTIONS}>
-                {(opt) => (
-                  <label class="badge badge-lg cursor-pointer gap-1 select-none">
-                    <input
-                      type="checkbox"
-                      class="checkbox checkbox-xs"
-                      checked={selectedPerms().includes(opt.code)}
-                      onChange={() => togglePerm(opt.code)}
-                    />
-                    {opt.label}
-                  </label>
-                )}
+            <legend class="fieldset-legend text-[14px]">角色（admin 专属权限不会授予 Bot）</legend>
+            <select
+              class="select select-bordered select-sm w-full max-w-xs"
+              value={selectedRole()}
+              onChange={(e) => setSelectedRole(e.target.value)}
+            >
+              <For each={BOT_ROLE_OPTIONS}>
+                {(opt) => <option value={opt.value}>{opt.label}</option>}
               </For>
-            </div>
+            </select>
           </fieldset>
 
           <fieldset class="fieldset">
@@ -215,7 +212,7 @@ function ApiKeyPage() {
                 <thead>
                   <tr>
                     <th>名称</th>
-                    <th>权限</th>
+                    <th>角色</th>
                     <th>过期时间</th>
                     <th>状态</th>
                     <th>操作</th>
@@ -227,15 +224,9 @@ function ApiKeyPage() {
                       <tr>
                         <td class="font-medium">{key.name}</td>
                         <td>
-                          <div class="flex flex-wrap gap-1">
-                            <For each={key.permissions}>
-                              {(p) => (
-                                <span class="badge badge-ghost badge-sm">{permLabel(p)}</span>
-                              )}
-                            </For>
-                          </div>
+                          <span class="badge badge-ghost badge-sm">{roleLabel(key.role)}</span>
                         </td>
-                        <td class="text-xs">{new Date(key.expires_at).toLocaleString()}</td>
+                        <td class="text-xs">{formatExpiry(key.expires_at)}</td>
                         <td>
                           <Show
                             when={!key.revoked}

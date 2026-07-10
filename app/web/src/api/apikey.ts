@@ -13,6 +13,11 @@ export interface BotAPIKey {
   updated_at: string
 }
 
+export const BOT_ROLE_OPTIONS = [
+  { value: "user", label: "普通用户 (user)" },
+  { value: "admin", label: "管理员 (admin)" },
+]
+
 export interface CreateBotKeyInput {
   name: string
   role: string
