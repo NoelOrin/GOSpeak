@@ -240,7 +240,7 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 		h.mu.RUnlock()
 		if !exists {
 			// 房间已空被删除，广播房间列表更新（含 DB 持久化房间）
-			h.server.BroadcastToNamespace("/", EventRoomList, h.GetRooms())
+			h.broadcastRoomList()
 			continue
 		}
 		h.mu.RLock()
@@ -530,7 +530,7 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 
 	// 房间已空被删除则广播房间列表，否则广播单房间更新（与 OnDisconnect 一致）
 	if roomDeleted {
-		h.server.BroadcastToNamespace("/", EventRoomList, h.GetRooms())
+		h.broadcastRoomList()
 	} else {
 		// NOTE: roomInfoLocked 在 !exists 时返回零值 RoomInfo（并发删房场景安全）
 		h.mu.RLock()
@@ -636,7 +636,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 	// 空房删除 SFU room 并广播列表，否则广播单房间更新
 	if roomDeleted {
 		h.deleteRoomSafe(req.Room)
-		h.server.BroadcastToNamespace("/", EventRoomList, h.GetRooms())
+		h.broadcastRoomList()
 	} else {
 		h.mu.RLock()
 		info := h.roomInfoLocked(req.Room)
@@ -797,6 +797,20 @@ func (h *Hub) GetSFURooms() []RoomInfo {
 func (h *Hub) GetRooms() []RoomInfo {
 	return h.getMergedRooms()
 }
+
+// broadcastRoomList 向全员推送最新房间列表。
+// 事件名必须是 room:list:result（与 OnRoomList 一致）；room:list 是客户端请求事件，前端不监听。
+func (h *Hub) broadcastRoomList() {
+	if h.server == nil {
+		return
+	}
+	rooms := h.GetRooms()
+	h.server.BroadcastToNamespace("/", EventRoomListResult, map[string]interface{}{
+		"rooms": rooms,
+		"count": len(rooms),
+	})
+}
+
 
 // CheckRoomLimit 检查房间是否已满，返回 (已满, 限制人数, 当前人数, 错误)
 func (h *Hub) CheckRoomLimit(roomName string) (bool, uint, int, error) {

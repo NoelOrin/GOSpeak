@@ -1,3 +1,17 @@
+/**
+ * LOCKED JOIN ORCHESTRATOR
+ *
+ * Do NOT modify this file for SFU provider adaptation (LiveKit / SRS / Agora / Daily / MediaSoup).
+ * Provider-specific connect targets, subscribePeers, WHIP/WHEP, token fields, etc. belong in:
+ * - app/web/src/components/room/session/providers.ts
+ * - app/web/src/components/room/session/runVoiceJoin.ts
+ * - packages/sfu-client/*
+ * - app/web/src/api/sfu.ts
+ *
+ * This hook only owns: token query, session phase, abort/teardown lifecycle, UI state.
+ * SFU adaptation changes that touch this file are rejected.
+ */
+
 import type { SFUClient, SFUProvider } from "@gospeak/sfu-client/types";
 import { useQuery } from "@tanstack/solid-query";
 import {
@@ -54,8 +68,6 @@ function toLegacyJoinState(phase: VoicePhase): JoinState {
 			return "connecting";
 	}
 }
-
-let _joiningRoom: string | null = null;
 
 export function useVoiceSession() {
 	const [session, setSession] = createSignal<Session | null>(null);
@@ -152,12 +164,8 @@ export function useVoiceSession() {
 
 				abortCurrentJoin();
 
-				// 同房已在加入中则跳过，防止 SolidJS effect 双发引发的重复 WHIP POST
-				if (_joiningRoom === data.room) return;
-
 				const controller = new AbortController();
 				joinAbortController = controller;
-				_joiningRoom = data.room;
 				const { signal } = controller;
 
 				const provider = resolveSFUProvider(data);
@@ -185,7 +193,7 @@ export function useVoiceSession() {
 					error: null,
 				});
 
-				const joinPromise = (async () => {
+				void (async () => {
 					let createdClient: SFUClient | null = null;
 					try {
 						// 串行拆旧 SFU client（保证 createOffer 不竞态）。
@@ -332,9 +340,6 @@ export function useVoiceSession() {
 						}
 					}
 				})();
-				joinPromise.finally(() => {
-					_joiningRoom = null;
-				});
 			},
 			{ defer: false },
 		),
@@ -369,7 +374,6 @@ export function useVoiceSession() {
 
 	const handleManualLeave = async () => {
 		abortCurrentJoin();
-		_joiningRoom = null;
 		const sess = session();
 		if (sess) await teardownSession(sess);
 		else {

@@ -145,24 +145,45 @@ export const socketStore = createRoot(() => {
 		);
 
 		adapter.onServerEvent(EVENTS.ROOM_UPDATED, (room: RoomInfo) => {
-			console.log("[Socket] room:updated", room.name);
+			if (!room?.name) return;
+			console.log("[Socket] room:updated", room.name, "count=", room.count);
 			// 仅覆盖服务端实际返回的字段（name/hasPassword/members/count/createdAt），
 			// 保留 DB 字段（id/uuid/description/limit/audioOnly/allowAudience）不被零值覆盖。
 			// members 由 rooms[] 派生，无需单独维护。
-			setRooms((prev) =>
-				prev.map((r) =>
+			setRooms((prev) => {
+				const idx = prev.findIndex((r) => r.name === room.name);
+				if (idx < 0) {
+					// 列表里还没有时补一条，避免 leave/join 广播丢更新
+					return [
+						...prev,
+						{
+							id: room.id ?? 0,
+							uuid: room.uuid ?? "",
+							name: room.name,
+							hasPassword: room.hasPassword,
+							description: room.description,
+							limit: room.limit ?? 0,
+							audioOnly: room.audioOnly,
+							allowAudience: room.allowAudience,
+							members: room.members ?? [],
+							count: room.count ?? room.members?.length ?? 0,
+							createdAt: room.createdAt ?? Date.now(),
+						},
+					];
+				}
+				return prev.map((r) =>
 					r.name === room.name
 						? {
 								...r,
 								name: room.name,
 								hasPassword: room.hasPassword,
-								members: room.members,
-								count: room.count,
+								members: room.members ?? [],
+								count: room.count ?? room.members?.length ?? 0,
 								createdAt: room.createdAt ?? r.createdAt,
 							}
 						: r,
-				),
-			);
+				);
+			});
 		});
 
 		adapter.onServerEvent(
@@ -364,10 +385,15 @@ export const socketStore = createRoot(() => {
 	}
 
 	function leaveRoom(room: string): Promise<any> {
-		// 仅发信令，不清本地状态。状态清理由 session 生命周期统一管理
+		// 仅发信令，不清 currentRoom。状态清理由 session 生命周期统一管理
 		// （teardownSession / handleManualLeave / room:kicked），避免切房 fire-and-forget 时
 		// .then 清状态与新房 joinRoom 设状态竞态。
-		return signalEmit(EVENTS.ROOM_LEAVE, { room });
+		// 离开者已不在 socket.io room，收不到 member:left；namespace 广播
+		// room:updated / room:list:result 负责刷新列表。ack 后再拉一次列表兜底。
+		return signalEmit(EVENTS.ROOM_LEAVE, { room }).then((data) => {
+			listRooms();
+			return data;
+		});
 	}
 
 	function joinRoomSFU(room: string, identity: string, stream?: string) {

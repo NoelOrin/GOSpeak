@@ -693,6 +693,15 @@ User enters room page
     ├─ createRoom({ token, url })   // LiveKit instance
     └─ _joinRoom(roomIns, url, token)  // LiveKit connect + enable mic
 
+
+### useVoiceSession 锁定规则
+
+`app/web/src/components/room/hooks/useVoiceSession.ts` 是统一进房编排器，**禁止为适配 SFU 而修改**。
+
+- 允许改：provider adapter / `runVoiceJoin` / `packages/sfu-client/*` / `api/sfu.ts`
+- 禁止改：`useVoiceSession.ts` 的 join 生命周期、phase、abort/teardown，仅为某个 SFU 分支特殊处理
+- LiveKit 回归：先确认上述 adapter/client 层，不要动 `useVoiceSession`
+
 ### Multi-SFU frontend note
 
 The backend now returns provider-aware token payloads and supports runtime provider switching. The frontend still contains historical LiveKit-oriented structure, but new work should treat LiveKit as one implementation behind a shared SFU client layer rather than the only runtime.
