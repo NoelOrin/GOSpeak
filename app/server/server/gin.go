@@ -133,7 +133,16 @@ func StartGin(env EnvEnum) {
 	signalHub.SetupRoutes(sioServer)
 	sfuSvc := service.NewSFUService(sfuProvider, signalHub)
 	signalH := handler.NewSignalHandler(sfuSvc)
-	srsCallbackH := handler.NewSRSCallbackHandler(signalHub, cfg.SRSSecret)
+	srsCallbackH := handler.NewSRSCallbackHandlerWithResolver(signalHub, func() string {
+		resolved, err := sfuConfigSvc.ResolveConfig()
+		if err != nil || resolved == nil {
+			return cfg.SRSSecret
+		}
+		if resolved.SRSSecret != "" {
+			return resolved.SRSSecret
+		}
+		return cfg.SRSSecret
+	})
 
 	authH := handler.NewAuthHandler(authSvc)
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)

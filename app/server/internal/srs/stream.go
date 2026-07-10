@@ -1,12 +1,21 @@
 package srs
 
 import (
-	"crypto/hmac"
 	"crypto/sha256"
+	"fmt"
 	"math/big"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const streamNamePrefix = "gs-"
+const streamTokenTTL = 2 * time.Hour
+
+type streamTokenClaims struct {
+	Stream string `json:"stream"`
+	jwt.RegisteredClaims
+}
 
 func GenerateStreamName(room, identity string) string {
 	h := sha256.Sum256([]byte(room + ":" + identity))
@@ -17,20 +26,35 @@ func GenerateStreamToken(stream, secret string) (string, error) {
 	if secret == "" {
 		return "", errSecretRequired
 	}
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(stream))
-	return base36(mac.Sum(nil))[:16], nil
+	claims := streamTokenClaims{
+		Stream: stream,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(streamTokenTTL)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(secret))
 }
 
 func ValidateStreamToken(stream, token, secret string) bool {
-	if secret == "" {
+	if secret == "" || token == "" || stream == "" {
 		return false
 	}
-	expected, err := GenerateStreamToken(stream, secret)
-	if err != nil {
+	parsed, err := jwt.ParseWithClaims(token, &streamTokenClaims{}, func(t *jwt.Token) (interface{}, error) {
+		if t.Method != jwt.SigningMethodHS256 {
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+		return []byte(secret), nil
+	})
+	if err != nil || !parsed.Valid {
 		return false
 	}
-	return hmac.Equal([]byte(expected), []byte(token))
+	claims, ok := parsed.Claims.(*streamTokenClaims)
+	if !ok || claims.Stream == "" {
+		return false
+	}
+	return claims.Stream == stream
 }
 
 func base36(b []byte) string {
@@ -55,4 +79,3 @@ func toBase36(v int64) byte {
 	}
 	return byte('a' + v - 10)
 }
-

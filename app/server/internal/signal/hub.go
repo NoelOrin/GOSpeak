@@ -204,7 +204,7 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 			stream := member.Stream
 			delete(room.Members, s.ID())
 			h.unregisterStreamLocked(roomName, identity, stream)
-			h.server.BroadcastToNamespace("/", EventMemberLeft, map[string]interface{}{
+			h.server.BroadcastToRoom("/", roomName, EventMemberLeft, map[string]interface{}{
 				"room":     roomName,
 				"identity": identity,
 				"id":       s.ID(),
@@ -449,7 +449,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 		})
 	}
 
-	h.server.BroadcastToNamespace("/", EventMemberJoined, map[string]interface{}{
+	h.server.BroadcastToRoom("/", req.Room, EventMemberJoined, map[string]interface{}{
 		"room":     req.Room,
 		"identity": req.Identity,
 		"id":       s.ID(),
@@ -522,7 +522,7 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 		"room": req.Room,
 	})
 
-	h.server.BroadcastToNamespace("/", EventMemberLeft, map[string]interface{}{
+	h.server.BroadcastToRoom("/", req.Room, EventMemberLeft, map[string]interface{}{
 		"room":     req.Room,
 		"identity": identity,
 		"id":       s.ID(),
@@ -624,7 +624,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 	})
 
 	// 通知全员成员离开
-	h.server.BroadcastToNamespace("/", EventMemberLeft, map[string]interface{}{
+	h.server.BroadcastToRoom("/", req.Room, EventMemberLeft, map[string]interface{}{
 		"room":     req.Room,
 		"identity": req.TargetIdentity,
 		"id":       targetSocketID,
@@ -890,6 +890,13 @@ func (h *Hub) IsStreamActive(stream string) bool {
 	_, ok := h.activeStreams[stream]
 	h.mu.RUnlock()
 	return ok
+}
+
+func (h *Hub) RoomForStream(stream string) (string, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	room, ok := h.streamRoomCache[stream]
+	return room, ok
 }
 
 func (h *Hub) BroadcastToRoom(room string, event string, data interface{}) {

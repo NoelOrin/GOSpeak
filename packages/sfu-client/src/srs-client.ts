@@ -75,14 +75,19 @@ export class SRSSFUClient implements SFUClient {
 	private isReconnecting = false;
 	private onPcStateChangeBound?: () => void;
 	private activeSpeakerRaf: number | null = null;
+	private static MAX_SUBSCRIBE_RETRIES = 60;
 	private analyzerContext: AudioContext | null = null;
 	private publishResourceUrl = "";
 	private identity = "";
+	private room = "";
 	private ownStream = "";
 	private streamToken = "";
+	private roomToken = "";
+	private whipUrl = "";
 	private baseWhepUrl = "";
 	private socket?: any;
 	private leaving = false;
+	private micEnabled = true;
 	private socketMemberJoinedBound?: (...args: unknown[]) => void;
 	private socketMemberLeftBound?: (...args: unknown[]) => void;
 
@@ -93,52 +98,32 @@ export class SRSSFUClient implements SFUClient {
 	async joinRoom(params: JoinParams): Promise<void> {
 		const { token, serverUrl: url, identity, room, stream, streamToken } = params;
 		this.identity = identity;
+		this.room = room || "";
 		this.ownStream = stream || "";
 		this.streamToken = streamToken || "";
+		this.roomToken = token || "";
+		this.whipUrl = url;
 		this.baseWhepUrl = url.replace(/\/whip\/?$/, "/whep/");
+		this.micEnabled = true;
 
-		this.localStream = await navigator.mediaDevices.getUserMedia({
-			audio: {
-				echoCancellation: this.options.audioCapture?.echoCancellation ?? true,
-				noiseSuppression:
-					this.options.audioCapture?.noiseSuppression ?? true,
-				autoGainControl:
-					this.options.audioCapture?.autoGainControl ?? true,
-				sampleRate: this.options.audioCapture?.sampleRate,
-				sampleSize: this.options.audioCapture?.sampleSize,
-				channelCount: this.options.audioCapture?.channelCount,
-			},
-			video: false,
-		});
-
-		this.publishPc = new RTCPeerConnection();
-		for (const track of this.localStream.getAudioTracks()) {
-			this.publishPc.addTrack(track, this.localStream);
-		}
 		try {
-			const whipUrl = appendStream(url, stream, streamToken, true);
-			this.publishResourceUrl = await this.exchangeSdp(
-				this.publishPc,
-				whipUrl,
-				token,
-				true,
-			);
-			await this.waitForPublishIceConnected();
+			await this.startPublish();
 		} catch (err) {
 			await this.cleanupPartialJoin();
 			throw err;
 		}
 
-		this.startAudioLevelLoop();
 		this.hasJoined = true;
 
 		if (this.socket) {
 			this.socketMemberJoinedBound = (data: any) => {
+				if (!this.isSameRoomEvent(data)) return;
 				if (data.identity && data.stream) {
 					this.subscribePeer(data.identity, data.stream);
 				}
 			};
 			this.socketMemberLeftBound = (data: any) => {
+				if (!this.isSameRoomEvent(data)) return;
 				if (data.identity) {
 					this.unsubscribePeer(data.identity);
 				}
@@ -171,6 +156,12 @@ export class SRSSFUClient implements SFUClient {
 			"iceconnectionstatechange",
 			this.onPcStateChangeBound,
 		);
+	}
+
+	private isSameRoomEvent(data: any): boolean {
+		if (!this.room) return true;
+		if (!data?.room) return true;
+		return data.room === this.room;
 	}
 
 	private subscribePeer(identity: string, stream: string): void {
@@ -239,9 +230,14 @@ export class SRSSFUClient implements SFUClient {
 			this.scheduleRetry(identity, stream);
 		});
 
-		const whepUrl = appendStream(this.baseWhepUrl, stream, "", false);
+		const whepUrl = appendStream(
+			this.baseWhepUrl,
+			stream,
+			this.roomToken,
+			true,
+		);
 
-		this.exchangeSdp(pc, whepUrl, "", false)
+		this.exchangeSdp(pc, whepUrl, this.roomToken, false)
 			.then((resourceUrl) => {
 				const s = this.peerSubs.get(identity);
 				// Stale 守卫：交换期间条目若被移除(unsubscribePeer)或被新订阅替换
@@ -325,22 +321,18 @@ export class SRSSFUClient implements SFUClient {
 			this.peerSubs.set(identity, sub);
 		}
 
-		if (sub.retryCount >= 5) {
-			if (sub.pc) {
-				this.deleteResource(sub.resourceUrl);
-				sub.pc.close();
-			}
+		if (sub.retryCount >= SRSSFUClient.MAX_SUBSCRIBE_RETRIES) {
+			this.peerSubs.delete(identity);
 			if (this.remoteTracks.has(identity)) {
 				const t = this.remoteTracks.get(identity)!;
 				t.detach();
 				this.remoteTracks.delete(identity);
 			}
-			this.peerSubs.delete(identity);
 			this.onRemoteAudioTrackRemovedCb?.(identity);
 			return;
 		}
 
-		const delay = Math.pow(2, sub.retryCount) * 1000;
+		const delay = Math.min(2 ** Math.min(sub.retryCount, 3), 8) * 1000;
 
 		sub.retryTimer = setTimeout(() => {
 			this.subscribePeer(identity, stream);
@@ -367,46 +359,174 @@ export class SRSSFUClient implements SFUClient {
 		this.leaving = true;
 		this.hasJoined = false;
 		this.isReconnecting = false;
+		this.room = "";
+		this.roomToken = "";
+		this.streamToken = "";
 
 		// Unsubscribe all peers (callbacks suppressed via leaving flag)
 		for (const [identity] of this.peerSubs) {
 			this.unsubscribePeer(identity);
 		}
 
+		await this.stopPublish({ stopLocalTracks: true });
+		this.onPcStateChangeBound = undefined;
+		this.remoteTracks.forEach((track) => track.detach());
+		this.remoteTracks.clear();
+		this.whipUrl = "";
+		this.micEnabled = true;
+		this.onReconnectingCb = undefined;
+		this.onReconnectedCb = undefined;
+		this.leaving = false;
+	}
+
+	async setMicEnabled(enabled: boolean): Promise<void> {
+		if (!this.hasJoined || this.leaving) return;
+		if (!enabled) {
+			this.localStream?.getAudioTracks().forEach((track) => {
+				track.enabled = false;
+				track.stop();
+			});
+			this.micEnabled = false;
+			if (this.activeSpeakerRaf !== null) {
+				cancelAnimationFrame(this.activeSpeakerRaf);
+				this.activeSpeakerRaf = null;
+			}
+			this.onActiveSpeakersCb?.([]);
+			return;
+		}
+
+		const live = this.localStream
+			?.getAudioTracks()
+			.some((t) => t.readyState === "live");
+		if (live) {
+			this.localStream?.getAudioTracks().forEach((track) => {
+				track.enabled = true;
+			});
+			this.micEnabled = true;
+			this.startAudioLevelLoop();
+			return;
+		}
+
+		const media = await navigator.mediaDevices.getUserMedia({
+			audio: {
+				echoCancellation: this.options.audioCapture?.echoCancellation ?? true,
+				noiseSuppression:
+					this.options.audioCapture?.noiseSuppression ?? true,
+				autoGainControl:
+					this.options.audioCapture?.autoGainControl ?? true,
+				sampleRate: this.options.audioCapture?.sampleRate,
+				sampleSize: this.options.audioCapture?.sampleSize,
+				channelCount: this.options.audioCapture?.channelCount,
+			},
+			video: false,
+		});
+		const newTrack = media.getAudioTracks()[0];
+		if (!newTrack) {
+			media.getTracks().forEach((t) => t.stop());
+			return;
+		}
+		newTrack.enabled = true;
+
+		// 若 PC 断开/失败/关闭，重建 WHIP。
+		const pcState = this.publishPc?.connectionState ?? "new";
+		if (pcState === "failed" || pcState === "disconnected" || pcState === "closed") {
+			this.localStream = media;
+			this.micEnabled = true;
+			await this.startPublish();
+			this.startAudioLevelLoop();
+			return;
+		}
+
+		const sender = this.publishPc
+			?.getSenders()
+			.find((s) => !s.track || s.track.kind === "audio");
+		if (sender) {
+			await sender.replaceTrack(newTrack);
+		} else if (this.publishPc) {
+			this.publishPc.addTrack(newTrack, media);
+		}
+
+		this.localStream?.getTracks().forEach((t) => {
+			if (t !== newTrack) t.stop();
+		});
+		this.localStream = media;
+		this.micEnabled = true;
+		this.startAudioLevelLoop();
+	}
+
+	private async startPublish(): Promise<void> {
+		if (this.publishPc || this.publishResourceUrl) {
+			await this.stopPublish({ stopLocalTracks: true });
+		}
+
+		this.localStream = await navigator.mediaDevices.getUserMedia({
+			audio: {
+				echoCancellation: this.options.audioCapture?.echoCancellation ?? true,
+				noiseSuppression:
+					this.options.audioCapture?.noiseSuppression ?? true,
+				autoGainControl:
+					this.options.audioCapture?.autoGainControl ?? true,
+				sampleRate: this.options.audioCapture?.sampleRate,
+				sampleSize: this.options.audioCapture?.sampleSize,
+				channelCount: this.options.audioCapture?.channelCount,
+			},
+			video: false,
+		});
+
+		this.publishPc = new RTCPeerConnection();
+		for (const track of this.localStream.getAudioTracks()) {
+			track.enabled = true;
+			this.publishPc.addTrack(track, this.localStream);
+		}
+
+		const whipUrl = appendStream(
+			this.whipUrl,
+			this.ownStream,
+			this.streamToken,
+			true,
+		);
+		this.publishResourceUrl = await this.exchangeSdp(
+			this.publishPc,
+			whipUrl,
+			this.roomToken,
+			true,
+		);
+		await this.waitForPublishIceConnected();
+
+		if (this.onPcStateChangeBound) {
+			this.publishPc.addEventListener(
+				"iceconnectionstatechange",
+				this.onPcStateChangeBound,
+			);
+		}
+		this.startAudioLevelLoop();
+	}
+
+	private async stopPublish(opts?: {
+		stopLocalTracks?: boolean;
+	}): Promise<void> {
 		if (this.onPcStateChangeBound) {
 			this.publishPc?.removeEventListener(
 				"iceconnectionstatechange",
 				this.onPcStateChangeBound,
 			);
-			this.onPcStateChangeBound = undefined;
 		}
 		if (this.activeSpeakerRaf !== null) {
 			cancelAnimationFrame(this.activeSpeakerRaf);
 			this.activeSpeakerRaf = null;
 		}
+		await this.analyzerContext?.close();
+		this.analyzerContext = null;
+
 		await this.deleteResource(this.publishResourceUrl);
 		this.publishResourceUrl = "";
 		this.publishPc?.close();
 		this.publishPc = null;
-		this.remoteTracks.forEach((track) => track.detach());
-		this.remoteTracks.clear();
-		if (this.localStream) {
+
+		if (opts?.stopLocalTracks !== false && this.localStream) {
 			this.localStream.getTracks().forEach((track) => track.stop());
 			this.localStream = null;
 		}
-		this.onReconnectingCb = undefined;
-		this.onReconnectedCb = undefined;
-		await this.analyzerContext?.close();
-		this.analyzerContext = null;
-		this.leaving = false;
-	}
-
-	async setMicEnabled(enabled: boolean): Promise<void> {
-		this.localStream
-			?.getAudioTracks()
-			.forEach((track) => {
-				track.enabled = enabled;
-			});
 	}
 
 	onActiveSpeakers(cb: (identities: string[]) => void): void {
@@ -524,18 +644,17 @@ export class SRSSFUClient implements SFUClient {
 	}
 
 	private async cleanupPartialJoin(): Promise<void> {
-		await this.deleteResource(this.publishResourceUrl);
-		this.publishResourceUrl = "";
-		this.publishPc?.close();
-		this.publishPc = null;
-		if (this.localStream) {
-			this.localStream.getTracks().forEach((track) => track.stop());
-			this.localStream = null;
-		}
+		await this.stopPublish({ stopLocalTracks: true });
+		this.hasJoined = false;
+		this.micEnabled = true;
 	}
 
 	private startAudioLevelLoop(): void {
-		if (!this.localStream || !this.onActiveSpeakersCb) return;
+		if (!this.localStream || !this.micEnabled || !this.onActiveSpeakersCb) return;
+		if (this.activeSpeakerRaf !== null) {
+			cancelAnimationFrame(this.activeSpeakerRaf);
+			this.activeSpeakerRaf = null;
+		}
 		this.analyzerContext = new AudioContext();
 		const source = this.analyzerContext.createMediaStreamSource(
 			this.localStream,

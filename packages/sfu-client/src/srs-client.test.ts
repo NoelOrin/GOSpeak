@@ -48,9 +48,12 @@ beforeEach(() => {
 	Object.defineProperty(globalThis, "navigator", {
 		value: {
 			mediaDevices: {
-				getUserMedia: vi.fn().mockResolvedValue({
-					getAudioTracks: () => [{ kind: "audio", stop: vi.fn() }],
-					getTracks: () => [{ kind: "audio", stop: vi.fn() }],
+				getUserMedia: vi.fn().mockImplementation(async () => {
+					const track = { kind: "audio", enabled: true, stop: vi.fn() };
+					return {
+						getAudioTracks: () => [track],
+						getTracks: () => [track],
+					};
 				}),
 			},
 		},
@@ -114,7 +117,7 @@ describe("SRSSFUClient subscribePeers", () => {
 		await client.leaveRoom();
 	});
 
-	it("retries WHEP on failure then removes peer after exhaustion", async () => {
+	it("retries WHEP on failure without dropping membership", async () => {
 		vi.useFakeTimers();
 		try {
 			(globalThis as any).fetch = makeFetch(true, false);
@@ -133,12 +136,53 @@ describe("SRSSFUClient subscribePeers", () => {
 			(client as any).subscribePeers([
 				{ identity: "bob", stream: "gs-bob" },
 			]);
-			await vi.runAllTimersAsync();
-			expect(removed).toHaveBeenCalledWith("bob");
+			await vi.advanceTimersByTimeAsync(20_000);
+			expect(removed).not.toHaveBeenCalled();
+			expect((client as any).peerSubs.has("bob")).toBe(true);
+			await client.leaveRoom();
 		} finally {
 			vi.useRealTimers();
 		}
 	});
+
+describe("SRSSFUClient subscribe retry exhaustion", () => {
+	it("exhausts after MAX_SUBSCRIBE_RETRIES and emits onRemoteAudioTrackRemoved", async () => {
+		vi.useFakeTimers();
+		try {
+			(globalThis as any).fetch = makeFetch(true, false);
+			const client = new SRSSFUClient({});
+			const removed = vi.fn();
+			client.onRemoteAudioTrackRemoved(removed);
+			const joinParams: JoinParams = {
+				token: "tok",
+				serverUrl: "http://h:1985/rtc/v1/whip/",
+				identity: "alice",
+				room: "room1",
+				stream: "gs-alice",
+				streamToken: "st",
+			};
+			await client.joinRoom(joinParams);
+			(client as any).peerSubs.set("bob", {
+				identity: "bob",
+				stream: "gs-bob",
+				pc: null,
+				resourceUrl: "",
+				retryCount: SRSSFUClient.MAX_SUBSCRIBE_RETRIES - 1,
+				retryTimer: null,
+				connecting: false,
+			});
+			(client as any).subscribePeer("bob", "gs-bob");
+			await vi.advanceTimersByTimeAsync(10_000);
+			expect(removed).toHaveBeenCalledWith("bob");
+			expect((client as any).peerSubs.has("bob")).toBe(false);
+			await client.leaveRoom();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
+
+
 
 	it("unsubscribePeer closes pc and emits onRemoteAudioTrackRemoved", async () => {
 		(globalThis as any).fetch = makeFetch(true, true);
@@ -218,3 +262,154 @@ describe("SRSSFUClient subscribePeers", () => {
 		await client.leaveRoom();
 	});
 });
+
+describe("SRSSFUClient room isolation", () => {
+	it("filters member events by room", async () => {
+		(globalThis as any).fetch = makeFetch(true, true);
+		const handlers: Record<string, Function[]> = {};
+		const socket = {
+			on: (ev: string, cb: Function) => {
+				(handlers[ev] ||= []).push(cb);
+			},
+			off: vi.fn(),
+		};
+		const client = new SRSSFUClient({ socket });
+		const onTrack = vi.fn();
+		client.onRemoteAudioTrack(onTrack);
+		await client.joinRoom({
+			token: "tok",
+			serverUrl: "/rtc/v1/whip/",
+			identity: "alice",
+			room: "room-a",
+			stream: "gs-alice",
+			streamToken: "st",
+		});
+
+		// other room should be ignored
+		handlers["member:joined"][0]({
+			room: "room-b",
+			identity: "bob",
+			stream: "gs-bob",
+		});
+		await new Promise((r) => setTimeout(r, 20));
+		expect(onTrack).not.toHaveBeenCalled();
+
+		// same room should subscribe
+		handlers["member:joined"][0]({
+			room: "room-a",
+			identity: "bob",
+			stream: "gs-bob",
+		});
+		await new Promise((r) => setTimeout(r, 50));
+		expect(onTrack).toHaveBeenCalledWith(
+			expect.objectContaining({ identity: "bob" }),
+		);
+		await client.leaveRoom();
+	});
+});
+
+
+describe("SRSSFUClient setMicEnabled", () => {
+	it("setMicEnabled(false) stops local tracks and keeps WHIP", async () => {
+		const fetchMock = makeFetch(true, true);
+		(globalThis as any).fetch = fetchMock;
+		const client = new SRSSFUClient({});
+		await client.joinRoom({
+			token: "tok",
+			serverUrl: "/rtc/v1/whip/",
+			identity: "alice",
+			room: "room1",
+			stream: "gs-alice",
+			streamToken: "st",
+		});
+		const local = (client as any).localStream as {
+			getAudioTracks: () => Array<{ stop: ReturnType<typeof vi.fn>; enabled: boolean; readyState: string }>;
+		};
+		const tracks = local.getAudioTracks();
+		for (const t of tracks) t.readyState = "live";
+		await client.setMicEnabled(false);
+		const del = fetchMock.mock.calls.find(
+			(c: unknown[]) => c[1] && (c[1] as any).method === "DELETE",
+		);
+		expect(del).toBeFalsy();
+		expect((client as any).publishPc).toBeTruthy();
+		for (const t of tracks) {
+			expect(t.enabled).toBe(false);
+			expect(t.stop).toHaveBeenCalled();
+		}
+		expect(client.isConnected()).toBe(true);
+		await client.leaveRoom();
+	});
+
+	it("setMicEnabled(true) replaces stopped tracks without new WHIP", async () => {
+		const fetchMock = makeFetch(true, true);
+		(globalThis as any).fetch = fetchMock;
+		const replaceTrack = vi.fn().mockResolvedValue(undefined);
+		(globalThis as any).RTCPeerConnection = vi.fn(function () {
+			const pc = makeMockPc();
+			(pc as any).getSenders = () => [{ track: { kind: "audio" }, replaceTrack }];
+			return pc;
+		});
+		const client = new SRSSFUClient({});
+		await client.joinRoom({
+			token: "tok",
+			serverUrl: "/rtc/v1/whip/",
+			identity: "alice",
+			room: "room1",
+			stream: "gs-alice",
+			streamToken: "st",
+		});
+		const whipBefore = fetchMock.mock.calls.filter((c: unknown[]) =>
+			String(c[0]).includes("/rtc/v1/whip/") &&
+			(!(c[1] as any)?.method || (c[1] as any).method === "POST"),
+		).length;
+		const tracks = (client as any).localStream.getAudioTracks();
+		for (const t of tracks) t.readyState = "ended";
+		await client.setMicEnabled(false);
+		await client.setMicEnabled(true);
+		const whipAfter = fetchMock.mock.calls.filter((c: unknown[]) =>
+			String(c[0]).includes("/rtc/v1/whip/") &&
+			(!(c[1] as any)?.method || (c[1] as any).method === "POST"),
+		).length;
+		expect(whipAfter).toBe(whipBefore);
+		expect(replaceTrack).toHaveBeenCalled();
+		expect((client as any).micEnabled).toBe(true);
+		await client.leaveRoom();
+	});
+});
+
+describe("SRSSFUClient setMicEnabled with PC disconnected", () => {
+	it("setMicEnabled(true) rebuilds WHIP when PC is failed/closed", async () => {
+		const fetchMock = makeFetch(true, true);
+		(globalThis as any).fetch = fetchMock;
+		const client = new SRSSFUClient({});
+		await client.joinRoom({
+			token: "tok",
+			serverUrl: "/rtc/v1/whip/",
+			identity: "alice",
+			room: "room1",
+			stream: "gs-alice",
+			streamToken: "st",
+		});
+		const whipBefore = fetchMock.mock.calls.filter((c: unknown[]) =>
+			String(c[0]).includes("/rtc/v1/whip/") &&
+			(!(c[1] as any)?.method || (c[1] as any).method === "POST"),
+		).length;
+		// Simulate PC failure via connectionState
+		const pc = (client as any).publishPc;
+		Object.defineProperty(pc, "connectionState", { value: "failed" });
+		const tracks = (client as any).localStream.getAudioTracks();
+		for (const t of tracks) t.readyState = "ended";
+		await client.setMicEnabled(false);
+		await client.setMicEnabled(true);
+		const whipAfter = fetchMock.mock.calls.filter((c: unknown[]) =>
+			String(c[0]).includes("/rtc/v1/whip/") &&
+			(!(c[1] as any)?.method || (c[1] as any).method === "POST"),
+		).length;
+		expect(whipAfter).toBeGreaterThan(whipBefore);
+		expect((client as any).publishPc).toBeTruthy();
+		expect((client as any).micEnabled).toBe(true);
+		await client.leaveRoom();
+	});
+});
+

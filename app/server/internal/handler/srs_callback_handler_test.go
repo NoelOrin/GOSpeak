@@ -81,14 +81,46 @@ func TestSrsCallback_OnPlay_ActiveStream_Allows(t *testing.T) {
 	hub := newCallbackHub()
 	hub.RegisterStream("gs-bbb")
 	h := NewSRSCallbackHandler(hub, "secret")
+	tok := srsStreamTokenForTest("gs-bbb", "secret")
+	payload := map[string]string{
+		"action": "on_play",
+		"stream": "gs-bbb",
+		"param":  "app=live&stream=gs-bbb&token=" + tok,
+	}
+	w := postJSON(t, h, payload)
+	if !strings.Contains(w.Body.String(), `"code":0`) {
+		t.Fatalf("on_play active stream should return 0, got %s", w.Body.String())
+	}
+}
+
+func TestSrsCallback_OnPlay_MissingToken_Rejects(t *testing.T) {
+	hub := newCallbackHub()
+	hub.RegisterStream("gs-bbb")
+	h := NewSRSCallbackHandler(hub, "secret")
 	payload := map[string]string{
 		"action": "on_play",
 		"stream": "gs-bbb",
 		"param":  "app=live&stream=gs-bbb",
 	}
 	w := postJSON(t, h, payload)
+	if !strings.Contains(w.Body.String(), `"code":403`) {
+		t.Fatalf("on_play without token should return 403, got %s", w.Body.String())
+	}
+}
+
+func TestSrsCallback_ResolveSecret_UsesResolver(t *testing.T) {
+	hub := newCallbackHub()
+	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "dynamic-secret" })
+	stream := "gs-dyn"
+	tok := srsStreamTokenForTest(stream, "dynamic-secret")
+	payload := map[string]string{
+		"action": "on_publish",
+		"stream": stream,
+		"param":  "app=live&stream=" + stream + "&token=" + tok,
+	}
+	w := postJSON(t, h, payload)
 	if !strings.Contains(w.Body.String(), `"code":0`) {
-		t.Fatalf("on_play active stream should return 0, got %s", w.Body.String())
+		t.Fatalf("resolver secret should validate publish, got %s", w.Body.String())
 	}
 }
 
@@ -138,3 +170,48 @@ func TestSrsCallback_OnStop_DoesNotUnregister(t *testing.T) {
 		t.Fatal("stream should remain registered after on_stop")
 	}
 }
+
+func TestAuthorizeSRSPlay_RoomTokenSameRoom(t *testing.T) {
+	stream := "gs-alice"
+	tok, err := srs.GenerateToken("room-a", "bob", "secret")
+	if err != nil {
+		t.Fatalf("GenerateToken: %v", err)
+	}
+	ok := authorizeSRSPlay(stream, tok, "secret", func(s string) (string, bool) {
+		if s != stream {
+			return "", false
+		}
+		return "room-a", true
+	})
+	if !ok {
+		t.Fatal("same-room room JWT should authorize play")
+	}
+}
+
+func TestAuthorizeSRSPlay_RoomTokenWrongRoom(t *testing.T) {
+	stream := "gs-alice"
+	tok, err := srs.GenerateToken("room-b", "bob", "secret")
+	if err != nil {
+		t.Fatalf("GenerateToken: %v", err)
+	}
+	ok := authorizeSRSPlay(stream, tok, "secret", func(s string) (string, bool) {
+		return "room-a", true
+	})
+	if ok {
+		t.Fatal("cross-room room JWT must not authorize play")
+	}
+}
+
+func TestAuthorizeSRSPlay_RoomTokenUnknownStream(t *testing.T) {
+	tok, err := srs.GenerateToken("room-a", "bob", "secret")
+	if err != nil {
+		t.Fatalf("GenerateToken: %v", err)
+	}
+	ok := authorizeSRSPlay("gs-missing", tok, "secret", func(string) (string, bool) {
+		return "", false
+	})
+	if ok {
+		t.Fatal("unknown stream room mapping must not authorize play")
+	}
+}
+

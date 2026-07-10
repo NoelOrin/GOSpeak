@@ -92,3 +92,10 @@ func TestValidateStreamToken_WrongStream(t *testing.T) {
 		t.Fatal("token bound to different stream should not validate")
 	}
 }
+
+func TestValidateStreamToken_WrongAlgRejected(t *testing.T) {
+	// ValidateStreamToken only accepts HS256 JWT bound to stream.
+	if ValidateStreamToken("gs-aaa", "not-a-jwt", "secret") {
+		t.Fatal("non-jwt token should not validate")
+	}
+}

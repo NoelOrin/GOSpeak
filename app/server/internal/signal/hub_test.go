@@ -792,10 +792,12 @@ func TestOnRoomJoinSFU_StoresAndBroadcastsStream(t *testing.T) {
 	}
 
 	broadcasted := false
-	if vals, ok := server.broadcasts[EventMemberJoined]; ok && len(vals) > 0 {
-		payload, _ := json.Marshal(vals[0])
-		if strings.Contains(string(payload), "gs-aaa") {
-			broadcasted = true
+	if roomEvents, ok := server.roomCasts["r1"]; ok {
+		if vals, ok := roomEvents[EventMemberJoined]; ok && len(vals) > 0 {
+			payload, _ := json.Marshal(vals[0])
+			if strings.Contains(string(payload), "gs-aaa") {
+				broadcasted = true
+			}
 		}
 	}
 	if !broadcasted {
@@ -847,10 +849,12 @@ func TestOnRoomJoinSFU_ServerRecomputesStream(t *testing.T) {
 
 	// 广播中的 stream 也应为服务端计算值
 	broadcasted := false
-	if vals, ok := server.broadcasts[EventMemberJoined]; ok && len(vals) > 0 {
-		payload, _ := json.Marshal(vals[0])
-		if expectedInJSON := `"stream":"` + expected + `"`; strings.Contains(string(payload), expectedInJSON) {
-			broadcasted = true
+	if roomEvents, ok := server.roomCasts["r1"]; ok {
+		if vals, ok := roomEvents[EventMemberJoined]; ok && len(vals) > 0 {
+			payload, _ := json.Marshal(vals[0])
+			if expectedInJSON := `"stream":"` + expected + `"`; strings.Contains(string(payload), expectedInJSON) {
+				broadcasted = true
+			}
 		}
 	}
 	if !broadcasted {
