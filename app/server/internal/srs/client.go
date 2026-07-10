@@ -62,15 +62,35 @@ func (c *Client) fetchClients() ([]clientsResponseClient, error) {
 }
 
 func (c *Client) ListParticipants(room string) ([]map[string]interface{}, error) {
+	// 兼容旧调用：room 被当作 stream 精确匹配。新路径请用 ListParticipantsByStreams。
+	if room == "" {
+		return c.ListParticipantsByStreams(nil)
+	}
+	return c.ListParticipantsByStreams([]string{room})
+}
+
+func (c *Client) ListParticipantsByStreams(streams []string) ([]map[string]interface{}, error) {
 	clients, err := c.fetchClients()
 	if err != nil {
 		return nil, err
 	}
 
+	var want map[string]struct{}
+	if streams != nil {
+		want = make(map[string]struct{}, len(streams))
+		for _, st := range streams {
+			if st != "" {
+				want[st] = struct{}{}
+			}
+		}
+	}
+
 	out := make([]map[string]interface{}, 0, len(clients))
 	for _, cl := range clients {
-		if room != "" && cl.Stream != room {
-			continue
+		if want != nil {
+			if _, ok := want[cl.Stream]; !ok {
+				continue
+			}
 		}
 		out = append(out, map[string]interface{}{
 			"id":     cl.ID,

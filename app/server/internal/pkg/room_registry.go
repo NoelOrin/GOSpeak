@@ -13,6 +13,8 @@ type RoomRegistry interface {
 	// StreamForIdentity 返回 join 时实际登记的 stream 名（基于 identity→stream 映射），
 	// 优于反算命名约定：命名函数变更后旧连接的 stream 仍可查到。未登记返 ok=false。
 	StreamForIdentity(room, identity string) (stream string, ok bool)
+	// IdentityForStream 返回登记该 stream 的 identity。未登记返 ok=false。
+	IdentityForStream(room, stream string) (identity string, ok bool)
 }
 
 // RoomRegistrySetter 由支持 room 聚合的 provider 实现可选接口。

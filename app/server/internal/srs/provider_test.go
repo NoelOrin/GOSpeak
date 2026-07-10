@@ -35,6 +35,18 @@ func (s *stubRegistry) StreamForIdentity(room, identity string) (string, bool) {
 	st, ok := s.identityStreams[room+"\x00"+identity]
 	return st, ok
 }
+func (s *stubRegistry) IdentityForStream(room, stream string) (string, bool) {
+	if s.identityStreams == nil {
+		return "", false
+	}
+	prefix := room + "\x00"
+	for k, st := range s.identityStreams {
+		if st == stream && len(k) > len(prefix) && k[:len(prefix)] == prefix {
+			return k[len(prefix):], true
+		}
+	}
+	return "", false
+}
 
 // srsTestServer 用 httptest 模拟 SRS HTTP API（/api/v1/clients/ + kick）。
 type srsTestServer struct {
@@ -111,8 +123,9 @@ func TestGetHost_EmptyForSRS(t *testing.T) {
 		SRSHost:    "srs.example.com",
 		SRSApiPort: "1985",
 	})
-	if got := s.GetHost(); got != "" {
-		t.Fatalf("GetHost = %q, want empty", got)
+	want := "http://srs.example.com:1985"
+	if got := s.GetHost(); got != want {
+		t.Fatalf("GetHost = %q, want %q", got, want)
 	}
 }
 
@@ -310,5 +323,85 @@ func TestStreamInfo_WithSecretSucceeds(t *testing.T) {
 	}
 	if stream == "" || token == "" {
 		t.Fatalf("expected non-empty stream+token, got stream=%q token=%q", stream, token)
+	}
+}
+
+
+func TestListParticipants_WithRegistry(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.close()
+	streamA := GenerateStreamName("room-x", "alice")
+	streamB := GenerateStreamName("room-x", "bob")
+	ts.mu.Lock()
+	ts.clients = []clientsResponseClient{
+		{ID: "cid-1", Stream: streamA},
+		{ID: "cid-2", Stream: streamB},
+		{ID: "cid-3", Stream: "gs-other"},
+	}
+	ts.mu.Unlock()
+
+	s := newServiceWithURL(ts.srv.URL)
+	s.registry = &stubRegistry{
+		streams: map[string][]string{"room-x": {streamA, streamB}},
+		identityStreams: map[string]string{
+			"room-x\x00alice": streamA,
+			"room-x\x00bob":   streamB,
+		},
+	}
+
+	got, err := s.ListParticipants("room-x")
+	if err != nil {
+		t.Fatalf("ListParticipants: %v", err)
+	}
+	names := make([]string, 0, len(got))
+	for _, p := range got {
+		names = append(names, p.Identity)
+	}
+	sort.Strings(names)
+	if !reflect.DeepEqual(names, []string{"alice", "bob"}) {
+		t.Fatalf("participants = %v, want [alice bob]", names)
+	}
+}
+
+func TestListParticipants_NoRegistryStreamsEmpty(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.close()
+	ts.mu.Lock()
+	ts.clients = []clientsResponseClient{{ID: "cid-1", Stream: "gs-aaa"}}
+	ts.mu.Unlock()
+	s := newServiceWithURL(ts.srv.URL)
+	// registry nil or empty streams → empty, not match by room name
+	got, err := s.ListParticipants("room-x")
+	if err != nil {
+		t.Fatalf("ListParticipants: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty without registry streams, got %v", got)
+	}
+}
+
+func TestGetHost_ReturnsAPIBase(t *testing.T) {
+	s := NewService(&config.Config{
+		SRSHost:    "srs.example.com",
+		SRSApiPort: "1985",
+	})
+	want := "http://srs.example.com:1985"
+	if got := s.GetHost(); got != want {
+		t.Fatalf("GetHost = %q, want %q", got, want)
+	}
+}
+
+func TestListRooms_MemberCount(t *testing.T) {
+	s := newServiceWithURL("http://srs.example")
+	s.registry = &stubRegistry{
+		rooms:   []string{"room-a"},
+		streams: map[string][]string{"room-a": {"gs-1", "gs-2"}},
+	}
+	got, err := s.ListRooms()
+	if err != nil {
+		t.Fatalf("ListRooms: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "room-a" || got[0].MemberCount != 2 {
+		t.Fatalf("unexpected rooms: %+v", got)
 	}
 }

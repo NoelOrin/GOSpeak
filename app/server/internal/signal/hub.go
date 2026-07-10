@@ -1109,6 +1109,21 @@ func (h *Hub) StreamForIdentity(room, identity string) (string, bool) {
 	return "", false
 }
 
+// IdentityForStream 返回登记该 stream 的 identity（RoomRegistry 实现）。
+// 未登记返 ok=false，调用方（SRS ListParticipants）可降级返回 client id。
+func (h *Hub) IdentityForStream(room, stream string) (string, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if identities, ok := h.streamByIdentity[room]; ok {
+		for identity, st := range identities {
+			if st == stream {
+				return identity, true
+			}
+		}
+	}
+	return "", false
+}
+
 func parseJSON(data string, v interface{}) error {
 	return json.Unmarshal([]byte(data), v)
 }

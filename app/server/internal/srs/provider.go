@@ -12,6 +12,7 @@ import (
 type Service struct {
 	client   *Client
 	secret   string
+	host     string
 	whipURL  string
 	registry pkg.RoomRegistry
 }
@@ -37,6 +38,7 @@ func NewService(cfg *config.Config) *Service {
 	return &Service{
 		client:  NewClient(baseURL),
 		secret:  cfg.SRSSecret,
+		host:    baseURL,
 		whipURL: whipURL,
 	}
 }
@@ -56,21 +58,49 @@ func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
 	rooms := s.registry.Rooms()
 	out := make([]sfu.RoomSummary, 0, len(rooms))
 	for _, name := range rooms {
-		out = append(out, sfu.RoomSummary{Name: name})
+		streams := s.registry.Streams(name)
+		out = append(out, sfu.RoomSummary{Name: name, MemberCount: len(streams)})
 	}
 	return out, nil
 }
 
 func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
-	participants, err := s.client.ListParticipants(room)
+	// SRS 客户端按 stream 维度，非 room 名。优先 registry 登记的 stream 集合过滤。
+	var streams []string
+	if s.registry != nil {
+		streams = s.registry.Streams(room)
+	}
+	if len(streams) == 0 {
+		// 无登记时不强行按 room 名过滤（那是 stream 名），返回空列表。
+		return []sfu.ParticipantSummary{}, nil
+	}
+	participants, err := s.client.ListParticipantsByStreams(streams)
 	if err != nil {
 		return nil, pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
 	}
 	out := make([]sfu.ParticipantSummary, 0, len(participants))
+	seen := make(map[string]struct{}, len(participants))
 	for _, p := range participants {
-		if id, ok := p["id"].(string); ok {
-			out = append(out, sfu.ParticipantSummary{Identity: id})
+		stream, _ := p["stream"].(string)
+		identity := ""
+		if s.registry != nil && stream != "" {
+			if id, ok := s.registry.IdentityForStream(room, stream); ok {
+				identity = id
+			}
 		}
+		if identity == "" {
+			if id, ok := p["id"].(string); ok {
+				identity = id
+			}
+		}
+		if identity == "" {
+			continue
+		}
+		if _, ok := seen[identity]; ok {
+			continue
+		}
+		seen[identity] = struct{}{}
+		out = append(out, sfu.ParticipantSummary{Identity: identity})
 	}
 	return out, nil
 }
@@ -125,7 +155,7 @@ func (s *Service) DeleteRoom(room string) error {
 }
 
 func (s *Service) GetHost() string {
-	return ""
+	return s.host
 }
 
 func (s *Service) ProviderName() string {
