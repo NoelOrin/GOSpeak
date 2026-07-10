@@ -87,3 +87,26 @@ func IsTokenExpired(claims *Claims) bool {
 func newJTI() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
 }
+
+// GenerateBotToken 签发 Bot token。如果 isPermanent 为 true，token 永不过期（100年）。
+func GenerateBotToken(username, displayName, userUUID, role string, tokenVersion uint, isPermanent bool) (string, error) {
+	claims := Claims{
+		Username:     username,
+		DisplayName:  displayName,
+		UserUUID:     userUUID,
+		Role:         role,
+		TokenVersion: tokenVersion,
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt: jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
+			ID:        newJTI(),
+		},
+	}
+	if isPermanent {
+		claims.RegisteredClaims.ExpiresAt = jwt.NewNumericDate(time.Date(2125, 1, 1, 0, 0, 0, 0, time.UTC))
+	} else {
+		claims.RegisteredClaims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(24 * time.Hour))
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(redis.GetSigningKey())
+}

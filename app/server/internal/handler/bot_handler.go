@@ -17,7 +17,7 @@ func NewBotHandler(svc *service.BotService) *BotHandler {
 
 // Create
 // @Summary      创建 Bot
-// @Description  创建 Bot 用户并签发 JWT（token 同构，与用户一致）
+// @Description  创建 Bot 用户并签发 JWT。expires_in 为空时生成永久 token（100年）
 // @Tags         Bot
 // @Accept       json
 // @Produce      json

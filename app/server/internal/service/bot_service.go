@@ -17,6 +17,8 @@ import (
 
 const botNamePrefix = "bot_"
 
+var permanentExpiry = time.Date(2125, 1, 1, 0, 0, 0, 0, time.UTC)
+
 type CreateBotRequest struct {
 	Name      string `json:"name" binding:"required"`
 	Role      string `json:"role" binding:"required"`
@@ -24,8 +26,11 @@ type CreateBotRequest struct {
 }
 
 type CreateBotResult struct {
-	Token string      `json:"token"`
-	User  *model.User `json:"user"`
+	Token      string      `json:"token"`
+	TokenUUID  string      `json:"token_uuid"`
+	User       *model.User `json:"user"`
+	Permanent  bool        `json:"permanent"`
+	ExpiresAt  *time.Time  `json:"expires_at,omitempty"`
 }
 
 type BotService struct {
@@ -75,7 +80,8 @@ func (s *BotService) Create(req *CreateBotRequest) (*CreateBotResult, error) {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	expiresAt, err := parseBotExpiry(req.ExpiresIn)
+	// Bot 永久，普通用户必须有限期
+	expiresAt, isPermanent, err := parseBotExpiry(req.ExpiresIn, true)
 	if err != nil {
 		_ = s.userRepo.Delete(user.ID)
 		return nil, err
@@ -93,12 +99,21 @@ func (s *BotService) Create(req *CreateBotRequest) (*CreateBotResult, error) {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	token, err := pkg.GenerateToken(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion)
+	token, err := pkg.GenerateBotToken(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion, isPermanent)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	return &CreateBotResult{Token: token, User: user}, nil
+	result := &CreateBotResult{
+		Token:     token,
+		TokenUUID: botToken.UUID,
+		User:      user,
+		Permanent: isPermanent,
+	}
+	if !isPermanent {
+		result.ExpiresAt = &expiresAt
+	}
+	return result, nil
 }
 
 func (s *BotService) List() ([]model.BotToken, error) {
@@ -116,19 +131,25 @@ func (s *BotService) Revoke(uuid string) error {
 	return nil
 }
 
-func parseBotExpiry(expiresIn string) (time.Time, error) {
+// parseBotExpiry 解析过期时间。isBot=true 时允许永久，isBot=false 时必须有限期
+func parseBotExpiry(expiresIn string, isBot bool) (time.Time, bool, error) {
 	expiresIn = strings.TrimSpace(expiresIn)
+	
 	if expiresIn == "" {
-		return time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC), nil
+		if isBot {
+			return permanentExpiry, true, nil
+		}
+		return time.Time{}, false, pkg.NewAppError(pkg.INVALID_PARAMS, "expires_in is required for non-bot users")
 	}
+
 	d, err := time.ParseDuration(expiresIn)
 	if err != nil {
-		return time.Time{}, pkg.NewAppError(pkg.INVALID_PARAMS, "invalid expires_in, use Go duration like 720h or 30d")
+		return time.Time{}, false, pkg.NewAppError(pkg.INVALID_PARAMS, "invalid expires_in, use Go duration like 720h or 30d")
 	}
 	if d <= 0 {
-		return time.Time{}, pkg.NewAppError(pkg.INVALID_PARAMS, "expires_in must be positive")
+		return time.Time{}, false, pkg.NewAppError(pkg.INVALID_PARAMS, "expires_in must be positive")
 	}
-	return time.Now().Add(d), nil
+	return time.Now().Add(d), false, nil
 }
 
 func randomHex(length int) string {
