@@ -9,6 +9,7 @@ import { useRoomPresenceSounds } from "./hooks/useRoomPresenceSounds";
 const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 	const {
 		selectedRoom,
+		phase,
 		phaseLabel,
 		sfuClient,
 		isJoined,
@@ -41,20 +42,24 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 						<div class="flex flex-col items-center gap-4">
 							<div class="text-lg font-bold">{selectedRoom()?.name}</div>
 							<Show
-								when={isLoading()}
+								when={phase() === "failed"}
 								fallback={
-									<div class="flex flex-col items-center gap-3">
-										<div class="text-sm text-error/70">
-											{error() || phaseLabel()}
+									<div class="flex flex-col items-center gap-4">
+										<div class="loading loading-spinner loading-sm" />
+										<div class="text-sm text-base-content/40">
+											{isLoading() ? phaseLabel() : "准备加入..."}
 										</div>
-										<button class="btn btn-sm btn-primary" onClick={retry}>
-											重试
-										</button>
 									</div>
 								}
 							>
-								<div class="loading loading-spinner loading-sm" />
-								<div class="text-sm text-base-content/40">{phaseLabel()}</div>
+								<div class="flex flex-col items-center gap-3">
+									<div class="text-sm text-error/70">
+										{error() || phaseLabel()}
+									</div>
+									<button class="btn btn-sm btn-primary" onClick={retry}>
+										重试
+									</button>
+								</div>
 							</Show>
 						</div>
 					}
