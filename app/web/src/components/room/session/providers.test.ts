@@ -2,10 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import { getVoiceProviderAdapter } from "./providers";
 
 describe("getVoiceProviderAdapter", () => {
-	it("srs is interactive after media (WHIP)", () => {
-		const adapter = getVoiceProviderAdapter("srs");
-		expect(adapter.interactiveAfterMedia).toBe(true);
-		expect(getVoiceProviderAdapter("livekit").interactiveAfterMedia).toBeFalsy();
+	it("srs uses background signal + serialize joins (WHIP)", () => {
+		const srs = getVoiceProviderAdapter("srs");
+		expect(srs.interactiveAfterMedia).toBe(true);
+		expect(srs.signalJoinMode).toBe("background");
+		expect(srs.serializeJoins).toBe(true);
+
+		const livekit = getVoiceProviderAdapter("livekit");
+		expect(livekit.interactiveAfterMedia).toBeFalsy();
+		expect(livekit.signalJoinMode).toBe("await");
+		expect(livekit.serializeJoins).toBe(false);
 	});
 
 	it("srs connect target uses whipUrl only", () => {

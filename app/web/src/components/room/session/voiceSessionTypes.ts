@@ -28,14 +28,35 @@ export type VoiceJoinAck = {
 	identity?: string;
 };
 
+/**
+ * media 成功后信令 join 的执行策略：
+ * - await: 等信令完成再返回（LiveKit 等）
+ * - background: media 成功即可返回，信令后台跑（SRS WHIP 等）
+ */
+export type VoiceSignalJoinMode = "await" | "background";
+
 export interface VoiceProviderAdapter {
 	provider: SFUProvider;
 	resolveConnectTarget(token: JoinTokenResponse): string;
 	/**
-	 * true: WHIP/WHEP 等 media join 完成后即可交互（VoiceChat 可加载），
-	 * 信令 join 继续后台进行。SRS 用。
+	 * true: media join 完成后即可交互（VoiceChat 可加载）。
+	 * 通常与 signalJoinMode=background 一起用。
 	 */
 	interactiveAfterMedia?: boolean;
+	/**
+	 * media 后信令 join 模式。默认 await。
+	 * SRS 用 background。
+	 */
+	signalJoinMode?: VoiceSignalJoinMode;
+	/**
+	 * true: 同 joinKey 串行 media join，避免 effect 重入双 publish。
+	 * 默认 false；SRS 开。
+	 */
+	serializeJoins?: boolean;
+	/**
+	 * 串行队列 key。默认 room::identity::stream。
+	 */
+	joinKey?(token: JoinTokenResponse): string;
 	afterMediaJoin?(
 		client: SFUClient,
 		token: JoinTokenResponse,

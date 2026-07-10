@@ -8,20 +8,19 @@ import {
 	resolveSFUProvider,
 } from "@/api/sfu";
 import { getVoiceProviderAdapter } from "./providers";
-import type { VoiceJoinAck, VoicePhase } from "./voiceSessionTypes";
+import type {
+	VoiceJoinAck,
+	VoicePhase,
+	VoiceProviderAdapter,
+} from "./voiceSessionTypes";
 
 export class VoiceJoinAbortError extends Error {
 	name = "AbortError";
 }
 
-// 同 room+identity 串行队列（不改 useVoiceSession）：
-// token effect 重入会 abort+新 join；必须等旧 join 的 leave 收尾后再 WHIP，
-// 否则第一次成功、第二次 stream busy。
+// adapter.serializeJoins=true 时按 joinKey 串行（SRS 防双 WHIP）。
+// LiveKit 等 serializeJoins=false，互不影响。
 const joinQueues = new Map<string, Promise<void>>();
-
-function joinKey(token: JoinTokenResponse): string {
-	return `${token.room}::${token.identity}::${token.stream || ""}`;
-}
 
 async function withJoinQueue<T>(
 	key: string,
@@ -32,7 +31,6 @@ async function withJoinQueue<T>(
 	const gate = new Promise<void>((resolve) => {
 		release = resolve;
 	});
-	// 串起队列：后继等待本轮 gate 释放
 	joinQueues.set(
 		key,
 		prev.catch(() => undefined).then(() => gate),
@@ -42,7 +40,6 @@ async function withJoinQueue<T>(
 		return await fn();
 	} finally {
 		release();
-		// 若仍是当前 gate 链尾，清掉避免 Map 无限增长
 		const cur = joinQueues.get(key);
 		void cur?.then(() => {
 			if (joinQueues.get(key) === cur) {
@@ -105,26 +102,44 @@ function raceAbort<T>(p: Promise<T>, signal?: AbortSignal): Promise<T> {
 	});
 }
 
+function resolveJoinKey(
+	adapter: VoiceProviderAdapter,
+	token: JoinTokenResponse,
+): string {
+	return (
+		adapter.joinKey?.(token) ??
+		`${token.room}::${token.identity}::${token.stream || ""}`
+	);
+}
+
+/**
+ * 通用进房编排。provider 差异只读 adapter：
+ * - resolveConnectTarget
+ * - serializeJoins / joinKey
+ * - interactiveAfterMedia / signalJoinMode
+ * - afterMediaJoin
+ *
+ * 禁止在此写 provider 名称分支。
+ */
 export async function runVoiceJoin(
 	token: JoinTokenResponse,
 	deps: VoiceJoinDeps,
 ): Promise<{ client: SFUClient; provider: SFUProvider }> {
 	const provider = resolveSFUProvider(token);
 	const adapter = getVoiceProviderAdapter(provider);
-	const key = joinKey(token);
+	const run = () => executeVoiceJoin(token, deps, provider, adapter);
 
-	// WHIP 类走同 key 串行；其他 provider 直接跑，避免误伤。
-	if (adapter.interactiveAfterMedia) {
-		return withJoinQueue(key, () => doVoiceJoin(token, deps, provider, adapter));
+	if (adapter.serializeJoins) {
+		return withJoinQueue(resolveJoinKey(adapter, token), run);
 	}
-	return doVoiceJoin(token, deps, provider, adapter);
+	return run();
 }
 
-async function doVoiceJoin(
+async function executeVoiceJoin(
 	token: JoinTokenResponse,
 	deps: VoiceJoinDeps,
 	provider: SFUProvider,
-	adapter: ReturnType<typeof getVoiceProviderAdapter>,
+	adapter: VoiceProviderAdapter,
 ): Promise<{ client: SFUClient; provider: SFUProvider }> {
 	const {
 		loadClient,
@@ -151,7 +166,7 @@ async function doVoiceJoin(
 	);
 	throwIfAborted(signal);
 
-	// 切房 abort 时必须拆掉已创建的 client，否则 SRS WHIP/WHEP 会孤儿悬挂。
+	// abort 时拆掉已创建 client，避免媒体会话孤儿。
 	try {
 		onPhase("joining_media");
 		await raceAbort(
@@ -169,7 +184,7 @@ async function doVoiceJoin(
 
 		setupAudio(client);
 
-		// media 已通：先挂 client，再切 phase。WHIP 类进 media_ready 即可渲染 VoiceChat。
+		// media 已通：先挂 client，再切 phase。
 		onClientReady?.(client, provider);
 		throwIfAborted(signal);
 
@@ -189,9 +204,12 @@ async function doVoiceJoin(
 			await adapter.afterMediaJoin?.(client, token, ack ?? {});
 		};
 
-		// WHIP/WHEP：media 成功即 media_ready 并立刻返回，VoiceChat 可加载。
-		// 信令/成员订阅后台继续；失败不得拆已成功的 media session。
-		if (adapter.interactiveAfterMedia) {
+		const signalMode = adapter.signalJoinMode ?? "await";
+		const earlyInteractive =
+			!!adapter.interactiveAfterMedia || signalMode === "background";
+
+		// background：media 成功即 media_ready 并返回；信令后台继续。
+		if (earlyInteractive) {
 			onPhase("media_ready");
 			void joinSignal()
 				.then(() => {
@@ -211,6 +229,7 @@ async function doVoiceJoin(
 			return { client, provider };
 		}
 
+		// await：完整 signal 后才返回（LiveKit 等）。
 		onPhase("joining_signal");
 		await joinSignal();
 		return { client, provider };

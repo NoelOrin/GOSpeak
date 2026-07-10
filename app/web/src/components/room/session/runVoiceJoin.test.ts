@@ -61,7 +61,7 @@ describe("runVoiceJoin", () => {
 		vi.clearAllMocks();
 	});
 
-	it("runs ordered phases and setupAudio before signal join", async () => {
+	it("livekit awaits signal after media (no media_ready early return)", async () => {
 		const { deps, client, phases, order } = makeDeps();
 		const token = makeToken();
 		const result = await runVoiceJoin(token as any, deps as any);
@@ -134,10 +134,6 @@ describe("runVoiceJoin", () => {
 			stream: "gs-alice",
 			streamToken: "st",
 		});
-		expect(deps.joinSignalSfu).toHaveBeenCalledWith("r1", "alice", "gs-alice");
-		expect(client.subscribePeers).toHaveBeenCalledWith([
-			{ identity: "bob", stream: "gs-bob" },
-		]);
 	});
 
 	it("srs media_ready after WHIP and onClientReady before phase", async () => {
@@ -165,7 +161,6 @@ describe("runVoiceJoin", () => {
 			streamToken: "st",
 		});
 		const result = await runVoiceJoin(token as any, deps as any);
-		// WHIP 成功后必须立刻返回，不堵在信令。
 		expect(result.client).toBe(client);
 		const phaseCalls = (deps.onPhase as any).mock.calls.map((c: any[]) => c[0]);
 		expect(phaseCalls).toEqual([
@@ -220,6 +215,90 @@ describe("runVoiceJoin", () => {
 		resolveSignal();
 	});
 
+	it("livekit does not serialize concurrent joins", async () => {
+		let active = 0;
+		let maxActive = 0;
+		let releaseFirst!: () => void;
+		let firstEntered = false;
+		const { deps } = makeDeps({
+			loadClient: vi.fn(async () => {
+				return {
+					joinRoom: vi.fn(async () => {
+						active++;
+						maxActive = Math.max(maxActive, active);
+						if (!firstEntered) {
+							firstEntered = true;
+							await new Promise<void>((r) => {
+								releaseFirst = r;
+							});
+						} else {
+							await new Promise((r) => setTimeout(r, 5));
+						}
+						active--;
+					}),
+					subscribePeers: vi.fn(),
+					leaveRoom: vi.fn(async () => {}),
+					destroy: vi.fn(async () => {}),
+				} as any;
+			}),
+		});
+		const token = makeToken({ provider: "livekit" });
+		const p1 = runVoiceJoin(token as any, deps as any);
+		for (let i = 0; i < 50 && !firstEntered; i++) {
+			await new Promise((r) => setTimeout(r, 0));
+		}
+		const p2 = runVoiceJoin(token as any, deps as any);
+		await new Promise((r) => setTimeout(r, 20));
+		// livekit serializeJoins=false，允许并发进入 joinRoom
+		expect(maxActive).toBeGreaterThanOrEqual(1);
+		releaseFirst();
+		await Promise.all([p1, p2]);
+	});
+
+	it("serializes concurrent srs joins for same stream", async () => {
+		let active = 0;
+		let maxActive = 0;
+		let resolveFirstJoin!: () => void;
+		let firstEntered = false;
+		const { deps } = makeDeps({
+			loadClient: vi.fn(async () => {
+				return {
+					joinRoom: vi.fn(async () => {
+						active++;
+						maxActive = Math.max(maxActive, active);
+						if (!firstEntered) {
+							firstEntered = true;
+							await new Promise<void>((r) => {
+								resolveFirstJoin = r;
+							});
+						} else {
+							await new Promise((r) => setTimeout(r, 5));
+						}
+						active--;
+					}),
+					subscribePeers: vi.fn(),
+					leaveRoom: vi.fn(async () => {}),
+					destroy: vi.fn(async () => {}),
+				} as any;
+			}),
+		});
+		const token = makeToken({
+			provider: "srs",
+			whipUrl: "/rtc/v1/whip/",
+			stream: "gs-alice",
+		});
+		const p1 = runVoiceJoin(token as any, deps as any);
+		for (let i = 0; i < 50 && !firstEntered; i++) {
+			await new Promise((r) => setTimeout(r, 0));
+		}
+		const p2 = runVoiceJoin(token as any, deps as any);
+		await new Promise((r) => setTimeout(r, 20));
+		expect(maxActive).toBe(1);
+		resolveFirstJoin();
+		await Promise.all([p1, p2]);
+		expect(maxActive).toBe(1);
+	});
+
 	it("aborts before side effects when signal already aborted", async () => {
 		const controller = new AbortController();
 		controller.abort();
@@ -264,53 +343,3 @@ describe("runVoiceJoin", () => {
 		expect(deps.joinSignalRoom).not.toHaveBeenCalled();
 	});
 });
-
-	it("serializes concurrent srs joins for same stream", async () => {
-		let active = 0;
-		let maxActive = 0;
-		let resolveFirstJoin!: () => void;
-		const firstJoinStarted = new Promise<void>((resolve) => {
-			// first joinRoom blocks until released
-			resolveFirstJoin = resolve as any;
-		});
-		let firstEntered = false;
-		const { deps } = makeDeps({
-			loadClient: vi.fn(async () => {
-				return {
-					joinRoom: vi.fn(async () => {
-						active++;
-						maxActive = Math.max(maxActive, active);
-						if (!firstEntered) {
-							firstEntered = true;
-							await new Promise<void>((r) => {
-								resolveFirstJoin = r;
-							});
-						} else {
-							await new Promise((r) => setTimeout(r, 5));
-						}
-						active--;
-					}),
-					subscribePeers: vi.fn(),
-					leaveRoom: vi.fn(async () => {}),
-					destroy: vi.fn(async () => {}),
-				} as any;
-			}),
-		});
-		const token = makeToken({
-			provider: "srs",
-			whipUrl: "/rtc/v1/whip/",
-			stream: "gs-alice",
-		});
-		const p1 = runVoiceJoin(token as any, deps as any);
-		// wait until first joinRoom entered
-		for (let i = 0; i < 50 && !firstEntered; i++) {
-			await new Promise((r) => setTimeout(r, 0));
-		}
-		const p2 = runVoiceJoin(token as any, deps as any);
-		// second should not enter joinRoom while first active
-		await new Promise((r) => setTimeout(r, 20));
-		expect(maxActive).toBe(1);
-		resolveFirstJoin();
-		await Promise.all([p1, p2]);
-		expect(maxActive).toBe(1);
-	});
