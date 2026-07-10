@@ -64,7 +64,7 @@ const VoiceChat = ({ ref }: { ref?: HTMLDivElement }) => {
 					when={socketStore.members().length > 0}
 					fallback={
 						<div class="flex justify-center items-center col-span-full h-32 text-base-content/40">
-							暂无成员
+							已连接，等待成员加入
 						</div>
 					}
 				>

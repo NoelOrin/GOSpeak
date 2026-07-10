@@ -3,19 +3,22 @@ import { socketStore } from "@/stores/socketStore";
 import MemberSidebar from "./components/memberSidebar";
 import VoiceChat from "./components/voiceChat";
 import { useRoomAudioBridge } from "./hooks/useRoomAudioBridge";
-import { useRoomJoinSession } from "./hooks/useRoomJoinSession";
+import { useVoiceSession } from "./hooks/useVoiceSession";
 import { useRoomPresenceSounds } from "./hooks/useRoomPresenceSounds";
 
 const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 	const {
 		selectedRoom,
-		joinState,
+		phaseLabel,
 		sfuClient,
 		isJoined,
+		isLoading,
 		isReconnecting,
 		currentRoom,
+		error,
 		handleManualLeave,
-	} = useRoomJoinSession();
+		retry,
+	} = useVoiceSession();
 	useRoomAudioBridge(sfuClient, isJoined);
 	useRoomPresenceSounds();
 
@@ -38,13 +41,20 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 						<div class="flex flex-col items-center gap-4">
 							<div class="text-lg font-bold">{selectedRoom()?.name}</div>
 							<Show
-								when={joinState() !== "failed"}
+								when={isLoading()}
 								fallback={
-									<div class="text-sm text-error/70">加入失败，请重试</div>
+									<div class="flex flex-col items-center gap-3">
+										<div class="text-sm text-error/70">
+											{error() || phaseLabel()}
+										</div>
+										<button class="btn btn-sm btn-primary" onClick={retry}>
+											重试
+										</button>
+									</div>
 								}
 							>
 								<div class="loading loading-spinner loading-sm" />
-								<div class="text-sm text-base-content/40">正在加入...</div>
+								<div class="text-sm text-base-content/40">{phaseLabel()}</div>
 							</Show>
 						</div>
 					}
