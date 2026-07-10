@@ -1,10 +1,9 @@
 import type { SFUClient } from "@gospeak/sfu-client/types";
-import { createEffect, onCleanup } from "solid-js";
+import { createEffect } from "solid-js";
 import {
 	cleanupAudioHandler,
 	setMasterMuted,
 	setMasterVolume,
-	setupAudioHandler,
 } from "@/handler_audio";
 import { socketStore } from "@/stores/socketStore";
 import VoiceChatStore from "@/stores/voiceChatStore";
@@ -18,14 +17,12 @@ export function useRoomAudioBridge(
 	client: () => SFUClient | null,
 	joined: () => boolean,
 ) {
+	// 音量/静音持久化同步；setupAudioHandler 由 join pipeline 唯一负责
 	createEffect(() => {
 		const currentClient = client();
-		if (!currentClient) return;
-		setupAudioHandler(currentClient);
-		// 把 store 持久化的全局输出音量/静音同步回 handler（cleanup 已重置为默认）。
+		if (!currentClient || !joined()) return;
 		setMasterVolume(VoiceChatStore.data.outputVolume / 100);
 		setMasterMuted(VoiceChatStore.data.isOutMute);
-		onCleanup(cleanupAudioHandler);
 	});
 
 	createEffect(() => {
