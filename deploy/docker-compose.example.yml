@@ -165,7 +165,7 @@ services:
   # ===========================================================================
   # 启用: app/server/.env.dev 设 SFU_PROVIDER=srs + app/web/.env.local 设 VITE_SFU_PROVIDER=srs
   srs:
-    image: ossrs/srs@sha256:4e293846ad2448ff1a0157aa2c694e7c451fff5046c93b5bc6da0fa0384ef998
+    image: ossrs/srs:6
     container_name: gospeak-srs
     restart: unless-stopped
     ports:

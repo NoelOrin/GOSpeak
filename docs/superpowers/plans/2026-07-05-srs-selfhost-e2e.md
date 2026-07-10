@@ -6,7 +6,7 @@
 
 **Architecture:** SRS5 docker 自部署,WHIP/WHEP 双 PC 直连(前端已有,无需改代码层)。修 `candidate` 解决 ICE,补 env 切换 provider,文档化手动 runbook,Playwright 2-context 验证 track 到达。
 
-**Tech Stack:** SRS5 (`ossrs/srs:5`) · Docker Compose · Go env · Vite env · Playwright (`@playwright/test`)
+**Tech Stack:** SRS6 (`ossrs/srs:6`) · Docker Compose · Go env · Vite env · Playwright (`@playwright/test`)
 
 ## Global Constraints
 
@@ -88,7 +88,7 @@ git commit -m "fix(srs): candidate 用 env 注入解决容器 ICE 不可达"
   # ===========================================================================
   # 启用: .env 设 SFU_PROVIDER=srs + app/web/.env.local 设 VITE_SFU_PROVIDER=srs
   srs:
-    image: ossrs/srs:5
+    image: ossrs/srs:6
     container_name: gospeak-srs
     restart: unless-stopped
     ports:
