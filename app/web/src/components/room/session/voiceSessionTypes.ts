@@ -7,6 +7,7 @@ export type VoicePhase =
 	| "resolving"
 	| "loading_sfu"
 	| "joining_media"
+	| "media_ready"
 	| "joining_signal"
 	| "ready"
 	| "reconnecting"
@@ -30,6 +31,11 @@ export type VoiceJoinAck = {
 export interface VoiceProviderAdapter {
 	provider: SFUProvider;
 	resolveConnectTarget(token: JoinTokenResponse): string;
+	/**
+	 * true: WHIP/WHEP 等 media join 完成后即可交互（VoiceChat 可加载），
+	 * 信令 join 继续后台进行。SRS 用。
+	 */
+	interactiveAfterMedia?: boolean;
 	afterMediaJoin?(
 		client: SFUClient,
 		token: JoinTokenResponse,
@@ -48,7 +54,12 @@ export function isVoiceLoading(phase: VoicePhase): boolean {
 }
 
 export function isVoiceInteractive(phase: VoicePhase): boolean {
-	return phase === "ready" || phase === "reconnecting";
+	// media_ready: WHIP 已成功，UI 可进 VoiceChat；信令可能仍在 joining_signal
+	return (
+		phase === "ready" ||
+		phase === "media_ready" ||
+		phase === "reconnecting"
+	);
 }
 
 export function voicePhaseLabel(phase: VoicePhase): string {
@@ -59,6 +70,8 @@ export function voicePhaseLabel(phase: VoicePhase): string {
 			return "加载语音引擎...";
 		case "joining_media":
 			return "连接媒体...";
+		case "media_ready":
+			return "媒体已连接";
 		case "joining_signal":
 			return "加入房间...";
 		case "reconnecting":

@@ -31,6 +31,11 @@ export type VoiceJoinDeps = {
 		stream?: string,
 	) => Promise<VoiceJoinAck>;
 	onPhase: (phase: VoicePhase) => void;
+	/**
+	 * media join 成功后立刻回调（所有 provider 通用）。
+	 * WHIP 类用此挂上 client，让 VoiceChat 在 media_ready 即可用，不必等信令结束。
+	 */
+	onClientReady?: (client: SFUClient, provider: SFUProvider) => void;
 	audioOptions: SFUClientOptions;
 	socket?: unknown;
 	password?: string;
@@ -72,6 +77,7 @@ export async function runVoiceJoin(
 		joinSignalRoom,
 		joinSignalSfu,
 		onPhase,
+		onClientReady,
 		audioOptions,
 		socket,
 		password,
@@ -93,36 +99,72 @@ export async function runVoiceJoin(
 	);
 	throwIfAborted(signal);
 
-	onPhase("joining_media");
-	await raceAbort(
-		client.joinRoom({
-			token: token.token,
-			serverUrl: adapter.resolveConnectTarget(token),
-			identity: token.identity,
-			room: token.room,
-			stream: token.stream,
-			streamToken: token.streamToken,
-		}),
-		signal,
-	);
-	throwIfAborted(signal);
+	// 切房 abort 时必须拆掉已创建的 client，否则 SRS WHIP/WHEP 会孤儿悬挂。
+	try {
+		onPhase("joining_media");
+		await raceAbort(
+			client.joinRoom({
+				token: token.token,
+				serverUrl: adapter.resolveConnectTarget(token),
+				identity: token.identity,
+				room: token.room,
+				stream: token.stream,
+				streamToken: token.streamToken,
+			}),
+			signal,
+		);
+		throwIfAborted(signal);
 
-	setupAudio(client);
+		setupAudio(client);
 
-	onPhase("joining_signal");
-	await raceAbort(
-		joinSignalRoom(token.room, token.identity, password),
-		signal,
-	);
-	throwIfAborted(signal);
+		// media 已通：先挂 client，再切 phase。WHIP 类进 media_ready 即可渲染 VoiceChat。
+		onClientReady?.(client, provider);
+		throwIfAborted(signal);
 
-	const ack = await raceAbort(
-		joinSignalSfu(token.room, token.identity, token.stream),
-		signal,
-	);
-	throwIfAborted(signal);
+		const joinSignal = async () => {
+			await raceAbort(
+				joinSignalRoom(token.room, token.identity, password),
+				signal,
+			);
+			throwIfAborted(signal);
 
-	await adapter.afterMediaJoin?.(client, token, ack ?? {});
+			const ack = await raceAbort(
+				joinSignalSfu(token.room, token.identity, token.stream),
+				signal,
+			);
+			throwIfAborted(signal);
 
-	return { client, provider };
+			await adapter.afterMediaJoin?.(client, token, ack ?? {});
+		};
+
+		// WHIP/WHEP：media 成功即 media_ready 并立刻返回，VoiceChat 可加载。
+		// 信令/成员订阅后台继续；失败不得拆已成功的 media session。
+		if (adapter.interactiveAfterMedia) {
+			onPhase("media_ready");
+			void joinSignal()
+				.then(() => {
+					if (signal?.aborted) return;
+					onPhase("ready");
+				})
+				.catch((err) => {
+					if (
+						signal?.aborted ||
+						err instanceof VoiceJoinAbortError ||
+						(err instanceof Error && err.name === "AbortError")
+					) {
+						return;
+					}
+					console.error("[runVoiceJoin] signal join failed after media:", err);
+				});
+			return { client, provider };
+		}
+
+		onPhase("joining_signal");
+		await joinSignal();
+		return { client, provider };
+	} catch (err) {
+		await client.leaveRoom().catch(() => {});
+		await client.destroy().catch(() => {});
+		throw err;
+	}
 }

@@ -184,21 +184,61 @@ func (s *SFUConfigService) ResolveConfig() (*config.Config, error) {
 	}
 	resolved := *s.baseCfg
 	resolved.SFUProvider = cfg.Provider
-	resolved.LiveKitHost = cfg.LiveKitHost
-	resolved.LiveKitKey = cfg.LiveKitKey
-	resolved.LiveKitSecret = cfg.LiveKitSecret
-	resolved.AgoraAppID = cfg.AgoraAppID
-	resolved.AgoraAppCertificate = cfg.AgoraAppCertificate
-	resolved.AgoraHost = cfg.AgoraHost
-	resolved.AgoraCustomerID = cfg.AgoraCustomerID
-	resolved.AgoraCustomerSecret = cfg.AgoraCustomerSecret
-	resolved.MediaSoupBridgeURL = cfg.MediaSoupBridgeURL
-	resolved.MediaSoupHost = cfg.MediaSoupHost
-	resolved.SRSHost = cfg.SRSHost
-	resolved.SRSApiPort = cfg.SRSApiPort
-	resolved.SRSSecret = cfg.SRSSecret
-	resolved.DailyAPIKey = cfg.DailyAPIKey
-	resolved.DailyDomain = cfg.DailyDomain
+
+	// env 的 SFU 设置直接覆盖当前激活 provider 的 DB 配置。
+	// 仅当 env 显式设置了非空值时覆盖，避免用空默认值清空 DB 中已保存的值。
+	switch cfg.Provider {
+	case "livekit":
+		if s.baseCfg.LiveKitHost == "" {
+			resolved.LiveKitHost = cfg.LiveKitHost
+		}
+		if s.baseCfg.LiveKitKey == "" {
+			resolved.LiveKitKey = cfg.LiveKitKey
+		}
+		if s.baseCfg.LiveKitSecret == "" {
+			resolved.LiveKitSecret = cfg.LiveKitSecret
+		}
+	case "agora":
+		if s.baseCfg.AgoraAppID == "" {
+			resolved.AgoraAppID = cfg.AgoraAppID
+		}
+		if s.baseCfg.AgoraAppCertificate == "" {
+			resolved.AgoraAppCertificate = cfg.AgoraAppCertificate
+		}
+		if s.baseCfg.AgoraHost == "" {
+			resolved.AgoraHost = cfg.AgoraHost
+		}
+		if s.baseCfg.AgoraCustomerID == "" {
+			resolved.AgoraCustomerID = cfg.AgoraCustomerID
+		}
+		if s.baseCfg.AgoraCustomerSecret == "" {
+			resolved.AgoraCustomerSecret = cfg.AgoraCustomerSecret
+		}
+	case "mediasoup":
+		if s.baseCfg.MediaSoupBridgeURL == "" {
+			resolved.MediaSoupBridgeURL = cfg.MediaSoupBridgeURL
+		}
+		if s.baseCfg.MediaSoupHost == "" {
+			resolved.MediaSoupHost = cfg.MediaSoupHost
+		}
+	case "srs":
+		if s.baseCfg.SRSHost == "" {
+			resolved.SRSHost = cfg.SRSHost
+		}
+		if s.baseCfg.SRSApiPort == "" {
+			resolved.SRSApiPort = cfg.SRSApiPort
+		}
+		if s.baseCfg.SRSSecret == "" {
+			resolved.SRSSecret = cfg.SRSSecret
+		}
+	case "daily":
+		if s.baseCfg.DailyAPIKey == "" {
+			resolved.DailyAPIKey = cfg.DailyAPIKey
+		}
+		if s.baseCfg.DailyDomain == "" {
+			resolved.DailyDomain = cfg.DailyDomain
+		}
+	}
 	return &resolved, nil
 }
 

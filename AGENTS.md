@@ -694,6 +694,19 @@ User enters room page
     └─ _joinRoom(roomIns, url, token)  // LiveKit connect + enable mic
 
 
+
+### WHIP/WHEP VoiceChat 加载时机
+
+对 SRS 等 **WHIP/WHEP** 类 SFU：
+
+- VoiceChat **可交互展示** 的确认点 = **本端 WHIP publish 成功**（`client.joinRoom` / media join 完成）
+- **不要** 等 `room:join` / `room:join:sfu` 信令全完成才允许加载 VoiceChat
+- 信令仍继续跑（成员列表、WHEP 订阅），但 UI 不得因信令慢而卡住 loading
+- LiveKit 等非 WHIP provider：仍以各自 media join 完成点为准；adapter 用 `interactiveAfterMedia` 声明
+- 实现落点：`providers.ts` / `runVoiceJoin.ts` / `voiceSessionTypes.ts` / `packages/sfu-client/*`
+- `runVoiceJoin` media 成功后必须先 `onClientReady(client)` 再 `onPhase("media_ready")`，否则 UI interactive 但 `session.client` 仍 null
+- `useVoiceSession` 只接通用 `onClientReady`（挂 client），**禁止** 为某个 SFU 写分支
+
 ### useVoiceSession 锁定规则
 
 `app/web/src/components/room/hooks/useVoiceSession.ts` 是统一进房编排器，**禁止为适配 SFU 而修改**。

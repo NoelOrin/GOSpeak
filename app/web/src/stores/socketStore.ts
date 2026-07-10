@@ -372,8 +372,31 @@ export const socketStore = createRoot(() => {
 		setCurrentRoom(null);
 	}
 
+	function waitForConnected(timeoutMs = 8000): Promise<void> {
+		if (adapter.isConnected()) return Promise.resolve();
+		// 进房时 socket 可能仍在握手；短等连接，避免 emit 丢进未连接队列后永久无 ack。
+		return new Promise((resolve, reject) => {
+			const timer = setTimeout(() => {
+				off();
+				reject(new Error("socket connect timeout"));
+			}, timeoutMs);
+			const off = adapter.onConnected(() => {
+				clearTimeout(timer);
+				off();
+				resolve();
+			});
+			if (adapter.isConnected()) {
+				clearTimeout(timer);
+				off();
+				resolve();
+			}
+		});
+	}
+
 	function joinRoom(room: string, identity: string, password?: string) {
-		return signalEmit(EVENTS.ROOM_JOIN, { room, identity, password }).then(
+		return waitForConnected().then(() =>
+			signalEmit(EVENTS.ROOM_JOIN, { room, identity, password }),
+		).then(
 			(data) => {
 				if (data.error) {
 					throw new Error(data.error);
@@ -397,7 +420,9 @@ export const socketStore = createRoot(() => {
 	}
 
 	function joinRoomSFU(room: string, identity: string, stream?: string) {
-		return signalEmit(EVENTS.ROOM_JOIN_SFU, { room, identity, stream }).then(
+		return waitForConnected().then(() =>
+			signalEmit(EVENTS.ROOM_JOIN_SFU, { room, identity, stream }),
+		).then(
 			(data) => {
 				// ack 返回完整成员列表，即时 upsert rooms[]（不等 room:updated）
 				if (data.members) {

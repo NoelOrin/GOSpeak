@@ -50,7 +50,7 @@ export function createSocketClient() {
 		payload?: Record<string, unknown>,
 	): Promise<any> {
 		return new Promise((resolve, reject) => {
-			if (!socket) {
+			if (!socket || !socket.connected) {
 				reject(new Error("socket not connected"));
 				return;
 			}

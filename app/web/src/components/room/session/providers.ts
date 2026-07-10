@@ -9,6 +9,8 @@ const livekitAdapter: VoiceProviderAdapter = {
 
 const srsAdapter: VoiceProviderAdapter = {
 	provider: "srs",
+	// WHIP 成功即可加载 VoiceChat，不堵在信令
+	interactiveAfterMedia: true,
 	resolveConnectTarget: (token) => token.whipUrl || "",
 	afterMediaJoin(client, token, ack) {
 		const peers = (ack.members ?? [])

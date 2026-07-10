@@ -263,3 +263,43 @@ func TestListProviders_ReturnsAll(t *testing.T) {
 		t.Errorf("provider count = %d, want 5", len(cfgs))
 	}
 }
+
+func TestResolveConfig_EnvOverridesActiveProvider(t *testing.T) {
+	repo := newSFUConfigTestRepo(t)
+	baseCfg := &config.Config{
+		SFUProvider: "livekit",
+		LiveKitHost: "env-host",
+		LiveKitKey:  "env-key",
+		// LiveKitSecret 故意留空 → 应回退到 DB
+	}
+	svc := NewSFUConfigService(repo, baseCfg)
+	if err := svc.SyncFromEnv(); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	// 模拟用户在 DB 中保存的 livekit 配置
+	if err := repo.Save(&model.SFUConfig{
+		Provider:      "livekit",
+		LiveKitHost:   "db-host",
+		LiveKitKey:    "db-key",
+		LiveKitSecret: "db-secret",
+	}); err != nil {
+		t.Fatalf("save livekit: %v", err)
+	}
+
+	resolved, err := svc.ResolveConfig()
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if resolved.SFUProvider != "livekit" {
+		t.Errorf("provider = %q, want livekit", resolved.SFUProvider)
+	}
+	if resolved.LiveKitHost != "env-host" {
+		t.Errorf("livekit_host = %q, want env-host (env overrides)", resolved.LiveKitHost)
+	}
+	if resolved.LiveKitKey != "env-key" {
+		t.Errorf("livekit_key = %q, want env-key (env overrides)", resolved.LiveKitKey)
+	}
+	if resolved.LiveKitSecret != "db-secret" {
+		t.Errorf("livekit_secret = %q, want db-secret (env empty -> DB fallback)", resolved.LiveKitSecret)
+	}
+}

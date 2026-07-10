@@ -18,12 +18,35 @@ type apiResponse struct {
 	Code int `json:"code"`
 }
 
+// SRS6 /api/v1/clients 实际字段:
+//   id / name(=stream 名 gs-xxx) / url(/live/gs-xxx) / stream(=内部 vid-xxx) / type / publish
+// 旧代码 json:"client" 永远解不出 ID，KickByStreams 全空，重入 WHIP 撞 5020。
 type clientsResponseClient struct {
-	ID      string `json:"client"`
+	ID      string `json:"id"`
+	// Stream 在 SRS 响应里是内部 stream id，不用于业务匹配。
 	Stream  string `json:"stream"`
+	// Name 才是业务 stream 名（gs-xxx）。
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Type    string `json:"type"`
+	Publish bool   `json:"publish"`
 	IP      string `json:"ip"`
 	Vhost   string `json:"vhost"`
 	PageURL string `json:"pageUrl"`
+}
+
+func (cl clientsResponseClient) streamName() string {
+	if cl.Name != "" {
+		return cl.Name
+	}
+	// 兼容 mock / 旧字段：url=/live/gs-xxx 或 stream 已是业务名
+	if cl.URL != "" {
+		if i := strings.LastIndex(cl.URL, "/"); i >= 0 && i+1 < len(cl.URL) {
+			return cl.URL[i+1:]
+		}
+		return cl.URL
+	}
+	return cl.Stream
 }
 
 type clientsResponse struct {
@@ -87,14 +110,15 @@ func (c *Client) ListParticipantsByStreams(streams []string) ([]map[string]inter
 
 	out := make([]map[string]interface{}, 0, len(clients))
 	for _, cl := range clients {
+		name := cl.streamName()
 		if want != nil {
-			if _, ok := want[cl.Stream]; !ok {
+			if _, ok := want[name]; !ok {
 				continue
 			}
 		}
 		out = append(out, map[string]interface{}{
 			"id":     cl.ID,
-			"stream": cl.Stream,
+			"stream": name,
 			"ip":     cl.IP,
 			"vhost":  cl.Vhost,
 		})
@@ -122,7 +146,7 @@ func (c *Client) KickByStreams(targets []string) (kicked, remaining int, err err
 
 	var toKick []string
 	for _, cl := range clients {
-		if _, ok := want[cl.Stream]; ok && cl.ID != "" {
+		if _, ok := want[cl.streamName()]; ok && cl.ID != "" {
 			toKick = append(toKick, cl.ID)
 		}
 	}

@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { getVoiceProviderAdapter } from "./providers";
 
 describe("getVoiceProviderAdapter", () => {
+	it("srs is interactive after media (WHIP)", () => {
+		const adapter = getVoiceProviderAdapter("srs");
+		expect(adapter.interactiveAfterMedia).toBe(true);
+		expect(getVoiceProviderAdapter("livekit").interactiveAfterMedia).toBeFalsy();
+	});
+
 	it("srs connect target uses whipUrl only", () => {
 		const adapter = getVoiceProviderAdapter("srs");
 		expect(

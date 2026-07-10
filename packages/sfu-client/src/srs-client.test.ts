@@ -413,3 +413,120 @@ describe("SRSSFUClient setMicEnabled with PC disconnected", () => {
 	});
 });
 
+
+
+describe("SRSSFUClient leave during in-flight WHIP", () => {
+	it("leaveRoom aborts in-flight WHIP before stream sticks", async () => {
+		const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+			if (init?.method === "DELETE") {
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					headers: { get: () => "" },
+					text: async () => "",
+				});
+			}
+			return new Promise((_, reject) => {
+				const signal = init?.signal;
+				if (!signal) return;
+				if (signal.aborted) {
+					reject(new DOMException("Aborted", "AbortError"));
+					return;
+				}
+				signal.addEventListener(
+					"abort",
+					() => reject(new DOMException("Aborted", "AbortError")),
+					{ once: true },
+				);
+			});
+		});
+		(globalThis as any).fetch = fetchMock;
+
+		const client = new SRSSFUClient({});
+		const joinPromise = client.joinRoom({
+			token: "tok",
+			serverUrl: "/rtc/v1/whip/",
+			identity: "alice",
+			room: "room1",
+			stream: "gs-alice",
+			streamToken: "st",
+		});
+
+		for (let i = 0; i < 50 && fetchMock.mock.calls.length === 0; i++) {
+			await new Promise((r) => setTimeout(r, 0));
+		}
+		expect(fetchMock.mock.calls.length).toBeGreaterThan(0);
+
+		await client.leaveRoom();
+		expect(client.isConnected()).toBe(false);
+		await expect(joinPromise).rejects.toThrow();
+		expect(client.isConnected()).toBe(false);
+		expect((client as any).publishPc).toBeNull();
+		expect((client as any).localStream).toBeNull();
+	});
+});
+
+
+describe("SRSSFUClient stream queue", () => {
+	it("serializes same-stream join after leave so second waits for first teardown", async () => {
+		const events: string[] = [];
+		let active = 0;
+		let maxActive = 0;
+		const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+			if (init?.method === "DELETE") {
+				events.push("DELETE");
+				return {
+					ok: true,
+					status: 200,
+					headers: { get: () => "" },
+					text: async () => "",
+				};
+			}
+			active++;
+			maxActive = Math.max(maxActive, active);
+			events.push("WHIP_START");
+			await new Promise((r) => setTimeout(r, 30));
+			active--;
+			events.push("WHIP_END");
+			return {
+				ok: true,
+				status: 201,
+				headers: {
+					get: (k: string) =>
+						k === "Location" ? "/rtc/v1/whip/?action=delete&token=t" : "",
+				},
+				text: async () => "v=0\r\n",
+			};
+		});
+		(globalThis as any).fetch = fetchMock;
+
+		const a = new SRSSFUClient({});
+		const b = new SRSSFUClient({});
+		const params = {
+			token: "tok",
+			serverUrl: "/rtc/v1/whip/",
+			identity: "alice",
+			room: "room1",
+			stream: "gs-alice",
+			streamToken: "st",
+		};
+
+		const p1 = a.joinRoom(params);
+		// 模拟 orchestrator abort 后立刻再 join：leave 与新 join 必须串行
+		const pLeave = a.leaveRoom();
+		const p2 = b.joinRoom(params);
+		await Promise.all([p1.catch(() => undefined), pLeave, p2]);
+
+		expect(maxActive).toBe(1);
+		const whipStarts = events.filter((e) => e === "WHIP_START").length;
+		expect(whipStarts).toBeGreaterThanOrEqual(1);
+		// 第二次 join 前必须先 DELETE/拆掉
+		const firstWhipEnd = events.indexOf("WHIP_END");
+		const lastWhipStart = events.lastIndexOf("WHIP_START");
+		if (whipStarts >= 2) {
+			expect(events.slice(0, lastWhipStart).includes("DELETE")).toBe(true);
+			expect(firstWhipEnd).toBeLessThan(lastWhipStart);
+		}
+		await b.leaveRoom();
+	});
+});

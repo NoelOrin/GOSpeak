@@ -32,6 +32,7 @@ import AudioDeviceStore from "@/stores/audioDeviceStore";
 import { socketStore } from "@/stores/socketStore";
 import userStore from "@/stores/userStore";
 import { loadSfuClient } from "../services/loadSfuClient";
+import { getVoiceProviderAdapter } from "../session/providers";
 import {
 	runVoiceJoin,
 	VoiceJoinAbortError,
@@ -57,6 +58,7 @@ type Session = {
 function toLegacyJoinState(phase: VoicePhase): JoinState {
 	switch (phase) {
 		case "ready":
+		case "media_ready":
 			return "joined";
 		case "reconnecting":
 			return "reconnecting";
@@ -105,9 +107,26 @@ export function useVoiceSession() {
 	}));
 
 	const phase = createMemo<VoicePhase>(() => session()?.status ?? "idle");
-	const isJoined = createMemo(() => isVoiceInteractive(phase()));
+	// VoiceChat 加载条件：
+	// - 通用：phase interactive（ready/media_ready/reconnecting）
+	// - WHIP 类：client 挂上即加载（interactiveAfterMedia），不堵信令
+	const isJoined = createMemo(() => {
+		const s = session();
+		if (
+			s?.client &&
+			s.status !== "failed" &&
+			s.status !== "leaving" &&
+			s.provider &&
+			getVoiceProviderAdapter(s.provider).interactiveAfterMedia
+		) {
+			return true;
+		}
+		return isVoiceInteractive(phase());
+	});
 	const isReconnecting = createMemo(() => phase() === "reconnecting");
-	const isLoading = createMemo(() => isVoiceLoading(phase()));
+	const isLoading = createMemo(
+		() => !isJoined() && isVoiceLoading(phase()),
+	);
 	const phaseLabel = createMemo(() => voicePhaseLabel(phase()));
 	const joinState = createMemo<JoinState>(() => toLegacyJoinState(phase()));
 	const currentRoom = createMemo<string | null>(
@@ -222,6 +241,30 @@ export function useVoiceSession() {
 											: s,
 									);
 								},
+								// 通用 media 完成回调：挂 client 到 session。
+								// WHIP 类 media_ready 时 VoiceChat/audio bridge 需要 client 已就绪。
+								onClientReady: (client, joinedProvider) => {
+									if (signal.aborted) return;
+									createdClient = client;
+									activeJoinClient = client;
+									socketStore.setCurrentSFUProvider(joinedProvider);
+									const whipReady =
+										!!getVoiceProviderAdapter(joinedProvider)
+											.interactiveAfterMedia;
+									// WHIP 类：client 挂上即 media_ready，VoiceChat 可加载。
+									// 非 WHIP：只挂 client，phase 仍由 onPhase 推进。
+									setSession((s) =>
+										s && s.roomName === newRoom && s.signal === signal
+											? {
+													...s,
+													client,
+													provider: joinedProvider,
+													...(whipReady ? { status: "media_ready" as const } : {}),
+													error: null,
+											  }
+											: s,
+									);
+								},
 								audioOptions: {
 									audioCapture: {
 										echoCancellation: audioSettings.echoCancellation,
@@ -259,7 +302,11 @@ export function useVoiceSession() {
 							const cur = session();
 							// 仅当当前 session 仍指向该 client 且处于活跃态才视为异常断连
 							if (cur?.client !== createdClient) return;
-							if (cur?.status !== "ready" && cur?.status !== "reconnecting") {
+							if (
+								cur?.status !== "ready" &&
+								cur?.status !== "media_ready" &&
+								cur?.status !== "reconnecting"
+							) {
 								return;
 							}
 							console.warn("[RoomDetail] SFU disconnected unexpectedly", info);
@@ -279,7 +326,9 @@ export function useVoiceSession() {
 							if (signal.aborted) return;
 							const cur = session();
 							if (cur?.client !== createdClient) return;
-							if (cur?.status !== "ready") return;
+							if (cur?.status !== "ready" && cur?.status !== "media_ready") {
+								return;
+							}
 							setSession((s) =>
 								s && s.client === createdClient
 									? { ...s, status: "reconnecting", error: null }
@@ -330,13 +379,16 @@ export function useVoiceSession() {
 								: "加入房间失败";
 						setSession((s) =>
 							s && s.roomName === newRoom
-								? { ...s, status: "failed", error: message }
+								? { ...s, status: "failed", error: message, client: null }
 								: s,
 						);
 						showToast("加入房间失败", { type: "error" });
 						if (createdClient) {
 							void teardownClient(createdClient);
 							cleanupAudioHandler();
+							if (activeJoinClient === createdClient) {
+								activeJoinClient = null;
+							}
 						}
 					}
 				})();

@@ -405,3 +405,25 @@ func TestListRooms_MemberCount(t *testing.T) {
 		t.Fatalf("unexpected rooms: %+v", got)
 	}
 }
+
+
+func TestKickByStreams_UsesNameNotInternalStreamID(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.close()
+	// 模拟 SRS6 真实响应：id + name=业务流名，stream=内部 vid
+	ts.clients = []clientsResponseClient{
+		{ID: "b3078950", Stream: "vid-15o35g6", Name: "gs-6401mpp6htg6", URL: "/live/gs-6401mpp6htg6", Publish: true},
+		{ID: "other", Stream: "vid-x", Name: "gs-other", URL: "/live/gs-other", Publish: true},
+	}
+	c := NewClient(ts.srv.URL)
+	kicked, remaining, err := c.KickByStreams([]string{"gs-6401mpp6htg6"})
+	if err != nil {
+		t.Fatalf("KickByStreams err: %v", err)
+	}
+	if kicked != 1 || remaining != 0 {
+		t.Fatalf("kicked=%d remaining=%d, want 1/0", kicked, remaining)
+	}
+	if len(ts.kickedIDs) != 1 || ts.kickedIDs[0] != "b3078950" {
+		t.Fatalf("kickedIDs=%v, want [b3078950]", ts.kickedIDs)
+	}
+}

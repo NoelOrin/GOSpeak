@@ -78,6 +78,13 @@ src/
 - **Current state**: socketStore 管理房间状态；媒体接入仍残留部分 LiveKit 命名和结构，需要继续收敛
 
 ### Multi-SFU rules
+### WHIP/WHEP VoiceChat 加载时机
+
+- SRS 等 WHIP/WHEP：`VoiceChat` 在 **WHIP 成功后** 即可展示（`media_ready`），不阻塞在信令 join
+- adapter 声明 `interactiveAfterMedia: true`；`runVoiceJoin` media join 后先 `onClientReady` 再 `onPhase("media_ready")`
+- 禁止改 `useVoiceSession` 仅为该行为开 SFU 分支
+
+
 - `/api/v1/signal/token` 返回的 `provider` 是前端选择 SFU 客户端的第一事实源
 - `VITE_SFU_PROVIDER` 只作为兜底，不应覆盖服务端返回值
 - 页面组件避免直接依赖任一 provider SDK 类型

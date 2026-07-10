@@ -116,6 +116,12 @@ describe("runVoiceJoin", () => {
 			streamToken: "st",
 		});
 		await runVoiceJoin(token as any, deps as any);
+		await vi.waitFor(() => {
+			expect(deps.joinSignalSfu).toHaveBeenCalledWith("r1", "alice", "gs-alice");
+			expect(client.subscribePeers).toHaveBeenCalledWith([
+				{ identity: "bob", stream: "gs-bob" },
+			]);
+		});
 
 		expect(deps.loadClient).toHaveBeenCalledWith("srs", expect.any(Object));
 		expect(client.joinRoom).toHaveBeenCalledWith({
@@ -132,6 +138,86 @@ describe("runVoiceJoin", () => {
 		]);
 	});
 
+	it("srs media_ready after WHIP and onClientReady before phase", async () => {
+		const order: string[] = [];
+		let resolveSignalRoom!: () => void;
+		const { deps, client } = makeDeps({
+			onClientReady: vi.fn(() => {
+				order.push("onClientReady");
+			}),
+			onPhase: vi.fn((phase: string) => {
+				order.push(`phase:${phase}`);
+			}),
+			joinSignalRoom: vi.fn(
+				() =>
+					new Promise<void>((resolve) => {
+						resolveSignalRoom = resolve;
+					}),
+			),
+		});
+		const token = makeToken({
+			provider: "srs",
+			serverUrl: "http://srs:1985",
+			whipUrl: "/rtc/v1/whip/",
+			stream: "gs-alice",
+			streamToken: "st",
+		});
+		const result = await runVoiceJoin(token as any, deps as any);
+		// WHIP 成功后必须立刻返回，不堵在信令。
+		expect(result.client).toBe(client);
+		const phaseCalls = (deps.onPhase as any).mock.calls.map((c: any[]) => c[0]);
+		expect(phaseCalls).toEqual([
+			"loading_sfu",
+			"joining_media",
+			"media_ready",
+		]);
+		expect(deps.onClientReady).toHaveBeenCalledWith(client, "srs");
+		expect(order.indexOf("onClientReady")).toBeLessThan(
+			order.indexOf("phase:media_ready"),
+		);
+		expect(deps.joinSignalRoom).toHaveBeenCalled();
+		expect(deps.joinSignalSfu).not.toHaveBeenCalled();
+
+		resolveSignalRoom();
+		await vi.waitFor(() => {
+			expect(deps.joinSignalSfu).toHaveBeenCalled();
+			expect((deps.onPhase as any).mock.calls.map((c: any[]) => c[0])).toEqual([
+				"loading_sfu",
+				"joining_media",
+				"media_ready",
+				"ready",
+			]);
+		});
+	});
+
+	it("srs returns before signal completes so VoiceChat can load", async () => {
+		let resolveSignal!: () => void;
+		const { deps, client } = makeDeps({
+			joinSignalRoom: vi.fn(
+				() =>
+					new Promise<void>((resolve) => {
+						resolveSignal = resolve;
+					}),
+			),
+		});
+		const token = makeToken({
+			provider: "srs",
+			serverUrl: "http://srs:1985",
+			whipUrl: "/rtc/v1/whip/",
+			stream: "gs-alice",
+		});
+		const result = await Promise.race([
+			runVoiceJoin(token as any, deps as any),
+			new Promise((_, reject) =>
+				setTimeout(() => reject(new Error("blocked on signal")), 20),
+			),
+		]);
+		expect((result as any).client).toBe(client);
+		expect(deps.onPhase).toHaveBeenCalledWith("media_ready");
+		expect(deps.joinSignalSfu).not.toHaveBeenCalled();
+		resolveSignal();
+	});
+
 	it("aborts before side effects when signal already aborted", async () => {
 		const controller = new AbortController();
 		controller.abort();
@@ -146,5 +232,33 @@ describe("runVoiceJoin", () => {
 		expect(deps.setupAudio).not.toHaveBeenCalled();
 		expect(deps.joinSignalRoom).not.toHaveBeenCalled();
 		expect(deps.joinSignalSfu).not.toHaveBeenCalled();
+	});
+
+	it("tears down client when aborted after media join starts", async () => {
+		const controller = new AbortController();
+		const leaveRoom = vi.fn(async () => {});
+		const destroy = vi.fn(async () => {});
+		const { deps, client } = makeDeps({
+			signal: controller.signal,
+			loadClient: vi.fn(async () => {
+				return {
+					...client,
+					joinRoom: vi.fn(async () => {
+						controller.abort();
+						await new Promise((r) => setTimeout(r, 0));
+					}),
+					leaveRoom,
+					destroy,
+				} as any;
+			}),
+		});
+
+		await expect(
+			runVoiceJoin(makeToken() as any, deps as any),
+		).rejects.toBeInstanceOf(VoiceJoinAbortError);
+
+		expect(leaveRoom).toHaveBeenCalled();
+		expect(destroy).toHaveBeenCalled();
+		expect(deps.joinSignalRoom).not.toHaveBeenCalled();
 	});
 });

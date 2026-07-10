@@ -6,6 +6,80 @@ import type {
 	SFUClientOptions,
 } from "./types";
 
+// 同 stream 全局闸门（不改 useVoiceSession）：
+// orchestrator abort 会并发“旧 leave + 新 join”，若双 WHIP 同时 POST 同 stream → 5020/500。
+// 规则：
+// 1) 同一 stream 同一时刻最多一个 holder
+// 2) leave 立即 abort in-flight WHIP
+// 3) 新 join 必须等旧 holder 释放后再 POST
+type StreamGate = {
+	holder: SRSSFUClient | null;
+	free: Promise<void>;
+	resolveFree: (() => void) | null;
+	tail: Promise<unknown>;
+};
+
+const streamGates = new Map<string, StreamGate>();
+
+function getStreamGate(streamKey: string): StreamGate {
+	const key = streamKey || "__empty__";
+	let gate = streamGates.get(key);
+	if (!gate) {
+		gate = {
+			holder: null,
+			free: Promise.resolve(),
+			resolveFree: null,
+			tail: Promise.resolve(),
+		};
+		streamGates.set(key, gate);
+	}
+	return gate;
+}
+
+function enqueueStreamOp<T>(streamKey: string, op: () => Promise<T>): Promise<T> {
+	const gate = getStreamGate(streamKey);
+	const run = gate.tail.catch(() => undefined).then(op);
+	gate.tail = run.then(
+		() => undefined,
+		() => undefined,
+	);
+	return run;
+}
+
+async function acquireStream(
+	streamKey: string,
+	self: SRSSFUClient,
+	isAborted: () => boolean,
+): Promise<void> {
+	const gate = getStreamGate(streamKey);
+	for (;;) {
+		if (isAborted()) throw new Error("SRS join aborted");
+		if (!gate.holder || gate.holder === self) {
+			gate.holder = self;
+			if (!gate.resolveFree) {
+				gate.free = new Promise<void>((resolve) => {
+					gate.resolveFree = resolve;
+				});
+			}
+			return;
+		}
+		await gate.free;
+	}
+}
+
+function releaseStream(streamKey: string, self: SRSSFUClient): void {
+	const gate = getStreamGate(streamKey);
+	if (gate.holder !== self) return;
+	gate.holder = null;
+	const resolve = gate.resolveFree;
+	gate.resolveFree = null;
+	resolve?.();
+	// free promise 重置为已完成，后续 wait 不挂
+	if (!gate.resolveFree) {
+		gate.free = Promise.resolve();
+	}
+}
+
 interface PeerSub {
 	identity: string;
 	stream: string;
@@ -87,6 +161,11 @@ export class SRSSFUClient implements SFUClient {
 	private baseWhepUrl = "";
 	private socket?: any;
 	private leaving = false;
+	private leavePromise: Promise<void> | null = null;
+	// 递增代数：abort/leave 与 in-flight WHIP 竞态时，旧 publish 不得回写状态。
+	private joinGeneration = 0;
+	private mediaAbort: AbortController | null = null;
+	private activeStreamKey = "";
 	private micEnabled = true;
 	private socketMemberJoinedBound?: (...args: unknown[]) => void;
 	private socketMemberLeftBound?: (...args: unknown[]) => void;
@@ -96,10 +175,28 @@ export class SRSSFUClient implements SFUClient {
 	}
 
 	async joinRoom(params: JoinParams): Promise<void> {
+		const streamKey = params.stream || `${params.room || ""}:${params.identity || ""}`;
+		await enqueueStreamOp(streamKey, () => this.joinRoomLocked(params, streamKey));
+	}
+
+	private async joinRoomLocked(
+		params: JoinParams,
+		streamKey: string,
+	): Promise<void> {
+		// 同 client 复用前先拆旧会话，避免 WHIP stream busy / 双 publish。
+		if (this.hasJoined || this.publishPc || this.publishResourceUrl) {
+			await this.leaveRoomLocked();
+		}
+		// 等旧 holder（可能是被 abort 的另一实例）释放 stream 后再 WHIP。
+		await acquireStream(streamKey, this, () => this.leaving);
+		this.activeStreamKey = streamKey;
+
+		const joinGen = ++this.joinGeneration;
+		this.leaving = false;
 		const { token, serverUrl: url, identity, room, stream, streamToken } = params;
 		this.identity = identity;
 		this.room = room || "";
-		this.ownStream = stream || "";
+		this.ownStream = stream || streamKey;
 		this.streamToken = streamToken || "";
 		this.roomToken = token || "";
 		this.whipUrl = url;
@@ -107,9 +204,17 @@ export class SRSSFUClient implements SFUClient {
 		this.micEnabled = true;
 
 		try {
-			await this.startPublish();
+			await this.startPublish(joinGen);
+			if (this.leaving || joinGen !== this.joinGeneration) {
+				await this.cleanupPartialJoin();
+				releaseStream(streamKey, this);
+				if (this.activeStreamKey === streamKey) this.activeStreamKey = "";
+				throw new Error("SRS join aborted");
+			}
 		} catch (err) {
 			await this.cleanupPartialJoin();
+			releaseStream(streamKey, this);
+			if (this.activeStreamKey === streamKey) this.activeStreamKey = "";
 			throw err;
 		}
 
@@ -341,7 +446,46 @@ export class SRSSFUClient implements SFUClient {
 	}
 
 	async leaveRoom(): Promise<void> {
-		// Remove socket listeners BEFORE setting leaving flag
+		// 立即打断 in-flight join（不入队），避免 leave 排在 join 后死等 WHIP。
+		this.beginLeaveAbort();
+		const streamKey =
+			this.activeStreamKey ||
+			this.ownStream ||
+			`${this.room || ""}:${this.identity || ""}` ||
+			"__empty__";
+		await enqueueStreamOp(streamKey, () => this.leaveRoomLocked());
+	}
+
+	private beginLeaveAbort(): void {
+		this.leaving = true;
+		this.joinGeneration++;
+		this.hasJoined = false;
+		this.isReconnecting = false;
+		this.mediaAbort?.abort();
+		this.mediaAbort = null;
+	}
+
+	private async leaveRoomLocked(): Promise<void> {
+		if (this.leavePromise) {
+			await this.leavePromise;
+			return;
+		}
+
+		this.leavePromise = this.doLeaveRoom();
+		try {
+			await this.leavePromise;
+		} finally {
+			this.leavePromise = null;
+		}
+	}
+
+	private async doLeaveRoom(): Promise<void> {
+		// leaveRoom 已 beginLeaveAbort；这里只做资源拆卸。
+		this.leaving = true;
+		this.hasJoined = false;
+		this.isReconnecting = false;
+
+		// Remove socket listeners BEFORE tearing media
 		if (this.socket) {
 			if (this.socketMemberJoinedBound) {
 				this.socket.off(
@@ -356,12 +500,10 @@ export class SRSSFUClient implements SFUClient {
 		this.socketMemberJoinedBound = undefined;
 		this.socketMemberLeftBound = undefined;
 
-		this.leaving = true;
-		this.hasJoined = false;
-		this.isReconnecting = false;
 		this.room = "";
 		this.roomToken = "";
 		this.streamToken = "";
+		this.ownStream = "";
 
 		// Unsubscribe all peers (callbacks suppressed via leaving flag)
 		for (const [identity] of this.peerSubs) {
@@ -373,9 +515,16 @@ export class SRSSFUClient implements SFUClient {
 		this.remoteTracks.forEach((track) => track.detach());
 		this.remoteTracks.clear();
 		this.whipUrl = "";
+		this.baseWhepUrl = "";
 		this.micEnabled = true;
 		this.onReconnectingCb = undefined;
 		this.onReconnectedCb = undefined;
+		this.onDisconnectedCb = undefined;
+		const streamKey = this.activeStreamKey || this.ownStream;
+		if (streamKey) {
+			releaseStream(streamKey, this);
+		}
+		this.activeStreamKey = "";
 		this.leaving = false;
 	}
 
@@ -454,12 +603,15 @@ export class SRSSFUClient implements SFUClient {
 		this.startAudioLevelLoop();
 	}
 
-	private async startPublish(): Promise<void> {
+	private async startPublish(joinGen = this.joinGeneration): Promise<void> {
 		if (this.publishPc || this.publishResourceUrl) {
 			await this.stopPublish({ stopLocalTracks: true });
 		}
+		if (this.leaving || joinGen !== this.joinGeneration) {
+			throw new Error("SRS join aborted");
+		}
 
-		this.localStream = await navigator.mediaDevices.getUserMedia({
+		const localStream = await navigator.mediaDevices.getUserMedia({
 			audio: {
 				echoCancellation: this.options.audioCapture?.echoCancellation ?? true,
 				noiseSuppression:
@@ -472,11 +624,17 @@ export class SRSSFUClient implements SFUClient {
 			},
 			video: false,
 		});
+		if (this.leaving || joinGen !== this.joinGeneration) {
+			localStream.getTracks().forEach((track) => track.stop());
+			throw new Error("SRS join aborted");
+		}
 
-		this.publishPc = new RTCPeerConnection();
+		this.localStream = localStream;
+		const publishPc = new RTCPeerConnection();
+		this.publishPc = publishPc;
 		for (const track of this.localStream.getAudioTracks()) {
 			track.enabled = true;
-			this.publishPc.addTrack(track, this.localStream);
+			publishPc.addTrack(track, this.localStream);
 		}
 
 		const whipUrl = appendStream(
@@ -485,21 +643,67 @@ export class SRSSFUClient implements SFUClient {
 			this.streamToken,
 			true,
 		);
-		this.publishResourceUrl = await this.exchangeSdp(
-			this.publishPc,
-			whipUrl,
-			this.roomToken,
-			true,
-		);
-		await this.waitForPublishIceConnected();
+		const mediaAbort = new AbortController();
+		this.mediaAbort = mediaAbort;
+		let resourceUrl = "";
+		try {
+			resourceUrl = await this.exchangeSdp(
+				publishPc,
+				whipUrl,
+				this.roomToken,
+				true,
+				mediaAbort.signal,
+			);
+			if (this.leaving || joinGen !== this.joinGeneration) {
+				await this.deleteResource(resourceUrl);
+				publishPc.close();
+				if (this.publishPc === publishPc) {
+					this.publishPc = null;
+					this.publishResourceUrl = "";
+				}
+				this.localStream?.getTracks().forEach((track) => track.stop());
+				if (this.localStream === localStream) {
+					this.localStream = null;
+				}
+				throw new Error("SRS join aborted");
+			}
+			this.publishResourceUrl = resourceUrl;
+			// WHIP 201 后不等 ICE。SRS ice-lite + HTTP 响应即 publish 成功。
+			if (this.leaving || joinGen !== this.joinGeneration) {
+				await this.stopPublish({ stopLocalTracks: true });
+				throw new Error("SRS join aborted");
+			}
+		} catch (err) {
+			const errResource =
+				resourceUrl ||
+				(typeof err === "object" && err && "resourceUrl" in err
+					? String((err as { resourceUrl?: string }).resourceUrl || "")
+					: "");
+			if (this.publishPc === publishPc) {
+				if (errResource && !this.publishResourceUrl) {
+					this.publishResourceUrl = errResource;
+				}
+				await this.stopPublish({ stopLocalTracks: true });
+			} else {
+				await this.deleteResource(errResource);
+				publishPc.close();
+				localStream.getTracks().forEach((track) => track.stop());
+			}
+			throw err;
+		} finally {
+			if (this.mediaAbort === mediaAbort) {
+				this.mediaAbort = null;
+			}
+		}
 
 		if (this.onPcStateChangeBound) {
-			this.publishPc.addEventListener(
+			publishPc.addEventListener(
 				"iceconnectionstatechange",
 				this.onPcStateChangeBound,
 			);
 		}
 		this.startAudioLevelLoop();
+		// WHIP 201 后不等 ICE。ICE 若最终 fail 由 iceconnectionstatechange listener 处理。
 	}
 
 	private async stopPublish(opts?: {
@@ -515,18 +719,22 @@ export class SRSSFUClient implements SFUClient {
 			cancelAnimationFrame(this.activeSpeakerRaf);
 			this.activeSpeakerRaf = null;
 		}
-		await this.analyzerContext?.close();
+		await this.analyzerContext?.close().catch(() => {});
 		this.analyzerContext = null;
 
-		await this.deleteResource(this.publishResourceUrl);
+		// 先关 PC / 停轨，再 best-effort DELETE。DELETE 慢不能拖住切房。
+		const resourceUrl = this.publishResourceUrl;
 		this.publishResourceUrl = "";
-		this.publishPc?.close();
+		const pc = this.publishPc;
 		this.publishPc = null;
+		pc?.close();
 
 		if (opts?.stopLocalTracks !== false && this.localStream) {
 			this.localStream.getTracks().forEach((track) => track.stop());
 			this.localStream = null;
 		}
+
+		await this.deleteResource(resourceUrl);
 	}
 
 	onActiveSpeakers(cb: (identities: string[]) => void): void {
@@ -575,6 +783,7 @@ export class SRSSFUClient implements SFUClient {
 		endpoint: string,
 		token: string,
 		publishing: boolean,
+		externalSignal?: AbortSignal,
 	): Promise<string> {
 		const offer = await pc.createOffer();
 		await pc.setLocalDescription(offer);
@@ -586,6 +795,17 @@ export class SRSSFUClient implements SFUClient {
 		}
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), 15_000);
+		const onExternalAbort = () => controller.abort();
+		if (externalSignal) {
+			if (externalSignal.aborted) {
+				controller.abort();
+			} else {
+				externalSignal.addEventListener("abort", onExternalAbort, {
+					once: true,
+				});
+			}
+		}
+		let location = "";
 		try {
 			const resp = await fetch(endpoint, {
 				method: "POST",
@@ -598,15 +818,22 @@ export class SRSSFUClient implements SFUClient {
 					`SRS ${publishing ? "WHIP" : "WHEP"} request failed: ${resp.status}`,
 				);
 			}
-			const location = resp.headers.get("Location") || "";
+			location = resp.headers.get("Location") || "";
 			const answer = await resp.text();
 			await pc.setRemoteDescription({
 				type: "answer",
 				sdp: answer,
 			});
 			return location;
+		} catch (err) {
+			// 已拿到 Location 但后续失败/被 abort：仍返回 location 给调用方 DELETE。
+			if (location) {
+				(err as any).resourceUrl = location;
+			}
+			throw err;
 		} finally {
 			clearTimeout(timer);
+			externalSignal?.removeEventListener("abort", onExternalAbort);
 		}
 	}
 
@@ -615,11 +842,7 @@ export class SRSSFUClient implements SFUClient {
 	): Promise<void> {
 		const pc = this.publishPc;
 		if (!pc) return;
-		const state = pc.iceConnectionState;
-		if (state === "connected" || state === "completed") return;
-		if (state === "failed" || state === "closed") {
-			throw new Error(`SRS publish ICE ${state}`);
-		}
+		// 先注册 listener，再检查 state。否则 ICE 在注册前已 ->connected 则事件丢、promise 永不 resolve。
 		await new Promise<void>((resolve, reject) => {
 			const onState = () => {
 				const s = pc.iceConnectionState;
@@ -640,10 +863,22 @@ export class SRSSFUClient implements SFUClient {
 				pc.removeEventListener("iceconnectionstatechange", onState);
 			};
 			pc.addEventListener("iceconnectionstatechange", onState);
+			// listener 注册后再检查一次，防中间态竞态
+			const s = pc.iceConnectionState;
+			if (s === "connected" || s === "completed") {
+				cleanup();
+				resolve();
+			} else if (s === "failed" || s === "closed") {
+				cleanup();
+				reject(new Error(`SRS publish ICE ${s}`));
+			}
 		});
 	}
 
 	private async cleanupPartialJoin(): Promise<void> {
+		for (const [identity] of this.peerSubs) {
+			this.unsubscribePeer(identity);
+		}
 		await this.stopPublish({ stopLocalTracks: true });
 		this.hasJoined = false;
 		this.micEnabled = true;
@@ -678,10 +913,14 @@ export class SRSSFUClient implements SFUClient {
 
 	private async deleteResource(url: string): Promise<void> {
 		if (!url) return;
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), 3_000);
 		try {
-			await fetch(url, { method: "DELETE" });
+			await fetch(url, { method: "DELETE", signal: controller.signal });
 		} catch {
 			return;
+		} finally {
+			clearTimeout(timer);
 		}
 	}
 }
