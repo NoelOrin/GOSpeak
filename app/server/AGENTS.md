@@ -25,7 +25,7 @@ server/
 │   ├── service/          # 业务逻辑层
 │   └── signal/           # Socket.IO 信令中心
 ├── docs/                 # Swagger 文档（swagger.json/yaml + docs.go）
-├── app/web/         # Web 前端（Vite + React + TypeScript）
+├── ../web/         # Web 前端（SolidJS + Vite + TanStack Router）
 └── test/                 # 测试用例
 ```
 

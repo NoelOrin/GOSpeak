@@ -15,7 +15,7 @@ GOSpeak 是一个自托管的**游戏语音平台**，类似自部署版 Discord
 
 ```
 GOSpeak/
-├── packages/
+├── app/
 │   ├── server/          # Go 后端 (Gin + GORM + multi-provider SFU abstraction)
 │   ├── web/             # SolidJS 前端 (TypeScript + Vite + TanStack Router)
 │   ├── sfu-client/      # 前端多 SFU 客户端抽象
@@ -31,7 +31,7 @@ GOSpeak/
 ## Server Architecture — Enterprise Layered Design
 
 ```
-packages/server/
+app/server/
 ├── main.go                 # Entry point
 ├── cmd/
 │   └── root.go             # CLI (cobra): `server`, `version` commands
@@ -554,7 +554,7 @@ hub.BroadcastToRoom(namespace, room, event, data)
 ## Frontend Architecture
 
 ```
-packages/web/src/
+app/web/src/
 ├── api/                # apiClient (axios wrapper) + auth API
 ├── assets/             # Static assets (SVG icons, global CSS)
 │   ├── styles/         # Global stylesheets
@@ -720,7 +720,7 @@ Node.js-based API integration tests in `test/`:
 
 ```bash
 # Start the server first, then:
-cd packages/server
+cd app/server
 pnpm test
 
 # Or from monorepo root:
@@ -735,7 +735,7 @@ Tests send real HTTP requests and validate responses. Add new test files under `
 
 ```bash
 # Start server (dev mode, SQLite)
-cd packages/server
+cd app/server
 pnpm dev
 
 # Start server (prod mode)
@@ -801,73 +801,32 @@ pnpm build:server
 
 ## Test Logging
 
-当 agent 被命令进行测试时，必须将测试总结的结果以 Markdown 格式保存到 `agent_test_logs` 文件夹。
+当 agent 被命令进行测试时，必须将测试总结的结果以 Markdown 格式保存到 `agent_test_logs` 文件夹。详见 `agent_test_logs/AGENTS.md`。
 
 ### 命名规范
 
 文件名格式：`{测试内容}-{时间}.md`
 
 示例：
-- `api-auth-test-2026-05-26.md`
-- `role-permission-test-2026-05-26.md`
-- `user-crud-test-2026-05-26-14-30.md`
+- `api-auth-test-2026-05-26.md` - 认证 API 测试
+- `role-permission-test-2026-05-26.md` - 角色权限测试
+- `user-crud-test-2026-05-26-14-30.md` - 用户 CRUD 测试（精确到分钟）
+- `signal-websocket-test-2026-05-26.md` - WebSocket 信令测试
 
-### 日志内容模板
+### 测试状态标识
 
-```markdown
-# {测试标题}
-
-**测试时间**: YYYY-MM-DD HH:MM:SS
-**测试环境**: dev / prod
-**测试人员**: AI Agent
-
-## 测试概要
-
-简要描述本次测试的目的和范围。
-
-## 测试结果
-
-| 测试项 | 状态 | 说明 |
-|--------|------|------|
-| 测试项1 | ✅ 通过 | 成功说明 |
-| 测试项2 | ❌ 失败 | 失败原因 |
-
-## 详细测试记录
-
-### 1. 测试项名称
-
-**请求**:
-```bash
-curl -X POST http://localhost:8998/api/v1/xxx
-```
-
-**响应**:
-```json
-{
-  "code": 0,
-  "msg": "success",
-  "data": { ... }
-}
-```
-
-**结论**: 测试通过/失败，原因说明。
-
-## 问题与建议
-
-列出测试过程中发现的问题和改进建议。
-
-## 总结
-
-整体测试结论和下一步计划。
-```
+- ✅ 通过 - 测试成功
+- ❌ 失败 - 测试失败
+- ⚠️ 警告 - 测试通过但存在问题
+- ⏭️ 跳过 - 测试被跳过
 
 ### 保存位置
 
 ```
 GOSpeak/
 ├── agent_test_logs/           # 测试日志目录
+│   ├── AGENTS.md              # 测试规范
 │   ├── api-auth-test-2026-05-26.md
-│   ├── role-permission-test-2026-05-26.md
 │   └── ...
 └── ...
 ```
