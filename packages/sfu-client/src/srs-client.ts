@@ -17,9 +17,17 @@ type StreamGate = {
 	free: Promise<void>;
 	resolveFree: (() => void) | null;
 	tail: Promise<unknown>;
+	heldAt: number;
 };
 
 const streamGates = new Map<string, StreamGate>();
+// 防止 holder 异常未释放时永久卡在 joining_media。
+// 僵死 holder 阈值：仅用于清理泄漏，不能用于抢占仍在 join 的会话。
+const STREAM_HOLD_STALE_MS = 30_000;
+// 仅配合 abort 检查，不再超时抢 holder。
+const ACQUIRE_TIMEOUT_MS = 30_000;
+const WHIP_BUSY_RETRY = 4;
+const WHIP_BUSY_RETRY_MS = 250;
 
 function getStreamGate(streamKey: string): StreamGate {
 	const key = streamKey || "__empty__";
@@ -30,6 +38,7 @@ function getStreamGate(streamKey: string): StreamGate {
 			free: Promise.resolve(),
 			resolveFree: null,
 			tail: Promise.resolve(),
+			heldAt: 0,
 		};
 		streamGates.set(key, gate);
 	}
@@ -46,16 +55,80 @@ function enqueueStreamOp<T>(streamKey: string, op: () => Promise<T>): Promise<T>
 	return run;
 }
 
+function forceReleaseStream(streamKey: string, reason: string): void {
+	const gate = getStreamGate(streamKey);
+	if (!gate.holder && !gate.resolveFree) return;
+	console.warn("[SRS] force release stream gate", streamKey, reason);
+	gate.holder = null;
+	gate.heldAt = 0;
+	const resolve = gate.resolveFree;
+	gate.resolveFree = null;
+	resolve?.();
+	gate.free = Promise.resolve();
+}
+
+function isDeadHolder(holder: SRSSFUClient): boolean {
+	// 仅判定“明确已死但仍占闸门”的 holder。
+	// leaving 过程中若仍有 publish 资源，必须等 DELETE 完成，不能抢闸门。
+	const anyHolder = holder as unknown as {
+		leaving?: boolean;
+		hasJoined?: boolean;
+		activeStreamKey?: string;
+		pendingStreamKey?: string;
+		publishPc?: unknown;
+		publishResourceUrl?: string;
+	};
+	const hasMedia = !!(anyHolder.publishPc || anyHolder.publishResourceUrl);
+	if (hasMedia) return false;
+	if (anyHolder.hasJoined && !anyHolder.leaving) return false;
+	// 无媒体且无 stream key：泄漏的空 holder
+	if (!anyHolder.activeStreamKey && !anyHolder.pendingStreamKey) {
+		return true;
+	}
+	// leave 已拆媒体但仍短暂占 key：可视为可回收
+	if (anyHolder.leaving && !hasMedia) {
+		return true;
+	}
+	return false;
+}
+
+function requestHolderLeave(holder: SRSSFUClient): void {
+	// 新 join 到来时，尽量让旧 holder 主动 leave，而不是抢闸门双 WHIP。
+	void holder.leaveRoom().catch(() => {});
+}
+
 async function acquireStream(
 	streamKey: string,
 	self: SRSSFUClient,
 	isAborted: () => boolean,
 ): Promise<void> {
 	const gate = getStreamGate(streamKey);
+	const started = Date.now();
+	let askedLeave = false;
 	for (;;) {
 		if (isAborted()) throw new Error("SRS join aborted");
+		if (gate.holder && gate.holder !== self) {
+			if (isDeadHolder(gate.holder)) {
+				forceReleaseStream(streamKey, "dead-holder");
+			} else if (
+				gate.heldAt > 0 &&
+				Date.now() - gate.heldAt > STREAM_HOLD_STALE_MS
+			) {
+				// 只对真正僵死的 holder 强制释放；仍先请求 leave。
+				if (!askedLeave) {
+					requestHolderLeave(gate.holder);
+					askedLeave = true;
+				}
+				forceReleaseStream(streamKey, "stale-holder");
+			} else if (!askedLeave) {
+				// 同 stream 二次 join：先让旧会话 leave，再等闸门释放。
+				requestHolderLeave(gate.holder);
+				askedLeave = true;
+			}
+		}
 		if (!gate.holder || gate.holder === self) {
 			gate.holder = self;
+			gate.heldAt = Date.now();
 			if (!gate.resolveFree) {
 				gate.free = new Promise<void>((resolve) => {
 					gate.resolveFree = resolve;
@@ -63,7 +136,15 @@ async function acquireStream(
 			}
 			return;
 		}
-		await gate.free;
+		// 禁止超时抢活 holder：那是双 WHIP 根因（第一次成功、第二次 busy）。
+		// 只在 abort 或旧 holder leave 后继续。
+		if (Date.now() - started > ACQUIRE_TIMEOUT_MS && isAborted()) {
+			throw new Error("SRS join aborted");
+		}
+		await Promise.race([
+			gate.free,
+			new Promise<void>((resolve) => setTimeout(resolve, 50)),
+		]);
 	}
 }
 
@@ -71,6 +152,7 @@ function releaseStream(streamKey: string, self: SRSSFUClient): void {
 	const gate = getStreamGate(streamKey);
 	if (gate.holder !== self) return;
 	gate.holder = null;
+	gate.heldAt = 0;
 	const resolve = gate.resolveFree;
 	gate.resolveFree = null;
 	resolve?.();
@@ -79,6 +161,20 @@ function releaseStream(streamKey: string, self: SRSSFUClient): void {
 		gate.free = Promise.resolve();
 	}
 }
+
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isWhipBusyError(err: unknown): boolean {
+	const msg = err instanceof Error ? err.message : String(err ?? "");
+	// SRS stream busy / duplicate publish 常见：5020、500、400、Failed to fetch 竞态
+	return /5020|stream busy|busy|already|409|500|400|Failed to fetch|WHIP request failed/i.test(
+		msg,
+	);
+}
+
 
 interface PeerSub {
 	identity: string;
@@ -166,6 +262,8 @@ export class SRSSFUClient implements SFUClient {
 	private joinGeneration = 0;
 	private mediaAbort: AbortController | null = null;
 	private activeStreamKey = "";
+	// leave 在 join 早期 abort 时，用 pendingStreamKey 命中正确 stream 闸门。
+	private pendingStreamKey = "";
 	private micEnabled = true;
 	private socketMemberJoinedBound?: (...args: unknown[]) => void;
 	private socketMemberLeftBound?: (...args: unknown[]) => void;
@@ -176,6 +274,21 @@ export class SRSSFUClient implements SFUClient {
 
 	async joinRoom(params: JoinParams): Promise<void> {
 		const streamKey = params.stream || `${params.room || ""}:${params.identity || ""}`;
+		// 同 client 已在同 stream：幂等返回，避免 effect 重入二次 WHIP。
+		if (
+			this.hasJoined &&
+			!this.leaving &&
+			this.activeStreamKey === streamKey &&
+			this.publishPc &&
+			this.publishResourceUrl
+		) {
+			return;
+		}
+		// 尽早绑定 stream key，leave 在 join 中途 abort 时仍能命中同一闸门。
+		this.pendingStreamKey = streamKey;
+		this.identity = params.identity || this.identity;
+		this.room = params.room || this.room;
+		this.ownStream = params.stream || streamKey;
 		await enqueueStreamOp(streamKey, () => this.joinRoomLocked(params, streamKey));
 	}
 
@@ -183,16 +296,31 @@ export class SRSSFUClient implements SFUClient {
 		params: JoinParams,
 		streamKey: string,
 	): Promise<void> {
-		// 同 client 复用前先拆旧会话，避免 WHIP stream busy / 双 publish。
-		if (this.hasJoined || this.publishPc || this.publishResourceUrl) {
-			await this.leaveRoomLocked();
-		}
-		// 等旧 holder（可能是被 abort 的另一实例）释放 stream 后再 WHIP。
-		await acquireStream(streamKey, this, () => this.leaving);
-		this.activeStreamKey = streamKey;
-
+		// 新 join 代数先占坑：并发 leave 只会 bump 代数，不会被后面 leaving=false 抹掉。
 		const joinGen = ++this.joinGeneration;
 		this.leaving = false;
+		this.pendingStreamKey = streamKey;
+
+		// 同 client 复用前先拆旧会话，避免 WHIP stream busy / 双 publish。
+		if (this.hasJoined || this.publishPc || this.publishResourceUrl) {
+			await this.cleanupPartialJoin();
+		}
+		if (this.leaving || joinGen !== this.joinGeneration) {
+			throw new Error("SRS join aborted");
+		}
+
+		// 等旧 holder（可能是被 abort 的另一实例）释放 stream 后再 WHIP。
+		await acquireStream(
+			streamKey,
+			this,
+			() => this.leaving || joinGen !== this.joinGeneration,
+		);
+		if (this.leaving || joinGen !== this.joinGeneration) {
+			releaseStream(streamKey, this);
+			throw new Error("SRS join aborted");
+		}
+		this.activeStreamKey = streamKey;
+
 		const { token, serverUrl: url, identity, room, stream, streamToken } = params;
 		this.identity = identity;
 		this.room = room || "";
@@ -446,14 +574,17 @@ export class SRSSFUClient implements SFUClient {
 	}
 
 	async leaveRoom(): Promise<void> {
-		// 立即打断 in-flight join（不入队），避免 leave 排在 join 后死等 WHIP。
+		// leave 必须不入队：
+		// 新 join 可能正卡在 acquire 等本 holder 释放；若 leave 再入同一 FIFO，会死锁。
+		// beginLeaveAbort 打断 in-flight WHIP，doLeave 直接 DELETE + release gate。
 		this.beginLeaveAbort();
 		const streamKey =
 			this.activeStreamKey ||
+			this.pendingStreamKey ||
 			this.ownStream ||
 			`${this.room || ""}:${this.identity || ""}` ||
 			"__empty__";
-		await enqueueStreamOp(streamKey, () => this.leaveRoomLocked());
+		await this.leaveRoomLocked(streamKey);
 	}
 
 	private beginLeaveAbort(): void {
@@ -465,13 +596,13 @@ export class SRSSFUClient implements SFUClient {
 		this.mediaAbort = null;
 	}
 
-	private async leaveRoomLocked(): Promise<void> {
+	private async leaveRoomLocked(streamKeyHint = ""): Promise<void> {
 		if (this.leavePromise) {
 			await this.leavePromise;
 			return;
 		}
 
-		this.leavePromise = this.doLeaveRoom();
+		this.leavePromise = this.doLeaveRoom(streamKeyHint);
 		try {
 			await this.leavePromise;
 		} finally {
@@ -479,11 +610,18 @@ export class SRSSFUClient implements SFUClient {
 		}
 	}
 
-	private async doLeaveRoom(): Promise<void> {
+	private async doLeaveRoom(streamKeyHint = ""): Promise<void> {
 		// leaveRoom 已 beginLeaveAbort；这里只做资源拆卸。
 		this.leaving = true;
 		this.hasJoined = false;
 		this.isReconnecting = false;
+
+		const streamKey =
+			streamKeyHint ||
+			this.activeStreamKey ||
+			this.pendingStreamKey ||
+			this.ownStream ||
+			"";
 
 		// Remove socket listeners BEFORE tearing media
 		if (this.socket) {
@@ -504,11 +642,19 @@ export class SRSSFUClient implements SFUClient {
 		this.roomToken = "";
 		this.streamToken = "";
 		this.ownStream = "";
+		this.pendingStreamKey = "";
 
 		// Unsubscribe all peers (callbacks suppressed via leaving flag)
 		for (const [identity] of this.peerSubs) {
 			this.unsubscribePeer(identity);
 		}
+
+		// 先释放闸门，让排队的新 join 能进入；DELETE 异步收尾。
+		if (streamKey) {
+			releaseStream(streamKey, this);
+		}
+		this.activeStreamKey = "";
+		this.pendingStreamKey = "";
 
 		await this.stopPublish({ stopLocalTracks: true });
 		this.onPcStateChangeBound = undefined;
@@ -520,11 +666,6 @@ export class SRSSFUClient implements SFUClient {
 		this.onReconnectingCb = undefined;
 		this.onReconnectedCb = undefined;
 		this.onDisconnectedCb = undefined;
-		const streamKey = this.activeStreamKey || this.ownStream;
-		if (streamKey) {
-			releaseStream(streamKey, this);
-		}
-		this.activeStreamKey = "";
 		this.leaving = false;
 	}
 
@@ -556,19 +697,7 @@ export class SRSSFUClient implements SFUClient {
 			return;
 		}
 
-		const media = await navigator.mediaDevices.getUserMedia({
-			audio: {
-				echoCancellation: this.options.audioCapture?.echoCancellation ?? true,
-				noiseSuppression:
-					this.options.audioCapture?.noiseSuppression ?? true,
-				autoGainControl:
-					this.options.audioCapture?.autoGainControl ?? true,
-				sampleRate: this.options.audioCapture?.sampleRate,
-				sampleSize: this.options.audioCapture?.sampleSize,
-				channelCount: this.options.audioCapture?.channelCount,
-			},
-			video: false,
-		});
+		const media = await this.getLocalAudioStream();
 		const newTrack = media.getAudioTracks()[0];
 		if (!newTrack) {
 			media.getTracks().forEach((t) => t.stop());
@@ -576,9 +705,15 @@ export class SRSSFUClient implements SFUClient {
 		}
 		newTrack.enabled = true;
 
-		// 若 PC 断开/失败/关闭，重建 WHIP。
+		// 仅 hard-fail 才重建 WHIP。
+		// connecting/disconnected 瞬态很常见；重建会二次 WHIP 撞 5020。
 		const pcState = this.publishPc?.connectionState ?? "new";
-		if (pcState === "failed" || pcState === "disconnected" || pcState === "closed") {
+		const hardFail =
+			!this.publishPc ||
+			!this.publishResourceUrl ||
+			pcState === "failed" ||
+			pcState === "closed";
+		if (hardFail) {
 			this.localStream = media;
 			this.micEnabled = true;
 			await this.startPublish();
@@ -603,6 +738,57 @@ export class SRSSFUClient implements SFUClient {
 		this.startAudioLevelLoop();
 	}
 
+
+	private async getLocalAudioStream(): Promise<MediaStream> {
+		const preferred: MediaTrackConstraints = {
+			echoCancellation: this.options.audioCapture?.echoCancellation ?? true,
+			noiseSuppression: this.options.audioCapture?.noiseSuppression ?? true,
+			autoGainControl: this.options.audioCapture?.autoGainControl ?? true,
+		};
+		// sampleRate/sampleSize/channelCount 不是所有设备都支持；失败时降级。
+		if (this.options.audioCapture?.channelCount) {
+			preferred.channelCount = this.options.audioCapture.channelCount;
+		}
+		try {
+			return await this.getUserMediaWithTimeout({
+				audio: preferred,
+				video: false,
+			});
+		} catch (err) {
+			console.warn("[SRS] getUserMedia preferred constraints failed, fallback", err);
+			return await this.getUserMediaWithTimeout({
+				audio: true,
+				video: false,
+			});
+		}
+	}
+
+	private async getUserMediaWithTimeout(
+		constraints: MediaStreamConstraints,
+		timeoutMs = 10_000,
+	): Promise<MediaStream> {
+		// 不用 Promise.race+timer：fake timers 测试下悬挂 timer 会拖垮后续用例。
+		// 超时用可取消包装。
+		let timer: ReturnType<typeof setTimeout> | null = null;
+		let timedOut = false;
+		const timeoutPromise = new Promise<never>((_, reject) => {
+			timer = setTimeout(() => {
+				timedOut = true;
+				reject(new Error("getUserMedia timeout"));
+			}, timeoutMs);
+		});
+		try {
+			const media = await Promise.race([
+				navigator.mediaDevices.getUserMedia(constraints),
+				timeoutPromise,
+			]);
+			return media;
+		} finally {
+			if (timer) clearTimeout(timer);
+			void timedOut;
+		}
+	}
+
 	private async startPublish(joinGen = this.joinGeneration): Promise<void> {
 		if (this.publishPc || this.publishResourceUrl) {
 			await this.stopPublish({ stopLocalTracks: true });
@@ -611,19 +797,8 @@ export class SRSSFUClient implements SFUClient {
 			throw new Error("SRS join aborted");
 		}
 
-		const localStream = await navigator.mediaDevices.getUserMedia({
-			audio: {
-				echoCancellation: this.options.audioCapture?.echoCancellation ?? true,
-				noiseSuppression:
-					this.options.audioCapture?.noiseSuppression ?? true,
-				autoGainControl:
-					this.options.audioCapture?.autoGainControl ?? true,
-				sampleRate: this.options.audioCapture?.sampleRate,
-				sampleSize: this.options.audioCapture?.sampleSize,
-				channelCount: this.options.audioCapture?.channelCount,
-			},
-			video: false,
-		});
+		// 约束尽量保守：复杂 sampleRate/sampleSize 在部分浏览器会挂起 getUserMedia。
+		const localStream = await this.getLocalAudioStream();
 		if (this.leaving || joinGen !== this.joinGeneration) {
 			localStream.getTracks().forEach((track) => track.stop());
 			throw new Error("SRS join aborted");
@@ -647,13 +822,30 @@ export class SRSSFUClient implements SFUClient {
 		this.mediaAbort = mediaAbort;
 		let resourceUrl = "";
 		try {
-			resourceUrl = await this.exchangeSdp(
-				publishPc,
-				whipUrl,
-				this.roomToken,
-				true,
-				mediaAbort.signal,
-			);
+			// 旧会话 DELETE 后 SRS 可能短暂 busy；忙时退避重试，避免“第一次成功第二次失败”。
+			let lastErr: unknown;
+			for (let attempt = 0; attempt <= WHIP_BUSY_RETRY; attempt++) {
+				if (this.leaving || joinGen !== this.joinGeneration) {
+					throw new Error("SRS join aborted");
+				}
+				try {
+					resourceUrl = await this.exchangeSdp(
+						publishPc,
+						whipUrl,
+						this.roomToken,
+						true,
+						mediaAbort.signal,
+					);
+					lastErr = undefined;
+					break;
+				} catch (err) {
+					lastErr = err;
+					const busy = isWhipBusyError(err);
+					if (!busy || attempt >= WHIP_BUSY_RETRY) throw err;
+					await sleep(WHIP_BUSY_RETRY_MS * (attempt + 1));
+				}
+			}
+			if (lastErr) throw lastErr;
 			if (this.leaving || joinGen !== this.joinGeneration) {
 				await this.deleteResource(resourceUrl);
 				publishPc.close();

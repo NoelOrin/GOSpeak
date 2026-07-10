@@ -530,3 +530,123 @@ describe("SRSSFUClient stream queue", () => {
 		await b.leaveRoom();
 	});
 });
+
+describe("SRSSFUClient stale stream gate recovery", () => {
+	it("recovers from leaked stream holder without permanent hang", async () => {
+		const fetchMock = makeFetch(true, true);
+		(globalThis as any).fetch = fetchMock;
+		const a = new SRSSFUClient({});
+		const b = new SRSSFUClient({});
+		const params = {
+			token: "tok",
+			serverUrl: "/rtc/v1/whip/",
+			identity: "alice",
+			room: "room1",
+			stream: "gs-alice",
+			streamToken: "st",
+		};
+		await a.joinRoom(params);
+		// 模拟异常路径：holder 未释放但 client 已 leaving。
+		(a as any).leaving = true;
+		(a as any).hasJoined = false;
+		(a as any).publishPc = null;
+		(a as any).publishResourceUrl = "";
+		const started = Date.now();
+		await expect(b.joinRoom(params)).resolves.toBeUndefined();
+		expect(Date.now() - started).toBeLessThan(2_000);
+		expect(b.isConnected()).toBe(true);
+		await b.leaveRoom();
+	});
+});
+
+describe("SRSSFUClient setMicEnabled no rebuild on transient PC state", () => {
+	it("does not rebuild WHIP when PC is only disconnected", async () => {
+		const fetchMock = makeFetch(true, true);
+		(globalThis as any).fetch = fetchMock;
+		const replaceTrack = vi.fn().mockResolvedValue(undefined);
+		(globalThis as any).RTCPeerConnection = vi.fn(function () {
+			const pc = makeMockPc();
+			(pc as any).getSenders = () => [{ track: { kind: "audio" }, replaceTrack }];
+			(pc as any).connectionState = "connected";
+			return pc;
+		});
+		const client = new SRSSFUClient({});
+		await client.joinRoom({
+			token: "tok",
+			serverUrl: "/rtc/v1/whip/",
+			identity: "alice",
+			room: "room1",
+			stream: "gs-alice",
+			streamToken: "st",
+		});
+		const whipBefore = fetchMock.mock.calls.filter((c: unknown[]) =>
+			String(c[0]).includes("/rtc/v1/whip/") &&
+			(!(c[1] as any)?.method || (c[1] as any).method === "POST"),
+		).length;
+		const tracks = (client as any).localStream.getAudioTracks();
+		for (const t of tracks) t.readyState = "ended";
+		await client.setMicEnabled(false);
+		Object.defineProperty((client as any).publishPc, "connectionState", {
+			value: "disconnected",
+			configurable: true,
+		});
+		await client.setMicEnabled(true);
+		const whipAfter = fetchMock.mock.calls.filter((c: unknown[]) =>
+			String(c[0]).includes("/rtc/v1/whip/") &&
+			(!(c[1] as any)?.method || (c[1] as any).method === "POST"),
+		).length;
+		expect(whipAfter).toBe(whipBefore);
+		expect(replaceTrack).toHaveBeenCalled();
+		await client.leaveRoom();
+	});
+});
+
+describe("SRSSFUClient live holder takeover", () => {
+	it("waits for live holder leave without stealing", async () => {
+		const events: string[] = [];
+		const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+			if (init?.method === "DELETE") {
+				events.push("DELETE");
+				return {
+					ok: true,
+					status: 200,
+					headers: { get: () => "" },
+					text: async () => "",
+				};
+			}
+			events.push("WHIP");
+			return {
+				ok: true,
+				status: 201,
+				headers: {
+					get: (k: string) =>
+						k === "Location" ? "/rtc/v1/whip/?action=delete&token=t" : "",
+				},
+				text: async () => "v=0\r\n",
+			};
+		});
+		(globalThis as any).fetch = fetchMock;
+		const a = new SRSSFUClient({});
+		const b = new SRSSFUClient({});
+		const params = {
+			token: "tok",
+			serverUrl: "/rtc/v1/whip/",
+			identity: "alice",
+			room: "room1",
+			stream: "gs-alice",
+			streamToken: "st",
+		};
+		await a.joinRoom(params);
+		const p = b.joinRoom(params);
+		// b 应请求 a leave，而不是立刻第二路 WHIP 并行
+		await vi.waitFor(() => {
+			expect(events.filter((e) => e === "DELETE").length).toBeGreaterThan(0);
+		});
+		await p;
+		const whips = events.filter((e) => e === "WHIP").length;
+		expect(whips).toBeGreaterThanOrEqual(2);
+		// 第二次 WHIP 必须在 DELETE 之后
+		expect(events.indexOf("DELETE")).toBeLessThan(events.lastIndexOf("WHIP"));
+		await b.leaveRoom();
+	});
+});

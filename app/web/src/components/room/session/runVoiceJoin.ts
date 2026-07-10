@@ -14,6 +14,44 @@ export class VoiceJoinAbortError extends Error {
 	name = "AbortError";
 }
 
+// 同 room+identity 串行队列（不改 useVoiceSession）：
+// token effect 重入会 abort+新 join；必须等旧 join 的 leave 收尾后再 WHIP，
+// 否则第一次成功、第二次 stream busy。
+const joinQueues = new Map<string, Promise<void>>();
+
+function joinKey(token: JoinTokenResponse): string {
+	return `${token.room}::${token.identity}::${token.stream || ""}`;
+}
+
+async function withJoinQueue<T>(
+	key: string,
+	fn: () => Promise<T>,
+): Promise<T> {
+	const prev = joinQueues.get(key) ?? Promise.resolve();
+	let release!: () => void;
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	// 串起队列：后继等待本轮 gate 释放
+	joinQueues.set(
+		key,
+		prev.catch(() => undefined).then(() => gate),
+	);
+	try {
+		await prev.catch(() => undefined);
+		return await fn();
+	} finally {
+		release();
+		// 若仍是当前 gate 链尾，清掉避免 Map 无限增长
+		const cur = joinQueues.get(key);
+		void cur?.then(() => {
+			if (joinQueues.get(key) === cur) {
+				joinQueues.delete(key);
+			}
+		});
+	}
+}
+
 export type VoiceJoinDeps = {
 	loadClient: (
 		provider: SFUProvider,
@@ -71,6 +109,23 @@ export async function runVoiceJoin(
 	token: JoinTokenResponse,
 	deps: VoiceJoinDeps,
 ): Promise<{ client: SFUClient; provider: SFUProvider }> {
+	const provider = resolveSFUProvider(token);
+	const adapter = getVoiceProviderAdapter(provider);
+	const key = joinKey(token);
+
+	// WHIP 类走同 key 串行；其他 provider 直接跑，避免误伤。
+	if (adapter.interactiveAfterMedia) {
+		return withJoinQueue(key, () => doVoiceJoin(token, deps, provider, adapter));
+	}
+	return doVoiceJoin(token, deps, provider, adapter);
+}
+
+async function doVoiceJoin(
+	token: JoinTokenResponse,
+	deps: VoiceJoinDeps,
+	provider: SFUProvider,
+	adapter: ReturnType<typeof getVoiceProviderAdapter>,
+): Promise<{ client: SFUClient; provider: SFUProvider }> {
 	const {
 		loadClient,
 		setupAudio,
@@ -85,9 +140,6 @@ export async function runVoiceJoin(
 	} = deps;
 
 	throwIfAborted(signal);
-
-	const provider = resolveSFUProvider(token);
-	const adapter = getVoiceProviderAdapter(provider);
 
 	onPhase("loading_sfu");
 	const client = await raceAbort(
