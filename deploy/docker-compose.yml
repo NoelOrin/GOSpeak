@@ -23,7 +23,7 @@ services:
 
   srs:
     container_name: gospeak-srs
-    image: ossrs/srs:5
+    image: ossrs/srs@sha256:4e293846ad2448ff1a0157aa2c694e7c451fff5046c93b5bc6da0fa0384ef998
     restart: unless-stopped
     ports:
       - "1935:1935"
@@ -31,7 +31,7 @@ services:
       - "8080:8080"
       # 8000/udp 由 nginx 反代处理, SRS 不对外暴露
     environment:
-      CANDIDATE: "${SRS_CANDIDATE:-host.docker.internal}"
+      CANDIDATE: "${SRS_CANDIDATE:-host.docker.internal}"  # 公网部署设 SRS_CANDIDATE=<公网IP>
     volumes:
       - ./srs/srs.conf:/usr/local/srs/conf/srs.conf
     command: ./objs/srs -c conf/srs.conf

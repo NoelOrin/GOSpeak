@@ -82,7 +82,6 @@ const emptyForm: UpdateSFUConfigParams = {
 	mediasoup_host: "",
 	srs_host: "",
 	srs_api_port: "1985",
-	srs_whip_port: "1985",
 	srs_secret: "",
 	daily_api_key: "",
 	daily_domain: "",
@@ -176,7 +175,6 @@ function SFUPage() {
 			mediasoup_host: data.mediasoup_host || "",
 			srs_host: data.srs_host || "",
 			srs_api_port: data.srs_api_port || "1985",
-			srs_whip_port: data.srs_whip_port || "1985",
 			srs_secret: data.srs_secret || "",
 			daily_api_key: data.daily_api_key || "",
 			daily_domain: data.daily_domain || "",
@@ -232,7 +230,6 @@ function SFUPage() {
 			if (!isHost(f.srs_host))
 				e.srs_host = "需要域名或 IP, 不含 scheme / 路径 / 引号";
 			if (!isPort(f.srs_api_port)) e.srs_api_port = "1-65535 数字";
-			if (!isPort(f.srs_whip_port)) e.srs_whip_port = "1-65535 数字";
 			require("srs_secret", "Secret 必填");
 		} else if (p === "daily") {
 			require("daily_api_key", "API Key 必填");
@@ -726,24 +723,6 @@ function SFUPage() {
 								onInput={(event) =>
 									updateField(
 										"srs_api_port",
-										event.currentTarget.value,
-									)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-						<Field label="WHIP Port" error={errors().srs_whip_port}>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().srs_whip_port,
-								}}
-								placeholder="1985"
-								value={form().srs_whip_port}
-								onInput={(event) =>
-									updateField(
-										"srs_whip_port",
 										event.currentTarget.value,
 									)
 								}

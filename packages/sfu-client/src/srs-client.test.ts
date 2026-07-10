@@ -161,6 +161,41 @@ describe("SRSSFUClient subscribePeers", () => {
 		await client.leaveRoom();
 	});
 
+	it("routes WHIP/WHEP through same-origin reverse proxy (relative serverUrl)", async () => {
+		const fetchMock = makeFetch(true, true);
+		(globalThis as any).fetch = fetchMock;
+		const client = new SRSSFUClient({});
+		const onTrack = vi.fn();
+		client.onRemoteAudioTrack(onTrack);
+		const joinParams: JoinParams = {
+			token: "tok",
+			serverUrl: "/rtc/v1/whip/",
+			identity: "alice",
+			room: "room1",
+			stream: "gs-alice",
+			streamToken: "st",
+		};
+		await client.joinRoom(joinParams);
+		(client as any).subscribePeers([{ identity: "bob", stream: "gs-bob" }]);
+		await new Promise((r) => setTimeout(r, 50));
+
+		const whipCall = fetchMock.mock.calls.find((c: unknown[]) =>
+			String(c[0]).includes("/rtc/v1/whip/"),
+		);
+		const whepCall = fetchMock.mock.calls.find((c: unknown[]) =>
+			String(c[0]).includes("/rtc/v1/whep/"),
+		);
+		expect(whipCall).toBeTruthy();
+		expect(whepCall).toBeTruthy();
+		expect(String(whipCall![0])).not.toMatch(/^https?:\/\//);
+		expect(String(whepCall![0])).not.toMatch(/^https?:\/\//);
+		expect(String(whepCall![0])).toContain("/rtc/v1/whep/");
+		expect(onTrack).toHaveBeenCalledWith(
+			expect.objectContaining({ identity: "bob" }),
+		);
+		await client.leaveRoom();
+	});
+
 	it("does not subscribe self stream", async () => {
 		(globalThis as any).fetch = makeFetch(true, true);
 		const client = new SRSSFUClient({});

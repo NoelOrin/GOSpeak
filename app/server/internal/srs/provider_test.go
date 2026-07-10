@@ -75,23 +75,44 @@ func (ts *srsTestServer) close() { ts.srv.Close() }
 
 func newServiceWithURL(baseURL string) *Service {
 	return &Service{
-		client:    NewClient(baseURL),
-		whipURL:   "/rtc/v1/whip/",
-		serverURL: baseURL,
+		client:  NewClient(baseURL),
+		whipURL: "/rtc/v1/whip/",
 	}
 }
 
-func TestClientInfo_ReturnsAbsoluteWHIPURL(t *testing.T) {
+func TestClientInfo_ReturnsSameOriginWHIPURL(t *testing.T) {
 	s := NewService(&config.Config{
-		SRSHost:     "srs.example.com",
-		SRSApiPort:  "1985",
-		SRSWHIPPort: "1986",
+		SRSHost:    "srs.example.com",
+		SRSApiPort: "1985",
 	})
 
 	got, _ := s.ClientInfo()["whipUrl"].(string)
-	want := "http://srs.example.com:1986/rtc/v1/whip/"
+	want := "/rtc/v1/whip/"
 	if got != want {
 		t.Fatalf("whipUrl = %q, want %q", got, want)
+	}
+}
+
+func TestClientInfo_AbsoluteWHIPURLOverride(t *testing.T) {
+	s := NewService(&config.Config{
+		SRSHost:    "srs.example.com",
+		SRSApiPort: "1985",
+		SRSWHIPURL: "https://srs.example.com:1985/rtc/v1/whip/",
+	})
+	got, _ := s.ClientInfo()["whipUrl"].(string)
+	want := "https://srs.example.com:1985/rtc/v1/whip/"
+	if got != want {
+		t.Fatalf("whipUrl = %q, want %q", got, want)
+	}
+}
+
+func TestGetHost_EmptyForSRS(t *testing.T) {
+	s := NewService(&config.Config{
+		SRSHost:    "srs.example.com",
+		SRSApiPort: "1985",
+	})
+	if got := s.GetHost(); got != "" {
+		t.Fatalf("GetHost = %q, want empty", got)
 	}
 }
 

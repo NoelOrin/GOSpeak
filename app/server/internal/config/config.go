@@ -26,7 +26,7 @@ type Config struct {
 	MediaSoupHost        string
 	SRSHost              string
 	SRSApiPort           string
-	SRSWHIPPort          string
+	SRSWHIPURL           string
 	SRSSecret            string
 	DailyAPIKey          string
 	DailyDomain          string
@@ -78,7 +78,7 @@ func Load() *Config {
 		MediaSoupHost:        getEnv("MEDIASOUP_HOST", "localhost:3012"),
 		SRSHost:              getEnv("SRS_HOST", "localhost"),
 		SRSApiPort:           getEnv("SRS_API_PORT", "1985"),
-		SRSWHIPPort:          getEnv("SRS_WHIP_PORT", "1985"),
+		SRSWHIPURL:           getEnv("SRS_WHIP_URL", "/rtc/v1/whip/"),
 		SRSSecret:            getEnv("SRS_SECRET", ""),
 		DailyAPIKey:          getEnv("DAILY_API_KEY", ""),
 		DailyDomain:          getEnv("DAILY_DOMAIN", ""),

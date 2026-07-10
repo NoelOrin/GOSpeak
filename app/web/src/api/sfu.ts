@@ -77,7 +77,6 @@ export interface SFUConfig {
 	mediasoup_host: string;
 	srs_host: string;
 	srs_api_port: string;
-	srs_whip_port: string;
 	srs_secret: string;
 	daily_api_key: string;
 	daily_domain: string;

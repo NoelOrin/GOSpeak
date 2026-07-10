@@ -22,7 +22,7 @@ function resolveConnectTarget(
 		case "mediasoup":
 			return data.bridgeUrl || data.serverUrl;
 		case "srs":
-			return data.whipUrl || data.serverUrl;
+			return data.whipUrl || "";
 		case "daily":
 			return data.dailyDomain || data.serverUrl;
 		case "livekit":

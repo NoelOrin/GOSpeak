@@ -24,7 +24,6 @@ type UpdateSFUConfigRequest struct {
 	MediaSoupHost       string `json:"mediasoup_host"`
 	SRSHost             string `json:"srs_host"`
 	SRSApiPort          string `json:"srs_api_port"`
-	SRSWHIPPort         string `json:"srs_whip_port"`
 	SRSSecret           string `json:"srs_secret"`
 	DailyAPIKey         string `json:"daily_api_key"`
 	DailyDomain         string `json:"daily_domain"`
@@ -106,7 +105,6 @@ func (s *SFUConfigService) UpdateFromDTO(req *UpdateSFUConfigRequest) (*model.SF
 	cfg.MediaSoupHost = req.MediaSoupHost
 	cfg.SRSHost = req.SRSHost
 	cfg.SRSApiPort = req.SRSApiPort
-	cfg.SRSWHIPPort = req.SRSWHIPPort
 	cfg.SRSSecret = req.SRSSecret
 	cfg.DailyAPIKey = req.DailyAPIKey
 	cfg.DailyDomain = req.DailyDomain
@@ -198,7 +196,6 @@ func (s *SFUConfigService) ResolveConfig() (*config.Config, error) {
 	resolved.MediaSoupHost = cfg.MediaSoupHost
 	resolved.SRSHost = cfg.SRSHost
 	resolved.SRSApiPort = cfg.SRSApiPort
-	resolved.SRSWHIPPort = cfg.SRSWHIPPort
 	resolved.SRSSecret = cfg.SRSSecret
 	resolved.DailyAPIKey = cfg.DailyAPIKey
 	resolved.DailyDomain = cfg.DailyDomain
@@ -234,7 +231,6 @@ func (s *SFUConfigService) defaultConfigForProvider(provider string) *model.SFUC
 	case "srs":
 		cfg.SRSHost = s.baseCfg.SRSHost
 		cfg.SRSApiPort = s.baseCfg.SRSApiPort
-		cfg.SRSWHIPPort = s.baseCfg.SRSWHIPPort
 		cfg.SRSSecret = s.baseCfg.SRSSecret
 	case "daily":
 		cfg.DailyAPIKey = s.baseCfg.DailyAPIKey

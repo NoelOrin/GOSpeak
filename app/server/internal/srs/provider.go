@@ -10,14 +10,10 @@ import (
 )
 
 type Service struct {
-	client    *Client
-	host      string
-	apiPort   string
-	whipPort  string
-	secret    string
-	whipURL   string
-	serverURL string
-	registry  pkg.RoomRegistry
+	client   *Client
+	secret   string
+	whipURL  string
+	registry pkg.RoomRegistry
 }
 
 func (s *Service) SetRoomRegistry(r pkg.RoomRegistry) {
@@ -27,26 +23,21 @@ func (s *Service) SetRoomRegistry(r pkg.RoomRegistry) {
 func NewService(cfg *config.Config) *Service {
 	host := strings.TrimSpace(cfg.SRSHost)
 	apiPort := strings.TrimSpace(cfg.SRSApiPort)
-	whipPort := strings.TrimSpace(cfg.SRSWHIPPort)
 	if host == "" {
 		host = "localhost"
 	}
 	if apiPort == "" {
 		apiPort = "1985"
 	}
-	if whipPort == "" {
-		whipPort = "1985"
+	whipURL := strings.TrimSpace(cfg.SRSWHIPURL)
+	if whipURL == "" {
+		whipURL = "/rtc/v1/whip/"
 	}
 	baseURL := fmt.Sprintf("http://%s:%s", host, apiPort)
-	serverURL := fmt.Sprintf("http://%s:%s", host, whipPort)
 	return &Service{
-		client:    NewClient(baseURL),
-		host:      host,
-		apiPort:   apiPort,
-		whipPort:  whipPort,
-		secret:    cfg.SRSSecret,
-		whipURL:   serverURL + "/rtc/v1/whip/",
-		serverURL: serverURL,
+		client:  NewClient(baseURL),
+		secret:  cfg.SRSSecret,
+		whipURL: whipURL,
 	}
 }
 
@@ -134,7 +125,7 @@ func (s *Service) DeleteRoom(room string) error {
 }
 
 func (s *Service) GetHost() string {
-	return s.serverURL
+	return ""
 }
 
 func (s *Service) ProviderName() string {

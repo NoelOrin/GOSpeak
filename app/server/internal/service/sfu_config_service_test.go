@@ -78,7 +78,6 @@ func TestSyncFromEnv_SeedsWhenDBEmpty(t *testing.T) {
 		SFUProvider: "srs",
 		SRSHost:     "localhost",
 		SRSApiPort:  "1985",
-		SRSWHIPPort: "1985",
 	}
 	svc := NewSFUConfigService(repo, baseCfg)
 

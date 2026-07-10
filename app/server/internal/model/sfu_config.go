@@ -18,7 +18,6 @@ type SFUConfig struct {
 	MediaSoupHost       string    `gorm:"size:255" json:"mediasoup_host"`
 	SRSHost             string    `gorm:"size:255" json:"srs_host"`
 	SRSApiPort          string    `gorm:"size:255;default:1985" json:"srs_api_port"`
-	SRSWHIPPort         string    `gorm:"size:255;default:1985" json:"srs_whip_port"`
 	SRSSecret           string    `gorm:"size:255" json:"srs_secret"`
 	DailyAPIKey         string    `gorm:"size:255" json:"daily_api_key"`
 	DailyDomain         string    `gorm:"size:255" json:"daily_domain"`
