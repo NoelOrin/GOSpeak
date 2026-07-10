@@ -44,11 +44,12 @@ export const Route = createFileRoute("/(app)/manage/permission/")({
 });
 
 const DOMAIN_LABELS: Record<string, string> = {
-	room: "房间",
-	user: "用户",
-	role: "角色",
-	signal: "信令",
-	sfu: "SFU",
+  bot: "Bot 密钥",
+  room: "房间",
+  user: "用户",
+  role: "角色",
+  signal: "信令",
+  sfu: "SFU",
 };
 
 const getDomain = (permission: PermissionItem) =>
