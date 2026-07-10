@@ -45,10 +45,11 @@ export function preloadSfuClient(provider: SFUProvider): Promise<void> {
 		});
 }
 
-export function loadSfuClient(
+export async function loadSfuClient(
 	provider: SFUProvider,
 	options?: SFUClientOptions,
 ): Promise<SFUClient> {
 	rememberSfuProvider(provider);
+	await preloadSfuClient(provider);
 	return createSFUClient(provider, options);
 }
