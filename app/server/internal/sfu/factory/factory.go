@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"GOSpeak/internal/agora"
+	"GOSpeak/internal/cloudflare"
 	"GOSpeak/internal/daily"
 	"GOSpeak/internal/livekit"
 	"GOSpeak/internal/mediasoup"
@@ -28,6 +29,8 @@ func NewProvider(cfg *config.Config) (sfu.Provider, error) {
 		return srs.NewService(cfg), nil
 	case "daily":
 		return daily.NewService(cfg), nil
+	case "cloudflare":
+		return cloudflare.NewService(cfg), nil
 	default:
 		return nil, fmt.Errorf("unknown SFU provider: %q", name)
 	}

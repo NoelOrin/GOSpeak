@@ -30,6 +30,9 @@ type Config struct {
 	SRSSecret            string
 	DailyAPIKey          string
 	DailyDomain          string
+	CFAppID              string
+	CFAppSecret          string
+	CFStunURL            string
 	ServerPort           string
 	RedisHost            string
 	RedisPort            string
@@ -82,6 +85,9 @@ func Load() *Config {
 		SRSSecret:            getEnv("SRS_SECRET", ""),
 		DailyAPIKey:          getEnv("DAILY_API_KEY", ""),
 		DailyDomain:          getEnv("DAILY_DOMAIN", ""),
+		CFAppID:              getEnv("CF_APP_ID", ""),
+		CFAppSecret:          getEnv("CF_APP_SECRET", ""),
+		CFStunURL:            getEnv("CF_STUN_URL", "stun.cloudflare.com:3478"),
 		ServerPort:           getEnv("SERVER_PORT", "8098"),
 		RedisHost:            getEnv("REDIS_HOST", ""),
 		RedisPort:            getEnv("REDIS_PORT", "6379"),

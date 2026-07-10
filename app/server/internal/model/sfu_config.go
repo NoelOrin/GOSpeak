@@ -21,6 +21,9 @@ type SFUConfig struct {
 	SRSSecret           string    `gorm:"size:255" json:"srs_secret"`
 	DailyAPIKey         string    `gorm:"size:255" json:"daily_api_key"`
 	DailyDomain         string    `gorm:"size:255" json:"daily_domain"`
+	CFAppID             string    `gorm:"size:255" json:"cf_app_id"`
+	CFAppSecret         string    `gorm:"size:255" json:"cf_app_secret"`
+	CFStunURL           string    `gorm:"size:255;default:stun.cloudflare.com:3478" json:"cf_stun_url"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
 }

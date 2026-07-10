@@ -86,7 +86,7 @@ func TestSyncFromEnv_SeedsWhenDBEmpty(t *testing.T) {
 	}
 
 	// 所有 provider 都应被 seed
-	providers := []string{"livekit", "agora", "mediasoup", "srs", "daily"}
+	providers := []string{"livekit", "agora", "mediasoup", "srs", "daily", "cloudflare"}
 	for _, p := range providers {
 		_, err := repo.GetByProvider(p)
 		if err != nil {
@@ -259,8 +259,8 @@ func TestListProviders_ReturnsAll(t *testing.T) {
 	if active != "srs" {
 		t.Errorf("active = %q, want srs", active)
 	}
-	if len(cfgs) != 5 {
-		t.Errorf("provider count = %d, want 5", len(cfgs))
+	if len(cfgs) != 6 {
+		t.Errorf("provider count = %d, want 6", len(cfgs))
 	}
 }
 

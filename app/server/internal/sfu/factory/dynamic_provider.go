@@ -30,6 +30,7 @@ func fingerprint(cfg *config.Config) string {
 		cfg.MediaSoupBridgeURL, cfg.MediaSoupHost,
 		cfg.SRSHost, cfg.SRSApiPort, cfg.SRSWHIPURL, cfg.SRSSecret,
 		cfg.DailyAPIKey, cfg.DailyDomain,
+		cfg.CFAppID, cfg.CFAppSecret, cfg.CFStunURL,
 	}, "|")
 }
 
