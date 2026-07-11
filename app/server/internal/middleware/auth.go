@@ -147,23 +147,35 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 	}
 }
 
+// permissionGranted 判断当前 caller 是否拥有 permCode。
+// Bot token 在 claims 中直接携带 Permissions，优先命中；
+// 普通用户与未携带 Permissions 的旧 bot token 回退到 role → permChecker 映射。
+func permissionGranted(c *gin.Context, permCode string) bool {
+	if v, ok := c.Get("claims"); ok {
+		if claims, ok := v.(*pkg.Claims); ok && len(claims.Permissions) > 0 {
+			for _, p := range claims.Permissions {
+				if p == permCode {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	role, _ := c.Get("role")
+	roleStr, _ := role.(string)
+	return permChecker != nil && permChecker.HasPermission(roleStr, permCode)
+}
+
 // RequirePermission 基于权限码的鉴权，替代硬编码角色名。
 func RequirePermission(permCode string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		role, exists := c.Get("role")
+		_, exists := c.Get("role")
 		if !exists {
 			pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 			c.Abort()
 			return
 		}
-		roleStr, ok := role.(string)
-		if !ok {
-			pkg.Fail(c, pkg.FORBIDDEN)
-			c.Abort()
-			return
-		}
-
-		if permChecker != nil && permChecker.HasPermission(roleStr, permCode) {
+		if permissionGranted(c, permCode) {
 			c.Next()
 			return
 		}
@@ -178,9 +190,7 @@ func RequirePermission(permCode string) gin.HandlerFunc {
 // 与 JWT 中的 username 比对。
 func RequireOwnerOrPermission(ownerContextKey, permCode string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		role, _ := c.Get("role")
-		roleStr, _ := role.(string)
-		if permChecker != nil && permChecker.HasPermission(roleStr, permCode) {
+		if permissionGranted(c, permCode) {
 			c.Next()
 			return
 		}

@@ -358,13 +358,11 @@ function SFUPage() {
 									type="button"
 									class="btn btn-sm justify-between px-3 h-auto min-h-12 py-2"
 									classList={{
-										"btn-primary shadow-none ring-2 ring-primary/60":
-											isSelected,
-										"btn-ghost shadow-none hover:bg-base-200":
-											!isSelected &&
+										"bg-white border-base-content/20 ring-2 ring-base-content/20 shadow-none":
+											(isSelected || isActive) &&
 											!isProviderDisabled(option.value),
-										"border border-base-content/15 bg-base-100 shadow-none":
-											isActive && !isSelected &&
+										"btn-ghost shadow-none hover:bg-base-200":
+											!isSelected && !isActive &&
 											!isProviderDisabled(option.value),
 										"btn-ghost shadow-none cursor-not-allowed opacity-60":
 											isProviderDisabled(option.value),

@@ -11,15 +11,15 @@ import Activity from "lucide-solid/icons/activity";
 import KeyRound from "lucide-solid/icons/key-round";
 
 const MANAGE_TABS = [
-	{ path: "permission", label: "权限", icon: ShieldCheck },
-	{ path: "sfu", label: "SFU", icon: ServerCog },
-	{ path: "users", label: "用户管理", icon: Users },
-	{ path: "mute", label: "禁言", icon: Gavel },
-	{ path: "ban", label: "封禁", icon: Ban },
-	{ path: "storage", label: "存储", icon: HardDrive },
-	{ path: "email", label: "邮箱", icon: Mail },
-	{ path: "monitor", label: "服务监控", icon: Activity },
-	{ path: "apikey", label: "Bot 密钥", icon: KeyRound },
+  { path: "permission", label: "权限", icon: ShieldCheck },
+  { path: "sfu", label: "SFU", icon: ServerCog },
+  { path: "users", label: "用户管理", icon: Users },
+  { path: "mute", label: "禁言", icon: Gavel },
+  { path: "ban", label: "封禁", icon: Ban },
+  { path: "storage", label: "存储", icon: HardDrive },
+  { path: "email", label: "邮箱", icon: Mail },
+  { path: "monitor", label: "服务监控", icon: Activity },
+  { path: "apikey", label: "BOT 密钥", icon: KeyRound },
 ] as const;
 
 const ManageNav = () => {

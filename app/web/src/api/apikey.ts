@@ -1,3 +1,11 @@
+// Bot 可被授予的权限码白名单，须与后端 model.BotScopedPermissions 保持一致。
+export const BOT_ALLOWED_PERMISSION_CODES = [
+	"room:read",
+	"user:read",
+	"signal:kick",
+	"mute:manage",
+];
+
 import apiClient from './apiClient'
 import type { Result } from './apiClient'
 
@@ -5,7 +13,7 @@ export interface BotAPIKey {
   id: number
   uuid: string
   name: string
-  role: string
+  permissions: string[]
   user_uuid: string
   revoked: boolean
   expires_at: string
@@ -13,20 +21,16 @@ export interface BotAPIKey {
   updated_at: string
 }
 
-export const BOT_ROLE_OPTIONS = [
-  { value: "user", label: "普通用户 (user)" },
-  { value: "admin", label: "管理员 (admin)" },
-]
-
 export interface CreateBotKeyInput {
   name: string
-  role: string
+  permissions: string[]
   expires_in?: string
 }
 
 export interface CreateBotKeyResult {
   token: string
   token_uuid: string
+  permissions: string[]
   user: {
     id: number
     uuid: string

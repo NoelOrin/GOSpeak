@@ -20,17 +20,18 @@ const botNamePrefix = "bot_"
 var permanentExpiry = time.Date(2125, 1, 1, 0, 0, 0, 0, time.UTC)
 
 type CreateBotRequest struct {
-	Name      string `json:"name" binding:"required"`
-	Role      string `json:"role" binding:"required"`
-	ExpiresIn string `json:"expires_in"`
+	Name        string   `json:"name" binding:"required"`
+	Permissions []string `json:"permissions" binding:"required"`
+	ExpiresIn   string   `json:"expires_in"`
 }
 
 type CreateBotResult struct {
-	Token      string      `json:"token"`
-	TokenUUID  string      `json:"token_uuid"`
-	User       *model.User `json:"user"`
-	Permanent  bool        `json:"permanent"`
-	ExpiresAt  *time.Time  `json:"expires_at,omitempty"`
+	Token       string      `json:"token"`
+	TokenUUID   string      `json:"token_uuid"`
+	Permissions []string    `json:"permissions"`
+	User        *model.User `json:"user"`
+	Permanent   bool        `json:"permanent"`
+	ExpiresAt   *time.Time  `json:"expires_at,omitempty"`
 }
 
 type BotService struct {
@@ -51,9 +52,8 @@ func (s *BotService) Create(req *CreateBotRequest) (*CreateBotResult, error) {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "name should not contain 'bot_' prefix")
 	}
 
-	role := strings.TrimSpace(req.Role)
-	if role == "" {
-		role = "user"
+	if err := validateBotPermissions(req.Permissions); err != nil {
+		return nil, err
 	}
 
 	botUsername := botNamePrefix + name
@@ -73,7 +73,7 @@ func (s *BotService) Create(req *CreateBotRequest) (*CreateBotResult, error) {
 		Name:        botUsername,
 		DisplayName: displayName,
 		Password:    string(hashedPwd),
-		Role:        role,
+		Role:        "user",
 		IsBot:       true,
 	}
 	if err := s.userRepo.Create(user); err != nil {
@@ -88,27 +88,28 @@ func (s *BotService) Create(req *CreateBotRequest) (*CreateBotResult, error) {
 	}
 
 	botToken := &model.BotToken{
-		UUID:      uuid.New().String(),
-		Name:      name,
-		UserUUID:  user.UUID,
-		Role:      role,
-		ExpiresAt: expiresAt,
+		UUID:        uuid.New().String(),
+		Name:        name,
+		UserUUID:    user.UUID,
+		Permissions: req.Permissions,
+		ExpiresAt:   expiresAt,
 	}
 	if err := s.botRepo.Create(botToken); err != nil {
 		_ = s.userRepo.Delete(user.ID)
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	token, err := pkg.GenerateBotToken(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion, isPermanent)
+	token, err := pkg.GenerateBotToken(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion, req.Permissions, isPermanent)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
 	result := &CreateBotResult{
-		Token:     token,
-		TokenUUID: botToken.UUID,
-		User:      user,
-		Permanent: isPermanent,
+		Token:       token,
+		TokenUUID:   botToken.UUID,
+		Permissions: req.Permissions,
+		User:        user,
+		Permanent:   isPermanent,
 	}
 	if !isPermanent {
 		result.ExpiresAt = &expiresAt
@@ -134,7 +135,7 @@ func (s *BotService) Revoke(uuid string) error {
 // parseBotExpiry 解析过期时间。isBot=true 时允许永久，isBot=false 时必须有限期
 func parseBotExpiry(expiresIn string, isBot bool) (time.Time, bool, error) {
 	expiresIn = strings.TrimSpace(expiresIn)
-	
+
 	if expiresIn == "" {
 		if isBot {
 			return permanentExpiry, true, nil
@@ -150,6 +151,23 @@ func parseBotExpiry(expiresIn string, isBot bool) (time.Time, bool, error) {
 		return time.Time{}, false, pkg.NewAppError(pkg.INVALID_PARAMS, "expires_in must be positive")
 	}
 	return time.Now().Add(d), false, nil
+}
+
+// validateBotPermissions 校验 bot 权限码非空且均在 Bot 允许白名单内。
+func validateBotPermissions(codes []string) error {
+	if len(codes) == 0 {
+		return pkg.NewAppError(pkg.INVALID_PARAMS, "permissions is required and must not be empty")
+	}
+	scope := model.BotScopedPermissionsSet()
+	for _, c := range codes {
+		if c == "" {
+			return pkg.NewAppError(pkg.INVALID_PARAMS, "permission code must not be empty")
+		}
+		if _, ok := scope[c]; !ok {
+			return pkg.NewAppError(pkg.INVALID_PARAMS, "permission not allowed for bot: "+c)
+		}
+	}
+	return nil
 }
 
 func randomHex(length int) string {

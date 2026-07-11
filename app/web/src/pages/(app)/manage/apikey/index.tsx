@@ -6,12 +6,13 @@ import KeyRound from "lucide-solid/icons/key-round";
 import Copy from "lucide-solid/icons/copy";
 import Trash2 from "lucide-solid/icons/trash-2";
 import {
-  BOT_ROLE_OPTIONS,
   createBotKey,
   listBotKeys,
   revokeBotKey,
   type BotAPIKey,
+  BOT_ALLOWED_PERMISSION_CODES,
 } from "@/api/apikey";
+import { listPermissions, type PermissionItem } from "@/api/permission";
 
 const EXPIRY_OPTIONS = [
   { value: "24h", label: "1 天" },
@@ -37,16 +38,22 @@ export const Route = createFileRoute("/(app)/manage/apikey/")({
 
 function ApiKeyPage() {
   const [keysData, { refetch }] = createResource(() => listBotKeys());
+  const [permissionsData] = createResource(() => listPermissions());
+
+	const botPermissions = () =>
+		(permissionsData() ?? []).filter(
+			(p: PermissionItem) => BOT_ALLOWED_PERMISSION_CODES.includes(p.code),
+		);
 
   const [name, setName] = createSignal("");
-  const [selectedRole, setSelectedRole] = createSignal("user");
+  const [selectedPermissions, setSelectedPermissions] = createSignal<string[]>([]);
   const [expiry, setExpiry] = createSignal("720h");
   const [creating, setCreating] = createSignal(false);
   const [newPlainKey, setNewPlainKey] = createSignal("");
   const [revokingUuid, setRevokingUuid] = createSignal<string | null>(null);
 
-  const roleLabel = (code: string) =>
-    BOT_ROLE_OPTIONS.find((r) => r.value === code)?.label || code;
+  const permissionLabel = (code: string) =>
+    permissionsData()?.find((p: PermissionItem) => p.code === code)?.name || code;
 
   const formatExpiry = (value: string) => {
     const d = new Date(value);
@@ -55,26 +62,41 @@ function ApiKeyPage() {
     return d.toLocaleString();
   };
 
+  const togglePermission = (code: string) => {
+    setSelectedPermissions((prev) =>
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code],
+    );
+  };
+
   const handleCreate = async () => {
     if (!name().trim()) {
       showToast("请填写密钥名称", { type: "warning" });
+      return;
+    }
+    const selected = selectedPermissions();
+    if (selected.length === 0) {
+      showToast("请至少选择一个权限", { type: "warning" });
+      return;
+    }
+    if (!selected.every((c) => BOT_ALLOWED_PERMISSION_CODES.includes(c))) {
+      showToast("存在不允许授予 Bot 的权限", { type: "error" });
       return;
     }
     setCreating(true);
     try {
       const res = await createBotKey({
         name: name().trim(),
-        role: selectedRole(),
+        permissions: selectedPermissions(),
         expires_in: expiry() || undefined,
       });
       if (res.code !== 0) {
         showToast(res.msg || "创建失败", { type: "error" });
         return;
       }
-      showToast("Bot 密钥已创建，请妥善保存明文 Key", { type: "success" });
+      showToast("BOT 密钥已创建，请妥善保存明文 Key", { type: "success" });
       setNewPlainKey(res.data?.token || "");
       setName("");
-      setSelectedRole("user");
+      setSelectedPermissions([]);
       setExpiry("720h");
       refetch();
     } catch (e: any) {
@@ -135,16 +157,39 @@ function ApiKeyPage() {
           </fieldset>
 
           <fieldset class="fieldset">
-            <legend class="fieldset-legend text-[14px]">角色（admin 专属权限不会授予 Bot）</legend>
-            <select
-              class="select select-bordered select-sm w-full max-w-xs"
-              value={selectedRole()}
-              onChange={(e) => setSelectedRole(e.target.value)}
+            <legend class="fieldset-legend text-[14px]">
+              权限（直接授予 Bot，不依赖角色）
+            </legend>
+            <Show
+              when={!(permissionsData() === undefined)}
+              fallback={<div class="loading loading-spinner loading-sm" />}
             >
-              <For each={BOT_ROLE_OPTIONS}>
-                {(opt) => <option value={opt.value}>{opt.label}</option>}
-              </For>
-            </select>
+              <div class="grid grid-cols-2 gap-2 xl:grid-cols-3 max-md:grid-cols-1">
+                <For each={botPermissions()}>
+                  {(perm) => (
+                    <label class="flex min-h-20 items-start gap-3 rounded-md border border-base-300 p-3 hover:bg-base-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        class="checkbox checkbox-sm mt-1"
+                        checked={selectedPermissions().includes(perm.code)}
+                        onChange={() => togglePermission(perm.code)}
+                      />
+                      <span class="min-w-0 flex-1">
+                        <span class="block truncate font-medium text-sm">
+                          {perm.name}
+                        </span>
+                        <span class="mt-1 block break-all font-mono text-base-content/50 text-xs">
+                          {perm.code}
+                        </span>
+                        <span class="mt-1 line-clamp-2 block text-base-content/60 text-xs">
+                          {perm.description}
+                        </span>
+                      </span>
+                    </label>
+                  )}
+                </For>
+              </div>
+            </Show>
           </fieldset>
 
           <fieldset class="fieldset">
@@ -177,7 +222,9 @@ function ApiKeyPage() {
             <div class="alert alert-warning text-sm">
               <KeyRound size={16} />
               <div class="flex-1 break-all">
-                <div class="font-medium">请立即保存此明文 Key（仅显示一次）：</div>
+                <div class="font-medium">
+                  请立即保存此明文 Key（仅显示一次）：
+                </div>
                 <code class="font-mono text-xs">{newPlainKey()}</code>
               </div>
               <button
@@ -203,7 +250,7 @@ function ApiKeyPage() {
             when={(keysData()?.data?.length ?? 0) > 0}
             fallback={
               <div class="text-base-content/50 py-8 text-center text-sm">
-                暂无 Bot 密钥
+                暂无 BOT 密钥
               </div>
             }
           >
@@ -212,7 +259,7 @@ function ApiKeyPage() {
                 <thead>
                   <tr>
                     <th>名称</th>
-                    <th>角色</th>
+                    <th>权限</th>
                     <th>过期时间</th>
                     <th>状态</th>
                     <th>操作</th>
@@ -224,15 +271,29 @@ function ApiKeyPage() {
                       <tr>
                         <td class="font-medium">{key.name}</td>
                         <td>
-                          <span class="badge badge-ghost badge-sm">{roleLabel(key.role)}</span>
+                          <div class="flex flex-wrap gap-1">
+                            <For each={key.permissions}>
+                              {(perm) => (
+                                <span class="badge badge-ghost badge-sm">
+                                  {permissionLabel(perm)}
+                                </span>
+                              )}
+                            </For>
+                          </div>
                         </td>
                         <td class="text-xs">{formatExpiry(key.expires_at)}</td>
                         <td>
                           <Show
                             when={!key.revoked}
-                            fallback={<span class="badge badge-error badge-sm">已吊销</span>}
+                            fallback={
+                              <span class="badge badge-error badge-sm">
+                                已吊销
+                              </span>
+                            }
                           >
-                            <span class="badge badge-success badge-sm">有效</span>
+                            <span class="badge badge-success badge-sm">
+                              有效
+                            </span>
                           </Show>
                         </td>
                         <td>
@@ -243,7 +304,10 @@ function ApiKeyPage() {
                               disabled={revokingUuid() === key.uuid}
                               onClick={() => handleRevoke(key)}
                             >
-                              <Show when={revokingUuid() === key.uuid} fallback={<Trash2 size={14} />}>
+                              <Show
+                                when={revokingUuid() === key.uuid}
+                                fallback={<Trash2 size={14} />}
+                              >
                                 <span class="loading loading-spinner loading-xs" />
                               </Show>
                               吊销

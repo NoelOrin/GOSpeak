@@ -44,7 +44,7 @@ export const Route = createFileRoute("/(app)/manage/permission/")({
 });
 
 const DOMAIN_LABELS: Record<string, string> = {
-  bot: "Bot 密钥",
+  bot: "BOT",
   room: "房间",
   user: "用户",
   role: "角色",

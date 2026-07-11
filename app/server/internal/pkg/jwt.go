@@ -11,11 +11,12 @@ import (
 
 // Claims JWT 载荷。TokenVersion 绑定用户态的 token 版本号，改密/重置后递增使旧 token 失效。
 type Claims struct {
-	Username     string `json:"username"`
-	DisplayName  string `json:"display_name"`
-	UserUUID     string `json:"user_uuid"`
-	Role         string `json:"role"`
-	TokenVersion uint   `json:"token_version"`
+	Username     string   `json:"username"`
+	DisplayName  string   `json:"display_name"`
+	UserUUID     string   `json:"user_uuid"`
+	Role         string   `json:"role"`
+	TokenVersion uint     `json:"token_version"`
+	Permissions  []string `json:"permissions,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -89,13 +90,14 @@ func newJTI() string {
 }
 
 // GenerateBotToken 签发 Bot token。如果 isPermanent 为 true，token 永不过期（100年）。
-func GenerateBotToken(username, displayName, userUUID, role string, tokenVersion uint, isPermanent bool) (string, error) {
+func GenerateBotToken(username, displayName, userUUID, role string, tokenVersion uint, permissions []string, isPermanent bool) (string, error) {
 	claims := Claims{
 		Username:     username,
 		DisplayName:  displayName,
 		UserUUID:     userUUID,
 		Role:         role,
 		TokenVersion: tokenVersion,
+		Permissions:  permissions,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),

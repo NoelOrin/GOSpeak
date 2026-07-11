@@ -61,6 +61,34 @@ func (r *PermissionRepository) SeedRolePermissionsIfEmpty(roleName string, permC
 	return nil
 }
 
+// EnsureRolePermissions 将默认权限码合并进角色（只增不删）。
+// 用于版本升级时把 DefaultRolePermissions 中新增的权限补齐到已存在的角色，
+// 而不会清除管理员在运行时对角色做的自定义调整。
+func (r *PermissionRepository) EnsureRolePermissions(roleName string, permCodes []string) error {
+	for _, code := range permCodes {
+		var count int64
+		err := r.db.Model(&model.RolePermission{}).
+			Joins("JOIN permissions ON permissions.id = role_permissions.permission_id").
+			Where("role_permissions.role_name = ? AND permissions.code = ?", roleName, code).
+			Count(&count).Error
+		if err != nil {
+			return err
+		}
+		if count > 0 {
+			continue
+		}
+		var perm model.Permission
+		if err := r.db.Where("code = ?", code).First(&perm).Error; err != nil {
+			continue
+		}
+		rp := model.RolePermission{RoleName: roleName, PermissionID: perm.ID}
+		if err := r.db.Create(&rp).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // GetAllRolePermissions 获取所有角色的权限映射
 func (r *PermissionRepository) GetAllRolePermissions() (map[string][]string, error) {
 	var rps []model.RolePermission

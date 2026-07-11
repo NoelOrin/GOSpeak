@@ -256,7 +256,7 @@ func seedPermissions(permRepo *repository.PermissionRepository) {
 
 	// 种子角色-权限映射
 	for roleName, codes := range model.DefaultRolePermissions {
-		if err := permRepo.SeedRolePermissionsIfEmpty(roleName, codes); err != nil {
+		if err := permRepo.EnsureRolePermissions(roleName, codes); err != nil {
 			fmt.Printf("[Seed] 同步角色 %s 权限失败: %v\n", roleName, err)
 		}
 	}
