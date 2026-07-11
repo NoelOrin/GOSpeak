@@ -1,10 +1,11 @@
-import { Show } from "solid-js";
+import { Show, createEffect } from "solid-js";
 import { socketStore } from "@/stores/socketStore";
 import MemberSidebar from "./components/memberSidebar";
 import VoiceChat from "./components/voiceChat";
 import { useRoomAudioBridge } from "./hooks/useRoomAudioBridge";
 import { useVoiceSession } from "./hooks/useVoiceSession";
 import { useRoomPresenceSounds } from "./hooks/useRoomPresenceSounds";
+import { playJoinSound } from "@/handler_audio/notificationSounds";
 
 const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 	const {
@@ -22,6 +23,19 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 	} = useVoiceSession();
 	useRoomAudioBridge(sfuClient, isJoined);
 	useRoomPresenceSounds();
+	// play join sound once on media connection completion
+	let playedJoinOnMedia = false;
+	createEffect(() => {
+		const p = phase();
+		if (p === "media_ready" || p === "ready") {
+			if (!playedJoinOnMedia) {
+				playedJoinOnMedia = true;
+				playJoinSound();
+			}
+		} else if (p === "idle" || p === "resolving") {
+			playedJoinOnMedia = false;
+		}
+	});
 
 	return (
 		<div

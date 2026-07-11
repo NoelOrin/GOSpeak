@@ -4,6 +4,7 @@ import {
 	playLeaveSound,
 } from "@/handler_audio/notificationSounds";
 import { socketStore } from "@/stores/socketStore";
+import userStore from "@/stores/userStore";
 
 export function useRoomPresenceSounds() {
 	onMount(() => {
@@ -11,6 +12,8 @@ export function useRoomPresenceSounds() {
 			// 仅当前选中房间触发音效，避免切房后旧房间事件误响
 			const current = socketStore.selectedRoomInfo()?.name;
 			if (event.room !== current) return;
+			// self-join sound played by media lifecycle
+			if (event.identity === userStore.user()?.name) return;
 			if (event.type === "member_joined") {
 				playJoinSound();
 				return;

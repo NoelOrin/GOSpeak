@@ -61,7 +61,7 @@ const cloudflareAdapter: VoiceProviderAdapter = {
 	resolveConnectTarget: (token) => token.serverUrl,
 	interactiveAfterMedia: true,
 	signalJoinMode: "background",
-	serializeJoins: false,
+	serializeJoins: true,
 	joinKey: defaultJoinKey,
 	afterMediaJoin(client, token, ack) {
 		const peers = (ack.members ?? [])

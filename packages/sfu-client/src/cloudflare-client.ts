@@ -107,6 +107,7 @@ export class CloudflareSFUClient implements SFUClient {
 	private onReconnectedCb?: () => void;
 	private hasJoined = false;
 	private leaving = false;
+	private joining = false;
 	private isReconnecting = false;
 	private identity = "";
 	private room = "";
@@ -127,6 +128,8 @@ export class CloudflareSFUClient implements SFUClient {
 
 	async joinRoom(params: JoinParams): Promise<void> {
 		if (this.hasJoined && !this.leaving && this.pc) return;
+		if (this.joining) return;
+		this.joining = true;
 
 		this.leaving = false;
 		const payload = parseToken(params.token);
@@ -231,6 +234,8 @@ export class CloudflareSFUClient implements SFUClient {
 		} catch (err) {
 			await this.cleanupMedia();
 			throw err;
+		} finally {
+			this.joining = false;
 		}
 	}
 
