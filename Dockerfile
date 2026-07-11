@@ -13,47 +13,44 @@ RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o /gospeak .
 # ── Stage 2: Build frontend SPA ──────────────────────────────────────────
 FROM node:22-alpine AS web-builder
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.11.0 --activate
 
 WORKDIR /build
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY app/web/package.json app/web/package.json
-RUN pnpm install --frozen-lockfile --filter @gospeak/web
+COPY packages/sfu-client/package.json packages/sfu-client/package.json
+RUN pnpm install --frozen-lockfile --filter @gospeak/web...
 
-COPY app/web/ app/web/
-RUN cd app/web && pnpm build
+COPY packages/sfu-client packages/sfu-client
+COPY app/web app/web
+RUN pnpm --filter @gospeak/web build
 
 # ── Stage 3: Production ──────────────────────────────────────────────────
 FROM alpine:3.21
 
-RUN apk add --no-cache sqlite-libs ca-certificates tzdata wget
-
-# 非 root 运行
-RUN addgroup -S app && adduser -S -G app app
+RUN apk add --no-cache sqlite-libs ca-certificates tzdata wget \
+    && addgroup -S app && adduser -S -G app app
 
 WORKDIR /app
 
-# Go backend + 环境
 COPY --from=go-builder /gospeak /app/gospeak
-COPY --from=go-builder /build/.env* /app/app/server/
-RUN mkdir -p /app/app/server/db /app/logs \
-    && chown -R app:app /app
-
-# Frontend static files
 COPY --from=web-builder /build/app/web/dist /app/static
 
+RUN mkdir -p /app/db /app/logs /app/uploads \
+    && chown -R app:app /app
+
 ENV GIN_MODE=release
-ENV PORT=8998
+ENV SERVER_PORT=8998
+ENV DB_PATH=/app/db/app.db
 
 EXPOSE 8998
 
-# 数据 + 日志卷
-VOLUME ["/app/app/server/db", "/app/logs"]
+VOLUME ["/app/db", "/app/logs", "/app/uploads", "/app/static"]
 
-# 健康检查 (GET /ping, alpine wget)
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD wget -qO- http://127.0.0.1:8998/ping || exit 1
 
 USER app
 
-ENTRYPOINT ["/app/gospeak"]
+# 运行时配置走 env_file / 环境变量，不把密钥打进镜像
+ENTRYPOINT ["/app/gospeak", "server", "-e", "prod"]
