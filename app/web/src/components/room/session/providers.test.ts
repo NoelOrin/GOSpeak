@@ -73,4 +73,31 @@ describe("getVoiceProviderAdapter", () => {
 			}),
 		).toBe("wss://lk.example");
 	});
+
+
+	it("cloudflare uses background signal and subscribes peers by session stream", async () => {
+		const adapter = getVoiceProviderAdapter("cloudflare");
+		expect(adapter.interactiveAfterMedia).toBe(true);
+		expect(adapter.signalJoinMode).toBe("background");
+		const subscribePeers = vi.fn();
+		await adapter.afterMediaJoin?.(
+			{ subscribePeers } as any,
+			{
+				token: "t",
+				serverUrl: "https://rtc.live.cloudflare.com/v1/apps/x",
+				room: "r1",
+				identity: "alice",
+				stream: "sess-alice",
+			},
+			{
+				members: [
+					{ identity: "alice", stream: "sess-alice" } as any,
+					{ identity: "bob", stream: "sess-bob" } as any,
+				],
+			},
+		);
+		expect(subscribePeers).toHaveBeenCalledWith([
+			{ identity: "bob", stream: "sess-bob" },
+		]);
+	});
 });

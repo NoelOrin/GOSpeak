@@ -2,6 +2,7 @@ package cloudflare
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,13 +13,16 @@ func TestClient_CreateSession(t *testing.T) {
 		assertEqual(t, r.Method, http.MethodPost)
 		assertEqual(t, r.URL.Path, "/apps/test-app-id/sessions/new")
 		assertEqual(t, r.Header.Get("Authorization"), "Bearer test-secret")
-
-		var req NewSessionRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
+		assertEqual(t, r.URL.Query().Get("correlationId"), "room1")
+		if r.Header.Get("Content-Type") != "" {
+			t.Fatalf("expected empty content-type for bodyless create session, got %q", r.Header.Get("Content-Type"))
 		}
-		if req.CorrelationID != "room1" {
-			t.Fatalf("expected correlation room1, got %q", req.CorrelationID)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if len(body) != 0 {
+			t.Fatalf("expected empty body, got %q", string(body))
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -40,6 +44,40 @@ func TestClient_CreateSession(t *testing.T) {
 	}
 	if resp.SessionID != "test-session-id" {
 		t.Fatalf("expected session id test-session-id, got %s", resp.SessionID)
+	}
+}
+
+func TestClient_CreateSession_ThirdpartyQuery(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertEqual(t, r.URL.Path, "/apps/test-app-id/sessions/new")
+		assertEqual(t, r.URL.Query().Get("thirdparty"), "true")
+		assertEqual(t, r.URL.Query().Get("correlationId"), "room1")
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if len(body) != 0 {
+			t.Fatalf("expected empty body, got %q", string(body))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(NewSessionResponse{SessionID: "sess-tp"})
+	}))
+	defer server.Close()
+
+	client := &Client{
+		appID:      "test-app-id",
+		appSecret:  "test-secret",
+		baseURL:    server.URL,
+		httpClient: http.DefaultClient,
+	}
+
+	resp, err := client.CreateSession(&NewSessionRequest{Thirdparty: true, CorrelationID: "room1"})
+	if err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	if resp.SessionID != "sess-tp" {
+		t.Fatalf("expected sess-tp, got %s", resp.SessionID)
 	}
 }
 

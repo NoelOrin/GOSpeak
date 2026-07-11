@@ -2,6 +2,7 @@ package cloudflare
 
 import (
 	"encoding/json"
+	"io"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -14,9 +15,15 @@ import (
 func TestService_GenerateToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/apps/test-app/sessions/new" && r.Method == http.MethodPost {
-			var req NewSessionRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode: %v", err)
+			if got := r.URL.Query().Get("correlationId"); got != "room1" {
+				t.Fatalf("expected correlationId=room1, got %q", got)
+			}
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			if len(body) != 0 {
+				t.Fatalf("expected empty body for create session, got %q", string(body))
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)

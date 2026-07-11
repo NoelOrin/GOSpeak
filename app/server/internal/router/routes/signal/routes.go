@@ -13,6 +13,12 @@ func Register(r *gin.RouterGroup, h *handler.SignalHandler) {
 	r.POST("/webhook", h.LivekitWebhook)
 }
 
-func RegisterProtected(r *gin.RouterGroup, h *handler.SignalHandler) {
+func RegisterProtected(r *gin.RouterGroup, h *handler.SignalHandler, cf *handler.CloudflareHandler) {
 	r.POST("/token", h.GetJoinToken)
+	if cf != nil {
+		r.POST("/cloudflare/sessions/:sessionId/tracks/new", cf.AddTracks)
+		r.PUT("/cloudflare/sessions/:sessionId/renegotiate", cf.Renegotiate)
+		r.PUT("/cloudflare/sessions/:sessionId/tracks/close", cf.CloseTracks)
+		r.DELETE("/cloudflare/sessions/:sessionId", cf.DeleteSession)
+	}
 }

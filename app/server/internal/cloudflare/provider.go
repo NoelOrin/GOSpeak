@@ -159,6 +159,23 @@ func (s *Service) ProviderName() string {
 	return "cloudflare"
 }
 
+
+func (s *Service) StreamName(room, identity string) string {
+	sessionID, ok := s.getSession(room, identity)
+	if !ok {
+		return ""
+	}
+	return sessionID
+}
+
+func (s *Service) StreamInfo(room, identity string) (string, string, error) {
+	sessionID, ok := s.getSession(room, identity)
+	if !ok || sessionID == "" {
+		return "", "", nil
+	}
+	return sessionID, "", nil
+}
+
 func (s *Service) ClientInfo() map[string]interface{} {
 	return map[string]interface{}{
 		"appId":   s.appID,

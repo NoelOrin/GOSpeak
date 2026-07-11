@@ -5,6 +5,7 @@
 # 触发:
 #   - push 到 dev/master 且含 docs 变更
 #   - PR 到 dev/master 且含 docs 变更
+#   - release 发布 (published / edited)
 #   - workflow_dispatch 手动
 
 name: Docs
@@ -23,6 +24,8 @@ on:
       - "app/docs/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/docs.yml"
+  release:
+    types: [published, edited]
   workflow_dispatch:
     inputs:
       deploy:
@@ -84,13 +87,15 @@ jobs:
         with:
           path: app/docs/.vitepress/dist
 
-  # ── 部署到 GitHub Pages（仅 master push 或手动触发）─────────────────
+  # ── 部署到 GitHub Pages ──────────────────────────────────────────────
+  # 条件：master push / release 发布 / 手动且勾选 deploy
   deploy:
     name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
     needs: build
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      github.event_name == 'release' ||
       (github.event_name == 'workflow_dispatch' && inputs.deploy)
     environment:
       name: github-pages

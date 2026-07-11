@@ -35,6 +35,7 @@ type Handlers struct {
 	Auth        *handler.AuthHandler
 	User        *handler.UserHandler
 	Signal      *handler.SignalHandler
+	Cloudflare  *handler.CloudflareHandler
 	OAuth       *handler.OAuthHandler
 	Role        *handler.RoleHandler
 	Room        *handler.RoomHandler
@@ -74,7 +75,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	protected.Use(middleware.BanCheck())
 	userRoutes.Register(protected.Group("/user"), h.User)
 	authRoutes.RegisterProtected(protected.Group("/auth"), h.Auth)
-	signalRoutes.RegisterProtected(protected.Group("/signal"), h.Signal)
+	signalRoutes.RegisterProtected(protected.Group("/signal"), h.Signal, h.Cloudflare)
 	oauthRoutes.RegisterAdmin(protected.Group("/oauth/admin"), h.OAuth)
 	roleRoutes.RegisterProtected(protected.Group("/role"), h.Role)
 	muteRoutes.RegisterProtected(protected.Group("/mute"), h.Mute)

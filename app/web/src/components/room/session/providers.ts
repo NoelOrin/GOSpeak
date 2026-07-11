@@ -55,13 +55,20 @@ const mediasoupAdapter: VoiceProviderAdapter = {
 	joinKey: defaultJoinKey,
 };
 
-// Cloudflare Realtime：暂无前端媒体客户端，使用 livekit 适配器占位
+// Cloudflare Realtime：本端 publish 成功即可交互；stream 字段承载 sessionId，用于拉远端 track。
 const cloudflareAdapter: VoiceProviderAdapter = {
 	provider: "cloudflare",
 	resolveConnectTarget: (token) => token.serverUrl,
-	signalJoinMode: "await",
+	interactiveAfterMedia: true,
+	signalJoinMode: "background",
 	serializeJoins: false,
 	joinKey: defaultJoinKey,
+	afterMediaJoin(client, token, ack) {
+		const peers = (ack.members ?? [])
+			.filter((m) => m.identity !== token.identity && m.stream)
+			.map((m) => ({ identity: m.identity, stream: m.stream as string }));
+		if (peers.length) client.subscribePeers?.(peers);
+	},
 };
 
 const ADAPTERS: Record<SFUProvider, VoiceProviderAdapter> = {

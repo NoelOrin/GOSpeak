@@ -133,6 +133,8 @@ func StartGin(env EnvEnum) {
 	signalHub.SetupRoutes(sioServer)
 	sfuSvc := service.NewSFUService(sfuProvider, signalHub)
 	signalH := handler.NewSignalHandler(sfuSvc)
+	cfMediaSvc := service.NewCloudflareMediaService(sfuConfigSvc.ResolveConfig)
+	cfH := handler.NewCloudflareHandler(cfMediaSvc)
 	srsCallbackH := handler.NewSRSCallbackHandlerWithResolver(signalHub, func() string {
 		resolved, err := sfuConfigSvc.ResolveConfig()
 		if err != nil || resolved == nil {
@@ -179,6 +181,7 @@ func StartGin(env EnvEnum) {
 		Auth:        authH,
 		User:        userH,
 		Signal:      signalH,
+		Cloudflare:  cfH,
 		OAuth:       oauthH,
 		Role:        roleH,
 		Room:        roomH,

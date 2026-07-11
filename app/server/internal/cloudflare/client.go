@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -29,9 +30,26 @@ func NewClient(appID, appSecret string) *Client {
 	}
 }
 
+// CreateSession creates an empty Cloudflare Realtime session.
+// Official API accepts thirdparty/correlationId only as query params; the request body
+// must stay empty or Cloudflare validates it as a sessionDescription payload.
 func (c *Client) CreateSession(req *NewSessionRequest) (*NewSessionResponse, error) {
+	path := fmt.Sprintf("/apps/%s/sessions/new", c.appID)
+	if req != nil {
+		q := url.Values{}
+		if req.Thirdparty {
+			q.Set("thirdparty", "true")
+		}
+		if req.CorrelationID != "" {
+			q.Set("correlationId", req.CorrelationID)
+		}
+		if encoded := q.Encode(); encoded != "" {
+			path += "?" + encoded
+		}
+	}
+
 	var result NewSessionResponse
-	if err := c.doJSON(http.MethodPost, fmt.Sprintf("/apps/%s/sessions/new", c.appID), req, &result); err != nil {
+	if err := c.doJSON(http.MethodPost, path, nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -53,12 +71,11 @@ func (c *Client) AddTracks(sessionID string, req *TrackRequest) (*TracksResponse
 	return &result, nil
 }
 
-func (c *Client) Renegotiate(sessionID string, req *SessionDescription) (*SessionDescription, error) {
-	var result SessionDescription
-	if err := c.doJSON(http.MethodPut, fmt.Sprintf("/apps/%s/sessions/%s/renegotiate", c.appID, sessionID), req, &result); err != nil {
-		return nil, err
+func (c *Client) Renegotiate(sessionID string, req *RenegotiateRequest) error {
+	if req == nil {
+		return fmt.Errorf("cloudflare renegotiate: request is nil")
 	}
-	return &result, nil
+	return c.doJSON(http.MethodPut, fmt.Sprintf("/apps/%s/sessions/%s/renegotiate", c.appID, sessionID), req, nil)
 }
 
 func (c *Client) CloseTracks(sessionID string, req *CloseTrackRequest) (*CloseTrackResponse, error) {
@@ -90,7 +107,9 @@ func (c *Client) doJSON(method, path string, body, target interface{}) error {
 	if err != nil {
 		return fmt.Errorf("cloudflare build request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	if c.appSecret != "" {
 		req.Header.Set("Authorization", "Bearer "+c.appSecret)
 	}

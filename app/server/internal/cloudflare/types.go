@@ -25,6 +25,7 @@ type IceServer struct {
 type TrackRequest struct {
 	SessionDescription *SessionDescription `json:"sessionDescription,omitempty"`
 	Tracks             []TrackSpec         `json:"tracks,omitempty"`
+	AutoDiscover       bool                `json:"autoDiscover,omitempty"`
 }
 
 type SessionDescription struct {
@@ -33,32 +34,56 @@ type SessionDescription struct {
 }
 
 type TrackSpec struct {
-	Location string `json:"location"`
-	MID      string `json:"mid,omitempty"`
+	Location                 string `json:"location"`
+	MID                      string `json:"mid,omitempty"`
+	SessionID                string `json:"sessionId,omitempty"`
+	TrackName                string `json:"trackName,omitempty"`
+	BidirectionalMediaStream bool   `json:"bidirectionalMediaStream,omitempty"`
+	Kind                     string `json:"kind,omitempty"`
 }
 
 type TracksResponse struct {
-	SessionDescription *SessionDescription `json:"sessionDescription,omitempty"`
-	Tracks             []TrackResult       `json:"tracks,omitempty"`
+	SessionDescription            *SessionDescription `json:"sessionDescription,omitempty"`
+	Tracks                        []TrackResult       `json:"tracks,omitempty"`
+	RequiresImmediateRenegotiation bool               `json:"requiresImmediateRenegotiation,omitempty"`
+	ErrorCode                     string              `json:"errorCode,omitempty"`
+	ErrorDescription              string              `json:"errorDescription,omitempty"`
 }
 
 type TrackResult struct {
-	TrackName string `json:"trackName,omitempty"`
-	MID       string `json:"mid,omitempty"`
-	Location  string `json:"location"`
-	SessionID string `json:"sessionId,omitempty"`
+	TrackName        string `json:"trackName,omitempty"`
+	MID              string `json:"mid,omitempty"`
+	Location         string `json:"location"`
+	SessionID        string `json:"sessionId,omitempty"`
+	ErrorCode        string `json:"errorCode,omitempty"`
+	ErrorDescription string `json:"errorDescription,omitempty"`
 }
 
 type CloseTrackRequest struct {
-	TrackNames []string `json:"trackNames"`
+	Tracks             []CloseTrackSpec    `json:"tracks,omitempty"`
+	TrackNames         []string            `json:"trackNames,omitempty"`
+	SessionDescription *SessionDescription `json:"sessionDescription,omitempty"`
+	Force              bool                `json:"force,omitempty"`
+}
+
+type CloseTrackSpec struct {
+	MID       string `json:"mid,omitempty"`
+	TrackName string `json:"trackName,omitempty"`
 }
 
 type CloseTrackResponse struct {
-	Tracks []CloseTrackResult `json:"tracks,omitempty"`
+	Tracks                        []CloseTrackResult  `json:"tracks,omitempty"`
+	SessionDescription            *SessionDescription `json:"sessionDescription,omitempty"`
+	RequiresImmediateRenegotiation bool               `json:"requiresImmediateRenegotiation,omitempty"`
 }
 
 type CloseTrackResult struct {
-	TrackName string `json:"trackName"`
+	MID       string `json:"mid,omitempty"`
+	TrackName string `json:"trackName,omitempty"`
+}
+
+type RenegotiateRequest struct {
+	SessionDescription SessionDescription `json:"sessionDescription"`
 }
 
 type APIError struct {

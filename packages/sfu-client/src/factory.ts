@@ -7,7 +7,7 @@ const providerLoaders: Record<SFUProvider, () => Promise<unknown>> = {
 	mediasoup: () => import("./mediasoup-client"),
 	srs: () => import("./srs-client"),
 	livekit: () => import("./livekit-client"),
-	cloudflare: () => import("./livekit-client"),
+	cloudflare: () => import("./cloudflare-client"),
 };
 
 export async function preloadSFUClient(provider: SFUProvider): Promise<void> {
@@ -55,6 +55,12 @@ export async function createSFUClient(
 				LiveKitSFUClient: new (o?: SFUClientOptions) => SFUClient;
 			};
 			return new LiveKitSFUClient(options);
+		}
+		case "cloudflare": {
+			const { CloudflareSFUClient } = (await providerLoaders.cloudflare()) as {
+				CloudflareSFUClient: new (o?: SFUClientOptions) => SFUClient;
+			};
+			return new CloudflareSFUClient(options);
 		}
 		default: {
 			throw new Error(`unknown SFU provider: ${provider}`);
