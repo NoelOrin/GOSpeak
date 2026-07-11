@@ -28,6 +28,7 @@ type Config struct {
 	SRSApiPort           string
 	SRSWHIPURL           string
 	SRSSecret            string
+	SRSPublicHost        string
 	DailyAPIKey          string
 	DailyDomain          string
 	CFAppID              string
@@ -83,6 +84,7 @@ func Load() *Config {
 		SRSApiPort:           getEnv("SRS_API_PORT", "1985"),
 		SRSWHIPURL:           getEnv("SRS_WHIP_URL", "/rtc/v1/whip/"),
 		SRSSecret:            getEnv("SRS_SECRET", ""),
+		SRSPublicHost:        getEnv("SRS_PUBLIC_HOST", ""),
 		DailyAPIKey:          getEnv("DAILY_API_KEY", ""),
 		DailyDomain:          getEnv("DAILY_DOMAIN", ""),
 		CFAppID:              getEnv("CF_APP_ID", ""),

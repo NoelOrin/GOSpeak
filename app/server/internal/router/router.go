@@ -20,6 +20,11 @@ import (
 	systemRoutes "GOSpeak/internal/router/routes/system"
 	userRoutes "GOSpeak/internal/router/routes/user"
 
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	socketio "github.com/googollee/go-socket.io"
 
@@ -52,6 +57,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	})
 
 	r.Static("/uploads", "./uploads")
+	serveSPA(r)
 
 	swaggerRoutes.Register(r)
 
@@ -86,4 +92,39 @@ func SetupSocketRoutes(server *socketio.Server, signalHub interface {
 	SetupRoutes(*socketio.Server)
 }) {
 	signalHub.SetupRoutes(server)
+}
+
+// serveSPA 托管前端构建产物。路径优先级：STATIC_DIR > /app/static > ./static。
+// 仅生产镜像/统一部署使用；开发环境前端走 Vite，静态目录不存在时静默跳过。
+func serveSPA(r *gin.Engine) {
+	staticDir := os.Getenv("STATIC_DIR")
+	if staticDir == "" {
+		for _, candidate := range []string{"/app/static", "./static"} {
+			if st, err := os.Stat(candidate); err == nil && st.IsDir() {
+				staticDir = candidate
+				break
+			}
+		}
+	}
+	if staticDir == "" {
+		return
+	}
+	index := filepath.Join(staticDir, "index.html")
+	if _, err := os.Stat(index); err != nil {
+		return
+	}
+	fileServer := http.FileServer(http.Dir(staticDir))
+	r.NoRoute(func(c *gin.Context) {
+		path := c.Request.URL.Path
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/socket.io") || strings.HasPrefix(path, "/swagger") {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		full := filepath.Join(staticDir, path)
+		if st, err := os.Stat(full); err == nil && !st.IsDir() {
+			fileServer.ServeHTTP(c.Writer, c.Request)
+			return
+		}
+		c.File(index)
+	})
 }
