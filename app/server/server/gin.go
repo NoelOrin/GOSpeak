@@ -236,8 +236,9 @@ func loadingEnv(env EnvEnum) {
 			panic(err)
 		}
 	case Prod:
+		// Docker / K8s 通过 env_file 或环境变量注入, .env.prod 可不存在
 		if err := loadEnvFile("./.env.prod"); err != nil {
-			panic(err)
+			log.Printf("[Config] .env.prod not loaded (%v); using process environment", err)
 		}
 	}
 }
