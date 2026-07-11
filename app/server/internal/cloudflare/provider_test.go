@@ -119,9 +119,8 @@ func TestService_MuteParticipant_NotSupported(t *testing.T) {
 
 func TestService_RemoveParticipant(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/apps/test-app/sessions/sess-user1/tracks/close" && r.Method == http.MethodPut {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(CloseTrackResponse{Tracks: []CloseTrackResult{{TrackName: "mic"}}})
+		if r.URL.Path == "/apps/test-app/sessions/sess-user1" && r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -152,10 +151,9 @@ func TestService_RemoveParticipant(t *testing.T) {
 func TestService_DeleteRoom(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/apps/test-app/sessions/sess-1/tracks/close" || r.URL.Path == "/apps/test-app/sessions/sess-2/tracks/close" {
+		if (r.URL.Path == "/apps/test-app/sessions/sess-1" || r.URL.Path == "/apps/test-app/sessions/sess-2") && r.Method == http.MethodDelete {
 			callCount++
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(CloseTrackResponse{})
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)

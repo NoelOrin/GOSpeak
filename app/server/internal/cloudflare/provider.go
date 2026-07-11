@@ -115,8 +115,8 @@ func (s *Service) RemoveParticipant(room, identity string) error {
 		return nil
 	}
 
-	if _, err := s.client.CloseTracks(sessionID, &CloseTrackRequest{}); err != nil {
-		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, "cloudflare close tracks: "+err.Error())
+	if err := s.client.DeleteSession(sessionID); err != nil {
+		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, "cloudflare delete session: "+err.Error())
 	}
 	s.deleteSession(room, identity)
 	return nil
@@ -138,7 +138,7 @@ func (s *Service) DeleteRoom(room string) error {
 
 	var lastErr error
 	for _, sessionID := range sessionIDs {
-		if _, err := s.client.CloseTracks(sessionID, &CloseTrackRequest{}); err != nil {
+		if err := s.client.DeleteSession(sessionID); err != nil {
 			lastErr = err
 		}
 	}
@@ -146,7 +146,7 @@ func (s *Service) DeleteRoom(room string) error {
 		s.registry.ClearRoom(room)
 	}
 	if lastErr != nil {
-		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, lastErr, "cloudflare close tracks: "+lastErr.Error())
+		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, lastErr, "cloudflare delete session: "+lastErr.Error())
 	}
 	return nil
 }

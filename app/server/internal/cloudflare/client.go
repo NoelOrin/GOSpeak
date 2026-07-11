@@ -69,6 +69,13 @@ func (c *Client) CloseTracks(sessionID string, req *CloseTrackRequest) (*CloseTr
 	return &result, nil
 }
 
+// DeleteSession terminates a session and closes all of its tracks. Used for
+// participant kick and room deletion, where Cloudflare has no room/participant
+// concept and the whole session must be torn down.
+func (c *Client) DeleteSession(sessionID string) error {
+	return c.doJSON(http.MethodDelete, fmt.Sprintf("/apps/%s/sessions/%s", c.appID, sessionID), nil, nil)
+}
+
 func (c *Client) doJSON(method, path string, body, target interface{}) error {
 	var bodyReader io.Reader
 	if body != nil {
