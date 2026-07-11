@@ -55,12 +55,22 @@ const mediasoupAdapter: VoiceProviderAdapter = {
 	joinKey: defaultJoinKey,
 };
 
+// Cloudflare Realtime：暂无前端媒体客户端，使用 livekit 适配器占位
+const cloudflareAdapter: VoiceProviderAdapter = {
+	provider: "cloudflare",
+	resolveConnectTarget: (token) => token.serverUrl,
+	signalJoinMode: "await",
+	serializeJoins: false,
+	joinKey: defaultJoinKey,
+};
+
 const ADAPTERS: Record<SFUProvider, VoiceProviderAdapter> = {
 	livekit: livekitAdapter,
 	srs: srsAdapter,
 	agora: agoraAdapter,
 	daily: dailyAdapter,
 	mediasoup: mediasoupAdapter,
+	cloudflare: cloudflareAdapter,
 };
 
 export function getVoiceProviderAdapter(

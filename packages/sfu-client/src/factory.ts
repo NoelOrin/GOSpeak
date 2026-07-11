@@ -7,6 +7,7 @@ const providerLoaders: Record<SFUProvider, () => Promise<unknown>> = {
 	mediasoup: () => import("./mediasoup-client"),
 	srs: () => import("./srs-client"),
 	livekit: () => import("./livekit-client"),
+	cloudflare: () => import("./livekit-client"),
 };
 
 export async function preloadSFUClient(provider: SFUProvider): Promise<void> {

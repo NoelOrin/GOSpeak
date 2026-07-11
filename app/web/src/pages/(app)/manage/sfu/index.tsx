@@ -85,6 +85,9 @@ const emptyForm: UpdateSFUConfigParams = {
 	srs_secret: "",
 	daily_api_key: "",
 	daily_domain: "",
+	cf_app_id: "",
+	cf_app_secret: "",
+	cf_stun_url: "stun.cloudflare.com:3478",
 };
 
 const PROVIDER_OPTIONS: { value: SFUProvider; label: string }[] = [
@@ -93,6 +96,7 @@ const PROVIDER_OPTIONS: { value: SFUProvider; label: string }[] = [
 	{ value: "mediasoup", label: "MediaSoup" },
 	{ value: "srs", label: "SRS" },
 	{ value: "daily", label: "Daily" },
+	{ value: "cloudflare", label: "Cloudflare" },
 ];
 
 const DISABLED_PROVIDERS: SFUProvider[] = ["mediasoup"];
@@ -111,9 +115,11 @@ function isProviderConfigured(
 		case "srs":
 			return !!config.srs_host;
 		case "daily":
-			return !!(config.daily_api_key || config.daily_domain);
-		default:
-			return false;
+		return !!(config.daily_api_key || config.daily_domain);
+	case "cloudflare":
+		return !!config.cf_app_id;
+	default:
+		return false;
 	}
 }
 
@@ -178,6 +184,9 @@ function SFUPage() {
 			srs_secret: data.srs_secret || "",
 			daily_api_key: data.daily_api_key || "",
 			daily_domain: data.daily_domain || "",
+			cf_app_id: data.cf_app_id || "",
+			cf_app_secret: data.cf_app_secret || "",
+			cf_stun_url: data.cf_stun_url || "stun.cloudflare.com:3478",
 		});
 	}
 
@@ -235,6 +244,9 @@ function SFUPage() {
 			require("daily_api_key", "API Key 必填");
 			if (!isHost(f.daily_domain))
 				e.daily_domain = "需要域名, 不含 scheme / 路径 / 引号";
+		} else if (p === "cloudflare") {
+			require("cf_app_id", "App ID 必填");
+			require("cf_app_secret", "App Secret 必填");
 		}
 		return e;
 	};
@@ -783,6 +795,66 @@ function SFUPage() {
 								onInput={(event) =>
 									updateField(
 										"daily_domain",
+										event.currentTarget.value,
+									)
+								}
+								disabled={saving()}
+							/>
+						</Field>
+					</div>
+				</Show>
+
+				{/* Cloudflare Realtime config fields */}
+				<Show when={selectedProvider() === "cloudflare"}>
+					<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+						<Field label="App ID" error={errors().cf_app_id}>
+							<input
+								type="text"
+								class="input input-bordered input-sm w-full"
+								classList={{
+									"input-error": !!errors().cf_app_id,
+								}}
+								placeholder="Cloudflare Realtime App ID"
+								value={form().cf_app_id}
+								onInput={(event) =>
+									updateField(
+										"cf_app_id",
+										event.currentTarget.value,
+									)
+								}
+								disabled={saving()}
+							/>
+						</Field>
+						<Field label="STUN URL" error={errors().cf_stun_url}>
+							<input
+								type="text"
+								class="input input-bordered input-sm w-full"
+								classList={{
+									"input-error": !!errors().cf_stun_url,
+								}}
+								placeholder="stun.cloudflare.com:3478"
+								value={form().cf_stun_url}
+								onInput={(event) =>
+									updateField(
+										"cf_stun_url",
+										event.currentTarget.value,
+									)
+								}
+								disabled={saving()}
+							/>
+						</Field>
+						<Field label="App Secret" error={errors().cf_app_secret}>
+							<input
+								type="password"
+								class="input input-bordered input-sm w-full"
+								classList={{
+									"input-error": !!errors().cf_app_secret,
+								}}
+								placeholder="Cloudflare Realtime App Secret"
+								value={form().cf_app_secret}
+								onInput={(event) =>
+									updateField(
+										"cf_app_secret",
 										event.currentTarget.value,
 									)
 								}

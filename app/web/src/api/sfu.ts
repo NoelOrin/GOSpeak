@@ -61,6 +61,11 @@ export const SFU_PROVIDER_CAPABILITIES: Record<
 		requiresSignalAdapter: false,
 		kickViaSignal: true,
 	},
+	cloudflare: {
+		supportsParticipants: false,
+		requiresSignalAdapter: false,
+		kickViaSignal: true,
+	},
 };
 
 export interface SFUConfig {
@@ -80,6 +85,9 @@ export interface SFUConfig {
 	srs_secret: string;
 	daily_api_key: string;
 	daily_domain: string;
+	cf_app_id: string;
+	cf_app_secret: string;
+	cf_stun_url: string;
 	created_at?: string;
 	updated_at?: string;
 }

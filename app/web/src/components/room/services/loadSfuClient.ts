@@ -14,6 +14,7 @@ const providerPreloaders: Record<SFUProvider, () => Promise<void>> = {
 	mediasoup: () => preloadSFUClient("mediasoup"),
 	srs: () => preloadSFUClient("srs"),
 	daily: () => preloadSFUClient("daily"),
+	cloudflare: () => preloadSFUClient("cloudflare"),
 };
 
 const preloadedProviders = new Set<SFUProvider>();
