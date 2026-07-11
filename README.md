@@ -95,6 +95,9 @@ STORAGE_TYPE="local"
 
 ## 部署
 
+完整公网/统一编排见 **[deploy/DEPLOY.md](deploy/DEPLOY.md)**（`deploy/docker-compose.yml`）。
+
+
 ### 数据库三档渐进
 
 ```bash

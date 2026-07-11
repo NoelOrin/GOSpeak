@@ -1,6 +1,9 @@
 # GOSpeak 部署/运维手册
 
-> 版本: 1.0 · 更新: 2026-07-03
+> 版本: 1.1 · 更新: 2026-07-11
+>
+> **统一部署入口已迁到 [`deploy/DEPLOY.md`](../deploy/DEPLOY.md) + [`deploy/docker-compose.yml`](../deploy/docker-compose.yml)。**
+> 本文保留概念说明；一键命令与公网清单以 `deploy/DEPLOY.md` 为准。
 
 GOSpeak 实时音视频平台的部署文档。覆盖本地开发、Docker 部署、生产上线全流程。
 

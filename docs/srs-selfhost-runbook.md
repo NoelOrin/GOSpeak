@@ -6,6 +6,32 @@ dev 环境(浏览器与 docker 同宿主)。LAN 部署见末节。
 
 浏览器侧 WHIP/WHEP 走同源反向代理:前端拿到的 `whipUrl` 是 `/rtc/v1/whip/`,实际由 Vite dev proxy 或 nginx 转发到 SRS HTTP API `:1985`。不要让浏览器直接连接 `http://srs:1985` 或 `http://localhost:1985`,否则生产环境会遇到跨域、HTTPS mixed content 或内网地址不可达问题。
 
+## 注意事项（必读）
+
+1. **信令可反代，媒体必须直连**  
+   WHIP/WHEP 走同源 `/rtc/v1` → SRS `:1985`。WebRTC 媒体走 SRS `:8000`（UDP/TCP），Nginx 不能代 UDP。
+
+2. **`SRS_SECRET` 必填**  
+   空 secret 会明文 token + 中文 header 报错。生产/开发都用 `openssl rand -hex 32`。
+
+3. **两套地址不要混**  
+   - Go 管 SRS：`SRS_HOST=srs`（或 localhost）  
+   - 浏览器：`SRS_PUBLIC_HOST=https://域名` + 相对 `SRS_WHIP_URL=/rtc/v1/whip/`  
+   不要把 `serverUrl` 指到容器内网或浏览器不可达地址。
+
+4. **`SRS_CANDIDATE` = 客户端可达的媒体 IP**  
+   本机 `127.0.0.1`，局域网 LAN IP，公网公网 IP。填错表现为 ICE failed / 无声。
+
+5. **backend 先于 publish**  
+   SRS hooks 回调 Go；backend 挂了会 on_publish 403。
+
+6. **当前无 TURN 下发**  
+   不依赖 Coturn。公网务必放行 `8000/udp`（及 `8000/tcp` 回退）。NAT 极差环境需自建中继时再另议，不在默认部署路径。
+
+7. **生产勿让浏览器直连 `:1985`**  
+   跨域、mixed content、内网不可达都会踩坑；统一走 Nginx 同源反代。
+
+
 ## 1. 起 SRS
 
 > SRS http_hooks 已配 callback 到 backend:8998,backend 必须先于 SRS publish 启动,否则 SRS fail-closed 拒所有 publish。
