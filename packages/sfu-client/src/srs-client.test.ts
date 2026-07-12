@@ -89,7 +89,7 @@ function makeFetch(whipOk: boolean, whepOk: boolean) {
 						? "/rtc/v1/whip/?action=delete&token=t"
 						: "",
 			},
-			text: async () => "v=0\r\n",
+			text: async (): Promise<string> => "v=0\r\n",
 		};
 	});
 }
@@ -167,7 +167,7 @@ describe("SRSSFUClient subscribe retry exhaustion", () => {
 				stream: "gs-bob",
 				pc: null,
 				resourceUrl: "",
-				retryCount: SRSSFUClient.MAX_SUBSCRIBE_RETRIES - 1,
+				retryCount: (SRSSFUClient as any).MAX_SUBSCRIBE_RETRIES - 1,
 				retryTimer: null,
 				connecting: false,
 			});
@@ -423,7 +423,7 @@ describe("SRSSFUClient leave during in-flight WHIP", () => {
 					ok: true,
 					status: 200,
 					headers: { get: () => "" },
-					text: async () => "",
+					text: async (): Promise<string> => "",
 				});
 			}
 			return new Promise((_, reject) => {
@@ -479,7 +479,7 @@ describe("SRSSFUClient stream queue", () => {
 					ok: true,
 					status: 200,
 					headers: { get: () => "" },
-					text: async () => "",
+					text: async (): Promise<string> => "",
 				};
 			}
 			active++;
@@ -495,7 +495,7 @@ describe("SRSSFUClient stream queue", () => {
 					get: (k: string) =>
 						k === "Location" ? "/rtc/v1/whip/?action=delete&token=t" : "",
 				},
-				text: async () => "v=0\r\n",
+				text: async (): Promise<string> => "v=0\r\n",
 			};
 		});
 		(globalThis as any).fetch = fetchMock;
@@ -611,7 +611,7 @@ describe("SRSSFUClient live holder takeover", () => {
 					ok: true,
 					status: 200,
 					headers: { get: () => "" },
-					text: async () => "",
+					text: async (): Promise<string> => "",
 				};
 			}
 			events.push("WHIP");
@@ -622,7 +622,7 @@ describe("SRSSFUClient live holder takeover", () => {
 					get: (k: string) =>
 						k === "Location" ? "/rtc/v1/whip/?action=delete&token=t" : "",
 				},
-				text: async () => "v=0\r\n",
+				text: async (): Promise<string> => "v=0\r\n",
 			};
 		});
 		(globalThis as any).fetch = fetchMock;

@@ -27,4 +27,7 @@ const (
 	PermStorageRead   = "storage:read"
 	PermStorageManage = "storage:manage"
 	PermStorageDelete = "storage:delete"
+
+	PermOAuthRead    = "oauth:read"
+	PermOAuthManage  = "oauth:manage"
 )

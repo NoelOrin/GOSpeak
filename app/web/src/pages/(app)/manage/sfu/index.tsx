@@ -464,7 +464,7 @@ function SFUPage() {
 							<span class="text-base-content/70">
 								当前查看{" "}
 								<span class="font-medium text-base-content">
-									{PROVIDER_LABELS[selectedProvider()!]}
+									{PROVIDER_LABELS[selectedProvider() ?? ""]}
 								</span>
 								的配置，尚未激活。保存配置将自动激活，或直接切换。
 							</span>
@@ -869,7 +869,7 @@ function SFUPage() {
 							type="button"
 							class="btn btn-soft btn-sm"
 							onClick={() =>
-								handleSwitch(selectedProvider()!)
+								handleSwitch(selectedProvider() ?? "")
 							}
 							disabled={saving()}
 						>

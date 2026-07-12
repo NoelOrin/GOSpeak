@@ -15,6 +15,7 @@ export interface BackendUser {
 	display_name: string;
 	avatar: string;
 	role: string;
+	is_bot?: boolean;
 }
 
 export interface LoginData {
@@ -49,10 +50,10 @@ export async function changePassword(
 	oldPassword: string,
 	newPassword: string,
 ): Promise<void> {
-	const res = (await apiClient.post({
+	await apiClient.post({
 		url: "/api/v1/auth/change_password",
 		data: { old_password: oldPassword, new_password: newPassword },
-	})) as AxiosResponse<Result>;
+	});
 
 }
 
@@ -74,10 +75,10 @@ export async function resetPassword(
 	code: string,
 	newPassword: string,
 ): Promise<void> {
-	const res = (await apiClient.post({
+	await apiClient.post({
 		url: "/api/v1/auth/reset_password",
 		data: { email, code, new_password: newPassword },
-	})) as AxiosResponse<Result>;
+	});
 
 }
 

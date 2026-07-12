@@ -12,18 +12,13 @@ name: Docs
 
 on:
   push:
-    branches: [dev, release, feature/**, docs/**]
+    branches: [release, feature/**]
     paths:
       - "app/docs/**"
       - "packages/sfu-client/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/docs.yml"
-  pull_request:
-    branches: [release]
-    paths:
-      - "app/docs/**"
-      - "pnpm-lock.yaml"
-      - ".github/workflows/docs.yml"
+
   release:
     types: [published, edited]
   workflow_dispatch:
@@ -89,14 +84,13 @@ jobs:
           path: app/docs/.vitepress/dist
 
   # ── 部署到 GitHub Pages ──────────────────────────────────────────────
-  # 条件：master push / release 发布 / 手动且勾选 deploy
+  # push / PR / release 自动部署，手动触发需勾选 deploy
   deploy:
     name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
     needs: build
     if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
-      github.event_name == 'release' ||
+      github.event_name != 'workflow_dispatch' ||
       (github.event_name == 'workflow_dispatch' && inputs.deploy)
     environment:
       name: github-pages

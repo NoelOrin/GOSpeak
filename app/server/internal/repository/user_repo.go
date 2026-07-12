@@ -54,11 +54,15 @@ func (r *UserRepository) GetByEmail(email string) (*model.User, error) {
 	return &user, nil
 }
 
-func (r *UserRepository) List(page, pageSize int) ([]model.User, int64, error) {
+func (r *UserRepository) List(page, pageSize int, excludeBots bool) ([]model.User, int64, error) {
 	var users []model.User
 	var total int64
-	r.db.Model(&model.User{}).Count(&total)
-	err := r.db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&users).Error
+	query := r.db.Model(&model.User{})
+	if excludeBots {
+		query = query.Where("is_bot = ?", false)
+	}
+	query.Count(&total)
+	err := query.Offset((page - 1) * pageSize).Limit(pageSize).Find(&users).Error
 	return users, total, err
 }
 

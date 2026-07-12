@@ -76,10 +76,10 @@ export async function createRole(name: string): Promise<RoleItem> {
 }
 
 export async function deleteRole(id: number): Promise<void> {
-	const res = (await apiClient.post({
+	await apiClient.post({
 		url: "/api/v1/role/delete",
 		data: { id },
-	})) as AxiosResponse<Result>;
+	});
 
 }
 

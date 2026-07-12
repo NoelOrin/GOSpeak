@@ -33,10 +33,10 @@ export async function createMute(params: CreateMuteParams): Promise<MuteRecord> 
 }
 
 export async function cancelMute(userId: number): Promise<void> {
-	const res = (await apiClient.post({
+	await apiClient.post({
 		url: "/api/v1/mute/cancel",
 		data: { user_id: userId },
-	})) as AxiosResponse<Result>;
+	});
 
 }
 

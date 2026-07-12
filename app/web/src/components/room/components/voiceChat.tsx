@@ -16,7 +16,7 @@ import userStore from "@/stores/userStore";
 import VoiceChatStore from "@/stores/voiceChatStore";
 import { hasPermission } from "@/utils/permissions";
 
-const VoiceChat = ({ ref }: { ref?: HTMLDivElement }) => {
+const VoiceChat = ({ ref: _ref }: { ref?: HTMLDivElement }) => {
 	const sortedMembers = createMemo(() => {
 		const members = socketStore.members();
 		const myName = userStore.user()?.name;

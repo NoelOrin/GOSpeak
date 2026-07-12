@@ -53,6 +53,14 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 
 	pkg.Success(c, resp)
 }
+func (h *OAuthHandler) ListEnabledProviders(c *gin.Context) {
+	providers, err := h.oauthService.ListEnabledProviders()
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, providers)
+}
 
 func (h *OAuthHandler) ListProviders(c *gin.Context) {
 	providers, err := h.oauthService.ListProviders()

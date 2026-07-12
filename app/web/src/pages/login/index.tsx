@@ -38,9 +38,6 @@ function LoginPage() {
 		}
 	});
 	const [showChangeModal, setShowChangeModal] = createSignal(false);
-	const [loginData, setLoginData] = createSignal<Awaited<
-		ReturnType<typeof loginApi>
-	> | null>(null);
 
 	let forgotDialogRef!: HTMLDialogElement;
 	let changeDialogRef!: HTMLDialogElement;
@@ -242,7 +239,7 @@ function LoginPage() {
 							submitText="修改密码"
 							onSubmit={async ({ newPassword, name }) => {
 								const result = await firstChangePasswordApi(
-									newPassword!,
+									newPassword ?? "",
 									name,
 								);
 								await userStore.login(result.user, result.access_token, result.refresh_token);

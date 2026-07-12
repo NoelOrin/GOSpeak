@@ -20,7 +20,7 @@
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `SFU_PROVIDER` | `livekit` | SFU 类型：`livekit` / `srs` / `mediasoup` / `agora` / `daily` |
+| `SFU_PROVIDER` | `livekit` | SFU 类型：`livekit` / `srs` / `mediasoup` / `agora` / `daily` / `cloudflare` |
 
 ### LiveKit
 

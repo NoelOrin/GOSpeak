@@ -51,8 +51,7 @@ export async function presignUpload(params: {
     data: params,
   })) as AxiosResponse<Result<PresignResult>>
 
-  const result = res.data
-  return (res as any).data.data!
+  return (res as any).data.data
 }
 
 /** 确认 S3 上传完成 */
@@ -62,8 +61,7 @@ export async function confirmUpload(objectKey: string): Promise<{ public_url: st
     data: { object_key: objectKey },
   })) as AxiosResponse<Result<{ public_url: string }>>
 
-  const result = res.data
-  return (res as any).data.data!
+  return (res as any).data.data
 }
 
 /** 本地模式中转上传 */
@@ -78,8 +76,7 @@ export async function uploadFile(file: File, objectKey: string): Promise<{ publi
     headers: { 'Content-Type': 'multipart/form-data' },
   })) as AxiosResponse<Result<{ public_url: string }>>
 
-  const result = res.data
-  return (res as any).data.data!
+  return (res as any).data.data
 }
 
 /** 获取存储配置（管理员） */
@@ -88,8 +85,7 @@ export async function getStorageConfig(): Promise<StorageConfigView> {
     url: '/api/v1/storage/config',
   })) as AxiosResponse<Result<StorageConfigView>>
 
-  const result = res.data
-  return (res as any).data.data!
+  return (res as any).data.data
 }
 
 /** 更新存储配置（管理员） */
@@ -99,6 +95,5 @@ export async function updateStorageConfig(config: StorageConfigInput): Promise<S
     data: config,
   })) as AxiosResponse<Result<StorageConfigView>>
 
-  const result = res.data
-  return (res as any).data.data!
+  return (res as any).data.data
 }

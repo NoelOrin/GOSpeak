@@ -64,7 +64,7 @@ const FileUpload: Component<FileUploadProps> = (props) => {
   return (
     <div
       class={`flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 transition-colors cursor-pointer ${dragOver() ? 'border-primary bg-primary/10' : 'border-base-300 hover:border-primary/50'} ${props.class || ''}`}
-      onClick={() => inputRef?.click()}
+      role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") inputRef?.click() }} onClick={() => inputRef?.click()}
       onDrop={onDrop}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}

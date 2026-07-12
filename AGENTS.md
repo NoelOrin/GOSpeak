@@ -43,18 +43,24 @@ app/server/
 │   ├── repository/         # DAO layer, direct DB access
 │   ├── service/            # Business logic layer
 │   ├── handler/            # HTTP controller (Gin handlers)
-│   ├── middleware/         # JWT auth, CORS, RBAC (RequireRole)
+│   ├── middleware/         # JWT auth, CORS, permission-based RBAC, ban check
 │   ├── router/             # Route registration (sub-route modules)
-│   │   └── routes/         # Per-module route groups (auth, user, signal, oauth, swagger)
+│   │   └── routes/         # Per-module route groups (auth, user, signal, oauth, sfu, role, permission, mute, room, storage, bot, email, srs, system)
 │   ├── sfu/                # SFU provider abstraction layer
 │   ├── livekit/            # LiveKit SFU implementation
+│   ├── agora/              # Agora SFU implementation
+│   ├── daily/              # Daily SFU implementation
+│   ├── mediasoup/          # MediaSoup SFU implementation
+│   ├── srs/                # SRS SFU implementation (WHIP/WHEP)
+│   ├── cloudflare/         # Cloudflare Realtime SFU implementation
+│   ├── permcode/           # Permission code constants
 │   ├── signal/             # Socket.IO signaling hub
 │   ├── redis/              # Optional Redis client (blacklist, JWT key rotation)
 │   └── pkg/                # Shared utilities
 │       ├── errors.go       # Business error codes + AppError
 │       ├── response.go     # Unified JSON response
 │       ├── jwt.go          # JWT token generation/parsing
-│       └── oauth/          # OAuth2 provider abstraction (GitHub, Google, QQ)
+│       └── oauth/          # Generic OAuth2 provider abstraction (seeded github/google/qq + custom)
 ├── test/                   # API integration tests (Node.js)
 ├── docs/                   # Swagger generated docs
 ├── db/                     # SQLite database storage
@@ -190,96 +196,175 @@ if err := c.ShouldBindJSON(&req); err != nil {
 ## API Route Conventions
 
 - **All routes** are prefixed with `/api/v1/`
-- Grouped by module: `/api/v1/auth/*`, `/api/v1/user/*`, `/api/v1/signal/*`
-- Auth-required routes use `middleware.JWTAuth()` under a `protected` group
-- Public routes (login, register, signal token) are outside the protected group
+- Grouped by module: `auth`, `user`, `signal`, `oauth`, `role`, `permission`, `mute`, `room`, `storage`, `bot`, `email`, `sfu`, `srs`, `system`
+- The `protected` group applies `middleware.JWTAuth()` + `middleware.BanCheck()` to every route
+- Permission-gated routes additionally use `middleware.RequirePermission(permcode.X)` (permission-based RBAC; see Middleware section)
+- Public routes (login, register, oauth, signal exchange, srs callback, system stream) are outside the protected group
 
 ### Current Route Table
 
-| Method | Path | Auth | Handler |
-|--------|------|------|---------|
-| POST | `/api/v1/auth/login` | No | AuthHandler.Login |
-| POST | `/api/v1/auth/register` | No | AuthHandler.Register |
-| POST | `/api/v1/auth/refresh_token` | No | AuthHandler.GetRefreshToken |
-| POST | `/api/v1/auth/reset_password` | No | AuthHandler.ResetPassword |
-| POST | `/api/v1/auth/logout` | Yes | AuthHandler.Logout |
-| POST | `/api/v1/auth/refresh` | Yes | AuthHandler.RefreshToken |
-| POST | `/api/v1/auth/change_password` | Yes | AuthHandler.ChangePassword |
-| POST | `/api/v1/auth/first_change_password` | Yes | AuthHandler.FirstChangePassword |
-| GET | `/api/v1/oauth/login/:provider` | No | OAuthHandler.Login (redirect) |
-| GET | `/api/v1/oauth/callback/:provider` | No | OAuthHandler.Callback |
-| GET | `/api/v1/oauth/admin/providers` | Yes (admin) | OAuthHandler.ListProviders |
-| POST | `/api/v1/oauth/admin/providers` | Yes (admin) | OAuthHandler.CreateProvider |
-| PUT | `/api/v1/oauth/admin/providers` | Yes (admin) | OAuthHandler.UpdateProvider |
-| DELETE | `/api/v1/oauth/admin/providers/:id` | Yes (admin) | OAuthHandler.DeleteProvider |
-| POST | `/api/v1/signal/token` | No | SignalHandler.GetJoinToken |
-| POST | `/api/v1/signal/signal` | No | SignalHandler.Signal |
-| POST | `/api/v1/signal/webhook` | No | SignalHandler.LivekitWebhook |
-| POST | `/api/v1/sfu/config` | Yes (`PermSFUManage`) | SFUConfigHandler.Get |
-| POST | `/api/v1/sfu/update-config` | Yes (`PermSFUManage`) | SFUConfigHandler.Update |
-| GET | `/api/v1/signal/rooms` | No | SignalHandler.ListRooms |
-| GET | `/api/v1/signal/participants` | No | SignalHandler.ListParticipants |
-| POST | `/api/v1/user/profile` | Yes | UserHandler.GetProfile |
-| POST | `/api/v1/user/list` | Yes | UserHandler.List |
-| POST | `/api/v1/user/get` | Yes | UserHandler.GetByID |
-| POST | `/api/v1/user/delete` | Yes (admin) | UserHandler.Delete |
-| POST | `/api/v1/user/update-role` | Yes (admin) | UserHandler.UpdateRole |
-| GET | `/ping` | No | Health check |
-| GET | `/swagger/*any` | No | Swagger UI |
-| WS | `/socket.io/*` | No | Socket.IO signaling |
+| Method | Path | Auth | Permission | Handler |
+|--------|------|------|-----------|---------|
+| POST | `/api/v1/auth/login` | No | — | AuthHandler.Login |
+| POST | `/api/v1/auth/register` | No | — | AuthHandler.Register |
+| POST | `/api/v1/auth/refresh_token` | No | — | AuthHandler.GetRefreshToken |
+| POST | `/api/v1/auth/reset_password` | No | — | AuthHandler.ResetPassword |
+| POST | `/api/v1/auth/logout` | JWT | — | AuthHandler.Logout |
+| POST | `/api/v1/auth/refresh` | JWT | — | AuthHandler.RefreshToken |
+| POST | `/api/v1/auth/change_password` | JWT | — | AuthHandler.ChangePassword |
+| POST | `/api/v1/auth/first_change_password` | JWT | — | AuthHandler.FirstChangePassword |
+| POST | `/api/v1/user/profile` | JWT | — | UserHandler.GetProfile |
+| POST | `/api/v1/user/info` | JWT | — | UserHandler.GetByName |
+| POST | `/api/v1/user/update-profile` | JWT | — | UserHandler.UpdateProfile |
+| POST | `/api/v1/user/upload-avatar` | JWT | — | UserHandler.UploadAvatar |
+| POST | `/api/v1/user/list` | JWT | `user:read` | UserHandler.List |
+| POST | `/api/v1/user/get` | JWT | `user:read` | UserHandler.GetByID |
+| POST | `/api/v1/user/delete` | JWT | `user:delete` | UserHandler.Delete |
+| POST | `/api/v1/user/update-role` | JWT | `user:update` | UserHandler.UpdateRole |
+| POST | `/api/v1/signal/token` | JWT | — | SignalHandler.GetJoinToken |
+| POST | `/api/v1/signal/signal` | No | — | SignalHandler.Signal |
+| GET | `/api/v1/signal/rooms` | No | — | SignalHandler.ListRooms |
+| GET | `/api/v1/signal/participants` | No | — | SignalHandler.ListParticipants |
+| POST | `/api/v1/signal/webhook` | No | — | SignalHandler.LivekitWebhook |
+| POST | `/api/v1/signal/cloudflare/sessions/:sessionId/tracks/new` | JWT | — | CloudflareHandler.AddTracks |
+| PUT | `/api/v1/signal/cloudflare/sessions/:sessionId/renegotiate` | JWT | — | CloudflareHandler.Renegotiate |
+| PUT | `/api/v1/signal/cloudflare/sessions/:sessionId/tracks/close` | JWT | — | CloudflareHandler.CloseTracks |
+| DELETE | `/api/v1/signal/cloudflare/sessions/:sessionId` | JWT | — | CloudflareHandler.DeleteSession |
+| GET | `/api/v1/oauth/login/:provider` | No | — | OAuthHandler.Login (redirect) |
+| GET | `/api/v1/oauth/callback/:provider` | No | — | OAuthHandler.Callback |
+| GET | `/api/v1/oauth/providers` | No | — | OAuthHandler.ListEnabledProviders |
+| GET | `/api/v1/oauth/admin/providers` | JWT | `oauth:read` | OAuthHandler.ListProviders |
+| POST | `/api/v1/oauth/admin/providers` | JWT | `oauth:manage` | OAuthHandler.CreateProvider |
+| PUT | `/api/v1/oauth/admin/providers` | JWT | `oauth:manage` | OAuthHandler.UpdateProvider |
+| DELETE | `/api/v1/oauth/admin/providers/:id` | JWT | `oauth:manage` | OAuthHandler.DeleteProvider |
+| POST | `/api/v1/role/list` | JWT | `role:read` | RoleHandler.List |
+| POST | `/api/v1/role/create` | JWT | `role:manage` | RoleHandler.Create |
+| POST | `/api/v1/role/update` | JWT | `role:manage` | RoleHandler.Update |
+| POST | `/api/v1/role/delete` | JWT | `role:manage` | RoleHandler.Delete |
+| POST | `/api/v1/permission/list` | JWT | `role:read` | PermissionHandler.ListPermissions |
+| POST | `/api/v1/permission/role` | JWT | `role:read` | PermissionHandler.GetRolePermissions |
+| POST | `/api/v1/permission/sync` | JWT | `role:manage` | PermissionHandler.SyncRolePermissions |
+| POST | `/api/v1/mute/create` | JWT | `mute:manage` | MuteHandler.CreateMute |
+| POST | `/api/v1/mute/cancel` | JWT | `mute:manage` | MuteHandler.CancelMute |
+| POST | `/api/v1/mute/status` | JWT | `mute:manage` | MuteHandler.GetMuteStatus |
+| POST | `/api/v1/mute/list` | JWT | `mute:manage` | MuteHandler.ListMutes |
+| POST | `/api/v1/room/create` | JWT | `room:create` | RoomHandler.Create |
+| POST | `/api/v1/room/list` | JWT | `room:read` | RoomHandler.List |
+| POST | `/api/v1/room/get` | JWT | `room:read` | RoomHandler.Get |
+| POST | `/api/v1/room/update` | JWT | `room:update` | RoomHandler.Update |
+| POST | `/api/v1/room/delete` | JWT | `room:delete` | RoomHandler.Delete |
+| POST | `/api/v1/storage/presign` | JWT | — | StorageHandler.PresignUpload |
+| POST | `/api/v1/storage/confirm` | JWT | — | StorageHandler.ConfirmUpload |
+| POST | `/api/v1/storage/upload` | JWT | — | StorageHandler.Upload |
+| POST | `/api/v1/storage/delete` | JWT | `storage:delete` | StorageHandler.DeleteObject |
+| POST | `/api/v1/storage/config` | JWT | `storage:read` | StorageHandler.GetConfig |
+| POST | `/api/v1/storage/update-config` | JWT | `storage:manage` | StorageHandler.UpdateConfig |
+| POST | `/api/v1/bot/create` | JWT | `bot:manage` | BotHandler.Create |
+| POST | `/api/v1/bot/list` | JWT | `bot:manage` | BotHandler.List |
+| POST | `/api/v1/bot/revoke` | JWT | `bot:manage` | BotHandler.Revoke |
+| POST | `/api/v1/email/send_code` | JWT | — | EmailVerificationHandler.SendCode |
+| POST | `/api/v1/email/verify_code` | JWT | — | EmailVerificationHandler.VerifyCode |
+| POST | `/api/v1/email/config` | JWT | `email_config:read` | EmailConfigHandler.Get |
+| POST | `/api/v1/email/update-config` | JWT | `email_config:manage` | EmailConfigHandler.Update |
+| POST | `/api/v1/sfu/config` | JWT | `sfu:manage` | SFUConfigHandler.Get |
+| POST | `/api/v1/sfu/config/:provider` | JWT | `sfu:manage` | SFUConfigHandler.GetProvider |
+| POST | `/api/v1/sfu/update-config` | JWT | `sfu:manage` | SFUConfigHandler.Update |
+| POST | `/api/v1/sfu/switch-provider` | JWT | `sfu:manage` | SFUConfigHandler.SwitchProvider |
+| POST | `/api/v1/sfu/providers` | JWT | `sfu:manage` | SFUConfigHandler.ListProviders |
+| POST | `/api/v1/srs/callback` | No | — | SRSCallbackHandler.HandleCallback |
+| GET | `/api/v1/system/stream` | No | — | MonitorHandler.HealthStream |
+| GET | `/ping` | No | — | Health check |
+| GET | `/swagger/*any` | No | — | Swagger UI |
+| GET | `/uploads/*` | No | — | Static avatar/uploads |
+| WS | `/socket.io/*` | No | — | Socket.IO signaling |
 
 ---
 
-## Database
+## Configuration
 
-- **Default**: SQLite (zero config, auto-creates `db/app.db`)
-- **Supported**: PostgreSQL, MySQL via GORM
-- Configure via `.env.dev` / `.env.prod`:
+All configuration is injected via environment variables (`.env.dev` for dev, `deploy/env/app.*.env` for Docker). `config.Load()` reads them with the defaults below.
 
-```
-DB_TYPE="SQLite"          # SQLite | PostgreSQL | MySQL
-DB_HOST=""                # Required for PostgreSQL/MySQL
-DB_PORT=""
-DB_USER=""
-DB_PASSWORD=""
-DB_PATH=""                # Leave empty for default (db/app.db)
-```
+### Database
 
-### SFU Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_TYPE` | `SQLite` | `SQLite` / `PostgresSQL` / `MYSQL` |
+| `DB_HOST` | `localhost` | DB host (PostgreSQL/MySQL) |
+| `DB_PORT` | `5432` | DB port |
+| `DB_USER` | — | DB user |
+| `DB_PASSWORD` | — | DB password |
+| `DB_PATH` | `app.db` | SQLite file path |
+| `DB_DSN` | — | Custom DSN (overrides the field-by-field settings) |
+| `DB_WAL` | `false` | SQLite WAL mode |
 
-```
-SFU_PROVIDER="livekit"    # Supported: livekit | agora | mediasoup
-LIVEKIT_HOST=""           # LiveKit server URL (wss://...)
-LIVEKIT_KEY=""            # LiveKit API key
-LIVEKIT_SECRET=""         # LiveKit API secret
+### JWT
 
-AGORA_APP_ID=""
-AGORA_APP_CERTIFICATE=""
-AGORA_HOST=""
-AGORA_CUSTOMER_ID=""
-AGORA_CUSTOMER_SECRET=""
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JWT_KEY` | `default-secret` | HMAC signing key (change in production) |
+| `JWT_KEY_TTL` | `24h` | Signing-key rotation interval (Redis only) |
 
-MEDIASOUP_BRIDGE_URL=""   # HTTP bridge exposed by mediasoup worker/service
-MEDIASOUP_HOST=""         # Client-facing host info returned to web
-```
+### SFU Provider
 
-Runtime behavior:
+`SFU_PROVIDER` selects the active backend: `livekit` (default), `srs`, `mediasoup`, `agora`, `daily`, `cloudflare`. Provider-specific config:
 
-- Base SFU config is loaded from env.
-- Persistent config can be managed through `/api/v1/sfu/config`.
-- `sfu.NewDynamicProvider(...)` resolves the active provider at call time.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LIVEKIT_HOST` / `LIVEKIT_KEY` / `LIVEKIT_SECRET` | — | LiveKit server URL, API key/secret |
+| `AGORA_APP_ID` / `AGORA_APP_CERTIFICATE` / `AGORA_HOST` / `AGORA_CUSTOMER_ID` / `AGORA_CUSTOMER_SECRET` | — | Agora credentials |
+| `MEDIASOUP_BRIDGE_URL` | `http://localhost:3012` | MediaSoup worker HTTP bridge |
+| `MEDIASOUP_HOST` | `localhost:3012` | Client-facing MediaSoup host |
+| `SRS_HOST` / `SRS_API_PORT` | `localhost` / `1985` | SRS management API |
+| `SRS_WHIP_URL` | `/rtc/v1/whip/` | SRS WHIP endpoint path |
+| `SRS_SECRET` | — | SRS stream/room token HMAC key (required) |
+| `SRS_PUBLIC_HOST` | — | Browser-side serverUrl prefix |
+| `DAILY_API_KEY` / `DAILY_DOMAIN` | — | Daily credentials |
+| `CF_APP_ID` / `CF_APP_SECRET` / `CF_STUN_URL` | — / — / `stun.cloudflare.com:3478` | Cloudflare Realtime credentials |
 
-### Redis Configuration (Optional)
+> Base SFU config is loaded from env; persistent per-provider config is managed through `/api/v1/sfu/*` and resolved at runtime by `sfu.NewDynamicProvider(...)`.
 
-```
-REDIS_HOST=""             # Leave empty to skip Redis (graceful degradation)
-REDIS_PORT="6379"
-REDIS_PASSWORD=""
-REDIS_DB="0"
-JWT_KEY_TTL="24h"         # JWT signing key rotation interval (Redis only)
-```
+### Redis (optional)
 
-- Auto-migration is enabled — models are synced on startup in `repository/db.go`
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_HOST` | — | Leave empty to skip Redis (graceful degradation) |
+| `REDIS_PORT` | `6379` | Redis port |
+| `REDIS_PASSWORD` | — | Redis password |
+| `REDIS_DB` | `0` | Redis DB index |
+
+### Email / SMTP (optional)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EMAIL_ENABLED` | `false` | Enable email verification |
+| `SMTP_HOST` / `SMTP_PORT` | — / `587` | SMTP server & port |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | — | SMTP credentials |
+| `SMTP_FROM` / `SMTP_FROM_NAME` | — / `GoSpeak` | Sender address / name |
+| `EMAIL_CODE_TTL` | `10m` | Verification-code TTL |
+| `EMAIL_SEND_COOLDOWN` | `60s` | Per-email send cooldown |
+| `EMAIL_CODE_SECRET` | — | Code signing secret (required when email enabled) |
+
+### Object Storage
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `STORAGE_TYPE` | `local` | `local` / `s3` |
+| `STORAGE_ENDPOINT` | — | S3-compatible endpoint (MinIO / R2) |
+| `STORAGE_BUCKET` | — | S3 bucket |
+| `STORAGE_REGION` | — | S3 region |
+| `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY` | — | S3 credentials |
+| `STORAGE_PUBLIC_BASE_URL` | — | Public base URL (CDN / custom domain) |
+| `STORAGE_PATH_PREFIX` | `uploads/` | Upload path prefix |
+
+### Server
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SERVER_PORT` | `8098` | HTTP listen port |
+| `STATIC_DIR` | — | Frontend static dir (SPA hosting in prod) |
+| `GIN_MODE` | `debug` | Gin mode (`release` in prod) |
+
+- Auto-migration is enabled — all models are synced on startup in `repository/db.go`.
 
 ---
 
@@ -304,7 +389,7 @@ type Provider interface {
 
 ### Factory (`internal/sfu/factory.go`)
 
-`sfu.NewProvider(cfg)` reads `cfg.SFUProvider` and returns the matching implementation. Current registered providers are `"livekit"`, `"agora"`, `"mediasoup"`, `"srs"`, and `"daily"`.
+`sfu.NewProvider(cfg)` reads `cfg.SFUProvider` and returns the matching implementation. Registered providers are `"livekit"`, `"agora"`, `"mediasoup"`, `"srs"`, `"daily"`, and `"cloudflare"`.
 
 `sfu.NewDynamicProvider(resolve)` is the runtime entry used by server wiring. It resolves config via `SFUConfigService.ResolveConfig()` and delegates each call to the current provider.
 
@@ -312,7 +397,7 @@ type Provider interface {
 
 | 操作 | 信令层 | SFU 层 | 说明 |
 |------|--------|--------|------|
-| `RemoveParticipant` | ✅ 删 Members + 广播 | ✅ LiveKit/SRS 才调 | Agora/Daily/MediaSoup 跳过 |
+| `RemoveParticipant` | ✅ 删 Members + 广播 | ✅ LiveKit/SRS/MediaSoup/Daily 均调（按 `ErrSFUNotSupported` 优雅降级） | 仅 Agora 跳过（返回 `ErrSFUNotSupported`） |
 | `ListRooms` + `ListParticipants` | 失败时返回 `[]` | ✅ 有则返回 | SFU 媒体状态 ≠ 信令层在线状态，不 fallback |
 | `Mute*` | `BroadcastMute` 广播 | ❌ 不调 | 前端收到事件后自行停推流，仅 LiveKit 有服务端强制能力 |
 
@@ -337,10 +422,11 @@ All SFU calls go through `sfu.Provider`. Current service paths already consume t
 | Provider | Maturity | Notes |
 |----------|----------|-------|
 | LiveKit | Highest | Full room/token/participant/mute/remove/delete support |
-| SRS | High | Token/Room/Delete/RemoveParticipant via REST. Mute + ListParticipants not supported |
+| SRS | High | Token/Room/Delete/RemoveParticipant via REST; WHIP/WHEP media. Mute + ListParticipants not supported |
 | Agora | Medium | Token and basic room APIs work; mute/kick/admin flows incomplete |
 | Daily | Medium | Token/rooms/participants via REST. Mute/kick not supported |
 | MediaSoup | Medium | Uses provider-specific signaling path; generic provider methods return not supported |
+| Cloudflare | Medium | Realtime SFU via WHIP/WHEP; room/token via REST, media over WebRTC |
 
 ---
 
@@ -416,7 +502,7 @@ When Redis is not connected, blacklist operations are no-ops (best-effort strate
 
 ## OAuth Module
 
-Provides OAuth2 third-party login (GitHub / Google / QQ). Two layers:
+Provides generic OAuth2 third-party login. Providers are configured in the `oauth_providers` table and managed through the admin API; `github`, `google`, and `qq` are seeded presets, and arbitrary OpenID/OAuth2 providers are supported via custom endpoint URLs plus JSON field mappings. Two layers:
 
 ### Provider Abstraction (`internal/pkg/oauth/`)
 
@@ -432,7 +518,7 @@ type Provider interface {
 
 Built-in providers: `GitHubProvider`, `GoogleProvider`, `QQProvider`. Factory: `oauth.NewProvider(name, cfg)`.
 
-`oauth.GetDefaultConfig(name)` returns preset endpoint configs for each platform (ClientID/Secret/RedirectURL must be injected).
+`oauth.GetDefaultConfig(name)` returns preset endpoint configs for each platform (ClientID/Secret/RedirectURL must be injected). Built-in presets seed `github` / `google` / `qq`; additional providers are persisted in `oauth_providers` and resolved at runtime by the OAuth service.
 
 ### Data Layer
 
@@ -462,8 +548,11 @@ All middleware is in `internal/middleware/auth.go`.
 
 | Function | Description |
 |----------|-------------|
-| `JWTAuth()` | Validates Bearer token: checks header → signature → expiry → blacklist (JTI) |
-| `RequireRole(roles ...string)` | Checks `role` claim from JWT against allowed roles. Returns `FORBIDDEN` (1013) on mismatch |
+| `JWTAuth()` | Validates Bearer token: header → signature → expiry → token version → blacklist (JTI); injects `username`, `display_name`, `user_uuid`, `role`, `permissions`, `claims`, `auth_type` into context |
+| `RequireRole(roles ...string)` | Legacy role check against the `role` claim; returns `FORBIDDEN` (1013) on mismatch |
+| `RequirePermission(permCode)` | Permission-based gate. Bot tokens use `Claims.Permissions`; users map `role` → permissions via `role_permissions`. Returns `FORBIDDEN` (1013) on missing permission |
+| `RequireOwnerOrPermission(ownerContextKey, permCode)` | Allows the request if the caller owns the resource (owner field equals `username`) or holds the permission |
+| `BanCheck()` | Blocks any user whose `role` is `ban`; returns `FORBIDDEN` (1013) |
 | `CORS()` | Sets `Access-Control-Allow-Origin: *`, handles OPTIONS preflight |
 
 ### JWTAuth check order
@@ -471,20 +560,46 @@ All middleware is in `internal/middleware/auth.go`.
 1. Header exists → `TOKEN_NOT_EXIST` (1001)
 2. Signature valid → `TOKEN_WRONG` (1002)
 3. Not expired → `TOKEN_EXPIRED` (1003)
-4. JTI not blacklisted → `TOKEN_REVOKED` (1014)
-5. Inject `username`, `user_uuid`, `role`, `claims` into context
+4. `TokenVersion` matches current user → `TOKEN_REVOKED` (1014) on mismatch (password change / reset invalidates old tokens)
+5. JTI not blacklisted → `TOKEN_REVOKED` (1014)
+6. Inject `username`, `display_name`, `user_uuid`, `role`, `permissions`, `claims`, `auth_type` into context
 
 ---
+
+## RBAC / Permissions
+
+Access control is **permission-based**, layered on top of roles.
+
+- **Roles** (`roles` table): seeded with `admin`, `user`, `ban`. The `ban` role is intercepted by `BanCheck()` and always gets `FORBIDDEN`.
+- **Permissions** (`permissions` table): each row holds a `permcode` constant such as `user:read`, `room:create`, `sfu:manage`, `mute:manage`, `bot:manage`, `storage:delete`, `oauth:manage`, `email_config:read`, `role:manage`, `signal:kick`.
+- **Role → Permission mapping** (`role_permissions` table): links a role name to permission IDs. `RequirePermission` resolves a user's effective permissions from their `role`.
+- **Bot tokens** (`bot_tokens`): carry an explicit `permissions` list in the JWT (`Claims.Permissions`). Bot-scoped permissions are whitelisted via `model.BotScopedPermissions` so bots cannot reach platform-admin surfaces.
+- **Token versioning**: `User.TokenVersion` is embedded in the JWT. Changing a password / resetting it bumps the version, so all previously issued tokens are rejected (`TOKEN_REVOKED`).
+
+All permission constants live in `internal/permcode/permcode.go`.
 
 ## Models
 
 | Model | Table | Key Fields |
 |-------|-------|------------|
-| `User` | `users` | ID, UUID (auto-gen), Name, Password (`json:"-"`), Role, CreatedAt, UpdatedAt |
-| `Room` | `room` | ID, UUID (auto-gen), Name, Limit, CreatedAt, UpdatedAt |
-| `UserGroup` | `user_groups` | ID, UserID, GroupName, CreatedAt, UpdatedAt |
-| `OAuthProvider` | `oauth_providers` | ID, Name, ClientID, ClientSecret, AuthURL, TokenURL, UserInfoURL, RedirectURL, Scopes, Enabled |
-| `OAuthAccount` | `oauth_accounts` | ID, UserID, Provider, ProviderUID, AccessToken, RefreshToken |
+| `User` | `users` | ID, UUID (auto-gen), Name, DisplayName, Avatar, Email, EmailVerified, IsBot, Password (`json:"-"`), Role, TokenVersion, timestamps |
+| `Room` | `room` | ID, UUID (auto-gen), Name, Password, Description, Limit, AudioOnly, AllowAudience, CreatedBy, timestamps |
+| `UserGroup` | `user_groups` | ID, UserID, GroupName, timestamps |
+| `Role` | `roles` | ID, Name (seeds: `admin` / `user` / `ban`), timestamps |
+| `Permission` | `permissions` | ID, Code (unique `permcode`), Name, Description, timestamps |
+| `RolePermission` | `role_permissions` | ID, RoleName, PermissionID |
+| `Mute` | `mutes` | ID, UUID, UserID, MuterID, Duration, Permanent, ExpiresAt, Reason, timestamps |
+| `OAuthProvider` | `oauth_providers` | ID, Name, DisplayName, IconURL, ClientID, ClientSecret, AuthURL, TokenURL, UserInfoURL, RedirectURL, Scopes, field mappings, Enabled, timestamps |
+| `OAuthAccount` | `oauth_accounts` | ID, UserID, Provider, ProviderUID; AccessToken & RefreshToken stored but hidden (`json:"-"`), timestamps |
+| `BotToken` | `bot_tokens` | ID, UUID, Name, UserUUID, Permissions `[]string`, Revoked, ExpiresAt, timestamps |
+| `EmailConfig` | `email_configs` | ID, Enabled, SMTP host/port/user/pass/from/name, EmailCodeTTL, EmailSendCooldown, EmailCodeSecret (hidden, `json:"-"`), timestamps |
+| `EmailVerificationCode` | `email_verification_codes` | ID, Email, Scene, CodeHash (hidden), UserID, IPAddress, ExpiresAt, UsedAt, AttemptCount, timestamps |
+| `StorageConfig` | `storage_configs` | ID, ProviderType (`local`/`s3`), Endpoint, Bucket, Region, AccessKey & SecretKey (hidden), PublicBaseURL, PathPrefix, MaxFileSize, AllowedTypes, timestamps |
+| `SFUConfig` | `sfu_configs` | Provider (PK), LiveKit*/Agora*/MediaSoup*/SRS*/Daily*/Cloudflare* config fields, timestamps |
+| `SFUActiveProvider` | `sfu_active_provider` | ID, Provider |
+
+> Auto-migration (`repository/db.go`) syncs all of the above on startup. New fields/models take effect after a restart — no manual DDL.
+
 
 ---
 
@@ -539,13 +654,15 @@ hub.BroadcastToRoom(namespace, room, event, data)
 
 ### OnRoomKick SFU dispatch
 
-信令层始终先处理（删 Members + 广播），然后按 `Hub.sfuProviderName` 分发：
+信令层始终先处理（删 Members + 广播），随后由 `Hub.removeParticipantSafe` 直接调用 `sfuProvider.RemoveParticipant(room, identity)`。Hub **不再硬编码 provider 名**，仅在 provider 返回 `pkg.ErrSFUNotSupported` 时静默跳过，因此「踢人是否真正到达 SFU」由各 provider 自身是否实现 `RemoveParticipant` 决定：
 
-| provider | `sfuProvider.RemoveParticipant` 调用 |
-|----------|------------------------------------|
-| livekit | ✅ |
-| srs | ✅（`KickParticipant` → `RemoveParticipant` 统一命名） |
-| agora/daily/mediasoup | ❌ 跳过 |
+| provider | `sfuProvider.RemoveParticipant` 调用 | 实现状态 |
+|----------|------------------------------------|----------|
+| livekit | ✅ | 原始完整实现 |
+| srs | ✅（`KickParticipant` → `RemoveParticipant` 统一命名） | 原始完整实现 |
+| mediasoup | ✅ bridge `CloseParticipant` | 补全实现（历史文档误标为跳过） |
+| daily | ✅ list → 按 session id `RemoveParticipant` | 补全实现（历史文档误标为跳过） |
+| agora | ❌ 跳过（返回 `ErrSFUNotSupported`，无单用户踢人 REST API） | 未实现，仅 ban 语义 |
 
 `/signal/rooms` 和 `/signal/participants` 失败时返回空列表 `[]`。SFU 媒体节点状态与 WS 在线成员不可互相 fallback。
 

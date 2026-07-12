@@ -1,4 +1,4 @@
-import { createSignal, Show } from "solid-js";
+import { createSignal } from "solid-js";
 import { type RoomInfo, socketStore } from "@/stores/socketStore";
 
 interface PasswordModalProps {

@@ -19,7 +19,7 @@ const DynamicRender = () => {
 	const CurrentComponent = createMemo(() => {
 		const path = location().pathname;
 		for (const [prefix, component] of PREFIX_MAP) {
-			if (path === prefix || path.startsWith(prefix + "/")) {
+			if (path === prefix || path.startsWith(`${prefix}/`)) {
 				return component;
 			}
 		}

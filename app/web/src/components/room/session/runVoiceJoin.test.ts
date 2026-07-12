@@ -48,6 +48,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
 			phases.push(phase);
 			order.push(`phase:${phase}`);
 		}),
+		onClientReady: vi.fn(),
 		audioOptions: { audioCapture: { echoCancellation: true } },
 		socket: { id: "sock" },
 		password: "pwd",

@@ -489,7 +489,10 @@ function PermissionPage() {
 	return (
 		<div class="flex h-full min-h-0 flex-col gap-4 p-4 overflow-hidden">
 			<div class="flex items-center justify-between gap-3">
-				<h3 class="font-bold text-lg">权限</h3>
+				<div class="flex items-center gap-2">
+            <ShieldCheck size={20} />
+            <h3 class="font-bold text-lg">权限</h3>
+          </div>
 				<button
 					type="button"
 					class="btn btn-primary btn-sm gap-2"
