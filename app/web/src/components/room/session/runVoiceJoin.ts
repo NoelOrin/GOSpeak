@@ -18,36 +18,14 @@ export class VoiceJoinAbortError extends Error {
 	name = "AbortError";
 }
 
-// adapter.serializeJoins=true 时按 joinKey 串行（SRS 防双 WHIP）。
+// adapter.serializeJoins=true 时，同一 joinKey 的并发进房合并为一次执行，
+// 避免 effect 重入导致重复 WHIP publish（重复 tracks/new / 重复 client）。
+// 仅当没有同 key 的进行中 join 才真正发起；进行中则复用其 promise。
 // LiveKit 等 serializeJoins=false，互不影响。
-const joinQueues = new Map<string, Promise<void>>();
-
-async function withJoinQueue<T>(
-	key: string,
-	fn: () => Promise<T>,
-): Promise<T> {
-	const prev = joinQueues.get(key) ?? Promise.resolve();
-	let release!: () => void;
-	const gate = new Promise<void>((resolve) => {
-		release = resolve;
-	});
-	joinQueues.set(
-		key,
-		prev.catch(() => undefined).then(() => gate),
-	);
-	try {
-		await prev.catch(() => undefined);
-		return await fn();
-	} finally {
-		release();
-		const cur = joinQueues.get(key);
-		void cur?.then(() => {
-			if (joinQueues.get(key) === cur) {
-				joinQueues.delete(key);
-			}
-		});
-	}
-}
+const inFlightJoins = new Map<
+	string,
+	Promise<{ client: SFUClient; provider: SFUProvider }>
+>();
 
 export type VoiceJoinDeps = {
 	loadClient: (
@@ -130,7 +108,18 @@ export async function runVoiceJoin(
 	const run = () => executeVoiceJoin(token, deps, provider, adapter);
 
 	if (adapter.serializeJoins) {
-		return withJoinQueue(resolveJoinKey(adapter, token), run);
+		const key = resolveJoinKey(adapter, token);
+		const existing = inFlightJoins.get(key);
+		if (existing) {
+			return existing;
+		}
+		const join = run().finally(() => {
+			if (inFlightJoins.get(key) === join) {
+				inFlightJoins.delete(key);
+			}
+		});
+		inFlightJoins.set(key, join);
+		return join;
 	}
 	return run();
 }
