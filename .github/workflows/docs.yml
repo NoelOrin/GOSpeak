@@ -18,12 +18,7 @@ on:
       - "packages/sfu-client/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/docs.yml"
-  pull_request:
-    branches: [release]
-    paths:
-      - "app/docs/**"
-      - "pnpm-lock.yaml"
-      - ".github/workflows/docs.yml"
+
   release:
     types: [published, edited]
   workflow_dispatch:
