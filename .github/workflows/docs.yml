@@ -12,7 +12,7 @@ name: Docs
 
 on:
   push:
-    branches: [dev, release, feature/**, docs/**]
+    branches: [release, feature/**, docs/**]
     paths:
       - "app/docs/**"
       - "packages/sfu-client/**"
