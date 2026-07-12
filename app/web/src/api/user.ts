@@ -18,9 +18,7 @@ export async function listUsers(
 		data: { page, page_size: pageSize },
 	})) as AxiosResponse<Result<UserListResponse>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	return { users: result.data?.list || [], total: result.data?.total || 0 };
+	return { users: (res as any).data.data?.list || [], total: (res as any).data.data?.total || 0 };
 }
 
 /** 更新当前用户资料 */
@@ -33,10 +31,8 @@ export async function updateProfile(data: {
 		data,
 	})) as AxiosResponse<Result<BackendUser>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("profile data is missing");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("profile data is missing");
+	return (res as any).data.data;
 }
 
 export async function fetchUserInfo(identity: string): Promise<BackendUser> {
@@ -45,10 +41,8 @@ export async function fetchUserInfo(identity: string): Promise<BackendUser> {
 		data: { identity },
 	})) as AxiosResponse<Result<BackendUser>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("user not found");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("user not found");
+	return (res as any).data.data;
 }
 
 /** 获取预设头像列表 */
@@ -57,9 +51,7 @@ export async function getPresetAvatars(): Promise<string[]> {
 		url: "/api/v1/user/preset-avatars",
 	})) as AxiosResponse<Result<{ avatars: string[] }>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	return result.data?.avatars || [];
+	return (res as any).data.data?.avatars || [];
 }
 
 export async function updateUserRole(
@@ -70,8 +62,6 @@ export async function updateUserRole(
 		url: "/api/v1/user/update-role",
 		data: { id: userId, role },
 	})) as AxiosResponse<Result>;
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
 }
 
 export async function deleteUser(userId: number): Promise<void> {
@@ -79,6 +69,4 @@ export async function deleteUser(userId: number): Promise<void> {
 		url: "/api/v1/user/delete",
 		data: { id: userId },
 	})) as AxiosResponse<Result>;
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
 }

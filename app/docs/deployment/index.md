@@ -1,0 +1,52 @@
+# 部署概述
+
+GOSpeak 支持从本地开发到生产环境的**渐进式部署**方案，根据需求逐步增加组件：
+
+```
+最小栈 (SQLite + SRS)
+    │
+    ├─ 加 Nginx → 公网同源反代
+    │
+    ├─ 换 PostgreSQL → 更高并发
+    │
+    ├─ 加 Redis → JWT 黑名单 + 密钥轮换
+    │
+    ├─ 加 MinIO → S3 对象存储
+    │
+    └─ 加 Coturn → TURN 中继穿透
+```
+
+## 部署方式对比
+
+| 方式 | 用途 | 难度 |
+|------|------|------|
+| Docker Compose（推荐）| 生产部署、本地测试 | ⭐⭐ |
+| Docker 单容器 | 快速验证 | ⭐ |
+| 二进制 + 系统服务 | 裸机部署 | ⭐⭐⭐ |
+| K8s（需自行编排）| 大规模集群 | ⭐⭐⭐⭐ |
+
+## 网络架构
+
+```
+公网用户
+    │
+    ▼
+Nginx :80/:443（可选）
+    ├── /api /socket.io    → GOSpeak:8998
+    ├── /rtc/v1/* (SRS 时) → SRS:1985
+    └── / → 静态文件 / SPA 分发
+
+GOSpeak (Go)
+    ├── DB: SQLite/PG
+    ├── Redis (可选): JWT黑名单、密钥轮换
+    └── SFU: LiveKit/SRS/MediaSoup
+
+浏览器 ──WebRTC──► SFU 媒体端口（直连）
+```
+
+## 内容导航
+
+- [Docker Compose 部署](/deployment/docker-compose) — 完整编排方案
+- [生产部署](/deployment/production) — 生产环境 Checklist
+- [数据库演进](/deployment/database) — 从 SQLite 到 PostgreSQL + Redis
+- [Nginx 配置](/deployment/nginx) — 反代与 HTTPS 配置

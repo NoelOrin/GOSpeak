@@ -8,6 +8,8 @@ import HardDrive from "lucide-solid/icons/hard-drive";
 import Hash from "lucide-solid/icons/hash";
 import MemoryStick from "lucide-solid/icons/memory-stick";
 import Radio from "lucide-solid/icons/radio";
+import Server from "lucide-solid/icons/server";
+import Users from "lucide-solid/icons/users";
 import XCircle from "lucide-solid/icons/x-circle";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import userStore from "@/stores/userStore";
@@ -21,8 +23,29 @@ interface HealthSnapshot {
 	total_alloc_mb: number;
 	sys_mb: number;
 	num_gc: number;
+	heap_objects: number;
+	gc_pause_ms: number;
+	gc_cpu_fraction: number;
+	pid: number;
+	cpu_percent: number;
+	disk_used_mb: number;
+	disk_total_mb: number;
+	disk_percent: number;
+	hub_room_count: number;
+	hub_participant_count: number;
+	hub_online_user_count: number;
 	db_connected: boolean;
+	db_in_use: number;
+	db_idle: number;
+	db_max_open: number;
+	db_wait_count: number;
+	db_wait_duration_ms: number;
 	redis_connected: boolean;
+	redis_ping_ms: number;
+	redis_db_size: number;
+	redis_used_memory_mb: number;
+	redis_used_memory_peak_mb: number;
+	redis_connected_clients: number;
 }
 
 export const Route = createFileRoute("/(app)/manage/monitor/")({
@@ -58,7 +81,10 @@ function MonitorPage() {
 	let eventSource: EventSource | null = null;
 
 	onMount(() => {
-		eventSource = new EventSource("/api/v1/system/stream");
+		const token = userStore.accessToken();
+		eventSource = new EventSource(
+			`/api/v1/system/stream?token=${encodeURIComponent(token)}`,
+		);
 		eventSource.onopen = () => setStatus("已连接");
 		eventSource.onmessage = (e) => {
 			try {
@@ -81,7 +107,7 @@ function MonitorPage() {
 	const snap = () => data();
 
 	return (
-		<div class="flex h-full min-h-0 flex-col gap-4 p-4">
+		<div class="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
 			<div class="flex items-center gap-2">
 				<Activity size={18} />
 				<h3 class="font-bold text-lg">服务监控</h3>
@@ -91,7 +117,40 @@ function MonitorPage() {
 			{/* Connection Error */}
 			{error() && <div class="alert alert-warning text-sm py-2">{error()}</div>}
 
-			{/* Metric Cards */}
+			{/* 业务指标 */}
+			<SectionTitle>业务实时</SectionTitle>
+			<div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+				<MetricCard
+					icon={<Users size={16} />}
+					label="在线用户"
+					value={
+						snap()?.hub_online_user_count != null
+							? String(snap()?.hub_online_user_count)
+							: "—"
+					}
+				/>
+				<MetricCard
+					icon={<Server size={16} />}
+					label="活跃房间"
+					value={
+						snap()?.hub_room_count != null
+							? String(snap()?.hub_room_count)
+							: "—"
+					}
+				/>
+				<MetricCard
+					icon={<Hash size={16} />}
+					label="信令连接"
+					value={
+						snap()?.hub_participant_count != null
+							? String(snap()?.hub_participant_count)
+							: "—"
+					}
+				/>
+			</div>
+
+			{/* Go runtime */}
+			<SectionTitle>Go Runtime</SectionTitle>
 			<div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
 				<MetricCard
 					icon={<Clock size={16} />}
@@ -127,6 +186,63 @@ function MonitorPage() {
 					value={snap()?.num_gc != null ? String(snap()?.num_gc) : "—"}
 				/>
 				<MetricCard
+					icon={<Activity size={16} />}
+					label="GC 暂停"
+					value={
+						snap()?.gc_pause_ms != null
+							? `${snap()?.gc_pause_ms.toFixed(2)} ms`
+							: "—"
+					}
+				/>
+				<MetricCard
+					icon={<Hash size={16} />}
+					label="堆对象数"
+					value={
+						snap()?.heap_objects != null ? String(snap()?.heap_objects) : "—"
+					}
+				/>
+			</div>
+
+			{/* 系统级 */}
+			<SectionTitle>系统</SectionTitle>
+			<div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+				<MetricCard
+					icon={<Hash size={16} />}
+					label="进程 PID"
+					value={snap()?.pid != null ? String(snap()?.pid) : "—"}
+				/>
+				<MetricCard
+					icon={<Cpu size={16} />}
+					label="CPU 使用率"
+					value={
+						snap()?.cpu_percent != null
+							? `${snap()?.cpu_percent.toFixed(1)}%`
+							: "—"
+					}
+				/>
+				<MetricCard
+					icon={<HardDrive size={16} />}
+					label="磁盘使用"
+					value={
+						snap()?.disk_total_mb != null
+							? `${snap()?.disk_used_mb} / ${snap()?.disk_total_mb} MB`
+							: "—"
+					}
+					badge={
+						snap()?.disk_percent != null ? (
+							<StatusBadge
+								ok={(snap()?.disk_percent ?? 100) < 90}
+								label={`${(snap()?.disk_percent ?? 0).toFixed(1)}%`}
+							/>
+						) : undefined
+					}
+				/>
+			</div>
+
+			{/* 数据库连接池 */}
+			<SectionTitle>数据库连接池</SectionTitle>
+			<div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+				<MetricCard
 					icon={<Database size={16} />}
 					label="数据库"
 					value={null}
@@ -138,6 +254,44 @@ function MonitorPage() {
 					}
 				/>
 				<MetricCard
+					icon={<Database size={16} />}
+					label="活跃连接"
+					value={snap()?.db_in_use != null ? String(snap()?.db_in_use) : "—"}
+				/>
+				<MetricCard
+					icon={<Database size={16} />}
+					label="空闲连接"
+					value={snap()?.db_idle != null ? String(snap()?.db_idle) : "—"}
+				/>
+				<MetricCard
+					icon={<Database size={16} />}
+					label="最大连接数"
+					value={
+						snap()?.db_max_open != null ? String(snap()?.db_max_open) : "—"
+					}
+				/>
+				<MetricCard
+					icon={<Clock size={16} />}
+					label="等待次数"
+					value={
+						snap()?.db_wait_count != null ? String(snap()?.db_wait_count) : "—"
+					}
+				/>
+				<MetricCard
+					icon={<Clock size={16} />}
+					label="等待耗时"
+					value={
+						snap()?.db_wait_duration_ms != null
+							? `${snap()?.db_wait_duration_ms} ms`
+							: "—"
+					}
+				/>
+			</div>
+
+			{/* Redis */}
+			<SectionTitle>Redis</SectionTitle>
+			<div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+				<MetricCard
 					icon={<Radio size={16} />}
 					label="Redis"
 					value={null}
@@ -146,6 +300,47 @@ function MonitorPage() {
 							ok={!!snap()?.redis_connected}
 							label={snap()?.redis_connected ? "连接" : "未配置"}
 						/>
+					}
+				/>
+				<MetricCard
+					icon={<Clock size={16} />}
+					label="Ping 延迟"
+					value={
+						snap()?.redis_ping_ms != null ? `${snap()?.redis_ping_ms} ms` : "—"
+					}
+				/>
+				<MetricCard
+					icon={<Hash size={16} />}
+					label="Key 总数"
+					value={
+						snap()?.redis_db_size != null ? String(snap()?.redis_db_size) : "—"
+					}
+				/>
+				<MetricCard
+					icon={<MemoryStick size={16} />}
+					label="内存占用"
+					value={
+						snap()?.redis_used_memory_mb != null
+							? `${snap()?.redis_used_memory_mb} MB`
+							: "—"
+					}
+				/>
+				<MetricCard
+					icon={<MemoryStick size={16} />}
+					label="内存峰值"
+					value={
+						snap()?.redis_used_memory_peak_mb != null
+							? `${snap()?.redis_used_memory_peak_mb} MB`
+							: "—"
+					}
+				/>
+				<MetricCard
+					icon={<Users size={16} />}
+					label="客户端连接"
+					value={
+						snap()?.redis_connected_clients != null
+							? String(snap()?.redis_connected_clients)
+							: "—"
 					}
 				/>
 			</div>
@@ -180,6 +375,15 @@ function MetricCard(props: {
 					</div>
 				)}
 			</div>
+		</div>
+	);
+}
+
+function SectionTitle(props: { children: any }) {
+	return (
+		<div class="mt-2 mb-1 flex items-center gap-2 text-base-content/70 text-xs font-semibold tracking-wide uppercase">
+			<span class="bg-base-content/30 h-3 w-1 rounded-full" />
+			{props.children}
 		</div>
 	);
 }

@@ -5,6 +5,9 @@ import (
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
+	"GOSpeak/internal/redis"
+	"net/http"
+	"strings"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -58,13 +61,25 @@ type SFUSignalHandler interface {
 	RegisterRoutes(server *socketio.Server)
 }
 
-// BroadcastFn 供 provider 模块广播房间事件，无需依赖 Hub 具体类型。
+// broadcastFn 供 provider 模块广播房间事件，无需依赖 Hub 具体类型。
 type BroadcastFn func(room, event string, data interface{})
+
+// StreamNameResolver 计算给定 room+identity 的预期 stream 名，用于服务端覆写客户端提报值。
+type StreamNameResolver interface {
+	StreamName(room, identity string) string
+}
+
+// ParticipantCleanupHandler 处理参与者离开时的 SFU 专属清理(如 mediasoup 广播 producer-closed + 关 transport)。
+// 仅 mediasoup 实现;其它 provider 不实现此接口,Hub OnDisconnect 类型断言跳过。
+type ParticipantCleanupHandler interface {
+	OnParticipantLeft(room, identity string)
+}
 
 type Hub struct {
 	server           socketServer
 	sfuProvider      sfu.Provider
 	sfuProviderName  string
+	streamResolver   StreamNameResolver
 	rooms            map[string]*Room // roomName -> Room
 	mu               sync.RWMutex
 	roomStore        roomStore
@@ -72,15 +87,29 @@ type Hub struct {
 	userStore        userStore
 	permChecker      permChecker
 	sfuSignalHandler SFUSignalHandler
+	activeStreams    map[string]struct{}
+	// roomStreams 维护 room→stream 集合的聚合视图，供无原生 room 维度的 provider（SRS）查询。
+	// 由 WS join/leave 与 SRS on_publish/on_unpublish 回调双源同步。
+	roomStreams map[string]map[string]struct{}
+	// streamRoomCache 维护 stream→room 反查，供 SRS callback（仅给 stream 名）反查 room 同步 roomStreams。
+	streamRoomCache map[string]string
+	// streamByIdentity 维护 room→identity→stream 映射，供 SRS RemoveParticipant
+	// 按 identity 查实际登记的 stream，避免反算命名约定（命名函数变更后旧连接仍可查）。
+	streamByIdentity map[string]map[string]string
+	participantCleanup  ParticipantCleanupHandler
 }
 
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
 	return &Hub{
-		rooms:       make(map[string]*Room),
-		roomStore:   store,
-		muteStore:   mStore,
-		userStore:   uStore,
-		permChecker: pChecker,
+		rooms:           make(map[string]*Room),
+		roomStore:       store,
+		muteStore:       mStore,
+		userStore:       uStore,
+		permChecker:     pChecker,
+		activeStreams:     make(map[string]struct{}),
+		roomStreams:       make(map[string]map[string]struct{}),
+		streamRoomCache:   make(map[string]string),
+		streamByIdentity:  make(map[string]map[string]string),
 	}
 }
 
@@ -90,13 +119,17 @@ func (h *Hub) SetServer(server *socketio.Server) {
 
 func (h *Hub) SetSFU(provider sfu.Provider) {
 	h.sfuProvider = provider
-	if pn, ok := provider.(interface{ ProviderName() string }); ok {
-		h.sfuProviderName = pn.ProviderName()
-	}
 }
 
 func (h *Hub) SetSFUSignalHandler(handler SFUSignalHandler) {
 	h.sfuSignalHandler = handler
+	if ch, ok := handler.(ParticipantCleanupHandler); ok {
+		h.participantCleanup = ch
+	}
+}
+
+func (h *Hub) SetStreamResolver(r StreamNameResolver) {
+	h.streamResolver = r
 }
 
 // ─── 事件注册 ───
@@ -123,7 +156,35 @@ func (h *Hub) SetupRoutes(server *socketio.Server) {
 // ─── 连接/断开 ───
 
 func (h *Hub) OnConnect(s socketio.Conn) error {
-	s.SetContext("")
+	// JWT 鉴权：优先从 HTTP 升级请求头提取 Bearer token，
+	// 纯 WebSocket 连接不支持自定义 header，fallback 到 cookie。
+	tokenStr := ""
+	authHeader := s.RemoteHeader().Get("Authorization")
+	if authHeader != "" {
+		tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
+		if tokenStr == authHeader {
+			tokenStr = authHeader
+		}
+	}
+	if tokenStr == "" {
+		if cookie, err := (&http.Request{Header: s.RemoteHeader()}).Cookie("gospeak_token"); err == nil {
+			tokenStr = cookie.Value
+		}
+	}
+	if tokenStr == "" {
+		return fmt.Errorf("authorization token required")
+	}
+	claims, err := pkg.ParseToken(tokenStr)
+	if err != nil {
+		return fmt.Errorf("invalid token: %w", err)
+	}
+	if pkg.IsTokenExpired(claims) {
+		return fmt.Errorf("token expired")
+	}
+	if redis.IsBlacklisted(claims.ID) {
+		return fmt.Errorf("token revoked")
+	}
+	s.SetContext(claims)
 	log.Printf("[Signal] client connected: %s", s.ID())
 	return nil
 }
@@ -140,14 +201,16 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 	for roomName, room := range h.rooms {
 		if member, ok := room.Members[s.ID()]; ok {
 			identity := member.Identity
+			stream := member.Stream
 			delete(room.Members, s.ID())
-			h.server.BroadcastToNamespace("/", EventMemberLeft, map[string]interface{}{
+			h.unregisterStreamLocked(roomName, identity, stream)
+			h.server.BroadcastToRoom("/", roomName, EventMemberLeft, map[string]interface{}{
 				"room":     roomName,
 				"identity": identity,
 				"id":       s.ID(),
 			})
 			updatedRooms = append(updatedRooms, roomName)
-			deleted := h.deleteRoomIfEmpty(roomName)
+			deleted := h.deleteRoomIfEmptyLocked(roomName)
 			cleanups = append(cleanups, disconnectCleanup{roomName, identity, deleted})
 		}
 	}
@@ -164,6 +227,9 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 				if c.deleted {
 					h.deleteRoomSafe(c.room)
 				}
+				if h.participantCleanup != nil {
+					h.participantCleanup.OnParticipantLeft(c.room, c.identity)
+				}
 			}
 		}(cleanups)
 	}
@@ -174,7 +240,7 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 		h.mu.RUnlock()
 		if !exists {
 			// 房间已空被删除，广播房间列表更新（含 DB 持久化房间）
-			h.server.BroadcastToNamespace("/", EventRoomList, h.GetRooms())
+			h.broadcastRoomList()
 			continue
 		}
 		h.mu.RLock()
@@ -191,6 +257,10 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 // OnError 兜底处理 socket.io 层 error（含 OnConnect 返回的 panic error）。
 // 仅记录日志，不做断连等副作用——连接级错误由库自行处理。
 func (h *Hub) OnError(s socketio.Conn, err error) {
+	if s == nil {
+		log.Printf("[Signal] socket error: err=%v", err)
+		return
+	}
 	log.Printf("[Signal] socket error: conn=%s err=%v", s.ID(), err)
 }
 
@@ -243,7 +313,11 @@ func (h *Hub) OnRoomJoin(s socketio.Conn, data string) (string, error) {
 
 	// 禁言检查
 	if h.muteStore != nil && req.Identity != "" {
-		if muted, mute, _ := h.muteStore.IsMutedByIdentity(req.Identity); muted {
+		muted, mute, err := h.muteStore.IsMutedByIdentity(req.Identity)
+		if err != nil {
+			log.Printf("[signal] WARNING IsMutedByIdentity error - mute check fail-open: identity=%q err=%v", req.Identity, err)
+		}
+		if muted {
 			remaining := int64(0)
 			if !mute.Permanent && mute.ExpiresAt != nil {
 				remaining = int64(time.Until(*mute.ExpiresAt).Seconds())
@@ -319,10 +393,16 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 		identity = s.ID()
 	}
 
+	// 服务端覆写 stream：客户端提报值不可信，使用服务端基于 room+identity 计算的预期值
+	if h.streamResolver != nil {
+		req.Stream = h.streamResolver.StreamName(req.Room, identity)
+	}
+
 	member := &MemberInfo{
 		ID:       s.ID(),
 		Identity: identity,
 		JoinedAt: time.Now().UnixMilli(),
+		Stream:   req.Stream,
 	}
 
 	h.mu.Lock()
@@ -348,6 +428,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 		h.rooms[req.Room] = room
 	}
 	room.Members[s.ID()] = member
+	h.registerStreamLocked(req.Room, identity, req.Stream)
 	memberList := h.getMembersLocked(req.Room)
 	h.mu.Unlock()
 
@@ -368,10 +449,11 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 		})
 	}
 
-	h.server.BroadcastToNamespace("/", EventMemberJoined, map[string]interface{}{
+	h.server.BroadcastToRoom("/", req.Room, EventMemberJoined, map[string]interface{}{
 		"room":     req.Room,
 		"identity": req.Identity,
 		"id":       s.ID(),
+		"stream":   req.Stream,
 	})
 
 	h.mu.RLock()
@@ -413,9 +495,11 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 	if room, exists := h.rooms[req.Room]; exists {
 		if member, ok := room.Members[s.ID()]; ok {
 			identity = member.Identity
+			stream := member.Stream
 			delete(room.Members, s.ID())
+			h.unregisterStreamLocked(req.Room, identity, stream)
 			// 成员清空则删除房间，与 OnDisconnect 行为一致
-			roomDeleted = h.deleteRoomIfEmpty(req.Room)
+			roomDeleted = h.deleteRoomIfEmptyLocked(req.Room)
 		}
 	}
 	h.mu.Unlock()
@@ -438,7 +522,7 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 		"room": req.Room,
 	})
 
-	h.server.BroadcastToNamespace("/", EventMemberLeft, map[string]interface{}{
+	h.server.BroadcastToRoom("/", req.Room, EventMemberLeft, map[string]interface{}{
 		"room":     req.Room,
 		"identity": identity,
 		"id":       s.ID(),
@@ -446,7 +530,7 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 
 	// 房间已空被删除则广播房间列表，否则广播单房间更新（与 OnDisconnect 一致）
 	if roomDeleted {
-		h.server.BroadcastToNamespace("/", EventRoomList, h.GetRooms())
+		h.broadcastRoomList()
 	} else {
 		// NOTE: roomInfoLocked 在 !exists 时返回零值 RoomInfo（并发删房场景安全）
 		h.mu.RLock()
@@ -517,9 +601,11 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 	for sid, m := range room.Members {
 		if m.Identity == req.TargetIdentity {
 			targetSocketID = sid
+			stream := m.Stream
 			delete(room.Members, sid)
+			h.unregisterStreamLocked(req.Room, m.Identity, stream)
 			// 踢出最后一人也删房，与 OnRoomLeave / OnDisconnect 行为一致
-			roomDeleted = h.deleteRoomIfEmpty(req.Room)
+			roomDeleted = h.deleteRoomIfEmptyLocked(req.Room)
 			break
 		}
 	}
@@ -538,7 +624,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 	})
 
 	// 通知全员成员离开
-	h.server.BroadcastToNamespace("/", EventMemberLeft, map[string]interface{}{
+	h.server.BroadcastToRoom("/", req.Room, EventMemberLeft, map[string]interface{}{
 		"room":     req.Room,
 		"identity": req.TargetIdentity,
 		"id":       targetSocketID,
@@ -550,7 +636,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 	// 空房删除 SFU room 并广播列表，否则广播单房间更新
 	if roomDeleted {
 		h.deleteRoomSafe(req.Room)
-		h.server.BroadcastToNamespace("/", EventRoomList, h.GetRooms())
+		h.broadcastRoomList()
 	} else {
 		h.mu.RLock()
 		info := h.roomInfoLocked(req.Room)
@@ -667,6 +753,35 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 
 // ─── 公共方法 ───
 
+// HubStats 信令面实时统计，用于监控面板。
+type HubStats struct {
+	RoomCount       int `json:"room_count"`
+	ParticipantCount int `json:"participant_count"`
+	OnlineUserCount int `json:"online_user_count"`
+}
+
+// GetStats 返回信令面房间数、参与者总数、去重在线用户数。
+func (h *Hub) GetStats() HubStats {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	identities := make(map[string]struct{}, len(h.rooms))
+	participants := 0
+	for _, room := range h.rooms {
+		participants += len(room.Members)
+		for _, m := range room.Members {
+			if m.Identity != "" {
+				identities[m.Identity] = struct{}{}
+			}
+		}
+	}
+	return HubStats{
+		RoomCount:        len(h.rooms),
+		ParticipantCount: participants,
+		OnlineUserCount:  len(identities),
+	}
+}
+
 func (h *Hub) GetSFURooms() []RoomInfo {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -682,6 +797,20 @@ func (h *Hub) GetSFURooms() []RoomInfo {
 func (h *Hub) GetRooms() []RoomInfo {
 	return h.getMergedRooms()
 }
+
+// broadcastRoomList 向全员推送最新房间列表。
+// 事件名必须是 room:list:result（与 OnRoomList 一致）；room:list 是客户端请求事件，前端不监听。
+func (h *Hub) broadcastRoomList() {
+	if h.server == nil {
+		return
+	}
+	rooms := h.GetRooms()
+	h.server.BroadcastToNamespace("/", EventRoomListResult, map[string]interface{}{
+		"rooms": rooms,
+		"count": len(rooms),
+	})
+}
+
 
 // CheckRoomLimit 检查房间是否已满，返回 (已满, 限制人数, 当前人数, 错误)
 func (h *Hub) CheckRoomLimit(roomName string) (bool, uint, int, error) {
@@ -732,6 +861,56 @@ func (h *Hub) IsIdentityMuted(identity string) (bool, *model.Mute, error) {
 		return false, nil, nil
 	}
 	return h.muteStore.IsMutedByIdentity(identity)
+}
+
+// IsMuted 是 JoinPolicy 接口适配：仅返 bool/error，剥离 *model.Mute（pkg.JoinPolicy 不依赖 model）。
+func (h *Hub) IsMuted(identity string) (bool, error) {
+	muted, _, err := h.IsIdentityMuted(identity)
+	return muted, err
+}
+
+// 编译期断言：Hub 实现 pkg.JoinPolicy，供 SFUService 经接口注入。
+var _ pkg.JoinPolicy = (*Hub)(nil)
+
+func (h *Hub) RegisterStream(stream string) {
+	h.mu.Lock()
+	h.activeStreams[stream] = struct{}{}
+	// SRS callback 仅给 stream，反查 streamRoomCache 同步 roomStreams 聚合视图。
+	if room, ok := h.streamRoomCache[stream]; ok {
+		if h.roomStreams[room] == nil {
+			h.roomStreams[room] = make(map[string]struct{})
+		}
+		h.roomStreams[room][stream] = struct{}{}
+	}
+	h.mu.Unlock()
+}
+
+func (h *Hub) UnregisterStream(stream string) {
+	h.mu.Lock()
+	delete(h.activeStreams, stream)
+	if room, ok := h.streamRoomCache[stream]; ok {
+		if streams, ok := h.roomStreams[room]; ok {
+			delete(streams, stream)
+			if len(streams) == 0 {
+				delete(h.roomStreams, room)
+			}
+		}
+	}
+	h.mu.Unlock()
+}
+
+func (h *Hub) IsStreamActive(stream string) bool {
+	h.mu.RLock()
+	_, ok := h.activeStreams[stream]
+	h.mu.RUnlock()
+	return ok
+}
+
+func (h *Hub) RoomForStream(stream string) (string, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	room, ok := h.streamRoomCache[stream]
+	return room, ok
 }
 
 func (h *Hub) BroadcastToRoom(room string, event string, data interface{}) {
@@ -847,14 +1026,123 @@ func (h *Hub) duplicateIdentityLocked(roomName, identity, socketID string) bool 
 	return false
 }
 
-// deleteRoomIfEmpty 在房间无成员时删除并返回 true。调用方须持有 h.mu（写）。
-func (h *Hub) deleteRoomIfEmpty(roomName string) bool {
+// deleteRoomIfEmptyLocked 在房间无成员时删除并返回 true。调用方须持有 h.mu（写）。
+func (h *Hub) deleteRoomIfEmptyLocked(roomName string) bool {
 	room, exists := h.rooms[roomName]
 	if !exists || len(room.Members) != 0 {
 		return false
 	}
 	delete(h.rooms, roomName)
 	return true
+}
+
+// registerStreamLocked 在 WS join 时登记 stream→room 反查 + room→streams 聚合 + identity→stream 映射。
+// 调用方须持有 h.mu（写）。stream 为空则跳过（provider 无 stream 概念）。
+func (h *Hub) registerStreamLocked(room, identity, stream string) {
+	if stream == "" {
+		return
+	}
+	h.streamRoomCache[stream] = room
+	if h.roomStreams[room] == nil {
+		h.roomStreams[room] = make(map[string]struct{})
+	}
+	h.roomStreams[room][stream] = struct{}{}
+	if identity != "" {
+		if h.streamByIdentity[room] == nil {
+			h.streamByIdentity[room] = make(map[string]string)
+		}
+		h.streamByIdentity[room][identity] = stream
+	}
+}
+
+// unregisterStreamLocked 在 WS leave/disconnect 时清除 stream 映射 + identity→stream 映射。
+// 调用方须持有 h.mu（写）。stream 为空则跳过。
+func (h *Hub) unregisterStreamLocked(room, identity, stream string) {
+	if stream == "" {
+		return
+	}
+	delete(h.streamRoomCache, stream)
+	if streams, ok := h.roomStreams[room]; ok {
+		delete(streams, stream)
+		if len(streams) == 0 {
+			delete(h.roomStreams, room)
+		}
+	}
+	if identity != "" {
+		if identities, ok := h.streamByIdentity[room]; ok {
+			delete(identities, identity)
+			if len(identities) == 0 {
+				delete(h.streamByIdentity, room)
+			}
+		}
+	}
+}
+
+// Rooms 返回当前有活跃成员的 room 列表（RoomRegistry 实现）。
+func (h *Hub) Rooms() []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	out := make([]string, 0, len(h.roomStreams))
+	for room := range h.roomStreams {
+		out = append(out, room)
+	}
+	return out
+}
+
+// Streams 返回指定 room 下登记的 stream 名集合（RoomRegistry 实现）。
+func (h *Hub) Streams(room string) []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	streams, ok := h.roomStreams[room]
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(streams))
+	for s := range streams {
+		out = append(out, s)
+	}
+	return out
+}
+
+// ClearRoom 清除指定 room 的 stream 聚合登记（RoomRegistry 实现）。
+func (h *Hub) ClearRoom(room string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if streams, ok := h.roomStreams[room]; ok {
+		for s := range streams {
+			delete(h.streamRoomCache, s)
+		}
+		delete(h.roomStreams, room)
+	}
+	delete(h.streamByIdentity, room)
+}
+
+// StreamForIdentity 返回 join 时按 identity 实际登记的 stream 名（RoomRegistry 实现）。
+// 未登记返 ok=false，调用方（SRS RemoveParticipant）降级反算命名约定保持兼容。
+func (h *Hub) StreamForIdentity(room, identity string) (string, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if identities, ok := h.streamByIdentity[room]; ok {
+		if s, ok := identities[identity]; ok {
+			return s, true
+		}
+	}
+	return "", false
+}
+
+// IdentityForStream 返回登记该 stream 的 identity（RoomRegistry 实现）。
+// 未登记返 ok=false，调用方（SRS ListParticipants）可降级返回 client id。
+func (h *Hub) IdentityForStream(room, stream string) (string, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if identities, ok := h.streamByIdentity[room]; ok {
+		for identity, st := range identities {
+			if st == stream {
+				return identity, true
+			}
+		}
+	}
+	return "", false
 }
 
 func parseJSON(data string, v interface{}) error {

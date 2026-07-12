@@ -17,7 +17,7 @@ keys:
   API7ar5gCTyVkfY: xtpW2PGUKPugyVzEvX4OaPaHtNGm5bRUmrIXe6NMIqb
 
 redis:
-  address: livekit-redis:6379
+  address: redis:6379
 
 turn:
   enabled: true

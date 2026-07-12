@@ -78,6 +78,14 @@ func (r *UserRepository) UpdateEmailVerified(userID uint, verified bool) error {
 	return r.db.Model(&model.User{}).Where("id = ?", userID).Update("email_verified", verified).Error
 }
 // IncrementTokenVersion 递增用户的 TokenVersion，使所有已签发的 access/refresh token 失效。
-func (r *UserRepository) IncrementTokenVersion(userID uint) error {
-	return r.db.Model(&model.User{}).Where("id = ?", userID).UpdateColumn("token_version", gorm.Expr("token_version + 1")).Error
+// UpdatePasswordAndInvalidate 原子地保存新密码并递增 TokenVersion，
+// 避免两步独立写间失败导致旧 token 仍有效（auth_service 改密/重置场景）。
+func (r *UserRepository) UpdatePasswordAndInvalidate(user *model.User) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(user).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.User{}).Where("id = ?", user.ID).
+			UpdateColumn("token_version", gorm.Expr("token_version + 1")).Error
+	})
 }

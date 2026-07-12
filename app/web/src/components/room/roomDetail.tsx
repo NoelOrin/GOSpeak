@@ -1,23 +1,41 @@
-import { Show } from "solid-js";
+import { Show, createEffect } from "solid-js";
 import { socketStore } from "@/stores/socketStore";
 import MemberSidebar from "./components/memberSidebar";
 import VoiceChat from "./components/voiceChat";
 import { useRoomAudioBridge } from "./hooks/useRoomAudioBridge";
-import { useRoomJoinSession } from "./hooks/useRoomJoinSession";
+import { useVoiceSession } from "./hooks/useVoiceSession";
 import { useRoomPresenceSounds } from "./hooks/useRoomPresenceSounds";
+import { playJoinSound } from "@/handler_audio/notificationSounds";
 
 const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 	const {
 		selectedRoom,
-		joinState,
+		phase,
+		phaseLabel,
 		sfuClient,
 		isJoined,
+		isLoading,
 		isReconnecting,
 		currentRoom,
+		error,
 		handleManualLeave,
-	} = useRoomJoinSession();
+		retry,
+	} = useVoiceSession();
 	useRoomAudioBridge(sfuClient, isJoined);
 	useRoomPresenceSounds();
+	// play join sound once on media connection completion
+	let playedJoinOnMedia = false;
+	createEffect(() => {
+		const p = phase();
+		if (p === "media_ready" || p === "ready") {
+			if (!playedJoinOnMedia) {
+				playedJoinOnMedia = true;
+				playJoinSound();
+			}
+		} else if (p === "idle" || p === "resolving") {
+			playedJoinOnMedia = false;
+		}
+	});
 
 	return (
 		<div
@@ -38,13 +56,24 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 						<div class="flex flex-col items-center gap-4">
 							<div class="text-lg font-bold">{selectedRoom()?.name}</div>
 							<Show
-								when={joinState() !== "failed"}
+								when={phase() === "failed"}
 								fallback={
-									<div class="text-sm text-error/70">加入失败，请重试</div>
+									<div class="flex flex-col items-center gap-4">
+										<div class="loading loading-spinner loading-sm" />
+										<div class="text-sm text-base-content/40">
+											{isLoading() ? phaseLabel() : "准备加入..."}
+										</div>
+									</div>
 								}
 							>
-								<div class="loading loading-spinner loading-sm" />
-								<div class="text-sm text-base-content/40">正在加入...</div>
+								<div class="flex flex-col items-center gap-3">
+									<div class="text-sm text-error/70">
+										{error() || phaseLabel()}
+									</div>
+									<button class="btn btn-sm btn-primary" onClick={retry}>
+										重试
+									</button>
+								</div>
 							</Show>
 						</div>
 					}
@@ -60,19 +89,6 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 							<div class="flex justify-between items-center px-4 h-12 border-b border-base-300">
 								<div class="min-w-0">
 									<div class="font-bold truncate">{currentRoom()}</div>
-									<div class="flex items-center gap-1 mt-1 text-[11px] text-base-content/55">
-										{/* <Show when={selectedRoom()?.audioOnly}>
-                      <span class="badge badge-ghost badge-xs">语音</span>
-                    </Show>
-                    <Show when={selectedRoom()?.allowAudience === false}>
-                      <span class="badge badge-ghost badge-xs">仅成员</span>
-                    </Show> */}
-										{/* <Show when={selectedRoom()?.description}>
-                      <span class="truncate">
-                        {selectedRoom()?.description}
-                      </span>
-                    </Show> */}
-									</div>
 								</div>
 								<div class="flex items-center gap-2">
 									<span class="text-sm text-base-content/60">

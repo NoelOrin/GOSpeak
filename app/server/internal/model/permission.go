@@ -34,6 +34,15 @@ const (
 	PermSignalKick = permcode.PermSignalKick
 	PermMuteManage = permcode.PermMuteManage
 	PermSFUManage  = permcode.PermSFUManage
+
+	PermBotManage = permcode.PermBotManage
+
+	PermEmailConfigRead   = permcode.PermEmailConfigRead
+	PermEmailConfigManage = permcode.PermEmailConfigManage
+
+	PermStorageRead   = permcode.PermStorageRead
+	PermStorageManage = permcode.PermStorageManage
+	PermStorageDelete = permcode.PermStorageDelete
 )
 
 // DefaultPermissions 种子权限列表
@@ -53,6 +62,14 @@ var DefaultPermissions = []Permission{
 	{Code: PermSignalKick, Name: "踢出房间", Description: "将用户从语音房间中踢出"},
 	{Code: PermMuteManage, Name: "管理禁言", Description: "对用户进行全局禁言/取消禁言/查看禁言列表"},
 	{Code: PermSFUManage, Name: "管理 SFU", Description: "查看和修改 SFU 提供商配置"},
+	{Code: PermBotManage, Name: "管理 BOT 密钥", Description: "创建、查看、吊销 BOT 专用 API Key"},
+
+	{Code: PermEmailConfigRead, Name: "查看邮件配置", Description: "查看 SMTP 邮件服务器配置"},
+	{Code: PermEmailConfigManage, Name: "管理邮件配置", Description: "修改 SMTP 邮件服务器配置"},
+
+	{Code: PermStorageRead, Name: "查看存储配置", Description: "查看对象存储配置"},
+	{Code: PermStorageManage, Name: "管理存储配置", Description: "修改对象存储配置"},
+	{Code: PermStorageDelete, Name: "删除存储对象", Description: "删除对象存储中的文件"},
 }
 
 // RolePermission 角色-权限关联表
@@ -66,13 +83,33 @@ func (RolePermission) TableName() string {
 	return "role_permissions"
 }
 
+// BotScopedPermissions Bot 可被授予的权限码白名单。
+// 仅暴露业务面权限，避免 Bot 接触角色/用户管理、凭据配置、SFU 等平台级管理面。
+var BotScopedPermissions = []string{
+	PermRoomRead,
+	PermUserRead,
+	PermSignalKick,
+	PermMuteManage,
+}
+
+// BotScopedPermissionsSet 返回 Bot 允许权限码集合。
+func BotScopedPermissionsSet() map[string]struct{} {
+	set := make(map[string]struct{}, len(BotScopedPermissions))
+	for _, c := range BotScopedPermissions {
+		set[c] = struct{}{}
+	}
+	return set
+}
+
 // DefaultRolePermissions 默认角色权限映射
 var DefaultRolePermissions = map[string][]string{
 	"admin": {
 		PermRoomCreate, PermRoomRead, PermRoomUpdate, PermRoomDelete,
 		PermUserRead, PermUserUpdate, PermUserDelete,
 		PermRoleRead, PermRoleManage,
-		PermSignalKick, PermMuteManage, PermSFUManage,
+		PermSignalKick, PermMuteManage, PermSFUManage, PermBotManage,
+		PermEmailConfigRead, PermEmailConfigManage,
+		PermStorageRead, PermStorageManage, PermStorageDelete,
 	},
 	"user": {
 		PermRoomCreate, PermRoomRead,
@@ -80,4 +117,13 @@ var DefaultRolePermissions = map[string][]string{
 		PermRoleRead,
 	},
 	"ban": {},
+}
+
+// ValidPermissionSet 返回所有已知权限码集合，用于校验外部传入的权限码。
+func ValidPermissionSet() map[string]struct{} {
+	set := make(map[string]struct{}, len(DefaultPermissions))
+	for _, p := range DefaultPermissions {
+		set[p.Code] = struct{}{}
+	}
+	return set
 }

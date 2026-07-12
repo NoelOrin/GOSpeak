@@ -16,6 +16,7 @@ export interface MemberInfo {
 	isMuted: boolean;
 	isMicMuted: boolean;
 	joinedAt: number;
+	stream?: string;
 }
 
 export interface RoomInfo {
@@ -119,9 +120,14 @@ export const socketStore = createRoot(() => {
 
 	function connect() {
 		if (adapter.isConnected() || connecting()) return;
+		const token = userStore.accessToken();
+		if (!token) {
+			showToast("请先登录", { type: "warning" });
+			return;
+		}
 		const socketUrl = import.meta.env.VITE_SOCKET_URL || "";
 		setConnecting(true);
-		adapter.connect(socketUrl);
+		adapter.connect(socketUrl, token);
 
 		adapter.onServerEvent(
 			EVENTS.ROOM_CREATED,
@@ -139,29 +145,55 @@ export const socketStore = createRoot(() => {
 		);
 
 		adapter.onServerEvent(EVENTS.ROOM_UPDATED, (room: RoomInfo) => {
-			console.log("[Socket] room:updated", room.name);
+			if (!room?.name) return;
+			console.log("[Socket] room:updated", room.name, "count=", room.count);
 			// 仅覆盖服务端实际返回的字段（name/hasPassword/members/count/createdAt），
 			// 保留 DB 字段（id/uuid/description/limit/audioOnly/allowAudience）不被零值覆盖。
 			// members 由 rooms[] 派生，无需单独维护。
-			setRooms((prev) =>
-				prev.map((r) =>
+			setRooms((prev) => {
+				const idx = prev.findIndex((r) => r.name === room.name);
+				if (idx < 0) {
+					// 列表里还没有时补一条，避免 leave/join 广播丢更新
+					return [
+						...prev,
+						{
+							id: room.id ?? 0,
+							uuid: room.uuid ?? "",
+							name: room.name,
+							hasPassword: room.hasPassword,
+							description: room.description,
+							limit: room.limit ?? 0,
+							audioOnly: room.audioOnly,
+							allowAudience: room.allowAudience,
+							members: room.members ?? [],
+							count: room.count ?? room.members?.length ?? 0,
+							createdAt: room.createdAt ?? Date.now(),
+						},
+					];
+				}
+				return prev.map((r) =>
 					r.name === room.name
 						? {
 								...r,
 								name: room.name,
 								hasPassword: room.hasPassword,
-								members: room.members,
-								count: room.count,
+								members: room.members ?? [],
+								count: room.count ?? room.members?.length ?? 0,
 								createdAt: room.createdAt ?? r.createdAt,
 							}
 						: r,
-				),
-			);
+				);
+			});
 		});
 
 		adapter.onServerEvent(
 			EVENTS.MEMBER_JOINED as string,
-			(data: { room: string; identity: string; id: string }) => {
+			(data: {
+				room: string;
+				identity: string;
+				id: string;
+				stream?: string;
+			}) => {
 				console.log("[Socket] member:joined", data.identity);
 				// 即时追加 shell 成员，富化字段由后续 room:updated 覆盖。
 				setRooms((prev) =>
@@ -183,6 +215,7 @@ export const socketStore = createRoot(() => {
 													isMuted: false,
 													isMicMuted: false,
 													joinedAt: Date.now(),
+													stream: data.stream,
 												},
 											],
 								}
@@ -309,6 +342,12 @@ export const socketStore = createRoot(() => {
 	}
 
 	function disconnect() {
+		producerReadyListeners.clear();
+		producerClosedListeners.clear();
+		activityListeners.clear();
+		presenceListeners.clear();
+		kickedListeners.clear();
+		adapter.offAllServerEvents();
 		adapter.disconnect();
 		setConnecting(false);
 		setConnected(false);
@@ -333,8 +372,31 @@ export const socketStore = createRoot(() => {
 		setCurrentRoom(null);
 	}
 
+	function waitForConnected(timeoutMs = 8000): Promise<void> {
+		if (adapter.isConnected()) return Promise.resolve();
+		// 进房时 socket 可能仍在握手；短等连接，避免 emit 丢进未连接队列后永久无 ack。
+		return new Promise((resolve, reject) => {
+			const timer = setTimeout(() => {
+				off();
+				reject(new Error("socket connect timeout"));
+			}, timeoutMs);
+			const off = adapter.onConnected(() => {
+				clearTimeout(timer);
+				off();
+				resolve();
+			});
+			if (adapter.isConnected()) {
+				clearTimeout(timer);
+				off();
+				resolve();
+			}
+		});
+	}
+
 	function joinRoom(room: string, identity: string, password?: string) {
-		return signalEmit(EVENTS.ROOM_JOIN, { room, identity, password }).then(
+		return waitForConnected().then(() =>
+			signalEmit(EVENTS.ROOM_JOIN, { room, identity, password }),
+		).then(
 			(data) => {
 				if (data.error) {
 					throw new Error(data.error);
@@ -346,64 +408,66 @@ export const socketStore = createRoot(() => {
 	}
 
 	function leaveRoom(room: string): Promise<any> {
-		// 仅发信令，不清本地状态。状态清理由 session 生命周期统一管理
+		// 仅发信令，不清 currentRoom。状态清理由 session 生命周期统一管理
 		// （teardownSession / handleManualLeave / room:kicked），避免切房 fire-and-forget 时
 		// .then 清状态与新房 joinRoom 设状态竞态。
-		return signalEmit(EVENTS.ROOM_LEAVE, { room });
-	}
-
-	function joinRoomSFU(room: string, identity: string) {
-		return signalEmit(EVENTS.ROOM_JOIN_SFU, { room, identity }).then((data) => {
-			// ack 返回完整成员列表，即时 upsert rooms[]（不等 room:updated）
-			if (data.members) {
-				const ackMembers: MemberInfo[] = data.members;
-				setRooms((prev) => {
-					const exists = prev.some((r) => r.name === data.room);
-					if (!exists) {
-						return [
-							...prev,
-							{
-								id: 0,
-								uuid: "",
-								name: data.room,
-								hasPassword: false,
-								limit: 0,
-								members: ackMembers,
-								count: ackMembers.length,
-								createdAt: Date.now(),
-							},
-						];
-					}
-					return prev.map((r) =>
-						r.name === data.room
-							? { ...r, members: ackMembers, count: ackMembers.length }
-							: r,
-					);
-				});
-			}
-			emitActivity({
-				type: "room_joined",
-				room: data.room,
-				identity: data.identity,
-				timestamp: Date.now(),
-			});
+		// 离开者已不在 socket.io room，收不到 member:left；namespace 广播
+		// room:updated / room:list:result 负责刷新列表。ack 后再拉一次列表兜底。
+		return signalEmit(EVENTS.ROOM_LEAVE, { room }).then((data) => {
+			listRooms();
 			return data;
 		});
 	}
 
-	function sfuEmit(
-		event: string,
-		payload: Record<string, unknown>,
-	): Promise<any> {
-		return signalEmit(event, payload);
+	function joinRoomSFU(room: string, identity: string, stream?: string) {
+		return waitForConnected().then(() =>
+			signalEmit(EVENTS.ROOM_JOIN_SFU, { room, identity, stream }),
+		).then(
+			(data) => {
+				// ack 返回完整成员列表，即时 upsert rooms[]（不等 room:updated）
+				if (data.members) {
+					const ackMembers: MemberInfo[] = data.members;
+					setRooms((prev) => {
+						const exists = prev.some((r) => r.name === data.room);
+						if (!exists) {
+							return [
+								...prev,
+								{
+									id: 0,
+									uuid: "",
+									name: data.room,
+									hasPassword: false,
+									limit: 0,
+									members: ackMembers,
+									count: ackMembers.length,
+									createdAt: Date.now(),
+								},
+							];
+						}
+						return prev.map((r) =>
+							r.name === data.room
+								? { ...r, members: ackMembers, count: ackMembers.length }
+								: r,
+						);
+					});
+				}
+				emitActivity({
+					type: "room_joined",
+					room: data.room,
+					identity: data.identity,
+					timestamp: Date.now(),
+				});
+				return data;
+			},
+		);
 	}
 
 	function getRouterCapabilities(room: string) {
-		return sfuEmit(EVENTS.SFU_GET_ROUTER_CAPABILITIES, { room });
+		return signalEmit(EVENTS.SFU_GET_ROUTER_CAPABILITIES, { room });
 	}
 
 	function createTransport(room: string, direction: "send" | "recv") {
-		return sfuEmit(EVENTS.SFU_CREATE_TRANSPORT, { room, direction });
+		return signalEmit(EVENTS.SFU_CREATE_TRANSPORT, { room, direction });
 	}
 
 	function connectTransport(
@@ -411,7 +475,7 @@ export const socketStore = createRoot(() => {
 		transportId: string,
 		dtlsParameters: unknown,
 	) {
-		return sfuEmit(EVENTS.SFU_CONNECT_TRANSPORT, {
+		return signalEmit(EVENTS.SFU_CONNECT_TRANSPORT, {
 			room,
 			transportId,
 			dtlsParameters,
@@ -425,7 +489,7 @@ export const socketStore = createRoot(() => {
 		rtpParameters: unknown,
 		appData: unknown,
 	) {
-		return sfuEmit(EVENTS.SFU_PRODUCE, {
+		return signalEmit(EVENTS.SFU_PRODUCE, {
 			room,
 			transportId,
 			kind,
@@ -440,7 +504,7 @@ export const socketStore = createRoot(() => {
 		producerId: string,
 		rtpCapabilities: unknown,
 	) {
-		return sfuEmit(EVENTS.SFU_CONSUME, {
+		return signalEmit(EVENTS.SFU_CONSUME, {
 			room,
 			transportId,
 			producerId,

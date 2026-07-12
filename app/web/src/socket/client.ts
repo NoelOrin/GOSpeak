@@ -3,18 +3,23 @@ import io from "socket.io-client";
 export function createSocketClient() {
 	let socket: ReturnType<typeof io> | null = null;
 	const connectedCbs: Array<() => void> = [];
+	const serverEventCleanups: Array<() => void> = [];
 	const disconnectedCbs: Array<(reason: string) => void> = [];
 	const connectErrorCbs: Array<(err: Error) => void> = [];
 
-	function connect(url: string) {
+	function connect(url: string, token?: string) {
 		if (socket?.connected) return;
 		if (socket) {
 			(socket as any).io.reconnection(false);
 			socket.disconnect();
 			socket = null;
 		}
-		socket = io(url, { transports: ["websocket"] });
-
+		const opts: Record<string, unknown> = { transports: ["websocket"] };
+		if (token) {
+			opts.query = { token };
+			document.cookie = `gospeak_token=${token}; path=/; SameSite=Lax; max-age=3600`;
+		}
+		socket = io(url, opts);
 		socket.on("connect", () => {
 			for (const cb of connectedCbs) cb();
 		});
@@ -29,6 +34,7 @@ export function createSocketClient() {
 	}
 
 	function disconnect() {
+		offAllServerEvents();
 		if (socket) {
 			socket.disconnect();
 			socket = null;
@@ -44,7 +50,7 @@ export function createSocketClient() {
 		payload?: Record<string, unknown>,
 	): Promise<any> {
 		return new Promise((resolve, reject) => {
-			if (!socket) {
+			if (!socket || !socket.connected) {
 				reject(new Error("socket not connected"));
 				return;
 			}
@@ -73,9 +79,14 @@ export function createSocketClient() {
 		cb: (...args: any[]) => void,
 	): () => void {
 		socket?.on(event, cb);
-		return () => {
-			socket?.off(event, cb);
-		};
+		const cleanup = () => { socket?.off(event, cb); };
+		serverEventCleanups.push(cleanup);
+		return cleanup;
+	}
+
+	function offAllServerEvents() {
+		for (const cleanup of serverEventCleanups) cleanup();
+		serverEventCleanups.length = 0;
 	}
 
 	function getSocket() {
@@ -116,6 +127,7 @@ export function createSocketClient() {
 		emitFireAndForget,
 		emitAck,
 		onServerEvent,
+		offAllServerEvents,
 		getSocket,
 		isConnected,
 		onConnected,

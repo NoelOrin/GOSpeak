@@ -6,11 +6,13 @@ import (
 	"GOSpeak/internal/mediasoup"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/redis"
 	"GOSpeak/internal/repository"
 	"GOSpeak/internal/router"
 	"GOSpeak/internal/service"
 	"GOSpeak/internal/sfu"
+	"GOSpeak/internal/sfu/factory"
 	"GOSpeak/internal/signal"
 	"context"
 	"fmt"
@@ -89,8 +91,13 @@ func StartGin(env EnvEnum) {
 	roomSvc := service.NewRoomService(roomRepo)
 	muteSvc := service.NewMuteService(muteRepo, userRepo)
 	sfuConfigSvc := service.NewSFUConfigService(sfuConfigRepo, cfg)
+	if err := sfuConfigSvc.SyncFromEnv(); err != nil {
+		panic(fmt.Sprintf("failed to sync sfu config from env: %v", err))
+	}
 	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
-	sfuProvider := sfu.NewDynamicProvider(sfuConfigSvc.ResolveConfig)
+	botTokenRepo := repository.NewBotTokenRepository(repository.DB)
+	botSvc := service.NewBotService(userRepo, botTokenRepo)
+	var sfuProvider sfu.Provider = factory.NewDynamicProvider(sfuConfigSvc.ResolveConfig)
 	resolvedSFUCfg, err := sfuConfigSvc.ResolveConfig()
 	if err != nil {
 		panic(fmt.Sprintf("failed to resolve sfu config: %v", err))
@@ -109,15 +116,35 @@ func StartGin(env EnvEnum) {
 		},
 	})
 
-	signalHub := signal.NewHub(roomSvc, muteSvc, userRepo, permSvc)
+	signalHub := signal.NewHub(roomSvc, muteSvc, userSvc, permSvc)
 	signalHub.SetSFU(sfuProvider)
+	if snr, ok := sfuProvider.(signal.StreamNameResolver); ok {
+		signalHub.SetStreamResolver(snr)
+	}
+	// 注入 Hub room 聚合视图给 SRS 等无原生 room 维度的 provider（pkg.RoomRegistrySetter）。
+	if rs, ok := sfuProvider.(pkg.RoomRegistrySetter); ok {
+		rs.SetRoomRegistry(signalHub)
+	}
 	if resolvedSFUCfg.SFUProvider == "mediasoup" {
 		msService := mediasoup.NewService(resolvedSFUCfg)
 		msSignal := mediasoup.NewMediasoupSignal(msService.Bridge, signalHub.BroadcastToRoom)
 		signalHub.SetSFUSignalHandler(msSignal)
 	}
 	signalHub.SetupRoutes(sioServer)
-	signalH := handler.NewSignalHandler(sfuProvider, signalHub)
+	sfuSvc := service.NewSFUService(sfuProvider, signalHub)
+	signalH := handler.NewSignalHandler(sfuSvc)
+	cfMediaSvc := service.NewCloudflareMediaService(sfuConfigSvc.ResolveConfig)
+	cfH := handler.NewCloudflareHandler(cfMediaSvc)
+	srsCallbackH := handler.NewSRSCallbackHandlerWithResolver(signalHub, func() string {
+		resolved, err := sfuConfigSvc.ResolveConfig()
+		if err != nil || resolved == nil {
+			return cfg.SRSSecret
+		}
+		if resolved.SRSSecret != "" {
+			return resolved.SRSSecret
+		}
+		return cfg.SRSSecret
+	})
 
 	authH := handler.NewAuthHandler(authSvc)
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)
@@ -130,8 +157,9 @@ func StartGin(env EnvEnum) {
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
 	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc)
 	storageH := handler.NewStorageHandler(storageSvc)
+	botH := handler.NewBotHandler(botSvc)
 
-	monitorH := handler.NewMonitorHandler()
+	monitorH := handler.NewMonitorHandler(signalHub, cfg)
 
 	// 启动签名密钥轮换检查
 	go redis.KeyRotationLoop()
@@ -143,14 +171,17 @@ func StartGin(env EnvEnum) {
 		}
 	}()
 
-	r.GET("/socket.io/*any", gin.WrapH(sioServer))
-	r.POST("/socket.io/*any", gin.WrapH(sioServer))
-	r.OPTIONS("/socket.io/*any", gin.WrapH(sioServer))
+	wsAuth := middleware.WSAuth()
+	cors := middleware.CORS()
+	r.GET("/socket.io/*any", cors, wsAuth, gin.WrapH(sioServer))
+	r.POST("/socket.io/*any", cors, wsAuth, gin.WrapH(sioServer))
+	r.OPTIONS("/socket.io/*any", cors, wsAuth, gin.WrapH(sioServer))
 
 	router.SetupRoutes(r, &router.Handlers{
 		Auth:        authH,
 		User:        userH,
 		Signal:      signalH,
+		Cloudflare:  cfH,
 		OAuth:       oauthH,
 		Role:        roleH,
 		Room:        roomH,
@@ -161,6 +192,8 @@ func StartGin(env EnvEnum) {
 		Email:       emailH,
 		EmailConfig: emailConfigH,
 		Monitor:     monitorH,
+		SRSCallback: srsCallbackH,
+		Bot:         botH,
 	})
 
 	port := os.Getenv("SERVER_PORT")
@@ -206,8 +239,9 @@ func loadingEnv(env EnvEnum) {
 			panic(err)
 		}
 	case Prod:
+		// Docker / K8s 通过 env_file 或环境变量注入, .env.prod 可不存在
 		if err := loadEnvFile("./.env.prod"); err != nil {
-			panic(err)
+			log.Printf("[Config] .env.prod not loaded (%v); using process environment", err)
 		}
 	}
 }
@@ -226,7 +260,7 @@ func seedPermissions(permRepo *repository.PermissionRepository) {
 
 	// 种子角色-权限映射
 	for roleName, codes := range model.DefaultRolePermissions {
-		if err := permRepo.SeedRolePermissionsIfEmpty(roleName, codes); err != nil {
+		if err := permRepo.EnsureRolePermissions(roleName, codes); err != nil {
 			fmt.Printf("[Seed] 同步角色 %s 权限失败: %v\n", roleName, err)
 		}
 	}
@@ -274,12 +308,6 @@ func seedAdminUser(userRepo *repository.UserRepository) {
 }
 
 func init() {
-	logFile, err := os.OpenFile("./server/logs/xxx.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		fmt.Println("open log file failed, err:", err)
-		return
-	}
-	log.SetOutput(logFile)
 	log.SetFlags(log.Llongfile | log.Lmicroseconds | log.Ldate)
 
 	gin.DisableConsoleColor()

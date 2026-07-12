@@ -8,6 +8,7 @@ import net from "node:net";
 import { execSync } from "node:child_process";
 import { spawn } from "child_process";
 import { visualizer } from "rollup-plugin-visualizer";
+import { cuiIconsTreeShakePlugin } from "./scripts/cui-icons-plugin.mjs";
 
 function findAvailablePort(startPort: number): Promise<number> {
   if (startPort >= 65536) {
@@ -56,6 +57,9 @@ export default defineConfig(async ({ mode }) => {
         }
       }), 
       tailwindcss(),
+      // cui-solid-icons icon-set tree-shake: 重写 export 块只保留被引用图标,
+      // 让 rolldown 删未引用 function 声明。详见 scripts/cui-icons-plugin.mjs。
+      cuiIconsTreeShakePlugin(),
       // {
       //   name: "lefthook-plug",
       //   configEnvironment(_name, _config, env) {
@@ -114,6 +118,15 @@ export default defineConfig(async ({ mode }) => {
           changeOrigin: true,
           ws: true,
         },
+        "/rtc/v1": {
+          target: "http://localhost:1985",
+          changeOrigin: true,
+          configure: (proxy) => {
+            proxy.on("proxyReq", (proxyReq) => {
+              proxyReq.setHeader("Connection", "close");
+            });
+          },
+        },
       },
       // 监听 symlinked workspace 包源码以实现 HMR
       watch: {
@@ -124,15 +137,10 @@ export default defineConfig(async ({ mode }) => {
       },
     },
     resolve: {
-      alias: [
-        { find: "@", replacement: path.resolve(__dirname, "./src") },
-        { find: "#", replacement: path.resolve(__dirname, "./types") },
-        // cui-solid-icons 的 feather/f7 全量包未标 /* @__PURE__ */,tree-shake 失败整包打入 bundle。
-        // 重定向到 vendor shim,只 re-export cui-solid 实际依赖的图标。追加图标改 shim 文件即可。
-        // 见 vendor/AGENTS.md。注意 find 必须精确匹配子路径,避免误伤 cui-solid-icons 主入口。
-        { find: /^cui-solid-icons\/f7$/, replacement: path.resolve(__dirname, "./vendor/cui-solid-icons-f7.ts") },
-        { find: /^cui-solid-icons\/feather$/, replacement: path.resolve(__dirname, "./vendor/cui-solid-icons-feather.ts") },
-      ],
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
+        "#": path.resolve(__dirname, "./types"),
+      },
     },
     optimizeDeps: {
       include: [

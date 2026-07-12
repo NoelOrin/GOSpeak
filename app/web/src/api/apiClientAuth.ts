@@ -6,7 +6,7 @@ export interface APIClientAuthBindings {
 }
 
 let bindings: APIClientAuthBindings = {
-	getAccessToken: () => "",
+	getAccessToken: () => { throw new Error("APIClientAuth not initialized"); },
 	getRefreshToken: () => "",
 	updateAccessToken: () => undefined,
 	clearAuth: () => undefined,

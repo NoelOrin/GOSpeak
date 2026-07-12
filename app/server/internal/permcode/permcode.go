@@ -18,4 +18,13 @@ const (
 	PermSignalKick = "signal:kick"
 	PermMuteManage = "mute:manage"
 	PermSFUManage  = "sfu:manage"
+
+	PermBotManage = "bot:manage"
+
+	PermEmailConfigRead   = "email_config:read"
+	PermEmailConfigManage = "email_config:manage"
+
+	PermStorageRead   = "storage:read"
+	PermStorageManage = "storage:manage"
+	PermStorageDelete = "storage:delete"
 )

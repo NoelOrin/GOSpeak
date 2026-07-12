@@ -185,6 +185,10 @@ export class APIClient {
 			this.axiosInstance
 				.request<any, AxiosResponse<Result>>(config)
 				.then((res: AxiosResponse<Result>) => {
+					if (res.data && res.data.code !== 0) {
+						reject(new Error(res.data.msg));
+						return;
+					}
 					resolve(res as unknown as Promise<T>);
 				})
 				.catch((e: Error | AxiosError) => {
@@ -194,5 +198,4 @@ export class APIClient {
 	}
 }
 
-// export default new APIClient(import.meta.env.VITE_API_URL);
 export default new APIClient("/");

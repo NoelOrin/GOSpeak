@@ -4,6 +4,7 @@ import (
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/middleware"
 	authRoutes "GOSpeak/internal/router/routes/auth"
+	botRoutes "GOSpeak/internal/router/routes/bot"
 	emailRoutes "GOSpeak/internal/router/routes/email"
 	emailConfigRoutes "GOSpeak/internal/router/routes/email_config"
 	muteRoutes "GOSpeak/internal/router/routes/mute"
@@ -13,10 +14,16 @@ import (
 	roomRoutes "GOSpeak/internal/router/routes/room"
 	sfuConfigRoutes "GOSpeak/internal/router/routes/sfu_config"
 	signalRoutes "GOSpeak/internal/router/routes/signal"
+	srsRoutes "GOSpeak/internal/router/routes/srs"
 	storageRoutes "GOSpeak/internal/router/routes/storage"
 	swaggerRoutes "GOSpeak/internal/router/routes/swagger"
 	systemRoutes "GOSpeak/internal/router/routes/system"
 	userRoutes "GOSpeak/internal/router/routes/user"
+
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	socketio "github.com/googollee/go-socket.io"
@@ -28,6 +35,7 @@ type Handlers struct {
 	Auth        *handler.AuthHandler
 	User        *handler.UserHandler
 	Signal      *handler.SignalHandler
+	Cloudflare  *handler.CloudflareHandler
 	OAuth       *handler.OAuthHandler
 	Role        *handler.RoleHandler
 	Room        *handler.RoomHandler
@@ -38,6 +46,8 @@ type Handlers struct {
 	Email       *handler.EmailVerificationHandler
 	EmailConfig *handler.EmailConfigHandler
 	Monitor     *handler.MonitorHandler
+	SRSCallback *handler.SRSCallbackHandler
+	Bot         *handler.BotHandler
 }
 
 func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
@@ -48,6 +58,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	})
 
 	r.Static("/uploads", "./uploads")
+	serveSPA(r)
 
 	swaggerRoutes.Register(r)
 
@@ -56,6 +67,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	emailRoutes.Register(api.Group("/email"), h.Email)
 	signalRoutes.Register(api.Group("/signal"), h.Signal)
 	oauthRoutes.Register(api.Group("/oauth"), h.OAuth)
+	srsRoutes.Register(api.Group("/srs"), h.SRSCallback)
 	systemRoutes.Register(api.Group("/system"), h.Monitor)
 
 	protected := api.Group("")
@@ -63,6 +75,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	protected.Use(middleware.BanCheck())
 	userRoutes.Register(protected.Group("/user"), h.User)
 	authRoutes.RegisterProtected(protected.Group("/auth"), h.Auth)
+	signalRoutes.RegisterProtected(protected.Group("/signal"), h.Signal, h.Cloudflare)
 	oauthRoutes.RegisterAdmin(protected.Group("/oauth/admin"), h.OAuth)
 	roleRoutes.RegisterProtected(protected.Group("/role"), h.Role)
 	muteRoutes.RegisterProtected(protected.Group("/mute"), h.Mute)
@@ -71,6 +84,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	sfuConfigRoutes.RegisterProtected(protected.Group("/sfu"), h.SFUConfig)
 	storageRoutes.Register(protected.Group("/storage"), h.Storage)
 	emailConfigRoutes.RegisterProtected(protected.Group("/email"), h.EmailConfig)
+	botRoutes.RegisterProtected(protected.Group("/bot"), h.Bot)
 
 	return r
 }
@@ -79,4 +93,39 @@ func SetupSocketRoutes(server *socketio.Server, signalHub interface {
 	SetupRoutes(*socketio.Server)
 }) {
 	signalHub.SetupRoutes(server)
+}
+
+// serveSPA 托管前端构建产物。路径优先级：STATIC_DIR > /app/static > ./static。
+// 仅生产镜像/统一部署使用；开发环境前端走 Vite，静态目录不存在时静默跳过。
+func serveSPA(r *gin.Engine) {
+	staticDir := os.Getenv("STATIC_DIR")
+	if staticDir == "" {
+		for _, candidate := range []string{"/app/static", "./static"} {
+			if st, err := os.Stat(candidate); err == nil && st.IsDir() {
+				staticDir = candidate
+				break
+			}
+		}
+	}
+	if staticDir == "" {
+		return
+	}
+	index := filepath.Join(staticDir, "index.html")
+	if _, err := os.Stat(index); err != nil {
+		return
+	}
+	fileServer := http.FileServer(http.Dir(staticDir))
+	r.NoRoute(func(c *gin.Context) {
+		path := c.Request.URL.Path
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/socket.io") || strings.HasPrefix(path, "/swagger") {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		full := filepath.Join(staticDir, path)
+		if st, err := os.Stat(full); err == nil && !st.IsDir() {
+			fileServer.ServeHTTP(c.Writer, c.Request)
+			return
+		}
+		c.File(index)
+	})
 }

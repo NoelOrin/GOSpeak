@@ -36,6 +36,40 @@ func SetTokenVersionChecker(tvc tokenVersionChecker) {
 	tokenVersionCheck = tvc
 }
 
+// VerifyToken 执行完整的 token 校验链：签名解析 → 过期 → 黑名单 → 版本。
+// 供 JWTAuth / WSAuth / signal.OnConnect 共用，保证校验口径一致。
+func VerifyToken(tokenStr string) (*pkg.Claims, pkg.ErrCode) {
+	claims, err := pkg.ParseToken(tokenStr)
+	if err != nil {
+		return nil, pkg.TOKEN_WRONG
+	}
+	if pkg.IsTokenExpired(claims) {
+		return nil, pkg.TOKEN_EXPIRED
+	}
+	if redis.IsBlacklisted(claims.ID) {
+		return nil, pkg.TOKEN_REVOKED
+	}
+	if tokenVersionCheck != nil && claims.UserUUID != "" {
+		currentVersion, err := tokenVersionCheck.GetTokenVersionByUUID(claims.UserUUID)
+		if err != nil {
+			return nil, pkg.INTERNAL_ERROR
+		}
+		if currentVersion != claims.TokenVersion {
+			return nil, pkg.TOKEN_REVOKED
+		}
+	}
+	return claims, pkg.SUCCESS
+}
+
+func setClaimsContext(c *gin.Context, claims *pkg.Claims) {
+	c.Set("username", claims.Username)
+	c.Set("display_name", claims.DisplayName)
+	c.Set("user_uuid", claims.UserUUID)
+	c.Set("role", claims.Role)
+	c.Set("claims", claims)
+	c.Set("auth_type", "jwt")
+}
+
 func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenHeader := c.Request.Header.Get("Authorization")
@@ -50,40 +84,37 @@ func JWTAuth() gin.HandlerFunc {
 			tokenStr = tokenHeader
 		}
 
-		claims, err := pkg.ParseToken(tokenStr)
-		if err != nil {
-			pkg.Fail(c, pkg.TOKEN_WRONG)
+		claims, code := VerifyToken(tokenStr)
+		if code != pkg.SUCCESS {
+			pkg.Fail(c, code)
 			c.Abort()
 			return
 		}
 
-		if pkg.IsTokenExpired(claims) {
-			pkg.Fail(c, pkg.TOKEN_EXPIRED)
+		setClaimsContext(c, claims)
+		c.Next()
+	}
+}
+
+// WSAuth 为 Socket.IO 路由提供 WebSocket 鉴权门控。
+// 与 JWTAuth 共用 VerifyToken，从 URL query 读取 token（浏览器 WS 握手不支持自定义头）。
+func WSAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenStr := c.Query("token")
+		if tokenStr == "" {
+			pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 			c.Abort()
 			return
 		}
 
-		if redis.IsBlacklisted(claims.ID) {
-			pkg.Fail(c, pkg.TOKEN_REVOKED)
+		claims, code := VerifyToken(tokenStr)
+		if code != pkg.SUCCESS {
+			pkg.Fail(c, code)
 			c.Abort()
 			return
 		}
 
-		// 校验 token 版本：改密/重置后用户 TokenVersion 递增，旧 token 返回 TOKEN_REVOKED。
-		if tokenVersionCheck != nil && claims.UserUUID != "" {
-			currentVersion, err := tokenVersionCheck.GetTokenVersionByUUID(claims.UserUUID)
-			if err != nil || currentVersion != claims.TokenVersion {
-				pkg.Fail(c, pkg.TOKEN_REVOKED)
-				c.Abort()
-				return
-			}
-		}
-
-		c.Set("username", claims.Username)
-		c.Set("display_name", claims.DisplayName)
-		c.Set("user_uuid", claims.UserUUID)
-		c.Set("role", claims.Role)
-		c.Set("claims", claims)
+		setClaimsContext(c, claims)
 		c.Next()
 	}
 }
@@ -116,29 +147,41 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 	}
 }
 
+// permissionGranted 判断当前 caller 是否拥有 permCode。
+// Bot token 在 claims 中直接携带 Permissions，优先命中；
+// 普通用户与未携带 Permissions 的旧 bot token 回退到 role → permChecker 映射。
+func permissionGranted(c *gin.Context, permCode string) bool {
+	if v, ok := c.Get("claims"); ok {
+		if claims, ok := v.(*pkg.Claims); ok && len(claims.Permissions) > 0 {
+			for _, p := range claims.Permissions {
+				if p == permCode {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	role, _ := c.Get("role")
+	roleStr, _ := role.(string)
+	return permChecker != nil && permChecker.HasPermission(roleStr, permCode)
+}
+
 // RequirePermission 基于权限码的鉴权，替代硬编码角色名。
 func RequirePermission(permCode string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		role, exists := c.Get("role")
+		_, exists := c.Get("role")
 		if !exists {
 			pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 			c.Abort()
 			return
 		}
-		roleStr, ok := role.(string)
-		if !ok {
-			pkg.Fail(c, pkg.FORBIDDEN)
-			c.Abort()
+		if permissionGranted(c, permCode) {
+			c.Next()
 			return
 		}
 
-		if permChecker == nil || !permChecker.HasPermission(roleStr, permCode) {
-			pkg.Fail(c, pkg.FORBIDDEN)
-			c.Abort()
-			return
-		}
-
-		c.Next()
+		pkg.Fail(c, pkg.FORBIDDEN)
+		c.Abort()
 	}
 }
 
@@ -147,15 +190,11 @@ func RequirePermission(permCode string) gin.HandlerFunc {
 // 与 JWT 中的 username 比对。
 func RequireOwnerOrPermission(ownerContextKey, permCode string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 先尝试权限码放行
-		role, _ := c.Get("role")
-		roleStr, _ := role.(string)
-		if permChecker != nil && permChecker.HasPermission(roleStr, permCode) {
+		if permissionGranted(c, permCode) {
 			c.Next()
 			return
 		}
 
-		// 再尝试归属放行
 		owner, ownerOK := c.Get(ownerContextKey)
 		username, usernameOK := c.Get("username")
 		ownerStr, ownerIsString := owner.(string)

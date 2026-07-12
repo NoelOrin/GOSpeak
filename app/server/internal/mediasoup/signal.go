@@ -4,16 +4,40 @@ import (
 	"encoding/json"
 	"log"
 	"runtime/debug"
+	"sync"
+	"time"
 
 	socketio "github.com/googollee/go-socket.io"
 )
 
+const recentCloseTTL = 5 * time.Minute
+
 type BroadcastFn func(room, event string, data interface{})
 
-type MediasoupSignal struct {
-	bridge    *BridgeClient
-	broadcast BroadcastFn
+type participantBridge interface {
+	CreateRouter(roomID string) error
+	GetRouterCapabilities(roomID string) (json.RawMessage, error)
+	CreateTransport(roomID, identity, direction string) (*TransportParams, error)
+	ConnectTransport(roomID, transportID string, dtlsParameters json.RawMessage) error
+	Produce(roomID, transportID, kind string, rtpParameters, appData json.RawMessage) (*ProduceResult, error)
+	Consume(roomID, transportID, producerID string, rtpCapabilities json.RawMessage) (*ConsumeResult, error)
+	CloseParticipant(roomID, identity string) ([]string, error)
 }
+
+type MediasoupSignal struct {
+	bridge    participantBridge
+	broadcast BroadcastFn
+	// recentClose dedups CloseParticipant + producer-closed broadcast per (room,identity):
+	// OnDisconnect fires removeParticipantSafe (CloseParticipant) and OnParticipantLeft (CloseParticipant);
+	// close-transport event may also call OnParticipantLeft before disconnect. Without a guard this is
+	// up to 3 redundant HTTP round-trips + 2 broadcasts per leave. LoadOrStore marks first call wins.
+	// Cleared on sfu:produce so a rejoining identity (same room+identity, new socket) cleans up again.
+	// TTL-cleared by AfterFunc so an identity that leaves without rejoining doesn't leak its marker
+	// forever — pointer equality guards against deleting a newer marker set by a rejoin.
+	recentClose sync.Map
+}
+
+type dedupMarker struct{}
 
 func NewMediasoupSignal(bridge *BridgeClient, broadcast BroadcastFn) *MediasoupSignal {
 	return &MediasoupSignal{bridge: bridge, broadcast: broadcast}
@@ -44,6 +68,11 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 		if err := json.Unmarshal([]byte(payload), &req); err != nil || req.Room == "" {
 			return `{"error":"room required"}`, nil
 		}
+		// 确保 router 存在（worker.createRouter 幂等）：get-router-capabilities 是 mediasoup 客户端首调，
+		// router 此前仅由 GenerateToken 副作用创建，移除副作用后在此懒建，避免 404。
+		if err := m.bridge.CreateRouter(req.Room); err != nil {
+			return errorJSON(err), nil
+		}
 		rtpCaps, err := m.bridge.GetRouterCapabilities(req.Room)
 		if err != nil {
 			return errorJSON(err), nil
@@ -55,11 +84,12 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 		var req struct {
 			Room      string `json:"room"`
 			Direction string `json:"direction,omitempty"`
+			Identity  string `json:"identity,omitempty"`
 		}
 		if err := json.Unmarshal([]byte(payload), &req); err != nil || req.Room == "" {
 			return `{"error":"room required"}`, nil
 		}
-		params, err := m.bridge.CreateTransport(req.Room)
+		params, err := m.bridge.CreateTransport(req.Room, req.Identity, req.Direction)
 		if err != nil {
 			return errorJSON(err), nil
 		}
@@ -96,6 +126,11 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 		if err != nil {
 			return errorJSON(err), nil
 		}
+		var appDataMap map[string]interface{}
+		_ = json.Unmarshal(req.AppData, &appDataMap)
+		if id, ok := appDataMap["identity"].(string); ok && id != "" {
+			m.recentClose.Delete(req.Room + "\x00" + id)
+		}
 		if m.broadcast != nil {
 			m.broadcast(req.Room, "sfu:producer-ready", map[string]interface{}{
 				"room":       req.Room,
@@ -123,6 +158,42 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 		}
 		return marshalJSON(result), nil
 	}))
+
+	server.OnEvent("/", "sfu:close-transport", safeHandler(func(s socketio.Conn, payload string) (string, error) {
+		var req struct {
+			Room     string `json:"room"`
+			Identity string `json:"identity"`
+		}
+		if err := json.Unmarshal([]byte(payload), &req); err != nil || req.Room == "" || req.Identity == "" {
+			return `{"error":"room and identity required"}`, nil
+		}
+		m.OnParticipantLeft(req.Room, req.Identity)
+		return `{"ok":true}`, nil
+	}))
+}
+
+func (m *MediasoupSignal) OnParticipantLeft(room, identity string) {
+	key := room + "\x00" + identity
+	marker := &dedupMarker{}
+	if _, loaded := m.recentClose.LoadOrStore(key, marker); loaded {
+		return
+	}
+	time.AfterFunc(recentCloseTTL, func() {
+		if actual, ok := m.recentClose.Load(key); ok && actual == marker {
+			m.recentClose.Delete(key)
+		}
+	})
+	if m.broadcast != nil {
+		m.broadcast(room, "sfu:producer-closed", map[string]interface{}{
+			"room":     room,
+			"identity": identity,
+		})
+	}
+	go func() {
+		if _, err := m.bridge.CloseParticipant(room, identity); err != nil {
+			log.Printf("[mediasoup] CloseParticipant error: %v", err)
+		}
+	}()
 }
 
 // marshalJSON 序列化 v；失败时记录错误并返回占位 JSON，避免向客户端发送空串或无效 JSON。

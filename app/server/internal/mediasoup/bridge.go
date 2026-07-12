@@ -10,6 +10,9 @@ import (
 	"time"
 )
 
+// ErrParticipantNotFound is returned when CloseParticipant gets a 404 from the bridge.
+var ErrParticipantNotFound = fmt.Errorf("participant not found")
+
 type BridgeClient struct {
 	baseURL string
 	client  *http.Client
@@ -37,6 +40,13 @@ type ConsumeResult struct {
 	ProducerID    string          `json:"producerId"`
 	Kind          string          `json:"kind"`
 	RTPParameters json.RawMessage `json:"rtpParameters"`
+}
+
+type ParticipantInfo struct {
+	Identity         string `json:"identity"`
+	ProducerCount    int    `json:"producerCount"`
+	HasSendTransport bool   `json:"hasSendTransport"`
+	HasRecvTransport bool   `json:"hasRecvTransport"`
 }
 
 func NewBridgeClient(baseURL string) *BridgeClient {
@@ -80,9 +90,16 @@ func (b *BridgeClient) GetRouterCapabilities(roomID string) (json.RawMessage, er
 	return result.RTPCapabilities, nil
 }
 
-func (b *BridgeClient) CreateTransport(roomID string) (*TransportParams, error) {
+func (b *BridgeClient) CreateTransport(roomID, identity, direction string) (*TransportParams, error) {
+	body, err := json.Marshal(map[string]string{
+		"identity":  identity,
+		"direction": direction,
+	})
+	if err != nil {
+		return nil, err
+	}
 	var result TransportParams
-	if err := b.do(http.MethodPost, "/rooms/"+roomID+"/transports", bytes.NewReader([]byte("{}")), &result); err != nil {
+	if err := b.do(http.MethodPost, "/rooms/"+roomID+"/transports", bytes.NewReader(body), &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -129,6 +146,47 @@ func (b *BridgeClient) Consume(roomID, transportID, producerID string, rtpCapabi
 	return &result, nil
 }
 
+func (b *BridgeClient) ListParticipants(roomID string) ([]ParticipantInfo, error) {
+	var result struct {
+		Participants []ParticipantInfo `json:"participants"`
+	}
+	if err := b.do(http.MethodGet, "/rooms/"+roomID+"/participants", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Participants, nil
+}
+
+func (b *BridgeClient) CloseParticipant(roomID, identity string) ([]string, error) {
+	var result struct {
+		OK               bool     `json:"ok"`
+		ClosedProducerID []string `json:"closedProducerIds"`
+	}
+	err := b.do(http.MethodPost, "/rooms/"+roomID+"/participants/"+identity+"/close", bytes.NewReader([]byte("{}")), &result)
+	if err != nil {
+		if isNotFound(err) {
+			return nil, ErrParticipantNotFound
+		}
+		return nil, err
+	}
+	return result.ClosedProducerID, nil
+}
+
+func (b *BridgeClient) PauseProducer(roomID, producerID string) error {
+	return b.do(http.MethodPost, "/rooms/"+roomID+"/producers/"+producerID+"/pause", bytes.NewReader([]byte("{}")), nil)
+}
+
+func (b *BridgeClient) ResumeProducer(roomID, producerID string) error {
+	return b.do(http.MethodPost, "/rooms/"+roomID+"/producers/"+producerID+"/resume", bytes.NewReader([]byte("{}")), nil)
+}
+
+func (b *BridgeClient) PauseParticipant(roomID, identity string) error {
+	return b.do(http.MethodPost, "/rooms/"+roomID+"/participants/"+identity+"/pause", bytes.NewReader([]byte("{}")), nil)
+}
+
+func (b *BridgeClient) ResumeParticipant(roomID, identity string) error {
+	return b.do(http.MethodPost, "/rooms/"+roomID+"/participants/"+identity+"/resume", bytes.NewReader([]byte("{}")), nil)
+}
+
 func (b *BridgeClient) do(method, path string, body io.Reader, out interface{}) error {
 	req, err := http.NewRequest(method, b.baseURL+path, body)
 	if err != nil {
@@ -158,4 +216,8 @@ func (b *BridgeClient) do(method, path string, body io.Reader, out interface{}) 
 		return fmt.Errorf("mediasoup bridge: decode response: %w", err)
 	}
 	return nil
+}
+
+func isNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "status=404")
 }

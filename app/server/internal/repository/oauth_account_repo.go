@@ -33,6 +33,17 @@ func (r *OAuthAccountRepository) Create(account *model.OAuthAccount) error {
 	return r.db.Create(account).Error
 }
 
+// CreateWithUser 原子地创建用户并绑定 OAuth 账户，避免第二步失败留下孤儿用户。
+func (r *OAuthAccountRepository) CreateWithUser(user *model.User, account *model.OAuthAccount) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(user).Error; err != nil {
+			return err
+		}
+		account.UserID = user.ID
+		return tx.Create(account).Error
+	})
+}
+
 func (r *OAuthAccountRepository) Update(account *model.OAuthAccount) error {
 	return r.db.Save(account).Error
 }

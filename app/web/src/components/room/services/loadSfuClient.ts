@@ -14,6 +14,7 @@ const providerPreloaders: Record<SFUProvider, () => Promise<void>> = {
 	mediasoup: () => preloadSFUClient("mediasoup"),
 	srs: () => preloadSFUClient("srs"),
 	daily: () => preloadSFUClient("daily"),
+	cloudflare: () => preloadSFUClient("cloudflare"),
 };
 
 const preloadedProviders = new Set<SFUProvider>();
@@ -45,10 +46,11 @@ export function preloadSfuClient(provider: SFUProvider): Promise<void> {
 		});
 }
 
-export function loadSfuClient(
+export async function loadSfuClient(
 	provider: SFUProvider,
 	options?: SFUClientOptions,
 ): Promise<SFUClient> {
 	rememberSfuProvider(provider);
+	await preloadSfuClient(provider);
 	return createSFUClient(provider, options);
 }

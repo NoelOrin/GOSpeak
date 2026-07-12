@@ -8,7 +8,6 @@ import {
 } from "solid-js";
 import { showToast } from "solid-notifications";
 import Users from "lucide-solid/icons/users";
-import ShieldCheck from "lucide-solid/icons/shield-check";
 import Trash from "lucide-solid/icons/trash";
 import Gavel from "lucide-solid/icons/gavel";
 import UserCheck from "lucide-solid/icons/user-check";

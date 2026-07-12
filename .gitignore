@@ -11,6 +11,7 @@ node_modules
 .pnpm-store/
 .superpowers/
 .cache/
+.turbo/
 
 # ========================
 # 前端 (app/web)
@@ -87,3 +88,11 @@ agent_test_logs/*
 # 临时/构建目录
 tmp/
 build/
+
+# ========================
+# 部署运行时密钥
+# ========================
+deploy/.env
+deploy/env/app.srs.env
+deploy/env/app.livekit.env
+deploy/env/*.local.env

@@ -1,10 +1,3 @@
-export interface ProducerReadyInfo {
-	room?: string;
-	producerId: string;
-	kind?: string;
-	appData?: { identity?: string };
-}
-
 /**
  * Minimal playback surface required by the web app after a remote track has
  * already been subscribed.
@@ -26,6 +19,11 @@ export interface RemoteAudioTrackLike {
 export interface RemoteTrackInfo {
 	identity: string;
 	track: RemoteAudioTrackLike;
+}
+
+export interface PeerStream {
+	identity: string;
+	stream: string;
 }
 
 export interface SFUAudioCaptureOptions {
@@ -63,6 +61,20 @@ export interface SFUClientOptions {
 	socket?: /** raw socket */ any;
 }
 
+export interface JoinParams {
+	token: string;
+	serverUrl: string;
+	identity: string;
+	room?: string;
+	stream?: string;
+	streamToken?: string;
+}
+
+export interface SFUDisconnectInfo {
+	reason?: string;
+	unrecoverable?: boolean;
+}
+
 /**
  * `SFUClient` is the frontend media-session interface.
  *
@@ -80,17 +92,8 @@ export interface SFUClientOptions {
  */
 export interface SFUClient {
 	/**
-	 * Establishes the media session for the current provider.
-	 *
-	 * `url` is a historical parameter name. Depending on the provider, it may carry
-	 * a server URL, an app ID, or another provider-specific connect target.
-	 */
-	joinRoom(
-		token: string,
-		url: string,
-		identity: string,
-		room?: string,
-	): Promise<void>;
+	/** Establishes the media session for the current provider. */
+	joinRoom(params: JoinParams): Promise<void>;
 	/** Stops publishing, disconnects from the media session, and releases provider state. */
 	leaveRoom(): Promise<void>;
 	/** Enables or disables local microphone publishing for the current client only. */
@@ -108,14 +111,18 @@ export interface SFUClient {
 	 * 仅靠 `onRemoteAudioTrack` 事件会漏掉它们，导致全局静音/音量对这部分 track 失效。
 	 */
 	getExistingRemoteAudioTracks(): RemoteTrackInfo[];
+	subscribePeers?(peers: PeerStream[]): void;
+	unsubscribePeer?(identity: string): void;
 	/** Subscribes to unexpected media-session disconnect notifications (not triggered by explicit leave). */
-	onDisconnected(cb: () => void): void;
+	onDisconnected(cb: (info?: SFUDisconnectInfo) => void): void;
 	/** Subscribes to media-session reconnect-start notifications. Optional: providers without transient reconnect never fire it. */
 	onReconnecting?(cb: () => void): void;
 	/** Subscribes to media-session reconnect-success notifications. Optional: providers without transient reconnect never fire it. */
 	onReconnected?(cb: () => void): void;
+	/** Returns true if the media session is currently connected and joined. */
+	isConnected(): boolean;
 	/** Final cleanup hook for any remaining provider resources. */
-	destroy(): void;
+	destroy(): Promise<void>;
 }
 
 export type { SFUProvider } from "./provider";

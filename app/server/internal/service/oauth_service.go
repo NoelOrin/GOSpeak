@@ -162,17 +162,12 @@ func (s *OAuthService) HandleCallback(providerName, code string) (*AuthResponse,
 		Name:     username,
 		Password: "",
 	}
-	if err := s.userRepo.Create(user); err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-
 	oauthAccount = &model.OAuthAccount{
-		UserID:      user.ID,
 		Provider:    providerName,
 		ProviderUID: userInfo.ProviderUID,
 		AccessToken: accessToken,
 	}
-	if err := s.accountRepo.Create(oauthAccount); err != nil {
+	if err := s.accountRepo.CreateWithUser(user, oauthAccount); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 

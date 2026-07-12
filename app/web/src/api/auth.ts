@@ -30,10 +30,8 @@ export async function login(req: LoginReq): Promise<LoginData> {
 		data: req,
 	})) as AxiosResponse<Result<LoginData>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("login data is missing");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("login data is missing");
+	return (res as any).data.data;
 }
 
 export async function refreshToken(refreshToken: string): Promise<string> {
@@ -56,8 +54,6 @@ export async function changePassword(
 		data: { old_password: oldPassword, new_password: newPassword },
 	})) as AxiosResponse<Result>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
 }
 
 export async function firstChangePassword(
@@ -69,10 +65,8 @@ export async function firstChangePassword(
 		data: { new_password: newPassword, name: name || undefined },
 	})) as AxiosResponse<Result<LoginData>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("login data is missing");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("login data is missing");
+	return (res as any).data.data;
 }
 
 export async function resetPassword(
@@ -85,8 +79,6 @@ export async function resetPassword(
 		data: { email, code, new_password: newPassword },
 	})) as AxiosResponse<Result>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
 }
 
 export async function getProfile(): Promise<BackendUser> {
@@ -94,8 +86,6 @@ export async function getProfile(): Promise<BackendUser> {
 		url: "/api/v1/user/profile",
 	})) as AxiosResponse<Result<BackendUser>>;
 
-	const result = res.data;
-	if (result.code !== 0) throw new Error(result.msg);
-	if (!result.data) throw new Error("profile data is missing");
-	return result.data;
+	if (!(res as any).data.data) throw new Error("profile data is missing");
+	return (res as any).data.data;
 }

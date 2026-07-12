@@ -7,6 +7,7 @@ import type {
 	DailyParticipantTracks,
 } from "@daily-co/daily-js";
 import type {
+	JoinParams,
 	RemoteAudioTrackLike,
 	RemoteTrackInfo,
 	SFUClient,
@@ -55,9 +56,10 @@ export class DailySFUClient implements SFUClient {
 	private onReconnectedCb?: () => void;
 	private hasJoined = false;
 
-	constructor(private readonly _options: SFUClientOptions = {}) {}
+	constructor() {}
 
-	async joinRoom(token: string, url: string, identity: string, room?: string): Promise<void> {
+	async joinRoom(params: JoinParams): Promise<void> {
+		const { token, serverUrl: url, identity, room } = params;
 		const dailyModule = await import("@daily-co/daily-js");
 		const daily = dailyModule.default;
 		const callObject = daily.createCallObject();
@@ -121,8 +123,12 @@ export class DailySFUClient implements SFUClient {
 		this.onReconnectedCb = cb;
 	}
 
-	destroy(): void {
-		void this.leaveRoom();
+	isConnected(): boolean {
+		return this.hasJoined;
+	}
+
+	async destroy(): Promise<void> {
+		await this.leaveRoom();
 	}
 
 	private bindEvents(callObject: DailyCall): void {

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,7 +72,7 @@ func (m *mockConn) ID() string                { return m.id }
 func (m *mockConn) URL() url.URL              { return url.URL{} }
 func (m *mockConn) LocalAddr() net.Addr       { return nil }
 func (m *mockConn) RemoteAddr() net.Addr      { return nil }
-func (m *mockConn) RemoteHeader() http.Header { return nil }
+func (m *mockConn) RemoteHeader() http.Header { return http.Header{} }
 
 // Namespace interface
 func (m *mockConn) Context() interface{}     { return nil }
@@ -111,6 +112,12 @@ func (m *mockServer) BroadcastToRoom(namespace, room, event string, v ...interfa
 	return true
 }
 func (m *mockServer) ForEach(namespace, room string, f socketio.EachFunc) bool { return true }
+
+type fakeStreamResolver struct{}
+
+func (fakeStreamResolver) StreamName(room, identity string) string {
+	return "server-computed-" + room + "-" + identity
+}
 
 func decodeAck(t *testing.T, ack string) map[string]interface{} {
 	t.Helper()
@@ -747,5 +754,230 @@ func TestHub_OnRoomList_WithDB(t *testing.T) {
 
 	if count, ok := emitData["count"].(int); !ok || count != 2 {
 		t.Errorf("expected count 2, got %v", emitData["count"])
+	}
+}
+
+func TestOnRoomJoinSFU_StoresAndBroadcastsStream(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	server := newMockServer()
+	hub.server = server
+
+	creator := newMockConn("creator-socket")
+	hub.OnRoomCreate(creator, `{"room":"r1"}`)
+
+	member := newMockConn("mem-1")
+	ackRaw, err := hub.OnRoomJoinSFU(member, `{"room":"r1","identity":"alice","stream":"gs-aaa"}`)
+	if err != nil {
+		t.Fatalf("OnRoomJoinSFU error: %v", err)
+	}
+	var ack struct {
+		OK      bool         `json:"ok"`
+		Members []MemberInfo `json:"members"`
+	}
+	if err := json.Unmarshal([]byte(ackRaw), &ack); err != nil {
+		t.Fatalf("parse ack: %v", err)
+	}
+	if !ack.OK {
+		t.Fatal("ack should be ok")
+	}
+	if len(ack.Members) != 1 || ack.Members[0].Stream != "gs-aaa" {
+		t.Fatalf("ack members should carry stream, got %+v", ack.Members)
+	}
+
+	hub.mu.RLock()
+	stored := hub.rooms["r1"].Members["mem-1"].Stream
+	hub.mu.RUnlock()
+	if stored != "gs-aaa" {
+		t.Fatalf("MemberInfo.Stream should be stored, got %q", stored)
+	}
+
+	broadcasted := false
+	if roomEvents, ok := server.roomCasts["r1"]; ok {
+		if vals, ok := roomEvents[EventMemberJoined]; ok && len(vals) > 0 {
+			payload, _ := json.Marshal(vals[0])
+			if strings.Contains(string(payload), "gs-aaa") {
+				broadcasted = true
+			}
+		}
+	}
+	if !broadcasted {
+		t.Fatal("member:joined should broadcast stream")
+	}
+}
+
+func TestOnRoomJoinSFU_ServerRecomputesStream(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	server := newMockServer()
+	hub.server = server
+
+	// 注入 fake resolver 模拟 SRS 服务端流名计算
+	hub.SetStreamResolver(fakeStreamResolver{})
+
+	creator := newMockConn("creator-socket")
+	hub.OnRoomCreate(creator, `{"room":"r1"}`)
+
+	// 客户端提报错误 stream，服务端应覆写
+	member := newMockConn("mem-1")
+	ackRaw, err := hub.OnRoomJoinSFU(member, `{"room":"r1","identity":"alice","stream":"client-supplied-bad"}`)
+	if err != nil {
+		t.Fatalf("OnRoomJoinSFU error: %v", err)
+	}
+	var ack struct {
+		OK      bool         `json:"ok"`
+		Members []MemberInfo `json:"members"`
+	}
+	if err := json.Unmarshal([]byte(ackRaw), &ack); err != nil {
+		t.Fatalf("parse ack: %v", err)
+	}
+	if !ack.OK {
+		t.Fatal("ack should be ok")
+	}
+
+	// 成员列表中的 stream 应为服务端计算值
+	expected := "server-computed-r1-alice"
+	if len(ack.Members) != 1 || ack.Members[0].Stream != expected {
+		t.Fatalf("expected stream %q in ack members, got %+v", expected, ack.Members)
+	}
+
+	// Hub 中存储的 stream 也应为服务端计算值
+	hub.mu.RLock()
+	stored := hub.rooms["r1"].Members["mem-1"].Stream
+	hub.mu.RUnlock()
+	if stored != expected {
+		t.Fatalf("MemberInfo.Stream should be %q, got %q", expected, stored)
+	}
+
+	// 广播中的 stream 也应为服务端计算值
+	broadcasted := false
+	if roomEvents, ok := server.roomCasts["r1"]; ok {
+		if vals, ok := roomEvents[EventMemberJoined]; ok && len(vals) > 0 {
+			payload, _ := json.Marshal(vals[0])
+			if expectedInJSON := `"stream":"` + expected + `"`; strings.Contains(string(payload), expectedInJSON) {
+				broadcasted = true
+			}
+		}
+	}
+	if !broadcasted {
+		t.Fatal("member:joined should broadcast server-computed stream")
+	}
+}
+
+func TestStreamRegistry(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	if hub.IsStreamActive("gs-x") {
+		t.Fatal("unknown stream should not be active")
+	}
+	hub.RegisterStream("gs-x")
+	if !hub.IsStreamActive("gs-x") {
+		t.Fatal("registered stream should be active")
+	}
+	hub.UnregisterStream("gs-x")
+	if hub.IsStreamActive("gs-x") {
+		t.Fatal("unregistered stream should not be active")
+	}
+}
+
+// TestHub_RoomRegistry_JoinLeave 验证 WS join/leave 同步 room→streams 聚合视图，
+// 供 SRS 等无原生 room 维度的 provider 查询。
+func TestHub_RoomRegistry_JoinLeave(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.server = newMockServer()
+	hub.SetStreamResolver(fakeStreamResolver{})
+
+	conn := newMockConn("sock-1")
+	hub.OnRoomCreate(conn, `{"room":"room-a"}`)
+	if _, err := hub.OnRoomJoinSFU(conn, `{"room":"room-a","identity":"alice"}`); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+
+	// join 后 registry 应聚合出 room
+	rooms := hub.Rooms()
+	if len(rooms) != 1 || rooms[0] != "room-a" {
+		t.Fatalf("expected [room-a], got %v", rooms)
+	}
+	streams := hub.Streams("room-a")
+	if len(streams) != 1 || streams[0] != "server-computed-room-a-alice" {
+		t.Fatalf("expected computed stream, got %v", streams)
+	}
+
+	// leave 后聚合清空
+	if _, err := hub.OnRoomLeave(conn, `{"room":"room-a"}`); err != nil {
+		t.Fatalf("leave: %v", err)
+	}
+	if got := hub.Rooms(); len(got) != 0 {
+		t.Fatalf("expected no rooms after leave, got %v", got)
+	}
+	if got := hub.Streams("room-a"); got != nil {
+		t.Fatalf("expected nil streams after leave, got %v", got)
+	}
+}
+
+// TestHub_RoomRegistry_CallbackReverseLookup 验证 SRS on_publish 回调
+// 仅给 stream 名时，经 streamRoomCache 反查 room 同步 roomStreams。
+func TestHub_RoomRegistry_CallbackReverseLookup(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.server = newMockServer()
+	hub.SetStreamResolver(fakeStreamResolver{})
+
+	conn := newMockConn("sock-1")
+	hub.OnRoomCreate(conn, `{"room":"room-b"}`)
+	hub.OnRoomJoinSFU(conn, `{"room":"room-b","identity":"bob"}`)
+
+	stream := "server-computed-room-b-bob"
+	// on_publish 回调登记（模拟 SRS 推流确认）
+	hub.RegisterStream(stream)
+
+	// activeStreams 与 roomStreams 双登记
+	if !hub.IsStreamActive(stream) {
+		t.Fatal("stream should be active")
+	}
+	if got := hub.Streams("room-b"); len(got) != 1 || got[0] != stream {
+		t.Fatalf("roomStreams should contain stream after callback, got %v", got)
+	}
+
+	// on_unpublish 清两表
+	hub.UnregisterStream(stream)
+	if hub.IsStreamActive(stream) {
+		t.Fatal("stream should be inactive after unpublish")
+	}
+	// room 仍有 WS 成员，roomStreams 应保留（成员仍在）
+	if got := hub.Streams("room-b"); len(got) != 0 {
+		t.Fatalf("roomStreams should be empty after unpublish (stream removed), got %v", got)
+	}
+}
+
+// TestHub_RoomRegistry_Disconnect 验证 OnDisconnect 清成员 stream 映射。
+func TestHub_RoomRegistry_Disconnect(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.server = newMockServer()
+	hub.SetStreamResolver(fakeStreamResolver{})
+
+	conn := newMockConn("sock-1")
+	hub.OnRoomCreate(conn, `{"room":"room-c"}`)
+	hub.OnRoomJoinSFU(conn, `{"room":"room-c","identity":"carol"}`)
+
+	hub.OnDisconnect(conn, "transport close")
+
+	if got := hub.Rooms(); len(got) != 0 {
+		t.Fatalf("expected no rooms after disconnect, got %v", got)
+	}
+}
+
+// TestHub_RoomRegistry_ClearRoom 验证 ClearRoom 重置 room 聚合状态。
+func TestHub_RoomRegistry_ClearRoom(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.server = newMockServer()
+	hub.SetStreamResolver(fakeStreamResolver{})
+
+	conn := newMockConn("sock-1")
+	hub.OnRoomCreate(conn, `{"room":"room-d"}`)
+	hub.OnRoomJoinSFU(conn, `{"room":"room-d","identity":"dan"}`)
+
+	hub.ClearRoom("room-d")
+	if got := hub.Streams("room-d"); got != nil {
+		t.Fatalf("expected nil streams after ClearRoom, got %v", got)
+	}
+	if got := hub.Rooms(); len(got) != 0 {
+		t.Fatalf("expected no rooms after ClearRoom, got %v", got)
 	}
 }

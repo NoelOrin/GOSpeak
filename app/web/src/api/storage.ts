@@ -37,14 +37,6 @@ export interface PresignResult {
   public_url?: string
 }
 
-export interface ConfirmResult {
-  public_url: string
-}
-
-export interface UploadResult {
-  public_url: string
-}
-
 // ===== API 函数 =====
 
 /** 获取预签名上传 URL */
@@ -60,24 +52,22 @@ export async function presignUpload(params: {
   })) as AxiosResponse<Result<PresignResult>>
 
   const result = res.data
-  if (result.code !== 0) throw new Error(result.msg)
-  return result.data!
+  return (res as any).data.data!
 }
 
 /** 确认 S3 上传完成 */
-export async function confirmUpload(objectKey: string): Promise<ConfirmResult> {
+export async function confirmUpload(objectKey: string): Promise<{ public_url: string }> {
   const res = (await apiClient.post({
     url: '/api/v1/storage/confirm',
     data: { object_key: objectKey },
-  })) as AxiosResponse<Result<ConfirmResult>>
+  })) as AxiosResponse<Result<{ public_url: string }>>
 
   const result = res.data
-  if (result.code !== 0) throw new Error(result.msg)
-  return result.data!
+  return (res as any).data.data!
 }
 
 /** 本地模式中转上传 */
-export async function uploadFile(file: File, objectKey: string): Promise<UploadResult> {
+export async function uploadFile(file: File, objectKey: string): Promise<{ public_url: string }> {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('object_key', objectKey)
@@ -86,11 +76,10 @@ export async function uploadFile(file: File, objectKey: string): Promise<UploadR
     url: '/api/v1/storage/upload',
     data: formData,
     headers: { 'Content-Type': 'multipart/form-data' },
-  })) as AxiosResponse<Result<UploadResult>>
+  })) as AxiosResponse<Result<{ public_url: string }>>
 
   const result = res.data
-  if (result.code !== 0) throw new Error(result.msg)
-  return result.data!
+  return (res as any).data.data!
 }
 
 /** 获取存储配置（管理员） */
@@ -100,8 +89,7 @@ export async function getStorageConfig(): Promise<StorageConfigView> {
   })) as AxiosResponse<Result<StorageConfigView>>
 
   const result = res.data
-  if (result.code !== 0) throw new Error(result.msg)
-  return result.data!
+  return (res as any).data.data!
 }
 
 /** 更新存储配置（管理员） */
@@ -112,17 +100,5 @@ export async function updateStorageConfig(config: StorageConfigInput): Promise<S
   })) as AxiosResponse<Result<StorageConfigView>>
 
   const result = res.data
-  if (result.code !== 0) throw new Error(result.msg)
-  return result.data!
-}
-
-/** 删除文件 */
-export async function deleteObject(key: string): Promise<void> {
-  const res = (await apiClient.post({
-    url: '/api/v1/storage/delete',
-    data: { key },
-  })) as AxiosResponse<Result>
-
-  const result = res.data
-  if (result.code !== 0) throw new Error(result.msg)
+  return (res as any).data.data!
 }

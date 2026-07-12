@@ -90,11 +90,6 @@ func NewS3Provider(cfg model.StorageConfig) (*S3Provider, error) {
 	}, nil
 }
 
-// Name 返回提供者名称
-func (p *S3Provider) Name() string {
-	return "s3"
-}
-
 // PresignUpload 生成预签名 PUT URL
 func (p *S3Provider) PresignUpload(key string, contentType string, maxSize int64) (*PresignedResult, error) {
 	putInput := &s3.PutObjectInput{

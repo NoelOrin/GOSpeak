@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"os"
 
+	"gorm.io/gorm"
+
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 type DatabaseEnum string
@@ -44,6 +45,10 @@ func InitDB() error {
 	}
 	if err = sqlDB.Ping(); err != nil {
 		panic(fmt.Sprintf("数据库 Ping 失败 [%s]: %v", dbType, err))
+	}
+
+	if err := migrateOldSFUConfig(DB); err != nil {
+		return err
 	}
 
 	return autoMigrate()
@@ -124,6 +129,23 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
+// migrateOldSFUConfig handles migration from the old single-row sfu_configs
+// table (id as PK) to the new per-provider schema (provider as PK).
+// Detection uses PRAGMA table_info (SQLite) to check the primary key column.
+func migrateOldSFUConfig(db *gorm.DB) error {
+	if !db.Migrator().HasTable("sfu_configs") {
+		return nil
+	}
+	var pkColumn string
+	if err := db.Raw("SELECT name FROM pragma_table_info(?) WHERE pk = 1", "sfu_configs").Scan(&pkColumn).Error; err != nil {
+		return nil
+	}
+	if pkColumn != "id" {
+		return nil
+	}
+	return db.Migrator().DropTable("sfu_configs")
+}
+
 func autoMigrate() error {
 	return DB.AutoMigrate(
 		&model.Role{},
@@ -135,9 +157,11 @@ func autoMigrate() error {
 		&model.EmailConfig{},
 		&model.EmailVerificationCode{},
 		&model.SFUConfig{},
+		&model.SFUActiveProvider{},
 		&model.Permission{},
 		&model.RolePermission{},
 		&model.Mute{},
 		&model.StorageConfig{},
+		&model.BotToken{},
 	)
 }

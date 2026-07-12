@@ -9,6 +9,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// ErrRoomNotFound is returned when a room query finds no matching row.
+var ErrRoomNotFound = pkg.NewAppError(pkg.NOT_FOUND, "room not found")
+
 // RoomService 房间服务，提供房间的增删改查能力。
 type RoomService struct {
 	roomRepo *repository.RoomRepository
@@ -49,7 +52,7 @@ func (s *RoomService) GetByID(id uint) (*model.Room, error) {
 	room, err := s.roomRepo.GetByID(id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, pkg.NewAppError(pkg.NOT_FOUND, "room not found")
+			return nil, ErrRoomNotFound
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -61,7 +64,7 @@ func (s *RoomService) GetByUUID(uuid string) (*model.Room, error) {
 	room, err := s.roomRepo.GetByUUID(uuid)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, pkg.NewAppError(pkg.NOT_FOUND, "room not found")
+			return nil, ErrRoomNotFound
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -73,7 +76,7 @@ func (s *RoomService) GetByName(name string) (*model.Room, error) {
 	room, err := s.roomRepo.GetByName(name)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, pkg.NewAppError(pkg.NOT_FOUND, "room not found")
+			return nil, ErrRoomNotFound
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -103,12 +106,11 @@ func (s *RoomService) Update(room *model.Room) error {
 	return nil
 }
 
-// Delete 删除房间：先验证存在性，再执行删除。
+// Delete 删除房间，先检查是否存在。
 func (s *RoomService) Delete(id uint) error {
-	_, err := s.roomRepo.GetByID(id)
-	if err != nil {
+	if _, err := s.roomRepo.GetByID(id); err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return pkg.NewAppError(pkg.NOT_FOUND, "room not found")
+			return ErrRoomNotFound
 		}
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}

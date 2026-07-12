@@ -37,7 +37,8 @@ export function createRouter(worker: MediasoupWorker): ExpressRouter {
 
 	router.post("/rooms/:roomId/transports", async (req, res) => {
 		try {
-			const transport = await worker.createTransport(req.params.roomId);
+			const { identity, direction } = req.body || {};
+			const transport = await worker.createTransport(req.params.roomId, identity, direction);
 			res.json({
 				id: transport.id,
 				iceParameters: transport.iceParameters,
@@ -101,6 +102,49 @@ export function createRouter(worker: MediasoupWorker): ExpressRouter {
 	router.get("/rooms/:roomId/producers", (req, res) => {
 		if (!worker.getRoom(req.params.roomId)) return res.status(404).json({ error: "room not found" });
 		res.json({ producers: worker.listProducers(req.params.roomId) });
+	});
+
+	router.get("/rooms/:roomId/participants", (req, res) => {
+		if (!worker.getRoom(req.params.roomId)) return res.status(404).json({ error: "room not found" });
+		res.json({ participants: worker.listParticipants(req.params.roomId) });
+	});
+
+	router.post("/rooms/:roomId/participants/:identity/close", async (req, res) => {
+		if (!worker.getRoom(req.params.roomId)) return res.status(404).json({ error: "room not found" });
+		const closedProducerIds = await worker.closeParticipant(req.params.roomId, req.params.identity);
+		res.json({ ok: true, closedProducerIds });
+	});
+
+	router.post("/rooms/:roomId/participants/:identity/pause", (req, res) => {
+		if (!worker.getParticipant(req.params.roomId, req.params.identity)) {
+			return res.status(404).json({ error: "participant not found" });
+		}
+		worker.pauseParticipant(req.params.roomId, req.params.identity);
+		res.json({ ok: true });
+	});
+
+	router.post("/rooms/:roomId/participants/:identity/resume", (req, res) => {
+		if (!worker.getParticipant(req.params.roomId, req.params.identity)) {
+			return res.status(404).json({ error: "participant not found" });
+		}
+		worker.resumeParticipant(req.params.roomId, req.params.identity);
+		res.json({ ok: true });
+	});
+
+	router.post("/rooms/:roomId/producers/:producerId/pause", (req, res) => {
+		if (!worker.getProducer(req.params.roomId, req.params.producerId)) {
+			return res.status(404).json({ error: "producer not found" });
+		}
+		worker.pauseProducer(req.params.roomId, req.params.producerId);
+		res.json({ ok: true });
+	});
+
+	router.post("/rooms/:roomId/producers/:producerId/resume", (req, res) => {
+		if (!worker.getProducer(req.params.roomId, req.params.producerId)) {
+			return res.status(404).json({ error: "producer not found" });
+		}
+		worker.resumeProducer(req.params.roomId, req.params.producerId);
+		res.json({ ok: true });
 	});
 
 	return router;

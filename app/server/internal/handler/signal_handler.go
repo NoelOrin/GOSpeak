@@ -2,26 +2,18 @@ package handler
 
 import (
 	"GOSpeak/internal/pkg"
-	"GOSpeak/internal/sfu"
-	"GOSpeak/internal/signal"
-	"fmt"
+	"GOSpeak/internal/service"
 	"log"
 
 	"github.com/gin-gonic/gin"
 )
 
 type SignalHandler struct {
-	sfuProvider sfu.Provider
-	hub         *signal.Hub
+	sfuSvc *service.SFUService
 }
 
-type sfuClientInfoProvider interface {
-	ProviderName() string
-	ClientInfo() map[string]interface{}
-}
-
-func NewSignalHandler(provider sfu.Provider, hub *signal.Hub) *SignalHandler {
-	return &SignalHandler{sfuProvider: provider, hub: hub}
+func NewSignalHandler(sfuSvc *service.SFUService) *SignalHandler {
+	return &SignalHandler{sfuSvc: sfuSvc}
 }
 
 // JoinRoomRequest 加入房间请求
@@ -32,8 +24,8 @@ type JoinRoomRequest struct {
 }
 
 // GetJoinToken
-// @Summary      获取 LiveKit 加入 token
-// @Description  生成用于加入房间的 LiveKit 访问 token
+// @Summary      获取加入 token
+// @Description  生成用于加入房间的访问 token（禁言/限流/密码校验在 service 层）
 // @Tags         信令
 // @Accept       json
 // @Produce      json
@@ -47,51 +39,27 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 		return
 	}
 
-	// 禁言检查
-	if h.hub != nil {
-		if muted, _, _ := h.hub.IsIdentityMuted(req.Identity); muted {
-			pkg.Fail(c, pkg.USER_MUTED)
-			return
-		}
-	}
-
-	// 服务端校验房间人数上限
-	if h.hub != nil {
-		if full, limit, count, _ := h.hub.CheckRoomLimit(req.Room); full {
-			pkg.Fail(c, pkg.FORBIDDEN, fmt.Sprintf("room is full (%d/%d)", count, limit))
-			return
-		}
-	}
-
-	// 密码校验
-	if h.hub != nil {
-		if ok, err := h.hub.CheckRoomPassword(req.Room, req.Password); !ok {
-			if err != nil {
-				pkg.Fail(c, pkg.FORBIDDEN, "room requires password")
-				return
-			}
-			pkg.Fail(c, pkg.FORBIDDEN, "wrong room password")
-			return
-		}
-	}
-
-	token, err := h.sfuProvider.GenerateToken(req.Room, req.Identity)
+	result, err := h.sfuSvc.GetJoinToken(req.Room, req.Identity, req.Password)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
 
 	data := gin.H{
-		"token":     token,
-		"serverUrl": h.sfuProvider.GetHost(),
+		"token":     result.Token,
+		"serverUrl": result.ServerURL,
 		"room":      req.Room,
 		"identity":  req.Identity,
 	}
-	if provider, ok := h.sfuProvider.(sfuClientInfoProvider); ok {
-		data["provider"] = provider.ProviderName()
-		for key, value := range provider.ClientInfo() {
-			data[key] = value
-		}
+	if result.Provider != "" {
+		data["provider"] = result.Provider
+	}
+	for key, value := range result.ClientInfo {
+		data[key] = value
+	}
+	if result.Stream != "" {
+		data["stream"] = result.Stream
+		data["streamToken"] = result.StreamToken
 	}
 
 	pkg.Success(c, data)
@@ -129,15 +97,15 @@ func (h *SignalHandler) Signal(c *gin.Context) {
 
 // ListRooms
 // @Summary      获取房间列表
-// @Description  从 LiveKit 获取所有活跃房间
+// @Description  从 SFU 获取所有活跃房间
 // @Tags         信令
 // @Produce      json
 // @Success      200  {object}  pkg.Response
 // @Router       /signal/rooms [get]
 func (h *SignalHandler) ListRooms(c *gin.Context) {
-	rooms, err := h.sfuProvider.ListRooms()
+	rooms, err := h.sfuSvc.ListRooms()
 	if err != nil {
-		pkg.Success(c, []interface{}{})
+		pkg.HandleError(c, err)
 		return
 	}
 
@@ -146,7 +114,7 @@ func (h *SignalHandler) ListRooms(c *gin.Context) {
 
 // ListParticipants
 // @Summary      获取房间参与者
-// @Description  获取指定 LiveKit 房间中的所有参与者
+// @Description  获取指定房间中的所有参与者
 // @Tags         信令
 // @Produce      json
 // @Param        room  query     string  true  "房间名称"
@@ -159,7 +127,7 @@ func (h *SignalHandler) ListParticipants(c *gin.Context) {
 		return
 	}
 
-	participants, err := h.sfuProvider.ListParticipants(room)
+	participants, err := h.sfuSvc.ListParticipants(room)
 	if err != nil {
 		pkg.Success(c, []interface{}{})
 		return

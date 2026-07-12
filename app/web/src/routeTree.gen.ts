@@ -26,6 +26,7 @@ import { Route as appManageMuteIndexRouteImport } from './pages/(app)/manage/mut
 import { Route as appManageMonitorIndexRouteImport } from './pages/(app)/manage/monitor/index'
 import { Route as appManageEmailIndexRouteImport } from './pages/(app)/manage/email/index'
 import { Route as appManageBanIndexRouteImport } from './pages/(app)/manage/ban/index'
+import { Route as appManageApikeyIndexRouteImport } from './pages/(app)/manage/apikey/index'
 
 const appRouteRoute = appRouteRouteImport.update({
   id: '/(app)',
@@ -112,6 +113,11 @@ const appManageBanIndexRoute = appManageBanIndexRouteImport.update({
   path: '/ban/',
   getParentRoute: () => appManageRouteRoute,
 } as any)
+const appManageApikeyIndexRoute = appManageApikeyIndexRouteImport.update({
+  id: '/apikey/',
+  path: '/apikey/',
+  getParentRoute: () => appManageRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof appIndexRouteRoute
@@ -122,6 +128,7 @@ export interface FileRoutesByFullPath {
   '/index/': typeof appIndexIndexRoute
   '/link/': typeof appLinkIndexRoute
   '/manage/': typeof appManageIndexRoute
+  '/manage/apikey/': typeof appManageApikeyIndexRoute
   '/manage/ban/': typeof appManageBanIndexRoute
   '/manage/email/': typeof appManageEmailIndexRoute
   '/manage/monitor/': typeof appManageMonitorIndexRoute
@@ -139,6 +146,7 @@ export interface FileRoutesByTo {
   '/index': typeof appIndexIndexRoute
   '/link': typeof appLinkIndexRoute
   '/manage': typeof appManageIndexRoute
+  '/manage/apikey': typeof appManageApikeyIndexRoute
   '/manage/ban': typeof appManageBanIndexRoute
   '/manage/email': typeof appManageEmailIndexRoute
   '/manage/monitor': typeof appManageMonitorIndexRoute
@@ -159,6 +167,7 @@ export interface FileRoutesById {
   '/(app)/index/': typeof appIndexIndexRoute
   '/(app)/link/': typeof appLinkIndexRoute
   '/(app)/manage/': typeof appManageIndexRoute
+  '/(app)/manage/apikey/': typeof appManageApikeyIndexRoute
   '/(app)/manage/ban/': typeof appManageBanIndexRoute
   '/(app)/manage/email/': typeof appManageEmailIndexRoute
   '/(app)/manage/monitor/': typeof appManageMonitorIndexRoute
@@ -179,6 +188,7 @@ export interface FileRouteTypes {
     | '/index/'
     | '/link/'
     | '/manage/'
+    | '/manage/apikey/'
     | '/manage/ban/'
     | '/manage/email/'
     | '/manage/monitor/'
@@ -196,6 +206,7 @@ export interface FileRouteTypes {
     | '/index'
     | '/link'
     | '/manage'
+    | '/manage/apikey'
     | '/manage/ban'
     | '/manage/email'
     | '/manage/monitor'
@@ -215,6 +226,7 @@ export interface FileRouteTypes {
     | '/(app)/index/'
     | '/(app)/link/'
     | '/(app)/manage/'
+    | '/(app)/manage/apikey/'
     | '/(app)/manage/ban/'
     | '/(app)/manage/email/'
     | '/(app)/manage/monitor/'
@@ -351,11 +363,19 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof appManageBanIndexRouteImport
       parentRoute: typeof appManageRouteRoute
     }
+    '/(app)/manage/apikey/': {
+      id: '/(app)/manage/apikey/'
+      path: '/apikey'
+      fullPath: '/manage/apikey/'
+      preLoaderRoute: typeof appManageApikeyIndexRouteImport
+      parentRoute: typeof appManageRouteRoute
+    }
   }
 }
 
 interface appManageRouteRouteChildren {
   appManageIndexRoute: typeof appManageIndexRoute
+  appManageApikeyIndexRoute: typeof appManageApikeyIndexRoute
   appManageBanIndexRoute: typeof appManageBanIndexRoute
   appManageEmailIndexRoute: typeof appManageEmailIndexRoute
   appManageMonitorIndexRoute: typeof appManageMonitorIndexRoute
@@ -368,6 +388,7 @@ interface appManageRouteRouteChildren {
 
 const appManageRouteRouteChildren: appManageRouteRouteChildren = {
   appManageIndexRoute: appManageIndexRoute,
+  appManageApikeyIndexRoute: appManageApikeyIndexRoute,
   appManageBanIndexRoute: appManageBanIndexRoute,
   appManageEmailIndexRoute: appManageEmailIndexRoute,
   appManageMonitorIndexRoute: appManageMonitorIndexRoute,

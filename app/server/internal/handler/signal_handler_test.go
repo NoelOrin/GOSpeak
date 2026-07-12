@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/service"
+	"GOSpeak/internal/sfu"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,8 +19,8 @@ import (
 
 type mockSFU struct {
 	tokenFn          func(room, identity string) (string, error)
-	listRoomsFn      func() (interface{}, error)
-	listParticipants func(room string) (interface{}, error)
+	listRoomsFn      func() ([]sfu.RoomSummary, error)
+	listParticipants func(room string) ([]sfu.ParticipantSummary, error)
 	host             string
 }
 
@@ -29,22 +31,19 @@ func (m *mockSFU) GenerateToken(room, identity string) (string, error) {
 	return "mock-token", nil
 }
 func (m *mockSFU) GenerateAdminToken() (string, error) { return "admin-token", nil }
-func (m *mockSFU) ListRooms() (interface{}, error) {
+func (m *mockSFU) ListRooms() ([]sfu.RoomSummary, error) {
 	if m.listRoomsFn != nil {
 		return m.listRoomsFn()
 	}
-	return []interface{}{}, nil
+	return []sfu.RoomSummary{}, nil
 }
-func (m *mockSFU) ListParticipants(room string) (interface{}, error) {
+func (m *mockSFU) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
 	if m.listParticipants != nil {
 		return m.listParticipants(room)
 	}
-	return []interface{}{}, nil
+	return []sfu.ParticipantSummary{}, nil
 }
 func (m *mockSFU) MuteParticipant(room, identity, trackSid string, muted bool) error {
-	return nil
-}
-func (m *mockSFU) MuteRoomParticipant(room, identity string, muted bool) error {
 	return nil
 }
 func (m *mockSFU) RemoveParticipant(room, identity string) error { return nil }
@@ -61,7 +60,7 @@ func (m *mockSFU) GetHost() string {
 func setupRouter(sfu *mockSFU) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	h := NewSignalHandler(sfu, nil)
+	h := NewSignalHandler(service.NewSFUService(sfu, nil))
 	r.POST("/token", h.GetJoinToken)
 	r.POST("/signal", h.Signal)
 	r.GET("/rooms", h.ListRooms)
@@ -169,7 +168,7 @@ func TestGetJoinToken_EmptyBody(t *testing.T) {
 func TestGetJoinToken_SFUError(t *testing.T) {
 	sfu := &mockSFU{
 		tokenFn: func(room, identity string) (string, error) {
-			return "", errors.New("sfu connection failed")
+			return "", pkg.NewAppError(pkg.SFU_ERROR, "sfu connection failed")
 		},
 	}
 	r := setupRouter(sfu)
@@ -181,8 +180,8 @@ func TestGetJoinToken_SFUError(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	resp := parseResp(t, w.Body.String())
-	if resp.Code != pkg.INTERNAL_ERROR {
-		t.Fatalf("expected INTERNAL_ERROR (5001), got %d", resp.Code)
+	if resp.Code != pkg.SFU_ERROR {
+		t.Fatalf("expected SFU_ERROR (6002), got %d", resp.Code)
 	}
 }
 
@@ -226,10 +225,10 @@ func TestSignal_MissingType(t *testing.T) {
 
 func TestListRooms_Success(t *testing.T) {
 	sfu := &mockSFU{
-		listRoomsFn: func() (interface{}, error) {
-			return []map[string]interface{}{
-				{"name": "room-1", "num_participants": 3},
-				{"name": "room-2", "num_participants": 1},
+		listRoomsFn: func() ([]sfu.RoomSummary, error) {
+			return []sfu.RoomSummary{
+				{Name: "room-1", MemberCount: 3},
+				{Name: "room-2", MemberCount: 1},
 			}, nil
 		},
 	}
@@ -267,7 +266,7 @@ func TestListRooms_Empty(t *testing.T) {
 
 func TestListRooms_SFUError(t *testing.T) {
 	sfu := &mockSFU{
-		listRoomsFn: func() (interface{}, error) {
+		listRoomsFn: func() ([]sfu.RoomSummary, error) {
 			return nil, errors.New("livekit unavailable")
 		},
 	}
@@ -287,9 +286,9 @@ func TestListRooms_SFUError(t *testing.T) {
 
 func TestListParticipants_Success(t *testing.T) {
 	sfu := &mockSFU{
-		listParticipants: func(room string) (interface{}, error) {
-			return []map[string]interface{}{
-				{"identity": "user-1", "sid": "PA_xxx"},
+		listParticipants: func(room string) ([]sfu.ParticipantSummary, error) {
+			return []sfu.ParticipantSummary{
+				{Identity: "user-1"},
 			}, nil
 		},
 	}

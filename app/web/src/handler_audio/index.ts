@@ -26,9 +26,16 @@ function onTrackSubscribed({ identity, track }: RemoteTrackInfo) {
 	track.setVolume(effectiveVolume(identity));
 
 	const audioElement = track.attach();
+	audioElement.autoplay = true;
 	audioElement.style.display = "none";
 	document.body.appendChild(audioElement);
 	audioElements.set(identity, audioElement);
+	const playResult = audioElement.play?.();
+	if (playResult && typeof (playResult as Promise<void>).catch === "function") {
+		void (playResult as Promise<void>).catch(() => {
+			// autoplay may be blocked until user gesture; volume/mute controls remain valid
+		});
+	}
 }
 
 function onTrackUnsubscribed(identity: string) {
@@ -42,8 +49,12 @@ function onTrackUnsubscribed(identity: string) {
 	audioElements.delete(identity);
 }
 
+let boundClient: SFUClient | null = null;
+
 export function setupAudioHandler(client: SFUClient) {
+	if (boundClient === client) return;
 	cleanupAudioHandler();
+	boundClient = client;
 	client.onRemoteAudioTrack(onTrackSubscribed);
 	client.onRemoteAudioTrackRemoved(onTrackUnsubscribed);
 	client.onActiveSpeakers(setSpeakingIdentities);
@@ -66,6 +77,7 @@ export function cleanupAudioHandler() {
 	volumes.clear();
 	masterVolume = 1;
 	masterMuted = false;
+	boundClient = null;
 }
 
 export function setVolumeByIdentity(identity: string, volume: number) {

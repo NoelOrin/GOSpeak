@@ -1,4 +1,4 @@
-import { type Component, createMemo, createSignal, For } from "solid-js";
+import { type Component, createMemo, createSignal, For, onMount } from "solid-js";
 import { TABS } from "./tab_item";
 
 interface SearchModalProps {
@@ -7,7 +7,9 @@ interface SearchModalProps {
 }
 
 const SettingModal: Component<SearchModalProps> = ({ ...props }) => {
-	props.ref?.showModal?.();
+	onMount(() => {
+		props.ref?.showModal?.();
+	});
 
 	return (
 		<dialog ref={props.ref} class="modal">

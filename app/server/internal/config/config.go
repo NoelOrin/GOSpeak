@@ -26,10 +26,14 @@ type Config struct {
 	MediaSoupHost        string
 	SRSHost              string
 	SRSApiPort           string
-	SRSWHIPPort          string
+	SRSWHIPURL           string
 	SRSSecret            string
+	SRSPublicHost        string
 	DailyAPIKey          string
 	DailyDomain          string
+	CFAppID              string
+	CFAppSecret          string
+	CFStunURL            string
 	ServerPort           string
 	RedisHost            string
 	RedisPort            string
@@ -74,14 +78,18 @@ func Load() *Config {
 		AgoraHost:            getEnv("AGORA_HOST", ""),
 		AgoraCustomerID:      getEnv("AGORA_CUSTOMER_ID", ""),
 		AgoraCustomerSecret:  getEnv("AGORA_CUSTOMER_SECRET", ""),
-		MediaSoupBridgeURL:   getEnv("MEDIASOUP_BRIDGE_URL", "http://localhost:3001"),
-		MediaSoupHost:        getEnv("MEDIASOUP_HOST", "localhost:3001"),
+		MediaSoupBridgeURL:   getEnv("MEDIASOUP_BRIDGE_URL", "http://localhost:3012"),
+		MediaSoupHost:        getEnv("MEDIASOUP_HOST", "localhost:3012"),
 		SRSHost:              getEnv("SRS_HOST", "localhost"),
 		SRSApiPort:           getEnv("SRS_API_PORT", "1985"),
-		SRSWHIPPort:          getEnv("SRS_WHIP_PORT", "1985"),
+		SRSWHIPURL:           getEnv("SRS_WHIP_URL", "/rtc/v1/whip/"),
 		SRSSecret:            getEnv("SRS_SECRET", ""),
+		SRSPublicHost:        getEnv("SRS_PUBLIC_HOST", ""),
 		DailyAPIKey:          getEnv("DAILY_API_KEY", ""),
 		DailyDomain:          getEnv("DAILY_DOMAIN", ""),
+		CFAppID:              getEnv("CF_APP_ID", ""),
+		CFAppSecret:          getEnv("CF_APP_SECRET", ""),
+		CFStunURL:            getEnv("CF_STUN_URL", "stun.cloudflare.com:3478"),
 		ServerPort:           getEnv("SERVER_PORT", "8098"),
 		RedisHost:            getEnv("REDIS_HOST", ""),
 		RedisPort:            getEnv("REDIS_PORT", "6379"),
