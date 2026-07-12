@@ -12,10 +12,11 @@ interface UserListResponse {
 export async function listUsers(
 	page = 1,
 	pageSize = 100,
+	excludeBots = true,
 ): Promise<{ users: BackendUser[]; total: number }> {
 	const res = (await apiClient.post({
 		url: "/api/v1/user/list",
-		data: { page, page_size: pageSize },
+		data: { page, page_size: pageSize, exclude_bots: excludeBots },
 	})) as AxiosResponse<Result<UserListResponse>>;
 
 	return { users: (res as any).data.data?.list || [], total: (res as any).data.data?.total || 0 };
