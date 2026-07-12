@@ -20,7 +20,6 @@ on:
         type: boolean
 
 jobs:
-
   # ── Backend: Build Go Server ─────────────────────────────────────────
   build-server:
     name: Build Server (Go)
@@ -79,12 +78,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: pnpm/action-setup@v4
+        # version 由 package.json 的 packageManager 字段自动获取
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-
-      - uses: pnpm/action-setup@v4
-        # version 由 package.json 的 packageManager 字段自动获取
+          cache: pnpm
 
       - name: Cache pnpm store
         id: pnpm-cache
@@ -111,12 +111,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: pnpm/action-setup@v4
+        # version 由 package.json 的 packageManager 字段自动获取
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-
-      - uses: pnpm/action-setup@v4
-        # version 由 package.json 的 packageManager 字段自动获取
+          cache: pnpm
 
       - name: Restore pnpm cache
         id: pnpm-cache
@@ -152,12 +153,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: pnpm/action-setup@v4
+        # version 由 package.json 的 packageManager 字段自动获取
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-
-      - uses: pnpm/action-setup@v4
-        # version 由 package.json 的 packageManager 字段自动获取
+          cache: pnpm
 
       - name: Restore pnpm cache
         id: pnpm-cache
@@ -186,12 +188,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: pnpm/action-setup@v4
+        # version 由 package.json 的 packageManager 字段自动获取
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-
-      - uses: pnpm/action-setup@v4
-        # version 由 package.json 的 packageManager 字段自动获取
+          cache: pnpm
 
       - name: Restore pnpm cache
         id: pnpm-cache
@@ -220,12 +223,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: pnpm/action-setup@v4
+        # version 由 package.json 的 packageManager 字段自动获取
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-
-      - uses: pnpm/action-setup@v4
-        # version 由 package.json 的 packageManager 字段自动获取
+          cache: pnpm
 
       - name: Restore pnpm cache
         id: pnpm-cache
