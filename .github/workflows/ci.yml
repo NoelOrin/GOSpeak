@@ -81,11 +81,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-
-      - uses: pnpm/action-setup@v4
 
       - name: Cache pnpm store
         id: pnpm-cache
@@ -112,11 +112,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-
-      - uses: pnpm/action-setup@v4
 
       - name: Restore pnpm cache
         id: pnpm-cache
@@ -130,7 +130,7 @@ jobs:
             node_modules
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: Install offine
+      - name: Install offline
         run: pnpm install --frozen-lockfile --offline || pnpm install --frozen-lockfile
 
       - name: Build
@@ -152,11 +152,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-
-      - uses: pnpm/action-setup@v4
 
       - name: Restore pnpm cache
         id: pnpm-cache
@@ -170,7 +170,7 @@ jobs:
             node_modules
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: Install offine
+      - name: Install offline
         run: pnpm install --frozen-lockfile --offline || pnpm install --frozen-lockfile
 
       - name: Build
@@ -185,11 +185,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-
-      - uses: pnpm/action-setup@v4
 
       - name: Restore pnpm cache
         id: pnpm-cache
@@ -203,7 +203,7 @@ jobs:
             node_modules
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: Install offine
+      - name: Install offline
         run: pnpm install --frozen-lockfile --offline || pnpm install --frozen-lockfile
 
       - name: Build
@@ -218,11 +218,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-
-      - uses: pnpm/action-setup@v4
 
       - name: Restore pnpm cache
         id: pnpm-cache
@@ -236,7 +236,7 @@ jobs:
             node_modules
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: Install offine
+      - name: Install offline
         run: pnpm install --frozen-lockfile --offline || pnpm install --frozen-lockfile
 
       - name: Lint
