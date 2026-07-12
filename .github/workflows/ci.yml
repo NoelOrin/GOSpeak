@@ -85,8 +85,10 @@ jobs:
         with:
           node-version: 22
 
-      - uses: pnpm/action-setup@v4
-        # version 由 package.json 的 packageManager 字段自动获取
+      - name: Enable pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.11.0 --activate
 
       - name: Cache pnpm store
         id: pnpm-cache
@@ -117,8 +119,10 @@ jobs:
         with:
           node-version: 22
 
-      - uses: pnpm/action-setup@v4
-        # version 由 package.json 的 packageManager 字段自动获取
+      - name: Enable pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.11.0 --activate
 
       - name: Restore pnpm cache
         id: pnpm-cache
@@ -158,8 +162,10 @@ jobs:
         with:
           node-version: 22
 
-      - uses: pnpm/action-setup@v4
-        # version 由 package.json 的 packageManager 字段自动获取
+      - name: Enable pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.11.0 --activate
 
       - name: Restore pnpm cache
         id: pnpm-cache
@@ -192,8 +198,10 @@ jobs:
         with:
           node-version: 22
 
-      - uses: pnpm/action-setup@v4
-        # version 由 package.json 的 packageManager 字段自动获取
+      - name: Enable pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.11.0 --activate
 
       - name: Restore pnpm cache
         id: pnpm-cache
@@ -226,8 +234,10 @@ jobs:
         with:
           node-version: 22
 
-      - uses: pnpm/action-setup@v4
-        # version 由 package.json 的 packageManager 字段自动获取
+      - name: Enable pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.11.0 --activate
 
       - name: Restore pnpm cache
         id: pnpm-cache
