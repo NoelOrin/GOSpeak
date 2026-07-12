@@ -43,6 +43,9 @@ const (
 	PermStorageRead   = permcode.PermStorageRead
 	PermStorageManage = permcode.PermStorageManage
 	PermStorageDelete = permcode.PermStorageDelete
+
+	PermOAuthRead   = permcode.PermOAuthRead
+	PermOAuthManage = permcode.PermOAuthManage
 )
 
 // DefaultPermissions 种子权限列表
@@ -70,6 +73,9 @@ var DefaultPermissions = []Permission{
 	{Code: PermStorageRead, Name: "查看存储配置", Description: "查看对象存储配置"},
 	{Code: PermStorageManage, Name: "管理存储配置", Description: "修改对象存储配置"},
 	{Code: PermStorageDelete, Name: "删除存储对象", Description: "删除对象存储中的文件"},
+
+	{Code: PermOAuthRead, Name: "查看 OAuth 配置", Description: "查看第三方/自建 OAuth 登录提供商配置"},
+	{Code: PermOAuthManage, Name: "管理 OAuth 配置", Description: "创建、修改、删除 OAuth 登录提供商"},
 }
 
 // RolePermission 角色-权限关联表
@@ -110,6 +116,7 @@ var DefaultRolePermissions = map[string][]string{
 		PermSignalKick, PermMuteManage, PermSFUManage, PermBotManage,
 		PermEmailConfigRead, PermEmailConfigManage,
 		PermStorageRead, PermStorageManage, PermStorageDelete,
+		PermOAuthRead, PermOAuthManage,
 	},
 	"user": {
 		PermRoomCreate, PermRoomRead,
