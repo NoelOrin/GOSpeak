@@ -90,7 +90,7 @@ function makeFetch(whipOk: boolean, whepOk: boolean) {
 						: "",
 			},
 			text: async (): Promise<string> => "v=0\r\n",
-		};
+		} as unknown as Response;
 	});
 }
 
@@ -167,7 +167,7 @@ describe("SRSSFUClient subscribe retry exhaustion", () => {
 				stream: "gs-bob",
 				pc: null,
 				resourceUrl: "",
-				retryCount: (SRSSFUClient as any).MAX_SUBSCRIBE_RETRIES - 1,
+				retryCount: SRSSFUClient.MAX_SUBSCRIBE_RETRIES - 1,
 				retryTimer: null,
 				connecting: false,
 			});
@@ -422,7 +422,7 @@ describe("SRSSFUClient leave during in-flight WHIP", () => {
 				return Promise.resolve({
 					ok: true,
 					status: 200,
-					headers: { get: () => "" },
+					headers: { get: () => "" } as any,
 					text: async (): Promise<string> => "",
 				});
 			}
@@ -472,15 +472,15 @@ describe("SRSSFUClient stream queue", () => {
 		const events: string[] = [];
 		let active = 0;
 		let maxActive = 0;
-		const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+		const fetchMock = vi.fn(async (url: string, init?: RequestInit): Promise<Response> => {
 			if (init?.method === "DELETE") {
 				events.push("DELETE");
 				return {
 					ok: true,
 					status: 200,
-					headers: { get: () => "" },
+					headers: { get: () => "" } as any,
 					text: async (): Promise<string> => "",
-				};
+				} as unknown as Response;
 			}
 			active++;
 			maxActive = Math.max(maxActive, active);
@@ -496,7 +496,7 @@ describe("SRSSFUClient stream queue", () => {
 						k === "Location" ? "/rtc/v1/whip/?action=delete&token=t" : "",
 				},
 				text: async (): Promise<string> => "v=0\r\n",
-			};
+			} as unknown as Response;
 		});
 		(globalThis as any).fetch = fetchMock;
 
@@ -604,15 +604,15 @@ describe("SRSSFUClient setMicEnabled no rebuild on transient PC state", () => {
 describe("SRSSFUClient live holder takeover", () => {
 	it("waits for live holder leave without stealing", async () => {
 		const events: string[] = [];
-		const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+		const fetchMock = vi.fn(async (url: string, init?: RequestInit): Promise<Response> => {
 			if (init?.method === "DELETE") {
 				events.push("DELETE");
 				return {
 					ok: true,
 					status: 200,
-					headers: { get: () => "" },
+					headers: { get: () => "" } as any,
 					text: async (): Promise<string> => "",
-				};
+				} as unknown as Response;
 			}
 			events.push("WHIP");
 			return {
@@ -623,7 +623,7 @@ describe("SRSSFUClient live holder takeover", () => {
 						k === "Location" ? "/rtc/v1/whip/?action=delete&token=t" : "",
 				},
 				text: async (): Promise<string> => "v=0\r\n",
-			};
+			} as unknown as Response;
 		});
 		(globalThis as any).fetch = fetchMock;
 		const a = new SRSSFUClient({});

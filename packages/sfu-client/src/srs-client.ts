@@ -245,7 +245,7 @@ export class SRSSFUClient implements SFUClient {
 	private isReconnecting = false;
 	private onPcStateChangeBound?: () => void;
 	private activeSpeakerRaf: number | null = null;
-	private static MAX_SUBSCRIBE_RETRIES = 60;
+	public static readonly MAX_SUBSCRIBE_RETRIES = 60;
 	private analyzerContext: AudioContext | null = null;
 	private publishResourceUrl = "";
 	private identity = "";

@@ -169,7 +169,7 @@ describe("runVoiceJoin", () => {
 			"joining_media",
 			"media_ready",
 		]);
-		expect(deps.onClientReady).toHaveBeenCalledWith(client, "srs");
+		expect((deps as any).onClientReady).toHaveBeenCalledWith(client, "srs");
 		expect(order.indexOf("onClientReady")).toBeLessThan(
 			order.indexOf("phase:media_ready"),
 		);
