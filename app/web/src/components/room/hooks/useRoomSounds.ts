@@ -30,6 +30,7 @@ export function useRoomSounds(phase: () => VoicePhase) {
 	});
 
 	let playedJoinOnMedia = false;
+	let prevPhase: VoicePhase = "idle";
 	createEffect(() => {
 		const p = phase();
 		if (p === "media_ready" || p === "ready") {
@@ -40,5 +41,20 @@ export function useRoomSounds(phase: () => VoicePhase) {
 		} else if (p === "idle" || p === "resolving") {
 			playedJoinOnMedia = false;
 		}
+
+		// 自己离开房间：从已进房态（ready/media_ready/reconnecting）转入非进房态时
+		// 播放下行音。覆盖主动离开与切房——切房时 session 直接被替换成新房的
+		// resolving，不会经过 leaving，故用“joined -> 非 joined”跳变兜底。
+		// 异常断连走 failed，不在此集合，不误播。
+		const wasJoined =
+			prevPhase === "ready" ||
+			prevPhase === "media_ready" ||
+			prevPhase === "reconnecting";
+		const leftPhase =
+			p === "resolving" || p === "idle" || p === "leaving";
+		if (wasJoined && leftPhase) {
+			playLeaveSound();
+		}
+		prevPhase = p;
 	});
 }

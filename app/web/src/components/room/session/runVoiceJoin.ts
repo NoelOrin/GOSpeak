@@ -19,7 +19,7 @@ export class VoiceJoinAbortError extends Error {
 }
 
 // adapter.serializeJoins=true 时，同一 joinKey 的并发进房合并为一次执行，
-// 避免 effect 重入导致重复 WHIP publish（重复 tracks/new / 重复 client）。
+// 避免 effect 重入导致重复进房 publish（重复 tracks/new / 重复 client）。
 // 仅当没有同 key 的进行中 join 才真正发起；进行中则复用其 promise。
 // LiveKit 等 serializeJoins=false，互不影响。
 const inFlightJoins = new Map<
