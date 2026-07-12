@@ -18,29 +18,41 @@ import (
 
 // CreateOAuthProviderRequest is the handler-facing DTO for creating an OAuth provider.
 type CreateOAuthProviderRequest struct {
-	Name         string `json:"name" binding:"required"`
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
-	AuthURL      string `json:"auth_url"`
-	TokenURL     string `json:"token_url"`
-	UserInfoURL  string `json:"user_info_url"`
-	RedirectURL  string `json:"redirect_url"`
-	Scopes       string `json:"scopes"`
-	Enabled      *bool  `json:"enabled"`
+	Name          string `json:"name" binding:"required"`
+	DisplayName   string `json:"display_name"`
+	IconURL       string `json:"icon_url"`
+	ClientID      string `json:"client_id"`
+	ClientSecret  string `json:"client_secret"`
+	AuthURL       string `json:"auth_url"`
+	TokenURL      string `json:"token_url"`
+	UserInfoURL   string `json:"user_info_url"`
+	RedirectURL   string `json:"redirect_url"`
+	Scopes        string `json:"scopes"`
+	UIDField      string `json:"uid_field"`
+	UsernameField string `json:"username_field"`
+	AvatarField   string `json:"avatar_field"`
+	EmailField    string `json:"email_field"`
+	Enabled       *bool  `json:"enabled"`
 }
 
 // UpdateOAuthProviderRequest is the handler-facing DTO for updating an OAuth provider.
 type UpdateOAuthProviderRequest struct {
-	ID           uint   `json:"id" binding:"required"`
-	Name         string `json:"name"`
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
-	AuthURL      string `json:"auth_url"`
-	TokenURL     string `json:"token_url"`
-	UserInfoURL  string `json:"user_info_url"`
-	RedirectURL  string `json:"redirect_url"`
-	Scopes       string `json:"scopes"`
-	Enabled      *bool  `json:"enabled"`
+	ID            uint   `json:"id" binding:"required"`
+	Name          string `json:"name"`
+	DisplayName   string `json:"display_name"`
+	IconURL       string `json:"icon_url"`
+	ClientID      string `json:"client_id"`
+	ClientSecret  string `json:"client_secret"`
+	AuthURL       string `json:"auth_url"`
+	TokenURL      string `json:"token_url"`
+	UserInfoURL   string `json:"user_info_url"`
+	RedirectURL   string `json:"redirect_url"`
+	Scopes        string `json:"scopes"`
+	UIDField      string `json:"uid_field"`
+	UsernameField string `json:"username_field"`
+	AvatarField   string `json:"avatar_field"`
+	EmailField    string `json:"email_field"`
+	Enabled       *bool  `json:"enabled"`
 }
 
 // OAuthService 第三方登录服务，协调三个 repository 完成 OAuth 流程。
@@ -62,6 +74,25 @@ func NewOAuthService(
 	}
 }
 
+// providerConfigFromModel 将 DB 模型转为 oauth.ProviderConfig（含 FieldMapping）。
+func providerConfigFromModel(p *model.OAuthProvider) *oauth.ProviderConfig {
+	return &oauth.ProviderConfig{
+		ClientID:     p.ClientID,
+		ClientSecret: p.ClientSecret,
+		AuthURL:      p.AuthURL,
+		TokenURL:     p.TokenURL,
+		UserInfoURL:  p.UserInfoURL,
+		RedirectURL:  p.RedirectURL,
+		Scopes:       p.Scopes,
+		FieldMapping: oauth.FieldMapping{
+			UIDField:      p.UIDField,
+			UsernameField: p.UsernameField,
+			AvatarField:   p.AvatarField,
+			EmailField:    p.EmailField,
+		},
+	}
+}
+
 // GetAuthURL 构造 OAuth 授权页面 URL，供前端跳转。会检查提供商是否启用。
 func (s *OAuthService) GetAuthURL(providerName, state string) (string, error) {
 	provider, err := s.providerRepo.GetByName(providerName)
@@ -72,15 +103,7 @@ func (s *OAuthService) GetAuthURL(providerName, state string) (string, error) {
 		return "", pkg.NewAppError(pkg.OAUTH_PROVIDER_DISABLED)
 	}
 
-	p := oauth.NewProvider(providerName, &oauth.ProviderConfig{
-		ClientID:     provider.ClientID,
-		ClientSecret: provider.ClientSecret,
-		AuthURL:      provider.AuthURL,
-		TokenURL:     provider.TokenURL,
-		UserInfoURL:  provider.UserInfoURL,
-		RedirectURL:  provider.RedirectURL,
-		Scopes:       provider.Scopes,
-	})
+	p := oauth.NewProvider(providerName, providerConfigFromModel(provider))
 	if p == nil {
 		return "", pkg.NewAppError(pkg.OAUTH_PROVIDER_NOT_FOUND)
 	}
@@ -99,15 +122,7 @@ func (s *OAuthService) HandleCallback(providerName, code string) (*AuthResponse,
 		return nil, pkg.NewAppError(pkg.OAUTH_PROVIDER_DISABLED)
 	}
 
-	p := oauth.NewProvider(providerName, &oauth.ProviderConfig{
-		ClientID:     provider.ClientID,
-		ClientSecret: provider.ClientSecret,
-		AuthURL:      provider.AuthURL,
-		TokenURL:     provider.TokenURL,
-		UserInfoURL:  provider.UserInfoURL,
-		RedirectURL:  provider.RedirectURL,
-		Scopes:       provider.Scopes,
-	})
+	p := oauth.NewProvider(providerName, providerConfigFromModel(provider))
 	if p == nil {
 		return nil, pkg.NewAppError(pkg.OAUTH_PROVIDER_NOT_FOUND)
 	}
@@ -187,6 +202,35 @@ token, refreshToken, err := GenerateTokenPair(user)
 	}, nil
 }
 
+// EnabledProviderInfo 是不包含敏感信息的公开 OAuth 提供商信息，供登录页展示。
+type EnabledProviderInfo struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	IconURL     string `json:"icon_url"`
+}
+
+// ListEnabledProviders 返回已启用的 OAuth 提供商公开信息（不含 secret）。
+func (s *OAuthService) ListEnabledProviders() ([]EnabledProviderInfo, error) {
+	providers, err := s.providerRepo.List()
+	if err != nil {
+		return nil, err
+	}
+	var result []EnabledProviderInfo
+	for _, p := range providers {
+		if p.Enabled {
+			displayName := p.DisplayName
+			if displayName == "" {
+				displayName = p.Name
+			}
+			result = append(result, EnabledProviderInfo{
+				Name:        p.Name,
+				DisplayName: displayName,
+				IconURL:     p.IconURL,
+			})
+		}
+	}
+	return result, nil
+}
 // ListProviders 获取所有 OAuth 提供商配置（用于管理后台展示）。
 func (s *OAuthService) ListProviders() ([]model.OAuthProvider, error) {
 	return s.providerRepo.List()
@@ -199,15 +243,21 @@ func (s *OAuthService) CreateProviderFromDTO(req *CreateOAuthProviderRequest) (*
 		enabled = *req.Enabled
 	}
 	provider := &model.OAuthProvider{
-		Name:         req.Name,
-		ClientID:     req.ClientID,
-		ClientSecret: req.ClientSecret,
-		AuthURL:      req.AuthURL,
-		TokenURL:     req.TokenURL,
-		UserInfoURL:  req.UserInfoURL,
-		RedirectURL:  req.RedirectURL,
-		Scopes:       req.Scopes,
-		Enabled:      enabled,
+		Name:          req.Name,
+		DisplayName:   req.DisplayName,
+		IconURL:       req.IconURL,
+		ClientID:      req.ClientID,
+		ClientSecret:  req.ClientSecret,
+		AuthURL:       req.AuthURL,
+		TokenURL:      req.TokenURL,
+		UserInfoURL:   req.UserInfoURL,
+		RedirectURL:   req.RedirectURL,
+		Scopes:        req.Scopes,
+		UIDField:      req.UIDField,
+		UsernameField: req.UsernameField,
+		AvatarField:   req.AvatarField,
+		EmailField:    req.EmailField,
+		Enabled:       enabled,
 	}
 
 	defaultCfg := oauth.GetDefaultConfig(provider.Name)
@@ -235,15 +285,21 @@ func (s *OAuthService) CreateProviderFromDTO(req *CreateOAuthProviderRequest) (*
 // UpdateProviderFromDTO updates an OAuth provider from a handler-level DTO.
 func (s *OAuthService) UpdateProviderFromDTO(req *UpdateOAuthProviderRequest) (*model.OAuthProvider, error) {
 	provider := &model.OAuthProvider{
-		ID:           req.ID,
-		Name:         req.Name,
-		ClientID:     req.ClientID,
-		ClientSecret: req.ClientSecret,
-		AuthURL:      req.AuthURL,
-		TokenURL:     req.TokenURL,
-		UserInfoURL:  req.UserInfoURL,
-		RedirectURL:  req.RedirectURL,
-		Scopes:       req.Scopes,
+		ID:            req.ID,
+		Name:          req.Name,
+		DisplayName:   req.DisplayName,
+		IconURL:       req.IconURL,
+		ClientID:      req.ClientID,
+		ClientSecret:  req.ClientSecret,
+		AuthURL:       req.AuthURL,
+		TokenURL:      req.TokenURL,
+		UserInfoURL:   req.UserInfoURL,
+		RedirectURL:   req.RedirectURL,
+		Scopes:        req.Scopes,
+		UIDField:      req.UIDField,
+		UsernameField: req.UsernameField,
+		AvatarField:   req.AvatarField,
+		EmailField:    req.EmailField,
 	}
 	if req.Enabled != nil {
 		provider.Enabled = *req.Enabled

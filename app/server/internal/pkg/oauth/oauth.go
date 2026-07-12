@@ -20,6 +20,7 @@ type ProviderConfig struct {
 	UserInfoURL  string // 获取用户信息的 API 端点
 	RedirectURL  string // 授权后回调地址
 	Scopes       string // 请求的权限范围，多个用空格分隔
+	FieldMapping FieldMapping // 自建 OAuth 的用户信息字段映射（仅 GenericProvider 使用）
 }
 
 // UserInfo 统一用户信息模型，屏蔽各平台字段差异。
@@ -51,6 +52,10 @@ func NewProvider(name string, cfg *ProviderConfig) Provider {
 	case "qq":
 		return &QQProvider{cfg: cfg}
 	default:
+		// 自建/自定义 OAuth 提供商，使用通用实现
+		if cfg.AuthURL != "" && cfg.TokenURL != "" && cfg.UserInfoURL != "" {
+			return &GenericProvider{cfg: cfg, name: name, fields: cfg.FieldMapping}
+		}
 		return nil
 	}
 }
