@@ -1,6 +1,6 @@
 # server 模块
 
-GoRTC 服务端入口，基于 Gin + Socket.IO 的 WebRTC 信令服务器。当前媒体层通过多 provider SFU 抽象接入，主实现为 LiveKit，同时支持 Agora 与 MediaSoup。
+GoRTC 服务端入口，基于 Gin + Socket.IO 的 WebRTC 信令服务器。媒体层通过多 provider SFU 抽象接入，支持 LiveKit、SRS、MediaSoup、Agora、Daily、Cloudflare 六种后端，运行时可切换。
 
 ## 目录结构
 
@@ -13,19 +13,26 @@ server/
 ├── server/
 │   └── gin.go            # Gin 引擎启动、依赖组装、Socket.IO 集成
 ├── internal/
-│   ├── config/           # 配置管理
-│   ├── handler/          # HTTP 请求处理层
-│   ├── sfu/              # SFU 抽象与动态 provider 分发
-│   ├── livekit/          # LiveKit WebRTC 服务封装
-│   ├── middleware/       # Gin 中间件（JWT 鉴权）
+│   ├── config/           # 配置管理（环境变量）
 │   ├── model/            # GORM 数据模型
-│   ├── pkg/              # 公共工具包（错误码、JWT、响应封装、OAuth 协议）
 │   ├── repository/       # 数据访问层
-│   ├── router/           # 路由注册
 │   ├── service/          # 业务逻辑层
-│   └── signal/           # Socket.IO 信令中心
-├── docs/                 # Swagger 文档（swagger.json/yaml + docs.go）
-├── ../web/         # Web 前端（SolidJS + Vite + TanStack Router）
+│   ├── handler/          # HTTP 请求处理层
+│   ├── middleware/       # Gin 中间件（JWT、权限 RBAC、封禁检查）
+│   ├── router/           # 路由注册（按模块拆分）
+│   ├── sfu/              # SFU 抽象与动态 provider 分发
+│   ├── livekit/          # LiveKit 实现
+│   ├── agora/            # Agora 实现
+│   ├── daily/            # Daily 实现
+│   ├── mediasoup/        # MediaSoup 实现
+│   ├── srs/              # SRS 实现（WHIP/WHEP）
+│   ├── cloudflare/       # Cloudflare Realtime 实现
+│   ├── permcode/         # 权限码常量
+│   ├── signal/           # Socket.IO 信令中心
+│   ├── redis/            # 可选 Redis（黑名单、JWT 密钥轮换）
+│   └── pkg/              # 公共工具（错误码、JWT、响应、OAuth、permcode）
+├── docs/                 # Swagger 文档
+├── ../web/               # Web 前端（SolidJS + Vite + TanStack Router）
 └── test/                 # 测试用例
 ```
 
@@ -36,19 +43,30 @@ go run main.go server          # 生产模式
 go run main.go server -e dev   # 开发模式
 ```
 
-## 环境变量
+## 环境变量（关键项）
 
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| SERVER_PORT | HTTP 监听端口 | 8998 |
-| SFU_PROVIDER | 当前 SFU provider | `livekit` |
-| LIVEKIT_HOST | LiveKit 服务器地址 | — |
-| LIVEKIT_KEY | LiveKit API Key | — |
-| LIVEKIT_SECRET | LiveKit API Secret | — |
-| AGORA_APP_ID | Agora App ID | — |
-| AGORA_APP_CERTIFICATE | Agora App Certificate | — |
-| MEDIASOUP_BRIDGE_URL | MediaSoup bridge 地址 | — |
-| DB_WAL | SQLite WAL 模式开关 | false |
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| SERVER_PORT | `8098` | HTTP 监听端口 |
+| SFU_PROVIDER | `livekit` | SFU 类型：`livekit` / `srs` / `mediasoup` / `agora` / `daily` / `cloudflare` |
+| LIVEKIT_HOST | — | LiveKit 服务器地址 |
+| LIVEKIT_KEY | — | LiveKit API Key |
+| LIVEKIT_SECRET | — | LiveKit API Secret |
+| AGORA_APP_ID | — | Agora App ID |
+| AGORA_APP_CERTIFICATE | — | Agora App Certificate |
+| MEDIASOUP_BRIDGE_URL | `http://localhost:3012` | MediaSoup bridge 地址 |
+| SRS_HOST / SRS_API_PORT | `localhost` / `1985` | SRS 管理 API |
+| SRS_SECRET | — | SRS token HMAC 密钥（必填）|
+| DAILY_API_KEY / DAILY_DOMAIN | — | Daily 凭据 |
+| CF_APP_ID / CF_APP_SECRET / CF_STUN_URL | — / — / `stun.cloudflare.com:3478` | Cloudflare 凭据 |
+| DB_TYPE | `SQLite` | `SQLite` / `PostgresSQL` / `MYSQL` |
+| DB_WAL | `false` | SQLite WAL 模式开关 |
+| REDIS_HOST | — | Redis 主机（留空则不连接）|
+| JWT_KEY | `default-secret` | JWT 签名密钥（生产必须修改）|
+| EMAIL_ENABLED | `false` | 启用邮箱验证 |
+| STORAGE_TYPE | `local` | `local` / `s3` |
+
+完整变量见根目录 `AGENTS.md` 的「Configuration」章节。
 
 ## 依赖关系
 
@@ -56,18 +74,17 @@ go run main.go server -e dev   # 开发模式
 main.go → cmd/ → server/gin.go
                    ├── internal/repository/ → SQLite/PostgreSQL/MySQL
                    ├── internal/sfu/        → SFU provider 抽象 / 动态分发
-                   ├── internal/livekit/    → LiveKit 服务
-                   ├── internal/service/    → 业务逻辑层
-                   ├── internal/handler/    → HTTP 处理层
-                   ├── internal/router/     → 路由注册
-                   └── internal/signal/     → Socket.IO 信令
+                   ├── internal/livekit|agora|daily|mediasoup|srs|cloudflare/
+                   ├── internal/service/     → 业务逻辑层
+                   ├── internal/handler/     → HTTP 处理层
+                   ├── internal/router/      → 路由注册
+                   ├── internal/signal/      → Socket.IO 信令
+                   └── internal/redis/       → 可选黑名单 / 密钥轮换
+```
 
 ## 禁言语义
 
-- 服务端当前只维护 **用户级禁言**。
-- 用户级禁言表示：**允许收听，但不允许发布本地音轨**。
-- 新功能不要再引入“房间级静音/房间级禁言”作为产品语义。
-- 若需要区分概念：
-  - `静音` = 前端本地远端轨道静音
-  - `禁言` = 服务端用户级发言限制
-```
+- 服务端只维护**用户级禁言**。
+- 用户级禁言：**允许收听，但不允许发布本地音轨**。
+- 不要引入“房间级静音/房间级禁言”作为产品语义。
+- `静音` = 前端本地远端轨道静音；`禁言` = 服务端用户级发言限制。
