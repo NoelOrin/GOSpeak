@@ -2,17 +2,17 @@
 
 ## 功能覆盖矩阵
 
-| 功能 | LiveKit | SRS | MediaSoup | Agora | Daily |
-|------|---------|-----|-----------|-------|-------|
-| `GenerateToken` | ✅ | ✅ (WHIP Bearer) | ✅ | ✅ | ✅ |
-| `GenerateAdminToken` | ✅ | ✅ | ✅ | ❌ | ❌ |
-| `ListRooms` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `ListParticipants` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `MuteParticipant` | ✅ 服务端强制 | ❌ (前端自行停止) | ❌ | ❌ | ❌ |
-| `RemoveParticipant` | ✅ | ✅ (KickParticipant) | ❌ | ❌ | ❌ |
-| `DeleteRoom` | ✅ | ✅ | ✅ | ❌ | ❌ |
-| `GetHost` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Webhook | ✅ | ✅ (HTTP Hooks) | ❌ | ❌ | ❌ |
+| 功能 | LiveKit | SRS | MediaSoup | Agora | Daily | Cloudflare |
+|------|---------|-----|-----------|-------|-------|------------|
+| `GenerateToken` | ✅ | ✅ (WHIP Bearer) | ✅ | ✅ | ✅ | ✅ (WHIP/WHEP) |
+| `GenerateAdminToken` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `ListRooms` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `ListParticipants` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `MuteParticipant` | ✅ 服务端强制 | ❌ (前端自行停止) | ❌ | ❌ | ❌ | ❌ |
+| `RemoveParticipant` | ✅ | ✅ (KickParticipant) | ❌ | ❌ | ❌ | ❌ |
+| `DeleteRoom` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `GetHost` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Webhook | ✅ | ✅ (HTTP Hooks) | ❌ | ❌ | ❌ | ❌ |
 
 ## 成熟度评级
 
@@ -23,6 +23,7 @@
 | **MediaSoup** | ⭐⭐⭐ | Token + 基础房间 API 可用，高级管理功能缺失 |
 | **Agora** | ⭐⭐⭐ | Token 生成和基础查询工作，踢人/禁言未完整实现 |
 | **Daily** | ⭐⭐⭐ | Token 和房间查询可用，管理功能有限 |
+| **Cloudflare** | ⭐⭐⭐ | Realtime SFU，WHIP/WHEP 媒体 + REST 房间/Token，全球边缘节点 |
 
 ## 信令 vs SFU 分工
 
@@ -54,9 +55,10 @@ SFU_PROVIDER=srs   # 国产、高性能，GOSpeak 对 SRS 支持完善
 SFU_PROVIDER=mediasoup  # 高度可定制
 ```
 
-### 零运维
+### 零运维（云服务）
 
 ```env
 SFU_PROVIDER=agora   # 国内用户
 SFU_PROVIDER=daily   # 海外用户
+SFU_PROVIDER=cloudflare   # 全球边缘、WHIP/WHEP
 ```

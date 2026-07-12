@@ -83,9 +83,15 @@ app/
 │   │   ├── repository/  # DAO
 │   │   ├── model/       # GORM 实体
 │   │   ├── router/      # 路由注册
-│   │   ├── middleware/  # JWT/CORS/RBAC
+│   │   ├── middleware/  # JWT/CORS/权限 RBAC/封禁
 │   │   ├── sfu/         # SFU 抽象层
 │   │   ├── livekit/     # LiveKit 实现
+│   │   ├── agora/       # Agora 实现
+│   │   ├── daily/       # Daily 实现
+│   │   ├── mediasoup/   # MediaSoup 实现
+│   │   ├── srs/         # SRS 实现（WHIP/WHEP）
+│   │   ├── cloudflare/  # Cloudflare Realtime 实现
+│   │   ├── permcode/    # 权限码常量
 │   │   ├── signal/      # Socket.IO 信令 Hub
 │   │   ├── redis/       # Redis 客户端
 │   │   └── pkg/         # 工具包

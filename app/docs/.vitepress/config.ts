@@ -23,6 +23,7 @@ export default defineConfig({
       { text: 'SFU 配置', link: '/sfu/' },
       { text: '部署指南', link: '/deployment/' },
       { text: '架构', link: '/architecture/' },
+      { text: '权限模型', link: '/guide/permissions' },
     ],
 
     sidebar: {
@@ -33,6 +34,7 @@ export default defineConfig({
             { text: '快速开始', link: '/guide/getting-started' },
             { text: '基本使用', link: '/guide/usage' },
             { text: '环境变量', link: '/guide/configuration' },
+            { text: '权限模型', link: '/guide/permissions' },
             { text: 'OAuth 登录', link: '/guide/oauth' },
             { text: '常见问题', link: '/guide/faq' },
           ],
