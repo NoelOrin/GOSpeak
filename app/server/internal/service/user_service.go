@@ -61,14 +61,14 @@ func (s *UserService) GetByName(name string) (*model.User, error) {
 }
 
 // List 分页查询用户列表，page 从 1 开始，pageSize 最大 100。
-func (s *UserService) List(page, pageSize int) ([]model.User, int64, error) {
+func (s *UserService) List(page, pageSize int, excludeBots bool) ([]model.User, int64, error) {
 	if page < 1 {
 		page = 1
 	}
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-	users, total, err := s.userRepo.List(page, pageSize)
+	users, total, err := s.userRepo.List(page, pageSize, excludeBots)
 	if err != nil {
 		return nil, 0, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}

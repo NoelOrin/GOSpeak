@@ -91,6 +91,7 @@ func (h *UserHandler) List(c *gin.Context) {
 	var req struct {
 		Page     int `json:"page"`
 		PageSize int `json:"page_size"`
+		ExcludeBots bool `json:"exclude_bots"`
 	}
 	_ = c.ShouldBindJSON(&req)
 	if req.Page <= 0 {
@@ -100,7 +101,7 @@ func (h *UserHandler) List(c *gin.Context) {
 		req.PageSize = 20
 	}
 
-	users, total, err := h.userService.List(req.Page, req.PageSize)
+	users, total, err := h.userService.List(req.Page, req.PageSize, req.ExcludeBots)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
