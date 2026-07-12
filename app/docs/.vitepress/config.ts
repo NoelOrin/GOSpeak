@@ -1,12 +1,17 @@
 import { defineConfig } from 'vitepress'
 
+const isProd = process.env.NODE_ENV === 'production'
+const base = isProd ? '/GOSpeak/' : '/'
+
 export default defineConfig({
   title: 'GOSpeak',
   description: '自部署游戏语音平台 — 文档',
   lang: 'zh-CN',
 
+  base,
+
   head: [
-    ['link', { rel: 'icon', href: '/favicon.svg' }],
+    ['link', { rel: 'icon', href: `${base}favicon.svg` }],
   ],
 
   themeConfig: {
@@ -76,7 +81,7 @@ export default defineConfig({
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/your/GOSpeak' },
+      { icon: 'github', link: 'https://github.com/noelorin/GOSpeak' },
     ],
 
     footer: {
