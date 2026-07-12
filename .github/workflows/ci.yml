@@ -16,7 +16,7 @@ on:
       release_build:
         description: "Build cross-platform release binaries"
         required: false
-        default: false
+        default: true
         type: boolean
 
 jobs:
@@ -374,6 +374,17 @@ jobs:
           name: gospeak-server-${{ matrix.target }}
           path: app/server/gospeak-server-${{ matrix.target }}.*
           retention-days: 14
+
+      - name: Upload to release assets
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for f in app/server/gospeak-server-${{ matrix.target }}.*; do
+            [ -f "$f" ] || continue
+            echo "Uploading $f to release ${{ github.event.release.tag_name }}..."
+            gh release upload "${{ github.event.release.tag_name }}" "$f" --clobber
+          done
 
       - name: Verify binary
         if: matrix.goos != 'windows'
