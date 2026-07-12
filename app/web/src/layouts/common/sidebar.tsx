@@ -4,7 +4,6 @@ import Divider from "@/components/common/divider";
 import OptionSquare from "@/components/common/optionSquare";
 import SvgIcon from "@/components/svgIcon";
 import ShieldCheck from "lucide-solid/icons/shield-check";
-import userStore from "@/stores/userStore";
 import { hasPermission } from "@/utils/permissions";
 
 interface SidebarProps {

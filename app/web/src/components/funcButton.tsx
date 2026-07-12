@@ -2,8 +2,8 @@ import SearchModal from "@/components/modal/searchModal";
 import SvgIcon from "./svgIcon";
 
 const FuncButton = ({
-	label,
-	onClick,
+	_label,
+	_onClick,
 }: {
 	label?: string;
 	onClick?: () => void;

@@ -12,7 +12,7 @@ import Trash from "lucide-solid/icons/trash";
 import Gavel from "lucide-solid/icons/gavel";
 import UserCheck from "lucide-solid/icons/user-check";
 import Clock from "lucide-solid/icons/clock";
-import Infinity from "lucide-solid/icons/infinity";
+import InfinityIcon from "lucide-solid/icons/infinity";
 import UserX from "lucide-solid/icons/user-x";
 import { listUsers, updateUserRole, deleteUser } from "@/api/user";
 import { createMute, cancelMute, listMutes, type MuteRecord } from "@/api/mute";
@@ -34,12 +34,12 @@ export const Route = createFileRoute("/(app)/manage/users/")({
 });
 
 function UsersPage() {
-	const [usersData, { refetch: refetchUsers }] = createResource(
+	const [_usersData, { refetch: _refetchUsers }] = createResource(
 		() => listUsers(1, 200),
 	);
-	const [mutes, { refetch: refetchMutes }] = createResource(() => listMutes());
+	const [mutes, { refetch: _refetchMutes }] = createResource(() => listMutes());
 
-	const muteMap = () => {
+	const _muteMap = () => {
 		const data = mutes();
 		if (!data) return new Map<number, MuteRecord>();
 		const m = new Map<number, MuteRecord>();
@@ -49,20 +49,12 @@ function UsersPage() {
 		return m;
 	};
 
-	// Role update
-	const roleActions = () => {
-		const currentUser = userStore.user();
-		return ROLES.map((r) => ({
-			value: r,
-			label: r === "admin" ? "管理员" : "普通用户",
-		}));
-	};
 
 	const handleRoleChange = async (userId: number, newRole: string) => {
 		try {
 			await updateUserRole(userId, newRole);
 			showToast("角色已更新", { type: "success" });
-			refetchUsers();
+			_refetchUsers();
 		} catch (e: any) {
 			showToast(e?.message || "更新失败", { type: "error" });
 		}
@@ -73,7 +65,7 @@ function UsersPage() {
 		try {
 			await deleteUser(userId);
 			showToast("用户已删除", { type: "success" });
-			refetchUsers();
+			_refetchUsers();
 		} catch (e: any) {
 			showToast(e?.message || "删除失败", { type: "error" });
 		}
@@ -110,7 +102,7 @@ function UsersPage() {
 			setMuteDuration(3600);
 			setMutePerm(false);
 			setMuteReason("");
-			refetchMutes();
+			_refetchMutes();
 		} catch (e: any) {
 			showToast(e?.message || "禁言失败", { type: "error" });
 		} finally {
@@ -123,7 +115,7 @@ function UsersPage() {
 		try {
 			await cancelMute(uid);
 			showToast("禁言已解除", { type: "success" });
-			refetchMutes();
+			_refetchMutes();
 		} catch (e: any) {
 			showToast(e?.message || "解除失败", { type: "error" });
 		} finally {
@@ -132,7 +124,7 @@ function UsersPage() {
 	};
 
 	const users = () =>
-		(usersData()?.users || []).filter((u) => !u.is_bot);
+		(_usersData()?.users || []).filter((u) => !u.is_bot);
 	const userMap = () => {
 		const m = new Map<number, string>();
 		for (const u of users()) {
@@ -156,7 +148,7 @@ function UsersPage() {
 
 			<div class="overflow-x-auto">
 				<Show
-					when={!usersData.loading}
+					when={!_usersData.loading}
 					fallback={<div class="loading loading-spinner loading-sm py-8 mx-auto block" />}
 				>
 					<Show
@@ -181,7 +173,7 @@ function UsersPage() {
 							<tbody>
 								<For each={users()}>
 									{(user) => {
-										const mute = () => muteMap().get(user.id);
+										const mute = () => _muteMap().get(user.id);
 										const muted = () => !!mute();
 										const isSelf = () => userStore.user()?.id === user.id;
 										return (
@@ -210,14 +202,14 @@ function UsersPage() {
 														}
 													>
 														<span class="flex items-center gap-1 text-error font-medium text-xs">
-															{mute()!.permanent ? (
-																<Infinity size={12} />
+															{mute()?.permanent ?? false ? (
+																<InfinityIcon size={12} />
 															) : (
 																<Clock size={12} />
 															)}
-															{mute()!.permanent
+															{mute()?.permanent ?? false
 																? "永久"
-																: formatRemaining(mute()!.expires_at)}
+																: formatRemaining(mute()?.expires_at)}
 														</span>
 													</Show>
 												</td>
@@ -303,11 +295,10 @@ function UsersPage() {
 				</div>
 				<div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
 					<div class="form-control">
-						<label class="label py-1">
-							<span class="label-text text-xs">用户</span>
-						</label>
-						<select
-							class="select select-bordered select-sm"
+						<label class="label py-1" htmlFor="mute-user">
+								<span class="label-text text-xs">用户</span>
+							</label>
+						<select id="mute-user" 							class="select select-bordered select-sm"
 							value={muteUserId()}
 							onChange={(e) =>
 								setMuteUserId(
@@ -327,10 +318,10 @@ function UsersPage() {
 					</div>
 
 					<div class="form-control">
-						<label class="label py-1">
-							<span class="label-text text-xs">类型</span>
-						</label>
-						<div class="flex items-center gap-3 pt-1">
+						<label class="label py-1" htmlFor="None">
+								<span class="label-text text-xs">类型</span>
+							</label>
+						<div id="None" class="flex items-center gap-3 pt-1">
 							<label class="flex items-center gap-1.5 text-xs">
 								<input
 									type="radio"
@@ -356,11 +347,10 @@ function UsersPage() {
 
 					<Show when={!mutePerm()}>
 						<div class="form-control">
-							<label class="label py-1">
+							<label class="label py-1" htmlFor="mute-duration">
 								<span class="label-text text-xs">时长（秒）</span>
 							</label>
-							<input
-								type="number"
+							<input id="mute-duration" 								type="number"
 								class="input input-bordered input-sm"
 								value={muteDuration()}
 								onInput={(e) =>
@@ -372,11 +362,10 @@ function UsersPage() {
 					</Show>
 
 					<div class="form-control">
-						<label class="label py-1">
-							<span class="label-text text-xs">原因</span>
-						</label>
-						<input
-							type="text"
+						<label class="label py-1" htmlFor="mute-reason">
+								<span class="label-text text-xs">原因</span>
+							</label>
+						<input id="mute-reason" 							type="text"
 							class="input input-bordered input-sm"
 							placeholder="违规发言"
 							value={muteReason()}
@@ -443,7 +432,7 @@ function UsersPage() {
 												<td>
 													{mute.permanent ? (
 														<span class="flex items-center gap-1 text-error font-medium text-xs">
-															<Infinity size={13} />
+															<InfinityIcon size={13} />
 															永久
 														</span>
 													) : (

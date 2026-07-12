@@ -4,7 +4,6 @@ import userStore from "@/stores/userStore";
 import { updateProfile } from "@/api/user";
 import { useUpload } from "@/hooks/useUpload";
 import PresetAvatars from "./presetAvatars";
-import type { UserInfo } from "@/stores/userStore";
 
 type ViewMode = "view" | "edit";
 

@@ -17,6 +17,7 @@ export function createSocketClient() {
 		const opts: Record<string, unknown> = { transports: ["websocket"] };
 		if (token) {
 			opts.query = { token };
+			// biome-ignore lint/suspicious/noDocumentCookie: token persistence for socket auth
 			document.cookie = `gospeak_token=${token}; path=/; SameSite=Lax; max-age=3600`;
 		}
 		socket = io(url, opts);
@@ -50,7 +51,7 @@ export function createSocketClient() {
 		payload?: Record<string, unknown>,
 	): Promise<any> {
 		return new Promise((resolve, reject) => {
-			if (!socket || !socket.connected) {
+			if (!socket?.connected) {
 				reject(new Error("socket not connected"));
 				return;
 			}

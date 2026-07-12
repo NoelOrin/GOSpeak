@@ -31,15 +31,8 @@ function BanPage() {
 
 	const allUsers = () => usersData()?.users || [];
 	const bannedUsers = () => allUsers().filter((u) => u.role === BAN_ROLE);
-	const normalUsers = () => allUsers().filter((u) => u.role !== BAN_ROLE);
+	const _normalUsers = () => allUsers().filter((u) => u.role !== BAN_ROLE);
 
-	const userMap = () => {
-		const m = new Map<number, string>();
-		for (const u of allUsers()) {
-			m.set(u.id, `${u.display_name || u.name} (${u.name})`);
-		}
-		return m;
-	};
 
 	const handleBan = async () => {
 		const uid = targetUserId();
@@ -151,10 +144,11 @@ function BanPage() {
 				</div>
 				<div class="flex items-end gap-3">
 					<div class="form-control">
-						<label class="label py-1">
+						<label class="label py-1" htmlFor="ban-select-user">
 							<span class="label-text text-xs">选择用户</span>
 						</label>
 						<select
+							id="ban-select-user"
 							class="select select-bordered select-sm w-52"
 							value={targetUserId()}
 							onChange={(e) =>
@@ -164,7 +158,7 @@ function BanPage() {
 							}
 						>
 							<option value="">选择用户</option>
-							<For each={normalUsers()}>
+							<For each={_normalUsers()}>
 								{(u) => (
 									<option value={u.id}>
 										{u.display_name || u.name} ({u.name})

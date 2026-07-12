@@ -229,7 +229,7 @@ function OAuthPage() {
     try {
       if (isEditing()) {
         const input: any = {
-          id: editingId()!,
+          id: editingId() ?? 0,
           name: name().trim(),
           display_name: displayName().trim(),
           icon_url: iconURL().trim(),

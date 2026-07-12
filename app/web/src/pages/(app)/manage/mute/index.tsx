@@ -4,7 +4,7 @@ import Gavel from "lucide-solid/icons/gavel";
 import UserX from "lucide-solid/icons/user-x";
 import UserCheck from "lucide-solid/icons/user-check";
 import Clock from "lucide-solid/icons/clock";
-import Infinity from "lucide-solid/icons/infinity";
+import InfinityIcon from "lucide-solid/icons/infinity";
 import {
 	createResource,
 	createSignal,
@@ -150,7 +150,7 @@ function MutePage() {
 												<td>
 													{mute.permanent ? (
 														<span class="flex items-center gap-1 text-error font-medium text-xs">
-															<Infinity size={13} />
+															<InfinityIcon size={13} />
 															永久
 														</span>
 													) : (
@@ -201,11 +201,10 @@ function MutePage() {
 				</div>
 				<div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
 					<div class="form-control">
-						<label class="label py-1">
-							<span class="label-text text-xs">用户</span>
-						</label>
-						<select
-							class="select select-bordered select-sm"
+						<label class="label py-1" htmlFor="mute-user">
+								<span class="label-text text-xs">用户</span>
+							</label>
+						<select id="mute-user" 							class="select select-bordered select-sm"
 							value={userId()}
 							onChange={(e) =>
 								setUserId(
@@ -225,9 +224,9 @@ function MutePage() {
 					</div>
 
 					<div class="form-control">
-						<label class="label py-1">
+						<div class="label py-1">
 							<span class="label-text text-xs">类型</span>
-						</label>
+						</div>
 						<div class="flex items-center gap-3 pt-1">
 							<label class="flex items-center gap-1.5 text-xs">
 								<input
@@ -254,11 +253,10 @@ function MutePage() {
 
 					<Show when={!permanent()}>
 						<div class="form-control">
-							<label class="label py-1">
+							<label class="label py-1" htmlFor="mute-duration">
 								<span class="label-text text-xs">时长（秒）</span>
 							</label>
-							<input
-								type="number"
+							<input id="mute-duration" 								type="number"
 								class="input input-bordered input-sm"
 								value={duration()}
 								onInput={(e) =>
@@ -270,11 +268,10 @@ function MutePage() {
 					</Show>
 
 					<div class="form-control">
-						<label class="label py-1">
-							<span class="label-text text-xs">原因</span>
-						</label>
-						<input
-							type="text"
+						<label class="label py-1" htmlFor="mute-reason">
+								<span class="label-text text-xs">原因</span>
+							</label>
+						<input id="mute-reason" 							type="text"
 							class="input input-bordered input-sm"
 							placeholder="违规发言"
 							value={reason()}

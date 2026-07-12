@@ -1,4 +1,4 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show } from "solid-js";
 import { createQuery } from "@tanstack/solid-query";
 import { getPresetAvatars } from "@/api/user";
 

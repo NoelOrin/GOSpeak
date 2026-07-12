@@ -1,4 +1,4 @@
-import { type Component, createMemo, createSignal, For, onMount } from "solid-js";
+import { createSignal, onMount } from "solid-js";
 import { TABS } from "./tab_item";
 
 interface SearchModalProps {

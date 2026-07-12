@@ -59,15 +59,15 @@ export async function updateUserRole(
 	userId: number,
 	role: string,
 ): Promise<void> {
-	const res = (await apiClient.post({
+	await apiClient.post({
 		url: "/api/v1/user/update-role",
 		data: { id: userId, role },
-	})) as AxiosResponse<Result>;
+	});
 }
 
 export async function deleteUser(userId: number): Promise<void> {
-	const res = (await apiClient.post({
+	await apiClient.post({
 		url: "/api/v1/user/delete",
 		data: { id: userId },
-	})) as AxiosResponse<Result>;
+	});
 }
