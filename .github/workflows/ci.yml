@@ -4,6 +4,8 @@
 name: CI
 
 on:
+  pull_request:
+    branches: [release, dev, main, master]
   release:
     types: [published]
   workflow_dispatch:
@@ -42,6 +44,7 @@ jobs:
         run: go build -ldflags="-s -w" -o gospeak-server .
 
       - name: Upload binary
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v6
         with:
           name: gospeak-server
