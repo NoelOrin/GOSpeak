@@ -79,11 +79,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v5
-
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        # version 由 package.json 的 packageManager 字段自动获取
 
       - name: Cache pnpm store
         id: pnpm-cache
@@ -110,11 +111,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v5
-
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        # version 由 package.json 的 packageManager 字段自动获取
 
       - name: Restore pnpm cache
         id: pnpm-cache
@@ -150,11 +152,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v5
-
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        # version 由 package.json 的 packageManager 字段自动获取
 
       - name: Restore pnpm cache
         id: pnpm-cache
@@ -183,11 +186,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v5
-
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        # version 由 package.json 的 packageManager 字段自动获取
 
       - name: Restore pnpm cache
         id: pnpm-cache
@@ -216,11 +220,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v5
-
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        # version 由 package.json 的 packageManager 字段自动获取
 
       - name: Restore pnpm cache
         id: pnpm-cache
