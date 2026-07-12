@@ -3,6 +3,7 @@ import userStore from "@/stores/userStore";
 import { createSignal, onMount, Show } from "solid-js";
 import { getStorageConfig, updateStorageConfig, type StorageConfigInput } from "@/api/storage";
 import { showToast } from "solid-notifications";
+import HardDrive from "lucide-solid/icons/hard-drive";
 
 export const Route = createFileRoute("/(app)/manage/storage/")({
 	beforeLoad: () => {
@@ -119,7 +120,10 @@ function StoragePage() {
 	return (
 		<Show when={!loading()} fallback={<span class="loading loading-spinner loading-lg" />}>
 			<div class="p-4 flex flex-col gap-4">
-				<h3 class="font-bold text-lg">存储</h3>
+				<div class="flex items-center gap-2">
+					<HardDrive size={20} />
+					<h3 class="font-bold text-lg">存储</h3>
+				</div>
 
 				<div class="divider my-0 text-xs text-base-content/40">存储后端</div>
 				<div class="flex gap-4">

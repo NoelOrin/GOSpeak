@@ -75,6 +75,10 @@ function BanPage() {
 
 	return (
 		<div class="flex h-full min-h-0 flex-col gap-4 p-4">
+		<div class="flex items-center gap-2 mb-3">
+			<Ban size={20} />
+			<h3 class="font-bold text-lg">封禁管理</h3>
+		</div>
 			{/* ========== 已封禁用户 ========== */}
 			<div>
 				<div class="mb-3 flex items-center gap-2 font-semibold text-sm">

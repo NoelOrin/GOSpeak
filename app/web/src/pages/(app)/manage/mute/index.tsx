@@ -104,7 +104,10 @@ function MutePage() {
 	return (
 		<div class="flex h-full min-h-0 flex-col gap-4 p-4">
 			<div class="flex items-center justify-between gap-3">
-				<h3 class="font-bold text-lg">禁言管理</h3>
+				<div class="flex items-center gap-2">
+					<Gavel size={20} />
+					<h3 class="font-bold text-lg">禁言管理</h3>
+				</div>
 			</div>
 
 			<div class="min-h-0 flex-1 overflow-auto">

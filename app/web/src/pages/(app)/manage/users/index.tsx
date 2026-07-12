@@ -131,7 +131,8 @@ function UsersPage() {
 		}
 	};
 
-	const users = () => usersData()?.users || [];
+	const users = () =>
+		(usersData()?.users || []).filter((u) => !u.is_bot);
 	const userMap = () => {
 		const m = new Map<number, string>();
 		for (const u of users()) {
