@@ -36,6 +36,10 @@ const (
 	// 管理操作推送
 	EventRoomKicked = "room:kicked"
 
+	// 发言检测（无 SFU 原生 active speaker 的 provider：SRS / Cloudflare）
+	EventMemberSpeaking = "member:speaking"
+	EventRoomActiveSpeakers = "room:active-speakers"
+
 	// 禁言事件
 	EventUserMuted   = "user:muted"
 	EventUserUnmuted = "user:unmuted"
