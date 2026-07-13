@@ -1,9 +1,8 @@
-import type { EventType } from "../core/types";
-import type { HandlerFilter } from "../filters/handlerFilter";
-import { CommandFilter } from "../filters/commandFilter";
 import { registerHandler } from "../core/registry";
+import type { EventType } from "../core/types";
+import { CommandFilter } from "../filters/commandFilter";
+import type { HandlerFilter } from "../filters/handlerFilter";
 import { getPluginModulePath } from "./register";
-import type { Plugin } from "../core/plugin";
 
 type HandlerFn = (event: any, ctx: any) => unknown | Promise<unknown>;
 
@@ -34,8 +33,15 @@ export function On(
 	eventType: EventType,
 	options: { priority?: number; desc?: string; filters?: HandlerFilter[] } = {},
 ) {
-	return function (target: any, propertyKey: string): void {
-		decorate(target, propertyKey, eventType, options.filters ?? [], options.priority ?? 0, options.desc);
+	return (target: any, propertyKey: string): void => {
+		decorate(
+			target,
+			propertyKey,
+			eventType,
+			options.filters ?? [],
+			options.priority ?? 0,
+			options.desc,
+		);
 	};
 }
 
@@ -49,8 +55,18 @@ export function Command(
 		filters?: HandlerFilter[];
 	} = {},
 ) {
-	return function (target: any, propertyKey: string): void {
-		const filters = [new CommandFilter(name, options), ...(options.filters ?? [])];
-		decorate(target, propertyKey, "AdapterMessage" as EventType, filters, options.priority ?? 0, options.desc);
+	return (target: any, propertyKey: string): void => {
+		const filters = [
+			new CommandFilter(name, options),
+			...(options.filters ?? []),
+		];
+		decorate(
+			target,
+			propertyKey,
+			"AdapterMessage" as EventType,
+			filters,
+			options.priority ?? 0,
+			options.desc,
+		);
 	};
 }

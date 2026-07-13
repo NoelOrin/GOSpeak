@@ -8,14 +8,14 @@
  * @returns "3h 25m" / "5m 30s" / "已过期" / "—"
  */
 export function formatRemaining(expiresAt: string | null): string {
-  if (!expiresAt) return "—";
-  const remaining = new Date(expiresAt).getTime() - Date.now();
-  if (remaining <= 0) return "已过期";
-  const mins = Math.floor(remaining / 60000);
-  const secs = Math.floor((remaining % 60000) / 1000);
-  if (mins >= 60) {
-    const hours = Math.floor(mins / 60);
-    return `${hours}h ${mins % 60}m`;
-  }
-  return `${mins}m ${secs}s`;
+	if (!expiresAt) return "—";
+	const remaining = new Date(expiresAt).getTime() - Date.now();
+	if (remaining <= 0) return "已过期";
+	const mins = Math.floor(remaining / 60000);
+	const secs = Math.floor((remaining % 60000) / 1000);
+	if (mins >= 60) {
+		const hours = Math.floor(mins / 60);
+		return `${hours}h ${mins % 60}m`;
+	}
+	return `${mins}m ${secs}s`;
 }

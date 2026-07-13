@@ -1,6 +1,6 @@
 import { createForm } from "@tanstack/solid-form";
 import { useNavigate } from "@tanstack/solid-router";
-import { type Component, Show, createMemo } from "solid-js";
+import { type Component, createMemo, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import { createRoom as createRoomApi } from "@/api/room";
 import { Form, type FormFieldConfig } from "@/components/form";
@@ -92,10 +92,9 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 					navigate({ to: "/channel" });
 				}
 			} catch (error) {
-				showToast(
-					error instanceof Error ? error.message : "创建房间失败",
-					{ type: "error" },
-				);
+				showToast(error instanceof Error ? error.message : "创建房间失败", {
+					type: "error",
+				});
 			}
 		},
 	}));
@@ -195,7 +194,9 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 							</div>
 							<div>
 								<div class="text-base-content/50">接入规模</div>
-								<div class="mt-1 font-medium">最多 {summary().limit || "-"} 人</div>
+								<div class="mt-1 font-medium">
+									最多 {summary().limit || "-"} 人
+								</div>
 							</div>
 							<div>
 								<div class="text-base-content/50">媒体模式</div>
@@ -208,7 +209,9 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 						</div>
 
 						<Show when={form.state.isSubmitting}>
-							<div class="mt-4 text-sm text-base-content/60">正在提交房间配置...</div>
+							<div class="mt-4 text-sm text-base-content/60">
+								正在提交房间配置...
+							</div>
 						</Show>
 					</aside>
 				</div>

@@ -8,14 +8,14 @@ const APP_NAME = "GOSpeak";
  * 在顶层布局中调用一次即可覆盖所有页面。
  */
 export function useTitle() {
-  const router = useRouter();
-  const location = useLocation();
+	const router = useRouter();
+	const location = useLocation();
 
-  createEffect(() => {
-    const currentPath = location().pathname;
-    const matchedRoutes = router.matchRoutes(currentPath);
-    const lastMatch = matchedRoutes.at(-1);
-    const routeTitle = (lastMatch?.staticData as any)?.title;
-    document.title = routeTitle ? `${routeTitle} | ${APP_NAME}` : APP_NAME;
-  });
+	createEffect(() => {
+		const currentPath = location().pathname;
+		const matchedRoutes = router.matchRoutes(currentPath);
+		const lastMatch = matchedRoutes.at(-1);
+		const routeTitle = (lastMatch?.staticData as any)?.title;
+		document.title = routeTitle ? `${routeTitle} | ${APP_NAME}` : APP_NAME;
+	});
 }

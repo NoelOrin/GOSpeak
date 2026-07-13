@@ -19,6 +19,7 @@
     "prepare": "lefthook install"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.1",
     "@commitlint/cli": "^17.7.2",
     "@commitlint/config-conventional": "^17.7.0",
     "lefthook": "1.8.5",

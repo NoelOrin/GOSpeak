@@ -65,7 +65,12 @@ const UserBar = ({ ...props }: UserBarPropsType) => {
 					<Show when={showCard()}>
 						{/* 遮罩层，点击关闭 */}
 						<div
-							class="fixed inset-0 z-40" role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setShowCard(false) }}
+							class="fixed inset-0 z-40"
+							role="button"
+							tabIndex={0}
+							onKeyDown={(e) => {
+								if (e.key === "Enter" || e.key === " ") setShowCard(false);
+							}}
 							onClick={() => setShowCard(false)}
 						/>
 						<div class="absolute bottom-full left-0 mb-2 z-50">

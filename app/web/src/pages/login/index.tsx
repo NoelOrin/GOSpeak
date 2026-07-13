@@ -73,7 +73,6 @@ function LoginPage() {
 						data.access_token,
 						data.refresh_token,
 					);
-					setLoginData(data);
 					openChangeModal();
 					return;
 				}
@@ -163,29 +162,53 @@ function LoginPage() {
 									onSubmit={async (e) => {
 										e.preventDefault();
 										const formEl = e.target as HTMLFormElement;
-										const pwd = (formEl.querySelector('input[name="newPassword"]') as HTMLInputElement).value;
+										const pwd = (
+											formEl.querySelector(
+												'input[name="newPassword"]',
+											) as HTMLInputElement
+										).value;
 										try {
 											await resetPasswordApi(forgotEmail(), forgotCode(), pwd);
 											closeForgotModal();
 											showToast("密码已重置，请登录", { type: "success" });
 										} catch (err: any) {
-											showToast(err?.response?.data?.msg || err?.message || "重置失败", { type: "error" });
+											showToast(
+												err?.response?.data?.msg || err?.message || "重置失败",
+												{ type: "error" },
+											);
 										}
 									}}
 								>
 									<fieldset class="fieldset mb-3">
 										<legend class="fieldset-legend text-[14px]">邮箱</legend>
-										<input type="email" value={forgotEmail()} disabled class="input w-full" />
+										<input
+											type="email"
+											value={forgotEmail()}
+											disabled
+											class="input w-full"
+										/>
 									</fieldset>
 									<fieldset class="fieldset mb-3">
 										<legend class="fieldset-legend text-[14px]">验证码</legend>
-										<input type="text" placeholder="请输入邮箱验证码" class="input w-full" onInput={(e) => setForgotCode(e.currentTarget.value)} />
+										<input
+											type="text"
+											placeholder="请输入邮箱验证码"
+											class="input w-full"
+											onInput={(e) => setForgotCode(e.currentTarget.value)}
+										/>
 									</fieldset>
 									<fieldset class="fieldset mb-3">
 										<legend class="fieldset-legend text-[14px]">新密码</legend>
-										<input type="password" name="newPassword" placeholder="请输入新密码" class="input w-full" />
+										<input
+											type="password"
+											name="newPassword"
+											placeholder="请输入新密码"
+											class="input w-full"
+										/>
 									</fieldset>
-									<button type="submit" class="btn btn-primary w-full">重置密码</button>
+									<button type="submit" class="btn btn-primary w-full">
+										重置密码
+									</button>
 								</form>
 							}
 						>
@@ -194,11 +217,17 @@ function LoginPage() {
 									e.preventDefault();
 									setCodeSending(true);
 									try {
-										await sendEmailCode({ email: forgotEmail(), scene: "reset_password" });
+										await sendEmailCode({
+											email: forgotEmail(),
+											scene: "reset_password",
+										});
 										setForgotStep("code");
 										showToast("验证码已发送", { type: "success" });
 									} catch (err: any) {
-										showToast(err?.response?.data?.msg || err?.message || "发送失败", { type: "error" });
+										showToast(
+											err?.response?.data?.msg || err?.message || "发送失败",
+											{ type: "error" },
+										);
 									} finally {
 										setCodeSending(false);
 									}
@@ -206,16 +235,29 @@ function LoginPage() {
 							>
 								<fieldset class="fieldset mb-3">
 									<legend class="fieldset-legend text-[14px]">邮箱</legend>
-									<input type="email" required placeholder="请输入注册邮箱" class="input w-full" value={forgotEmail()} onInput={(e) => setForgotEmail(e.currentTarget.value)} />
+									<input
+										type="email"
+										required
+										placeholder="请输入注册邮箱"
+										class="input w-full"
+										value={forgotEmail()}
+										onInput={(e) => setForgotEmail(e.currentTarget.value)}
+									/>
 								</fieldset>
-								<button type="submit" class="btn btn-primary w-full" disabled={codeSending()}>
+								<button
+									type="submit"
+									class="btn btn-primary w-full"
+									disabled={codeSending()}
+								>
 									{codeSending() ? "发送中..." : "发送验证码"}
 								</button>
 							</form>
 						</Show>
 						<div class="modal-action">
 							<form method="dialog">
-								<button class="btn" onClick={closeForgotModal}>取消</button>
+								<button class="btn" onClick={closeForgotModal}>
+									取消
+								</button>
 							</form>
 						</div>
 					</div>
@@ -242,7 +284,11 @@ function LoginPage() {
 									newPassword ?? "",
 									name,
 								);
-								await userStore.login(result.user, result.access_token, result.refresh_token);
+								await userStore.login(
+									result.user,
+									result.access_token,
+									result.refresh_token,
+								);
 								closeChangeModal();
 								navigate({ to: "/" });
 							}}

@@ -1,7 +1,7 @@
-import type { BotEvent } from "./types";
+import type { FilterContext } from "../filters/handlerFilter";
 import type { BotContext } from "./context";
 import { getHandlersByEventType } from "./registry";
-import type { FilterContext } from "../filters/handlerFilter";
+import type { BotEvent } from "./types";
 
 export interface DispatchOptions {
 	stopOnFirstResult?: boolean;
@@ -16,7 +16,9 @@ export interface DispatchResult {
 
 export class EventBus {
 	private readonly buildContext: (pluginName: string) => BotContext;
-	private readonly getPluginConfig: (pluginName: string) => Record<string, unknown>;
+	private readonly getPluginConfig: (
+		pluginName: string,
+	) => Record<string, unknown>;
 
 	constructor(opts: {
 		buildContext: (pluginName: string) => BotContext;

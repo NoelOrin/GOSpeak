@@ -1,21 +1,16 @@
 import { createFileRoute, redirect } from "@tanstack/solid-router";
-import userStore from "@/stores/userStore";
-import {
-	createResource,
-	createSignal,
-	For,
-	Show,
-} from "solid-js";
-import { showToast } from "solid-notifications";
-import Users from "lucide-solid/icons/users";
-import Trash from "lucide-solid/icons/trash";
-import Gavel from "lucide-solid/icons/gavel";
-import UserCheck from "lucide-solid/icons/user-check";
 import Clock from "lucide-solid/icons/clock";
+import Gavel from "lucide-solid/icons/gavel";
 import InfinityIcon from "lucide-solid/icons/infinity";
+import Trash from "lucide-solid/icons/trash";
+import UserCheck from "lucide-solid/icons/user-check";
 import UserX from "lucide-solid/icons/user-x";
-import { listUsers, updateUserRole, deleteUser } from "@/api/user";
-import { createMute, cancelMute, listMutes, type MuteRecord } from "@/api/mute";
+import Users from "lucide-solid/icons/users";
+import { createResource, createSignal, For, Show } from "solid-js";
+import { showToast } from "solid-notifications";
+import { cancelMute, createMute, listMutes, type MuteRecord } from "@/api/mute";
+import { deleteUser, listUsers, updateUserRole } from "@/api/user";
+import userStore from "@/stores/userStore";
 import { formatRemaining } from "@/utils/format";
 
 const ROLES = ["user", "admin", "ban"];
@@ -34,8 +29,8 @@ export const Route = createFileRoute("/(app)/manage/users/")({
 });
 
 function UsersPage() {
-	const [_usersData, { refetch: _refetchUsers }] = createResource(
-		() => listUsers(1, 200),
+	const [_usersData, { refetch: _refetchUsers }] = createResource(() =>
+		listUsers(1, 200),
 	);
 	const [mutes, { refetch: _refetchMutes }] = createResource(() => listMutes());
 
@@ -48,7 +43,6 @@ function UsersPage() {
 		}
 		return m;
 	};
-
 
 	const handleRoleChange = async (userId: number, newRole: string) => {
 		try {
@@ -123,8 +117,7 @@ function UsersPage() {
 		}
 	};
 
-	const users = () =>
-		(_usersData()?.users || []).filter((u) => !u.is_bot);
+	const users = () => (_usersData()?.users || []).filter((u) => !u.is_bot);
 	const userMap = () => {
 		const m = new Map<number, string>();
 		for (const u of users()) {
@@ -149,7 +142,9 @@ function UsersPage() {
 			<div class="overflow-x-auto">
 				<Show
 					when={!_usersData.loading}
-					fallback={<div class="loading loading-spinner loading-sm py-8 mx-auto block" />}
+					fallback={
+						<div class="loading loading-spinner loading-sm py-8 mx-auto block" />
+					}
 				>
 					<Show
 						when={users().length > 0}
@@ -189,7 +184,11 @@ function UsersPage() {
 															"badge-ghost": user.role !== "admin",
 														}}
 													>
-														{user.role === "admin" ? "管理员" : user.role === "ban" ? "封禁" : "用户"}
+														{user.role === "admin"
+															? "管理员"
+															: user.role === "ban"
+																? "封禁"
+																: "用户"}
 													</span>
 												</td>
 												<td>
@@ -202,14 +201,14 @@ function UsersPage() {
 														}
 													>
 														<span class="flex items-center gap-1 text-error font-medium text-xs">
-															{mute()?.permanent ?? false ? (
+															{(mute()?.permanent ?? false) ? (
 																<InfinityIcon size={12} />
 															) : (
 																<Clock size={12} />
 															)}
-															{mute()?.permanent ?? false
+															{(mute()?.permanent ?? false)
 																? "永久"
-																: formatRemaining(mute()?.expires_at)}
+																: formatRemaining(mute()?.expires_at ?? null)}
 														</span>
 													</Show>
 												</td>
@@ -220,16 +219,17 @@ function UsersPage() {
 															value={user.role}
 															disabled={isSelf()}
 															onChange={(e) =>
-																handleRoleChange(
-																	user.id,
-																	e.currentTarget.value,
-																)
+																handleRoleChange(user.id, e.currentTarget.value)
 															}
 														>
 															<For each={ROLES}>
 																{(r) => (
 																	<option value={r}>
-																		{r === "admin" ? "管理员" : r === "ban" ? "封禁" : "用户"}
+																		{r === "admin"
+																			? "管理员"
+																			: r === "ban"
+																				? "封禁"
+																				: "用户"}
 																	</option>
 																)}
 															</For>
@@ -289,16 +289,19 @@ function UsersPage() {
 					<span>快速禁言</span>
 					<Show when={muteUserId()}>
 						<span class="text-primary text-xs">
-							目标: {userMap().get(muteUserId() as number) || `#${muteUserId()}`}
+							目标:{" "}
+							{userMap().get(muteUserId() as number) || `#${muteUserId()}`}
 						</span>
 					</Show>
 				</div>
 				<div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
 					<div class="form-control">
-						<label class="label py-1" htmlFor="mute-user">
-								<span class="label-text text-xs">用户</span>
-							</label>
-						<select id="mute-user" 							class="select select-bordered select-sm"
+						<label class="label py-1" for="mute-user">
+							<span class="label-text text-xs">用户</span>
+						</label>
+						<select
+							id="mute-user"
+							class="select select-bordered select-sm"
 							value={muteUserId()}
 							onChange={(e) =>
 								setMuteUserId(
@@ -318,9 +321,9 @@ function UsersPage() {
 					</div>
 
 					<div class="form-control">
-						<label class="label py-1" htmlFor="None">
-								<span class="label-text text-xs">类型</span>
-							</label>
+						<label class="label py-1" for="None">
+							<span class="label-text text-xs">类型</span>
+						</label>
 						<div id="None" class="flex items-center gap-3 pt-1">
 							<label class="flex items-center gap-1.5 text-xs">
 								<input
@@ -347,10 +350,12 @@ function UsersPage() {
 
 					<Show when={!mutePerm()}>
 						<div class="form-control">
-							<label class="label py-1" htmlFor="mute-duration">
+							<label class="label py-1" for="mute-duration">
 								<span class="label-text text-xs">时长（秒）</span>
 							</label>
-							<input id="mute-duration" 								type="number"
+							<input
+								id="mute-duration"
+								type="number"
 								class="input input-bordered input-sm"
 								value={muteDuration()}
 								onInput={(e) =>
@@ -362,10 +367,12 @@ function UsersPage() {
 					</Show>
 
 					<div class="form-control">
-						<label class="label py-1" htmlFor="mute-reason">
-								<span class="label-text text-xs">原因</span>
-							</label>
-						<input id="mute-reason" 							type="text"
+						<label class="label py-1" for="mute-reason">
+							<span class="label-text text-xs">原因</span>
+						</label>
+						<input
+							id="mute-reason"
+							type="text"
 							class="input input-bordered input-sm"
 							placeholder="违规发言"
 							value={muteReason()}
@@ -451,17 +458,14 @@ function UsersPage() {
 													{mute.reason || "—"}
 												</td>
 												<td class="text-xs">
-													{userMap().get(mute.muter_id) ||
-														`#${mute.muter_id}`}
+													{userMap().get(mute.muter_id) || `#${mute.muter_id}`}
 												</td>
 												<td>
 													<button
 														type="button"
 														class="btn btn-ghost btn-xs text-error"
 														disabled={cancellingId() === mute.user_id}
-														onClick={() =>
-															handleCancelMute(mute.user_id)
-														}
+														onClick={() => handleCancelMute(mute.user_id)}
 													>
 														<UserCheck size={14} />
 														解除

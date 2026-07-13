@@ -1,9 +1,9 @@
 import { useNavigate } from "@tanstack/solid-router";
-import { createMemo } from "solid-js";
 import ArrowRight from "lucide-solid/icons/arrow-right";
 import CirclePlus from "lucide-solid/icons/circle-plus";
 import Radio from "lucide-solid/icons/radio";
 import ShieldCheck from "lucide-solid/icons/shield-check";
+import { createMemo } from "solid-js";
 import { showToast } from "solid-notifications";
 import CreateRoomModal from "@/components/modal/createRoomModal";
 import { socketStore } from "@/stores/socketStore";
@@ -109,7 +109,10 @@ const QuickActions = (props: QuickActionsProps) => {
 					) : null}
 				</div>
 			</section>
-			<CreateRoomModal ref={createRoomModalRef} onClose={closeCreateRoomModal} />
+			<CreateRoomModal
+				ref={createRoomModalRef}
+				onClose={closeCreateRoomModal}
+			/>
 		</>
 	);
 };

@@ -40,7 +40,7 @@ const srsAdapter: VoiceProviderAdapter = {
 			.filter((m) => m.identity !== token.identity && m.stream)
 			.map((m) => ({ identity: m.identity, stream: m.stream as string }));
 		if (peers.length) client.subscribePeers?.(peers);
-	bindSignalActiveSpeakers(client, token);
+		bindSignalActiveSpeakers(client, token);
 	},
 };
 
@@ -81,7 +81,7 @@ const cloudflareAdapter: VoiceProviderAdapter = {
 			.filter((m) => m.identity !== token.identity && m.stream)
 			.map((m) => ({ identity: m.identity, stream: m.stream as string }));
 		if (peers.length) client.subscribePeers?.(peers);
-	bindSignalActiveSpeakers(client, token);
+		bindSignalActiveSpeakers(client, token);
 	},
 };
 

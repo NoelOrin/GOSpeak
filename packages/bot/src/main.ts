@@ -14,7 +14,9 @@ async function main(): Promise<void> {
 	const hasCredentials = BOT_USERNAME.length > 0 && BOT_PASSWORD.length > 0;
 
 	if (!hasToken && !hasCredentials) {
-		console.error("Provide either GOSPEAK_TOKEN or GOSPEAK_BOT_USERNAME + GOSPEAK_BOT_PASSWORD");
+		console.error(
+			"Provide either GOSPEAK_TOKEN or GOSPEAK_BOT_USERNAME + GOSPEAK_BOT_PASSWORD",
+		);
 		process.exit(1);
 	}
 

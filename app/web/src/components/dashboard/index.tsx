@@ -1,14 +1,14 @@
-import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import AudioLines from "lucide-solid/icons/audio-lines";
 import ChartColumn from "lucide-solid/icons/chart-column";
 import CircleUserRound from "lucide-solid/icons/circle-user-round";
 import HouseWifi from "lucide-solid/icons/house-wifi";
+import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { type ActivityEvent, socketStore } from "@/stores/socketStore";
+import userStore from "@/stores/userStore";
 import ActivityLog from "./activity-log";
 import OperationGuide from "./operation-guide";
 import ServerStats from "./server-stats";
 import StatsCard from "./stats-card";
-import { socketStore, type ActivityEvent } from "@/stores/socketStore";
-import userStore from "@/stores/userStore";
 
 const MAX_ACTIVITY_ITEMS = 8;
 
@@ -35,9 +35,7 @@ const Dashboard = () => {
 	const currentUser = createMemo(() => userStore.user());
 
 	const rankedRooms = createMemo(() =>
-		[...socketStore.rooms()]
-			.sort((a, b) => b.count - a.count)
-			.slice(0, 5),
+		[...socketStore.rooms()].sort((a, b) => b.count - a.count).slice(0, 5),
 	);
 
 	return (
@@ -52,10 +50,14 @@ const Dashboard = () => {
 							</p>
 						</div>
 						<div class="flex items-center gap-2">
-							<div class={`badge ${socketStore.connected() ? "badge-success" : "badge-warning"}`}>
+							<div
+								class={`badge ${socketStore.connected() ? "badge-success" : "badge-warning"}`}
+							>
 								{connectedLabel()}
 							</div>
-							<div class="badge badge-ghost">当前房间 {socketStore.currentRoom() || "无"}</div>
+							<div class="badge badge-ghost">
+								当前房间 {socketStore.currentRoom() || "无"}
+							</div>
 						</div>
 					</div>
 				</section>
@@ -71,21 +73,35 @@ const Dashboard = () => {
 					<StatsCard
 						title="连接状态"
 						value={socketStore.connected() ? "在线" : "离线"}
-						description={socketStore.connected() ? "房间列表已同步" : "等待建立 socket 连接"}
+						description={
+							socketStore.connected()
+								? "房间列表已同步"
+								: "等待建立 socket 连接"
+						}
 						icon={<AudioLines size={20} />}
-						accentClass={socketStore.connected() ? "text-success" : "text-warning"}
+						accentClass={
+							socketStore.connected() ? "text-success" : "text-warning"
+						}
 					/>
 					<StatsCard
 						title="个人状态"
 						value={currentUser()?.display_name || currentUser()?.name || "游客"}
-						description={currentUser() ? `${currentUser()?.role || "user"} · ${socketStore.connected() ? "在线" : "离线"}` : "尚未获取用户信息"}
+						description={
+							currentUser()
+								? `${currentUser()?.role || "user"} · ${socketStore.connected() ? "在线" : "离线"}`
+								: "尚未获取用户信息"
+						}
 						icon={<CircleUserRound size={20} />}
 						accentClass="text-secondary"
 					/>
 					<StatsCard
 						title="活跃房间"
 						value={rankedRooms()[0]?.name || "暂无"}
-						description={rankedRooms()[0] ? `${rankedRooms()[0].count} 人在线` : "等待房间数据"}
+						description={
+							rankedRooms()[0]
+								? `${rankedRooms()[0].count} 人在线`
+								: "等待房间数据"
+						}
 						icon={<ChartColumn size={20} />}
 						accentClass="text-accent"
 					/>
@@ -93,7 +109,10 @@ const Dashboard = () => {
 
 				<div class="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
 					<ActivityLog items={activityItems()} />
-					<ServerStats rooms={rankedRooms()} totalConnections={totalMembers()} />
+					<ServerStats
+						rooms={rankedRooms()}
+						totalConnections={totalMembers()}
+					/>
 				</div>
 
 				<OperationGuide />

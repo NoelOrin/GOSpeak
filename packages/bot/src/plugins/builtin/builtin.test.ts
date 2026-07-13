@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { EventType, EventBus } from "../../index";
-import { clearRegistry, bindHandlerInstances } from "../../core/registry";
+import { describe, expect, it, vi } from "vitest";
+import { bindHandlerInstances } from "../../core/registry";
 import type { MessageEvent, RoomEvent } from "../../core/types";
+import { EventBus, EventType } from "../../index";
 
 function makeCtx() {
 	const sent: string[] = [];
@@ -10,12 +10,18 @@ function makeCtx() {
 		config: {},
 		pluginName: "test",
 		chat: {
-			send: async (_r: string, c: string) => { sent.push(c); },
-			reply: async (_e: any, c: string) => { sent.push(c); },
+			send: async (_r: string, c: string) => {
+				sent.push(c);
+			},
+			reply: async (_e: any, c: string) => {
+				sent.push(c);
+			},
 		},
 		rooms: {
 			listRooms: async () => [{ id: "r1", name: "Room1" }],
-			getMembers: async () => [{ identity: "u1", name: "User1", role: "member" as const }],
+			getMembers: async () => [
+				{ identity: "u1", name: "User1", role: "member" as const },
+			],
 			createRoom: async (name: string) => ({ id: name, name }),
 		},
 		voice: {
@@ -33,7 +39,10 @@ function makeCtx() {
 	};
 }
 
-function msg(content: string, role: "member" | "admin" = "member"): MessageEvent {
+function msg(
+	content: string,
+	role: "member" | "admin" = "member",
+): MessageEvent {
 	return {
 		eventType: EventType.AdapterMessage,
 		messageId: "m1",
@@ -61,7 +70,7 @@ async function bootPlugin(moduleSpec: string, ctx: any): Promise<Plugin> {
 	const PluginCls = Object.values(mod).find(
 		(v: any) => typeof v === "function" && v.prototype instanceof Plugin,
 	) as (new () => Plugin) | undefined;
-	if (!PluginCls) throw new Error("no Plugin class found in " + moduleSpec);
+	if (!PluginCls) throw new Error(`no Plugin class found in ${moduleSpec}`);
 	const instance = new PluginCls();
 	instance.init(ctx);
 	bindHandlerInstances(instance);
@@ -69,7 +78,6 @@ async function bootPlugin(moduleSpec: string, ctx: any): Promise<Plugin> {
 }
 
 describe("builtin plugins", () => {
-
 	it("room-manager lists rooms via command", async () => {
 		const ctx: any = makeCtx();
 		await bootPlugin("./room-manager", ctx);
@@ -83,13 +91,20 @@ describe("builtin plugins", () => {
 	});
 
 	it("keyword-reply matches and replies", async () => {
-		const kvStore = new Map<string, any>([["keyword-reply:map", { hello: "你好！" }]]);
+		const kvStore = new Map<string, any>([
+			["keyword-reply:map", { hello: "你好！" }],
+		]);
 		const ctx: any = {
 			...makeCtx(),
 			kv: {
-				get: async <T>(key: string): Promise<T | undefined> => kvStore.get(key) as T,
-				set: async (key: string, val: any) => { kvStore.set(key, val); },
-				delete: async (key: string) => { kvStore.delete(key); },
+				get: async <T>(key: string): Promise<T | undefined> =>
+					kvStore.get(key) as T,
+				set: async (key: string, val: any) => {
+					kvStore.set(key, val);
+				},
+				delete: async (key: string) => {
+					kvStore.delete(key);
+				},
 			},
 		};
 		await bootPlugin("./keyword-reply", ctx);
@@ -149,7 +164,9 @@ describe("builtin plugins", () => {
 			buildContext: () => ctx,
 			getPluginConfig: () => ({}),
 		});
-		const res = await bus.dispatch(roomEvent(EventType.OnRoomJoined, "NewUser"));
+		const res = await bus.dispatch(
+			roomEvent(EventType.OnRoomJoined, "NewUser"),
+		);
 		expect(res.executed).toBeGreaterThanOrEqual(1);
 		expect(ctx._sent.some((s: string) => s.includes("NewUser"))).toBe(true);
 	});

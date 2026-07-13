@@ -1,6 +1,6 @@
 import { createSignal, Show } from "solid-js";
-import { useUpload } from "@/hooks/useUpload";
 import { showToast } from "solid-notifications";
+import { useUpload } from "@/hooks/useUpload";
 
 interface AvatarUploadProps {
 	/** 当前头像 URL */
@@ -26,7 +26,11 @@ const AvatarUpload = (props: AvatarUploadProps) => {
 		}
 
 		// 格式限制
-		if (!["image/jpeg", "image/png", "image/gif", "image/webp"].includes(file.type)) {
+		if (
+			!["image/jpeg", "image/png", "image/gif", "image/webp"].includes(
+				file.type,
+			)
+		) {
 			showToast("仅支持 JPG/PNG/GIF/WebP 格式", { type: "warning" });
 			return;
 		}
@@ -78,7 +82,9 @@ const AvatarUpload = (props: AvatarUploadProps) => {
 				<div class="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
 					<Show
 						when={!uploading()}
-						fallback={<span class="loading loading-spinner loading-md text-white" />}
+						fallback={
+							<span class="loading loading-spinner loading-md text-white" />
+						}
 					>
 						<span class="text-white text-sm">更换头像</span>
 					</Show>

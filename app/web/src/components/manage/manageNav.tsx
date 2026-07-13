@@ -1,27 +1,27 @@
 import { useLocation, useNavigate } from "@tanstack/solid-router";
-import { createMemo, For } from "solid-js";
-import ShieldCheck from "lucide-solid/icons/shield-check";
-import ServerCog from "lucide-solid/icons/server-cog";
-import Users from "lucide-solid/icons/users";
-import Gavel from "lucide-solid/icons/gavel";
-import Ban from "lucide-solid/icons/ban";
-import HardDrive from "lucide-solid/icons/hard-drive";
-import Mail from "lucide-solid/icons/mail";
 import Activity from "lucide-solid/icons/activity";
+import Ban from "lucide-solid/icons/ban";
+import Gavel from "lucide-solid/icons/gavel";
+import HardDrive from "lucide-solid/icons/hard-drive";
 import KeyRound from "lucide-solid/icons/key-round";
 import LogIn from "lucide-solid/icons/log-in";
+import Mail from "lucide-solid/icons/mail";
+import ServerCog from "lucide-solid/icons/server-cog";
+import ShieldCheck from "lucide-solid/icons/shield-check";
+import Users from "lucide-solid/icons/users";
+import { createMemo, For } from "solid-js";
 
 const MANAGE_TABS = [
-  { path: "permission", label: "权限", icon: ShieldCheck },
-  { path: "sfu", label: "SFU", icon: ServerCog },
-  { path: "users", label: "用户管理", icon: Users },
-  { path: "mute", label: "禁言", icon: Gavel },
-  { path: "ban", label: "封禁", icon: Ban },
-  { path: "storage", label: "存储", icon: HardDrive },
-  { path: "email", label: "邮箱", icon: Mail },
-  { path: "monitor", label: "服务监控", icon: Activity },
-  { path: "apikey", label: "BOT 密钥", icon: KeyRound },
-  { path: "oauth", label: "OAuth", icon: LogIn },
+	{ path: "permission", label: "权限", icon: ShieldCheck },
+	{ path: "sfu", label: "SFU", icon: ServerCog },
+	{ path: "users", label: "用户管理", icon: Users },
+	{ path: "mute", label: "禁言", icon: Gavel },
+	{ path: "ban", label: "封禁", icon: Ban },
+	{ path: "storage", label: "存储", icon: HardDrive },
+	{ path: "email", label: "邮箱", icon: Mail },
+	{ path: "monitor", label: "服务监控", icon: Activity },
+	{ path: "apikey", label: "BOT 密钥", icon: KeyRound },
+	{ path: "oauth", label: "OAuth", icon: LogIn },
 ] as const;
 
 const ManageNav = () => {

@@ -17,7 +17,7 @@ const activityText = (item: ActivityEvent) => {
 		case "room_left":
 			return `你已离开 ${item.room}`;
 	}
-	};
+};
 
 const ActivityLog = (props: ActivityLogProps) => {
 	return (
@@ -43,7 +43,9 @@ const ActivityLog = (props: ActivityLogProps) => {
 							<div class="flex items-start gap-3 rounded-lg border border-base-300/70 px-3 py-3">
 								<div class="mt-1 h-2.5 w-2.5 rounded-full bg-primary" />
 								<div class="min-w-0 flex-1">
-									<div class="text-sm text-base-content">{activityText(item)}</div>
+									<div class="text-sm text-base-content">
+										{activityText(item)}
+									</div>
 									<div class="mt-1 text-xs text-base-content/50">
 										{dayjs(item.timestamp).format("HH:mm:ss")}
 									</div>

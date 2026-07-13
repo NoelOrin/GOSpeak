@@ -61,7 +61,8 @@ export async function syncRolePermissions(
 		data: { role, permissions },
 	})) as AxiosResponse<Result<RolePermissionsData>>;
 
-	if (!(res as any).data.data) throw new Error("role permissions data is missing");
+	if (!(res as any).data.data)
+		throw new Error("role permissions data is missing");
 	return (res as any).data.data;
 }
 
@@ -80,7 +81,6 @@ export async function deleteRole(id: number): Promise<void> {
 		url: "/api/v1/role/delete",
 		data: { id },
 	});
-
 }
 
 export async function updateRole(id: number, name: string): Promise<RoleItem> {

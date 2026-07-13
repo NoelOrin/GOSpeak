@@ -3,10 +3,7 @@ import type {
 	SFUClientOptions,
 	SFUProvider,
 } from "@gospeak/sfu-client/types";
-import {
-	type JoinTokenResponse,
-	resolveSFUProvider,
-} from "@/api/sfu";
+import { type JoinTokenResponse, resolveSFUProvider } from "@/api/sfu";
 import { getVoiceProviderAdapter } from "./providers";
 import type {
 	VoiceJoinAck,

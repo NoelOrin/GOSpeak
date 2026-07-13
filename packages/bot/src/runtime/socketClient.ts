@@ -1,5 +1,12 @@
-import { EventType, type BotEvent, type MemberRef, type RoomEvent, type MemberStateEvent, type RoomRef } from "../core/types";
 import type { Logger } from "../core/context";
+import {
+	type BotEvent,
+	EventType,
+	type MemberRef,
+	type MemberStateEvent,
+	type RoomEvent,
+	type RoomRef,
+} from "../core/types";
 
 type SocketIONamespace = any;
 
@@ -32,7 +39,8 @@ export class GOSpeakSocketClient {
 	private connected = false;
 	private logger: Logger;
 	private joinedRooms: Map<string, { identity: string }> = new Map();
-	private connectResolve: ((value: void | PromiseLike<void>) => void) | null = null;
+	private connectResolve: ((value: void | PromiseLike<void>) => void) | null =
+		null;
 
 	constructor(opts: SocketClientOptions) {
 		this.opts = opts;
@@ -59,17 +67,19 @@ export class GOSpeakSocketClient {
 		if (this.socket) return Promise.resolve();
 		return new Promise((resolve, reject) => {
 			this.connectResolve = resolve;
-			void import("socket.io-client").then(({ io }) => {
-				const opts: Record<string, unknown> = {};
-				if (this.opts.token) opts.query = { token: this.opts.token };
+			void import("socket.io-client")
+				.then(({ io }) => {
+					const opts: Record<string, unknown> = {};
+					if (this.opts.token) opts.query = { token: this.opts.token };
 
-				this.socket = io(this.opts.url, opts) as SocketIONamespace;
-				this.setupListeners();
-			}).catch((err) => {
-				this.logger.error("Failed to load socket.io-client:", err);
-				this.connectResolve = null;
-				reject(err);
-			});
+					this.socket = io(this.opts.url, opts) as SocketIONamespace;
+					this.setupListeners();
+				})
+				.catch((err) => {
+					this.logger.error("Failed to load socket.io-client:", err);
+					this.connectResolve = null;
+					reject(err);
+				});
 		});
 	}
 
@@ -108,7 +118,11 @@ export class GOSpeakSocketClient {
 		this.socket?.emit("room:list");
 	}
 
-	joinRoomSFU(room: string, identity: string, stream?: string): Promise<{ ok: boolean; members: unknown[] }> {
+	joinRoomSFU(
+		room: string,
+		identity: string,
+		stream?: string,
+	): Promise<{ ok: boolean; members: unknown[] }> {
 		if (this.joinedRooms.has(room)) {
 			this.logger.debug(`Already in room ${room}, skipping SFU join`);
 			return Promise.reject(new Error(`already in room ${room}`));
@@ -118,15 +132,19 @@ export class GOSpeakSocketClient {
 				reject(new Error("socket not connected"));
 				return;
 			}
-			this.socket.emit("room:join:sfu", { room, identity, stream }, (ack: unknown) => {
-				const resp = ack as Record<string, unknown>;
-				if (resp?.error) {
-					reject(new Error(String(resp.error)));
-				} else {
-					this.joinedRooms.set(room, { identity });
-					resolve(resp as { ok: boolean; members: unknown[] });
-				}
-			});
+			this.socket.emit(
+				"room:join:sfu",
+				{ room, identity, stream },
+				(ack: unknown) => {
+					const resp = ack as Record<string, unknown>;
+					if (resp?.error) {
+						reject(new Error(String(resp.error)));
+					} else {
+						this.joinedRooms.set(room, { identity });
+						resolve(resp as { ok: boolean; members: unknown[] });
+					}
+				},
+			);
 		});
 	}
 

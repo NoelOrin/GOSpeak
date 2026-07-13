@@ -1,8 +1,8 @@
-import { createSignal, Show, Switch, Match, createEffect } from "solid-js";
+import { createEffect, createSignal, Match, Show, Switch } from "solid-js";
 import { showToast } from "solid-notifications";
-import userStore from "@/stores/userStore";
 import { updateProfile } from "@/api/user";
 import { useUpload } from "@/hooks/useUpload";
+import userStore from "@/stores/userStore";
 import PresetAvatars from "./presetAvatars";
 
 type ViewMode = "view" | "edit";
@@ -10,7 +10,9 @@ type ViewMode = "view" | "edit";
 const ProfileForm = () => {
 	const user = () => userStore.user();
 	const [mode, setMode] = createSignal<ViewMode>("view");
-	const [displayName, setDisplayName] = createSignal(user()?.display_name || "");
+	const [displayName, setDisplayName] = createSignal(
+		user()?.display_name || "",
+	);
 	const [avatar, setAvatar] = createSignal(user()?.avatar || "");
 	const [saving, setSaving] = createSignal(false);
 	const [preview, setPreview] = createSignal<string | null>(null);
@@ -48,7 +50,11 @@ const ProfileForm = () => {
 			showToast("头像文件不能超过 5MB", { type: "warning" });
 			return;
 		}
-		if (!["image/jpeg", "image/png", "image/gif", "image/webp"].includes(file.type)) {
+		if (
+			!["image/jpeg", "image/png", "image/gif", "image/webp"].includes(
+				file.type,
+			)
+		) {
 			showToast("仅支持 JPG/PNG/GIF/WebP 格式", { type: "warning" });
 			return;
 		}
@@ -97,7 +103,8 @@ const ProfileForm = () => {
 	};
 
 	const displayAvatar = () => preview() || avatar();
-	const initial = () => (user()?.display_name || user()?.name || "?").charAt(0).toUpperCase();
+	const initial = () =>
+		(user()?.display_name || user()?.name || "?").charAt(0).toUpperCase();
 
 	return (
 		<div class="flex flex-col items-center gap-6 p-6 w-full max-w-lg mx-auto">
@@ -143,7 +150,9 @@ const ProfileForm = () => {
 						<div class="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
 							<Show
 								when={!uploading()}
-								fallback={<span class="loading loading-spinner loading-md text-white" />}
+								fallback={
+									<span class="loading loading-spinner loading-md text-white" />
+								}
 							>
 								<span class="text-white text-sm">更换头像</span>
 							</Show>
@@ -182,7 +191,9 @@ const ProfileForm = () => {
 				<legend class="fieldset-legend text-[14px]">昵称</legend>
 				<Switch>
 					<Match when={mode() === "view"}>
-						<div class="input w-full bg-base-200 cursor-default">{displayName()}</div>
+						<div class="input w-full bg-base-200 cursor-default">
+							{displayName()}
+						</div>
 					</Match>
 					<Match when={mode() === "edit"}>
 						<input
@@ -232,7 +243,10 @@ const ProfileForm = () => {
 							onClick={handleSave}
 							disabled={saving()}
 						>
-							<Show when={!saving()} fallback={<span class="loading loading-spinner loading-sm" />}>
+							<Show
+								when={!saving()}
+								fallback={<span class="loading loading-spinner loading-sm" />}
+							>
 								保存
 							</Show>
 						</button>

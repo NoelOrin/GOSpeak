@@ -80,7 +80,9 @@ export function createSocketClient() {
 		cb: (...args: any[]) => void,
 	): () => void {
 		socket?.on(event, cb);
-		const cleanup = () => { socket?.off(event, cb); };
+		const cleanup = () => {
+			socket?.off(event, cb);
+		};
 		serverEventCleanups.push(cleanup);
 		return cleanup;
 	}

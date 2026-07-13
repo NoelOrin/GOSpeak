@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, Outlet } from "@tanstack/solid-router";
+import { createFileRoute, Outlet, redirect } from "@tanstack/solid-router";
 import userStore from "@/stores/userStore";
 
 export const Route = createFileRoute("/(app)/manage")({

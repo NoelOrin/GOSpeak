@@ -13,7 +13,12 @@ export enum EventType {
 	OnPluginError = "OnPluginError",
 }
 
-export type PermissionLevel = "owner" | "admin" | "moderator" | "member" | "guest";
+export type PermissionLevel =
+	| "owner"
+	| "admin"
+	| "moderator"
+	| "member"
+	| "guest";
 
 export interface RoomRef {
 	id: string;
@@ -69,7 +74,11 @@ export interface PluginErrorEvent {
 }
 
 export interface LifecycleEvent {
-	eventType: EventType.OnBotLoaded | EventType.OnPluginLoaded | EventType.OnPluginUnloaded | EventType.OnPluginError;
+	eventType:
+		| EventType.OnBotLoaded
+		| EventType.OnPluginLoaded
+		| EventType.OnPluginUnloaded
+		| EventType.OnPluginError;
 	pluginName?: string;
 	timestamp: number;
 }

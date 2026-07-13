@@ -1,20 +1,25 @@
 export * from "./core/index";
-export * from "./filters/index";
+export type { LoadedPlugin } from "./core/loader";
+export { initPlugin, loadPlugin } from "./core/loader";
+export { Command, On } from "./decorators/handlers";
+export type { PluginMetaInput } from "./decorators/register";
 export {
+	getPluginModulePath,
 	RegisterPlugin,
 	setPluginModulePath,
-	getPluginModulePath,
 } from "./decorators/register";
-export type { PluginMetaInput } from "./decorators/register";
-export { On, Command } from "./decorators/handlers";
-export { loadPlugin, initPlugin } from "./core/loader";
-export type { LoadedPlugin } from "./core/loader";
-export { GOSpeakApiClient, GOSpeakSocketClient, BotRunner, AuthClient } from "./runtime/index";
+export * from "./filters/index";
 export type {
-	BotConfig,
-	BotStatus,
 	ApiClientOptions,
-	SocketClientOptions,
 	AuthCredentials,
 	AuthResult,
+	BotConfig,
+	BotStatus,
+	SocketClientOptions,
+} from "./runtime/index";
+export {
+	AuthClient,
+	BotRunner,
+	GOSpeakApiClient,
+	GOSpeakSocketClient,
 } from "./runtime/index";

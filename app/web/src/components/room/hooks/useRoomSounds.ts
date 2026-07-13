@@ -50,8 +50,7 @@ export function useRoomSounds(phase: () => VoicePhase) {
 			prevPhase === "ready" ||
 			prevPhase === "media_ready" ||
 			prevPhase === "reconnecting";
-		const leftPhase =
-			p === "resolving" || p === "idle" || p === "leaving";
+		const leftPhase = p === "resolving" || p === "idle" || p === "leaving";
 		if (wasJoined && leftPhase) {
 			playLeaveSound();
 		}

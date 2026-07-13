@@ -1,5 +1,5 @@
-import type { EventType } from "./types";
 import type { HandlerFilter } from "../filters/handlerFilter";
+import type { EventType } from "./types";
 
 export interface PluginMetadata {
 	name: string;
@@ -28,8 +28,9 @@ export class Plugin {
 	protected ctx!: import("./context").BotContext;
 
 	constructor() {
-		const meta = (this.constructor as unknown as { __pluginMeta?: PluginMetadata })
-			.__pluginMeta;
+		const meta = (
+			this.constructor as unknown as { __pluginMeta?: PluginMetadata }
+		).__pluginMeta;
 		if (meta) this.metadata = meta;
 	}
 

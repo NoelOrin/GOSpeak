@@ -1,11 +1,11 @@
 import { createFileRoute, redirect } from "@tanstack/solid-router";
-import userStore from "@/stores/userStore";
-import { createResource, createSignal, For, Show } from "solid-js";
-import { showToast } from "solid-notifications";
 import Ban from "lucide-solid/icons/ban";
 import UserCheck from "lucide-solid/icons/user-check";
 import Users from "lucide-solid/icons/users";
+import { createResource, createSignal, For, Show } from "solid-js";
+import { showToast } from "solid-notifications";
 import { listUsers, updateUserRole } from "@/api/user";
+import userStore from "@/stores/userStore";
 
 const BAN_ROLE = "ban";
 const USER_ROLE = "user";
@@ -32,7 +32,6 @@ function BanPage() {
 	const allUsers = () => usersData()?.users || [];
 	const bannedUsers = () => allUsers().filter((u) => u.role === BAN_ROLE);
 	const _normalUsers = () => allUsers().filter((u) => u.role !== BAN_ROLE);
-
 
 	const handleBan = async () => {
 		const uid = targetUserId();
@@ -68,10 +67,10 @@ function BanPage() {
 
 	return (
 		<div class="flex h-full min-h-0 flex-col gap-4 p-4">
-		<div class="flex items-center gap-2 mb-3">
-			<Ban size={20} />
-			<h3 class="font-bold text-lg">封禁管理</h3>
-		</div>
+			<div class="flex items-center gap-2 mb-3">
+				<Ban size={20} />
+				<h3 class="font-bold text-lg">封禁管理</h3>
+			</div>
 			{/* ========== 已封禁用户 ========== */}
 			<div>
 				<div class="mb-3 flex items-center gap-2 font-semibold text-sm">
@@ -144,7 +143,7 @@ function BanPage() {
 				</div>
 				<div class="flex items-end gap-3">
 					<div class="form-control">
-						<label class="label py-1" htmlFor="ban-select-user">
+						<label class="label py-1" for="ban-select-user">
 							<span class="label-text text-xs">选择用户</span>
 						</label>
 						<select

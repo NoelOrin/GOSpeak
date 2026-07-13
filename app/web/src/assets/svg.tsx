@@ -184,6 +184,6 @@ const svgGroup: Record<string, JSX.Element> = {
 			stroke-linejoin="round"
 		/>
 	),
-	} as const;
+} as const;
 
 export default svgGroup;

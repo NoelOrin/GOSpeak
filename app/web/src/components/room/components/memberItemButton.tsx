@@ -19,7 +19,7 @@ const MemberItemButton = (props: MemberItemButtonPropsType) => {
 		>
 			<Avatar
 				class="size-6 shrink-0"
-				textClass="text-[12px]"	
+				textClass="text-[12px]"
 				src={props.member.avatar}
 				name={
 					props.member.displayName || props.member.name || props.member.identity

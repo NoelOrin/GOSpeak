@@ -1,15 +1,15 @@
 import { createFileRoute, redirect } from "@tanstack/solid-router";
-import userStore from "@/stores/userStore";
+import Mail from "lucide-solid/icons/mail";
 import RefreshCcw from "lucide-solid/icons/refresh-ccw";
 import Save from "lucide-solid/icons/save";
-import Mail from "lucide-solid/icons/mail";
 import { createEffect, createResource, createSignal, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import {
+	type EmailConfigInput,
 	getEmailConfig,
 	updateEmailConfig,
-	type EmailConfigInput,
 } from "@/api/email";
+import userStore from "@/stores/userStore";
 
 export const Route = createFileRoute("/(app)/manage/email/")({
 	beforeLoad: () => {
