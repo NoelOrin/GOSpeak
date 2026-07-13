@@ -11,6 +11,7 @@ GOSpeak 通过 **Provider 抽象层**支持多种 SFU（Selective Forwarding Uni
 | **MediaSoup** | 自建 | Node.js Worker | ⭐⭐⭐ | 高度自定义 |
 | **Agora** | 云服务 | SDK 集成 | ⭐⭐⭐ | 不想管服务器 |
 | **Daily** | 云服务 | REST API | ⭐⭐⭐ | 快速集成 |
+| **Cloudflare** | 云服务 | WHIP/WHEP + REST | ⭐⭐⭐ | 全球边缘节点 |
 
 ## Provider 接口
 
@@ -93,7 +94,7 @@ Authorization: Bearer <admin-token>
 
 | 你的场景 | 推荐选项 |
 |----------|---------|
-| 游戏语音、完全自控 | **SRS** + Linux 服务器 |
+| 游戏语音、完全自控 | **LiveKit**（完整功能）或 **SRS**（轻量）|
 | 快速搭建、功能全面 | **LiveKit** Docker |
 | 不想管基础设施 | **Agora**（国内）或 **Daily**（海外）|
 | 自定义信令/媒体逻辑 | **MediaSoup** |
@@ -107,4 +108,5 @@ Authorization: Bearer <admin-token>
 - [MediaSoup 自建 →](/sfu/mediasoup-selfhost)
 - [Agora 云服务 →](/sfu/agora-cloud)
 - [Daily 云服务 →](/sfu/daily-cloud)
+- [Cloudflare 云服务 →](/sfu/cloudflare)
 - [成熟度对比 →](/sfu/comparison)

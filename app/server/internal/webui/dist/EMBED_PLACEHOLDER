@@ -1,2 +1,1 @@
-This file keeps go:embed valid when frontend assets are not synced yet.
-Release/Docker builds replace this directory with app/web/dist contents.
+This directory contains the built frontend assets.

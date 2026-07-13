@@ -12,7 +12,7 @@
      │          │                     │
      ▼          ▼                     ▼
 ┌──────────────────────┐     ┌──────────────┐
-│   Go Server :8998     │     │              │
+│   Go Server :8098     │     │              │
 │                       │     │   SFU 服务器  │
 │  ┌─────────────────┐  │     │  LiveKit/SRS │
 │  │ Handler → Service│  │     │  MediaSoup   │

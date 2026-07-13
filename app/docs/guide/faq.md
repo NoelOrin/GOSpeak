@@ -70,12 +70,14 @@ DB_PASSWORD="gospeak"
 
 ## TURN 服务器需要配置吗？
 
-当前仓库不内置 Coturn。公网部署时，如果用户处于对称 NAT 后可能出现 ICE 失败。两种解决方式：
+取决于你使用的 SFU 和部署环境：
 
-1. 使用 LiveKit（内建 TURN 支持，docker-compose 中 `turn.enabled=true`）
-2. 自行部署 Coturn，在 SFU 配置中填入 iceServers
+- **LiveKit 自建**：内置 TURN 服务器（docker-compose 中 `turn.enabled=true`，端口 3478/udp），无需额外部署
+- **LiveKit Cloud**：自带 TURN 中继，零配置
+- **SRS 自建**：不内置 TURN。大多数非对称 NAT 场景下 SRS 的 8000/udp + TCP 回退已足够；对称 NAT 环境建议自行部署 Coturn
+- **Agora / Daily / Cloudflare**：云服务自带 ICE 穿透能力
 
-对于大多数非对称 NAT 场景，SRS 的 8000/udp + TCP 回退已足够。
+对于大多数非对称 NAT 场景，无需额外 TURN 服务器。
 
 ## Docker 镜像如何构建？
 

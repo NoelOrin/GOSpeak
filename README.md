@@ -46,11 +46,22 @@
 
 ### 前置依赖
 
-- Go 1.24+、Node.js 20+、pnpm 10+
+- **二进制运行**：无需任何依赖，下载即用
+- **源码开发**：Go 1.24+、Node.js 20+、pnpm 10+
 - Docker & Docker Compose（可选，也可直接用 SFU 云服务）
-- GCC / musl-dev（SQLite 需要 CGO）
 
-### 5 分钟跑起来
+### 1 分钟跑起来（单二进制）
+
+Release 页面下载对应平台的 [`gospeak-*` 单文件](https://github.com/NoelOrin/GOSpeak/releases)，前端已内嵌：
+
+```bash
+# 下载后
+chmod +x gospeak-linux-amd64
+./gospeak-linux-amd64 server -e prod
+# 浏览器打开 http://<host>:8998 即可使用
+```
+
+### 5 分钟开发模式跑起来
 
 ```bash
 # 1. 克隆
@@ -123,17 +134,17 @@ DB_TYPE="PostgresSQL"  DB_HOST=postgres  DB_PORT=5432  DB_USER=gospeak  DB_PASSW
 REDIS_HOST=redis
 ```
 
-### Docker 生产部署
+### Docker 生产部署（前端已内嵌）
 
 ```bash
-# 构建一体镜像
+# 构建一体镜像（Dockerfile 内构建前端 + go:embed）
 docker build -t gospeak .
 
-# 运行（端口 8998，挂载数据库 + 上传目录）
+# 运行
 docker run -d \
   --env-file app/server/.env.prod \
   -p 8998:8998 \
-  -v gospeak-data:/app/packages/server/db \
+  -v gospeak-data:/app/db \
   gospeak
 ```
 
@@ -256,7 +267,11 @@ pnpm start:dev          # 启动前后端（热重载）
 pnpm dev:server         # 仅后端（air）
 pnpm dev:web            # 仅前端（vite）
 
-pnpm build:server       # 构建 Go 二进制
+# 单平台二进制（前端自动嵌入）
+make linux-amd64-bin
+
+# 全平台
+make all
 docker build -t gospeak .  # Docker 镜像
 
 pnpm test:server        # 后端集成测试
@@ -291,7 +306,7 @@ PR / Issue 欢迎。大改动先开 Issue 讨论。
 
 ## 相关文档
 
-- [部署指南](./docs/deployment-guide.md)
+- [部署指南](./docs/deployment-guide.md)（含[单二进制部署](./app/docs/deployment/binary.md)）
 - [架构图](./ARCHITECTURE.md)
 - [SFU 成熟度](./docs/sfu-provider-maturity.md)
 - [API 路由表](./AGENTS.md)

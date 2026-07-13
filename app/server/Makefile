@@ -10,8 +10,11 @@
 #   make linux              # linux/amd64 + linux/arm64
 #   make darwin             # darwin/amd64 + darwin/arm64
 #   make windows            # windows/amd64
+#   make edge               # ARMv7/v6/v5 + RISC-V
 #   make web                # 仅构建前端并同步到 embed 目录
 #   make linux-amd64-bin    # 仅编译单平台二进制
+#   make freebsd            # freebsd/amd64 + arm64
+#   make windows-arm64      # windows/arm64 (Snapdragon X)
 
 VERSION   ?= $(shell git describe --tags --always 2>/dev/null || echo "dev")
 BUILDDIR  ?= build
@@ -34,7 +37,7 @@ define sync_web
 	@echo "✓  synced frontend → $(EMBED_DIR)"
 endef
 
-all: clean web linux windows darwin
+all: clean web linux windows darwin freebsd openbsd
 
 clean:
 	rm -rf $(BUILDDIR)
@@ -79,6 +82,14 @@ linux-arm64-bin: | $(BUILDDIR)
 		go build $(LDFLAGS) -o $(BUILDDIR)/gospeak-linux-arm64 main.go
 	@echo "✓  $(BUILDDIR)/gospeak-linux-arm64"
 
+linux-armv7: web linux-armv7-bin
+
+linux-armv7-bin: | $(BUILDDIR)
+	@echo ">> Building linux/arm/v7 (ARMv7, 树莓派2/3 32位, 全志H3) …"
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 \
+		go build $(LDFLAGS) -o $(BUILDDIR)/gospeak-linux-armv7 main.go
+	@echo "✓  $(BUILDDIR)/gospeak-linux-armv7"
+
 # ── macOS ─────────────────────────────────────────────────────
 darwin: darwin-amd64 darwin-arm64
 
@@ -97,8 +108,39 @@ darwin-arm64-bin: | $(BUILDDIR)
 		go build $(LDFLAGS) -o $(BUILDDIR)/gospeak-darwin-arm64 main.go
 	@echo "✓  $(BUILDDIR)/gospeak-darwin-arm64"
 
+# ── FreeBSD ──────────────────────────────────────────────────
+freebsd: freebsd-amd64 freebsd-arm64
+
+freebsd-amd64: web freebsd-amd64-bin
+
+freebsd-amd64-bin: | $(BUILDDIR)
+	@echo ">> Building freebsd/amd64 …"
+	CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+		go build $(LDFLAGS) -o $(BUILDDIR)/gospeak-freebsd-amd64 main.go
+	@echo "✓  $(BUILDDIR)/gospeak-freebsd-amd64"
+
+freebsd-arm64: web freebsd-arm64-bin
+
+freebsd-arm64-bin: | $(BUILDDIR)
+	@echo ">> Building freebsd/arm64 (FreeBSD ARM, NAS) …"
+	CGO_ENABLED=0 GOOS=freebsd GOARCH=arm64 \
+		go build $(LDFLAGS) -o $(BUILDDIR)/gospeak-freebsd-arm64 main.go
+	@echo "✓  $(BUILDDIR)/gospeak-freebsd-arm64"
+
+# ── OpenBSD ──────────────────────────────────────────────────
+openbsd: openbsd-amd64
+
+openbsd-amd64: web openbsd-amd64-bin
+
+openbsd-amd64-bin: | $(BUILDDIR)
+	@echo ">> Building openbsd/amd64 (OpenBSD, 防火墙/路由) …"
+	CGO_ENABLED=0 GOOS=openbsd GOARCH=amd64 \
+		go build $(LDFLAGS) -o $(BUILDDIR)/gospeak-openbsd-amd64 main.go
+	@echo "✓  $(BUILDDIR)/gospeak-openbsd-amd64"
 # ── Windows ───────────────────────────────────────────────────
-windows: windows-amd64
+
+
+windows: windows-amd64 windows-arm64
 
 windows-amd64: web windows-amd64-bin
 
@@ -108,9 +150,22 @@ windows-amd64-bin: | $(BUILDDIR)
 		go build $(LDFLAGS) -o $(BUILDDIR)/gospeak-windows-amd64.exe main.go
 	@echo "✓  $(BUILDDIR)/gospeak-windows-amd64.exe"
 
+windows-arm64: web windows-arm64-bin
+
+windows-arm64-bin: | $(BUILDDIR)
+	@echo ">> Building windows/arm64 (Snapdragon X / Surface Pro) …"
+	CGO_ENABLED=0 GOOS=windows GOARCH=arm64 \
+		go build $(LDFLAGS) -o $(BUILDDIR)/gospeak-windows-arm64.exe main.go
+	@echo "✓  $(BUILDDIR)/gospeak-windows-arm64.exe"
+
 .PHONY: all clean web sync-web \
 	linux linux-amd64 linux-arm64 \
 	linux-amd64-bin linux-arm64-bin \
 	darwin darwin-amd64 darwin-arm64 \
 	darwin-amd64-bin darwin-arm64-bin \
-	windows windows-amd64 windows-amd64-bin
+	windows windows-amd64 windows-amd64-bin \
+	openbsd openbsd-amd64 openbsd-amd64-bin \
+	freebsd-arm64 freebsd-arm64-bin \
+	linux-armv7 linux-armv7-bin \
+	windows-arm64 windows-arm64-bin \
+	freebsd freebsd-amd64 freebsd-amd64-bin
