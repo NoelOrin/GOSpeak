@@ -30,6 +30,7 @@ jobs:
   build-server:
     name: Build Server (Go)
     runs-on: ubuntu-latest
+    needs: build-web
     steps:
       - uses: actions/checkout@v7
 
@@ -38,6 +39,19 @@ jobs:
           go-version-file: app/server/go.mod
           cache-dependency-path: app/server/go.sum
           cache: true
+
+      - name: Download web dist
+        uses: actions/download-artifact@v8
+        with:
+          name: web-dist
+          path: app/web/dist
+
+      - name: Embed frontend into server
+        run: |
+          rm -rf app/server/internal/webui/dist
+          mkdir -p app/server/internal/webui/dist
+          cp -R app/web/dist/. app/server/internal/webui/dist/
+          test -f app/server/internal/webui/dist/index.html
 
       - name: Build
         working-directory: app/server

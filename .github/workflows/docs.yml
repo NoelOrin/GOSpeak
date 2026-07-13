@@ -89,7 +89,10 @@ jobs:
           if [ "$EVENT" = "push" ]; then
             # paths filter already guarantees docs-related changes
             should_build=true
-            should_deploy=true
+            # 仅 release 分支部署；feature 分支仅构建，不部署
+            if [ "$REF_NAME" = "release" ]; then
+              should_deploy=true
+            fi
           elif [ "$EVENT" = "workflow_dispatch" ]; then
             should_build=true
             source_ref="${SOURCE_REF_INPUT:-}"
