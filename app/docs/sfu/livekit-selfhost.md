@@ -64,8 +64,7 @@ docker run -d \
   -p 7881:7881 \
   -p 7882:7882 \
   -p 7882:7882/udp \
-  # TURN 中继（辅助 NAT 穿透）
-  -p 3478:3478/udp \
+  -p 3478:3478/udp \    # TURN 中继
   -v $(pwd)/livekit.yaml:/etc/livekit.yaml \
   livekit/livekit-server:latest \
   --config /etc/livekit.yaml
