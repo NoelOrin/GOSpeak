@@ -4,6 +4,7 @@ import { showToast } from "solid-notifications";
 import { createSocketClient } from "@/socket/client";
 import { EVENTS } from "@/socket/events";
 import userStore from "@/stores/userStore";
+import { setSpeakingIdentities } from "@/handler_audio/speakingStore";
 
 export { EVENTS } from "@/socket/events";
 
@@ -339,6 +340,10 @@ export const socketStore = createRoot(() => {
 			setSpeechRestricted(false);
 			setSpeechRestrictionInfo(null);
 		});
+	// 发言检测（SRS / Cloudflare）：信令层聚合后广播房间级 active speakers
+	adapter.onServerEvent(EVENTS.ROOM_ACTIVE_SPEAKERS, (event: { identities?: string[] }) => {
+		setSpeakingIdentities(event?.identities ?? []);
+	});
 	}
 
 	function disconnect() {
@@ -570,6 +575,14 @@ export const socketStore = createRoot(() => {
 		});
 	}
 
+	function emitSpeaking(room: string, identity: string, speaking: boolean) {
+		adapter.emitFireAndForget(EVENTS.MEMBER_SPEAKING, {
+			room,
+			identity,
+			speaking,
+		});
+	}
+
 	function selectRoom(room: RoomInfo) {
 		setSelectedRoomInfo(room);
 	}
@@ -612,6 +625,7 @@ export const socketStore = createRoot(() => {
 		listRooms,
 		kickMember,
 		emitMicState,
+		emitSpeaking,
 		selectRoom,
 		clearSelectedRoom,
 		setCurrentSFUProvider,
