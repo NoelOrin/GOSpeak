@@ -38,8 +38,6 @@ jobs:
           go-version-file: app/server/go.mod
           cache-dependency-path: app/server/go.sum
           cache: true
-          cache-dependency-path: app/server/go.sum
-          cache: true
 
       - name: Build
         working-directory: app/server
@@ -59,7 +57,7 @@ jobs:
   test-server:
     name: Test Server (Go)
     runs-on: ubuntu-latest
-    if: ${{ !cancelled() && ((github.event_name == 'workflow_dispatch' && inputs.run_tests) || (github.event_name != 'workflow_dispatch')) }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_tests) || (github.event_name != 'workflow_dispatch') }}
     steps:
       - uses: actions/checkout@v7
 
@@ -237,7 +235,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: app/server/go.mod
-
+          cache-dependency-path: app/server/go.sum
+          cache: true
 
       - name: Build binary
         working-directory: app/server
