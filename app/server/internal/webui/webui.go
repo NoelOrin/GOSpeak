@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-// dist 在构建时由前端产物填充；仓库内仅保留 .gitkeep 保证 go:embed 合法。
+// dist 在构建时由前端产物填充；仓库内保留 EMBED_PLACEHOLDER 保证 go:embed 合法。
 //
 //go:embed all:dist
 var embedded embed.FS
