@@ -16,7 +16,8 @@
     "start:dev": "pnpm run dev:server & pnpm run dev:web",
     "start:prod": "pnpm run prod:server",
     "format": "pnpm -r format",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "typecheck": "pnpm --filter @gospeak/web --filter @gospeak/bot --filter @gospeak/sfu-client --filter @gospeak/mediasoup-worker exec tsc --noEmit"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",
