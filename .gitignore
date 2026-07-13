@@ -106,3 +106,4 @@ deploy/env/*.local.env
 # go:embed frontend bundle (build overwrites contents, keep placeholder tracked)
 app/server/internal/webui/dist/*
 !app/server/internal/webui/dist/EMBED_PLACEHOLDER
+!app/server/internal/webui/dist/.gitkeep
