@@ -5,7 +5,8 @@ RUN corepack enable && corepack prepare pnpm@10.11.0 --activate
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY app/web/package.json app/web/
 COPY packages/sfu-client/package.json packages/sfu-client/
-RUN pnpm install --frozen-lockfile --filter @gospeak/web...
+# `prepare` 含 lefthook install，依赖 git，Docker 内无需执行
+RUN pnpm install --frozen-lockfile --filter @gospeak/web... --ignore-scripts
 COPY app/web app/web
 COPY packages/sfu-client packages/sfu-client
 RUN pnpm --filter @gospeak/web build
