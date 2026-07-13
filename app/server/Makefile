@@ -42,7 +42,10 @@ clean:
 	# 保留 embed 目录结构，清理构建产物
 	rm -rf $(EMBED_DIR)
 	mkdir -p $(EMBED_DIR)
-	touch $(EMBED_DIR)/.gitkeep
+	printf '%s\n' \
+		'This file keeps go:embed valid when frontend assets are not synced yet.' \
+		'Release/Docker builds replace this directory with app/web/dist contents.' \
+		> $(EMBED_DIR)/EMBED_PLACEHOLDER
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)

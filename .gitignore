@@ -16,7 +16,10 @@ node_modules
 # ========================
 # 前端 (app/web)
 # ========================
-dist
+# Vite/TS package build outputs (not go embed dir)
+**/dist/
+!app/server/internal/webui/dist/
+!app/server/internal/webui/dist/**
 dist-ssr
 .nitro
 .tanstack
@@ -97,8 +100,9 @@ deploy/env/app.srs.env
 deploy/env/app.livekit.env
 deploy/env/*.local.env
 
-# go:embed frontend bundle (populated at build time)
 # 顶层 dist 规则会忽略整个目录，需先反忽略目录再保留 .gitkeep
 !app/server/internal/webui/dist/
+
+# go:embed frontend bundle (build overwrites contents, keep placeholder tracked)
 app/server/internal/webui/dist/*
-!app/server/internal/webui/dist/.gitkeep
+!app/server/internal/webui/dist/EMBED_PLACEHOLDER
