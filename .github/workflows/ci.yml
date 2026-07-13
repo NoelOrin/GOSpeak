@@ -196,7 +196,7 @@ jobs:
   # ── Release: Cross-Platform Binary ───────────────────────────────────
   build-release-binaries:
     name: Build ${{ matrix.target }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-latest
     if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.release_build) }}
     permissions:
       contents: write
@@ -204,30 +204,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # CGO_ENABLED=0 pure-Go cross-compile on Linux — no macOS runners needed.
           - target: linux-amd64
             goos: linux
             goarch: amd64
-            runner: ubuntu-latest
             ext: ""
           - target: linux-arm64
             goos: linux
             goarch: arm64
-            runner: ubuntu-latest
             ext: ""
           - target: darwin-amd64
             goos: darwin
             goarch: amd64
-            runner: macos-13
             ext: ""
           - target: darwin-arm64
             goos: darwin
             goarch: arm64
-            runner: macos-latest
             ext: ""
           - target: windows-amd64
             goos: windows
             goarch: amd64
-            runner: ubuntu-latest
             ext: ".exe"
     steps:
       - uses: actions/checkout@v7
