@@ -74,7 +74,6 @@ describe("getVoiceProviderAdapter", () => {
 		).toBe("wss://lk.example");
 	});
 
-
 	it("cloudflare uses background signal and subscribes peers by session stream", async () => {
 		const adapter = getVoiceProviderAdapter("cloudflare");
 		expect(adapter.interactiveAfterMedia).toBe(true);

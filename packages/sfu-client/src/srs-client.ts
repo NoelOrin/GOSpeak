@@ -236,6 +236,7 @@ export class SRSSFUClient implements SFUClient {
 	private remoteTracks = new Map<string, SRSRemoteAudioTrack>();
 	private peerSubs = new Map<string, PeerSub>();
 	private onActiveSpeakersCb?: (ids: string[]) => void;
+	private onLocalSpeakingChangeCb?: (speaking: boolean) => void;
 	private onRemoteAudioTrackCb?: (info: RemoteTrackInfo) => void;
 	private onRemoteAudioTrackRemovedCb?: (identity: string) => void;
 	private onDisconnectedCb?: () => void;
@@ -245,7 +246,7 @@ export class SRSSFUClient implements SFUClient {
 	private isReconnecting = false;
 	private onPcStateChangeBound?: () => void;
 	private activeSpeakerRaf: number | null = null;
-	private static MAX_SUBSCRIBE_RETRIES = 60;
+	public static readonly MAX_SUBSCRIBE_RETRIES = 60;
 	private analyzerContext: AudioContext | null = null;
 	private publishResourceUrl = "";
 	private identity = "";
@@ -681,7 +682,7 @@ export class SRSSFUClient implements SFUClient {
 				cancelAnimationFrame(this.activeSpeakerRaf);
 				this.activeSpeakerRaf = null;
 			}
-			this.onActiveSpeakersCb?.([]);
+			this.onLocalSpeakingChangeCb?.(false);
 			return;
 		}
 
@@ -933,6 +934,10 @@ export class SRSSFUClient implements SFUClient {
 		this.onActiveSpeakersCb = cb;
 	}
 
+	onLocalSpeakingChange(cb: (speaking: boolean) => void): void {
+		this.onLocalSpeakingChangeCb = cb;
+	}
+
 	onRemoteAudioTrack(cb: (info: RemoteTrackInfo) => void): void {
 		this.onRemoteAudioTrackCb = cb;
 	}
@@ -1077,7 +1082,7 @@ export class SRSSFUClient implements SFUClient {
 	}
 
 	private startAudioLevelLoop(): void {
-		if (!this.localStream || !this.micEnabled || !this.onActiveSpeakersCb) return;
+		if (!this.localStream || !this.micEnabled) return;
 		if (this.activeSpeakerRaf !== null) {
 			cancelAnimationFrame(this.activeSpeakerRaf);
 			this.activeSpeakerRaf = null;
@@ -1095,9 +1100,8 @@ export class SRSSFUClient implements SFUClient {
 			const average =
 				levels.reduce((sum, value) => sum + value, 0) /
 				levels.length;
-			this.onActiveSpeakersCb?.(
-				average > 10 ? [this.identity] : [],
-			);
+			const speaking = average > 10;
+			this.onLocalSpeakingChangeCb?.(speaking);
 			this.activeSpeakerRaf = requestAnimationFrame(tick);
 		};
 		tick();

@@ -1,6 +1,7 @@
 import type { SFUProvider } from "@gospeak/sfu-client/types";
 import { createMemo, createRoot, createSignal } from "solid-js";
 import { showToast } from "solid-notifications";
+import { setSpeakingIdentities } from "@/handler_audio/speakingStore";
 import { createSocketClient } from "@/socket/client";
 import { EVENTS } from "@/socket/events";
 import userStore from "@/stores/userStore";
@@ -339,6 +340,13 @@ export const socketStore = createRoot(() => {
 			setSpeechRestricted(false);
 			setSpeechRestrictionInfo(null);
 		});
+		// 发言检测（SRS / Cloudflare）：信令层聚合后广播房间级 active speakers
+		adapter.onServerEvent(
+			EVENTS.ROOM_ACTIVE_SPEAKERS,
+			(event: { identities?: string[] }) => {
+				setSpeakingIdentities(event?.identities ?? []);
+			},
+		);
 	}
 
 	function disconnect() {
@@ -394,17 +402,15 @@ export const socketStore = createRoot(() => {
 	}
 
 	function joinRoom(room: string, identity: string, password?: string) {
-		return waitForConnected().then(() =>
-			signalEmit(EVENTS.ROOM_JOIN, { room, identity, password }),
-		).then(
-			(data) => {
+		return waitForConnected()
+			.then(() => signalEmit(EVENTS.ROOM_JOIN, { room, identity, password }))
+			.then((data) => {
 				if (data.error) {
 					throw new Error(data.error);
 				}
 				setCurrentRoom(data.room);
 				return data;
-			},
-		);
+			});
 	}
 
 	function leaveRoom(room: string): Promise<any> {
@@ -420,10 +426,9 @@ export const socketStore = createRoot(() => {
 	}
 
 	function joinRoomSFU(room: string, identity: string, stream?: string) {
-		return waitForConnected().then(() =>
-			signalEmit(EVENTS.ROOM_JOIN_SFU, { room, identity, stream }),
-		).then(
-			(data) => {
+		return waitForConnected()
+			.then(() => signalEmit(EVENTS.ROOM_JOIN_SFU, { room, identity, stream }))
+			.then((data) => {
 				// ack 返回完整成员列表，即时 upsert rooms[]（不等 room:updated）
 				if (data.members) {
 					const ackMembers: MemberInfo[] = data.members;
@@ -458,8 +463,7 @@ export const socketStore = createRoot(() => {
 					timestamp: Date.now(),
 				});
 				return data;
-			},
-		);
+			});
 	}
 
 	function getRouterCapabilities(room: string) {
@@ -570,6 +574,14 @@ export const socketStore = createRoot(() => {
 		});
 	}
 
+	function emitSpeaking(room: string, identity: string, speaking: boolean) {
+		adapter.emitFireAndForget(EVENTS.MEMBER_SPEAKING, {
+			room,
+			identity,
+			speaking,
+		});
+	}
+
 	function selectRoom(room: RoomInfo) {
 		setSelectedRoomInfo(room);
 	}
@@ -612,6 +624,7 @@ export const socketStore = createRoot(() => {
 		listRooms,
 		kickMember,
 		emitMicState,
+		emitSpeaking,
 		selectRoom,
 		clearSelectedRoom,
 		setCurrentSFUProvider,

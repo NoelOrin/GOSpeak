@@ -1,5 +1,5 @@
-import type { EventType } from "./types";
 import type { HandlerMetadata, Plugin, PluginMetadata } from "./plugin";
+import type { EventType } from "./types";
 
 const handlerRegistry: HandlerMetadata[] = [];
 const pluginMap = new Map<string, PluginMetadata>();
@@ -64,7 +64,8 @@ export function clearRegistry(): void {
 }
 
 export function bindHandlerInstances(instance: Plugin): void {
-	const modulePath = (instance.constructor as any).__modulePath ?? instance.constructor.name;
+	const modulePath =
+		(instance.constructor as any).__modulePath ?? instance.constructor.name;
 	for (const h of handlerRegistry) {
 		if (h.modulePath !== modulePath) continue;
 		// Bind from the original unbound handler — re-binding an already-bound

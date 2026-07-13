@@ -29,7 +29,11 @@ export interface RoomClient {
 export interface VoiceClient {
 	muteMember(roomId: string, identity: string, muted: boolean): Promise<void>;
 	removeMember(roomId: string, identity: string): Promise<void>;
-	setMemberVolume(roomId: string, identity: string, volume: number): Promise<void>;
+	setMemberVolume(
+		roomId: string,
+		identity: string,
+		volume: number,
+	): Promise<void>;
 }
 
 export interface KeyValueStore {

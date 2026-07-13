@@ -1,13 +1,7 @@
 import SearchModal from "@/components/modal/searchModal";
 import SvgIcon from "./svgIcon";
 
-const FuncButton = ({
-	_label,
-	_onClick,
-}: {
-	label?: string;
-	onClick?: () => void;
-}) => {
+const FuncButton = () => {
 	let searchModalRef!: HTMLDialogElement;
 
 	const openModal = () => {

@@ -1,12 +1,12 @@
-import { createFileRoute, redirect } from "@tanstack/solid-router";
-import userStore from "@/stores/userStore";
+import { DEFAULT_SFU_PROVIDER, PROVIDER_LABELS } from "@gospeak/sfu-client";
 import type { SFUProvider } from "@gospeak/sfu-client/types";
-import RefreshCcw from "lucide-solid/icons/refresh-ccw";
-import Save from "lucide-solid/icons/save";
+import { createFileRoute, redirect } from "@tanstack/solid-router";
 import ArrowRight from "lucide-solid/icons/arrow-right";
-import ServerCog from "lucide-solid/icons/server-cog";
 import Check from "lucide-solid/icons/check";
 import CircleAlert from "lucide-solid/icons/circle-alert";
+import RefreshCcw from "lucide-solid/icons/refresh-ccw";
+import Save from "lucide-solid/icons/save";
+import ServerCog from "lucide-solid/icons/server-cog";
 import {
 	createEffect,
 	createResource,
@@ -16,14 +16,14 @@ import {
 } from "solid-js";
 import { showToast } from "solid-notifications";
 import {
-	getSFUProviderCapabilities,
 	getSFUConfigByProvider,
-	updateSFUConfig,
-	switchSFUProvider,
+	getSFUProviderCapabilities,
 	listSFUProviders,
+	switchSFUProvider,
 	type UpdateSFUConfigParams,
+	updateSFUConfig,
 } from "@/api/sfu";
-import { DEFAULT_SFU_PROVIDER, PROVIDER_LABELS } from "@gospeak/sfu-client";
+import userStore from "@/stores/userStore";
 
 type FieldErrors = Partial<Record<keyof UpdateSFUConfigParams, string>>;
 
@@ -115,11 +115,11 @@ function isProviderConfigured(
 		case "srs":
 			return !!config.srs_host;
 		case "daily":
-		return !!(config.daily_api_key || config.daily_domain);
-	case "cloudflare":
-		return !!config.cf_app_id;
-	default:
-		return false;
+			return !!(config.daily_api_key || config.daily_domain);
+		case "cloudflare":
+			return !!config.cf_app_id;
+		default:
+			return false;
 	}
 }
 
@@ -163,10 +163,7 @@ function SFUPage() {
 			.catch(() => populateForm({ ...emptyForm, provider: p }));
 	});
 
-	function populateForm(data: {
-		provider: SFUProvider;
-		[key: string]: any;
-	}) {
+	function populateForm(data: { provider: SFUProvider; [key: string]: any }) {
 		setForm({
 			provider: data.provider,
 			livekit_host: data.livekit_host || "",
@@ -261,9 +258,7 @@ function SFUPage() {
 		setSaving(true);
 		try {
 			const cleaned = { ...form() };
-			for (
-				const k of Object.keys(cleaned) as (keyof UpdateSFUConfigParams)[]
-			) {
+			for (const k of Object.keys(cleaned) as (keyof UpdateSFUConfigParams)[]) {
 				if (typeof cleaned[k] === "string") {
 					cleaned[k] = clean(cleaned[k] as string) as never;
 				}
@@ -338,17 +333,14 @@ function SFUPage() {
 					</div>
 				</Show>
 
-				<div class="divider my-0 text-xs text-base-content/40">
-					提供商选择
-				</div>
+				<div class="divider my-0 text-xs text-base-content/40">提供商选择</div>
 
 				{/* Provider card grid with status indicators */}
 				<div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
 					<For each={PROVIDER_OPTIONS}>
 						{(option) => {
 							const isActive = activeProvider() === option.value;
-							const isSelected =
-								selectedProvider() === option.value;
+							const isSelected = selectedProvider() === option.value;
 							const cfg = providerConfig(option.value);
 							const configured = cfg
 								? isProviderConfigured(option.value, cfg)
@@ -362,20 +354,17 @@ function SFUPage() {
 											(isSelected || isActive) &&
 											!isProviderDisabled(option.value),
 										"btn-ghost shadow-none hover:bg-base-200":
-											!isSelected && !isActive &&
+											!isSelected &&
+											!isActive &&
 											!isProviderDisabled(option.value),
 										"btn-ghost shadow-none cursor-not-allowed opacity-60":
 											isProviderDisabled(option.value),
 									}}
 									onClick={() => {
-										if (isProviderDisabled(option.value))
-											return;
+										if (isProviderDisabled(option.value)) return;
 										setSelectedProvider(option.value);
 									}}
-									disabled={
-										saving() ||
-										isProviderDisabled(option.value)
-									}
+									disabled={saving() || isProviderDisabled(option.value)}
 								>
 									<div class="flex flex-col items-start gap-1">
 										<div class="flex items-center gap-2">
@@ -406,18 +395,11 @@ function SFUPage() {
 												}
 											>
 												<span class="rounded-full bg-base-300 px-1.5 py-0 text-[11px] text-base-content/55 flex items-center gap-1">
-													<Check
-														size={10}
-														class="text-success"
-													/>
+													<Check size={10} class="text-success" />
 													已配置
 												</span>
 											</Show>
-											<Show
-												when={isProviderDisabled(
-													option.value,
-												)}
-											>
+											<Show when={isProviderDisabled(option.value)}>
 												<span class="rounded-full bg-base-300 px-2 py-0.5 text-[11px] text-base-content/55">
 													暂禁用
 												</span>
@@ -464,7 +446,7 @@ function SFUPage() {
 							<span class="text-base-content/70">
 								当前查看{" "}
 								<span class="font-medium text-base-content">
-									{PROVIDER_LABELS[selectedProvider() ?? ""]}
+									{PROVIDER_LABELS[selectedProvider() ?? activeProvider()]}
 								</span>
 								的配置，尚未激活。保存配置将自动激活，或直接切换。
 							</span>
@@ -479,8 +461,7 @@ function SFUPage() {
 				</Show>
 
 				<div class="divider my-0 text-xs text-base-content/40">
-					{PROVIDER_LABELS[selectedProvider() ?? activeProvider()]}{" "}
-					配置
+					{PROVIDER_LABELS[selectedProvider() ?? activeProvider()]} 配置
 				</div>
 
 				{/* LiveKit config fields */}
@@ -496,10 +477,7 @@ function SFUPage() {
 								placeholder="wss://livekit.example.com"
 								value={form().livekit_host}
 								onInput={(event) =>
-									updateField(
-										"livekit_host",
-										event.currentTarget.value,
-									)
+									updateField("livekit_host", event.currentTarget.value)
 								}
 								disabled={saving()}
 							/>
@@ -515,10 +493,7 @@ function SFUPage() {
 								placeholder="API key"
 								value={form().livekit_key}
 								onInput={(event) =>
-									updateField(
-										"livekit_key",
-										event.currentTarget.value,
-									)
+									updateField("livekit_key", event.currentTarget.value)
 								}
 								disabled={saving()}
 							/>
@@ -533,10 +508,7 @@ function SFUPage() {
 								placeholder="API secret"
 								value={form().livekit_secret}
 								onInput={(event) =>
-									updateField(
-										"livekit_secret",
-										event.currentTarget.value,
-									)
+									updateField("livekit_secret", event.currentTarget.value)
 								}
 								disabled={saving()}
 							/>
@@ -557,10 +529,7 @@ function SFUPage() {
 								placeholder="Agora App ID"
 								value={form().agora_app_id}
 								onInput={(event) =>
-									updateField(
-										"agora_app_id",
-										event.currentTarget.value,
-									)
+									updateField("agora_app_id", event.currentTarget.value)
 								}
 								disabled={saving()}
 							/>
@@ -575,10 +544,7 @@ function SFUPage() {
 								placeholder="https://api.agora.io"
 								value={form().agora_host}
 								onInput={(event) =>
-									updateField(
-										"agora_host",
-										event.currentTarget.value,
-									)
+									updateField("agora_host", event.currentTarget.value)
 								}
 								disabled={saving()}
 							/>
@@ -591,8 +557,7 @@ function SFUPage() {
 								type="password"
 								class="input input-bordered input-sm w-full"
 								classList={{
-									"input-error":
-										!!errors().agora_app_certificate,
+									"input-error": !!errors().agora_app_certificate,
 								}}
 								placeholder="App certificate"
 								value={form().agora_app_certificate}
@@ -613,8 +578,7 @@ function SFUPage() {
 								type="password"
 								class="input input-bordered input-sm w-full"
 								classList={{
-									"input-error":
-										!!errors().agora_customer_secret,
+									"input-error": !!errors().agora_customer_secret,
 								}}
 								placeholder="Customer secret"
 								value={form().agora_customer_secret}
@@ -627,10 +591,7 @@ function SFUPage() {
 								disabled={saving()}
 							/>
 						</Field>
-						<Field
-							label="Customer ID"
-							error={errors().agora_customer_id}
-						>
+						<Field label="Customer ID" error={errors().agora_customer_id}>
 							<input
 								type="text"
 								class="input input-bordered input-sm w-full"
@@ -640,10 +601,7 @@ function SFUPage() {
 								placeholder="Customer ID"
 								value={form().agora_customer_id}
 								onInput={(event) =>
-									updateField(
-										"agora_customer_id",
-										event.currentTarget.value,
-									)
+									updateField("agora_customer_id", event.currentTarget.value)
 								}
 								disabled={saving()}
 							/>
@@ -654,32 +612,22 @@ function SFUPage() {
 				{/* MediaSoup config fields */}
 				<Show when={selectedProvider() === "mediasoup"}>
 					<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-						<Field
-							label="Bridge URL"
-							error={errors().mediasoup_bridge_url}
-						>
+						<Field label="Bridge URL" error={errors().mediasoup_bridge_url}>
 							<input
 								type="text"
 								class="input input-bordered input-sm w-full"
 								classList={{
-									"input-error":
-										!!errors().mediasoup_bridge_url,
+									"input-error": !!errors().mediasoup_bridge_url,
 								}}
 								placeholder="https://mediasoup-bridge.example.com"
 								value={form().mediasoup_bridge_url}
 								onInput={(event) =>
-									updateField(
-										"mediasoup_bridge_url",
-										event.currentTarget.value,
-									)
+									updateField("mediasoup_bridge_url", event.currentTarget.value)
 								}
 								disabled={saving() || true}
 							/>
 						</Field>
-						<Field
-							label="Host"
-							error={errors().mediasoup_host}
-						>
+						<Field label="Host" error={errors().mediasoup_host}>
 							<input
 								type="text"
 								class="input input-bordered input-sm w-full"
@@ -689,10 +637,7 @@ function SFUPage() {
 								placeholder="wss://mediasoup.example.com"
 								value={form().mediasoup_host}
 								onInput={(event) =>
-									updateField(
-										"mediasoup_host",
-										event.currentTarget.value,
-									)
+									updateField("mediasoup_host", event.currentTarget.value)
 								}
 								disabled={saving() || true}
 							/>
@@ -713,10 +658,7 @@ function SFUPage() {
 								placeholder="srs.example.com"
 								value={form().srs_host}
 								onInput={(event) =>
-									updateField(
-										"srs_host",
-										event.currentTarget.value,
-									)
+									updateField("srs_host", event.currentTarget.value)
 								}
 								disabled={saving()}
 							/>
@@ -731,10 +673,7 @@ function SFUPage() {
 								placeholder="1985"
 								value={form().srs_api_port}
 								onInput={(event) =>
-									updateField(
-										"srs_api_port",
-										event.currentTarget.value,
-									)
+									updateField("srs_api_port", event.currentTarget.value)
 								}
 								disabled={saving()}
 							/>
@@ -749,10 +688,7 @@ function SFUPage() {
 								placeholder="Bearer secret"
 								value={form().srs_secret}
 								onInput={(event) =>
-									updateField(
-										"srs_secret",
-										event.currentTarget.value,
-									)
+									updateField("srs_secret", event.currentTarget.value)
 								}
 								disabled={saving()}
 							/>
@@ -773,10 +709,7 @@ function SFUPage() {
 								placeholder="Daily API key"
 								value={form().daily_api_key}
 								onInput={(event) =>
-									updateField(
-										"daily_api_key",
-										event.currentTarget.value,
-									)
+									updateField("daily_api_key", event.currentTarget.value)
 								}
 								disabled={saving()}
 							/>
@@ -791,10 +724,7 @@ function SFUPage() {
 								placeholder="your-team.daily.co"
 								value={form().daily_domain}
 								onInput={(event) =>
-									updateField(
-										"daily_domain",
-										event.currentTarget.value,
-									)
+									updateField("daily_domain", event.currentTarget.value)
 								}
 								disabled={saving()}
 							/>
@@ -815,10 +745,7 @@ function SFUPage() {
 								placeholder="Cloudflare Realtime App ID"
 								value={form().cf_app_id}
 								onInput={(event) =>
-									updateField(
-										"cf_app_id",
-										event.currentTarget.value,
-									)
+									updateField("cf_app_id", event.currentTarget.value)
 								}
 								disabled={saving()}
 							/>
@@ -833,10 +760,7 @@ function SFUPage() {
 								placeholder="stun.cloudflare.com:3478"
 								value={form().cf_stun_url}
 								onInput={(event) =>
-									updateField(
-										"cf_stun_url",
-										event.currentTarget.value,
-									)
+									updateField("cf_stun_url", event.currentTarget.value)
 								}
 								disabled={saving()}
 							/>
@@ -851,10 +775,7 @@ function SFUPage() {
 								placeholder="Cloudflare Realtime App Secret"
 								value={form().cf_app_secret}
 								onInput={(event) =>
-									updateField(
-										"cf_app_secret",
-										event.currentTarget.value,
-									)
+									updateField("cf_app_secret", event.currentTarget.value)
 								}
 								disabled={saving()}
 							/>
@@ -868,17 +789,13 @@ function SFUPage() {
 						<button
 							type="button"
 							class="btn btn-soft btn-sm"
-							onClick={() =>
-								handleSwitch(selectedProvider() ?? "")
-							}
+							onClick={() => {
+								const provider = selectedProvider();
+								if (provider) void handleSwitch(provider);
+							}}
 							disabled={saving()}
 						>
-							<Show
-								when={saving()}
-								fallback={
-									<ArrowRight size={16} />
-								}
-							>
+							<Show when={saving()} fallback={<ArrowRight size={16} />}>
 								<span class="loading loading-spinner loading-xs" />
 							</Show>
 							{saving() ? "切换中..." : "切换到此提供商"}
@@ -890,10 +807,7 @@ function SFUPage() {
 						classList={{ "btn-disabled": saving() }}
 						onClick={handleSave}
 					>
-						<Show
-							when={saving()}
-							fallback={<Save size={16} />}
-						>
+						<Show when={saving()} fallback={<Save size={16} />}>
 							<span class="loading loading-spinner loading-xs" />
 						</Show>
 						{saving() ? "保存中..." : "保存并激活"}

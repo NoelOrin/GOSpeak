@@ -69,11 +69,7 @@ describe("runVoiceJoin", () => {
 
 		expect(result.client).toBe(client);
 		expect(result.provider).toBe("livekit");
-		expect(phases).toEqual([
-			"loading_sfu",
-			"joining_media",
-			"joining_signal",
-		]);
+		expect(phases).toEqual(["loading_sfu", "joining_media", "joining_signal"]);
 		expect(order).toEqual([
 			"phase:loading_sfu",
 			"loadClient",
@@ -120,7 +116,11 @@ describe("runVoiceJoin", () => {
 		});
 		await runVoiceJoin(token as any, deps as any);
 		await vi.waitFor(() => {
-			expect(deps.joinSignalSfu).toHaveBeenCalledWith("r1", "alice", "gs-alice");
+			expect(deps.joinSignalSfu).toHaveBeenCalledWith(
+				"r1",
+				"alice",
+				"gs-alice",
+			);
 			expect(client.subscribePeers).toHaveBeenCalledWith([
 				{ identity: "bob", stream: "gs-bob" },
 			]);
@@ -164,12 +164,8 @@ describe("runVoiceJoin", () => {
 		const result = await runVoiceJoin(token as any, deps as any);
 		expect(result.client).toBe(client);
 		const phaseCalls = (deps.onPhase as any).mock.calls.map((c: any[]) => c[0]);
-		expect(phaseCalls).toEqual([
-			"loading_sfu",
-			"joining_media",
-			"media_ready",
-		]);
-		expect(deps.onClientReady).toHaveBeenCalledWith(client, "srs");
+		expect(phaseCalls).toEqual(["loading_sfu", "joining_media", "media_ready"]);
+		expect((deps as any).onClientReady).toHaveBeenCalledWith(client, "srs");
 		expect(order.indexOf("onClientReady")).toBeLessThan(
 			order.indexOf("phase:media_ready"),
 		);

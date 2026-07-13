@@ -1,9 +1,13 @@
 import { createFileRoute, redirect } from "@tanstack/solid-router";
-import userStore from "@/stores/userStore";
-import { createSignal, onMount, Show } from "solid-js";
-import { getStorageConfig, updateStorageConfig, type StorageConfigInput } from "@/api/storage";
-import { showToast } from "solid-notifications";
 import HardDrive from "lucide-solid/icons/hard-drive";
+import { createSignal, onMount, Show } from "solid-js";
+import { showToast } from "solid-notifications";
+import {
+	getStorageConfig,
+	type StorageConfigInput,
+	updateStorageConfig,
+} from "@/api/storage";
+import userStore from "@/stores/userStore";
 
 export const Route = createFileRoute("/(app)/manage/storage/")({
 	beforeLoad: () => {
@@ -28,7 +32,9 @@ function StoragePage() {
 	const [publicBaseURL, setPublicBaseURL] = createSignal("");
 	const [pathPrefix, setPathPrefix] = createSignal("uploads/");
 	const [maxFileSize, setMaxFileSize] = createSignal(5);
-	const [allowedTypes, setAllowedTypes] = createSignal("image/jpeg,image/png,image/gif,image/webp");
+	const [allowedTypes, setAllowedTypes] = createSignal(
+		"image/jpeg,image/png,image/gif,image/webp",
+	);
 	const [saving, setSaving] = createSignal(false);
 	const [testing, setTesting] = createSignal(false);
 	const [loading, setLoading] = createSignal(true);
@@ -118,7 +124,10 @@ function StoragePage() {
 	};
 
 	return (
-		<Show when={!loading()} fallback={<span class="loading loading-spinner loading-lg" />}>
+		<Show
+			when={!loading()}
+			fallback={<span class="loading loading-spinner loading-lg" />}
+		>
 			<div class="p-4 flex flex-col gap-4">
 				<div class="flex items-center gap-2">
 					<HardDrive size={20} />
@@ -208,7 +217,9 @@ function StoragePage() {
 
 				<div class="divider my-0 text-xs text-base-content/40">通用配置</div>
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend text-[14px]">公开访问基础 URL（可选）</legend>
+					<legend class="fieldset-legend text-[14px]">
+						公开访问基础 URL（可选）
+					</legend>
 					<input
 						type="text"
 						class="input input-bordered input-sm w-full"
@@ -216,7 +227,9 @@ function StoragePage() {
 						value={publicBaseURL()}
 						onInput={(e) => setPublicBaseURL(e.target.value)}
 					/>
-					<p class="label text-[12px] text-base-content/50">用于 CDN 或自定义域名，留空时 S3 自动拼接、本地用 /uploads 前缀</p>
+					<p class="label text-[12px] text-base-content/50">
+						用于 CDN 或自定义域名，留空时 S3 自动拼接、本地用 /uploads 前缀
+					</p>
 				</fieldset>
 				<div class="grid grid-cols-2 gap-3">
 					<fieldset class="fieldset">
@@ -230,7 +243,9 @@ function StoragePage() {
 						/>
 					</fieldset>
 					<fieldset class="fieldset">
-						<legend class="fieldset-legend text-[14px]">最大文件大小 (MB)</legend>
+						<legend class="fieldset-legend text-[14px]">
+							最大文件大小 (MB)
+						</legend>
 						<input
 							type="number"
 							class="input input-bordered input-sm w-full"
@@ -250,7 +265,9 @@ function StoragePage() {
 						value={allowedTypes()}
 						onInput={(e) => setAllowedTypes(e.target.value)}
 					/>
-					<p class="label text-[12px] text-base-content/50">逗号分隔 MIME 类型</p>
+					<p class="label text-[12px] text-base-content/50">
+						逗号分隔 MIME 类型
+					</p>
 				</fieldset>
 
 				<div class="flex gap-3 mt-2">

@@ -1,12 +1,11 @@
 import { createFileRoute, redirect } from "@tanstack/solid-router";
-import userStore from "@/stores/userStore";
+import Check from "lucide-solid/icons/check";
+import Pencil from "lucide-solid/icons/pencil";
+import Plus from "lucide-solid/icons/plus";
 import Save from "lucide-solid/icons/save";
 import ShieldCheck from "lucide-solid/icons/shield-check";
 import ShieldX from "lucide-solid/icons/shield-x";
-import Plus from "lucide-solid/icons/plus";
 import Trash2 from "lucide-solid/icons/trash-2";
-import Pencil from "lucide-solid/icons/pencil";
-import Check from "lucide-solid/icons/check";
 import X from "lucide-solid/icons/x";
 import {
 	createEffect,
@@ -20,7 +19,6 @@ import { showToast } from "solid-notifications";
 import {
 	createRole,
 	deleteRole,
-	updateRole,
 	getRolePermissions,
 	listPermissions,
 	listRoles,
@@ -28,7 +26,9 @@ import {
 	type RoleItem,
 	type RolePermissionsData,
 	syncRolePermissions,
+	updateRole,
 } from "@/api/permission";
+import userStore from "@/stores/userStore";
 
 export const Route = createFileRoute("/(app)/manage/permission/")({
 	beforeLoad: () => {
@@ -44,12 +44,12 @@ export const Route = createFileRoute("/(app)/manage/permission/")({
 });
 
 const DOMAIN_LABELS: Record<string, string> = {
-  bot: "BOT",
-  room: "房间",
-  user: "用户",
-  role: "角色",
-  signal: "信令",
-  sfu: "SFU",
+	bot: "BOT",
+	room: "房间",
+	user: "用户",
+	role: "角色",
+	signal: "信令",
+	sfu: "SFU",
 };
 
 const getDomain = (permission: PermissionItem) =>
@@ -227,7 +227,11 @@ function PermissionCard(props: {
 // ─── PermissionGrid ───────────────────────────────────────
 
 function PermissionGrid(props: {
-	groupedPermissions: { domain: string; label: string; items: PermissionItem[] }[];
+	groupedPermissions: {
+		domain: string;
+		label: string;
+		items: PermissionItem[];
+	}[];
 	selectedCodes: Set<string>;
 	loading: boolean;
 	onToggle: (code: string, checked: boolean) => void;
@@ -440,10 +444,7 @@ function PermissionPage() {
 		}
 	};
 
-	const handleDeleteRole = async (roleItem: {
-		id: number;
-		name: string;
-	}) => {
+	const handleDeleteRole = async (roleItem: { id: number; name: string }) => {
 		if (isDefaultRole(roleItem.name)) return;
 		setDeleting(true);
 		try {
@@ -490,9 +491,9 @@ function PermissionPage() {
 		<div class="flex h-full min-h-0 flex-col gap-4 p-4 overflow-hidden">
 			<div class="flex items-center justify-between gap-3">
 				<div class="flex items-center gap-2">
-            <ShieldCheck size={20} />
-            <h3 class="font-bold text-lg">权限</h3>
-          </div>
+					<ShieldCheck size={20} />
+					<h3 class="font-bold text-lg">权限</h3>
+				</div>
 				<button
 					type="button"
 					class="btn btn-primary btn-sm gap-2"

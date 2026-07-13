@@ -9,11 +9,11 @@
  * - 自动检测长时间静音成员并提醒
  */
 import { Plugin } from "../../../core/plugin";
-import { RegisterPlugin } from "../../../decorators/register";
-import { Command, On } from "../../../decorators/handlers";
-import { PermissionFilter } from "../../../filters/index";
+import type { MemberStateEvent, MessageEvent } from "../../../core/types";
 import { EventType } from "../../../core/types";
-import type { MessageEvent, MemberStateEvent } from "../../../core/types";
+import { Command, On } from "../../../decorators/handlers";
+import { RegisterPlugin } from "../../../decorators/register";
+import { PermissionFilter } from "../../../filters/index";
 
 @RegisterPlugin({
 	name: "moderation",
@@ -67,7 +67,10 @@ export class ModerationPlugin extends Plugin {
 				setTimeout(async () => {
 					try {
 						await this.ctx.voice.muteMember(event.room.id, target, false);
-						await this.ctx.chat.send(event.room.id, `已自动解除禁言: ${target}`);
+						await this.ctx.chat.send(
+							event.room.id,
+							`已自动解除禁言: ${target}`,
+						);
 					} catch {
 						// member may have left
 					}
@@ -108,7 +111,7 @@ export class ModerationPlugin extends Plugin {
 			return;
 		}
 		const volume = parseInt(volStr, 10);
-		if (isNaN(volume) || volume < 0 || volume > 100) {
+		if (Number.isNaN(volume) || volume < 0 || volume > 100) {
 			await this.ctx.chat.reply(event, "音量必须为 0-100");
 			return;
 		}
@@ -144,7 +147,10 @@ export class ModerationPlugin extends Plugin {
 		const now = Date.now();
 		const warnings: string[] = [];
 		for (const [key, since] of this.mutedSince) {
-			if (key.startsWith(`${roomId}:`) && now - since > this.muteWarnThresholdMs) {
+			if (
+				key.startsWith(`${roomId}:`) &&
+				now - since > this.muteWarnThresholdMs
+			) {
 				const identity = key.split(":")[1];
 				warnings.push(identity);
 			}

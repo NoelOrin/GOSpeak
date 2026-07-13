@@ -19,7 +19,10 @@ export async function listUsers(
 		data: { page, page_size: pageSize, exclude_bots: excludeBots },
 	})) as AxiosResponse<Result<UserListResponse>>;
 
-	return { users: (res as any).data.data?.list || [], total: (res as any).data.data?.total || 0 };
+	return {
+		users: (res as any).data.data?.list || [],
+		total: (res as any).data.data?.total || 0,
+	};
 }
 
 /** 更新当前用户资料 */

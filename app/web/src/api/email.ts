@@ -49,7 +49,9 @@ export async function getEmailConfig(): Promise<EmailConfigView> {
 	return (res as any).data.data;
 }
 
-export async function updateEmailConfig(config: EmailConfigInput): Promise<EmailConfigView> {
+export async function updateEmailConfig(
+	config: EmailConfigInput,
+): Promise<EmailConfigView> {
 	const res = (await apiClient.post({
 		url: "/api/v1/email/update-config",
 		data: config,
@@ -58,11 +60,14 @@ export async function updateEmailConfig(config: EmailConfigInput): Promise<Email
 	return (res as any).data.data;
 }
 
-export async function sendEmailCode(input: SendEmailCodeInput): Promise<SendEmailCodeResult> {
+export async function sendEmailCode(
+	input: SendEmailCodeInput,
+): Promise<SendEmailCodeResult> {
 	const res = (await apiClient.post({
 		url: "/api/v1/email/send_code",
 		data: input,
 	})) as AxiosResponse<Result<SendEmailCodeResult>>;
-	if (!(res as any).data.data) throw new Error("send email code response is missing");
+	if (!(res as any).data.data)
+		throw new Error("send email code response is missing");
 	return (res as any).data.data;
 }

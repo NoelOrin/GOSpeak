@@ -17,6 +17,9 @@ export const EVENTS = {
 	ROOM_KICKED: "room:kicked",
 	USER_MUTED: "user:muted",
 	USER_UNMUTED: "user:unmuted",
+	// 发言检测（无 SFU 原生 active speaker 的 provider：SRS / Cloudflare）
+	MEMBER_SPEAKING: "member:speaking",
+	ROOM_ACTIVE_SPEAKERS: "room:active-speakers",
 	SFU_GET_ROUTER_CAPABILITIES: "sfu:get-router-capabilities",
 	SFU_CREATE_TRANSPORT: "sfu:create-transport",
 	SFU_CONNECT_TRANSPORT: "sfu:connect-transport",

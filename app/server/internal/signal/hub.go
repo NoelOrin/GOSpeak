@@ -25,6 +25,9 @@ type Room struct {
 	Password  string
 	Members   map[string]*MemberInfo // socketID -> MemberInfo
 	MicMuted  map[string]bool
+	// Speaking 维护房间内各成员本地发言态（仅 SRS/Cloudflare 等无 SFU 原生 active speaker 的 provider 上报）。
+	// 与 MicMuted 类似，仅用于信令层聚合广播，不持久化。
+	Speaking  map[string]bool
 	CreatedAt time.Time
 }
 
@@ -147,6 +150,7 @@ func (h *Hub) SetupRoutes(server *socketio.Server) {
 	server.OnEvent("/", EventRoomList, safeOnEventNoData(h.OnRoomList))
 	server.OnEvent("/", EventRoomKick, safeOnEventData(h.OnRoomKick))
 	server.OnEvent("/", EventMemberMicState, safeOnEventData(h.OnMemberMicState))
+	server.OnEvent("/", EventMemberSpeaking, safeOnEventData(h.OnMemberSpeaking))
 
 	if h.sfuSignalHandler != nil {
 		h.sfuSignalHandler.RegisterRoutes(server)
@@ -197,13 +201,19 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 	}
 	var cleanups []disconnectCleanup
 	var updatedRooms []string
+	var speakingChanged []string
 	h.mu.Lock()
 	for roomName, room := range h.rooms {
 		if member, ok := room.Members[s.ID()]; ok {
 			identity := member.Identity
 			stream := member.Stream
+			wasSpeaking := room.Speaking[identity]
 			delete(room.Members, s.ID())
+			delete(room.Speaking, identity)
 			h.unregisterStreamLocked(roomName, identity, stream)
+			if wasSpeaking {
+				speakingChanged = append(speakingChanged, roomName)
+			}
 			h.server.BroadcastToRoom("/", roomName, EventMemberLeft, map[string]interface{}{
 				"room":     roomName,
 				"identity": identity,
@@ -215,6 +225,10 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 		}
 	}
 	h.mu.Unlock()
+
+	for _, name := range speakingChanged {
+		h.broadcastActiveSpeakers(name)
+	}
 
 	// SFU 清理异步：RemoveParticipant/DeleteRoom 是 HTTP/gRPC 调用，可能慢。
 	// 同步阻塞会拉长 OnDisconnect 持续时间，加剧 go-socket.io 内部 goroutine
@@ -287,6 +301,7 @@ func (h *Hub) OnRoomCreate(s socketio.Conn, data string) {
 		Password:  req.Password,
 		Members:   make(map[string]*MemberInfo),
 		MicMuted:  make(map[string]bool),
+		Speaking:  make(map[string]bool),
 		CreatedAt: time.Now(),
 	}
 	roomInfo := h.roomInfoLocked(req.Room)
@@ -423,6 +438,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 			Name:      req.Room,
 			Members:   make(map[string]*MemberInfo),
 			MicMuted:  make(map[string]bool),
+			Speaking:  make(map[string]bool),
 			CreatedAt: time.Now(),
 		}
 		h.rooms[req.Room] = room
@@ -490,19 +506,25 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 	s.Leave(req.Room)
 
 	var identity string
+	wasSpeaking := false
 	roomDeleted := false
 	h.mu.Lock()
 	if room, exists := h.rooms[req.Room]; exists {
 		if member, ok := room.Members[s.ID()]; ok {
 			identity = member.Identity
+			wasSpeaking = room.Speaking[identity]
 			stream := member.Stream
 			delete(room.Members, s.ID())
+			delete(room.Speaking, identity)
 			h.unregisterStreamLocked(req.Room, identity, stream)
 			// 成员清空则删除房间，与 OnDisconnect 行为一致
 			roomDeleted = h.deleteRoomIfEmptyLocked(req.Room)
 		}
 	}
 	h.mu.Unlock()
+	if wasSpeaking && !roomDeleted {
+		h.broadcastActiveSpeakers(req.Room)
+	}
 
 	// 同步清理 SFU 端：移除 participant，空房时删除 SFU room
 	if identity != "" {
@@ -597,12 +619,15 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 		return
 	}
 	var targetSocketID string
+	targetWasSpeaking := false
 	roomDeleted := false
 	for sid, m := range room.Members {
 		if m.Identity == req.TargetIdentity {
 			targetSocketID = sid
 			stream := m.Stream
+			targetWasSpeaking = room.Speaking[m.Identity]
 			delete(room.Members, sid)
+			delete(room.Speaking, m.Identity)
 			h.unregisterStreamLocked(req.Room, m.Identity, stream)
 			// 踢出最后一人也删房，与 OnRoomLeave / OnDisconnect 行为一致
 			roomDeleted = h.deleteRoomIfEmptyLocked(req.Room)
@@ -642,6 +667,9 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 		info := h.roomInfoLocked(req.Room)
 		h.mu.RUnlock()
 		h.server.BroadcastToNamespace("/", EventRoomUpdated, info)
+	if targetWasSpeaking {
+		h.broadcastActiveSpeakers(req.Room)
+	}
 	}
 }
 
@@ -676,6 +704,69 @@ func (h *Hub) OnMemberMicState(s socketio.Conn, data string) {
 		"room":       req.Room,
 		"identity":   req.Identity,
 		"isMicMuted": req.IsMicMuted,
+	})
+}
+
+// OnMemberSpeaking 接收成员本地发言态上报（SRS / Cloudflare 等无 SFU 原生
+// active speaker 的 provider）。服务端按 room 聚合后广播 room:active-speakers。
+// 仅持有本地麦克风的成员可上报自身状态，避免伪造他人发言态。
+func (h *Hub) OnMemberSpeaking(s socketio.Conn, data string) {
+	var req struct {
+		Room     string `json:"room"`
+		Identity string `json:"identity"`
+		Speaking bool   `json:"speaking"`
+	}
+	if err := parseJSON(data, &req); err != nil || req.Room == "" || req.Identity == "" {
+		return
+	}
+
+	h.mu.Lock()
+	room, ok := h.rooms[req.Room]
+	if !ok {
+		h.mu.Unlock()
+		return
+	}
+	caller := room.Members[s.ID()]
+	if caller == nil || caller.Identity != req.Identity {
+		h.mu.Unlock()
+		return
+	}
+	if room.Speaking == nil {
+		room.Speaking = make(map[string]bool)
+	}
+	room.Speaking[req.Identity] = req.Speaking
+	h.mu.Unlock()
+
+	h.broadcastActiveSpeakers(req.Room)
+}
+
+// computeActiveSpeakersLocked 在持锁状态下返回房间内正在发言的成员 identity 列表。
+func (h *Hub) computeActiveSpeakersLocked(roomName string) []string {
+	room, ok := h.rooms[roomName]
+	if !ok || room.Speaking == nil {
+		return nil
+	}
+	out := make([]string, 0)
+	for identity, speaking := range room.Speaking {
+		if speaking {
+			out = append(out, identity)
+		}
+	}
+	return out
+}
+
+// broadcastActiveSpeakers 向房间广播当前 active speakers 列表（用于无 SFU 原生
+// active speaker 的 provider）。发言人清空（离开/断连）时也同样广播空列表以重置高亮。
+func (h *Hub) broadcastActiveSpeakers(roomName string) {
+	if h.server == nil {
+		return
+	}
+	h.mu.RLock()
+	identities := h.computeActiveSpeakersLocked(roomName)
+	h.mu.RUnlock()
+	h.server.BroadcastToRoom("/", roomName, EventRoomActiveSpeakers, map[string]interface{}{
+		"room":      roomName,
+		"identities": identities,
 	})
 }
 

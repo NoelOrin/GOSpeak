@@ -1,9 +1,8 @@
 import { Plugin } from "../../core/plugin";
-import { RegisterPlugin } from "../../decorators/register";
-import { Command } from "../../decorators/handlers";
-import { PermissionFilter, RegexFilter } from "../../filters/index";
-import { EventType } from "../../core/types";
 import type { MessageEvent } from "../../core/types";
+import { Command } from "../../decorators/handlers";
+import { RegisterPlugin } from "../../decorators/register";
+import { PermissionFilter, RegexFilter } from "../../filters/index";
 
 @RegisterPlugin({
 	name: "echo",
@@ -18,7 +17,10 @@ export class EchoPlugin extends Plugin {
 		await this.ctx.chat.reply(event, `echo: ${text}`);
 	}
 
-	@Command("hello", { filters: [new RegexFilter(/hi/i)], desc: "Reply to a greeting." })
+	@Command("hello", {
+		filters: [new RegexFilter(/hi/i)],
+		desc: "Reply to a greeting.",
+	})
 	async onHello(event: MessageEvent): Promise<void> {
 		await this.ctx.chat.reply(event, "hi there!");
 	}

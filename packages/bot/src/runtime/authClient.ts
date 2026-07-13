@@ -137,7 +137,10 @@ export class AuthClient {
 	}
 
 	/** Schedule automatic token refresh before expiry */
-	startAutoRefresh(intervalMs: number, onRefreshed?: (token: string) => void): NodeJS.Timeout {
+	startAutoRefresh(
+		intervalMs: number,
+		onRefreshed?: (token: string) => void,
+	): NodeJS.Timeout {
 		return setInterval(async () => {
 			try {
 				const newToken = await this.refreshAccessToken();

@@ -170,7 +170,8 @@ export async function getJoinToken(
 		signal,
 	})) as AxiosResponse<Result<JoinTokenResponse>>;
 
-	if (!(res as any).data.data) throw new Error("join token response is missing");
+	if (!(res as any).data.data)
+		throw new Error("join token response is missing");
 	return (res as any).data.data;
 }
 

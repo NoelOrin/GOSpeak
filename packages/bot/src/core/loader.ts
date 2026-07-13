@@ -1,6 +1,6 @@
-import { Plugin, type PluginMetadata } from "./plugin";
-import { bindPluginInstance, registerPlugin, bindHandlerInstances } from "./registry";
 import type { BotContext } from "./context";
+import { Plugin, type PluginMetadata } from "./plugin";
+import { bindHandlerInstances, bindPluginInstance } from "./registry";
 
 export interface LoadedPlugin {
 	metadata: PluginMetadata;
@@ -16,7 +16,11 @@ async function importModule(spec: string): Promise<Record<string, unknown>> {
 	return mod;
 }
 
-function collectPluginClasses(mod: Record<string, unknown>): new (...args: any[]) => Plugin {
+function collectPluginClasses(
+	mod: Record<string, unknown>,
+): new (
+	...args: any[]
+) => Plugin {
 	const candidates = Object.values(mod).filter(
 		(v): v is new (...args: any[]) => Plugin =>
 			typeof v === "function" && (v as any).prototype instanceof Plugin,
@@ -27,7 +31,10 @@ function collectPluginClasses(mod: Record<string, unknown>): new (...args: any[]
 	return candidates[0];
 }
 
-export async function loadPlugin(spec: string, modulePath: string): Promise<LoadedPlugin> {
+export async function loadPlugin(
+	spec: string,
+	modulePath: string,
+): Promise<LoadedPlugin> {
 	const mod = await importModule(spec);
 	const Cls = collectPluginClasses(mod);
 	(Cls as unknown as { __modulePath?: string }).__modulePath = modulePath;

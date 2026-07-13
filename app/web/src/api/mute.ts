@@ -22,7 +22,9 @@ export interface CreateMuteParams {
 	reason: string;
 }
 
-export async function createMute(params: CreateMuteParams): Promise<MuteRecord> {
+export async function createMute(
+	params: CreateMuteParams,
+): Promise<MuteRecord> {
 	const res = (await apiClient.post({
 		url: "/api/v1/mute/create",
 		data: params,
@@ -37,7 +39,6 @@ export async function cancelMute(userId: number): Promise<void> {
 		url: "/api/v1/mute/cancel",
 		data: { user_id: userId },
 	});
-
 }
 
 export async function listMutes(): Promise<MuteRecord[]> {

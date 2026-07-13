@@ -1,35 +1,35 @@
-export { EventType } from "./types";
-export type {
-	BotEvent,
-	MessageEvent,
-	RoomEvent,
-	MemberStateEvent,
-	PluginErrorEvent,
-	ParsedCommand,
-	RoomRef,
-	MemberRef,
-	PermissionLevel,
-} from "./types";
-export { Plugin } from "./plugin";
-export type { PluginMetadata, HandlerMetadata } from "./plugin";
 export type {
 	BotContext,
-	Logger,
 	ChatClient,
+	KeyValueStore,
+	Logger,
 	RoomClient,
 	VoiceClient,
-	KeyValueStore,
 } from "./context";
+export type { DispatchOptions, DispatchResult } from "./eventBus";
+export { EventBus } from "./eventBus";
+export type { HandlerMetadata, PluginMetadata } from "./plugin";
+export { Plugin } from "./plugin";
 export {
+	bindPluginInstance,
+	clearRegistry,
+	getHandlersByEventType,
+	getPluginInstance,
+	listPlugins,
 	registerHandler,
 	registerPlugin,
-	bindPluginInstance,
-	getPluginInstance,
-	getHandlersByEventType,
 	removeHandlersByModule,
-	listPlugins,
 	setPluginActivated,
-	clearRegistry,
 } from "./registry";
-export { EventBus } from "./eventBus";
-export type { DispatchOptions, DispatchResult } from "./eventBus";
+export type {
+	BotEvent,
+	MemberRef,
+	MemberStateEvent,
+	MessageEvent,
+	ParsedCommand,
+	PermissionLevel,
+	PluginErrorEvent,
+	RoomEvent,
+	RoomRef,
+} from "./types";
+export { EventType } from "./types";

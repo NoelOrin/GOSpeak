@@ -1,5 +1,5 @@
-import { For, Show } from "solid-js";
 import { createQuery } from "@tanstack/solid-query";
+import { For, Show } from "solid-js";
 import { getPresetAvatars } from "@/api/user";
 
 interface PresetAvatarsProps {

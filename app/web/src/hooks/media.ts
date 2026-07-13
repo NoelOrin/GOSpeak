@@ -11,7 +11,9 @@ export async function getAudioDevices(): Promise<{
 }> {
 	try {
 		const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-		for (const t of stream.getTracks()) { t.stop() };
+		for (const t of stream.getTracks()) {
+			t.stop();
+		}
 	} catch {
 		// permission denied or no mic
 	}

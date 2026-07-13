@@ -100,6 +100,13 @@ export interface SFUClient {
 	setMicEnabled(enabled: boolean): Promise<void>;
 	/** Subscribes to active-speaker updates produced by the provider. */
 	onActiveSpeakers(cb: (identities: string[]) => void): void;
+	/**
+	 * 订阅「自身」本地麦克风音量状态变化（仅本人，非房间级）。
+	 * 无 SFU 原生 active speaker 的 provider（SRS / Cloudflare）用它向信令层
+	 * 上报，再由服务端聚合广播房间级 active speakers。
+	 * 可选：具备原生检测能力的 provider 可不实现，仅由 SFU 原生事件驱动 onActiveSpeakers。
+	 */
+	onLocalSpeakingChange?(cb: (speaking: boolean) => void): void;
 	/** Subscribes to provider-agnostic remote audio track delivery. */
 	onRemoteAudioTrack(cb: (info: RemoteTrackInfo) => void): void;
 	/** Subscribes to remote audio track removal notifications. */

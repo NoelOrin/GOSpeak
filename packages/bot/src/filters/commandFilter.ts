@@ -7,7 +7,10 @@ export interface CommandFilterOptions {
 	ignorePrefixCase?: boolean;
 }
 
-function parseCommand(content: string, prefix: string): ParsedCommand | undefined {
+function parseCommand(
+	content: string,
+	prefix: string,
+): ParsedCommand | undefined {
 	if (!content.startsWith(prefix)) return undefined;
 	const raw = content.slice(prefix.length).trim();
 	if (!raw) return undefined;
@@ -42,7 +45,10 @@ export class CommandFilter implements HandlerFilter {
 		const name = this.ignoreCase ? parsed.name.toLowerCase() : parsed.name;
 		if (name === this.command || this.alias.includes(name)) {
 			msg.isCommand = true;
-			msg.rawCommand = { ...parsed, alias: name === this.command ? undefined : name };
+			msg.rawCommand = {
+				...parsed,
+				alias: name === this.command ? undefined : name,
+			};
 			return true;
 		}
 		return false;

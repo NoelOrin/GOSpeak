@@ -1,9 +1,21 @@
-import type { SFUProvider } from "@gospeak/sfu-client/types";
+import type { SFUClient, SFUProvider } from "@gospeak/sfu-client/types";
 import type { JoinTokenResponse } from "@/api/sfu";
+import { socketStore } from "@/stores/socketStore";
 import type { VoiceProviderAdapter } from "./voiceSessionTypes";
 
 function defaultJoinKey(token: JoinTokenResponse): string {
 	return `${token.room}::${token.identity}::${token.stream || ""}`;
+}
+
+// 无 SFU 原生 active speaker 的 provider（SRS / Cloudflare）：
+// 本端分析本地麦克风音量（onLocalSpeakingChange）→ 信令层聚合广播房间级 active speakers。
+function bindSignalActiveSpeakers(
+	client: SFUClient,
+	token: JoinTokenResponse,
+): void {
+	client.onLocalSpeakingChange?.((speaking) => {
+		socketStore.emitSpeaking(token.room, token.identity, speaking);
+	});
 }
 
 // LiveKit：完整 media + signal 后才 ready。不串行、不 background。
@@ -28,6 +40,7 @@ const srsAdapter: VoiceProviderAdapter = {
 			.filter((m) => m.identity !== token.identity && m.stream)
 			.map((m) => ({ identity: m.identity, stream: m.stream as string }));
 		if (peers.length) client.subscribePeers?.(peers);
+		bindSignalActiveSpeakers(client, token);
 	},
 };
 
@@ -68,6 +81,7 @@ const cloudflareAdapter: VoiceProviderAdapter = {
 			.filter((m) => m.identity !== token.identity && m.stream)
 			.map((m) => ({ identity: m.identity, stream: m.stream as string }));
 		if (peers.length) client.subscribePeers?.(peers);
+		bindSignalActiveSpeakers(client, token);
 	},
 };
 

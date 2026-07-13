@@ -13,10 +13,10 @@
  * duration 格式：1h / 30m / 7d / permanent / 数字秒数
  */
 import { Plugin } from "../../../core/plugin";
-import { RegisterPlugin } from "../../../decorators/register";
-import { Command } from "../../../decorators/handlers";
-import { PermissionFilter } from "../../../filters/index";
 import type { MessageEvent } from "../../../core/types";
+import { Command } from "../../../decorators/handlers";
+import { RegisterPlugin } from "../../../decorators/register";
+import { PermissionFilter } from "../../../filters/index";
 import type { GOSpeakApiClient } from "../../../runtime/apiClient";
 
 interface MuteRecord {
@@ -29,7 +29,9 @@ interface MuteRecord {
 	created_at: string;
 }
 
-function parseDuration(input: string): { duration: number; permanent: boolean } | string {
+function parseDuration(
+	input: string,
+): { duration: number; permanent: boolean } | string {
 	if (input === "permanent") {
 		return { duration: 0, permanent: true };
 	}
@@ -37,14 +39,18 @@ function parseDuration(input: string): { duration: number; permanent: boolean } 
 	if (match) {
 		const num = parseInt(match[1], 10);
 		switch (match[2]) {
-			case "s": return { duration: num, permanent: false };
-			case "m": return { duration: num * 60, permanent: false };
-			case "h": return { duration: num * 3600, permanent: false };
-			case "d": return { duration: num * 86400, permanent: false };
+			case "s":
+				return { duration: num, permanent: false };
+			case "m":
+				return { duration: num * 60, permanent: false };
+			case "h":
+				return { duration: num * 3600, permanent: false };
+			case "d":
+				return { duration: num * 86400, permanent: false };
 		}
 	}
 	const num = parseInt(input, 10);
-	if (!isNaN(num) && num > 0) {
+	if (!Number.isNaN(num) && num > 0) {
 		return { duration: num, permanent: false };
 	}
 	return "invalid duration, use: 30m, 1h, 7d, permanent, or seconds";
@@ -90,8 +96,10 @@ export class MuteManagerPlugin extends Plugin {
 				if (sub && args.length >= 1) {
 					return this.handleCreate(event, sub, args);
 				}
-				await this.ctx.chat.reply(event,
-					"用法: /gmute <user> <duration> [reason] | /gunmute <user> | /gmute list | /gmute status <user>");
+				await this.ctx.chat.reply(
+					event,
+					"用法: /gmute <user> <duration> [reason] | /gunmute <user> | /gmute list | /gmute status <user>",
+				);
 		}
 	}
 
@@ -114,7 +122,11 @@ export class MuteManagerPlugin extends Plugin {
 		}
 	}
 
-	private async handleCreate(event: MessageEvent, username: string, args: string[]): Promise<void> {
+	private async handleCreate(
+		event: MessageEvent,
+		username: string,
+		args: string[],
+	): Promise<void> {
 		const durationStr = args[0];
 		const reason = args.slice(1).join(" ") || "";
 
@@ -126,8 +138,16 @@ export class MuteManagerPlugin extends Plugin {
 
 		try {
 			const userInfo = await this.api.getUserByIdentity(username);
-			await this.api.muteUser(userInfo.id, parsed.duration, parsed.permanent, reason);
-			await this.ctx.chat.reply(event, `已禁言 ${username} (${durationStr})${reason ? ` 原因: ${reason}` : ""}`);
+			await this.api.muteUser(
+				userInfo.id,
+				parsed.duration,
+				parsed.permanent,
+				reason,
+			);
+			await this.ctx.chat.reply(
+				event,
+				`已禁言 ${username} (${durationStr})${reason ? ` 原因: ${reason}` : ""}`,
+			);
 		} catch (err) {
 			await this.ctx.chat.reply(event, `禁言失败: ${(err as Error).message}`);
 		}
@@ -135,22 +155,28 @@ export class MuteManagerPlugin extends Plugin {
 
 	private async handleList(event: MessageEvent): Promise<void> {
 		try {
-			const mutes = await this.api.listMutes() as MuteRecord[];
+			const mutes = (await this.api.listMutes()) as MuteRecord[];
 			if (!mutes || mutes.length === 0) {
 				await this.ctx.chat.reply(event, "当前没有生效禁言");
 				return;
 			}
-			const lines = mutes.map(m => {
+			const lines = mutes.map((m) => {
 				const remaining = fmtRemaining(m);
 				return `  - user#${m.user_id} ${remaining}${m.reason ? ` (${m.reason})` : ""}`;
 			});
-			await this.ctx.chat.reply(event, `生效禁言 (${mutes.length}):\n${lines.join("\n")}`);
+			await this.ctx.chat.reply(
+				event,
+				`生效禁言 (${mutes.length}):\n${lines.join("\n")}`,
+			);
 		} catch (err) {
 			await this.ctx.chat.reply(event, `查询失败: ${(err as Error).message}`);
 		}
 	}
 
-	private async handleStatus(event: MessageEvent, args: string[]): Promise<void> {
+	private async handleStatus(
+		event: MessageEvent,
+		args: string[],
+	): Promise<void> {
 		const username = args[0];
 		if (!username) {
 			await this.ctx.chat.reply(event, "用法: /gmute status <user>");
@@ -158,14 +184,18 @@ export class MuteManagerPlugin extends Plugin {
 		}
 		try {
 			const userInfo = await this.api.getUserByIdentity(username);
-			const status = await this.api.getMuteStatus(userInfo.id) as MuteRecord | null;
+			const status = (await this.api.getMuteStatus(
+				userInfo.id,
+			)) as MuteRecord | null;
 			if (!status) {
 				await this.ctx.chat.reply(event, `${username} 未被禁言`);
 				return;
 			}
 			const remaining = fmtRemaining(status);
-			await this.ctx.chat.reply(event,
-				`${username} 禁言中: ${remaining}${status.reason ? `, 原因: ${status.reason}` : ""}`);
+			await this.ctx.chat.reply(
+				event,
+				`${username} 禁言中: ${remaining}${status.reason ? `, 原因: ${status.reason}` : ""}`,
+			);
 		} catch (err) {
 			await this.ctx.chat.reply(event, `查询失败: ${(err as Error).message}`);
 		}

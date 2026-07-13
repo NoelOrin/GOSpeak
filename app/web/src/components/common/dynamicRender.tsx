@@ -1,10 +1,10 @@
-import type { JSX } from "solid-js";
 import { useLocation } from "@tanstack/solid-router";
+import type { JSX } from "solid-js";
 import { createMemo } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import HomePage from "@/components/home/homePage";
-import RoomList from "@/components/room/roomList";
 import ManageNav from "@/components/manage/manageNav";
+import RoomList from "@/components/room/roomList";
 
 // 路径前缀 -> 左侧面板组件（长前缀优先匹配）
 const PREFIX_MAP: [string, (...args: any[]) => JSX.Element][] = [

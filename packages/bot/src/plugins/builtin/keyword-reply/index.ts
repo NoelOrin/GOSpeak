@@ -9,11 +9,11 @@
  * - 关键词存储在 KV 中，跨重启持久化
  */
 import { Plugin } from "../../../core/plugin";
-import { RegisterPlugin } from "../../../decorators/register";
-import { Command, On } from "../../../decorators/handlers";
-import { PermissionFilter } from "../../../filters/index";
-import { EventType } from "../../../core/types";
 import type { MessageEvent } from "../../../core/types";
+import { EventType } from "../../../core/types";
+import { Command, On } from "../../../decorators/handlers";
+import { RegisterPlugin } from "../../../decorators/register";
+import { PermissionFilter } from "../../../filters/index";
 
 interface KeywordMap {
 	[trigger: string]: string;
@@ -33,7 +33,9 @@ export class KeywordReplyPlugin extends Plugin {
 	async onLoad(): Promise<void> {
 		const stored = await this.ctx.kv.get<KeywordMap>(KV_KEY);
 		this.keywords = stored ?? {};
-		this.ctx.logger.info(`keyword-reply: loaded ${Object.keys(this.keywords).length} keywords`);
+		this.ctx.logger.info(
+			`keyword-reply: loaded ${Object.keys(this.keywords).length} keywords`,
+		);
 	}
 
 	private async save(): Promise<void> {
@@ -65,7 +67,10 @@ export class KeywordReplyPlugin extends Plugin {
 		const trigger = args[0];
 		const response = args.slice(1).join(" ");
 		if (!trigger || !response) {
-			await this.ctx.chat.reply(event, "用法: /keyword add <trigger> <response>");
+			await this.ctx.chat.reply(
+				event,
+				"用法: /keyword add <trigger> <response>",
+			);
 			return;
 		}
 		this.keywords[trigger.toLowerCase()] = response;
@@ -73,7 +78,10 @@ export class KeywordReplyPlugin extends Plugin {
 		await this.ctx.chat.reply(event, `已添加关键词: ${trigger}`);
 	}
 
-	private async handleRemove(event: MessageEvent, args: string[]): Promise<void> {
+	private async handleRemove(
+		event: MessageEvent,
+		args: string[],
+	): Promise<void> {
 		const trigger = args[0];
 		if (!trigger) {
 			await this.ctx.chat.reply(event, "用法: /keyword remove <trigger>");

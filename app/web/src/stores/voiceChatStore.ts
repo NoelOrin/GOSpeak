@@ -130,18 +130,18 @@ const debouncedPersist = debounce((state) => {
 // 监听&防抖持久化
 createRoot(() => {
 	createEffect(
-			on(
-				() => [
-					store.isInputMute,
-					store.isOutMute,
-					store.isVideoMute,
-					store.inputVolume,
-					store.outputVolume,
-					store.videoVolume,
-					JSON.stringify(store.otherMemberState),
-				],
-				() => {
-					debouncedPersist(store);
+		on(
+			() => [
+				store.isInputMute,
+				store.isOutMute,
+				store.isVideoMute,
+				store.inputVolume,
+				store.outputVolume,
+				store.videoVolume,
+				JSON.stringify(store.otherMemberState),
+			],
+			() => {
+				debouncedPersist(store);
 			},
 		),
 	);

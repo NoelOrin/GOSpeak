@@ -8,11 +8,11 @@
  * - 欢迎语支持 {name} 占位符
  */
 import { Plugin } from "../../../core/plugin";
-import { RegisterPlugin } from "../../../decorators/register";
-import { Command, On } from "../../../decorators/handlers";
-import { PermissionFilter } from "../../../filters/index";
-import { EventType } from "../../../core/types";
 import type { MessageEvent, RoomEvent } from "../../../core/types";
+import { EventType } from "../../../core/types";
+import { Command, On } from "../../../decorators/handlers";
+import { RegisterPlugin } from "../../../decorators/register";
+import { PermissionFilter } from "../../../filters/index";
 
 const KV_TEMPLATE = "welcome:template";
 const KV_ENABLED = "welcome:enabled";
@@ -67,7 +67,10 @@ export class WelcomePlugin extends Plugin {
 	private async handleSet(event: MessageEvent, args: string[]): Promise<void> {
 		const msg = args.join(" ");
 		if (!msg) {
-			await this.ctx.chat.reply(event, "用法: /welcome set <message>（可用 {name} 占位）");
+			await this.ctx.chat.reply(
+				event,
+				"用法: /welcome set <message>（可用 {name} 占位）",
+			);
 			return;
 		}
 		this.template = msg;

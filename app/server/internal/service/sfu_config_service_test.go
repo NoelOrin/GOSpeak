@@ -7,7 +7,7 @@ import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/repository"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 

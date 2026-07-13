@@ -1,23 +1,14 @@
 import { createFileRoute, redirect } from "@tanstack/solid-router";
-import userStore from "@/stores/userStore";
-import Gavel from "lucide-solid/icons/gavel";
-import UserX from "lucide-solid/icons/user-x";
-import UserCheck from "lucide-solid/icons/user-check";
 import Clock from "lucide-solid/icons/clock";
+import Gavel from "lucide-solid/icons/gavel";
 import InfinityIcon from "lucide-solid/icons/infinity";
-import {
-	createResource,
-	createSignal,
-	For,
-	Show,
-} from "solid-js";
+import UserCheck from "lucide-solid/icons/user-check";
+import UserX from "lucide-solid/icons/user-x";
+import { createResource, createSignal, For, Show } from "solid-js";
 import { showToast } from "solid-notifications";
-import {
-	listMutes,
-	cancelMute,
-	createMute,
-} from "@/api/mute";
+import { cancelMute, createMute, listMutes } from "@/api/mute";
 import { listUsers } from "@/api/user";
+import userStore from "@/stores/userStore";
 import { formatRemaining } from "@/utils/format";
 
 export const Route = createFileRoute("/(app)/manage/mute/")({
@@ -146,7 +137,9 @@ function MutePage() {
 									<For each={mutes()}>
 										{(mute) => (
 											<tr>
-												<td>{userMap().get(mute.user_id) || `#${mute.user_id}`}</td>
+												<td>
+													{userMap().get(mute.user_id) || `#${mute.user_id}`}
+												</td>
 												<td>
 													{mute.permanent ? (
 														<span class="flex items-center gap-1 text-error font-medium text-xs">
@@ -201,10 +194,12 @@ function MutePage() {
 				</div>
 				<div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
 					<div class="form-control">
-						<label class="label py-1" htmlFor="mute-user">
-								<span class="label-text text-xs">用户</span>
-							</label>
-						<select id="mute-user" 							class="select select-bordered select-sm"
+						<label class="label py-1" for="mute-user">
+							<span class="label-text text-xs">用户</span>
+						</label>
+						<select
+							id="mute-user"
+							class="select select-bordered select-sm"
 							value={userId()}
 							onChange={(e) =>
 								setUserId(
@@ -253,25 +248,27 @@ function MutePage() {
 
 					<Show when={!permanent()}>
 						<div class="form-control">
-							<label class="label py-1" htmlFor="mute-duration">
+							<label class="label py-1" for="mute-duration">
 								<span class="label-text text-xs">时长（秒）</span>
 							</label>
-							<input id="mute-duration" 								type="number"
+							<input
+								id="mute-duration"
+								type="number"
 								class="input input-bordered input-sm"
 								value={duration()}
-								onInput={(e) =>
-									setDuration(Number(e.currentTarget.value) || 0)
-								}
+								onInput={(e) => setDuration(Number(e.currentTarget.value) || 0)}
 								min={1}
 							/>
 						</div>
 					</Show>
 
 					<div class="form-control">
-						<label class="label py-1" htmlFor="mute-reason">
-								<span class="label-text text-xs">原因</span>
-							</label>
-						<input id="mute-reason" 							type="text"
+						<label class="label py-1" for="mute-reason">
+							<span class="label-text text-xs">原因</span>
+						</label>
+						<input
+							id="mute-reason"
+							type="text"
 							class="input input-bordered input-sm"
 							placeholder="违规发言"
 							value={reason()}

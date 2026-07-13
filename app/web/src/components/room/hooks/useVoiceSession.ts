@@ -24,19 +24,13 @@ import {
 } from "solid-js";
 import { showToast } from "solid-notifications";
 import { getJoinToken, resolveSFUProvider } from "@/api/sfu";
-import {
-	cleanupAudioHandler,
-	setupAudioHandler,
-} from "@/handler_audio";
+import { cleanupAudioHandler, setupAudioHandler } from "@/handler_audio";
 import AudioDeviceStore from "@/stores/audioDeviceStore";
 import { socketStore } from "@/stores/socketStore";
 import userStore from "@/stores/userStore";
 import { loadSfuClient } from "../services/loadSfuClient";
 import { getVoiceProviderAdapter } from "../session/providers";
-import {
-	runVoiceJoin,
-	VoiceJoinAbortError,
-} from "../session/runVoiceJoin";
+import { runVoiceJoin, VoiceJoinAbortError } from "../session/runVoiceJoin";
 import {
 	isVoiceInteractive,
 	isVoiceLoading,
@@ -124,9 +118,7 @@ export function useVoiceSession() {
 		return isVoiceInteractive(phase());
 	});
 	const isReconnecting = createMemo(() => phase() === "reconnecting");
-	const isLoading = createMemo(
-		() => !isJoined() && isVoiceLoading(phase()),
-	);
+	const isLoading = createMemo(() => !isJoined() && isVoiceLoading(phase()));
 	const phaseLabel = createMemo(() => voicePhaseLabel(phase()));
 	const joinState = createMemo<JoinState>(() => toLegacyJoinState(phase()));
 	const currentRoom = createMemo<string | null>(
@@ -259,9 +251,11 @@ export function useVoiceSession() {
 													...s,
 													client,
 													provider: joinedProvider,
-													...(whipReady ? { status: "media_ready" as const } : {}),
+													...(whipReady
+														? { status: "media_ready" as const }
+														: {}),
 													error: null,
-											  }
+												}
 											: s,
 									);
 								},

@@ -1,3 +1,7 @@
-export { RegisterPlugin, setPluginModulePath, getPluginModulePath } from "./register";
+export { Command, On } from "./handlers";
 export type { PluginMetaInput } from "./register";
-export { On, Command } from "./handlers";
+export {
+	getPluginModulePath,
+	RegisterPlugin,
+	setPluginModulePath,
+} from "./register";

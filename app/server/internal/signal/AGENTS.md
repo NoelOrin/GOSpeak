@@ -6,7 +6,7 @@ WebSocket 信令层，基于 Socket.IO 实现实时通信。
 
 | 文件 | 职责 |
 |------|------|
-| events.go | 事件名常量（14 个）|
+| events.go | 事件名常量（16 个）|
 | types.go | `RoomRequest`、`MemberInfo`、`RoomInfo` 等结构 |
 | hub.go | 信令中心：连接、房间成员、事件处理、SFU 分发 |
 
@@ -47,6 +47,11 @@ Mute/ListParticipants 不由信令层触发 SFU 调用——靠前端 Socket.IO 
 - `user:muted` / `user:unmuted` 表示用户被切换为仅收听 / 恢复可发布状态。
 - `room:mute` / `member:muted` 旧房间级静音链路已移除。
 - SFU 房间 ≠ 业务房间，两者状态不互相 fallback。
+- 发言检测（无 SFU 原生 active speaker 的 provider：SRS / Cloudflare）：
+  - 前端 `onLocalSpeakingChange` 上报「自身」本地麦克风音量状态，经 `member:speaking` 发往信令层；
+  - `Hub.OnMemberSpeaking` 按房间聚合 `Room.Speaking`，广播 `room:active-speakers`（identities 列表）；
+  - LiveKit / Daily / Agora / MediaSoup 仍由各自 SFU 原生事件驱动 `onActiveSpeakers`，不经此链路。
+  - 成员离开 / 断连 / 被踢时清发言态；原本在发言则广播最新列表以重置高亮。
 
 ## 依赖
 

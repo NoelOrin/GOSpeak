@@ -54,7 +54,6 @@ export async function changePassword(
 		url: "/api/v1/auth/change_password",
 		data: { old_password: oldPassword, new_password: newPassword },
 	});
-
 }
 
 export async function firstChangePassword(
@@ -79,7 +78,6 @@ export async function resetPassword(
 		url: "/api/v1/auth/reset_password",
 		data: { email, code, new_password: newPassword },
 	});
-
 }
 
 export async function getProfile(): Promise<BackendUser> {

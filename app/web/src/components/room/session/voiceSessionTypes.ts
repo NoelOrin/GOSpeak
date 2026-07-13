@@ -77,9 +77,7 @@ export function isVoiceLoading(phase: VoicePhase): boolean {
 export function isVoiceInteractive(phase: VoicePhase): boolean {
 	// media_ready: WHIP 已成功，UI 可进 VoiceChat；信令可能仍在 joining_signal
 	return (
-		phase === "ready" ||
-		phase === "media_ready" ||
-		phase === "reconnecting"
+		phase === "ready" || phase === "media_ready" || phase === "reconnecting"
 	);
 }
 

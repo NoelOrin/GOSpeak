@@ -1,19 +1,18 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { EventBus } from "../core/eventBus";
-import { EventType, createBotEvent, type LifecycleEvent } from "../core/types";
 import type { BotContext, Logger as ILogger } from "../core/context";
-import { Plugin } from "../core/plugin";
+import { EventBus } from "../core/eventBus";
+import { initPlugin, loadPlugin } from "../core/loader";
+import type { Plugin } from "../core/plugin";
 import {
-	getHandlersByEventType,
 	clearRegistry,
+	getHandlersByEventType,
 	removeHandlersByModule,
 } from "../core/registry";
-import { loadPlugin, initPlugin } from "../core/loader";
-import { GOSpeakApiClient } from "./apiClient";
-import { GOSpeakSocketClient } from "./socketClient";
-import { createKVStore } from "./apiClient";
+import { createBotEvent, EventType, type LifecycleEvent } from "../core/types";
+import { createKVStore, GOSpeakApiClient } from "./apiClient";
 import { AuthClient, type AuthCredentials } from "./authClient";
+import { GOSpeakSocketClient } from "./socketClient";
 
 export interface BotConfig {
 	/** GOSpeak server base URL, e.g. http://localhost:8998  */
@@ -52,7 +51,6 @@ export class BotRunner {
 	private socket!: GOSpeakSocketClient;
 	private auth!: AuthClient;
 	private startedAt = 0;
-	private _running = false;
 	private _plugins: { instance: Plugin; name: string }[] = [];
 	private _loadedPaths = new Set<string>();
 	private _refreshTimer: NodeJS.Timeout | null = null;
@@ -66,7 +64,8 @@ export class BotRunner {
 		return {
 			connected: this.socket?.isConnected ?? false,
 			pluginCount: this._plugins.length,
-			handlerCount: getHandlersByEventType(EventType.AdapterMessage, false).length,
+			handlerCount: getHandlersByEventType(EventType.AdapterMessage, false)
+				.length,
 			startedAt: this.startedAt,
 			loggedIn: this.auth?.isLoggedIn ?? false,
 		};
@@ -124,7 +123,8 @@ export class BotRunner {
 
 		this.bus = new EventBus({
 			buildContext: (pluginName) => this.buildPluginCtx(pluginName),
-			getPluginConfig: (pluginName) => this.config.pluginConfigs?.[pluginName] ?? {},
+			getPluginConfig: (pluginName) =>
+				this.config.pluginConfigs?.[pluginName] ?? {},
 		});
 
 		this.socket = new GOSpeakSocketClient({
@@ -141,7 +141,6 @@ export class BotRunner {
 		await this.loadAllPlugins();
 		await this.socket.connect();
 
-		this._running = true;
 		this.logger.info(
 			`Bot started — ${this._plugins.length} plugins, ${this.status.handlerCount} handlers`,
 		);
@@ -150,7 +149,6 @@ export class BotRunner {
 	}
 
 	async stop(): Promise<void> {
-		this._running = false;
 		if (this._refreshTimer) {
 			clearInterval(this._refreshTimer);
 			this._refreshTimer = null;
@@ -196,8 +194,8 @@ export class BotRunner {
 	async reloadPlugin(name: string): Promise<void> {
 		const old = this._plugins.find((p) => p.name === name);
 		if (!old) return;
-		const absPath = [...this._loadedPaths].find((p) =>
-			path.basename(p, path.extname(p)) === name,
+		const absPath = [...this._loadedPaths].find(
+			(p) => path.basename(p, path.extname(p)) === name,
 		);
 		if (!absPath) {
 			this.logger.warn(`Cannot reload plugin ${name}: module path not tracked`);
@@ -220,7 +218,8 @@ export class BotRunner {
 			rooms: {
 				listRooms: () => this.api.listRooms(),
 				getMembers: (roomId: string) => this.api.getMembers(roomId),
-				createRoom: (name: string, limit?: number) => this.api.createRoom(name, limit),
+				createRoom: (name: string, limit?: number) =>
+					this.api.createRoom(name, limit),
 				join: (name: string, o?: { sfu?: boolean }) => this.joinRoom(name, o),
 				leave: (name: string) => this.leaveRoom(name),
 				joined: () => this.joinedRooms,
@@ -260,10 +259,18 @@ export class BotRunner {
 			const modulePath = `user_plugins/${path.basename(absPath, path.extname(absPath))}`;
 			const loaded = await loadPlugin(absPath, modulePath);
 			initPlugin(loaded, (name) => this.buildPluginCtx(name));
-			this._plugins.push({ instance: loaded.instance, name: loaded.metadata.name });
+			this._plugins.push({
+				instance: loaded.instance,
+				name: loaded.metadata.name,
+			});
 			this._loadedPaths.add(absPath);
-			await this.fireLifecycleEvent(EventType.OnPluginLoaded, loaded.metadata.name);
-			this.logger.info(`Loaded plugin: ${loaded.metadata.name} (${modulePath})`);
+			await this.fireLifecycleEvent(
+				EventType.OnPluginLoaded,
+				loaded.metadata.name,
+			);
+			this.logger.info(
+				`Loaded plugin: ${loaded.metadata.name} (${modulePath})`,
+			);
 		} catch (err) {
 			this.logger.error(`Failed to load plugin ${absPath}:`, err);
 		}
