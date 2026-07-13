@@ -1,11 +1,15 @@
 # GOSpeak Docs — VitePress 构建与部署
 #
-# 构建文档站并可选部署到 GitHub Pages。
+# 构建文档站并在文档有更新时部署到 GitHub Pages。
 #
 # 触发:
-#   - push 到 release / feature/** 且含 docs 变更
-#   - release 发布 (published / edited)
-#   - workflow_dispatch 手动
+#   - push 到 release / feature/** 且含 docs 相关变更
+#   - workflow_dispatch 手动（可选部署）
+#
+# 部署策略:
+#   - push（paths 已过滤）→ 自动部署
+#   - workflow_dispatch → 仅当勾选 deploy 时部署
+#   - 预发布标签 (-alpha/-beta/-rc) → 不部署
 
 name: Docs
 
@@ -18,8 +22,6 @@ on:
       - "pnpm-lock.yaml"
       - ".github/workflows/docs.yml"
 
-  release:
-    types: [published, edited]
   workflow_dispatch:
     inputs:
       deploy:
@@ -77,7 +79,7 @@ jobs:
           path: app/docs/.vitepress/dist
 
   # ── 部署到 GitHub Pages ──────────────────────────────────────────────
-  # push / PR / release 自动部署，手动触发需勾选 deploy
+  # 仅 docs 相关 push 自动部署；手动触发需勾选 deploy
   deploy:
     name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
@@ -87,7 +89,7 @@ jobs:
         !contains(github.ref_name, '-beta') &&
         !contains(github.ref_name, '-rc')
       ) && (
-        github.event_name != 'workflow_dispatch' ||
+        github.event_name == 'push' ||
         (github.event_name == 'workflow_dispatch' && inputs.deploy)
       )
     environment:
