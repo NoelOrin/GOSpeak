@@ -3,8 +3,7 @@
 # 构建文档站并可选部署到 GitHub Pages。
 #
 # 触发:
-#   - push 到 dev/master 且含 docs 变更
-#   - PR 到 dev/master 且含 docs 变更
+#   - push 到 release / feature/** 且含 docs 变更
 #   - release 发布 (published / edited)
 #   - workflow_dispatch 手动
 
@@ -29,12 +28,6 @@ on:
         default: false
         type: boolean
 
-# GitHub Pages 需要这些权限
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 # 同一时间只允许一个部署
 concurrency:
   group: pages-${{ github.ref }}
@@ -46,12 +39,12 @@ jobs:
     name: Build Docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@v6
         # version 由 package.json 的 packageManager 字段自动获取
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -61,7 +54,7 @@ jobs:
         shell: bash
         run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: |
             ${{ steps.pnpm-cache.outputs.STORE_PATH }}
@@ -79,7 +72,7 @@ jobs:
         run: pnpm --filter @gospeak/docs build
 
       - name: Upload static site
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v5
         with:
           path: app/docs/.vitepress/dist
 
@@ -101,6 +94,9 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
     steps:
       - name: Deploy
         id: deployment
