@@ -4,12 +4,14 @@
 #
 # 触发:
 #   - push 到 release / feature/** 且含 docs 相关变更
+#   - release 发布 (published / edited)，仅当相对上一版本改到 docs
 #   - workflow_dispatch 手动（可选部署）
 #
 # 部署策略:
 #   - push（paths 已过滤）→ 自动部署
+#   - release → 对比上一 tag，docs 有变更才构建并部署
 #   - workflow_dispatch → 仅当勾选 deploy 时部署
-#   - 预发布标签 (-alpha/-beta/-rc) → 不部署
+#   - 预发布标签 / prerelease → 不部署
 
 name: Docs
 
@@ -21,6 +23,9 @@ on:
       - "packages/sfu-client/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/docs.yml"
+
+  release:
+    types: [published, edited]
 
   workflow_dispatch:
     inputs:
@@ -36,10 +41,92 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── 是否需要构建 / 部署 ───────────────────────────────────────────────
+  gate:
+    name: Check Docs Changes
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.decide.outputs.should_build }}
+      should_deploy: ${{ steps.decide.outputs.should_deploy }}
+    steps:
+      - name: Checkout (release only)
+        if: github.event_name == 'release'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Decide
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DEPLOY_INPUT: ${{ inputs.deploy }}
+          TAG: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+
+          should_build=false
+          should_deploy=false
+
+          is_prerelease_name=false
+          case "$REF_NAME" in
+            *-alpha*|*-beta*|*-rc*) is_prerelease_name=true ;;
+          esac
+
+          docs_path_regex='^(app/docs/|packages/sfu-client/|pnpm-lock\.yaml$|\.github/workflows/docs\.yml$)'
+
+          if [ "$EVENT" = "push" ]; then
+            # paths filter already guarantees docs-related changes
+            should_build=true
+            should_deploy=true
+          elif [ "$EVENT" = "workflow_dispatch" ]; then
+            should_build=true
+            if [ "${DEPLOY_INPUT:-false}" = "true" ]; then
+              should_deploy=true
+            fi
+          elif [ "$EVENT" = "release" ]; then
+            git fetch --tags --force origin 2>/dev/null || true
+
+            prev="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+            docs_changed=false
+
+            if [ -z "${prev}" ]; then
+              # 首个 tag：仓库里存在 docs 相关文件则视为有变更
+              if git ls-tree -r --name-only "$TAG" | grep -Eq "$docs_path_regex"; then
+                docs_changed=true
+              fi
+            elif git diff --name-only "$prev" "$TAG" | grep -Eq "$docs_path_regex"; then
+              docs_changed=true
+            fi
+
+            echo "release tag=$TAG prev=${prev:-<none>} docs_changed=$docs_changed prerelease=$IS_PRERELEASE"
+
+            if [ "$docs_changed" = true ]; then
+              should_build=true
+              should_deploy=true
+            fi
+
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              should_deploy=false
+            fi
+          fi
+
+          if [ "$is_prerelease_name" = true ]; then
+            should_deploy=false
+          fi
+
+          echo "should_build=$should_build" >> "$GITHUB_OUTPUT"
+          echo "should_deploy=$should_deploy" >> "$GITHUB_OUTPUT"
+          echo "decision: build=$should_build deploy=$should_deploy"
+
   # ── 构建 ──────────────────────────────────────────────────────────────
   build:
     name: Build Docs
     runs-on: ubuntu-latest
+    needs: gate
+    if: needs.gate.outputs.should_build == 'true'
     steps:
       - uses: actions/checkout@v7
 
@@ -79,19 +166,12 @@ jobs:
           path: app/docs/.vitepress/dist
 
   # ── 部署到 GitHub Pages ──────────────────────────────────────────────
-  # 仅 docs 相关 push 自动部署；手动触发需勾选 deploy
+  # push: paths 已过滤；release: 相对上一 tag 有 docs 变更；手动: 需勾选 deploy
   deploy:
     name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
-    needs: build
-    if: |
-      (!contains(github.ref_name, '-alpha') &&
-        !contains(github.ref_name, '-beta') &&
-        !contains(github.ref_name, '-rc')
-      ) && (
-        github.event_name == 'push' ||
-        (github.event_name == 'workflow_dispatch' && inputs.deploy)
-      )
+    needs: [gate, build]
+    if: needs.gate.outputs.should_deploy == 'true'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
