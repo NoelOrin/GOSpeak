@@ -9,7 +9,8 @@
 #
 # 部署策略:
 #   - push（paths 已过滤）→ 自动部署
-#   - release → 对比上一 tag，docs 有变更才构建并部署
+#   - release → 对比上一 tag，docs 有变更则从 release 分支 redispatch 部署
+#     （Pages 环境通常只允许 branch ref，不允许 tag ref 直接部署）
 #   - workflow_dispatch → 仅当勾选 deploy 时部署
 #   - 预发布标签 / prerelease → 不部署
 
@@ -34,10 +35,15 @@ on:
         required: false
         default: false
         type: boolean
+      source_ref:
+        description: "Optional git ref to build (tag/sha). Empty = workflow ref"
+        required: false
+        default: ""
+        type: string
 
 # 同一时间只允许一个部署
 concurrency:
-  group: pages-${{ github.ref }}
+  group: pages-${{ github.event_name == 'release' && format('release-{0}', github.event.release.tag_name) || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -48,6 +54,7 @@ jobs:
     outputs:
       should_build: ${{ steps.decide.outputs.should_build }}
       should_deploy: ${{ steps.decide.outputs.should_deploy }}
+      source_ref: ${{ steps.decide.outputs.source_ref }}
     steps:
       - name: Checkout (release only)
         if: github.event_name == 'release'
@@ -62,6 +69,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           DEPLOY_INPUT: ${{ inputs.deploy }}
+          SOURCE_REF_INPUT: ${{ inputs.source_ref }}
           TAG: ${{ github.event.release.tag_name }}
           IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
@@ -69,6 +77,7 @@ jobs:
 
           should_build=false
           should_deploy=false
+          source_ref=""
 
           is_prerelease_name=false
           case "$REF_NAME" in
@@ -83,6 +92,7 @@ jobs:
             should_deploy=true
           elif [ "$EVENT" = "workflow_dispatch" ]; then
             should_build=true
+            source_ref="${SOURCE_REF_INPUT:-}"
             if [ "${DEPLOY_INPUT:-false}" = "true" ]; then
               should_deploy=true
             fi
@@ -104,8 +114,11 @@ jobs:
             echo "release tag=$TAG prev=${prev:-<none>} docs_changed=$docs_changed prerelease=$IS_PRERELEASE"
 
             if [ "$docs_changed" = true ]; then
-              should_build=true
+              # release 事件的 github.ref 是 tag；Pages 环境常禁 tag 部署。
+              # 这里只做门禁，真正的 build/deploy 由 redispatch 在 release 分支执行。
+              should_build=false
               should_deploy=true
+              source_ref="$TAG"
             fi
 
             if [ "$IS_PRERELEASE" = "true" ]; then
@@ -119,16 +132,44 @@ jobs:
 
           echo "should_build=$should_build" >> "$GITHUB_OUTPUT"
           echo "should_deploy=$should_deploy" >> "$GITHUB_OUTPUT"
-          echo "decision: build=$should_build deploy=$should_deploy"
+          echo "source_ref=$source_ref" >> "$GITHUB_OUTPUT"
+          echo "decision: build=$should_build deploy=$should_deploy source_ref=${source_ref:-<default>}"
+
+  # ── release 事件：从 release 分支 redispatch，绕过 tag 环境限制 ─────
+  redispatch:
+    name: Redispatch Deploy From Branch
+    runs-on: ubuntu-latest
+    needs: gate
+    if: github.event_name == 'release' && needs.gate.outputs.should_deploy == 'true'
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Trigger docs deploy on release branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ needs.gate.outputs.source_ref }}
+        run: |
+          set -euo pipefail
+          echo "Redispatch docs.yml on ref=release source_ref=${SOURCE_REF}"
+          gh workflow run docs.yml \
+            --repo "${{ github.repository }}" \
+            --ref release \
+            -f deploy=true \
+            -f source_ref="${SOURCE_REF}"
 
   # ── 构建 ──────────────────────────────────────────────────────────────
   build:
     name: Build Docs
     runs-on: ubuntu-latest
     needs: gate
-    if: needs.gate.outputs.should_build == 'true'
+    # release 事件走 redispatch，不在 tag ref 上直接 build/deploy
+    if: needs.gate.outputs.should_build == 'true' && github.event_name != 'release'
     steps:
       - uses: actions/checkout@v7
+        with:
+          # workflow_dispatch 可指定 tag/sha；push 使用当前触发提交
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref != '' && inputs.source_ref || github.sha }}
 
       - uses: pnpm/action-setup@v6
         # version 由 package.json 的 packageManager 字段自动获取
@@ -166,12 +207,12 @@ jobs:
           path: app/docs/.vitepress/dist
 
   # ── 部署到 GitHub Pages ──────────────────────────────────────────────
-  # push: paths 已过滤；release: 相对上一 tag 有 docs 变更；手动: 需勾选 deploy
+  # push: paths 已过滤；release: redispatch 到 release 分支后部署；手动: 需勾选 deploy
   deploy:
     name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
     needs: [gate, build]
-    if: needs.gate.outputs.should_deploy == 'true'
+    if: needs.gate.outputs.should_deploy == 'true' && github.event_name != 'release'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
