@@ -86,7 +86,7 @@ pnpm dev:web      # vite --force
 
 # 生产
 pnpm prod:server          # go run main.go server -e prod
-pnpm build:server         # 输出 gospeak-server 二进制
+pnpm build:server         # 输出 gospeak 二进制
 docker build -t gospeak .  # 一体镜像，端口 8998 (见根 Dockerfile)
 
 # 测试

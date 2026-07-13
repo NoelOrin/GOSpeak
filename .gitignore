@@ -54,7 +54,7 @@ app/server/gin.log
 *.log
 
 # Go 编译产物
-gospeak-server
+gospeak
 *.exe
 *.exe~
 *.dll
@@ -96,3 +96,7 @@ deploy/.env
 deploy/env/app.srs.env
 deploy/env/app.livekit.env
 deploy/env/*.local.env
+
+# go:embed frontend bundle (populated at build time)
+app/server/internal/webui/dist/*
+!app/server/internal/webui/dist/.gitkeep

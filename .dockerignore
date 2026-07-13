@@ -35,7 +35,7 @@ lerna-debug.log*
 **/.cache
 
 # Go 构建产物
-**/gospeak-server
+**/gospeak
 **/*.exe
 **/*.exe~
 **/*.dll

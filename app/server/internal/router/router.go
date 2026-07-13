@@ -28,6 +28,8 @@ import (
 	"github.com/gin-gonic/gin"
 	socketio "github.com/googollee/go-socket.io"
 
+	"GOSpeak/internal/webui"
+
 	_ "GOSpeak/docs"
 )
 
@@ -95,9 +97,14 @@ func SetupSocketRoutes(server *socketio.Server, signalHub interface {
 	signalHub.SetupRoutes(server)
 }
 
-// serveSPA 托管前端构建产物。路径优先级：STATIC_DIR > /app/static > ./static。
-// 仅生产镜像/统一部署使用；开发环境前端走 Vite，静态目录不存在时静默跳过。
+// serveSPA 托管前端构建产物。
+// 路径优先级：STATIC_DIR > /app/static > ./static > go:embed 内嵌资源。
+// 开发环境前端走 Vite；无外部目录且未嵌入前端时静默跳过。
 func serveSPA(r *gin.Engine) {
+	var fileServer http.Handler
+	var hasFile func(path string) bool
+	var serveIndex func(c *gin.Context)
+
 	staticDir := os.Getenv("STATIC_DIR")
 	if staticDir == "" {
 		for _, candidate := range []string{"/app/static", "./static"} {
@@ -107,25 +114,55 @@ func serveSPA(r *gin.Engine) {
 			}
 		}
 	}
-	if staticDir == "" {
+
+	if staticDir != "" {
+		index := filepath.Join(staticDir, "index.html")
+		if _, err := os.Stat(index); err == nil {
+			fsys := http.Dir(staticDir)
+			fileServer = http.FileServer(fsys)
+			hasFile = func(path string) bool {
+				full := filepath.Join(staticDir, path)
+				st, err := os.Stat(full)
+				return err == nil && !st.IsDir()
+			}
+			serveIndex = func(c *gin.Context) { c.File(index) }
+		}
+	}
+
+	// 外部目录不可用时，回退到编译期嵌入的前端资源
+	if fileServer == nil {
+		if fsys := webui.FS(); fsys != nil {
+			fileServer = http.FileServer(fsys)
+			hasFile = func(path string) bool {
+				f, err := fsys.Open(strings.TrimPrefix(path, "/"))
+				if err != nil {
+					return false
+				}
+				defer f.Close()
+				st, err := f.Stat()
+				return err == nil && !st.IsDir()
+			}
+			serveIndex = func(c *gin.Context) {
+				c.Request.URL.Path = "/"
+				fileServer.ServeHTTP(c.Writer, c.Request)
+			}
+		}
+	}
+
+	if fileServer == nil {
 		return
 	}
-	index := filepath.Join(staticDir, "index.html")
-	if _, err := os.Stat(index); err != nil {
-		return
-	}
-	fileServer := http.FileServer(http.Dir(staticDir))
+
 	r.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
 		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/socket.io") || strings.HasPrefix(path, "/swagger") {
 			c.Status(http.StatusNotFound)
 			return
 		}
-		full := filepath.Join(staticDir, path)
-		if st, err := os.Stat(full); err == nil && !st.IsDir() {
+		if hasFile(path) {
 			fileServer.ServeHTTP(c.Writer, c.Request)
 			return
 		}
-		c.File(index)
+		serveIndex(c)
 	})
 }
