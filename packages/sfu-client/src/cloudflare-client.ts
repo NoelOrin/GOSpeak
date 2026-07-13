@@ -100,6 +100,7 @@ export class CloudflareSFUClient implements SFUClient {
 	private remoteTracks = new Map<string, CloudflareRemoteAudioTrack>();
 	private peerSessions = new Map<string, string>();
 	private onActiveSpeakersCb?: (ids: string[]) => void;
+	private onLocalSpeakingChangeCb?: (speaking: boolean) => void;
 	private onRemoteAudioTrackCb?: (info: RemoteTrackInfo) => void;
 	private onRemoteAudioTrackRemovedCb?: (identity: string) => void;
 	private onDisconnectedCb?: () => void;
@@ -120,6 +121,8 @@ export class CloudflareSFUClient implements SFUClient {
 	private socketMemberLeftBound?: (...args: unknown[]) => void;
 	private activeSpeakerTimer: ReturnType<typeof setInterval> | null = null;
 	private analyzerContext: AudioContext | null = null;
+	private analyzer?: AnalyserNode | null = null;
+	private analyzedTrack: MediaStreamTrack | null = null;
 	private micEnabled = true;
 
 	constructor(private readonly options: SFUClientOptions = {}) {
@@ -282,6 +285,10 @@ export class CloudflareSFUClient implements SFUClient {
 
 	onActiveSpeakers(cb: (identities: string[]) => void): void {
 		this.onActiveSpeakersCb = cb;
+	}
+
+	onLocalSpeakingChange(cb: (speaking: boolean) => void): void {
+		this.onLocalSpeakingChangeCb = cb;
 	}
 
 	onRemoteAudioTrack(cb: (info: RemoteTrackInfo) => void): void {
@@ -488,10 +495,39 @@ export class CloudflareSFUClient implements SFUClient {
 	private startActiveSpeakerLoop(): void {
 		this.stopActiveSpeakerLoop();
 		this.activeSpeakerTimer = setInterval(() => {
-			if (!this.onActiveSpeakersCb) return;
-			// Cloudflare client 不做精确 VAD；保持空回调兼容接口。
-			this.onActiveSpeakersCb([]);
-		}, 1000);
+			// Cloudflare 无 SFU 原生 active speaker：本端分析本地麦克风音量并上报信令层。
+			if (!this.micEnabled) {
+				this.onLocalSpeakingChangeCb?.(false);
+				return;
+			}
+			const ctx = this.ensureAnalyzer();
+			if (!ctx || !this.analyzer) {
+				this.onLocalSpeakingChangeCb?.(false);
+				return;
+			}
+			const levels = new Uint8Array(this.analyzer.frequencyBinCount);
+			this.analyzer.getByteFrequencyData(levels);
+			const average =
+				levels.reduce((sum, value) => sum + value, 0) / levels.length;
+			this.onLocalSpeakingChangeCb?.(average > 10);
+		}, 200);
+	}
+
+	private ensureAnalyzer(): AudioContext | null {
+		if (!this.localTrack) return null;
+		if (this.analyzedTrack === this.localTrack && this.analyzerContext && this.analyzer) {
+			return this.analyzerContext;
+		}
+		this.analyzerContext?.close().catch(() => undefined);
+		const ctx = new AudioContext();
+		const source = ctx.createMediaStreamSource(new MediaStream([this.localTrack]));
+		const analyzer = ctx.createAnalyser();
+		analyzer.fftSize = 256;
+		source.connect(analyzer);
+		this.analyzerContext = ctx;
+		this.analyzer = analyzer;
+		this.analyzedTrack = this.localTrack;
+		return ctx;
 	}
 
 	private stopActiveSpeakerLoop(): void {
