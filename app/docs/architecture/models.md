@@ -181,15 +181,28 @@
 
 ```go
 type RoomInfo struct {
-    Room      string       `json:"room"`
-    Members   []MemberInfo `json:"members"`
-    CreatedAt time.Time    `json:"created_at"`
+    ID            uint         `json:"id"`
+    UUID          string       `json:"uuid"`
+    Name          string       `json:"name"`
+    HasPassword   bool         `json:"hasPassword"`
+    Description   string       `json:"description"`
+    Limit         uint         `json:"limit"`
+    AudioOnly     bool         `json:"audioOnly"`
+    AllowAudience bool         `json:"allowAudience"`
+    Members       []MemberInfo `json:"members"`
+    Count         int          `json:"count"`
+    CreatedAt     int64        `json:"createdAt"`
 }
 
 type MemberInfo struct {
-    Identity string `json:"identity"`
-    UserID   string `json:"user_id"`
-    Username string `json:"username"`
-    JoinAt   time.Time `json:"join_at"`
+    ID          string `json:"id"`
+    Identity    string `json:"identity"`
+    Name        string `json:"name"`
+    DisplayName string `json:"displayName"`
+    Avatar      string `json:"avatar"`
+    IsMuted     bool   `json:"isMuted"`
+    IsMicMuted  bool   `json:"isMicMuted"`
+    JoinedAt    int64  `json:"joinedAt"`
+    Stream      string `json:"stream,omitempty"`
 }
 ```

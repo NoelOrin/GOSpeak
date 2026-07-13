@@ -57,7 +57,13 @@ const AudioForm = () => {
 
 			<fieldset class="fieldset">
 				<legend class="fieldset-legend text-[14px]">输入设备</legend>
-				<select class="select w-full">
+				<select
+					class="select w-full"
+					value={AudioDeviceStore.state.selectedAudioInput}
+					onChange={(e) =>
+						AudioDeviceStore.setSelectedAudioInput(e.currentTarget.value)
+					}
+				>
 					{AudioDeviceStore.state.audioinputs.map((d) => (
 						<option value={d.deviceId}>
 							{d.label || `麦克风 (${d.deviceId.slice(0, 8)})`}
@@ -68,7 +74,13 @@ const AudioForm = () => {
 
 			<fieldset class="fieldset">
 				<legend class="fieldset-legend text-[14px]">输出设备</legend>
-				<select class="select w-full">
+				<select
+					class="select w-full"
+					value={AudioDeviceStore.state.selectedAudioOutput}
+					onChange={(e) =>
+						AudioDeviceStore.setSelectedAudioOutput(e.currentTarget.value)
+					}
+				>
 					{AudioDeviceStore.state.audiooutputs.map((d) => (
 						<option value={d.deviceId}>
 							{d.label || `扬声器 (${d.deviceId.slice(0, 8)})`}

@@ -15,6 +15,8 @@ export type AudioSampleRate = 44100 | 48000;
 export type AudioSampleSize = 8 | 16 | 24 | 32;
 
 interface AudioDeviceState {
+	selectedAudioInput: string;
+	selectedAudioOutput: string;
 	audioinputs: AudioDeviceInfo[];
 	audiooutputs: AudioDeviceInfo[];
 	loaded: boolean;
@@ -33,6 +35,8 @@ interface AudioDeviceState {
 }
 
 const initialState: AudioDeviceState = {
+	selectedAudioInput: "",
+	selectedAudioOutput: "",
 	audioinputs: [],
 	audiooutputs: [],
 	loaded: false,
@@ -63,6 +67,14 @@ const [audioDeviceStore, setAudioDeviceStore] = createStore<AudioDeviceState>(
 async function fetchAudioDevices() {
 	const devices = await getAudioDevices();
 	setAudioDeviceStore({
+		selectedAudioInput:
+			audioDeviceStore.selectedAudioInput ||
+			devices.audioinputs[0]?.deviceId ||
+			"",
+		selectedAudioOutput:
+			audioDeviceStore.selectedAudioOutput ||
+			devices.audiooutputs[0]?.deviceId ||
+			"",
 		audioinputs: devices.audioinputs.map((d) => ({
 			deviceId: d.deviceId,
 			label: d.label,
@@ -77,6 +89,14 @@ async function fetchAudioDevices() {
 
 function setAudioBitrate(bitrate: AudioBitrate) {
 	setAudioDeviceStore("audioBitrate", bitrate);
+}
+
+function setSelectedAudioInput(deviceId: string) {
+	setAudioDeviceStore("selectedAudioInput", deviceId);
+}
+
+function setSelectedAudioOutput(deviceId: string) {
+	setAudioDeviceStore("selectedAudioOutput", deviceId);
 }
 
 function setStereo(v: boolean) {
@@ -132,6 +152,8 @@ createRoot(() => {
 				audioDeviceStore.noiseSuppression,
 				audioDeviceStore.autoGainControl,
 				audioDeviceStore.voiceIsolation,
+				audioDeviceStore.selectedAudioInput,
+				audioDeviceStore.selectedAudioOutput,
 			],
 			() => {
 				debouncedPersist(audioDeviceStore);
@@ -144,6 +166,8 @@ const AudioDeviceStore = {
 	state: audioDeviceStore,
 	fetchAudioDevices,
 	setAudioBitrate,
+	setSelectedAudioInput,
+	setSelectedAudioOutput,
 	setStereo,
 	setDtx,
 	setRed,

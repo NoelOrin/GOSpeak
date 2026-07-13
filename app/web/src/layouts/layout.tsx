@@ -17,7 +17,7 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 	useTitle();
 	const isChannel = () => location().pathname.startsWith("/channel");
 	const [splitWidth, setSplitWidth] = createSignal(
-		localStorage.getItem("splitWidth") || "190px",
+		localStorage.getItem("splitWidth") || "333px",
 	);
 
 	const MIN_SPLIT_WIDTH = 333;

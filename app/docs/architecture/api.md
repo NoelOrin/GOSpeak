@@ -144,10 +144,10 @@ SRS 模式下还包含：`whipUrl`、`stream` 等 WHIP/WHEP 字段。
 `POST /api/v1/signal/webhook`
 
 ### Cloudflare 媒体会话（JWT）
-`POST /signal/cloudflare/sessions/:sessionId/tracks/new` ·
-`PUT /signal/cloudflare/sessions/:sessionId/renegotiate` ·
-`PUT /signal/cloudflare/sessions/:sessionId/tracks/close` ·
-`DELETE /signal/cloudflare/sessions/:sessionId`
+`POST /api/v1/signal/cloudflare/sessions/:sessionId/tracks/new` ·
+`PUT /api/v1/signal/cloudflare/sessions/:sessionId/renegotiate` ·
+`PUT /api/v1/signal/cloudflare/sessions/:sessionId/tracks/close` ·
+`DELETE /api/v1/signal/cloudflare/sessions/:sessionId`
 
 ## SFU 配置 API（JWT + `sfu:manage`）
 

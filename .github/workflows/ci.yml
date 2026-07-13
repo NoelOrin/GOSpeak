@@ -208,6 +208,11 @@ jobs:
             goos: linux
             goarch: arm64
             ext: ""
+          - target: linux-armv7
+            goos: linux
+            goarch: arm
+            goarm: "7"
+            ext: ""
           - target: darwin-amd64
             goos: darwin
             goarch: amd64
@@ -216,9 +221,25 @@ jobs:
             goos: darwin
             goarch: arm64
             ext: ""
+          - target: freebsd-amd64
+            goos: freebsd
+            goarch: amd64
+            ext: ""
+          - target: freebsd-arm64
+            goos: freebsd
+            goarch: arm64
+            ext: ""
+          - target: openbsd-amd64
+            goos: openbsd
+            goarch: amd64
+            ext: ""
           - target: windows-amd64
             goos: windows
             goarch: amd64
+            ext: ".exe"
+          - target: windows-arm64
+            goos: windows
+            goarch: arm64
             ext: ".exe"
     steps:
       - uses: actions/checkout@v7
@@ -248,6 +269,7 @@ jobs:
           CGO_ENABLED: 0
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
         run: |
           go build -ldflags="-s -w" -o "gospeak-${{ matrix.target }}${{ matrix.ext }}" main.go
 
@@ -279,4 +301,5 @@ jobs:
       - name: Verify binary (windows)
         if: matrix.goos == 'windows'
         run: |
-          file app/server/gospeak-windows-amd64.exe
+          f="${{ matrix.target }}"
+          file "app/server/gospeak-${f}.exe"
