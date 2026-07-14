@@ -189,37 +189,36 @@ function LoginPage() {
 						</button>
 					</div>
 
-					{/* 已启用的第三方登录 */}
+					{/* 已启用的第三方登录：按提供商显示品牌 icon 按钮 */}
 					<Show
 						when={!oauthProviders.error && (oauthProviders()?.length || 0) > 0}
 					>
 						<div class="divider text-xs text-base-content/40 my-3">
 							或使用第三方登录
 						</div>
-						<div class="flex flex-col gap-2">
+						<div class="flex flex-wrap items-center justify-center gap-3">
 							<For each={oauthProviders() ?? []}>
-								{(p) => (
-									<button
-										type="button"
-										class="btn btn-outline btn-sm w-full justify-start gap-3"
-										disabled={oauthLoading()}
-										onClick={() => {
-											window.location.href = getOAuthLoginURL(p.name);
-										}}
-									>
-										<Show
-											when={p.icon_url}
-											fallback={<ProviderIcon name={p.name} size={18} />}
+								{(p) => {
+									const label = p.display_name || p.name;
+									return (
+										<button
+											type="button"
+											class="btn btn-outline btn-square size-12"
+											title={`使用 ${label} 登录`}
+											aria-label={`使用 ${label} 登录`}
+											disabled={oauthLoading()}
+											onClick={() => {
+												window.location.href = getOAuthLoginURL(p.name);
+											}}
 										>
-											<img
-												src={p.icon_url}
-												alt=""
-												class="size-[18px] rounded-sm object-cover"
+											<ProviderIcon
+												name={p.name}
+												iconUrl={p.icon_url}
+												size={22}
 											/>
-										</Show>
-										<span>使用 {p.display_name || p.name} 登录</span>
-									</button>
-								)}
+										</button>
+									);
+								}}
 							</For>
 						</div>
 					</Show>
