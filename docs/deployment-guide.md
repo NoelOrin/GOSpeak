@@ -63,6 +63,16 @@ pnpm start:dev
 
 访问: http://localhost:5173 (Vite 默认)
 
+### 2.5 默认管理员账号
+
+| 字段 | 值 |
+|------|-----|
+| 用户名 | `admin` |
+| 默认密码 | `admin123` |
+
+首次启动自动 seed；登录后若 `need_change_password=true`，请立即修改默认密码。
+
+
 ---
 
 ## 3. 环境变量说明

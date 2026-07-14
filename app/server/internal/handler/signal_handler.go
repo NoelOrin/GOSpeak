@@ -19,7 +19,7 @@ func NewSignalHandler(sfuSvc *service.SFUService) *SignalHandler {
 // JoinRoomRequest 加入房间请求
 type JoinRoomRequest struct {
 	Room     string `json:"room" binding:"required" example:"my-room"`
-	Identity string `json:"identity" binding:"required" example:"user-123"`
+	Identity string `json:"identity,omitempty" example:"user-123"` // 兼容字段，服务端以 JWT username 覆盖
 	Password string `json:"password,omitempty"`
 }
 
@@ -38,6 +38,19 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
+
+	// 身份以 JWT 为准，拒绝客户端伪造他人 identity
+	username, ok := c.Get("username")
+	if !ok {
+		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
+		return
+	}
+	identity, ok := username.(string)
+	if !ok || identity == "" {
+		pkg.Fail(c, pkg.TOKEN_WRONG, "invalid token identity")
+		return
+	}
+	req.Identity = identity
 
 	result, err := h.sfuSvc.GetJoinToken(req.Room, req.Identity, req.Password)
 	if err != nil {

@@ -1,9 +1,14 @@
 // Package service 业务逻辑层。
-// 此文件提供用户相关业务：查询资料、列表、删除、角色变更。
+// 此文件提供用户相关业务：查询资料、列表、删除、角色变更、头像上传。
 package service
 
 import (
 	"errors"
+	"fmt"
+	"io"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
@@ -15,13 +20,24 @@ import (
 // ErrUserNotFound is returned when a user query finds no matching row.
 var ErrUserNotFound = pkg.NewAppError(pkg.NOT_FOUND, "user not found")
 
-// UserService 用户服务，支持按 ID / UUID / 用户名查询以及 CRUD 操作。
-type UserService struct {
-	userRepo *repository.UserRepository
+// avatarStorage 头像上传所需的最小存储能力。
+type avatarStorage interface {
+	GetConfig() (*model.StorageConfig, error)
+	UploadFromReader(key string, reader io.Reader, size int64, contentType string) (string, error)
 }
 
-func NewUserService(userRepo *repository.UserRepository) *UserService {
-	return &UserService{userRepo: userRepo}
+// UserService 用户服务，支持按 ID / UUID / 用户名查询以及 CRUD 操作。
+type UserService struct {
+	userRepo  *repository.UserRepository
+	storage   avatarStorage
+}
+
+func NewUserService(userRepo *repository.UserRepository, storage ...avatarStorage) *UserService {
+	svc := &UserService{userRepo: userRepo}
+	if len(storage) > 0 {
+		svc.storage = storage[0]
+	}
+	return svc
 }
 
 // GetByID 按主键 ID 查询用户，不存在返回 NOT_FOUND。
@@ -86,7 +102,7 @@ func (s *UserService) Update(user *model.User) error {
 // Delete 删除用户。
 func (s *UserService) Delete(id uint) error {
 	if _, err := s.userRepo.GetByID(id); err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrUserNotFound
 		}
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -97,11 +113,11 @@ func (s *UserService) Delete(id uint) error {
 	return nil
 }
 
-// UpdateRole 变更用户角色，仅允许 admin 和 user 两种取值。
+// UpdateRole 变更用户角色（含 ban），并递增 TokenVersion 使旧 token 立即失效。
 func (s *UserService) UpdateRole(id uint, role string) error {
 	user, err := s.userRepo.GetByID(id)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrUserNotFound
 		}
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -110,9 +126,11 @@ func (s *UserService) UpdateRole(id uint, role string) error {
 	if !model.IsValidRole(role) {
 		return pkg.NewAppError(pkg.INVALID_PARAMS, "invalid role")
 	}
+	if user.Role == role {
+		return nil
+	}
 
-	user.Role = role
-	if err := s.userRepo.Update(user); err != nil {
+	if err := s.userRepo.UpdateRoleAndInvalidate(user.ID, role); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	return nil
@@ -122,7 +140,7 @@ func (s *UserService) UpdateRole(id uint, role string) error {
 func (s *UserService) UpdateProfile(uuid, displayName, avatar string) (*model.User, error) {
 	user, err := s.userRepo.GetByUUID(uuid)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrUserNotFound
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -139,4 +157,67 @@ func (s *UserService) UpdateProfile(uuid, displayName, avatar string) (*model.Us
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	return user, nil
+}
+
+// UploadAvatar 校验并上传头像，成功后写回 users.avatar。
+func (s *UserService) UploadAvatar(uuid, filename, contentType string, size int64, reader io.Reader) (string, *model.User, error) {
+	if s.storage == nil {
+		return "", nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "storage service is not configured")
+	}
+	if reader == nil {
+		return "", nil, pkg.NewAppError(pkg.INVALID_PARAMS, "avatar file is required")
+	}
+
+	cfg, err := s.storage.GetConfig()
+	if err != nil {
+		return "", nil, err
+	}
+
+	maxMB := cfg.MaxFileSize
+	if maxMB <= 0 {
+		maxMB = 5
+	}
+	maxBytes := int64(maxMB) * 1024 * 1024
+	if size > maxBytes {
+		return "", nil, pkg.NewAppError(pkg.STORAGE_FILE_TOO_LARGE)
+	}
+
+	contentType = strings.TrimSpace(strings.ToLower(contentType))
+	allowedTypes := map[string]bool{
+		"image/jpeg": true,
+		"image/png":  true,
+		"image/gif":  true,
+		"image/webp": true,
+	}
+	if !allowedTypes[contentType] {
+		return "", nil, pkg.NewAppError(pkg.INVALID_PARAMS, "invalid image type, allowed: jpeg, png, gif, webp")
+	}
+
+	ext := filepath.Ext(filename)
+	if ext == "" {
+		switch contentType {
+		case "image/jpeg":
+			ext = ".jpg"
+		case "image/png":
+			ext = ".png"
+		case "image/gif":
+			ext = ".gif"
+		case "image/webp":
+			ext = ".webp"
+		default:
+			ext = ".bin"
+		}
+	}
+	objectKey := fmt.Sprintf("avatars/%s_%d%s", uuid, time.Now().UnixMilli(), ext)
+
+	avatarURL, err := s.storage.UploadFromReader(objectKey, reader, size, contentType)
+	if err != nil {
+		return "", nil, err
+	}
+
+	user, err := s.UpdateProfile(uuid, "", avatarURL)
+	if err != nil {
+		return "", nil, err
+	}
+	return avatarURL, user, nil
 }

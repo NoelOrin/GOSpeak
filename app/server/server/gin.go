@@ -86,7 +86,8 @@ func StartGin(env EnvEnum) {
 	emailSvc := service.NewEmailService(emailConfigSvc.ResolveConfig)
 	emailVerificationSvc := service.NewEmailVerificationService(emailVerificationRepo, userRepo, emailSvc, emailConfigSvc.ResolveConfig)
 	authSvc := service.NewAuthService(userRepo, emailConfigSvc, emailVerificationSvc)
-	userSvc := service.NewUserService(userRepo)
+	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
+	userSvc := service.NewUserService(userRepo, storageSvc)
 	oauthSvc := service.NewOAuthService(oauthProviderRepo, oauthAccountRepo, userRepo)
 	roomSvc := service.NewRoomService(roomRepo)
 	muteSvc := service.NewMuteService(muteRepo, userRepo)
@@ -94,7 +95,6 @@ func StartGin(env EnvEnum) {
 	if err := sfuConfigSvc.SyncFromEnv(); err != nil {
 		panic(fmt.Sprintf("failed to sync sfu config from env: %v", err))
 	}
-	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
 	botTokenRepo := repository.NewBotTokenRepository(repository.DB)
 	botSvc := service.NewBotService(userRepo, botTokenRepo)
 	var sfuProvider sfu.Provider = factory.NewDynamicProvider(sfuConfigSvc.ResolveConfig)
@@ -155,7 +155,7 @@ func StartGin(env EnvEnum) {
 	roomH := handler.NewRoomHandler(roomSvc, permSvc)
 	permH := handler.NewPermissionHandler(permSvc)
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
-	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc)
+	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc, signalHub)
 	storageH := handler.NewStorageHandler(storageSvc)
 	botH := handler.NewBotHandler(botSvc)
 
@@ -283,7 +283,7 @@ func seedRoles(roleRepo *repository.RoleRepository) {
 }
 
 func seedAdminUser(userRepo *repository.UserRepository) {
-	hashedPwd, err := bcrypt.GenerateFromPassword([]byte("123123"), bcrypt.DefaultCost)
+	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(service.DefaultAdminPassword), bcrypt.DefaultCost)
 	if err != nil {
 		fmt.Printf("[Seed] 生成密码哈希失败: %v\n", err)
 		return
@@ -304,7 +304,7 @@ func seedAdminUser(userRepo *repository.UserRepository) {
 		fmt.Printf("[Seed] 创建管理员用户失败: %v\n", err)
 		return
 	}
-	fmt.Println("[Seed] 已创建管理员用户: admin / 123123")
+	fmt.Printf("[Seed] 已创建管理员用户: admin / %s\n", service.DefaultAdminPassword)
 }
 
 func init() {

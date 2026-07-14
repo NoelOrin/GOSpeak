@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"GOSpeak/internal/pkg"
-	"GOSpeak/internal/redis"
 	"strings"
+
+	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -90,30 +90,7 @@ func (h *AuthHandler) GetRefreshToken(c *gin.Context) {
 		return
 	}
 
-	claims, err := pkg.ParseToken(req.RefreshToken)
-	if err != nil {
-		pkg.Fail(c, pkg.TOKEN_WRONG, "invalid refresh token")
-		return
-	}
-
-	if pkg.IsTokenExpired(claims) {
-		pkg.Fail(c, pkg.TOKEN_EXPIRED, "refresh token expired")
-		return
-	}
-
-	if redis.IsBlacklisted(claims.ID) {
-		pkg.Fail(c, pkg.TOKEN_REVOKED)
-		return
-	}
-
-	// 校验 token 版本：改密后旧 refresh_token 不可换发新 access_token
-	currentVersion, vErr := h.authService.GetTokenVersionByUUID(claims.UserUUID)
-	if vErr != nil || currentVersion != claims.TokenVersion {
-		pkg.Fail(c, pkg.TOKEN_REVOKED)
-		return
-	}
-
-	newToken, err := h.authService.RefreshToken(claims.Username, claims.DisplayName, claims.UserUUID, claims.Role, claims.TokenVersion)
+	newToken, err := h.authService.RefreshFromToken(req.RefreshToken)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -131,26 +108,20 @@ func (h *AuthHandler) GetRefreshToken(c *gin.Context) {
 // @Success      200  {object}  pkg.Response
 // @Router       /auth/logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
-	claims, ok := c.Get("claims")
-	if ok {
-		if cl, ok := claims.(*pkg.Claims); ok {
-			_ = h.authService.BlacklistToken(cl)
-		}
+	var accessClaims *pkg.Claims
+	if v, ok := c.Get("claims"); ok {
+		accessClaims, _ = v.(*pkg.Claims)
 	}
 
-	// 同时吊销请求体中携带的 refresh_token（如果有）
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
 	}
 	_ = c.ShouldBindJSON(&req)
-	if req.RefreshToken != "" {
-		if refreshClaims, err := pkg.ParseToken(req.RefreshToken); err == nil {
-			_ = h.authService.BlacklistToken(refreshClaims)
-		}
-	}
 
+	_ = h.authService.Logout(accessClaims, req.RefreshToken)
 	pkg.Success(c, nil)
 }
+
 
 // RefreshToken
 // @Summary      刷新当前用户 token
@@ -161,13 +132,6 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 // @Success      200      {object}  pkg.Response
 // @Router       /auth/refresh [post]
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
-	username, _ := c.Get("username")
-	usernameStr, ok := username.(string)
-	if !ok {
-		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
-		return
-	}
-
 	userUUID, _ := c.Get("user_uuid")
 	uuidStr, ok := userUUID.(string)
 	if !ok || uuidStr == "" {
@@ -175,22 +139,8 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	role, _ := c.Get("role")
-	roleStr, ok := role.(string)
-	if !ok {
-		roleStr = "user"
-	}
-
-	displayName, _ := c.Get("display_name")
-	displayNameStr, _ := displayName.(string)
-
-	claims, _ := c.Get("claims")
-	var tokenVersion uint
-	if cl, ok := claims.(*pkg.Claims); ok {
-		tokenVersion = cl.TokenVersion
-	}
-
-	token, err := h.authService.RefreshToken(usernameStr, displayNameStr, uuidStr, roleStr, tokenVersion)
+	// 已鉴权路径也从 DB 重载 role/version，避免 JWT 快照续签旧权限
+	token, err := h.authService.RefreshAccessForUserUUID(uuidStr)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return

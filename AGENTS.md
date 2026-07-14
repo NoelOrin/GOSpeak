@@ -571,6 +571,7 @@ All middleware is in `internal/middleware/auth.go`.
 Access control is **permission-based**, layered on top of roles.
 
 - **Roles** (`roles` table): seeded with `admin`, `user`, `ban`. The `ban` role is intercepted by `BanCheck()` and always gets `FORBIDDEN`.
+- **Default admin account**: first boot seeds user `admin` / `admin123` when missing (`service.DefaultAdminPassword`). Login returns `need_change_password=true` while still on the default password; change it immediately in production.
 - **Permissions** (`permissions` table): each row holds a `permcode` constant such as `user:read`, `room:create`, `sfu:manage`, `mute:manage`, `bot:manage`, `storage:delete`, `oauth:manage`, `email_config:read`, `role:manage`, `signal:kick`.
 - **Role → Permission mapping** (`role_permissions` table): links a role name to permission IDs. `RequirePermission` resolves a user's effective permissions from their `role`.
 - **Bot tokens** (`bot_tokens`): carry an explicit `permissions` list in the JWT (`Claims.Permissions`). Bot-scoped permissions are whitelisted via `model.BotScopedPermissions` so bots cannot reach platform-admin surfaces.

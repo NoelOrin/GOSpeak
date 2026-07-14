@@ -3,20 +3,16 @@ package handler
 import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
-	"fmt"
-	"path/filepath"
-	"time"
-
 	"github.com/gin-gonic/gin"
 )
 
 type UserHandler struct {
-	userService    *service.UserService
-	storageService *service.StorageService
+	userService *service.UserService
 }
 
-func NewUserHandler(userService *service.UserService, storageService *service.StorageService) *UserHandler {
-	return &UserHandler{userService: userService, storageService: storageService}
+func NewUserHandler(userService *service.UserService, _ ...*service.StorageService) *UserHandler {
+	// storage 已注入 UserService；保留可选参数兼容旧 DI 调用
+	return &UserHandler{userService: userService}
 }
 
 // GetProfile
@@ -239,52 +235,6 @@ func (h *UserHandler) UploadAvatar(c *gin.Context) {
 		return
 	}
 
-	// 从存储配置获取大小限制
-	cfg, err := h.storageService.GetConfig()
-	if err != nil {
-		pkg.HandleError(c, err)
-		return
-	}
-
-	// 文件大小校验
-	maxBytes := int64(cfg.MaxFileSize) * 1024 * 1024
-	if file.Size > maxBytes {
-		pkg.Fail(c, pkg.STORAGE_FILE_TOO_LARGE)
-		return
-	}
-
-	// 文件类型校验
-	contentType := file.Header.Get("Content-Type")
-	allowedTypes := map[string]bool{
-		"image/jpeg": true,
-		"image/png":  true,
-		"image/gif":  true,
-		"image/webp": true,
-	}
-	if !allowedTypes[contentType] {
-		pkg.Fail(c, pkg.INVALID_PARAMS, "invalid image type, allowed: jpeg, png, gif, webp")
-		return
-	}
-
-	// 生成对象键: avatars/{uuid}_{timestamp}.{ext}
-	ext := filepath.Ext(file.Filename)
-	if ext == "" {
-		switch contentType {
-		case "image/jpeg":
-			ext = ".jpg"
-		case "image/png":
-			ext = ".png"
-		case "image/gif":
-			ext = ".gif"
-		case "image/webp":
-			ext = ".webp"
-		default:
-			ext = ".bin"
-		}
-	}
-	objectKey := fmt.Sprintf("avatars/%s_%d%s", uuidStr, time.Now().UnixMilli(), ext)
-
-	// 通过存储抽象层上传（S3 或本地）
 	src, err := file.Open()
 	if err != nil {
 		pkg.Fail(c, pkg.INTERNAL_ERROR, "failed to open uploaded file")
@@ -292,13 +242,19 @@ func (h *UserHandler) UploadAvatar(c *gin.Context) {
 	}
 	defer src.Close()
 
-	avatarURL, err := h.storageService.UploadFromReader(objectKey, src, file.Size, contentType)
+	avatarURL, user, err := h.userService.UploadAvatar(
+		uuidStr,
+		file.Filename,
+		file.Header.Get("Content-Type"),
+		file.Size,
+		src,
+	)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
 
-	pkg.Success(c, gin.H{"avatar": avatarURL})
+	pkg.Success(c, gin.H{"avatar": avatarURL, "user": user})
 }
 
 // UpdateRole
