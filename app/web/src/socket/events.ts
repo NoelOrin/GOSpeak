@@ -27,4 +27,6 @@ export const EVENTS = {
 	SFU_CONSUME: "sfu:consume",
 	SFU_PRODUCER_READY: "sfu:producer-ready",
 	SFU_PRODUCER_CLOSED: "sfu:producer-closed",
+	// SFU 热切换：强制断连并刷新
+	SFU_PROVIDER_CHANGED: "sfu:provider-changed",
 } as const;

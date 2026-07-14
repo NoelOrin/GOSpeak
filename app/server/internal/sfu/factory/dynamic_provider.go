@@ -28,7 +28,7 @@ func fingerprint(cfg *config.Config) string {
 		cfg.SFUProvider, cfg.LiveKitHost, cfg.LiveKitKey, cfg.LiveKitSecret,
 		cfg.AgoraAppID, cfg.AgoraAppCertificate, cfg.AgoraHost, cfg.AgoraCustomerID, cfg.AgoraCustomerSecret,
 		cfg.MediaSoupBridgeURL, cfg.MediaSoupHost,
-		cfg.SRSHost, cfg.SRSApiPort, cfg.SRSWHIPURL, cfg.SRSSecret,
+		cfg.SRSHost, cfg.SRSApiPort, cfg.SRSWHIPURL, cfg.SRSSecret, cfg.SRSPublicHost,
 		cfg.DailyAPIKey, cfg.DailyDomain,
 		cfg.CFAppID, cfg.CFAppSecret, cfg.CFStunURL,
 	}, "|")

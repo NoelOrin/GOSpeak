@@ -66,7 +66,8 @@ func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error
 }
 
 func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) error {
-	return nil
+	// Agora 服务端无与 LiveKit 对齐的单轨 mute API；不可伪装成功。
+	return pkg.NewErrSFUNotSupported()
 }
 
 // RemoveParticipant Agora 服务端无单用户踢出 API：kicking-rule 是 ban 语义
