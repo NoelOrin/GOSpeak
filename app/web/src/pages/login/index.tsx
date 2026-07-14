@@ -1,15 +1,18 @@
 import { createForm } from "@tanstack/solid-form";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/solid-router";
-import { createSignal, onMount, Show } from "solid-js";
+import { createResource, createSignal, For, onMount, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import {
 	firstChangePassword as firstChangePasswordApi,
+	getProfile,
 	login as loginApi,
 	resetPassword as resetPasswordApi,
 } from "@/api/auth";
 import { sendEmailCode } from "@/api/email";
+import { getEnabledProviders, getOAuthLoginURL } from "@/api/oauth";
 import { Form } from "@/components/form";
 import PasswordChangeForm from "@/components/form/PasswordChangeForm";
+import ProviderIcon from "@/components/oauth/ProviderIcon";
 import userStore from "@/stores/userStore";
 
 export const Route = createFileRoute("/login/")({
@@ -30,11 +33,66 @@ function LoginPage() {
 	const [forgotStep, setForgotStep] = createSignal<"email" | "code">("email");
 	const [codeSending, setCodeSending] = createSignal(false);
 
+	const [oauthProviders] = createResource(getEnabledProviders);
+	const [oauthLoading, setOauthLoading] = createSignal(false);
+
 	onMount(() => {
 		const params = new URLSearchParams(window.location.search);
 		if (params.get("banned") === "1") {
 			setBanned(true);
 			window.history.replaceState({}, "", "/login");
+			return;
+		}
+
+		const oauthError = params.get("oauth_error");
+		if (oauthError) {
+			showToast(oauthError, { type: "error" });
+			window.history.replaceState({}, "", "/login");
+			return;
+		}
+
+		// OAuth 回调：后端把 token 带回登录页，完成会话落地后进首页。
+		if (params.get("oauth") === "1") {
+			const accessToken = params.get("access_token") || "";
+			const refreshToken = params.get("refresh_token") || "";
+			window.history.replaceState({}, "", "/login");
+			if (!accessToken || !refreshToken) {
+				showToast("OAuth 登录失败：缺少 token", { type: "error" });
+				return;
+			}
+			void (async () => {
+				setOauthLoading(true);
+				try {
+					// 先写入 access token，供 getProfile 鉴权
+					await userStore.login(
+						{
+							id: 0,
+							uuid: "",
+							name: "",
+							display_name: "",
+							avatar: "",
+							role: "user",
+						},
+						accessToken,
+						refreshToken,
+					);
+					const profile = await getProfile();
+					await userStore.login(profile, accessToken, refreshToken);
+					navigate({ to: "/" });
+				} catch (e: any) {
+					await userStore.clearAuth();
+					if (e?.response?.data?.code === 1015) {
+						setBanned(true);
+					} else {
+						showToast(
+							e?.response?.data?.msg || e?.message || "OAuth 登录失败",
+							{ type: "error" },
+						);
+					}
+				} finally {
+					setOauthLoading(false);
+				}
+			})();
 		}
 	});
 	const [showChangeModal, setShowChangeModal] = createSignal(false);
@@ -122,10 +180,56 @@ function LoginPage() {
 					/>
 
 					<div class="text-center mt-1">
-						<button class="link link-primary text-sm" onClick={openForgotModal}>
+						<button
+							type="button"
+							class="link link-primary text-sm"
+							onClick={openForgotModal}
+						>
 							忘记密码?
 						</button>
 					</div>
+
+					{/* 已启用的第三方登录 */}
+					<Show
+						when={!oauthProviders.error && (oauthProviders()?.length || 0) > 0}
+					>
+						<div class="divider text-xs text-base-content/40 my-3">
+							或使用第三方登录
+						</div>
+						<div class="flex flex-col gap-2">
+							<For each={oauthProviders() ?? []}>
+								{(p) => (
+									<button
+										type="button"
+										class="btn btn-outline btn-sm w-full justify-start gap-3"
+										disabled={oauthLoading()}
+										onClick={() => {
+											window.location.href = getOAuthLoginURL(p.name);
+										}}
+									>
+										<Show
+											when={p.icon_url}
+											fallback={<ProviderIcon name={p.name} size={18} />}
+										>
+											<img
+												src={p.icon_url}
+												alt=""
+												class="size-[18px] rounded-sm object-cover"
+											/>
+										</Show>
+										<span>使用 {p.display_name || p.name} 登录</span>
+									</button>
+								)}
+							</For>
+						</div>
+					</Show>
+
+					<Show when={oauthLoading()}>
+						<div class="flex items-center justify-center gap-2 mt-3 text-sm text-base-content/60">
+							<span class="loading loading-spinner loading-xs" />
+							正在完成第三方登录…
+						</div>
+					</Show>
 
 					<Show when={banned()}>
 						<div class="alert alert-error mt-2">

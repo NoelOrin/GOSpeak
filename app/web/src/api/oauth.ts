@@ -98,3 +98,18 @@ export function deleteProvider(id: number): Promise<Result<null>> {
 		.delete({ url: `/api/v1/oauth/admin/providers/${id}` })
 		.then((r) => r.data);
 }
+
+/** 公开：获取已启用 OAuth 提供商（登录页使用，无需登录）。 */
+export async function getEnabledProviders(): Promise<EnabledProvider[]> {
+	const res = await listEnabledProviders();
+	if (res.code !== 0) {
+		throw new Error(res.msg || "failed to load oauth providers");
+	}
+	return res.data ?? [];
+}
+
+/** 浏览器跳转 OAuth 授权页；state 由服务端 cookie 生成/校验。 */
+export function getOAuthLoginURL(provider: string): string {
+	const name = encodeURIComponent(provider);
+	return `/api/v1/oauth/login/${name}`;
+}

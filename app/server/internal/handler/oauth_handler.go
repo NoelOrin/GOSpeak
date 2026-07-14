@@ -3,7 +3,9 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"GOSpeak/internal/pkg"
@@ -25,7 +27,7 @@ func NewOAuthHandler(oauthService *service.OAuthService) *OAuthHandler {
 func (h *OAuthHandler) Login(c *gin.Context) {
 	provider := c.Param("provider")
 	if provider == "" {
-		pkg.Fail(c, pkg.INVALID_PARAMS, "provider is required")
+		redirectOAuthError(c, "provider is required")
 		return
 	}
 
@@ -45,7 +47,8 @@ func (h *OAuthHandler) Login(c *gin.Context) {
 
 	authURL, err := h.oauthService.GetAuthURL(provider, state)
 	if err != nil {
-		pkg.HandleError(c, err)
+		// 浏览器从登录页跳入，错误统一回登录页展示，避免卡在 JSON 页。
+		redirectOAuthError(c, oauthErrorMessage(err, "oauth provider unavailable"))
 		return
 	}
 
@@ -56,14 +59,14 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 	provider := c.Param("provider")
 	code := c.Query("code")
 	if code == "" {
-		pkg.Fail(c, pkg.INVALID_PARAMS, "code is required")
+		redirectOAuthError(c, "code is required")
 		return
 	}
 
 	state := c.Query("state")
 	cookie, err := c.Request.Cookie(oauthStateCookie)
 	if err != nil || cookie.Value == "" || state == "" || state != cookie.Value {
-		pkg.Fail(c, pkg.INVALID_PARAMS, "invalid oauth state")
+		redirectOAuthError(c, "invalid oauth state")
 		return
 	}
 	// 一次性 state
@@ -76,13 +79,47 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	resp, err := h.oauthService.HandleCallback(provider, code)
-	if err != nil {
-		pkg.HandleError(c, err)
+	// 授权方错误回传（用户拒绝等）
+	if errDesc := c.Query("error"); errDesc != "" {
+		msg := errDesc
+		if d := c.Query("error_description"); d != "" {
+			msg = d
+		}
+		redirectOAuthError(c, msg)
 		return
 	}
 
-	pkg.Success(c, resp)
+	resp, err := h.oauthService.HandleCallback(provider, code)
+	if err != nil {
+		redirectOAuthError(c, oauthErrorMessage(err, "oauth login failed"))
+		return
+	}
+
+	// 浏览器回调：把 token 交给登录页完成会话落地，避免 API JSON 卡在新页面。
+	q := make(url.Values)
+	q.Set("oauth", "1")
+	q.Set("access_token", resp.Token)
+	q.Set("refresh_token", resp.RefreshToken)
+	c.Redirect(http.StatusFound, "/login?"+q.Encode())
+}
+
+func redirectOAuthError(c *gin.Context, msg string) {
+	q := make(url.Values)
+	q.Set("oauth_error", msg)
+	c.Redirect(http.StatusFound, "/login?"+q.Encode())
+}
+
+func oauthErrorMessage(err error, fallback string) string {
+	var appErr *pkg.AppError
+	if errors.As(err, &appErr) {
+		if appErr.Message != "" {
+			return appErr.Message
+		}
+		if msg := pkg.GetErrMsg(appErr.Code); msg != "" {
+			return msg
+		}
+	}
+	return fallback
 }
 
 func randomState(n int) string {
