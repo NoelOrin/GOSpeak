@@ -9,8 +9,11 @@ export interface StorageConfigView {
 	endpoint: string;
 	bucket: string;
 	region: string;
-	access_key: string; // 脱敏 "AK***XYZ"
-	secret_key: string; // 永远为空
+	/** 管理端读取时始终为空；提交留空表示保留旧值 */
+	access_key: string;
+	access_key_set?: boolean;
+	secret_key: string;
+	secret_key_set?: boolean;
 	public_base_url: string;
 	path_prefix: string;
 	max_file_size: number;

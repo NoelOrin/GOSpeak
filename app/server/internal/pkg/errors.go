@@ -6,7 +6,7 @@ package pkg
 // 2xxx      = 参数校验错误
 // 3xxx      = 资源相关错误
 // 5xxx      = 服务端内部错误
-// 6xxx      = LiveKit 相关错误
+// 6xxx      = SFU 相关错误
 type ErrCode int
 
 const (
@@ -108,6 +108,11 @@ func GetErrMsg(code ErrCode) string {
 		return msg
 	}
 	return "unknown error"
+}
+
+// String 返回错误码对应的默认消息，便于日志与 WS 鉴权失败原因输出。
+func (c ErrCode) String() string {
+	return GetErrMsg(c)
 }
 
 // AppError 业务错误，携带状态码，可在 service 层直接返回

@@ -303,3 +303,77 @@ func TestResolveConfig_EnvOverridesActiveProvider(t *testing.T) {
 		t.Errorf("livekit_secret = %q, want db-secret (env empty -> DB fallback)", resolved.LiveKitSecret)
 	}
 }
+
+func TestResolveConfig_SRSPublicHostAndWHIP(t *testing.T) {
+	repo := newSFUConfigTestRepo(t)
+	// baseCfg 不提供 public/whip，确保可从 DB 回填
+	baseCfg := &config.Config{
+		SFUProvider:   "srs",
+		SRSHost:       "",
+		SRSApiPort:    "",
+		SRSSecret:     "",
+		SRSWHIPURL:    "",
+		SRSPublicHost: "",
+	}
+	svc := NewSFUConfigService(repo, baseCfg)
+
+	if _, err := svc.UpdateFromDTO(&UpdateSFUConfigRequest{
+		Provider:      "srs",
+		SRSHost:       "192.168.1.10",
+		SRSApiPort:    "1985",
+		SRSSecret:     "secret",
+		SRSWHIPURL:    "/rtc/v1/whip/?app=live",
+		SRSPublicHost: "https://voice.example.com",
+	}); err != nil {
+		t.Fatalf("update srs: %v", err)
+	}
+
+	resolved, err := svc.ResolveConfig()
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if resolved.SRSHost != "192.168.1.10" {
+		t.Errorf("SRSHost=%q", resolved.SRSHost)
+	}
+	if resolved.SRSWHIPURL != "/rtc/v1/whip/?app=live" {
+		t.Errorf("SRSWHIPURL=%q", resolved.SRSWHIPURL)
+	}
+	if resolved.SRSPublicHost != "https://voice.example.com" {
+		t.Errorf("SRSPublicHost=%q", resolved.SRSPublicHost)
+	}
+}
+
+func TestUpdateFromDTO_KeepsExistingSecrets(t *testing.T) {
+	repo := newSFUConfigTestRepo(t)
+	svc := NewSFUConfigService(repo, &config.Config{SFUProvider: "livekit"})
+
+	if _, err := svc.UpdateFromDTO(&UpdateSFUConfigRequest{
+		Provider:      "livekit",
+		LiveKitHost:   "wss://livekit.example.com",
+		LiveKitKey:    "key-1",
+		LiveKitSecret: "super-secret-value",
+	}); err != nil {
+		t.Fatalf("seed update: %v", err)
+	}
+
+	cfg, err := svc.UpdateFromDTO(&UpdateSFUConfigRequest{
+		Provider:    "livekit",
+		LiveKitHost: "wss://livekit.example.com",
+		LiveKitKey:  "key-1",
+		// LiveKitSecret 留空，应保留旧值
+	})
+	if err != nil {
+		t.Fatalf("update keep secret: %v", err)
+	}
+	if cfg.LiveKitSecret != "super-secret-value" {
+		t.Fatalf("secret = %q, want preserved", cfg.LiveKitSecret)
+	}
+
+	pub := ToPublicSFUConfig(cfg)
+	if pub.LiveKitSecret != "" {
+		t.Fatalf("public secret should be empty, got %q", pub.LiveKitSecret)
+	}
+	if !pub.LiveKitSecretSet {
+		t.Fatal("public secret_set should be true")
+	}
+}

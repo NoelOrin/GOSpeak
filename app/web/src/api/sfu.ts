@@ -72,21 +72,30 @@ export interface SFUConfig {
 	provider: SFUProvider;
 	livekit_host: string;
 	livekit_key: string;
+	/** 管理端读取时始终为空；提交时留空表示保留旧值 */
 	livekit_secret: string;
+	livekit_secret_set?: boolean;
 	agora_app_id: string;
 	agora_app_certificate: string;
+	agora_app_certificate_set?: boolean;
 	agora_host: string;
 	agora_customer_id: string;
 	agora_customer_secret: string;
+	agora_customer_secret_set?: boolean;
 	mediasoup_bridge_url: string;
 	mediasoup_host: string;
 	srs_host: string;
 	srs_api_port: string;
 	srs_secret: string;
+	srs_secret_set?: boolean;
+	srs_whip_url: string;
+	srs_public_host: string;
 	daily_api_key: string;
+	daily_api_key_set?: boolean;
 	daily_domain: string;
 	cf_app_id: string;
 	cf_app_secret: string;
+	cf_app_secret_set?: boolean;
 	cf_stun_url: string;
 	created_at?: string;
 	updated_at?: string;
@@ -94,7 +103,14 @@ export interface SFUConfig {
 
 export type UpdateSFUConfigParams = Omit<
 	SFUConfig,
-	"created_at" | "updated_at"
+	| "created_at"
+	| "updated_at"
+	| "livekit_secret_set"
+	| "agora_app_certificate_set"
+	| "agora_customer_secret_set"
+	| "srs_secret_set"
+	| "daily_api_key_set"
+	| "cf_app_secret_set"
 >;
 
 export interface SFUProvidersListResponse {

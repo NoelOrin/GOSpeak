@@ -7,11 +7,13 @@ export interface EmailConfigView {
 	smtp_port: string;
 	smtp_username: string;
 	smtp_password: string;
+	smtp_password_set?: boolean;
 	smtp_from: string;
 	smtp_from_name: string;
 	email_code_ttl: string;
 	email_send_cooldown: string;
 	email_code_secret: string;
+	email_code_secret_set?: boolean;
 	available: boolean;
 }
 

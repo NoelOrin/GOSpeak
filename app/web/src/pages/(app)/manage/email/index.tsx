@@ -9,11 +9,11 @@ import {
 	getEmailConfig,
 	updateEmailConfig,
 } from "@/api/email";
-import userStore from "@/stores/userStore";
+import { hasPermission } from "@/utils/permissions";
 
 export const Route = createFileRoute("/(app)/manage/email/")({
 	beforeLoad: () => {
-		if (userStore.user()?.role !== "admin") {
+		if (!hasPermission("email_config:read")) {
 			throw redirect({ to: "/" });
 		}
 	},
@@ -36,6 +36,8 @@ function EmailPage() {
 	const [emailCodeTTL, setEmailCodeTTL] = createSignal("10m");
 	const [emailSendCooldown, setEmailSendCooldown] = createSignal("60s");
 	const [emailCodeSecret, setEmailCodeSecret] = createSignal("");
+	const [smtpPasswordSet, setSmtpPasswordSet] = createSignal(false);
+	const [emailCodeSecretSet, setEmailCodeSecretSet] = createSignal(false);
 	const [saving, setSaving] = createSignal(false);
 
 	createEffect(() => {
@@ -49,6 +51,8 @@ function EmailPage() {
 		setSmtpFromName(data.smtp_from_name || "GoSpeak");
 		setEmailCodeTTL(data.email_code_ttl || "10m");
 		setEmailSendCooldown(data.email_send_cooldown || "60s");
+		setSmtpPasswordSet(!!data.smtp_password_set);
+		setEmailCodeSecretSet(!!data.email_code_secret_set);
 	});
 
 	const handleSave = async () => {
@@ -67,7 +71,9 @@ function EmailPage() {
 			if (smtpPassword()) input.smtp_password = smtpPassword();
 			if (emailCodeSecret()) input.email_code_secret = emailCodeSecret();
 
-			await updateEmailConfig(input);
+			const saved = await updateEmailConfig(input);
+			setSmtpPasswordSet(!!saved.smtp_password_set);
+			setEmailCodeSecretSet(!!saved.email_code_secret_set);
 			showToast("邮箱配置已保存", { type: "success" });
 			setSmtpPassword("");
 			setEmailCodeSecret("");
@@ -182,7 +188,7 @@ function EmailPage() {
 						<input
 							type="password"
 							class="input input-bordered input-sm w-full"
-							placeholder="留空保持原值"
+							placeholder={smtpPasswordSet() ? "已配置，留空保留" : "SMTP 密码"}
 							value={smtpPassword()}
 							onInput={(e) => setSmtpPassword(e.currentTarget.value)}
 							disabled={saving()}
@@ -237,7 +243,9 @@ function EmailPage() {
 						<input
 							type="password"
 							class="input input-bordered input-sm w-full"
-							placeholder="留空保持原值"
+							placeholder={
+								emailCodeSecretSet() ? "已配置，留空保留" : "验证码签名密钥"
+							}
 							value={emailCodeSecret()}
 							onInput={(e) => setEmailCodeSecret(e.currentTarget.value)}
 							disabled={saving()}

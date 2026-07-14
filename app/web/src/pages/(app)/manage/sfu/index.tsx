@@ -19,11 +19,12 @@ import {
 	getSFUConfigByProvider,
 	getSFUProviderCapabilities,
 	listSFUProviders,
+	type SFUConfig,
 	switchSFUProvider,
 	type UpdateSFUConfigParams,
 	updateSFUConfig,
 } from "@/api/sfu";
-import userStore from "@/stores/userStore";
+import { hasPermission } from "@/utils/permissions";
 
 type FieldErrors = Partial<Record<keyof UpdateSFUConfigParams, string>>;
 
@@ -57,7 +58,7 @@ const isHost = (v: string): boolean => {
 
 export const Route = createFileRoute("/(app)/manage/sfu/")({
 	beforeLoad: () => {
-		if (userStore.user()?.role !== "admin") {
+		if (!hasPermission("sfu:manage")) {
 			throw redirect({ to: "/" });
 		}
 	},
@@ -83,6 +84,8 @@ const emptyForm: UpdateSFUConfigParams = {
 	srs_host: "",
 	srs_api_port: "1985",
 	srs_secret: "",
+	srs_whip_url: "",
+	srs_public_host: "",
 	daily_api_key: "",
 	daily_domain: "",
 	cf_app_id: "",
@@ -103,7 +106,7 @@ const DISABLED_PROVIDERS: SFUProvider[] = ["mediasoup"];
 
 function isProviderConfigured(
 	provider: SFUProvider,
-	config: UpdateSFUConfigParams,
+	config: Partial<SFUConfig> & { provider?: SFUProvider },
 ): boolean {
 	switch (provider) {
 		case "livekit":
@@ -115,7 +118,7 @@ function isProviderConfigured(
 		case "srs":
 			return !!config.srs_host;
 		case "daily":
-			return !!(config.daily_api_key || config.daily_domain);
+			return !!(config.daily_api_key_set || config.daily_domain);
 		case "cloudflare":
 			return !!config.cf_app_id;
 		default:
@@ -130,6 +133,14 @@ function SFUPage() {
 		SFUProvider | undefined
 	>();
 	const [form, setForm] = createSignal<UpdateSFUConfigParams>(emptyForm);
+	const [secretFlags, setSecretFlags] = createSignal({
+		livekit_secret_set: false,
+		agora_app_certificate_set: false,
+		agora_customer_secret_set: false,
+		srs_secret_set: false,
+		daily_api_key_set: false,
+		cf_app_secret_set: false,
+	});
 	const [errors, setErrors] = createSignal<FieldErrors>({});
 	const [saving, setSaving] = createSignal(false);
 
@@ -164,25 +175,36 @@ function SFUPage() {
 	});
 
 	function populateForm(data: { provider: SFUProvider; [key: string]: any }) {
+		// 密钥字段不回填明文；仅记录是否已配置，提交时留空表示保留旧值。
+		setSecretFlags({
+			livekit_secret_set: !!data.livekit_secret_set,
+			agora_app_certificate_set: !!data.agora_app_certificate_set,
+			agora_customer_secret_set: !!data.agora_customer_secret_set,
+			srs_secret_set: !!data.srs_secret_set,
+			daily_api_key_set: !!data.daily_api_key_set,
+			cf_app_secret_set: !!data.cf_app_secret_set,
+		});
 		setForm({
 			provider: data.provider,
 			livekit_host: data.livekit_host || "",
 			livekit_key: data.livekit_key || "",
-			livekit_secret: data.livekit_secret || "",
+			livekit_secret: "",
 			agora_app_id: data.agora_app_id || "",
-			agora_app_certificate: data.agora_app_certificate || "",
+			agora_app_certificate: "",
 			agora_host: data.agora_host || "",
 			agora_customer_id: data.agora_customer_id || "",
-			agora_customer_secret: data.agora_customer_secret || "",
+			agora_customer_secret: "",
 			mediasoup_bridge_url: data.mediasoup_bridge_url || "",
 			mediasoup_host: data.mediasoup_host || "",
 			srs_host: data.srs_host || "",
 			srs_api_port: data.srs_api_port || "1985",
-			srs_secret: data.srs_secret || "",
-			daily_api_key: data.daily_api_key || "",
+			srs_secret: "",
+			srs_whip_url: data.srs_whip_url || "",
+			srs_public_host: data.srs_public_host || "",
+			daily_api_key: "",
 			daily_domain: data.daily_domain || "",
 			cf_app_id: data.cf_app_id || "",
-			cf_app_secret: data.cf_app_secret || "",
+			cf_app_secret: "",
 			cf_stun_url: data.cf_stun_url || "stun.cloudflare.com:3478",
 		});
 	}
@@ -211,20 +233,40 @@ function SFUPage() {
 		const e: FieldErrors = {};
 		const p = f.provider;
 
+		const flags = secretFlags();
 		const require = (key: keyof UpdateSFUConfigParams, msg: string) => {
 			if (!clean(String(f[key] ?? ""))) e[key] = msg;
+		};
+		const requireSecret = (
+			key: keyof UpdateSFUConfigParams,
+			set: boolean,
+			msg: string,
+		) => {
+			if (!set && !clean(String(f[key] ?? ""))) e[key] = msg;
 		};
 
 		if (p === "livekit") {
 			if (!isUrl(f.livekit_host, ["ws", "wss"]))
 				e.livekit_host = "需要 ws:// 或 wss:// 开头的合法 URL";
 			require("livekit_key", "API Key 必填");
-			require("livekit_secret", "API Secret 必填");
+			requireSecret(
+				"livekit_secret",
+				flags.livekit_secret_set,
+				"API Secret 必填",
+			);
 		} else if (p === "agora") {
 			require("agora_app_id", "App ID 必填");
-			require("agora_app_certificate", "App Certificate 必填");
+			requireSecret(
+				"agora_app_certificate",
+				flags.agora_app_certificate_set,
+				"App Certificate 必填",
+			);
 			require("agora_customer_id", "Customer ID 必填");
-			require("agora_customer_secret", "Customer Secret 必填");
+			requireSecret(
+				"agora_customer_secret",
+				flags.agora_customer_secret_set,
+				"Customer Secret 必填",
+			);
 			if (f.agora_host && !isUrl(f.agora_host, ["http", "https"]))
 				e.agora_host = "需要 http(s):// 开头的合法 URL";
 		} else if (p === "mediasoup") {
@@ -236,14 +278,31 @@ function SFUPage() {
 			if (!isHost(f.srs_host))
 				e.srs_host = "需要域名或 IP, 不含 scheme / 路径 / 引号";
 			if (!isPort(f.srs_api_port)) e.srs_api_port = "1-65535 数字";
-			require("srs_secret", "Secret 必填");
+			requireSecret("srs_secret", flags.srs_secret_set, "Secret 必填");
+			if (
+				f.srs_public_host &&
+				!isUrl(f.srs_public_host, ["http", "https", "ws", "wss"])
+			)
+				e.srs_public_host = "需要 http(s)/ws(s) URL，或留空";
+			if (
+				f.srs_whip_url &&
+				!(
+					f.srs_whip_url.startsWith("/") ||
+					isUrl(f.srs_whip_url, ["http", "https"])
+				)
+			)
+				e.srs_whip_url = "需要绝对路径或 http(s) URL";
 		} else if (p === "daily") {
-			require("daily_api_key", "API Key 必填");
+			requireSecret("daily_api_key", flags.daily_api_key_set, "API Key 必填");
 			if (!isHost(f.daily_domain))
 				e.daily_domain = "需要域名, 不含 scheme / 路径 / 引号";
 		} else if (p === "cloudflare") {
 			require("cf_app_id", "App ID 必填");
-			require("cf_app_secret", "App Secret 必填");
+			requireSecret(
+				"cf_app_secret",
+				flags.cf_app_secret_set,
+				"App Secret 必填",
+			);
 		}
 		return e;
 	};
@@ -263,11 +322,13 @@ function SFUPage() {
 					cleaned[k] = clean(cleaned[k] as string) as never;
 				}
 			}
-			await updateSFUConfig(cleaned);
+			const saved = await updateSFUConfig(cleaned);
+			populateForm(saved);
 			void refetchList();
-			showToast(`${PROVIDER_LABELS[form().provider]} 配置已保存并激活`, {
-				type: "success",
-			});
+			showToast(
+				`${PROVIDER_LABELS[form().provider]} 配置已保存并激活，所有客户端将强制刷新`,
+				{ type: "success" },
+			);
 		} catch (error) {
 			showToast(error instanceof Error ? error.message : "保存失败", {
 				type: "error",
@@ -283,7 +344,7 @@ function SFUPage() {
 			const cfg = await switchSFUProvider(provider);
 			populateForm(cfg);
 			void refetchList();
-			showToast(`已切换到 ${PROVIDER_LABELS[provider]}`, {
+			showToast(`已切换到 ${PROVIDER_LABELS[provider]}，所有客户端将强制刷新`, {
 				type: "success",
 			});
 		} catch (error) {
@@ -505,7 +566,11 @@ function SFUPage() {
 								classList={{
 									"input-error": !!errors().livekit_secret,
 								}}
-								placeholder="API secret"
+								placeholder={
+									secretFlags().livekit_secret_set
+										? "已配置，留空保留"
+										: "API secret"
+								}
 								value={form().livekit_secret}
 								onInput={(event) =>
 									updateField("livekit_secret", event.currentTarget.value)
@@ -559,7 +624,11 @@ function SFUPage() {
 								classList={{
 									"input-error": !!errors().agora_app_certificate,
 								}}
-								placeholder="App certificate"
+								placeholder={
+									secretFlags().agora_app_certificate_set
+										? "已配置，留空保留"
+										: "App certificate"
+								}
 								value={form().agora_app_certificate}
 								onInput={(event) =>
 									updateField(
@@ -580,7 +649,11 @@ function SFUPage() {
 								classList={{
 									"input-error": !!errors().agora_customer_secret,
 								}}
-								placeholder="Customer secret"
+								placeholder={
+									secretFlags().agora_customer_secret_set
+										? "已配置，留空保留"
+										: "Customer secret"
+								}
 								value={form().agora_customer_secret}
 								onInput={(event) =>
 									updateField(
@@ -685,10 +758,44 @@ function SFUPage() {
 								classList={{
 									"input-error": !!errors().srs_secret,
 								}}
-								placeholder="Bearer secret"
+								placeholder={
+									secretFlags().srs_secret_set
+										? "已配置，留空保留"
+										: "Bearer secret"
+								}
 								value={form().srs_secret}
 								onInput={(event) =>
 									updateField("srs_secret", event.currentTarget.value)
+								}
+								disabled={saving()}
+							/>
+						</Field>
+						<Field label="WHIP URL" error={errors().srs_whip_url}>
+							<input
+								type="text"
+								class="input input-bordered input-sm w-full"
+								classList={{
+									"input-error": !!errors().srs_whip_url,
+								}}
+								placeholder="/rtc/v1/whip/ 或 https://srs.example.com/rtc/v1/whip/"
+								value={form().srs_whip_url}
+								onInput={(event) =>
+									updateField("srs_whip_url", event.currentTarget.value)
+								}
+								disabled={saving()}
+							/>
+						</Field>
+						<Field label="Public Host" error={errors().srs_public_host}>
+							<input
+								type="text"
+								class="input input-bordered input-sm w-full"
+								classList={{
+									"input-error": !!errors().srs_public_host,
+								}}
+								placeholder="https://voice.example.com 或留空使用 Host"
+								value={form().srs_public_host}
+								onInput={(event) =>
+									updateField("srs_public_host", event.currentTarget.value)
 								}
 								disabled={saving()}
 							/>
@@ -706,7 +813,11 @@ function SFUPage() {
 								classList={{
 									"input-error": !!errors().daily_api_key,
 								}}
-								placeholder="Daily API key"
+								placeholder={
+									secretFlags().daily_api_key_set
+										? "已配置，留空保留"
+										: "Daily API key"
+								}
 								value={form().daily_api_key}
 								onInput={(event) =>
 									updateField("daily_api_key", event.currentTarget.value)
@@ -772,7 +883,11 @@ function SFUPage() {
 								classList={{
 									"input-error": !!errors().cf_app_secret,
 								}}
-								placeholder="Cloudflare Realtime App Secret"
+								placeholder={
+									secretFlags().cf_app_secret_set
+										? "已配置，留空保留"
+										: "Cloudflare Realtime App Secret"
+								}
 								value={form().cf_app_secret}
 								onInput={(event) =>
 									updateField("cf_app_secret", event.currentTarget.value)

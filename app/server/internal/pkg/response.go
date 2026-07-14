@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -40,34 +41,59 @@ func Fail(c *gin.Context, code ErrCode, msg ...string) {
 
 // errToHTTPStatus 将业务错误码映射为 HTTP 状态码
 func errToHTTPStatus(code ErrCode) int {
-	switch {
-	case code == FORBIDDEN || code == USER_BANNED:
-		return http.StatusForbidden // 403
-	case code >= 1001 && code <= 1015:
-		return http.StatusUnauthorized // 401
-	case code >= 2001 && code <= 2999:
-		return http.StatusBadRequest // 400
-	case code == NOT_FOUND:
-		return http.StatusNotFound // 404
-	case code >= 8001 && code <= 8099:
-		return http.StatusBadRequest // 400
-	case code >= 8101 && code <= 8199:
-		return http.StatusInternalServerError // 500
-	case code >= 5001 && code <= 5999:
-		return http.StatusInternalServerError // 500
+	switch code {
+	case SUCCESS:
+		return http.StatusOK
+	case TOKEN_NOT_EXIST, TOKEN_WRONG, TOKEN_EXPIRED, TOKEN_REVOKED:
+		return http.StatusUnauthorized
+	case INVALID_PASSWORD, USER_NOT_FOUND, USERNAME_EXISTS, EMAIL_ALREADY_EXISTS:
+		// 登录/注册业务错误：避免与 token 鉴权 401 混淆
+		return http.StatusBadRequest
+	case FORBIDDEN, USER_BANNED, USER_MUTED, PASSWORD_RESET_DISABLED:
+		return http.StatusForbidden
+	case INVALID_PARAMS, EMAIL_CODE_INVALID, EMAIL_CODE_EXPIRED, EMAIL_CODE_ALREADY_USED,
+		EMAIL_SEND_TOO_FREQUENT, EMAIL_CODE_MAX_ATTEMPTS, EMAIL_NOT_VERIFIED,
+		STORAGE_FILE_TOO_LARGE, STORAGE_FILE_TYPE_NOT_ALLOWED:
+		return http.StatusBadRequest
+	case NOT_FOUND, OAUTH_PROVIDER_NOT_FOUND:
+		return http.StatusNotFound
+	case ALREADY_EXISTS:
+		return http.StatusConflict
+	case SFU_NOT_CONFIGURED, EMAIL_NOT_CONFIGURED, STORAGE_NOT_CONFIGURED, OAUTH_PROVIDER_DISABLED:
+		return http.StatusServiceUnavailable
+	case OAUTH_TOKEN_EXCHANGE_FAILED, OAUTH_GET_USER_FAILED, SFU_ERROR, STORAGE_ERROR, EMAIL_SEND_FAILED:
+		return http.StatusBadGateway
+	case INTERNAL_ERROR:
+		return http.StatusInternalServerError
 	default:
-		return http.StatusInternalServerError // 500
+		return http.StatusInternalServerError
 	}
 }
 
-// HandleError 统一处理 service 层返回的错误
+// HandleError 统一处理 service 层返回的错误。
 //
-//	如果 err 是 *AppError，提取 Code 和 Message；
-//	否则使用 INTERNAL_ERROR 兜底
+//	*AppError：业务码按需返回 Message；内部/上游错误仅返回默认文案，避免泄露实现细节。
+//	其他 error：统一 INTERNAL_ERROR 兜底，不透传 err.Error()。
 func HandleError(c *gin.Context, err error) {
-	if appErr, ok := err.(*AppError); ok {
+	var appErr *AppError
+	if errors.As(err, &appErr) {
+		if shouldHideErrorDetail(appErr.Code) {
+			Fail(c, appErr.Code)
+			return
+		}
 		Fail(c, appErr.Code, appErr.Message)
 		return
 	}
 	Fail(c, INTERNAL_ERROR)
+}
+
+// shouldHideErrorDetail 判断该业务码是否可能携带底层实现细节，客户端只应看到默认文案。
+func shouldHideErrorDetail(code ErrCode) bool {
+	switch code {
+	case INTERNAL_ERROR, SFU_ERROR, STORAGE_ERROR,
+		OAUTH_TOKEN_EXCHANGE_FAILED, OAUTH_GET_USER_FAILED, EMAIL_SEND_FAILED:
+		return true
+	default:
+		return false
+	}
 }

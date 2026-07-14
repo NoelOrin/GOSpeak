@@ -7,7 +7,9 @@ export interface OAuthProvider {
 	display_name: string;
 	icon_url: string;
 	client_id: string;
+	/** 管理端读取时始终为空；提交时留空表示保留旧值 */
 	client_secret: string;
+	client_secret_set?: boolean;
 	auth_url: string;
 	token_url: string;
 	userinfo_url: string;

@@ -191,7 +191,10 @@ func (s *OAuthService) HandleCallback(providerName, code string) (*AuthResponse,
 
 // buildAuthResponse 统一构造 OAuth 登录成功后的 AuthResponse（与密码登录复用同一结构）。
 func (s *OAuthService) buildAuthResponse(user *model.User) (*AuthResponse, error) {
-token, refreshToken, err := GenerateTokenPair(user)
+	if model.HasBanRole(user.Role) {
+		return nil, pkg.NewAppError(pkg.USER_BANNED)
+	}
+	token, refreshToken, err := GenerateTokenPair(user)
 	if err != nil {
 		return nil, err
 	}
@@ -207,6 +210,71 @@ type EnabledProviderInfo struct {
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name"`
 	IconURL     string `json:"icon_url"`
+}
+
+// AdminOAuthProvider 管理后台 OAuth 配置视图：不回显 client_secret 明文。
+type AdminOAuthProvider struct {
+	ID              uint   `json:"id"`
+	Name            string `json:"name"`
+	DisplayName     string `json:"display_name"`
+	IconURL         string `json:"icon_url"`
+	ClientID        string `json:"client_id"`
+	ClientSecret    string `json:"client_secret"`
+	ClientSecretSet bool   `json:"client_secret_set"`
+	AuthURL         string `json:"auth_url"`
+	TokenURL        string `json:"token_url"`
+	UserInfoURL     string `json:"userinfo_url"`
+	RedirectURL     string `json:"redirect_url"`
+	Scopes          string `json:"scopes"`
+	UIDField        string `json:"uid_field"`
+	UsernameField   string `json:"username_field"`
+	AvatarField     string `json:"avatar_field"`
+	EmailField      string `json:"email_field"`
+	Enabled         bool   `json:"enabled"`
+	CreatedAt       string `json:"created_at,omitempty"`
+	UpdatedAt       string `json:"updated_at,omitempty"`
+}
+
+func toAdminOAuthProvider(p *model.OAuthProvider) *AdminOAuthProvider {
+	if p == nil {
+		return nil
+	}
+	out := &AdminOAuthProvider{
+		ID:              p.ID,
+		Name:            p.Name,
+		DisplayName:     p.DisplayName,
+		IconURL:         p.IconURL,
+		ClientID:        p.ClientID,
+		ClientSecret:    "",
+		ClientSecretSet: p.ClientSecret != "",
+		AuthURL:         p.AuthURL,
+		TokenURL:        p.TokenURL,
+		UserInfoURL:     p.UserInfoURL,
+		RedirectURL:     p.RedirectURL,
+		Scopes:          p.Scopes,
+		UIDField:        p.UIDField,
+		UsernameField:   p.UsernameField,
+		AvatarField:     p.AvatarField,
+		EmailField:      p.EmailField,
+		Enabled:         p.Enabled,
+	}
+	if !p.CreatedAt.IsZero() {
+		out.CreatedAt = p.CreatedAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+	if !p.UpdatedAt.IsZero() {
+		out.UpdatedAt = p.UpdatedAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+	return out
+}
+
+func toAdminOAuthProviders(providers []model.OAuthProvider) []AdminOAuthProvider {
+	out := make([]AdminOAuthProvider, 0, len(providers))
+	for i := range providers {
+		if item := toAdminOAuthProvider(&providers[i]); item != nil {
+			out = append(out, *item)
+		}
+	}
+	return out
 }
 
 // ListEnabledProviders 返回已启用的 OAuth 提供商公开信息（不含 secret）。
@@ -231,13 +299,18 @@ func (s *OAuthService) ListEnabledProviders() ([]EnabledProviderInfo, error) {
 	}
 	return result, nil
 }
-// ListProviders 获取所有 OAuth 提供商配置（用于管理后台展示）。
-func (s *OAuthService) ListProviders() ([]model.OAuthProvider, error) {
-	return s.providerRepo.List()
+
+// ListProviders 获取所有 OAuth 提供商配置（用于管理后台展示，secret 已脱敏）。
+func (s *OAuthService) ListProviders() ([]AdminOAuthProvider, error) {
+	providers, err := s.providerRepo.List()
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return toAdminOAuthProviders(providers), nil
 }
 
 // CreateProviderFromDTO creates an OAuth provider from a handler-level DTO.
-func (s *OAuthService) CreateProviderFromDTO(req *CreateOAuthProviderRequest) (*model.OAuthProvider, error) {
+func (s *OAuthService) CreateProviderFromDTO(req *CreateOAuthProviderRequest) (*AdminOAuthProvider, error) {
 	enabled := true
 	if req.Enabled != nil {
 		enabled = *req.Enabled
@@ -277,20 +350,29 @@ func (s *OAuthService) CreateProviderFromDTO(req *CreateOAuthProviderRequest) (*
 	}
 
 	if err := s.providerRepo.Create(provider); err != nil {
-		return nil, err
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	return provider, nil
+	return toAdminOAuthProvider(provider), nil
 }
 
 // UpdateProviderFromDTO updates an OAuth provider from a handler-level DTO.
-func (s *OAuthService) UpdateProviderFromDTO(req *UpdateOAuthProviderRequest) (*model.OAuthProvider, error) {
+// client_secret 为空时保留旧密钥，避免管理后台脱敏回写清空。
+func (s *OAuthService) UpdateProviderFromDTO(req *UpdateOAuthProviderRequest) (*AdminOAuthProvider, error) {
+	existing, err := s.providerRepo.GetByID(req.ID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, pkg.NewAppError(pkg.OAUTH_PROVIDER_NOT_FOUND)
+		}
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+
 	provider := &model.OAuthProvider{
-		ID:            req.ID,
+		ID:            existing.ID,
 		Name:          req.Name,
 		DisplayName:   req.DisplayName,
 		IconURL:       req.IconURL,
 		ClientID:      req.ClientID,
-		ClientSecret:  req.ClientSecret,
+		ClientSecret:  pkg.KeepSecret(req.ClientSecret, existing.ClientSecret),
 		AuthURL:       req.AuthURL,
 		TokenURL:      req.TokenURL,
 		UserInfoURL:   req.UserInfoURL,
@@ -300,18 +382,26 @@ func (s *OAuthService) UpdateProviderFromDTO(req *UpdateOAuthProviderRequest) (*
 		UsernameField: req.UsernameField,
 		AvatarField:   req.AvatarField,
 		EmailField:    req.EmailField,
+		Enabled:       existing.Enabled,
+		CreatedAt:     existing.CreatedAt,
+	}
+	if req.Name == "" {
+		provider.Name = existing.Name
 	}
 	if req.Enabled != nil {
 		provider.Enabled = *req.Enabled
 	}
 
 	if err := s.providerRepo.Update(provider); err != nil {
-		return nil, err
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	return provider, nil
+	return toAdminOAuthProvider(provider), nil
 }
 
 // DeleteProvider 删除 OAuth 提供商配置。
 func (s *OAuthService) DeleteProvider(id uint) error {
-	return s.providerRepo.Delete(id)
+	if err := s.providerRepo.Delete(id); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return nil
 }

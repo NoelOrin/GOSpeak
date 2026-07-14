@@ -25,6 +25,23 @@ type UpdateEmailConfigRequest struct {
 	EmailCodeSecret   string `json:"email_code_secret"`
 }
 
+// PublicEmailConfig 管理后台邮件配置视图：密钥不回显明文。
+type PublicEmailConfig struct {
+	Enabled            bool   `json:"enabled"`
+	SMTPHost           string `json:"smtp_host"`
+	SMTPPort           string `json:"smtp_port"`
+	SMTPUsername       string `json:"smtp_username"`
+	SMTPPassword       string `json:"smtp_password"`
+	SMTPPasswordSet    bool   `json:"smtp_password_set"`
+	SMTPFrom           string `json:"smtp_from"`
+	SMTPFromName       string `json:"smtp_from_name"`
+	EmailCodeTTL       string `json:"email_code_ttl"`
+	EmailSendCooldown  string `json:"email_send_cooldown"`
+	EmailCodeSecret    string `json:"email_code_secret"`
+	EmailCodeSecretSet bool   `json:"email_code_secret_set"`
+	Available          bool   `json:"available"`
+}
+
 type EmailConfigService struct {
 	repo    *repository.EmailConfigRepository
 	baseCfg *config.Config
@@ -93,12 +110,8 @@ func (s *EmailConfigService) UpdateFromDTO(req *UpdateEmailConfigRequest) (*mode
 			cfg.EmailSendCooldown = "60s"
 		}
 	}
-	if cfg.SMTPPassword == "" {
-		cfg.SMTPPassword = existing.SMTPPassword
-	}
-	if cfg.EmailCodeSecret == "" {
-		cfg.EmailCodeSecret = existing.EmailCodeSecret
-	}
+	cfg.SMTPPassword = pkg.KeepSecret(cfg.SMTPPassword, existing.SMTPPassword)
+	cfg.EmailCodeSecret = pkg.KeepSecret(cfg.EmailCodeSecret, existing.EmailCodeSecret)
 
 	if err := s.repo.Save(cfg); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -154,5 +167,27 @@ func (s *EmailConfigService) defaultConfig() *model.EmailConfig {
 		EmailCodeTTL:      s.baseCfg.EmailCodeTTL,
 		EmailSendCooldown: s.baseCfg.EmailSendCooldown,
 		EmailCodeSecret:   s.baseCfg.EmailCodeSecret,
+	}
+}
+
+// ToPublicEmailConfig 转为管理后台安全视图。
+func ToPublicEmailConfig(cfg *model.EmailConfig, available bool) *PublicEmailConfig {
+	if cfg == nil {
+		return nil
+	}
+	return &PublicEmailConfig{
+		Enabled:            cfg.Enabled,
+		SMTPHost:           cfg.SMTPHost,
+		SMTPPort:           cfg.SMTPPort,
+		SMTPUsername:       cfg.SMTPUsername,
+		SMTPPassword:       "",
+		SMTPPasswordSet:    cfg.SMTPPassword != "",
+		SMTPFrom:           cfg.SMTPFrom,
+		SMTPFromName:       cfg.SMTPFromName,
+		EmailCodeTTL:       cfg.EmailCodeTTL,
+		EmailSendCooldown:  cfg.EmailSendCooldown,
+		EmailCodeSecret:    "",
+		EmailCodeSecretSet: cfg.EmailCodeSecret != "",
+		Available:          available,
 	}
 }

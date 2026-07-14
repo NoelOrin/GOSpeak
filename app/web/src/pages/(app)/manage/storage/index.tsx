@@ -7,11 +7,11 @@ import {
 	type StorageConfigInput,
 	updateStorageConfig,
 } from "@/api/storage";
-import userStore from "@/stores/userStore";
+import { hasPermission } from "@/utils/permissions";
 
 export const Route = createFileRoute("/(app)/manage/storage/")({
 	beforeLoad: () => {
-		if (userStore.user()?.role !== "admin") {
+		if (!hasPermission("storage:read")) {
 			throw redirect({ to: "/" });
 		}
 	},
@@ -29,6 +29,8 @@ function StoragePage() {
 	const [region, setRegion] = createSignal("");
 	const [accessKey, setAccessKey] = createSignal("");
 	const [secretKey, setSecretKey] = createSignal("");
+	const [accessKeySet, setAccessKeySet] = createSignal(false);
+	const [secretKeySet, setSecretKeySet] = createSignal(false);
 	const [publicBaseURL, setPublicBaseURL] = createSignal("");
 	const [pathPrefix, setPathPrefix] = createSignal("uploads/");
 	const [maxFileSize, setMaxFileSize] = createSignal(5);
@@ -50,6 +52,8 @@ function StoragePage() {
 			setPathPrefix(cfg.path_prefix);
 			setMaxFileSize(cfg.max_file_size);
 			setAllowedTypes(cfg.allowed_types);
+			setAccessKeySet(!!cfg.access_key_set);
+			setSecretKeySet(!!cfg.secret_key_set);
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : "加载配置失败";
 			showToast(msg, { type: "error" });
@@ -74,7 +78,9 @@ function StoragePage() {
 			if (accessKey()) input.access_key = accessKey();
 			if (secretKey()) input.secret_key = secretKey();
 
-			await updateStorageConfig(input);
+			const saved = await updateStorageConfig(input);
+			setAccessKeySet(!!saved.access_key_set);
+			setSecretKeySet(!!saved.secret_key_set);
 			showToast("存储配置已保存", { type: "success" });
 			setAccessKey("");
 			setSecretKey("");
@@ -197,7 +203,7 @@ function StoragePage() {
 							<input
 								type="password"
 								class="input input-bordered input-sm w-full"
-								placeholder="留空保持原值"
+								placeholder={accessKeySet() ? "已配置，留空保留" : "Access Key"}
 								value={accessKey()}
 								onInput={(e) => setAccessKey(e.target.value)}
 							/>
@@ -207,7 +213,7 @@ function StoragePage() {
 							<input
 								type="password"
 								class="input input-bordered input-sm w-full"
-								placeholder="留空保持原值"
+								placeholder={secretKeySet() ? "已配置，留空保留" : "Secret Key"}
 								value={secretKey()}
 								onInput={(e) => setSecretKey(e.target.value)}
 							/>
