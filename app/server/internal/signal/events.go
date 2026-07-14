@@ -43,4 +43,7 @@ const (
 	// 禁言事件
 	EventUserMuted   = "user:muted"
 	EventUserUnmuted = "user:unmuted"
+
+	// SFU 热切换：通知所有客户端断连并刷新
+	EventSFUProviderChanged = "sfu:provider-changed"
 )

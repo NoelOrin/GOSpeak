@@ -5,14 +5,14 @@ import Users from "lucide-solid/icons/users";
 import { createResource, createSignal, For, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import { listUsers, updateUserRole } from "@/api/user";
-import userStore from "@/stores/userStore";
+import { hasPermission } from "@/utils/permissions";
 
 const BAN_ROLE = "ban";
 const USER_ROLE = "user";
 
 export const Route = createFileRoute("/(app)/manage/ban/")({
 	beforeLoad: () => {
-		if (userStore.user()?.role !== "admin") {
+		if (!hasPermission("user:update")) {
 			throw redirect({ to: "/" });
 		}
 	},

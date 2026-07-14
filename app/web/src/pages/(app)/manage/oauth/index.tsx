@@ -16,11 +16,11 @@ import {
 	type OAuthProvider,
 	updateProvider,
 } from "@/api/oauth";
-import userStore from "@/stores/userStore";
+import { hasPermission } from "@/utils/permissions";
 
 export const Route = createFileRoute("/(app)/manage/oauth/")({
 	beforeLoad: () => {
-		if (userStore.user()?.role !== "admin") {
+		if (!hasPermission("oauth:read")) {
 			throw redirect({ to: "/" });
 		}
 	},

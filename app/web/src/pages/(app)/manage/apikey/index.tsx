@@ -12,7 +12,7 @@ import {
 	revokeBotKey,
 } from "@/api/apikey";
 import { listPermissions, type PermissionItem } from "@/api/permission";
-import userStore from "@/stores/userStore";
+import { hasPermission } from "@/utils/permissions";
 
 const EXPIRY_OPTIONS = [
 	{ value: "24h", label: "1 天" },
@@ -25,7 +25,7 @@ const PERMANENT_YEAR = 2125;
 
 export const Route = createFileRoute("/(app)/manage/apikey/")({
 	beforeLoad: () => {
-		if (userStore.user()?.role !== "admin") {
+		if (!hasPermission("bot:manage")) {
 			throw redirect({ to: "/" });
 		}
 	},

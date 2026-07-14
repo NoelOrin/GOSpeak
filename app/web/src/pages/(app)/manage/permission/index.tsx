@@ -28,11 +28,11 @@ import {
 	syncRolePermissions,
 	updateRole,
 } from "@/api/permission";
-import userStore from "@/stores/userStore";
+import { hasPermission } from "@/utils/permissions";
 
 export const Route = createFileRoute("/(app)/manage/permission/")({
 	beforeLoad: () => {
-		if (userStore.user()?.role !== "admin") {
+		if (!hasPermission("role:manage")) {
 			throw redirect({ to: "/" });
 		}
 	},

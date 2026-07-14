@@ -4,7 +4,7 @@ import { Show } from "solid-js";
 import Divider from "@/components/common/divider";
 import OptionSquare from "@/components/common/optionSquare";
 import SvgIcon from "@/components/svgIcon";
-import { hasPermission } from "@/utils/permissions";
+import { hasManageAccess } from "@/utils/permissions";
 
 interface SidebarProps {
 	onOpenSettings?: () => void;
@@ -30,7 +30,7 @@ const Sidebar = (props: SidebarProps) => {
 			<OptionSquare label="设置" onClick={() => props.onOpenSettings?.()}>
 				<SvgIcon width={24} height={24} name="setting-two" />
 			</OptionSquare>
-			<Show when={hasPermission("role:manage")}>
+			<Show when={hasManageAccess()}>
 				<OptionSquare label="管理" onClick={() => navigate({ to: "/manage" })}>
 					<ShieldCheck size={24} />
 				</OptionSquare>

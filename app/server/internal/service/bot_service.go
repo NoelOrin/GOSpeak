@@ -122,12 +122,21 @@ func (s *BotService) List() ([]model.BotToken, error) {
 }
 
 func (s *BotService) Revoke(uuid string) error {
-	_, err := s.botRepo.GetByUUID(uuid)
+	botToken, err := s.botRepo.GetByUUID(uuid)
 	if err != nil {
 		return pkg.NewAppError(pkg.NOT_FOUND, "bot token not found")
 	}
 	if err := s.botRepo.Revoke(uuid); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	// 吊销后递增 bot 用户 TokenVersion，使已签发 JWT 立即失效（VerifyToken 会校验版本）。
+	if botToken.UserUUID != "" {
+		user, uerr := s.userRepo.GetByUUID(botToken.UserUUID)
+		if uerr == nil && user != nil {
+			if ierr := s.userRepo.IncrementTokenVersion(user.ID); ierr != nil {
+				return pkg.NewAppError(pkg.INTERNAL_ERROR, ierr.Error())
+			}
+		}
 	}
 	return nil
 }

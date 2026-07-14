@@ -13,6 +13,7 @@ import Users from "lucide-solid/icons/users";
 import XCircle from "lucide-solid/icons/x-circle";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import userStore from "@/stores/userStore";
+import { hasPermission } from "@/utils/permissions";
 
 interface HealthSnapshot {
 	timestamp: string;
@@ -50,7 +51,7 @@ interface HealthSnapshot {
 
 export const Route = createFileRoute("/(app)/manage/monitor/")({
 	beforeLoad: () => {
-		if (userStore.user()?.role !== "admin") {
+		if (!hasPermission("role:manage")) {
 			throw redirect({ to: "/" });
 		}
 	},

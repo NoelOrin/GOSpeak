@@ -79,6 +79,24 @@ func (s *MuteService) IsMutedByUUID(uuid string) (bool, error) {
 // MuteUser 禁言用户
 // duration: 禁言秒数（0 = 永久）
 func (s *MuteService) MuteUser(muterID, userID uint, duration int64, permanent bool, reason string) (*model.Mute, error) {
+	if userID == 0 {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "user_id is required")
+	}
+	target, err := s.userRepo.GetByID(userID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, pkg.NewAppError(pkg.USER_NOT_FOUND)
+		}
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR)
+	}
+	// 禁止禁言管理员；Bot 可禁言普通用户，但不可抬权到管理面。
+	if target.Role == "admin" {
+		muter, merr := s.userRepo.GetByID(muterID)
+		if merr != nil || muter == nil || muter.Role != "admin" || muter.IsBot {
+			return nil, pkg.NewAppError(pkg.FORBIDDEN, "cannot mute admin")
+		}
+	}
+
 	mute := &model.Mute{
 		UserID:    userID,
 		MuterID:   muterID,

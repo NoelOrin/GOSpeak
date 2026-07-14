@@ -1,9 +1,9 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/solid-router";
-import userStore from "@/stores/userStore";
+import { hasManageAccess } from "@/utils/permissions";
 
 export const Route = createFileRoute("/(app)/manage")({
 	beforeLoad: () => {
-		if (userStore.user()?.role !== "admin") {
+		if (!hasManageAccess()) {
 			throw redirect({ to: "/" });
 		}
 	},

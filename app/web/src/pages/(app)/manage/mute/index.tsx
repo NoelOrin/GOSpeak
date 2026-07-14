@@ -8,12 +8,12 @@ import { createResource, createSignal, For, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import { cancelMute, createMute, listMutes } from "@/api/mute";
 import { listUsers } from "@/api/user";
-import userStore from "@/stores/userStore";
 import { formatRemaining } from "@/utils/format";
+import { hasPermission } from "@/utils/permissions";
 
 export const Route = createFileRoute("/(app)/manage/mute/")({
 	beforeLoad: () => {
-		if (userStore.user()?.role !== "admin") {
+		if (!hasPermission("mute:manage")) {
 			throw redirect({ to: "/" });
 		}
 	},
