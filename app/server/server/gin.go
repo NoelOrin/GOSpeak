@@ -2,9 +2,10 @@ package server
 
 import (
 	"GOSpeak/internal/bus"
-	"GOSpeak/internal/jobs"
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/handler"
+	"GOSpeak/internal/jobs"
+	"GOSpeak/internal/logger"
 	"GOSpeak/internal/mediasoup"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
@@ -18,22 +19,21 @@ import (
 	"GOSpeak/internal/signal"
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	ossignal "os/signal"
-	"syscall"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nats-io/nats.go"
-	goredis "github.com/redis/go-redis/v9"
 	socketio "github.com/googollee/go-socket.io"
 	engineio "github.com/googollee/go-socket.io/engineio"
 	"github.com/googollee/go-socket.io/engineio/transport"
 	"github.com/googollee/go-socket.io/engineio/transport/polling"
 	"github.com/googollee/go-socket.io/engineio/transport/websocket"
+	"github.com/nats-io/nats.go"
+	goredis "github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -56,6 +56,17 @@ func StartGin(env EnvEnum) {
 	}
 
 	cfg := config.MustLoad()
+
+	// 统一日志初始化（先于其它组件，后续 log/fmt 可逐步迁移）
+	if err := logger.Init(logger.OptionsFrom(cfg.LoggerOptions())); err != nil {
+		panic(fmt.Sprintf("failed to init logger: %v", err))
+	}
+	logger.SetupGin()
+	logger.WithComponent("Server").WithFields(logger.Fields{
+		"env":      appEnv,
+		"port":     cfg.ServerPort,
+		"provider": cfg.SFUProvider,
+	}).Info("logger ready")
 
 	if env == Prod || env == "" || cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
@@ -119,7 +130,8 @@ func StartGin(env EnvEnum) {
 		panic(fmt.Sprintf("failed to resolve sfu config: %v", err))
 	}
 
-	r := gin.Default()
+	r := gin.New()
+	r.Use(logger.GinRecovery(), logger.GinLogger())
 	middleware.SetTokenVersionChecker(authSvc)
 
 	wsTransport := websocket.Default
@@ -186,12 +198,12 @@ func StartGin(env EnvEnum) {
 		NATS:   natsConn,
 	})
 	if err != nil {
-		log.Printf("[StateStore] unavailable mode=%s: %v", cfg.StateStore, err)
+		logger.WithComponent("StateStore").Warnf("unavailable mode=%s: %v", cfg.StateStore, err)
 	} else if store != nil {
 		signalHub.SetMembershipStore(store, instanceID)
-		log.Printf("[StateStore] ready backend=%s instance=%s", backend, instanceID)
+		logger.WithComponent("StateStore").Infof("ready backend=%s instance=%s", backend, instanceID)
 	} else {
-		log.Printf("[StateStore] backend=none (local membership only)")
+		logger.WithComponent("StateStore").Info("backend=none (local membership only)")
 	}
 
 	var jobQueue *bus.JobQueue
@@ -201,16 +213,16 @@ func StartGin(env EnvEnum) {
 			NC:     nb.Conn(),
 		})
 		if err != nil {
-			log.Printf("[JobQueue] unavailable: %v", err)
+			logger.WithComponent("JobQueue").Warnf("unavailable: %v", err)
 		} else {
 			jobQueue = q
 			signalHub.SetCleanupPublisher(q)
 			if _, err := q.Consume(nb.InstanceID(), func(job bus.JobEnvelope) error {
 				return jobs.Handle(job, signalHub, signalHub)
 			}); err != nil {
-				log.Printf("[JobQueue] consume failed: %v", err)
+				logger.WithComponent("JobQueue").Errorf("consume failed: %v", err)
 			} else {
-				log.Printf("[JobQueue] consumer started instance=%s", nb.InstanceID())
+				logger.WithComponent("JobQueue").Infof("consumer started instance=%s", nb.InstanceID())
 			}
 		}
 	}
@@ -304,7 +316,7 @@ func StartGin(env EnvEnum) {
 		port = "8998"
 	}
 
-	fmt.Printf("[Swagger] API 文档地址: http://localhost:%s/swagger/index.html\n", port)
+	logger.WithComponent("Swagger").Infof("API 文档地址: http://localhost:%s/swagger/index.html", port)
 
 	srv := &http.Server{
 		Addr:    ":" + port,
@@ -316,66 +328,64 @@ func StartGin(env EnvEnum) {
 		quit := make(chan os.Signal, 1)
 		ossignal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 		<-quit
-		log.Println("[Server] shutting down...")
+		logger.WithComponent("Server").Info("shutting down...")
 
 		if err := sioServer.Close(); err != nil {
-			log.Printf("[Socket.IO] close error: %v", err)
+			logger.WithComponent("Socket.IO").Warnf("close error: %v", err)
 		}
-		log.Println("[Socket.IO] connections closed")
+		logger.WithComponent("Socket.IO").Info("connections closed")
 
 		closeEventBus()
-		log.Println("[EventBus] closed")
+		logger.WithComponent("EventBus").Info("closed")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(ctx); err != nil {
-			log.Printf("[HTTP] shutdown error: %v", err)
+			logger.WithComponent("HTTP").Errorf("shutdown error: %v", err)
 		}
 	}()
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("[HTTP] listen error: %v", err)
+		logger.WithComponent("HTTP").Fatalf("listen error: %v", err)
 	}
 }
-
-
 
 func seedPermissions(permRepo *repository.PermissionRepository) {
 	// 种子权限定义
 	for i := range model.DefaultPermissions {
 		if err := permRepo.CreateIfNotExists(&model.DefaultPermissions[i]); err != nil {
-			fmt.Printf("[Seed] 创建权限 %s 失败: %v\n", model.DefaultPermissions[i].Code, err)
+			logger.WithComponent("Seed").Warnf("创建权限 %s 失败: %v", model.DefaultPermissions[i].Code, err)
 		}
 	}
 
 	// 种子角色-权限映射
 	for roleName, codes := range model.DefaultRolePermissions {
 		if err := permRepo.EnsureRolePermissions(roleName, codes); err != nil {
-			fmt.Printf("[Seed] 同步角色 %s 权限失败: %v\n", roleName, err)
+			logger.WithComponent("Seed").Warnf("同步角色 %s 权限失败: %v", roleName, err)
 		}
 	}
-	fmt.Println("[Seed] 权限系统初始化完成")
+	logger.WithComponent("Seed").Info("权限系统初始化完成")
 }
 
 func seedRoles(roleRepo *repository.RoleRepository) {
 	for i := range model.DefaultRoles {
 		if err := roleRepo.CreateIfNotExists(&model.DefaultRoles[i]); err != nil {
-			fmt.Printf("[Seed] 创建角色 %s 失败: %v\n", model.DefaultRoles[i].Name, err)
+			logger.WithComponent("Seed").Warnf("创建角色 %s 失败: %v", model.DefaultRoles[i].Name, err)
 		}
 	}
 	roles, err := roleRepo.List()
 	if err != nil {
-		fmt.Printf("[Seed] 加载角色列表失败: %v\n", err)
+		logger.WithComponent("Seed").Errorf("加载角色列表失败: %v", err)
 		return
 	}
 	model.LoadRoleCache(roles)
-	fmt.Printf("[Seed] 已加载 %d 个角色\n", len(roles))
+	logger.WithComponent("Seed").Infof("已加载 %d 个角色", len(roles))
 }
 
 func seedAdminUser(userRepo *repository.UserRepository) {
 	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(service.DefaultAdminPassword), bcrypt.DefaultCost)
 	if err != nil {
-		fmt.Printf("[Seed] 生成密码哈希失败: %v\n", err)
+		logger.WithComponent("Seed").Errorf("生成密码哈希失败: %v", err)
 		return
 	}
 
@@ -391,16 +401,13 @@ func seedAdminUser(userRepo *repository.UserRepository) {
 		Role:        "admin",
 	}
 	if err := userRepo.Create(admin); err != nil {
-		fmt.Printf("[Seed] 创建管理员用户失败: %v\n", err)
+		logger.WithComponent("Seed").Errorf("创建管理员用户失败: %v", err)
 		return
 	}
-	fmt.Printf("[Seed] 已创建管理员用户: admin / %s\n", service.DefaultAdminPassword)
+	logger.WithComponent("Seed").Infof("已创建管理员用户: admin / %s", service.DefaultAdminPassword)
 }
 
 func init() {
-	log.SetFlags(log.Llongfile | log.Lmicroseconds | log.Ldate)
-
+	// 日志完整初始化在 StartGin 的 config 加载之后；此处仅做最小兜底
 	gin.DisableConsoleColor()
-	// f, _ := os.Create("gin.log")
-	// gin.DefaultWriter = io.MultiWriter(f, os.Stdout)
 }

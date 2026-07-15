@@ -3,9 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	"GOSpeak/server"
+	"github.com/spf13/cobra"
 )
 
 var RootCmd = &cobra.Command{
@@ -35,8 +34,6 @@ var versionCmd = &cobra.Command{
 }
 
 func init() {
-	logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
-
 	serverCmd.Flags().StringP("env", "e", "", "specify environment (dev, prod)")
 	RootCmd.AddCommand(serverCmd)
 	RootCmd.AddCommand(versionCmd)

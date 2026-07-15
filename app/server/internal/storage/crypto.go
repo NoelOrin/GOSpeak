@@ -9,8 +9,7 @@ import (
 	"fmt"
 
 	"GOSpeak/internal/config"
-
-	"github.com/sirupsen/logrus"
+	"GOSpeak/internal/logger"
 )
 
 // devFallbackKey 仅用于开发环境，绝不可用于生产
@@ -28,10 +27,10 @@ func getEncryptKey() []byte {
 
 	if hexKey == "" {
 		if isDev {
-			logrus.Warn("[Storage] ⚠️ STORAGE_ENCRYPT_KEY not set, using INSECURE dev fallback key — NEVER use in production")
+			logger.Warn("[Storage] ⚠️ STORAGE_ENCRYPT_KEY not set, using INSECURE dev fallback key — NEVER use in production")
 			hexKey = devFallbackKey
 		} else {
-			logrus.Fatal("[Storage] STORAGE_ENCRYPT_KEY is required in production. Set a 64-char hex string (32 bytes) and restart.")
+			logger.Fatal("[Storage] STORAGE_ENCRYPT_KEY is required in production. Set a 64-char hex string (32 bytes) and restart.")
 		}
 	}
 
@@ -39,9 +38,9 @@ func getEncryptKey() []byte {
 	if err != nil || len(key) != 32 {
 		if isDev && hexKey == devFallbackKey {
 			// dev fallback key is valid by definition, any error is a code bug
-			logrus.Fatal("[Storage] dev fallback key is invalid, this is a code bug")
+			logger.Fatal("[Storage] dev fallback key is invalid, this is a code bug")
 		}
-		logrus.Fatal("[Storage] STORAGE_ENCRYPT_KEY must be a 64-char hex string (32 bytes). Got invalid key.")
+		logger.Fatal("[Storage] STORAGE_ENCRYPT_KEY must be a 64-char hex string (32 bytes). Got invalid key.")
 	}
 	return key
 }
