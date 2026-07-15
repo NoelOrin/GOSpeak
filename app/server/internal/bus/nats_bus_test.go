@@ -179,3 +179,52 @@ func TestNATSBus_CloseIdempotent(t *testing.T) {
 		t.Fatalf("second Close: %v", err)
 	}
 }
+
+
+
+func TestNATSBus_PublishInternal_NoSocketDeliver(t *testing.T) {
+	es, err := StartEmbeddedServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer es.Shutdown()
+
+	d1 := &memDeliverer{}
+	d2 := &memDeliverer{}
+	hookCh := make(chan string, 2)
+
+	b1, err := NewNATSBus(NATSBusConfig{
+		URL: es.ClientURL(), SubjectPrefix: "gospeak_int", InstanceID: "a", Name: "a", Mode: "embedded", Deliverer: d1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b1.Close()
+
+	b2, err := NewNATSBus(NATSBusConfig{
+		URL: es.ClientURL(), SubjectPrefix: "gospeak_int", InstanceID: "b", Name: "b", Mode: "embedded", Deliverer: d2,
+		RemoteHook: func(event string, payload interface{}) { hookCh <- event },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b2.Close()
+
+	if err := b1.PublishInternal(context.Background(), "cache:permissions-invalidated", map[string]string{"role": "user"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ev := <-hookCh:
+		if ev != "cache:permissions-invalidated" {
+			t.Fatalf("hook event %s", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting remote hook")
+	}
+
+	d1.mu.Lock(); n1 := len(d1.namespace) + len(d1.roomEvents); d1.mu.Unlock()
+	d2.mu.Lock(); n2 := len(d2.namespace) + len(d2.roomEvents); d2.mu.Unlock()
+	if n1 != 0 || n2 != 0 {
+		t.Fatalf("deliverer should stay empty, d1=%d d2=%d", n1, n2)
+	}
+}

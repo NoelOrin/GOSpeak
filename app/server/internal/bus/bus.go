@@ -30,6 +30,8 @@ type EventBus interface {
 	PublishNamespace(ctx context.Context, event string, payload interface{}) error
 	// PublishRoom 先本地投递到 room，再发布到 NATS。
 	PublishRoom(ctx context.Context, room, event string, payload interface{}) error
+	// PublishInternal 仅 NATS 发布（不经 Socket.IO Deliverer），用于缓存失效等内部事件。
+	PublishInternal(ctx context.Context, event string, payload interface{}) error
 	Mode() string // "embedded" | "external"
 	IsConnected() bool
 	InstanceID() string
@@ -42,6 +44,10 @@ func NamespaceSubject(prefix string) string {
 
 func RoomSubject(prefix, room string) string {
 	return prefix + ".signal.room." + room
+}
+
+func InternalSubject(prefix string) string {
+	return prefix + ".internal"
 }
 
 func NewEnvelope(instanceID, scope, room, event string, payload interface{}) (Envelope, error) {

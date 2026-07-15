@@ -490,3 +490,6 @@ GOSpeak 在进程内通过 EventBus 做信令 fanout：
 
 二进制仍为单文件：链接 `nats.go` 客户端 + `nats-server` 库，不附带独立 nats-server 可执行文件。
 
+内部事件使用 `PublishInternal`（subject `{prefix}.internal`），例如权限缓存失效 `cache:permissions-invalidated`，不经 Socket.IO Deliverer。
+
+

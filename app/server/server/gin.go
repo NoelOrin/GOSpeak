@@ -136,8 +136,15 @@ func StartGin(env EnvEnum) {
 
 	signalHub := signal.NewHub(roomSvc, muteSvc, userSvc, permSvc)
 	signalHub.SetEventBus(eventBus)
+	permSvc.SetEventBus(eventBus)
 	if nb, ok := eventBus.(*bus.NATSBus); ok {
-		nb.SetRemoteHook(signalHub.HandleRemoteEvent)
+		nb.SetRemoteHook(func(event string, payload interface{}) {
+			if event == service.EventPermissionsInvalidated {
+				permSvc.OnRemoteInvalidate(payload)
+				return
+			}
+			signalHub.HandleRemoteEvent(event, payload)
+		})
 		store, err := bus.OpenStateStore(bus.StateStoreConfig{
 			Prefix: cfg.NATSSubjectPrefix,
 			NC:     nb.Conn(),

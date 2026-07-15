@@ -162,6 +162,16 @@ func (b *NATSBus) PublishRoom(ctx context.Context, room, event string, payload i
 	return b.publish(RoomSubject(b.prefix, room), env)
 }
 
+func (b *NATSBus) PublishInternal(ctx context.Context, event string, payload interface{}) error {
+	_ = ctx
+	env, err := NewEnvelope(b.instanceID, "internal", "", event, payload)
+	if err != nil {
+		return err
+	}
+	return b.publish(InternalSubject(b.prefix), env)
+}
+
+
 func (b *NATSBus) Close() error {
 	if !b.closed.CompareAndSwap(false, true) {
 		return nil
@@ -194,13 +204,20 @@ func (b *NATSBus) subscribeAll() error {
 		_ = subNS.Unsubscribe()
 		return fmt.Errorf("subscribe room wildcard: %w", err)
 	}
+	subInt, err := b.nc.Subscribe(InternalSubject(b.prefix), b.onMessage)
+	if err != nil {
+		_ = subNS.Unsubscribe()
+		_ = subRoom.Unsubscribe()
+		return fmt.Errorf("subscribe internal: %w", err)
+	}
 	if err := b.nc.Flush(); err != nil {
 		_ = subNS.Unsubscribe()
 		_ = subRoom.Unsubscribe()
+		_ = subInt.Unsubscribe()
 		return fmt.Errorf("subscribe flush: %w", err)
 	}
 	b.mu.Lock()
-	b.subs = append(b.subs, subNS, subRoom)
+	b.subs = append(b.subs, subNS, subRoom, subInt)
 	b.mu.Unlock()
 	return nil
 }
@@ -217,13 +234,16 @@ func (b *NATSBus) onMessage(m *nats.Msg) {
 
 	payload := decodePayload(env.Payload)
 
-	d, ok := b.deliverer.Load().(Deliverer)
-	if ok && d != nil {
-		switch env.Scope {
-		case "room":
-			d.BroadcastToRoom(env.Room, env.Event, payload)
-		default:
-			d.BroadcastToNamespace(env.Event, payload)
+	// internal 事件不进 Socket.IO，只走 RemoteHook（缓存失效等）。
+	if env.Scope != "internal" {
+		d, ok := b.deliverer.Load().(Deliverer)
+		if ok && d != nil {
+			switch env.Scope {
+			case "room":
+				d.BroadcastToRoom(env.Room, env.Event, payload)
+			default:
+				d.BroadcastToNamespace(env.Event, payload)
+			}
 		}
 	}
 

@@ -1,10 +1,19 @@
 package service
 
 import (
+	"context"
+	"log"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/repository"
 	"sync"
 )
+
+const EventPermissionsInvalidated = "cache:permissions-invalidated"
+
+// cacheBus publishes internal cache invalidation events (no Socket.IO).
+type cacheBus interface {
+	PublishInternal(ctx context.Context, event string, payload interface{}) error
+}
 
 // PermissionService 权限服务，管理权限定义和角色权限缓存。
 type PermissionService struct {
@@ -13,12 +22,24 @@ type PermissionService struct {
 	// 缓存：roleName → permission codes
 	cache   map[string]map[string]struct{}
 	cacheMu sync.RWMutex
+	bus     cacheBus
 }
 
 func NewPermissionService(permRepo *repository.PermissionRepository) *PermissionService {
 	return &PermissionService{
 		permRepo: permRepo,
 		cache:    make(map[string]map[string]struct{}),
+	}
+}
+
+func (s *PermissionService) SetEventBus(b cacheBus) {
+	s.bus = b
+}
+
+// OnRemoteInvalidate reloads role permission cache from DB.
+func (s *PermissionService) OnRemoteInvalidate(payload interface{}) {
+	if err := s.LoadCache(); err != nil {
+		log.Printf("[Permission] remote cache reload failed: %v", err)
 	}
 }
 
@@ -86,5 +107,12 @@ func (s *PermissionService) SyncRolePermissions(roleName string, permCodes []str
 	}
 	s.cache[roleName] = set
 	s.cacheMu.Unlock()
+	if s.bus != nil {
+		if err := s.bus.PublishInternal(context.Background(), EventPermissionsInvalidated, map[string]string{
+			"role": roleName,
+		}); err != nil {
+			log.Printf("[Permission] publish invalidate: %v", err)
+		}
+	}
 	return nil
 }
