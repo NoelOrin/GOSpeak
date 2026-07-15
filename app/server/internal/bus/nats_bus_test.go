@@ -7,27 +7,109 @@ import (
 	"time"
 )
 
-type recordedCall struct {
-	event string
-	data  interface{}
-	room  string // empty for namespace calls
+type memDeliverer struct {
+	mu         sync.Mutex
+	namespace  []string
+	roomEvents []string
+	payloads   []interface{}
 }
 
-type recordingDeliverer struct {
-	mu    sync.Mutex
-	calls []recordedCall
+func (m *memDeliverer) BroadcastToNamespace(event string, data interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.namespace = append(m.namespace, event)
+	m.payloads = append(m.payloads, data)
 }
 
-func (d *recordingDeliverer) BroadcastToNamespace(event string, data interface{}) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.calls = append(d.calls, recordedCall{event: event, data: data})
+func (m *memDeliverer) BroadcastToRoom(room, event string, data interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.roomEvents = append(m.roomEvents, room+":"+event)
+	m.payloads = append(m.payloads, data)
 }
 
-func (d *recordingDeliverer) BroadcastToRoom(room, event string, data interface{}) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.calls = append(d.calls, recordedCall{event: event, data: data, room: room})
+func waitUntil(t *testing.T, timeout time.Duration, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("condition not met before timeout")
+}
+
+func TestNATSBus_FanoutToPeerSkipsSelf(t *testing.T) {
+	es, err := StartEmbeddedServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer es.Shutdown()
+	url := es.ClientURL()
+
+	d1 := &memDeliverer{}
+	d2 := &memDeliverer{}
+
+	b1, err := NewNATSBus(NATSBusConfig{
+		URL:        url,
+		SubjectPrefix: "gospeak",
+		Name:       "inst-a",
+		InstanceID: "inst-a",
+		Mode:       "embedded",
+		Deliverer:  d1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b1.Close()
+
+	b2, err := NewNATSBus(NATSBusConfig{
+		URL:        url,
+		SubjectPrefix: "gospeak",
+		Name:       "inst-b",
+		InstanceID: "inst-b",
+		Mode:       "embedded",
+		Deliverer:  d2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b2.Close()
+
+	if err := b1.PublishRoom(context.Background(), "r1", "member:joined", map[string]string{"id": "x"}); err != nil {
+		t.Fatal(err)
+	}
+
+	waitUntil(t, 2*time.Second, func() bool {
+		d1.mu.Lock()
+		n1 := len(d1.roomEvents)
+		d1.mu.Unlock()
+		d2.mu.Lock()
+		n2 := len(d2.roomEvents)
+		d2.mu.Unlock()
+		return n1 >= 1 && n2 >= 1
+	})
+
+	d1.mu.Lock()
+	defer d1.mu.Unlock()
+	d2.mu.Lock()
+	defer d2.mu.Unlock()
+
+	if len(d1.roomEvents) != 1 {
+		t.Fatalf("local deliver want 1, got %v", d1.roomEvents)
+	}
+	if len(d2.roomEvents) != 1 {
+		t.Fatalf("peer deliver want 1, got %v", d2.roomEvents)
+	}
+	// peer payload must be decoded object, not raw JSON bytes
+	pm, ok := d2.payloads[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("peer payload type = %T, want map", d2.payloads[0])
+	}
+	if pm["id"] != "x" {
+		t.Fatalf("peer payload = %#v", pm)
+	}
 }
 
 func TestNATSBus_PublishNamespace(t *testing.T) {
@@ -37,101 +119,63 @@ func TestNATSBus_PublishNamespace(t *testing.T) {
 	}
 	defer es.Shutdown()
 
-	d := &recordingDeliverer{}
-	bus, err := NewNATSBus(NATSBusConfig{
-		InstanceID:    "test",
-		SubjectPrefix: "gospeak",
-		URL:           es.ClientURL(),
-		Deliverer:     d,
-	})
+	d1 := &memDeliverer{}
+	d2 := &memDeliverer{}
+	b1, err := NewNATSBus(NATSBusConfig{URL: es.ClientURL(), SubjectPrefix: "gospeak", InstanceID: "a", Name: "a", Mode: "external", Deliverer: d1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer bus.Close()
-
-	time.Sleep(200 * time.Millisecond)
-
-	payload := map[string]interface{}{"user": "alice"}
-	if err := bus.PublishNamespace(context.Background(), "member:joined", payload); err != nil {
+	defer b1.Close()
+	b2, err := NewNATSBus(NATSBusConfig{URL: es.ClientURL(), SubjectPrefix: "gospeak", InstanceID: "b", Name: "b", Mode: "external", Deliverer: d2})
+	if err != nil {
 		t.Fatal(err)
 	}
+	defer b2.Close()
 
-	time.Sleep(200 * time.Millisecond)
-
-	d.mu.Lock()
-	calls := make([]recordedCall, len(d.calls))
-	copy(calls, d.calls)
-	d.mu.Unlock()
-
-	if len(calls) != 1 {
-		t.Fatalf("expected 1 local delivery, got %d", len(calls))
+	if err := b1.PublishNamespace(context.Background(), "user:muted", map[string]any{"user_id": float64(1)}); err != nil {
+		t.Fatal(err)
 	}
-	if calls[0].event != "member:joined" {
-		t.Fatalf("expected event 'member:joined', got %q", calls[0].event)
+	waitUntil(t, 2*time.Second, func() bool {
+		d2.mu.Lock()
+		n := len(d2.namespace)
+		d2.mu.Unlock()
+		return n >= 1
+	})
+	d1.mu.Lock()
+	d2.mu.Lock()
+	defer d1.mu.Unlock()
+	defer d2.mu.Unlock()
+	if len(d1.namespace) != 1 || d1.namespace[0] != "user:muted" {
+		t.Fatalf("local namespace = %v", d1.namespace)
 	}
-	if calls[0].room != "" {
-		t.Fatalf("expected empty room for namespace, got %q", calls[0].room)
+	if len(d2.namespace) != 1 || d2.namespace[0] != "user:muted" {
+		t.Fatalf("peer namespace = %v", d2.namespace)
+	}
+	pm, ok := d2.payloads[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("peer payload type = %T", d2.payloads[0])
+	}
+	if pm["user_id"] != float64(1) {
+		t.Fatalf("peer payload = %#v", pm)
 	}
 }
 
-func TestNATSBus_FanoutToPeerSkipsSelf(t *testing.T) {
+func TestNATSBus_CloseIdempotent(t *testing.T) {
 	es, err := StartEmbeddedServer()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer es.Shutdown()
-
-	dA := &recordingDeliverer{}
-	busA, err := NewNATSBus(NATSBusConfig{
-		InstanceID:    "instance-a",
-		SubjectPrefix: "gospeak",
-		URL:           es.ClientURL(),
-		Deliverer:     dA,
+	b, err := NewNATSBus(NATSBusConfig{
+		URL: es.ClientURL(), SubjectPrefix: "gospeak", InstanceID: "c", Name: "c", Mode: "embedded", Deliverer: &memDeliverer{},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer busA.Close()
-
-	dB := &recordingDeliverer{}
-	busB, err := NewNATSBus(NATSBusConfig{
-		InstanceID:    "instance-b",
-		SubjectPrefix: "gospeak",
-		URL:           es.ClientURL(),
-		Deliverer:     dB,
-	})
-	if err != nil {
+	if err := b.Close(); err != nil {
 		t.Fatal(err)
 	}
-	defer busB.Close()
-
-	time.Sleep(300 * time.Millisecond)
-
-	payload := map[string]interface{}{"user": "alice"}
-	if err := busA.PublishNamespace(context.Background(), "member:joined", payload); err != nil {
-		t.Fatal(err)
-	}
-
-	time.Sleep(500 * time.Millisecond)
-
-	dA.mu.Lock()
-	callsA := make([]recordedCall, len(dA.calls))
-	copy(callsA, dA.calls)
-	dA.mu.Unlock()
-
-	if len(callsA) != 1 {
-		t.Fatalf("busA: expected 1 local delivery, got %d (self NATS messages must be skipped)", len(callsA))
-	}
-
-	dB.mu.Lock()
-	callsB := make([]recordedCall, len(dB.calls))
-	copy(callsB, dB.calls)
-	dB.mu.Unlock()
-
-	if len(callsB) != 1 {
-		t.Fatalf("busB: expected 1 event from peer, got %d", len(callsB))
-	}
-	if callsB[0].event != "member:joined" {
-		t.Fatalf("busB: expected event 'member:joined', got %q", callsB[0].event)
+	if err := b.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
 	}
 }

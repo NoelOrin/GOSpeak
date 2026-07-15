@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,15 +17,19 @@ type NATSBusConfig struct {
 	InstanceID    string
 	SubjectPrefix string
 	URL           string
+	Name          string
 	Deliverer     Deliverer
-	// Mode 强制指定 "embedded" 或 "external"；为空时由 URL 自动判断。
+	// Mode 必须为 "embedded" 或 "external"；为空时默认 "external"。
 	Mode string
 	// FallbackFromExternal 为 true 表示此 bus 由外部不可用降级而来。
 	FallbackFromExternal bool
+	// RemoteHook 在 peer 消息投递到本地 Deliverer 之后调用（不含自身回环）。
+	// 用于 Hub 等需要同步处理控制事件（如 sfu:provider-changed）的场景。
+	RemoteHook func(event string, payload interface{})
 }
 
 // NATSBus 基于 NATS 的 EventBus 实现。
-// 发布时先本地投递再 NATS pub（双写到 peer），收到 NATS 消息后按 InstanceID 去重。
+// 发布时先本地投递再 NATS pub；收到 NATS 消息后按 InstanceID 去重。
 type NATSBus struct {
 	instanceID string
 	prefix     string
@@ -36,68 +40,89 @@ type NATSBus struct {
 
 	deliverer atomic.Value // stores Deliverer
 
-	// fallbackFromExternal 为 true 表示此 bus 为嵌入 NATS 的降级模式，
-	// NATS 不可用时仅做本地投递不报错。
 	fallbackFromExternal bool
+	remoteHook           atomic.Value // stores func(event string, payload interface{})
 
 	subs []*nats.Subscription
 	mu   sync.Mutex
 
-	connected atomic.Bool
-	cancel    context.CancelFunc
-	done      chan struct{}
+	closed atomic.Bool
+	done   chan struct{}
 }
 
 // NewNATSBus 创建并启动 NATSBus。
-// 连接 NATS、订阅 namespace 和 room 主题，设置本地投递接口。
 func NewNATSBus(cfg NATSBusConfig) (*NATSBus, error) {
-	nc, err := nats.Connect(cfg.URL, nats.Timeout(5*time.Second))
-	if err != nil {
-		return nil, fmt.Errorf("nats connect: %w", err)
+	if cfg.URL == "" {
+		return nil, fmt.Errorf("nats bus: empty URL")
 	}
-
-	_ , cancel := context.WithCancel(context.Background())
+	if cfg.InstanceID == "" {
+		return nil, fmt.Errorf("nats bus: empty InstanceID")
+	}
+	if cfg.SubjectPrefix == "" {
+		cfg.SubjectPrefix = "gospeak"
+	}
+	mode := cfg.Mode
+	if mode == "" {
+		mode = "external"
+	}
+	if mode != "embedded" && mode != "external" {
+		return nil, fmt.Errorf("nats bus: invalid mode %q", mode)
+	}
+	name := cfg.Name
+	if name == "" {
+		name = cfg.InstanceID
+	}
 
 	b := &NATSBus{
-		instanceID: cfg.InstanceID,
-		prefix:     cfg.SubjectPrefix,
-		url:        cfg.URL,
-		nc:         nc,
-		cancel:     cancel,
-		done:       make(chan struct{}),
+		instanceID:           cfg.InstanceID,
+		prefix:               cfg.SubjectPrefix,
+		mode:                 mode,
+		url:                  cfg.URL,
+		fallbackFromExternal: cfg.FallbackFromExternal,
+		done:                 make(chan struct{}),
 	}
-	b.connected.Store(true)
-
-	// Mode: cfg.Mode 优先，否则由 URL 自动判断
-	b.fallbackFromExternal = cfg.FallbackFromExternal
-	if cfg.Mode != "" {
-		b.mode = cfg.Mode
-	} else if strings.Contains(cfg.URL, "127.0.0.1:") || strings.Contains(cfg.URL, "localhost:") {
-		b.mode = "embedded"
-	} else {
-		b.mode = "external"
-	}
-
 	if cfg.Deliverer != nil {
 		b.deliverer.Store(cfg.Deliverer)
 	}
+	if cfg.RemoteHook != nil {
+		b.remoteHook.Store(cfg.RemoteHook)
+	}
+
+	nc, err := nats.Connect(cfg.URL,
+		nats.Name(name),
+		nats.Timeout(5*time.Second),
+		nats.MaxReconnects(-1),
+		nats.ReconnectWait(time.Second),
+		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
+			if err != nil {
+				log.Printf("[EventBus] nats disconnected: %v", err)
+			}
+		}),
+		nats.ReconnectHandler(func(nc *nats.Conn) {
+			log.Printf("[EventBus] nats reconnected: %s", nc.ConnectedUrl())
+		}),
+		nats.ClosedHandler(func(_ *nats.Conn) {
+			log.Printf("[EventBus] nats connection closed")
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("nats connect: %w", err)
+	}
+	b.nc = nc
 
 	if err := b.subscribeAll(); err != nil {
 		nc.Close()
-		cancel()
 		return nil, err
 	}
-
 	return b, nil
 }
 
-// Mode 返回 "embedded" 或 "external"。
 func (b *NATSBus) Mode() string { return b.mode }
 
-// IsConnected 返回 NATS 连接状态。
-func (b *NATSBus) IsConnected() bool { return b.connected.Load() }
+func (b *NATSBus) IsConnected() bool {
+	return b.nc != nil && b.nc.IsConnected() && !b.closed.Load()
+}
 
-// InstanceID 返回此 bus 实例的唯一标识。
 func (b *NATSBus) InstanceID() string { return b.instanceID }
 
 // SetDeliverer 设置本地投递接口，可在启动后替换。
@@ -107,36 +132,37 @@ func (b *NATSBus) SetDeliverer(d Deliverer) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// EventBus 接口
-// ---------------------------------------------------------------------------
+// SetRemoteHook 设置 peer 事件钩子（投递后调用）。
+func (b *NATSBus) SetRemoteHook(hook func(event string, payload interface{})) {
+	if hook != nil {
+		b.remoteHook.Store(hook)
+	}
+}
 
 func (b *NATSBus) PublishNamespace(ctx context.Context, event string, payload interface{}) error {
-	// 1. 本地投递（使用原始 payload）
+	_ = ctx
 	b.deliverLocal(event, payload)
-
-	// 2. NATS 发布
 	env, err := NewEnvelope(b.instanceID, "namespace", "", event, payload)
 	if err != nil {
 		return err
 	}
-	return b.publish(ctx, NamespaceSubject(b.prefix), env)
+	return b.publish(NamespaceSubject(b.prefix), env)
 }
 
 func (b *NATSBus) PublishRoom(ctx context.Context, room, event string, payload interface{}) error {
-	// 1. 本地投递到 room
+	_ = ctx
 	b.deliverLocalRoom(room, event, payload)
-
-	// 2. NATS 发布
 	env, err := NewEnvelope(b.instanceID, "room", room, event, payload)
 	if err != nil {
 		return err
 	}
-	return b.publish(ctx, RoomSubject(b.prefix, room), env)
+	return b.publish(RoomSubject(b.prefix, room), env)
 }
 
 func (b *NATSBus) Close() error {
-	b.cancel()
+	if !b.closed.CompareAndSwap(false, true) {
+		return nil
+	}
 
 	b.mu.Lock()
 	subs := b.subs
@@ -146,80 +172,90 @@ func (b *NATSBus) Close() error {
 	for _, sub := range subs {
 		_ = sub.Unsubscribe()
 	}
-
 	if b.nc != nil {
 		b.nc.Close()
 	}
-
-	b.connected.Store(false)
 	close(b.done)
 	return nil
 }
 
-// ---------------------------------------------------------------------------
-// 内部
-// ---------------------------------------------------------------------------
-
-// subscribeAll 订阅 namespace 和 room 通配主题。
 func (b *NATSBus) subscribeAll() error {
 	subNS, err := b.nc.Subscribe(NamespaceSubject(b.prefix), b.onMessage)
 	if err != nil {
 		return fmt.Errorf("subscribe namespace: %w", err)
 	}
-
-	subRoom, err := b.nc.Subscribe(RoomSubject(b.prefix, ">"), b.onMessage)
+	// 明确通配，避免 RoomSubject(prefix, ">") 语义含糊
+	roomSubject := b.prefix + ".signal.room.>"
+	subRoom, err := b.nc.Subscribe(roomSubject, b.onMessage)
 	if err != nil {
 		_ = subNS.Unsubscribe()
 		return fmt.Errorf("subscribe room wildcard: %w", err)
 	}
-
+	if err := b.nc.Flush(); err != nil {
+		_ = subNS.Unsubscribe()
+		_ = subRoom.Unsubscribe()
+		return fmt.Errorf("subscribe flush: %w", err)
+	}
 	b.mu.Lock()
 	b.subs = append(b.subs, subNS, subRoom)
 	b.mu.Unlock()
 	return nil
 }
 
-// onMessage 处理 NATS 消息：
-//   - 反序列化为 Envelope
-//   - 若 InstanceID 匹配自身则跳过（自去重）
-//   - 按 scope 投递给本地 Deliverer
 func (b *NATSBus) onMessage(m *nats.Msg) {
 	var env Envelope
 	if err := json.Unmarshal(m.Data, &env); err != nil {
+		log.Printf("[EventBus] bad envelope: %v", err)
 		return
 	}
-
-	// 自去重：不处理自己发布的消息
 	if env.InstanceID == b.instanceID {
 		return
 	}
 
+	payload := decodePayload(env.Payload)
+
 	d, ok := b.deliverer.Load().(Deliverer)
-	if !ok || d == nil {
-		return
+	if ok && d != nil {
+		switch env.Scope {
+		case "room":
+			d.BroadcastToRoom(env.Room, env.Event, payload)
+		default:
+			d.BroadcastToNamespace(env.Event, payload)
+		}
 	}
 
-	switch env.Scope {
-	case "namespace":
-		d.BroadcastToNamespace(env.Event, env.Payload)
-	case "room":
-		d.BroadcastToRoom(env.Room, env.Event, env.Payload)
+	if hook, ok := b.remoteHook.Load().(func(event string, payload interface{})); ok && hook != nil {
+		hook(env.Event, payload)
 	}
 }
 
-func (b *NATSBus) publish(_ context.Context, subject string, env Envelope) error {
-	if !b.connected.Load() {
-		if b.fallbackFromExternal {
-			return nil // 降级：静默跳过
-		}
-		return fmt.Errorf("nats not connected")
+func decodePayload(raw json.RawMessage) interface{} {
+	if len(raw) == 0 {
+		return nil
 	}
+	var payload interface{}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return json.RawMessage(append([]byte(nil), raw...))
+	}
+	return payload
+}
 
+func (b *NATSBus) publish(subject string, env Envelope) error {
+	if b.closed.Load() || b.nc == nil || !b.nc.IsConnected() {
+		if b.fallbackFromExternal {
+			return nil
+		}
+		log.Printf("[EventBus] skip nats publish (disconnected): %s %s", env.Scope, env.Event)
+		return nil
+	}
 	data, err := json.Marshal(env)
 	if err != nil {
 		return err
 	}
-	return b.nc.Publish(subject, data)
+	if err := b.nc.Publish(subject, data); err != nil {
+		return fmt.Errorf("nats publish %s: %w", subject, err)
+	}
+	return nil
 }
 
 func (b *NATSBus) deliverLocal(event string, payload interface{}) {

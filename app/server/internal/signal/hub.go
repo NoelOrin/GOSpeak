@@ -290,7 +290,7 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 		h.mu.RLock()
 		info := h.roomInfoLocked(name)
 		h.mu.RUnlock()
-		h.publishNamespace(EventRoomUpdated, info)
+		h.localNamespace(EventRoomUpdated, info)
 	}
 
 	log.Printf("[Signal] client disconnected: %s, reason: %s", s.ID(), reason)
@@ -340,7 +340,7 @@ func (h *Hub) OnRoomCreate(s socketio.Conn, data string) {
 	log.Printf("[Signal] room created: %s by %s", req.Room, s.ID())
 
 	s.Emit(EventRoomCreated, roomInfo)
-	h.publishNamespace(EventRoomUpdated, roomInfo)
+	h.localNamespace(EventRoomUpdated, roomInfo)
 }
 
 // ─── 加入房间 ───
@@ -538,7 +538,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 	h.mu.RLock()
 	info := h.roomInfoLocked(req.Room)
 	h.mu.RUnlock()
-	h.publishNamespace(EventRoomUpdated, info)
+	h.localNamespace(EventRoomUpdated, info)
 
 	return marshalAck(map[string]interface{}{
 		"ok":       true,
@@ -625,7 +625,7 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 		h.mu.RLock()
 		info := h.roomInfoLocked(req.Room)
 		h.mu.RUnlock()
-		h.publishNamespace(EventRoomUpdated, info)
+		h.localNamespace(EventRoomUpdated, info)
 	}
 
 	return marshalAck(map[string]interface{}{
@@ -782,7 +782,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 		h.mu.RLock()
 		info := h.roomInfoLocked(req.Room)
 		h.mu.RUnlock()
-		h.publishNamespace(EventRoomUpdated, info)
+		h.localNamespace(EventRoomUpdated, info)
 		if targetWasSpeaking {
 			h.broadcastActiveSpeakers(req.Room)
 		}
@@ -1012,7 +1012,7 @@ func (h *Hub) broadcastRoomList() {
 		return
 	}
 	rooms := h.GetRooms()
-	h.publishNamespace(EventRoomListResult, map[string]interface{}{
+	h.localNamespace(EventRoomListResult, map[string]interface{}{
 		"rooms": rooms,
 		"count": len(rooms),
 	})
@@ -1168,6 +1168,14 @@ func (h *Hub) publishNamespace(event string, data interface{}) {
 	}
 }
 
+// localNamespace 仅本机广播，不经 EventBus。
+// 用于携带本机内存状态快照的事件（room:list:result / room:updated），避免跨实例投递错误成员数。
+func (h *Hub) localNamespace(event string, data interface{}) {
+	if h.server != nil {
+		h.server.BroadcastToNamespace("/", event, data)
+	}
+}
+
 func (h *Hub) BroadcastToRoom(room string, event string, data interface{}) {
 	h.publishRoom(room, event, data)
 }
@@ -1200,12 +1208,34 @@ func (h *Hub) deleteRoomSafe(room string) {
 }
 
 // ForceSFUProviderSwitch SFU 热切换：广播事件 → 清信令房间 → 尽力清理 SFU 侧。
-// 客户端收到后强制断连并刷新页面。
+// 客户端收到后强制断连并刷新页面。对端实例通过 HandleRemoteEvent 执行同等清理。
 func (h *Hub) ForceSFUProviderSwitch(provider string) {
 	h.publishNamespace(EventSFUProviderChanged, map[string]interface{}{
 		"provider": provider,
 	})
+	h.clearLocalRoomsForSFUSwitch()
+	log.Printf("[Signal] SFU provider switched to %s, forced all sessions offline", provider)
+}
 
+// HandleRemoteEvent 处理来自其他实例的控制面事件。
+// 当前仅对 sfu:provider-changed 做本机房间清理；其余事件已由 EventBus 投递到本地 Socket.IO。
+func (h *Hub) HandleRemoteEvent(event string, payload interface{}) {
+	if event != EventSFUProviderChanged {
+		return
+	}
+	provider := ""
+	switch p := payload.(type) {
+	case map[string]interface{}:
+		if v, ok := p["provider"].(string); ok {
+			provider = v
+		}
+	}
+	log.Printf("[Signal] remote SFU provider switch received: %s", provider)
+	h.clearLocalRoomsForSFUSwitch()
+}
+
+// clearLocalRoomsForSFUSwitch 清理本机信令房间与 stream 视图（不重复广播 provider-changed）。
+func (h *Hub) clearLocalRoomsForSFUSwitch() {
 	type cleanupItem struct {
 		room     string
 		identity string
@@ -1223,7 +1253,6 @@ func (h *Hub) ForceSFUProviderSwitch(provider string) {
 			delete(room.Members, sid)
 			delete(room.Speaking, identity)
 			delete(room.MicMuted, identity)
-			// 从 socket.io room 移除
 			if h.server != nil {
 				h.server.ForEach("/", roomName, func(conn socketio.Conn) {
 					if conn != nil && conn.ID() == sid {
@@ -1237,7 +1266,6 @@ func (h *Hub) ForceSFUProviderSwitch(provider string) {
 	for _, roomName := range roomsToDelete {
 		delete(h.rooms, roomName)
 	}
-	// 清空 stream 聚合视图
 	h.activeStreams = make(map[string]struct{})
 	h.roomStreams = make(map[string]map[string]struct{})
 	h.streamRoomCache = make(map[string]string)
@@ -1254,7 +1282,6 @@ func (h *Hub) ForceSFUProviderSwitch(provider string) {
 		h.deleteRoomSafe(roomName)
 	}
 	h.broadcastRoomList()
-	log.Printf("[Signal] SFU provider switched to %s, forced all sessions offline", provider)
 }
 
 // BroadcastMute 广播禁言事件到所有客户端

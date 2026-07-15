@@ -16,6 +16,8 @@ type InitConfig struct {
 	Name           string
 	ConnectTimeout time.Duration
 	Deliverer      Deliverer
+	// RemoteHook 可选：peer 事件在本地投递后回调（用于 Hub 控制面清理等）。
+	RemoteHook func(event string, payload interface{})
 }
 
 // Stats 供监控面板与测试。
@@ -83,12 +85,12 @@ func Init(cfg InitConfig) (EventBus, func(), error) {
 		URL:                  url,
 		SubjectPrefix:        cfg.Prefix,
 		InstanceID:           instanceID,
+		Name:                 name,
 		Mode:                 mode,
 		FallbackFromExternal: fallbackFromExternal,
 		Deliverer:            cfg.Deliverer,
+		RemoteHook:           cfg.RemoteHook,
 	})
-	// keep Name unused except for instance identity above; nats.Connect name optional in NewNATSBus
-	_ = name
 	if err != nil {
 		if embedded != nil {
 			embedded.Shutdown()

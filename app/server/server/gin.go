@@ -135,6 +135,9 @@ func StartGin(env EnvEnum) {
 
 	signalHub := signal.NewHub(roomSvc, muteSvc, userSvc, permSvc)
 	signalHub.SetEventBus(eventBus)
+	if nb, ok := eventBus.(*bus.NATSBus); ok {
+		nb.SetRemoteHook(signalHub.HandleRemoteEvent)
+	}
 	signalHub.SetSFU(sfuProvider)
 	if snr, ok := sfuProvider.(signal.StreamNameResolver); ok {
 		signalHub.SetStreamResolver(snr)

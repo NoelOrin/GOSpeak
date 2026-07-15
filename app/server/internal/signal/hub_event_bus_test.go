@@ -53,3 +53,41 @@ func TestHub_BroadcastMute_UsesEventBus(t *testing.T) {
 		t.Fatalf("bus ns = %v", bus.ns)
 	}
 }
+
+func TestHub_BroadcastRoomList_LocalOnly(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	bus := &captureBus{}
+	hub.SetEventBus(bus)
+	// server nil -> localNamespace no-ops, but must NOT hit event bus
+	hub.broadcastRoomList()
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+	if len(bus.ns) != 0 {
+		t.Fatalf("room list must stay local, bus ns=%v", bus.ns)
+	}
+}
+
+type clearingHubBus struct {
+	captureBus
+	hub *Hub
+}
+
+func TestHub_HandleRemoteEvent_ClearsLocalRooms(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.mu.Lock()
+	hub.rooms["r1"] = &Room{
+		Name:     "r1",
+		Members:  map[string]*MemberInfo{"s1": {Identity: "alice"}},
+		MicMuted: map[string]bool{},
+		Speaking: map[string]bool{},
+	}
+	hub.mu.Unlock()
+
+	hub.HandleRemoteEvent(EventSFUProviderChanged, map[string]interface{}{"provider": "srs"})
+
+	hub.mu.RLock()
+	defer hub.mu.RUnlock()
+	if len(hub.rooms) != 0 {
+		t.Fatalf("rooms should be cleared, got %d", len(hub.rooms))
+	}
+}
