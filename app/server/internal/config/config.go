@@ -39,6 +39,10 @@ type Config struct {
 	RedisPort            string
 	RedisPassword        string
 	RedisDB              string
+	NATSURL              string
+	NATSSubjectPrefix     string
+	NATSName             string
+	NATSConnectTimeout    string
 	EmailEnabled         bool
 	SMTPHost             string
 	SMTPPort             string
@@ -95,6 +99,10 @@ func Load() *Config {
 		RedisPort:            getEnv("REDIS_PORT", "6379"),
 		RedisPassword:        getEnv("REDIS_PASSWORD", ""),
 		RedisDB:              getEnv("REDIS_DB", "0"),
+		NATSURL:              getEnv("NATS_URL", ""),
+		NATSSubjectPrefix:     getEnv("NATS_SUBJECT_PREFIX", "gospeak"),
+		NATSName:             getEnv("NATS_NAME", ""),
+		NATSConnectTimeout:    getEnv("NATS_CONNECT_TIMEOUT", "2s"),
 		EmailEnabled:         getEnv("EMAIL_ENABLED", "false") == "true",
 		SMTPHost:             getEnv("SMTP_HOST", ""),
 		SMTPPort:             getEnv("SMTP_PORT", "587"),
