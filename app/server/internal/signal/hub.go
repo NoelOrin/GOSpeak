@@ -109,6 +109,8 @@ type Hub struct {
 	// 按 identity 查实际登记的 stream，避免反算命名约定（命名函数变更后旧连接仍可查）。
 	streamByIdentity   map[string]map[string]string
 	participantCleanup ParticipantCleanupHandler
+	membershipStore    membershipStore
+	instanceID         string
 }
 
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
@@ -255,6 +257,10 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 		}
 	}
 	h.mu.Unlock()
+
+	for _, name := range updatedRooms {
+		h.syncRoomToStore(name)
+	}
 
 	for _, name := range speakingChanged {
 		h.broadcastActiveSpeakers(name)
@@ -510,6 +516,10 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 	h.registerStreamLocked(req.Room, identity, req.Stream)
 	memberList := h.getMembersLocked(req.Room)
 	h.mu.Unlock()
+	h.syncRoomToStore(req.Room)
+	if req.Stream != "" {
+		h.syncStreamPut(req.Stream, req.Room, identity)
+	}
 
 	log.Printf("[Signal] sfu confirmed: %s in %s", s.ID(), req.Room)
 
@@ -586,6 +596,7 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 		}
 	}
 	h.mu.Unlock()
+	h.syncRoomToStore(req.Room)
 	if wasSpeaking && !roomDeleted {
 		h.broadcastActiveSpeakers(req.Room)
 	}
@@ -769,6 +780,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 	})
 
 	// 从 SFU 移除 participant（不支持时优雅降级）
+	h.syncRoomToStore(req.Room)
 	h.removeParticipantSafe(req.Room, req.TargetIdentity)
 	if h.participantCleanup != nil {
 		h.participantCleanup.OnParticipantLeft(req.Room, req.TargetIdentity)
@@ -942,6 +954,12 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 			info.AllowAudience = existing.AllowAudience
 			info.CreatedAt = existing.CreatedAt
 		}
+		// 有 KV 时补齐其他实例成员，修正 Count
+		if h.membershipStore != nil {
+			merged := h.GetRoomMembersMerged(name)
+			info.Members = merged
+			info.Count = len(merged)
+		}
 		dbRooms[name] = info
 	}
 
@@ -1027,12 +1045,7 @@ func (h *Hub) CheckRoomLimit(roomName string) (bool, uint, int, error) {
 	if err != nil || dbRoom.Limit == 0 {
 		return false, 0, 0, err
 	}
-	h.mu.RLock()
-	var currentCount int
-	if room, ok := h.rooms[roomName]; ok {
-		currentCount = len(room.Members)
-	}
-	h.mu.RUnlock()
+	currentCount := len(h.GetRoomMembersMerged(roomName))
 	return currentCount >= int(dbRoom.Limit), dbRoom.Limit, currentCount, nil
 }
 
@@ -1099,16 +1112,29 @@ func (h *Hub) IsMuted(identity string) (bool, error) {
 var _ pkg.JoinPolicy = (*Hub)(nil)
 
 func (h *Hub) RegisterStream(stream string) {
+	var room, identity string
 	h.mu.Lock()
 	h.activeStreams[stream] = struct{}{}
 	// SRS callback 仅给 stream，反查 streamRoomCache 同步 roomStreams 聚合视图。
-	if room, ok := h.streamRoomCache[stream]; ok {
+	if r, ok := h.streamRoomCache[stream]; ok {
+		room = r
 		if h.roomStreams[room] == nil {
 			h.roomStreams[room] = make(map[string]struct{})
 		}
 		h.roomStreams[room][stream] = struct{}{}
+		if byID := h.streamByIdentity[room]; byID != nil {
+			for id, st := range byID {
+				if st == stream {
+					identity = id
+					break
+				}
+			}
+		}
 	}
 	h.mu.Unlock()
+	if room != "" {
+		h.syncStreamPut(stream, room, identity)
+	}
 }
 
 func (h *Hub) UnregisterStream(stream string) {
@@ -1123,6 +1149,7 @@ func (h *Hub) UnregisterStream(stream string) {
 		}
 	}
 	h.mu.Unlock()
+	h.syncStreamDelete(stream)
 }
 
 func (h *Hub) IsStreamActive(stream string) bool {

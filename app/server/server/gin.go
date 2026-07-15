@@ -137,6 +137,16 @@ func StartGin(env EnvEnum) {
 	signalHub.SetEventBus(eventBus)
 	if nb, ok := eventBus.(*bus.NATSBus); ok {
 		nb.SetRemoteHook(signalHub.HandleRemoteEvent)
+		store, err := bus.OpenStateStore(bus.StateStoreConfig{
+			Prefix: cfg.NATSSubjectPrefix,
+			NC:     nb.Conn(),
+		})
+		if err != nil {
+			log.Printf("[EventBus] state store unavailable: %v", err)
+		} else {
+			signalHub.SetMembershipStore(store, nb.InstanceID())
+			log.Printf("[EventBus] membership state store ready instance=%s", nb.InstanceID())
+		}
 	}
 	signalHub.SetSFU(sfuProvider)
 	if snr, ok := sfuProvider.(signal.StreamNameResolver); ok {
