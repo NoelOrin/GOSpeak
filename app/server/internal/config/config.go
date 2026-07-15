@@ -43,6 +43,7 @@ type Config struct {
 	NATSSubjectPrefix     string
 	NATSName             string
 	NATSConnectTimeout    string
+	StateStore           string // auto|redis|nats|none
 	EmailEnabled         bool
 	SMTPHost             string
 	SMTPPort             string
@@ -103,6 +104,7 @@ func Load() *Config {
 		NATSSubjectPrefix:     getEnv("NATS_SUBJECT_PREFIX", "gospeak"),
 		NATSName:             getEnv("NATS_NAME", ""),
 		NATSConnectTimeout:    getEnv("NATS_CONNECT_TIMEOUT", "2s"),
+		StateStore:           getEnv("STATE_STORE", "auto"),
 		EmailEnabled:         getEnv("EMAIL_ENABLED", "false") == "true",
 		SMTPHost:             getEnv("SMTP_HOST", ""),
 		SMTPPort:             getEnv("SMTP_PORT", "587"),

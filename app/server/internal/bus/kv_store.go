@@ -190,6 +190,8 @@ func (s *StateStore) ListRoomNames(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
+func (s *StateStore) Backend() string { return "nats" }
+
 // Close closes the underlying connection only when OpenStateStore created it.
 func (s *StateStore) Close() error {
 	if s == nil {

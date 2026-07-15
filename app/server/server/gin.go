@@ -26,6 +26,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/nats-io/nats.go"
+	goredis "github.com/redis/go-redis/v9"
 	socketio "github.com/googollee/go-socket.io"
 	engineio "github.com/googollee/go-socket.io/engineio"
 	"github.com/googollee/go-socket.io/engineio/transport"
@@ -138,7 +140,10 @@ func StartGin(env EnvEnum) {
 	signalHub.SetEventBus(eventBus)
 	signalHub.SetStateNotifier(eventBus)
 	permSvc.SetEventBus(eventBus)
+	var natsConn *nats.Conn
+	instanceID := eventBus.InstanceID()
 	if nb, ok := eventBus.(*bus.NATSBus); ok {
+		natsConn = nb.Conn()
 		nb.SetRemoteHook(func(event string, payload interface{}) {
 			if event == service.EventPermissionsInvalidated {
 				permSvc.OnRemoteInvalidate(payload)
@@ -146,16 +151,26 @@ func StartGin(env EnvEnum) {
 			}
 			signalHub.HandleRemoteEvent(event, payload)
 		})
-		store, err := bus.OpenStateStore(bus.StateStoreConfig{
-			Prefix: cfg.NATSSubjectPrefix,
-			NC:     nb.Conn(),
-		})
-		if err != nil {
-			log.Printf("[EventBus] state store unavailable: %v", err)
-		} else {
-			signalHub.SetMembershipStore(store, nb.InstanceID())
-			log.Printf("[EventBus] membership state store ready instance=%s", nb.InstanceID())
-		}
+	}
+
+	// membership KV: redis → nats → none (STATE_STORE=auto default)
+	var redisClient *goredis.Client
+	if redis.IsConnected() {
+		redisClient = redis.Client
+	}
+	store, backend, err := bus.ResolveMembershipStore(bus.ResolveMembershipConfig{
+		Mode:   cfg.StateStore,
+		Prefix: cfg.NATSSubjectPrefix,
+		Redis:  redisClient,
+		NATS:   natsConn,
+	})
+	if err != nil {
+		log.Printf("[StateStore] unavailable mode=%s: %v", cfg.StateStore, err)
+	} else if store != nil {
+		signalHub.SetMembershipStore(store, instanceID)
+		log.Printf("[StateStore] ready backend=%s instance=%s", backend, instanceID)
+	} else {
+		log.Printf("[StateStore] backend=none (local membership only)")
 	}
 
 	var jobQueue *bus.JobQueue
