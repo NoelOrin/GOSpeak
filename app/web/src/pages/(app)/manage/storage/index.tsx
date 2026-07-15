@@ -9,6 +9,7 @@ import {
 } from "@/api/storage";
 import {
 	ManageHeader,
+	ManageLoading,
 	ManagePage,
 	ManageSection,
 } from "@/components/manage/ManageShell";
@@ -135,21 +136,18 @@ function StoragePage() {
 	};
 
 	return (
-		<Show
-			when={!loading()}
-			fallback={
-				<div class="flex h-full min-h-52 items-center justify-center">
-					<span class="loading loading-spinner loading-lg" />
-				</div>
-			}
-		>
-			<ManagePage>
-				<ManageHeader
-					icon={<HardDrive size={18} />}
-					title="存储"
-					description="配置上传后端与访问规则"
-				/>
+		<ManagePage>
+			<ManageHeader
+				icon={<HardDrive size={18} />}
+				title="存储"
+				description="配置上传后端与访问规则"
+			/>
 
+			<Show when={loading()}>
+				<ManageLoading />
+			</Show>
+
+			<Show when={!loading()}>
 				<ManageSection title="存储后端" description="选择对象存储或本地磁盘">
 					<div class="flex flex-wrap gap-3">
 						<label class="flex cursor-pointer items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2">
@@ -313,7 +311,7 @@ function StoragePage() {
 						</p>
 					</fieldset>
 				</ManageSection>
-			</ManagePage>
-		</Show>
+			</Show>
+		</ManagePage>
 	);
 }

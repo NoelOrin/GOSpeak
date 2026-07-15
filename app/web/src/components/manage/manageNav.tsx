@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from "@tanstack/solid-router";
+import { Link, useLocation } from "@tanstack/solid-router";
 import Activity from "lucide-solid/icons/activity";
 import Ban from "lucide-solid/icons/ban";
 import Gavel from "lucide-solid/icons/gavel";
@@ -12,8 +12,31 @@ import Users from "lucide-solid/icons/users";
 import { createMemo, For } from "solid-js";
 import { hasPermission } from "@/utils/permissions";
 
+type ManagePath =
+	| "permission"
+	| "sfu"
+	| "users"
+	| "mute"
+	| "ban"
+	| "storage"
+	| "email"
+	| "monitor"
+	| "apikey"
+	| "oauth";
+
 type ManageTab = {
-	path: string;
+	path: ManagePath;
+	to:
+		| "/manage/permission"
+		| "/manage/sfu"
+		| "/manage/users"
+		| "/manage/mute"
+		| "/manage/ban"
+		| "/manage/storage"
+		| "/manage/email"
+		| "/manage/monitor"
+		| "/manage/apikey"
+		| "/manage/oauth";
 	label: string;
 	icon: typeof Users;
 	/** 进入该页需要的权限码（任一） */
@@ -21,46 +44,80 @@ type ManageTab = {
 };
 
 const MANAGE_TABS: ManageTab[] = [
+	// 用户与权限
+	{
+		path: "users",
+		to: "/manage/users",
+		label: "用户管理",
+		icon: Users,
+		permissions: ["user:read"],
+	},
 	{
 		path: "permission",
+		to: "/manage/permission",
 		label: "权限",
 		icon: ShieldCheck,
 		permissions: ["role:manage", "role:read"],
 	},
-	{ path: "sfu", label: "SFU", icon: ServerCog, permissions: ["sfu:manage"] },
-	{ path: "users", label: "用户管理", icon: Users, permissions: ["user:read"] },
-	{ path: "mute", label: "禁言", icon: Gavel, permissions: ["mute:manage"] },
-	{ path: "ban", label: "封禁", icon: Ban, permissions: ["user:update"] },
+	// 风控
+	{
+		path: "mute",
+		to: "/manage/mute",
+		label: "禁言",
+		icon: Gavel,
+		permissions: ["mute:manage"],
+	},
+	{
+		path: "ban",
+		to: "/manage/ban",
+		label: "封禁",
+		icon: Ban,
+		permissions: ["user:update"],
+	},
+	// 基础设施
+	{
+		path: "sfu",
+		to: "/manage/sfu",
+		label: "SFU",
+		icon: ServerCog,
+		permissions: ["sfu:manage"],
+	},
 	{
 		path: "storage",
+		to: "/manage/storage",
 		label: "存储",
 		icon: HardDrive,
 		permissions: ["storage:read", "storage:manage"],
 	},
 	{
 		path: "email",
+		to: "/manage/email",
 		label: "邮箱",
 		icon: Mail,
 		permissions: ["email_config:read", "email_config:manage"],
 	},
-	// 监控暂无独立权限码，沿用 role:manage 作为管理面入口
+	// 集成
 	{
-		path: "monitor",
-		label: "服务监控",
-		icon: Activity,
-		permissions: ["role:manage"],
+		path: "oauth",
+		to: "/manage/oauth",
+		label: "OAuth",
+		icon: LogIn,
+		permissions: ["oauth:read", "oauth:manage"],
 	},
 	{
 		path: "apikey",
+		to: "/manage/apikey",
 		label: "BOT 密钥",
 		icon: KeyRound,
 		permissions: ["bot:manage"],
 	},
+	// 监控暂无独立权限码，沿用 role:manage 作为管理面入口
 	{
-		path: "oauth",
-		label: "OAuth",
-		icon: LogIn,
-		permissions: ["oauth:read", "oauth:manage"],
+		path: "monitor",
+		to: "/manage/monitor",
+		label: "服务监控",
+		icon: Activity,
+		permissions: ["role:manage"],
 	},
 ];
 
@@ -72,7 +129,6 @@ export function firstAccessibleManagePath(): string | null {
 }
 
 const ManageNav = () => {
-	const navigate = useNavigate();
 	const location = useLocation();
 
 	const visibleTabs = createMemo(() =>
@@ -80,16 +136,12 @@ const ManageNav = () => {
 	);
 
 	const currentPath = createMemo(() => {
-		const segments = location().pathname.split("/");
-		return segments[2] || "users";
+		const segments = location().pathname.split("/").filter(Boolean);
+		// /manage/users -> users
+		return segments[1] || "users";
 	});
 
-	const isActive = (path: string) => {
-		const current = currentPath();
-		if (current === path) return true;
-		if (!current && path === "users") return true;
-		return false;
-	};
+	const isActive = (path: string) => currentPath() === path;
 
 	return (
 		<div class="flex flex-col gap-1 p-2 select-none">
@@ -98,17 +150,18 @@ const ManageNav = () => {
 				{(tab) => {
 					const Icon = tab.icon;
 					return (
-						<button
-							type="button"
-							class="btn btn-ghost justify-start gap-2"
+						<Link
+							to={tab.to}
+							preload="intent"
+							class="btn btn-ghost justify-start gap-2 no-underline"
 							classList={{
 								"btn-active": isActive(tab.path),
 							}}
-							onClick={() => navigate({ to: `/manage/${tab.path}` })}
+							aria-current={isActive(tab.path) ? "page" : undefined}
 						>
 							<Icon size={16} />
 							<span>{tab.label}</span>
-						</button>
+						</Link>
 					);
 				}}
 			</For>

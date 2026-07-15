@@ -11,6 +11,7 @@ import {
 } from "@/api/email";
 import {
 	ManageHeader,
+	ManageLoading,
 	ManageNotice,
 	ManagePage,
 	ManageSection,
@@ -94,37 +95,34 @@ function EmailPage() {
 	};
 
 	return (
-		<Show
-			when={!config.loading}
-			fallback={
-				<div class="flex h-full min-h-52 items-center justify-center">
-					<span class="loading loading-spinner loading-lg" />
+		<ManagePage>
+			<ManageHeader
+				icon={<Mail size={18} />}
+				title="邮箱配置"
+				description="SMTP 与邮箱验证码参数"
+				actions={
+					<button
+						class="btn btn-ghost btn-sm btn-square"
+						onClick={() => void refetch()}
+						disabled={saving() || config.loading}
+						title="重新加载"
+					>
+						<RefreshCcw size={16} />
+					</button>
+				}
+			/>
+
+			<Show when={config.loading}>
+				<ManageLoading />
+			</Show>
+
+			<Show when={!config.loading && config.error}>
+				<div class="alert alert-error text-sm">
+					{config.error instanceof Error ? config.error.message : "加载失败"}
 				</div>
-			}
-		>
-			<ManagePage>
-				<ManageHeader
-					icon={<Mail size={18} />}
-					title="邮箱配置"
-					description="SMTP 与邮箱验证码参数"
-					actions={
-						<button
-							class="btn btn-ghost btn-sm btn-square"
-							onClick={() => void refetch()}
-							disabled={saving()}
-							title="重新加载"
-						>
-							<RefreshCcw size={16} />
-						</button>
-					}
-				/>
+			</Show>
 
-				<Show when={config.error}>
-					<div class="alert alert-error text-sm">
-						{config.error instanceof Error ? config.error.message : "加载失败"}
-					</div>
-				</Show>
-
+			<Show when={!config.loading && !!config()}>
 				<Show when={config()}>
 					{(data) => (
 						<ManageNotice tone={data().available ? "info" : "warning"}>
@@ -135,22 +133,22 @@ function EmailPage() {
 					)}
 				</Show>
 
-				<ManageSection title="功能开关" description="控制是否启用邮箱验证">
-					<div class="flex items-center justify-between gap-4 py-1">
-						<div>
-							<div class="text-sm font-medium">启用邮箱验证</div>
-							<div class="text-xs text-base-content/50">
-								关闭时保持现有注册与登录行为，重置密码将被禁用
-							</div>
+				<section class="flex items-center justify-between gap-4 rounded-2xl border border-base-300/80 bg-base-100 px-4 py-3 shadow-sm md:px-5">
+					<div class="min-w-0">
+						<div class="text-sm font-semibold text-base-content">
+							启用邮箱验证
 						</div>
-						<input
-							type="checkbox"
-							class="toggle toggle-sm"
-							checked={enabled()}
-							onChange={(e) => setEnabled(e.currentTarget.checked)}
-						/>
+						<p class="mt-0.5 text-xs text-base-content/50">
+							关闭时保持现有注册与登录行为，重置密码将被禁用
+						</p>
 					</div>
-				</ManageSection>
+					<input
+						type="checkbox"
+						class="toggle toggle-sm shrink-0"
+						checked={enabled()}
+						onChange={(e) => setEnabled(e.currentTarget.checked)}
+					/>
+				</section>
 
 				<ManageSection title="SMTP 配置" description="发信服务器与身份">
 					<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
@@ -271,8 +269,8 @@ function EmailPage() {
 						</Field>
 					</div>
 				</ManageSection>
-			</ManagePage>
-		</Show>
+			</Show>
+		</ManagePage>
 	);
 }
 

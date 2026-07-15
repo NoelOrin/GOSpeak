@@ -254,7 +254,7 @@ function PermissionPage() {
 	};
 
 	return (
-		<ManagePage class="overflow-hidden">
+		<ManagePage class="h-full min-h-0 flex-1 overflow-hidden">
 			<ManageHeader
 				icon={<ShieldCheck size={18} />}
 				title="权限"
@@ -281,10 +281,10 @@ function PermissionPage() {
 
 			<ManageSection
 				class="min-h-0 flex-1"
-				bodyClass="flex min-h-0 flex-1 flex-col overflow-hidden p-0 md:p-0"
+				bodyClass="relative min-h-0 flex-1 overflow-hidden p-0 md:p-0"
 				padded={false}
 			>
-				<div class="grid min-h-0 flex-1 grid-cols-[12rem_minmax(0,1fr)] gap-0 max-md:grid-cols-1 max-md:grid-rows-[auto_minmax(0,1fr)]">
+				<div class="absolute inset-0 grid min-h-0 grid-cols-[12rem_minmax(0,1fr)] gap-0 max-md:grid-cols-1 max-md:grid-rows-[auto_minmax(0,1fr)]">
 					<div class="min-h-0 overflow-y-auto overflow-x-hidden border-r border-base-300/70 p-3 max-md:border-r-0 max-md:border-b">
 						<RoleList
 							selectedRole={selectedRole()}

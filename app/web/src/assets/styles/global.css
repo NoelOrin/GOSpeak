@@ -62,3 +62,31 @@ html {
 .list-item {
 	@apply border-0 btn btn-sm btn-ghost;
 }
+
+/* 管理后台子页切换：轻量淡入，避免硬切闪烁 */
+.manage-shell-scroll {
+	scroll-behavior: auto;
+	overscroll-behavior: contain;
+}
+
+.manage-page {
+	animation: manage-page-enter 140ms ease-out;
+	will-change: opacity, transform;
+}
+
+@keyframes manage-page-enter {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.manage-page {
+		animation: none;
+	}
+}

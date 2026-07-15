@@ -32,6 +32,16 @@ const router = createRouter({
 	},
 	defaultPreload: "intent",
 	scrollRestoration: true,
+	// 管理子页共用滚动上下文，避免切换时浏览器/路由强制滚顶造成跳闪
+	getScrollRestorationKey: (location) => {
+		if (
+			location.pathname === "/manage" ||
+			location.pathname.startsWith("/manage/")
+		) {
+			return "/manage";
+		}
+		return location.state.key ?? location.href;
+	},
 	defaultPreloadStaleTime: 0,
 });
 

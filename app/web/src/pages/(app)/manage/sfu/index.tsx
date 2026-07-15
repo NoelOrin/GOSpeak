@@ -17,7 +17,11 @@ import {
 	type UpdateSFUConfigParams,
 	updateSFUConfig,
 } from "@/api/sfu";
-import { ManageHeader, ManagePage } from "@/components/manage/ManageShell";
+import {
+	ManageHeader,
+	ManageLoading,
+	ManagePage,
+} from "@/components/manage/ManageShell";
 import { hasPermission } from "@/utils/permissions";
 import CapabilityBadge from "./components/CapabilityBadge";
 import {
@@ -186,39 +190,36 @@ function SFUPage() {
 	};
 
 	return (
-		<Show
-			when={!providersResponse.loading}
-			fallback={
-				<div class="flex h-full min-h-52 items-center justify-center">
-					<span class="loading loading-spinner loading-lg" />
+		<ManagePage>
+			<ManageHeader
+				icon={<ServerCog size={18} />}
+				title="SFU 提供商"
+				description="选择实时语音后端，并配置对应连接参数"
+				actions={
+					<button
+						class="btn btn-ghost btn-sm btn-square"
+						onClick={() => void refetchList()}
+						disabled={saving() || providersResponse.loading}
+						title="重新加载"
+					>
+						<RefreshCcw size={16} />
+					</button>
+				}
+			/>
+
+			<Show when={providersResponse.loading}>
+				<ManageLoading />
+			</Show>
+
+			<Show when={!providersResponse.loading && providersResponse.error}>
+				<div class="alert alert-error text-sm">
+					{providersResponse.error instanceof Error
+						? providersResponse.error.message
+						: "加载失败"}
 				</div>
-			}
-		>
-			<ManagePage>
-				<ManageHeader
-					icon={<ServerCog size={18} />}
-					title="SFU 提供商"
-					description="选择实时语音后端，并配置对应连接参数"
-					actions={
-						<button
-							class="btn btn-ghost btn-sm btn-square"
-							onClick={() => void refetchList()}
-							disabled={saving()}
-							title="重新加载"
-						>
-							<RefreshCcw size={16} />
-						</button>
-					}
-				/>
+			</Show>
 
-				<Show when={providersResponse.error}>
-					<div class="alert alert-error text-sm">
-						{providersResponse.error instanceof Error
-							? providersResponse.error.message
-							: "加载失败"}
-					</div>
-				</Show>
-
+			<Show when={!providersResponse.loading && !providersResponse.error}>
 				<section class="rounded-2xl border border-base-300/80 bg-base-100 p-4 shadow-sm md:p-5">
 					<div class="mb-4 flex flex-wrap items-end justify-between gap-3">
 						<div>
@@ -352,7 +353,7 @@ function SFUPage() {
 						)}
 					</Show>
 				</section>
-			</ManagePage>
-		</Show>
+			</Show>
+		</ManagePage>
 	);
 }

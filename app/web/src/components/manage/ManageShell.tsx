@@ -1,15 +1,30 @@
 import type { JSX } from "solid-js";
 import { Show } from "solid-js";
 
-/** 管理页根容器：全宽、可滚动 */
+/** 管理页根容器：由 manage 布局统一滚动，避免子页切换时整壳卸载跳闪 */
 export function ManagePage(props: { children: JSX.Element; class?: string }) {
-	const overflowClass = () =>
-		props.class?.includes("overflow-") ? "" : "overflow-auto";
+	// 默认 min-h-full 跟随外层滚动；需要卡片内滚动的页面请传 h-full min-h-0 overflow-hidden
 	return (
 		<div
-			class={`flex h-full w-full min-h-0 min-w-0 flex-col gap-5 p-4 md:p-5 ${overflowClass()} ${props.class ?? ""}`}
+			class={`manage-page flex w-full min-w-0 flex-col gap-5 p-4 md:p-5 ${props.class ?? "min-h-full"}`}
 		>
 			{props.children}
+		</div>
+	);
+}
+
+/** 页内加载占位：保留页头时使用，避免整页被 spinner 替换造成闪白 */
+export function ManageLoading(props: { class?: string; label?: string }) {
+	return (
+		<div
+			class={`flex min-h-40 flex-1 items-center justify-center py-12 ${props.class ?? ""}`}
+			aria-busy="true"
+			aria-live="polite"
+		>
+			<div class="flex flex-col items-center gap-2 text-base-content/50">
+				<span class="loading loading-spinner loading-md" />
+				<span class="text-xs">{props.label ?? "加载中..."}</span>
+			</div>
 		</div>
 	);
 }
