@@ -119,58 +119,23 @@ function handleProviderChanged(provider?: string): void {
 	}, 500);
 }
 
-export interface MemberInfo {
-	id: string;
-	identity: string;
-	name: string;
-	displayName: string;
-	avatar: string;
-	isMuted: boolean;
-	isMicMuted: boolean;
-	joinedAt: number;
-	stream?: string;
-}
+export type {
+	MemberInfo,
+	RoomInfo,
+	MuteEvent,
+	UnmuteEvent,
+	ActivityEvent,
+	RoomPresenceEvent,
+} from "@/socket/types";
 
-export interface RoomInfo {
-	id: number;
-	uuid: string;
-	name: string;
-	hasPassword: boolean;
-	description?: string;
-	limit: number;
-	audioOnly?: boolean;
-	allowAudience?: boolean;
-	members: MemberInfo[];
-	count: number;
-	createdAt: number;
-	/** @internal 临时传递密码，不从服务器获取 */
-	_password?: string;
-}
-
-export interface MuteEvent {
-	user_id: number;
-	permanent: boolean;
-	expires_at: string | null;
-	reason: string;
-}
-
-export interface UnmuteEvent {
-	user_id: number;
-}
-
-export interface ActivityEvent {
-	type: "member_joined" | "member_left" | "room_joined" | "room_left";
-	room: string;
-	identity?: string;
-	timestamp: number;
-}
-
-export interface RoomPresenceEvent {
-	type: "member_joined" | "member_left";
-	room: string;
-	identity: string;
-	timestamp: number;
-}
+import type {
+	ActivityEvent,
+	MemberInfo,
+	MuteEvent,
+	RoomInfo,
+	RoomPresenceEvent,
+	UnmuteEvent,
+} from "@/socket/types";
 
 export const socketStore = createRoot(() => {
 	const adapter = createSocketClient();
