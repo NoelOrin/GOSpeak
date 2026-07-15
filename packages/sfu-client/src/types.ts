@@ -27,6 +27,8 @@ export interface PeerStream {
 }
 
 export interface SFUAudioCaptureOptions {
+	/** 指定麦克风 deviceId；空/未设置则用系统默认 */
+	deviceId?: string;
 	echoCancellation?: boolean;
 	noiseSuppression?: boolean;
 	autoGainControl?: boolean;

@@ -365,15 +365,19 @@ export class MediaSoupSFUClient implements SFUClient {
 	}
 
 	private async createLocalAudioTrack(): Promise<MediaStreamTrack> {
-		const stream = await navigator.mediaDevices.getUserMedia({
-			audio: {
+		const audioConstraints: MediaTrackConstraints = {
 				echoCancellation: this.options.audioCapture?.echoCancellation ?? true,
 				noiseSuppression: this.options.audioCapture?.noiseSuppression ?? true,
 				autoGainControl: this.options.audioCapture?.autoGainControl ?? true,
 				sampleRate: this.options.audioCapture?.sampleRate,
 				sampleSize: this.options.audioCapture?.sampleSize,
 				channelCount: this.options.audioCapture?.channelCount,
-			},
+			};
+		if (this.options.audioCapture?.deviceId) {
+			audioConstraints.deviceId = { exact: this.options.audioCapture.deviceId };
+		}
+		const stream = await navigator.mediaDevices.getUserMedia({
+			audio: audioConstraints,
 		});
 		return stream.getAudioTracks()[0];
 	}

@@ -746,6 +746,9 @@ export class SRSSFUClient implements SFUClient {
 			noiseSuppression: this.options.audioCapture?.noiseSuppression ?? true,
 			autoGainControl: this.options.audioCapture?.autoGainControl ?? true,
 		};
+		if (this.options.audioCapture?.deviceId) {
+			preferred.deviceId = { exact: this.options.audioCapture.deviceId };
+		}
 		// sampleRate/sampleSize/channelCount 不是所有设备都支持；失败时降级。
 		if (this.options.audioCapture?.channelCount) {
 			preferred.channelCount = this.options.audioCapture.channelCount;
