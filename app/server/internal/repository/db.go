@@ -101,11 +101,17 @@ func connectSQLite(cfg *config.Config) (*gorm.DB, error) {
 			return nil, fmt.Errorf("failed to create db directory: %w", err)
 		}
 	}
+	// glebarez/modernc 使用 _pragma=...，旧的 _journal_mode/_busy_timeout 不会生效。
+	// WAL + busy_timeout 可降低热重载/并发写时的 SQLITE_BUSY。
+	// MaxOpenConns(1) 避免同一进程多连接抢写锁。
 	journalMode := "DELETE"
 	if cfg.DBWAL {
 		journalMode = "WAL"
 	}
-	dsn := path + fmt.Sprintf("?_journal_mode=%s&_busy_timeout=5000", journalMode)
+	dsn := fmt.Sprintf(
+		"%s?_pragma=busy_timeout(10000)&_pragma=journal_mode(%s)&_pragma=foreign_keys(1)",
+		path, journalMode,
+	)
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return nil, err
@@ -114,13 +120,27 @@ func connectSQLite(cfg *config.Config) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	sqlDB.Exec(fmt.Sprintf("PRAGMA journal_mode=%s", journalMode))
-	if cfg.DBWAL {
-		sqlDB.Exec("PRAGMA synchronous=NORMAL")
-	} else {
-		sqlDB.Exec("PRAGMA synchronous=FULL")
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetConnMaxLifetime(0)
+	if _, err := sqlDB.Exec(fmt.Sprintf("PRAGMA journal_mode=%s", journalMode)); err != nil {
+		return nil, fmt.Errorf("set journal_mode=%s: %w", journalMode, err)
 	}
-	sqlDB.Exec("PRAGMA foreign_keys=ON")
+	if _, err := sqlDB.Exec("PRAGMA busy_timeout=10000"); err != nil {
+		return nil, fmt.Errorf("set busy_timeout: %w", err)
+	}
+	if cfg.DBWAL {
+		if _, err := sqlDB.Exec("PRAGMA synchronous=NORMAL"); err != nil {
+			return nil, fmt.Errorf("set synchronous=NORMAL: %w", err)
+		}
+	} else {
+		if _, err := sqlDB.Exec("PRAGMA synchronous=FULL"); err != nil {
+			return nil, fmt.Errorf("set synchronous=FULL: %w", err)
+		}
+	}
+	if _, err := sqlDB.Exec("PRAGMA foreign_keys=ON"); err != nil {
+		return nil, fmt.Errorf("set foreign_keys=ON: %w", err)
+	}
 	return db, nil
 }
 
