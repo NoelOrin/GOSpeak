@@ -5,6 +5,14 @@ import { preloadSfuClient } from "@/components/room/services/loadSfuClient";
 import { setSpeakingIdentities } from "@/handler_audio/speakingStore";
 import { createSocketClient } from "@/socket/client";
 import { EVENTS } from "@/socket/events";
+import {
+	addCreatedRoom,
+	applyMemberJoinedShell,
+	applyMemberLeft,
+	applyMemberUpdated,
+	mergeRoomUpdated,
+	upsertRoomMembersFromAck,
+} from "@/socket/roomState";
 import { createTabLock } from "@/socket/tabLock";
 import userStore from "@/stores/userStore";
 
@@ -148,10 +156,7 @@ export const socketStore = createRoot(() => {
 					showToast(`创建房间失败: ${room.error}`, { type: "error" });
 					return;
 				}
-				setRooms((prev) => {
-					if (prev.some((r) => r.name === room.name)) return prev;
-					return [...prev, room];
-				});
+				setRooms((prev) => addCreatedRoom(prev, room));
 			},
 		);
 
@@ -161,40 +166,7 @@ export const socketStore = createRoot(() => {
 			// 仅覆盖服务端实际返回的字段（name/hasPassword/members/count/createdAt），
 			// 保留 DB 字段（id/uuid/description/limit/audioOnly/allowAudience）不被零值覆盖。
 			// members 由 rooms[] 派生，无需单独维护。
-			setRooms((prev) => {
-				const idx = prev.findIndex((r) => r.name === room.name);
-				if (idx < 0) {
-					// 列表里还没有时补一条，避免 leave/join 广播丢更新
-					return [
-						...prev,
-						{
-							id: room.id ?? 0,
-							uuid: room.uuid ?? "",
-							name: room.name,
-							hasPassword: room.hasPassword,
-							description: room.description,
-							limit: room.limit ?? 0,
-							audioOnly: room.audioOnly,
-							allowAudience: room.allowAudience,
-							members: room.members ?? [],
-							count: room.count ?? room.members?.length ?? 0,
-							createdAt: room.createdAt ?? Date.now(),
-						},
-					];
-				}
-				return prev.map((r) =>
-					r.name === room.name
-						? {
-								...r,
-								name: room.name,
-								hasPassword: room.hasPassword,
-								members: room.members ?? [],
-								count: room.count ?? room.members?.length ?? 0,
-								createdAt: room.createdAt ?? r.createdAt,
-							}
-						: r,
-				);
-			});
+			setRooms((prev) => mergeRoomUpdated(prev, room));
 		});
 
 		adapter.onServerEvent(
@@ -207,32 +179,7 @@ export const socketStore = createRoot(() => {
 			}) => {
 				console.log("[Socket] member:joined", data.identity);
 				// 即时追加 shell 成员，富化字段由后续 room:updated 覆盖。
-				setRooms((prev) =>
-					prev.map((r) =>
-						r.name === data.room
-							? {
-									...r,
-									count: r.count + 1,
-									members: r.members.some((m) => m.id === data.id)
-										? r.members
-										: [
-												...r.members,
-												{
-													id: data.id,
-													identity: data.identity,
-													name: "",
-													displayName: "",
-													avatar: "",
-													isMuted: false,
-													isMicMuted: false,
-													joinedAt: Date.now(),
-													stream: data.stream,
-												},
-											],
-								}
-							: r,
-					),
-				);
+				setRooms((prev) => applyMemberJoinedShell(prev, data));
 				emitActivity({
 					type: "member_joined",
 					room: data.room,
@@ -252,17 +199,7 @@ export const socketStore = createRoot(() => {
 			EVENTS.MEMBER_LEFT as string,
 			(data: { room: string; identity: string; id: string }) => {
 				console.log("[Socket] member:left", data.identity);
-				setRooms((prev) =>
-					prev.map((r) =>
-						r.name === data.room
-							? {
-									...r,
-									count: Math.max(0, r.count - 1),
-									members: r.members.filter((m) => m.id !== data.id),
-								}
-							: r,
-					),
-				);
+				setRooms((prev) => applyMemberLeft(prev, data));
 				emitActivity({
 					type: "member_left",
 					room: data.room,
@@ -282,20 +219,7 @@ export const socketStore = createRoot(() => {
 			EVENTS.MEMBER_UPDATED,
 			(data: { room: string; identity: string; isMicMuted: boolean }) => {
 				// members 由 rooms[] 派生，仅更新 rooms[] 即可
-				setRooms((prev) =>
-					prev.map((r) =>
-						r.name === data.room
-							? {
-									...r,
-									members: r.members.map((m) =>
-										m.identity === data.identity
-											? { ...m, isMicMuted: data.isMicMuted }
-											: m,
-									),
-								}
-							: r,
-					),
-				);
+				setRooms((prev) => applyMemberUpdated(prev, data));
 			},
 		);
 
@@ -466,29 +390,9 @@ export const socketStore = createRoot(() => {
 				// ack 返回完整成员列表，即时 upsert rooms[]（不等 room:updated）
 				if (data.members) {
 					const ackMembers: MemberInfo[] = data.members;
-					setRooms((prev) => {
-						const exists = prev.some((r) => r.name === data.room);
-						if (!exists) {
-							return [
-								...prev,
-								{
-									id: 0,
-									uuid: "",
-									name: data.room,
-									hasPassword: false,
-									limit: 0,
-									members: ackMembers,
-									count: ackMembers.length,
-									createdAt: Date.now(),
-								},
-							];
-						}
-						return prev.map((r) =>
-							r.name === data.room
-								? { ...r, members: ackMembers, count: ackMembers.length }
-								: r,
-						);
-					});
+					setRooms((prev) =>
+						upsertRoomMembersFromAck(prev, data.room, ackMembers),
+					);
 				}
 				emitActivity({
 					type: "room_joined",
