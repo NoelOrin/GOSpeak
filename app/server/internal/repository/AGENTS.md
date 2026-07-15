@@ -26,4 +26,7 @@
 - SQLite 默认路径 `db/app.db`（相对于服务器工作目录）
 - SQLite WAL 模式通过环境变量 `DB_WAL=true` 开启（开发环境建议开启；默认 DELETE）
 - glebarez DSN 必须用 `_pragma=busy_timeout(...)/journal_mode(...)`，旧 `_busy_timeout` 无效
-- SQLite 连接池固定 `MaxOpenConns(1)`，避免同进程多连接写锁竞争
+- 连接池写死在 `db.go`，不提供环境变量覆盖：
+  - SQLite 非 WAL：`MaxOpen/Idle=1`
+  - SQLite WAL：`MaxOpen/Idle=4`（并发读）
+  - PostgreSQL/MySQL：`MaxOpen=25` / `MaxIdle=10` / `Lifetime=30m` / `IdleTime=5m`

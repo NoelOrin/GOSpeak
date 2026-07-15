@@ -3,9 +3,11 @@ package repository
 import (
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/model"
+	"database/sql"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -86,7 +88,14 @@ func connectPostgreSQL(cfg *config.Config) (*gorm.DB, error) {
 			host, user, password, port,
 		)
 	}
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, err
+	}
+	if err := configureDBPool(db, cfg); err != nil {
+		return nil, err
+	}
+	return db, nil
 }
 
 func connectSQLite(cfg *config.Config) (*gorm.DB, error) {
@@ -102,8 +111,8 @@ func connectSQLite(cfg *config.Config) (*gorm.DB, error) {
 		}
 	}
 	// glebarez/modernc 使用 _pragma=...，旧的 _journal_mode/_busy_timeout 不会生效。
-	// WAL + busy_timeout 可降低热重载/并发写时的 SQLITE_BUSY。
-	// MaxOpenConns(1) 避免同一进程多连接抢写锁。
+	// WAL + busy_timeout 可降低热重载/并发写时的 SQLITE_BUSY，并支持多连接并发读。
+	// 非 WAL 时连接池会强制 MaxOpenConns=1，避免 DELETE 日志模式写锁竞争。
 	journalMode := "DELETE"
 	if cfg.DBWAL {
 		journalMode = "WAL"
@@ -116,13 +125,13 @@ func connectSQLite(cfg *config.Config) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := configureDBPool(db, cfg); err != nil {
+		return nil, err
+	}
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, err
 	}
-	sqlDB.SetMaxOpenConns(1)
-	sqlDB.SetMaxIdleConns(1)
-	sqlDB.SetConnMaxLifetime(0)
 	if _, err := sqlDB.Exec(fmt.Sprintf("PRAGMA journal_mode=%s", journalMode)); err != nil {
 		return nil, fmt.Errorf("set journal_mode=%s: %w", journalMode, err)
 	}
@@ -164,7 +173,71 @@ func connectMySQL(cfg *config.Config) (*gorm.DB, error) {
 			user, cfg.DBPassword, host, port,
 		)
 	}
-	return gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, err
+	}
+	if err := configureDBPool(db, cfg); err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+// 连接池写死在代码内，不提供环境变量覆盖。
+// SQLite 非 WAL：单连接；WAL：小连接池支持并发读。
+// PostgreSQL/MySQL：固定生产向默认值。
+const (
+	sqliteWALMaxOpenConns = 4
+	sqliteWALMaxIdleConns = 4
+
+	rdbmsMaxOpenConns = 25
+	rdbmsMaxIdleConns = 10
+)
+
+var (
+	rdbmsConnMaxLifetime  = 30 * time.Minute
+	rdbmsConnMaxIdleTime = 5 * time.Minute
+)
+
+type dbPoolConfig struct {
+	maxOpenConns    int
+	maxIdleConns    int
+	connMaxLifetime  time.Duration
+	connMaxIdleTime time.Duration
+}
+
+func dbPoolFor(cfg *config.Config) dbPoolConfig {
+	if cfg != nil && cfg.DBType == string(SQLite) {
+		if cfg.DBWAL {
+			return dbPoolConfig{
+				maxOpenConns: sqliteWALMaxOpenConns,
+				maxIdleConns: sqliteWALMaxIdleConns,
+			}
+		}
+		return dbPoolConfig{maxOpenConns: 1, maxIdleConns: 1}
+	}
+	return dbPoolConfig{
+		maxOpenConns:    rdbmsMaxOpenConns,
+		maxIdleConns:    rdbmsMaxIdleConns,
+		connMaxLifetime:  rdbmsConnMaxLifetime,
+		connMaxIdleTime: rdbmsConnMaxIdleTime,
+	}
+}
+
+func configureDBPool(db *gorm.DB, cfg *config.Config) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+	applyDBPool(sqlDB, dbPoolFor(cfg))
+	return nil
+}
+
+func applyDBPool(sqlDB *sql.DB, pool dbPoolConfig) {
+	sqlDB.SetMaxOpenConns(pool.maxOpenConns)
+	sqlDB.SetMaxIdleConns(pool.maxIdleConns)
+	sqlDB.SetConnMaxLifetime(pool.connMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(pool.connMaxIdleTime)
 }
 
 func parentDir(path string) string {

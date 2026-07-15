@@ -296,7 +296,7 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | `DB_PASSWORD` | — | DB password |
 | `DB_PATH` | `db/app.db` | SQLite file path |
 | `DB_DSN` | — | Custom DSN (overrides the field-by-field settings) |
-| `DB_WAL` | `false` | SQLite WAL mode |
+| `DB_WAL` | `false` | SQLite WAL mode（并发读建议开启）|
 
 ### JWT
 
