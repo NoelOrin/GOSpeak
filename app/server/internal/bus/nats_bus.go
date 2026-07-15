@@ -18,6 +18,10 @@ type NATSBusConfig struct {
 	SubjectPrefix string
 	URL           string
 	Deliverer     Deliverer
+	// Mode 强制指定 "embedded" 或 "external"；为空时由 URL 自动判断。
+	Mode string
+	// FallbackFromExternal 为 true 表示此 bus 由外部不可用降级而来。
+	FallbackFromExternal bool
 }
 
 // NATSBus 基于 NATS 的 EventBus 实现。
@@ -64,10 +68,12 @@ func NewNATSBus(cfg NATSBusConfig) (*NATSBus, error) {
 	}
 	b.connected.Store(true)
 
-	// 自动判断 mode
-	if strings.Contains(cfg.URL, "127.0.0.1:") || strings.Contains(cfg.URL, "localhost:") {
+	// Mode: cfg.Mode 优先，否则由 URL 自动判断
+	b.fallbackFromExternal = cfg.FallbackFromExternal
+	if cfg.Mode != "" {
+		b.mode = cfg.Mode
+	} else if strings.Contains(cfg.URL, "127.0.0.1:") || strings.Contains(cfg.URL, "localhost:") {
 		b.mode = "embedded"
-		b.fallbackFromExternal = true
 	} else {
 		b.mode = "external"
 	}
