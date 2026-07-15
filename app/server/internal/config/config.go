@@ -50,10 +50,17 @@ type Config struct {
 	CFAppSecret         string `env:"CF_APP_SECRET" envDefault:""`
 	CFStunURL           string `env:"CF_STUN_URL" envDefault:"stun.cloudflare.com:3478"`
 
-	ServerPort  string `env:"SERVER_PORT" envDefault:"8998"`
-	StaticDir   string `env:"STATIC_DIR" envDefault:""`
-	CORSOrigin  string `env:"CORS_ORIGIN" envDefault:"*"`
-	GinMode     string `env:"GIN_MODE" envDefault:""`
+	ServerPort string `env:"SERVER_PORT" envDefault:"8998"`
+	StaticDir  string `env:"STATIC_DIR" envDefault:""`
+	CORSOrigin string `env:"CORS_ORIGIN" envDefault:"*"`
+	GinMode    string `env:"GIN_MODE" envDefault:""`
+
+	// 日志
+	LogLevel  string `env:"LOG_LEVEL" envDefault:""`  // trace|debug|info|warn|error；空则 dev=debug / prod=info
+	LogFormat string `env:"LOG_FORMAT" envDefault:""` // text|json；空则 dev=text / prod=json
+	LogOutput string `env:"LOG_OUTPUT" envDefault:""` // stdout|stderr|file|both；默认 stdout
+	LogFile   string `env:"LOG_FILE" envDefault:""`   // file/both 时路径，默认 logs/app.log
+	LogCaller bool   `env:"LOG_CALLER" envDefault:"false"`
 
 	RedisHost     string `env:"REDIS_HOST" envDefault:""`
 	RedisPort     string `env:"REDIS_PORT" envDefault:"6379"`
@@ -162,6 +169,19 @@ func (c *Config) IsProduction() bool {
 	}
 }
 
+// GetLogLevel / GetLogFormat / GetLogOutput / GetLogFile / GetLogCaller
+// 供 logger 包通过接口读取，避免循环依赖。
+func (c *Config) GetLogLevel() string  { return c.LogLevel }
+func (c *Config) GetLogFormat() string { return c.LogFormat }
+func (c *Config) GetLogOutput() string { return c.LogOutput }
+func (c *Config) GetLogFile() string   { return c.LogFile }
+func (c *Config) GetLogCaller() bool   { return c.LogCaller }
+
+// LoggerOptions 构造 logger 初始化选项。
+func (c *Config) LoggerOptions() (level, format, output, file string, caller, production bool) {
+	return c.LogLevel, c.LogFormat, c.LogOutput, c.LogFile, c.LogCaller, c.IsProduction()
+}
+
 // IsDevelopment 判断是否开发环境。
 func (c *Config) IsDevelopment() bool {
 	switch strings.ToLower(strings.TrimSpace(c.AppEnv)) {
@@ -246,6 +266,11 @@ func (c *Config) normalize() {
 	if c.ServerPort == "" {
 		c.ServerPort = "8998"
 	}
+
+	c.LogLevel = strings.ToLower(strings.TrimSpace(c.LogLevel))
+	c.LogFormat = strings.ToLower(strings.TrimSpace(c.LogFormat))
+	c.LogOutput = strings.ToLower(strings.TrimSpace(c.LogOutput))
+	c.LogFile = strings.TrimSpace(c.LogFile)
 }
 
 // Validate 做启动期校验，尽早暴露配置错误。
@@ -284,6 +309,28 @@ func (c *Config) Validate() error {
 
 	if port, err := strconv.Atoi(c.ServerPort); err != nil || port < 1 || port > 65535 {
 		errs = append(errs, fmt.Sprintf("SERVER_PORT %q invalid", c.ServerPort))
+	}
+
+	if c.LogLevel != "" {
+		switch c.LogLevel {
+		case "trace", "debug", "info", "warn", "warning", "error", "fatal", "panic":
+		default:
+			errs = append(errs, fmt.Sprintf("LOG_LEVEL %q unsupported", c.LogLevel))
+		}
+	}
+	if c.LogFormat != "" {
+		switch c.LogFormat {
+		case "text", "json":
+		default:
+			errs = append(errs, fmt.Sprintf("LOG_FORMAT %q unsupported (text|json)", c.LogFormat))
+		}
+	}
+	if c.LogOutput != "" {
+		switch c.LogOutput {
+		case "stdout", "stderr", "file", "both":
+		default:
+			errs = append(errs, fmt.Sprintf("LOG_OUTPUT %q unsupported (stdout|stderr|file|both)", c.LogOutput))
+		}
 	}
 
 	if _, err := time.ParseDuration(strings.TrimSpace(c.JWTKeyTTL)); err != nil {
