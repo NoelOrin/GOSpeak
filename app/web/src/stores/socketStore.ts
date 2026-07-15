@@ -5,6 +5,7 @@ import { preloadSfuClient } from "@/components/room/services/loadSfuClient";
 import { setSpeakingIdentities } from "@/handler_audio/speakingStore";
 import { createSocketClient } from "@/socket/client";
 import { EVENTS } from "@/socket/events";
+import { createProviderReloadHandler } from "@/socket/providerReload";
 import {
 	addCreatedRoom,
 	applyMemberJoinedShell,
@@ -27,18 +28,10 @@ const tabLock = createTabLock({
 	probeTimeoutMs: 150,
 });
 
-function handleProviderChanged(provider?: string): void {
-	console.log("[Socket] sfu:provider-changed", provider);
-	showToast("语音后端已切换，即将刷新页面", { type: "warning" });
-	if (provider) {
-		// 后台预热新包；失败也继续刷新（不阻塞 0.5s reload）
-		void preloadSfuClient(provider as SFUProvider).catch(() => {});
-	}
-	// 0.5s 后强制整页刷新，join 中途同样走这里
-	window.setTimeout(() => {
-		window.location.reload();
-	}, 500);
-}
+const handleProviderChanged = createProviderReloadHandler({
+	showToast,
+	preloadSfuClient,
+});
 
 export type {
 	ActivityEvent,
