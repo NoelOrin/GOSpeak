@@ -200,9 +200,6 @@ func StartGin(env EnvEnum) {
 	cfH := handler.NewCloudflareHandler(cfMediaSvc)
 	srsCallbackH := handler.NewSRSCallbackHandlerWithResolver(signalHub, func() string {
 		resolved, err := sfuConfigSvc.ResolveConfig()
-	if jobQueue != nil {
-		srsCallbackH.SetJobs(jobQueue)
-	}
 		if err != nil || resolved == nil {
 			return cfg.SRSSecret
 		}
@@ -211,6 +208,9 @@ func StartGin(env EnvEnum) {
 		}
 		return cfg.SRSSecret
 	})
+	if jobQueue != nil {
+		srsCallbackH.SetJobs(jobQueue)
+	}
 
 	authH := handler.NewAuthHandler(authSvc)
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)
