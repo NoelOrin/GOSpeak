@@ -1,6 +1,7 @@
 package server
 
 import (
+	"GOSpeak/internal/bus"
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/mediasoup"
@@ -116,7 +117,27 @@ func StartGin(env EnvEnum) {
 		},
 	})
 
+	timeout, err := time.ParseDuration(cfg.NATSConnectTimeout)
+	if err != nil || timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+	deliverer := bus.NewSIODeliverer(sioServer)
+	eventBus, closeEventBus, err := bus.Init(bus.InitConfig{
+		URL:            cfg.NATSURL,
+		Prefix:         cfg.NATSSubjectPrefix,
+		Name:           cfg.NATSName,
+		ConnectTimeout: timeout,
+		Deliverer:      deliverer,
+	})
+	if err != nil {
+		panic(fmt.Sprintf("failed to init event bus: %v", err))
+	}
+
 	signalHub := signal.NewHub(roomSvc, muteSvc, userSvc, permSvc)
+	signalHub.SetEventBus(eventBus)
+	if nb, ok := eventBus.(*bus.NATSBus); ok {
+		nb.SetRemoteHook(signalHub.HandleRemoteEvent)
+	}
 	signalHub.SetSFU(sfuProvider)
 	if snr, ok := sfuProvider.(signal.StreamNameResolver); ok {
 		signalHub.SetStreamResolver(snr)
@@ -159,7 +180,7 @@ func StartGin(env EnvEnum) {
 	storageH := handler.NewStorageHandler(storageSvc)
 	botH := handler.NewBotHandler(botSvc)
 
-	monitorH := handler.NewMonitorHandler(signalHub, cfg)
+	monitorH := handler.NewMonitorHandler(signalHub, cfg, eventBus)
 
 	// 启动签名密钥轮换检查
 	go redis.KeyRotationLoop()
@@ -219,6 +240,9 @@ func StartGin(env EnvEnum) {
 			log.Printf("[Socket.IO] close error: %v", err)
 		}
 		log.Println("[Socket.IO] connections closed")
+
+		closeEventBus()
+		log.Println("[EventBus] closed")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

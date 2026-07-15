@@ -1,6 +1,7 @@
 package signal
 
 import (
+	"context"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
@@ -36,6 +37,13 @@ type socketServer interface {
 	BroadcastToNamespace(namespace string, event string, args ...interface{}) bool
 	BroadcastToRoom(namespace string, room string, event string, args ...interface{}) bool
 	ForEach(namespace string, room string, f socketio.EachFunc) bool
+}
+
+// eventBus is the narrow publish surface used by Hub for client fanout.
+// *bus.NATSBus satisfies this without importing the bus package here.
+type eventBus interface {
+	PublishNamespace(ctx context.Context, event string, payload interface{}) error
+	PublishRoom(ctx context.Context, room, event string, payload interface{}) error
 }
 
 // roomStore abstracts DB room listing for Hub.
@@ -80,6 +88,7 @@ type ParticipantCleanupHandler interface {
 
 type Hub struct {
 	server           socketServer
+	eventBus         eventBus
 	sfuProvider      sfu.Provider
 	sfuProviderName  string
 	streamResolver   StreamNameResolver
@@ -235,7 +244,7 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 			if wasSpeaking {
 				speakingChanged = append(speakingChanged, roomName)
 			}
-			h.server.BroadcastToRoom("/", roomName, EventMemberLeft, map[string]interface{}{
+			h.publishRoom(roomName, EventMemberLeft, map[string]interface{}{
 				"room":     roomName,
 				"identity": identity,
 				"id":       s.ID(),
@@ -281,7 +290,7 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 		h.mu.RLock()
 		info := h.roomInfoLocked(name)
 		h.mu.RUnlock()
-		h.server.BroadcastToNamespace("/", EventRoomUpdated, info)
+		h.localNamespace(EventRoomUpdated, info)
 	}
 
 	log.Printf("[Signal] client disconnected: %s, reason: %s", s.ID(), reason)
@@ -331,7 +340,7 @@ func (h *Hub) OnRoomCreate(s socketio.Conn, data string) {
 	log.Printf("[Signal] room created: %s by %s", req.Room, s.ID())
 
 	s.Emit(EventRoomCreated, roomInfo)
-	h.server.BroadcastToNamespace("/", EventRoomUpdated, roomInfo)
+	h.localNamespace(EventRoomUpdated, roomInfo)
 }
 
 // ─── 加入房间 ───
@@ -519,7 +528,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 		})
 	}
 
-	h.server.BroadcastToRoom("/", req.Room, EventMemberJoined, map[string]interface{}{
+	h.publishRoom(req.Room, EventMemberJoined, map[string]interface{}{
 		"room":     req.Room,
 		"identity": identity,
 		"id":       s.ID(),
@@ -529,7 +538,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 	h.mu.RLock()
 	info := h.roomInfoLocked(req.Room)
 	h.mu.RUnlock()
-	h.server.BroadcastToNamespace("/", EventRoomUpdated, info)
+	h.localNamespace(EventRoomUpdated, info)
 
 	return marshalAck(map[string]interface{}{
 		"ok":       true,
@@ -602,7 +611,7 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 		"room": req.Room,
 	})
 
-	h.server.BroadcastToRoom("/", req.Room, EventMemberLeft, map[string]interface{}{
+	h.publishRoom(req.Room, EventMemberLeft, map[string]interface{}{
 		"room":     req.Room,
 		"identity": identity,
 		"id":       s.ID(),
@@ -616,7 +625,7 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 		h.mu.RLock()
 		info := h.roomInfoLocked(req.Room)
 		h.mu.RUnlock()
-		h.server.BroadcastToNamespace("/", EventRoomUpdated, info)
+		h.localNamespace(EventRoomUpdated, info)
 	}
 
 	return marshalAck(map[string]interface{}{
@@ -741,7 +750,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 	log.Printf("[Signal] %s kicked %s from room: %s", s.ID(), req.TargetIdentity, req.Room)
 
 	// 通知被踢者；payload 带 targetIdentity，前端按 identity 过滤避免误伤同房他人
-	h.server.BroadcastToRoom("/", req.Room, EventRoomKicked, map[string]interface{}{
+	h.publishRoom(req.Room, EventRoomKicked, map[string]interface{}{
 		"room":           req.Room,
 		"targetIdentity": req.TargetIdentity,
 	})
@@ -753,7 +762,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 	}
 
 	// 通知全员成员离开
-	h.server.BroadcastToRoom("/", req.Room, EventMemberLeft, map[string]interface{}{
+	h.publishRoom(req.Room, EventMemberLeft, map[string]interface{}{
 		"room":     req.Room,
 		"identity": req.TargetIdentity,
 		"id":       targetSocketID,
@@ -773,7 +782,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 		h.mu.RLock()
 		info := h.roomInfoLocked(req.Room)
 		h.mu.RUnlock()
-		h.server.BroadcastToNamespace("/", EventRoomUpdated, info)
+		h.localNamespace(EventRoomUpdated, info)
 		if targetWasSpeaking {
 			h.broadcastActiveSpeakers(req.Room)
 		}
@@ -871,7 +880,7 @@ func (h *Hub) broadcastActiveSpeakers(roomName string) {
 	h.mu.RLock()
 	identities := h.computeActiveSpeakersLocked(roomName)
 	h.mu.RUnlock()
-	h.server.BroadcastToRoom("/", roomName, EventRoomActiveSpeakers, map[string]interface{}{
+	h.publishRoom(roomName, EventRoomActiveSpeakers, map[string]interface{}{
 		"room":       roomName,
 		"identities": identities,
 	})
@@ -1003,7 +1012,7 @@ func (h *Hub) broadcastRoomList() {
 		return
 	}
 	rooms := h.GetRooms()
-	h.server.BroadcastToNamespace("/", EventRoomListResult, map[string]interface{}{
+	h.localNamespace(EventRoomListResult, map[string]interface{}{
 		"rooms": rooms,
 		"count": len(rooms),
 	})
@@ -1130,10 +1139,45 @@ func (h *Hub) RoomForStream(stream string) (string, bool) {
 	return room, ok
 }
 
-func (h *Hub) BroadcastToRoom(room string, event string, data interface{}) {
+
+func (h *Hub) SetEventBus(b eventBus) {
+	h.eventBus = b
+}
+
+func (h *Hub) publishRoom(room, event string, data interface{}) {
+	if h.eventBus != nil {
+		if err := h.eventBus.PublishRoom(context.Background(), room, event, data); err != nil {
+			log.Printf("[Signal] eventbus publish room %s %s: %v", room, event, err)
+		}
+		return
+	}
 	if h.server != nil {
 		h.server.BroadcastToRoom("/", room, event, data)
 	}
+}
+
+func (h *Hub) publishNamespace(event string, data interface{}) {
+	if h.eventBus != nil {
+		if err := h.eventBus.PublishNamespace(context.Background(), event, data); err != nil {
+			log.Printf("[Signal] eventbus publish ns %s: %v", event, err)
+		}
+		return
+	}
+	if h.server != nil {
+		h.server.BroadcastToNamespace("/", event, data)
+	}
+}
+
+// localNamespace 仅本机广播，不经 EventBus。
+// 用于携带本机内存状态快照的事件（room:list:result / room:updated），避免跨实例投递错误成员数。
+func (h *Hub) localNamespace(event string, data interface{}) {
+	if h.server != nil {
+		h.server.BroadcastToNamespace("/", event, data)
+	}
+}
+
+func (h *Hub) BroadcastToRoom(room string, event string, data interface{}) {
+	h.publishRoom(room, event, data)
 }
 
 // removeParticipantSafe 从 SFU 移除 participant。
@@ -1164,14 +1208,34 @@ func (h *Hub) deleteRoomSafe(room string) {
 }
 
 // ForceSFUProviderSwitch SFU 热切换：广播事件 → 清信令房间 → 尽力清理 SFU 侧。
-// 客户端收到后强制断连并刷新页面。
+// 客户端收到后强制断连并刷新页面。对端实例通过 HandleRemoteEvent 执行同等清理。
 func (h *Hub) ForceSFUProviderSwitch(provider string) {
-	if h.server != nil {
-		h.server.BroadcastToNamespace("/", EventSFUProviderChanged, map[string]interface{}{
-			"provider": provider,
-		})
-	}
+	h.publishNamespace(EventSFUProviderChanged, map[string]interface{}{
+		"provider": provider,
+	})
+	h.clearLocalRoomsForSFUSwitch()
+	log.Printf("[Signal] SFU provider switched to %s, forced all sessions offline", provider)
+}
 
+// HandleRemoteEvent 处理来自其他实例的控制面事件。
+// 当前仅对 sfu:provider-changed 做本机房间清理；其余事件已由 EventBus 投递到本地 Socket.IO。
+func (h *Hub) HandleRemoteEvent(event string, payload interface{}) {
+	if event != EventSFUProviderChanged {
+		return
+	}
+	provider := ""
+	switch p := payload.(type) {
+	case map[string]interface{}:
+		if v, ok := p["provider"].(string); ok {
+			provider = v
+		}
+	}
+	log.Printf("[Signal] remote SFU provider switch received: %s", provider)
+	h.clearLocalRoomsForSFUSwitch()
+}
+
+// clearLocalRoomsForSFUSwitch 清理本机信令房间与 stream 视图（不重复广播 provider-changed）。
+func (h *Hub) clearLocalRoomsForSFUSwitch() {
 	type cleanupItem struct {
 		room     string
 		identity string
@@ -1189,7 +1253,6 @@ func (h *Hub) ForceSFUProviderSwitch(provider string) {
 			delete(room.Members, sid)
 			delete(room.Speaking, identity)
 			delete(room.MicMuted, identity)
-			// 从 socket.io room 移除
 			if h.server != nil {
 				h.server.ForEach("/", roomName, func(conn socketio.Conn) {
 					if conn != nil && conn.ID() == sid {
@@ -1203,7 +1266,6 @@ func (h *Hub) ForceSFUProviderSwitch(provider string) {
 	for _, roomName := range roomsToDelete {
 		delete(h.rooms, roomName)
 	}
-	// 清空 stream 聚合视图
 	h.activeStreams = make(map[string]struct{})
 	h.roomStreams = make(map[string]map[string]struct{})
 	h.streamRoomCache = make(map[string]string)
@@ -1220,31 +1282,26 @@ func (h *Hub) ForceSFUProviderSwitch(provider string) {
 		h.deleteRoomSafe(roomName)
 	}
 	h.broadcastRoomList()
-	log.Printf("[Signal] SFU provider switched to %s, forced all sessions offline", provider)
 }
 
 // BroadcastMute 广播禁言事件到所有客户端
 func (h *Hub) BroadcastMute(userID uint, info *MuteInfo) {
-	if h.server != nil {
-		data := map[string]interface{}{
-			"user_id":   userID,
-			"permanent": info.Permanent,
-			"reason":    info.Reason,
-		}
-		if !info.Permanent && info.ExpiresAt != "" {
-			data["expires_at"] = info.ExpiresAt
-		}
-		h.server.BroadcastToNamespace("/", EventUserMuted, data)
+	data := map[string]interface{}{
+		"user_id":   userID,
+		"permanent": info.Permanent,
+		"reason":    info.Reason,
 	}
+	if !info.Permanent && info.ExpiresAt != "" {
+		data["expires_at"] = info.ExpiresAt
+	}
+	h.publishNamespace(EventUserMuted, data)
 }
 
 // BroadcastUnmute 广播取消禁言事件到所有客户端
 func (h *Hub) BroadcastUnmute(userID uint) {
-	if h.server != nil {
-		h.server.BroadcastToNamespace("/", EventUserUnmuted, map[string]interface{}{
-			"user_id": userID,
-		})
-	}
+	h.publishNamespace(EventUserUnmuted, map[string]interface{}{
+		"user_id": userID,
+	})
 }
 
 // ─── 内部辅助 ───
