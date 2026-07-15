@@ -2,7 +2,7 @@
 //
 // 用法：
 //
-//	logger.Init(logger.OptionsFromConfig(cfg))
+//	logger.Init(logger.OptionsFrom(cfg.LoggerOptions()))
 //	logger.Info("server started")
 //	logger.WithComponent("Signal").Infof("client connected: %s", id)
 //	logger.WithFields(logger.Fields{"room": room}).Warn("room full")
