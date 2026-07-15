@@ -14,6 +14,10 @@ import (
 	"gorm.io/gorm"
 )
 
+// DefaultAdminPassword 初始管理员默认密码（admin / admin123）。
+// seedAdminUser 与 Login/FirstChangePassword 的 need_change_password 检测共用此常量。
+const DefaultAdminPassword = "admin123"
+
 // AuthService 认证服务，处理登录、注册和 Token 刷新。
 type AuthService struct {
 	userRepo                 *repository.UserRepository
@@ -70,7 +74,7 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, err
 	}
 
-	needChange := user.Role == "admin" && bcrypt.CompareHashAndPassword([]byte(user.Password), []byte("admin123")) == nil
+	needChange := user.Role == "admin" && bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(DefaultAdminPassword)) == nil
 
 	return &AuthResponse{
 		Token:              token,
@@ -133,13 +137,84 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 	}, nil
 }
 
-// RefreshToken 用已有身份信息生成新 access_token（不验证旧 token 有效性，由 handler 层控制）。
+// RefreshToken 用已有身份信息生成新 access_token。
+// 优先走 RefreshFromToken：会重载用户最新 role/ban/TokenVersion，避免 JWT 快照过期权限续命。
 func (s *AuthService) RefreshToken(username, displayName, userUUID, role string, tokenVersion uint) (string, error) {
 	token, err := pkg.GenerateToken(username, displayName, userUUID, role, tokenVersion)
 	if err != nil {
 		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	return token, nil
+}
+
+// RefreshAccessForUserUUID 按用户 UUID 重载最新身份并签发 access_token（供已鉴权的 /auth/refresh 使用）。
+func (s *AuthService) RefreshAccessForUserUUID(userUUID string) (string, error) {
+	user, err := s.userRepo.GetByUUID(userUUID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", pkg.NewAppError(pkg.USER_NOT_FOUND)
+		}
+		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if model.HasBanRole(user.Role) {
+		return "", pkg.NewAppError(pkg.USER_BANNED)
+	}
+	token, err := pkg.GenerateToken(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion)
+	if err != nil {
+		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return token, nil
+}
+
+// RefreshFromToken 解析 refresh_token，校验黑名单/版本/封禁后，按库内最新用户信息签发 access_token。
+func (s *AuthService) RefreshFromToken(refreshToken string) (string, error) {
+	claims, err := pkg.ParseToken(refreshToken)
+	if err != nil {
+		return "", pkg.NewAppError(pkg.TOKEN_WRONG, "invalid refresh token")
+	}
+	if pkg.IsTokenExpired(claims) {
+		return "", pkg.NewAppError(pkg.TOKEN_EXPIRED, "refresh token expired")
+	}
+	if redis.IsBlacklisted(claims.ID) {
+		return "", pkg.NewAppError(pkg.TOKEN_REVOKED)
+	}
+	if claims.UserUUID == "" {
+		return "", pkg.NewAppError(pkg.TOKEN_WRONG, "invalid refresh token")
+	}
+
+	user, err := s.userRepo.GetByUUID(claims.UserUUID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", pkg.NewAppError(pkg.USER_NOT_FOUND)
+		}
+		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if model.HasBanRole(user.Role) {
+		return "", pkg.NewAppError(pkg.USER_BANNED)
+	}
+	if user.TokenVersion != claims.TokenVersion {
+		return "", pkg.NewAppError(pkg.TOKEN_REVOKED)
+	}
+
+	// 使用库内最新身份，避免 JWT 内旧 role/displayName 续签
+	token, err := pkg.GenerateToken(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion)
+	if err != nil {
+		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return token, nil
+}
+
+// Logout 将 access（及可选 refresh）加入黑名单。
+func (s *AuthService) Logout(accessClaims *pkg.Claims, refreshToken string) error {
+	if accessClaims != nil {
+		_ = s.BlacklistToken(accessClaims)
+	}
+	if refreshToken != "" {
+		if refreshClaims, err := pkg.ParseToken(refreshToken); err == nil {
+			_ = s.BlacklistToken(refreshClaims)
+		}
+	}
+	return nil
 }
 
 // ChangePassword 修改密码（需验证旧密码）。改密后递增 TokenVersion 使旧 token 失效。
@@ -183,7 +258,7 @@ func (s *AuthService) FirstChangePassword(username, newPassword string, name *st
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "仅管理员支持首次登录改密")
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte("admin123")); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(DefaultAdminPassword)); err != nil {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "当前密码非默认密码，请使用普通改密接口")
 	}
 

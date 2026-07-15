@@ -208,13 +208,6 @@ func (h *StorageHandler) DeleteObject(c *gin.Context) {
 		return
 	}
 
-	// 权限检查：仅管理员
-	role, _ := c.Get("role")
-	if roleStr, ok := role.(string); !ok || roleStr != "admin" {
-		pkg.Fail(c, pkg.FORBIDDEN)
-		return
-	}
-
 	if err := h.storageService.DeleteObject(req.Key); err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -232,32 +225,13 @@ func (h *StorageHandler) DeleteObject(c *gin.Context) {
 // @Success      200  {object}  pkg.Response
 // @Router       /storage/config [post]
 func (h *StorageHandler) GetConfig(c *gin.Context) {
-	// 权限检查：仅管理员
-	role, _ := c.Get("role")
-	if roleStr, ok := role.(string); !ok || roleStr != "admin" {
-		pkg.Fail(c, pkg.FORBIDDEN)
-		return
-	}
-
 	cfg, err := h.storageService.GetConfig()
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
 
-	// 脱敏处理
-	pkg.Success(c, gin.H{
-		"provider_type":   cfg.ProviderType,
-		"endpoint":        cfg.Endpoint,
-		"bucket":          cfg.Bucket,
-		"region":          cfg.Region,
-		"access_key":      maskKey(cfg.AccessKey),
-		"secret_key":      "",
-		"public_base_url": cfg.PublicBaseURL,
-		"path_prefix":     cfg.PathPrefix,
-		"max_file_size":   cfg.MaxFileSize,
-		"allowed_types":   cfg.AllowedTypes,
-	})
+	pkg.Success(c, service.ToPublicStorageConfig(cfg))
 }
 
 // UpdateConfig
@@ -271,25 +245,19 @@ func (h *StorageHandler) GetConfig(c *gin.Context) {
 // @Success      200   {object}  pkg.Response
 // @Router       /storage/update-config [post]
 func (h *StorageHandler) UpdateConfig(c *gin.Context) {
-	// 权限检查：仅管理员
-	role, _ := c.Get("role")
-	if roleStr, ok := role.(string); !ok || roleStr != "admin" {
-		pkg.Fail(c, pkg.FORBIDDEN)
-		return
-	}
-
 	var req service.UpdateStorageConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
 
-	if err := h.storageService.UpdateConfigFromDTO(req); err != nil {
+	cfg, err := h.storageService.UpdateConfigFromDTO(req)
+	if err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
 
-	pkg.Success(c, nil)
+	pkg.Success(c, cfg)
 }
 
 // generateObjectKey 生成对象键
@@ -320,15 +288,4 @@ func isAllowedType(contentType, allowedTypes string) bool {
 		}
 	}
 	return false
-}
-
-// maskKey 对密钥进行脱敏：前2位和后3位可见，中间 ***
-func maskKey(key string) string {
-	if key == "" {
-		return ""
-	}
-	if len(key) <= 5 {
-		return "***"
-	}
-	return key[:2] + "***" + key[len(key)-3:]
 }

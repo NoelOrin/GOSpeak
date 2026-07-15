@@ -1,11 +1,11 @@
 package middleware
 
 import (
+	"GOSpeak/internal/config"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/redis"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -148,22 +148,30 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 }
 
 // permissionGranted 判断当前 caller 是否拥有 permCode。
-// Bot token 在 claims 中直接携带 Permissions，优先命中；
-// 普通用户与未携带 Permissions 的旧 bot token 回退到 role → permChecker 映射。
 func permissionGranted(c *gin.Context, permCode string) bool {
+	var claims *pkg.Claims
 	if v, ok := c.Get("claims"); ok {
-		if claims, ok := v.(*pkg.Claims); ok && len(claims.Permissions) > 0 {
-			for _, p := range claims.Permissions {
-				if p == permCode {
-					return true
-				}
-			}
-			return false
-		}
+		claims, _ = v.(*pkg.Claims)
 	}
 	role, _ := c.Get("role")
 	roleStr, _ := role.(string)
-	return permChecker != nil && permChecker.HasPermission(roleStr, permCode)
+	return PermissionGranted(claims, roleStr, permCode, permChecker)
+}
+
+// PermissionGranted 统一权限判定：
+// 1) claims.Permissions 非空时，仅信任 token 显式权限（Bot / 细粒度 token）；
+// 2) 否则回退 role → checker 映射（普通用户）。
+// 供 HTTP 中间件与 Socket.IO Hub 共用，避免踢人/禁言路径口径不一致。
+func PermissionGranted(claims *pkg.Claims, role string, permCode string, checker permissionChecker) bool {
+	if claims != nil && len(claims.Permissions) > 0 {
+		for _, p := range claims.Permissions {
+			if p == permCode {
+				return true
+			}
+		}
+		return false
+	}
+	return checker != nil && checker.HasPermission(role, permCode)
 }
 
 // RequirePermission 基于权限码的鉴权，替代硬编码角色名。
@@ -232,9 +240,9 @@ func BanCheck() gin.HandlerFunc {
 
 func CORS() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		allowed := os.Getenv("CORS_ORIGIN")
-		if allowed == "" {
-			allowed = "*"
+		allowed := "*"
+		if cfg := config.Current(); cfg != nil && cfg.CORSOrigin != "" {
+			allowed = cfg.CORSOrigin
 		}
 		c.Header("Access-Control-Allow-Origin", allowed)
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")

@@ -7,11 +7,17 @@ import {
 	type StorageConfigInput,
 	updateStorageConfig,
 } from "@/api/storage";
-import userStore from "@/stores/userStore";
+import {
+	ManageHeader,
+	ManageLoading,
+	ManagePage,
+	ManageSection,
+} from "@/components/manage/ManageShell";
+import { hasPermission } from "@/utils/permissions";
 
 export const Route = createFileRoute("/(app)/manage/storage/")({
 	beforeLoad: () => {
-		if (userStore.user()?.role !== "admin") {
+		if (!hasPermission("storage:read")) {
 			throw redirect({ to: "/" });
 		}
 	},
@@ -29,6 +35,8 @@ function StoragePage() {
 	const [region, setRegion] = createSignal("");
 	const [accessKey, setAccessKey] = createSignal("");
 	const [secretKey, setSecretKey] = createSignal("");
+	const [accessKeySet, setAccessKeySet] = createSignal(false);
+	const [secretKeySet, setSecretKeySet] = createSignal(false);
 	const [publicBaseURL, setPublicBaseURL] = createSignal("");
 	const [pathPrefix, setPathPrefix] = createSignal("uploads/");
 	const [maxFileSize, setMaxFileSize] = createSignal(5);
@@ -50,6 +58,8 @@ function StoragePage() {
 			setPathPrefix(cfg.path_prefix);
 			setMaxFileSize(cfg.max_file_size);
 			setAllowedTypes(cfg.allowed_types);
+			setAccessKeySet(!!cfg.access_key_set);
+			setSecretKeySet(!!cfg.secret_key_set);
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : "加载配置失败";
 			showToast(msg, { type: "error" });
@@ -74,7 +84,9 @@ function StoragePage() {
 			if (accessKey()) input.access_key = accessKey();
 			if (secretKey()) input.secret_key = secretKey();
 
-			await updateStorageConfig(input);
+			const saved = await updateStorageConfig(input);
+			setAccessKeySet(!!saved.access_key_set);
+			setSecretKeySet(!!saved.secret_key_set);
 			showToast("存储配置已保存", { type: "success" });
 			setAccessKey("");
 			setSecretKey("");
@@ -124,175 +136,182 @@ function StoragePage() {
 	};
 
 	return (
-		<Show
-			when={!loading()}
-			fallback={<span class="loading loading-spinner loading-lg" />}
-		>
-			<div class="p-4 flex flex-col gap-4">
-				<div class="flex items-center gap-2">
-					<HardDrive size={20} />
-					<h3 class="font-bold text-lg">存储</h3>
-				</div>
+		<ManagePage>
+			<ManageHeader
+				icon={<HardDrive size={18} />}
+				title="存储"
+				description="配置上传后端与访问规则"
+			/>
 
-				<div class="divider my-0 text-xs text-base-content/40">存储后端</div>
-				<div class="flex gap-4">
-					<label class="flex items-center gap-2 cursor-pointer">
-						<input
-							type="radio"
-							name="storage_provider"
-							class="radio radio-sm radio-primary"
-							checked={providerType() === "s3"}
-							onChange={() => setProviderType("s3")}
-						/>
-						<span class="text-sm">S3 兼容存储</span>
-					</label>
-					<label class="flex items-center gap-2 cursor-pointer">
-						<input
-							type="radio"
-							name="storage_provider"
-							class="radio radio-sm radio-primary"
-							checked={providerType() === "local"}
-							onChange={() => setProviderType("local")}
-						/>
-						<span class="text-sm">本地存储</span>
-					</label>
-				</div>
+			<Show when={loading()}>
+				<ManageLoading />
+			</Show>
+
+			<Show when={!loading()}>
+				<ManageSection title="存储后端" description="选择对象存储或本地磁盘">
+					<div class="flex flex-wrap gap-3">
+						<label class="flex cursor-pointer items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2">
+							<input
+								type="radio"
+								name="storage_provider"
+								class="radio radio-sm"
+								checked={providerType() === "s3"}
+								onChange={() => setProviderType("s3")}
+							/>
+							<span class="text-sm">S3 兼容存储</span>
+						</label>
+						<label class="flex cursor-pointer items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2">
+							<input
+								type="radio"
+								name="storage_provider"
+								class="radio radio-sm"
+								checked={providerType() === "local"}
+								onChange={() => setProviderType("local")}
+							/>
+							<span class="text-sm">本地存储</span>
+						</label>
+					</div>
+				</ManageSection>
 
 				<Show when={providerType() === "s3"}>
-					<div class="divider my-0 text-xs text-base-content/40">S3 配置</div>
-					<div class="grid grid-cols-2 gap-3">
-						<fieldset class="fieldset">
-							<legend class="fieldset-legend text-[14px]">Endpoint</legend>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								placeholder="https://s3.example.com"
-								value={endpoint()}
-								onInput={(e) => setEndpoint(e.target.value)}
-							/>
-						</fieldset>
-						<fieldset class="fieldset">
-							<legend class="fieldset-legend text-[14px]">Bucket</legend>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								placeholder="my-bucket"
-								value={bucket()}
-								onInput={(e) => setBucket(e.target.value)}
-							/>
-						</fieldset>
-						<fieldset class="fieldset">
-							<legend class="fieldset-legend text-[14px]">Region</legend>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								placeholder="us-east-1"
-								value={region()}
-								onInput={(e) => setRegion(e.target.value)}
-							/>
-						</fieldset>
-						<div />
-						<fieldset class="fieldset">
-							<legend class="fieldset-legend text-[14px]">Access Key</legend>
-							<input
-								type="password"
-								class="input input-bordered input-sm w-full"
-								placeholder="留空保持原值"
-								value={accessKey()}
-								onInput={(e) => setAccessKey(e.target.value)}
-							/>
-						</fieldset>
-						<fieldset class="fieldset">
-							<legend class="fieldset-legend text-[14px]">Secret Key</legend>
-							<input
-								type="password"
-								class="input input-bordered input-sm w-full"
-								placeholder="留空保持原值"
-								value={secretKey()}
-								onInput={(e) => setSecretKey(e.target.value)}
-							/>
-						</fieldset>
-					</div>
+					<ManageSection title="S3 配置" description="密钥留空表示保留已有配置">
+						<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
+							<fieldset class="fieldset">
+								<legend class="fieldset-legend text-[14px]">Endpoint</legend>
+								<input
+									type="text"
+									class="input input-bordered input-sm w-full"
+									placeholder="https://s3.example.com"
+									value={endpoint()}
+									onInput={(e) => setEndpoint(e.target.value)}
+								/>
+							</fieldset>
+							<fieldset class="fieldset">
+								<legend class="fieldset-legend text-[14px]">Bucket</legend>
+								<input
+									type="text"
+									class="input input-bordered input-sm w-full"
+									placeholder="my-bucket"
+									value={bucket()}
+									onInput={(e) => setBucket(e.target.value)}
+								/>
+							</fieldset>
+							<fieldset class="fieldset">
+								<legend class="fieldset-legend text-[14px]">Region</legend>
+								<input
+									type="text"
+									class="input input-bordered input-sm w-full"
+									placeholder="us-east-1"
+									value={region()}
+									onInput={(e) => setRegion(e.target.value)}
+								/>
+							</fieldset>
+							<div />
+							<fieldset class="fieldset">
+								<legend class="fieldset-legend text-[14px]">Access Key</legend>
+								<input
+									type="password"
+									class="input input-bordered input-sm w-full"
+									placeholder={
+										accessKeySet() ? "已配置，留空保留" : "Access Key"
+									}
+									value={accessKey()}
+									onInput={(e) => setAccessKey(e.target.value)}
+								/>
+							</fieldset>
+							<fieldset class="fieldset">
+								<legend class="fieldset-legend text-[14px]">Secret Key</legend>
+								<input
+									type="password"
+									class="input input-bordered input-sm w-full"
+									placeholder={
+										secretKeySet() ? "已配置，留空保留" : "Secret Key"
+									}
+									value={secretKey()}
+									onInput={(e) => setSecretKey(e.target.value)}
+								/>
+							</fieldset>
+						</div>
+					</ManageSection>
 				</Show>
 
-				<div class="divider my-0 text-xs text-base-content/40">通用配置</div>
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend text-[14px]">
-						公开访问基础 URL（可选）
-					</legend>
-					<input
-						type="text"
-						class="input input-bordered input-sm w-full"
-						placeholder="https://cdn.example.com（留空则自动拼接）"
-						value={publicBaseURL()}
-						onInput={(e) => setPublicBaseURL(e.target.value)}
-					/>
-					<p class="label text-[12px] text-base-content/50">
-						用于 CDN 或自定义域名，留空时 S3 自动拼接、本地用 /uploads 前缀
-					</p>
-				</fieldset>
-				<div class="grid grid-cols-2 gap-3">
+				<ManageSection
+					title="通用配置"
+					description="公开访问地址、路径与上传限制"
+					actions={
+						<div class="flex gap-2">
+							<button
+								class="btn btn-sm border border-base-300 bg-base-100 text-base-content/80 shadow-none hover:bg-base-200"
+								classList={{ "btn-disabled": testing() || saving() }}
+								onClick={handleTestConnection}
+							>
+								{testing() ? "测试中..." : "测试连接"}
+							</button>
+							<button
+								class="btn btn-sm border border-base-300 bg-base-100 text-base-content shadow-none hover:bg-base-200"
+								classList={{ "btn-disabled": saving() || testing() }}
+								onClick={handleSave}
+							>
+								{saving() ? "保存中..." : "保存配置"}
+							</button>
+						</div>
+					}
+				>
 					<fieldset class="fieldset">
-						<legend class="fieldset-legend text-[14px]">路径前缀</legend>
+						<legend class="fieldset-legend text-[14px]">
+							公开访问基础 URL（可选）
+						</legend>
 						<input
 							type="text"
 							class="input input-bordered input-sm w-full"
-							placeholder="uploads/"
-							value={pathPrefix()}
-							onInput={(e) => setPathPrefix(e.target.value)}
+							placeholder="https://cdn.example.com（留空则自动拼接）"
+							value={publicBaseURL()}
+							onInput={(e) => setPublicBaseURL(e.target.value)}
 						/>
+						<p class="label text-[12px] text-base-content/50">
+							用于 CDN 或自定义域名，留空时 S3 自动拼接、本地用 /uploads 前缀
+						</p>
 					</fieldset>
-					<fieldset class="fieldset">
-						<legend class="fieldset-legend text-[14px]">
-							最大文件大小 (MB)
-						</legend>
-						<input
-							type="number"
-							class="input input-bordered input-sm w-full"
-							min="1"
-							max="100"
-							value={maxFileSize()}
-							onInput={(e) => setMaxFileSize(Number(e.target.value))}
+					<div class="mt-3 grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
+						<fieldset class="fieldset">
+							<legend class="fieldset-legend text-[14px]">路径前缀</legend>
+							<input
+								type="text"
+								class="input input-bordered input-sm w-full"
+								placeholder="uploads/"
+								value={pathPrefix()}
+								onInput={(e) => setPathPrefix(e.target.value)}
+							/>
+						</fieldset>
+						<fieldset class="fieldset">
+							<legend class="fieldset-legend text-[14px]">
+								最大文件大小 (MB)
+							</legend>
+							<input
+								type="number"
+								class="input input-bordered input-sm w-full"
+								min="1"
+								max="100"
+								value={maxFileSize()}
+								onInput={(e) => setMaxFileSize(Number(e.target.value))}
+							/>
+						</fieldset>
+					</div>
+					<fieldset class="fieldset mt-3">
+						<legend class="fieldset-legend text-[14px]">允许的文件类型</legend>
+						<textarea
+							class="textarea textarea-bordered textarea-sm w-full"
+							rows="2"
+							placeholder="image/jpeg,image/png,image/gif,image/webp"
+							value={allowedTypes()}
+							onInput={(e) => setAllowedTypes(e.target.value)}
 						/>
+						<p class="label text-[12px] text-base-content/50">
+							逗号分隔 MIME 类型
+						</p>
 					</fieldset>
-				</div>
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend text-[14px]">允许的文件类型</legend>
-					<textarea
-						class="textarea textarea-bordered textarea-sm w-full"
-						rows="2"
-						placeholder="image/jpeg,image/png,image/gif,image/webp"
-						value={allowedTypes()}
-						onInput={(e) => setAllowedTypes(e.target.value)}
-					/>
-					<p class="label text-[12px] text-base-content/50">
-						逗号分隔 MIME 类型
-					</p>
-				</fieldset>
-
-				<div class="flex gap-3 mt-2">
-					<button
-						class="btn btn-primary btn-sm"
-						classList={{ "btn-disabled": saving() }}
-						onClick={handleSave}
-					>
-						<Show when={saving()} fallback="保存配置">
-							<span class="loading loading-spinner loading-xs" /> 保存中...
-						</Show>
-					</button>
-					<Show when={providerType() === "s3"}>
-						<button
-							class="btn btn-outline btn-sm"
-							classList={{ "btn-disabled": testing() }}
-							onClick={handleTestConnection}
-						>
-							<Show when={testing()} fallback="测试连接">
-								<span class="loading loading-spinner loading-xs" /> 测试中...
-							</Show>
-						</button>
-					</Show>
-				</div>
-			</div>
-		</Show>
+				</ManageSection>
+			</Show>
+		</ManagePage>
 	);
 }

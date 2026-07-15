@@ -7,11 +7,13 @@ tmp_dir = "tmp"
   bin = "./tmp/main"
   full_bin = "./tmp/main server -e dev"
   include_ext = ["go", "tpl", "tmpl", "html"]
-  exclude_dir = ["tmp", "vendor", "test", "packages"]
+  exclude_dir = ["tmp", "vendor", "test", "packages", "db", "docs", "scripts", "tmp_tools", "build"]
   exclude_regex = ["_test.go"]
   exclude_unchanged = true
   delay = 1000
-  stop_on_error = false
+  stop_on_error = true
+  send_interrupt = true
+  kill_delay = "2s"
 
 [log]
   main_only = false

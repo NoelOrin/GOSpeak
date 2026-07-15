@@ -100,6 +100,18 @@ STORAGE_TYPE="local"
 
 > 没有 LiveKit？docker-compose 已在本地跑了一个。`LIVEKIT_KEY` 和 `LIVEKIT_SECRET` 默认值在 `deploy/livekit/livekit.yaml` 中。
 
+### 默认管理员账号
+
+首次启动会自动 seed 管理员账号（仅当库中不存在 `admin` 时）：
+
+| 字段 | 值 |
+|------|-----|
+| 用户名 | `admin` |
+| 默认密码 | `admin123` |
+
+登录后若仍为默认密码，会提示首次改密（`need_change_password=true`）。**生产环境请立即修改默认密码。**
+
+
 ---
 
 ## 部署

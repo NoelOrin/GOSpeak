@@ -60,7 +60,7 @@ go run main.go server -e dev   # 开发模式
 | DAILY_API_KEY / DAILY_DOMAIN | — | Daily 凭据 |
 | CF_APP_ID / CF_APP_SECRET / CF_STUN_URL | — / — / `stun.cloudflare.com:3478` | Cloudflare 凭据 |
 | DB_TYPE | `SQLite` | `SQLite` / `PostgresSQL` / `MYSQL` |
-| DB_WAL | `false` | SQLite WAL 模式开关 |
+| DB_WAL | `false` | SQLite WAL 模式开关（并发读建议开启）|
 | REDIS_HOST | — | Redis 主机（留空则不连接）|
 | JWT_KEY | `default-secret` | JWT 签名密钥（生产必须修改）|
 | EMAIL_ENABLED | `false` | 启用邮箱验证 |

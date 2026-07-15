@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
 
 	socketio "github.com/googollee/go-socket.io"
 )
@@ -50,6 +51,7 @@ func newMockRoomStore(names ...string) *mockRoomStore {
 
 type mockConn struct {
 	id      string
+	ctx     interface{}
 	emitted map[string]interface{}
 	joined  map[string]bool
 	left    map[string]bool
@@ -64,6 +66,12 @@ func newMockConn(id string) *mockConn {
 	}
 }
 
+func newAuthedMockConn(id, username string) *mockConn {
+	conn := newMockConn(id)
+	conn.SetContext(&pkg.Claims{Username: username, UserUUID: username, Role: "user"})
+	return conn
+}
+
 // io.Closer
 func (m *mockConn) Close() error { return nil }
 
@@ -75,8 +83,8 @@ func (m *mockConn) RemoteAddr() net.Addr      { return nil }
 func (m *mockConn) RemoteHeader() http.Header { return http.Header{} }
 
 // Namespace interface
-func (m *mockConn) Context() interface{}     { return nil }
-func (m *mockConn) SetContext(v interface{}) {}
+func (m *mockConn) Context() interface{} { return m.ctx }
+func (m *mockConn) SetContext(v interface{}) { m.ctx = v }
 func (m *mockConn) Namespace() string        { return "/" }
 func (m *mockConn) Emit(event string, v ...interface{}) {
 	m.emitted[event] = v
@@ -135,7 +143,7 @@ func TestHub_OnRoomCreate_Success(t *testing.T) {
 	server := newMockServer()
 	hub.server = server
 
-	conn := newMockConn("socket-1")
+	conn := newAuthedMockConn("socket-1", "user-1")
 	data := `{"room":"test-room"}`
 
 	hub.OnRoomCreate(conn, data)
@@ -179,7 +187,7 @@ func TestHub_OnRoomCreate_Duplicate(t *testing.T) {
 
 func TestHub_OnRoomCreate_InvalidJSON(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	conn := newMockConn("socket-1")
+	conn := newAuthedMockConn("socket-1", "user-1")
 
 	hub.OnRoomCreate(conn, "not json")
 
@@ -200,7 +208,7 @@ func TestHub_OnRoomCreate_InvalidJSON(t *testing.T) {
 
 func TestHub_OnRoomCreate_MissingRoom(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	conn := newMockConn("socket-1")
+	conn := newAuthedMockConn("socket-1", "user-1")
 
 	hub.OnRoomCreate(conn, `{}`)
 
@@ -226,7 +234,7 @@ func TestHub_OnRoomJoin_CreateAndJoin(t *testing.T) {
 	server := newMockServer()
 	hub.server = server
 
-	conn := newMockConn("socket-1")
+	conn := newAuthedMockConn("socket-1", "user-1")
 	data := `{"room":"test-room","identity":"user-1"}`
 
 	ack, err := hub.OnRoomJoin(conn, data)
@@ -279,7 +287,7 @@ func TestHub_OnRoomJoin_JoinExisting(t *testing.T) {
 		JoinedAt: time.Now().UnixMilli(),
 	}
 
-	conn := newMockConn("socket-2")
+	conn := newAuthedMockConn("socket-2", "user-2")
 	data := `{"room":"test-room","identity":"user-2"}`
 
 	ack, err := hub.OnRoomJoin(conn, data)
@@ -317,12 +325,12 @@ func TestHub_OnRoomJoin_JoinExisting(t *testing.T) {
 	}
 }
 
-func TestHub_OnRoomJoin_DefaultIdentity(t *testing.T) {
+func TestHub_OnRoomJoin_IdentityFromClaims(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
 	server := newMockServer()
 	hub.server = server
 
-	conn := newMockConn("socket-1")
+	conn := newAuthedMockConn("socket-1", "user-1")
 	data := `{"room":"test-room"}`
 
 	if _, err := hub.OnRoomJoin(conn, data); err != nil {
@@ -344,8 +352,8 @@ func TestHub_OnRoomJoin_DefaultIdentity(t *testing.T) {
 		t.Fatal("expected member in room")
 	}
 
-	if member.Identity != "socket-1" {
-		t.Errorf("expected identity to default to socket ID, got %s", member.Identity)
+	if member.Identity != "user-1" {
+		t.Errorf("expected identity from JWT claims, got %s", member.Identity)
 	}
 }
 
@@ -366,7 +374,7 @@ func TestHub_OnRoomJoin_RoomFull(t *testing.T) {
 	}
 
 	// 第二个用户尝试加入，应该被拒绝
-	conn := newMockConn("socket-2")
+	conn := newAuthedMockConn("socket-2", "user-2")
 	ack, err := hub.OnRoomJoin(conn, `{"room":"limited-room","identity":"user-2"}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -407,7 +415,7 @@ func TestHub_OnRoomLeave_Success(t *testing.T) {
 		JoinedAt: time.Now().UnixMilli(),
 	}
 
-	conn := newMockConn("socket-1")
+	conn := newAuthedMockConn("socket-1", "user-1")
 	data := `{"room":"test-room"}`
 
 	resp, err := hub.OnRoomLeave(conn, data)
@@ -445,7 +453,7 @@ func TestHub_OnRoomLeave_RemoveEmptyRoom(t *testing.T) {
 		JoinedAt: time.Now().UnixMilli(),
 	}
 
-	conn := newMockConn("socket-1")
+	conn := newAuthedMockConn("socket-1", "user-1")
 	data := `{"room":"test-room"}`
 
 	resp, err := hub.OnRoomLeave(conn, data)
@@ -466,7 +474,7 @@ func TestHub_OnRoomList_Empty(t *testing.T) {
 	server := newMockServer()
 	hub.server = server
 
-	conn := newMockConn("socket-1")
+	conn := newAuthedMockConn("socket-1", "user-1")
 
 	hub.OnRoomList(conn)
 
@@ -507,7 +515,7 @@ func TestHub_OnRoomList_Multiple(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 
-	conn := newMockConn("socket-1")
+	conn := newAuthedMockConn("socket-1", "user-1")
 	hub.OnRoomList(conn)
 
 	emitted, ok := conn.emitted[EventRoomListResult].([]interface{})
@@ -547,7 +555,7 @@ func TestHub_OnDisconnect_RemoveFromRoom(t *testing.T) {
 		JoinedAt: time.Now().UnixMilli(),
 	}
 
-	conn := newMockConn("socket-1")
+	conn := newAuthedMockConn("socket-1", "user-1")
 	hub.OnDisconnect(conn, "client namespace disconnect")
 
 	if _, exists := hub.rooms["test-room"].Members["socket-1"]; exists {
@@ -574,7 +582,7 @@ func TestHub_OnDisconnect_RemoveEmptyRoom(t *testing.T) {
 		JoinedAt: time.Now().UnixMilli(),
 	}
 
-	conn := newMockConn("socket-1")
+	conn := newAuthedMockConn("socket-1", "user-1")
 	hub.OnDisconnect(conn, "client namespace disconnect")
 
 	if _, exists := hub.rooms["test-room"]; exists {
@@ -601,7 +609,7 @@ func TestHub_OnDisconnect_MultipleRooms(t *testing.T) {
 		},
 	}
 
-	conn := newMockConn("socket-1")
+	conn := newAuthedMockConn("socket-1", "user-1")
 	hub.OnDisconnect(conn, "disconnect")
 
 	if _, exists := hub.rooms["room-1"]; exists {
@@ -739,7 +747,7 @@ func TestHub_OnRoomList_WithDB(t *testing.T) {
 	server := newMockServer()
 	hub.server = server
 
-	conn := newMockConn("socket-1")
+	conn := newAuthedMockConn("socket-1", "user-1")
 	hub.OnRoomList(conn)
 
 	emitted, ok := conn.emitted[EventRoomListResult].([]interface{})
@@ -762,10 +770,10 @@ func TestOnRoomJoinSFU_StoresAndBroadcastsStream(t *testing.T) {
 	server := newMockServer()
 	hub.server = server
 
-	creator := newMockConn("creator-socket")
+	creator := newAuthedMockConn("creator-socket", "creator")
 	hub.OnRoomCreate(creator, `{"room":"r1"}`)
 
-	member := newMockConn("mem-1")
+	member := newAuthedMockConn("mem-1", "alice")
 	ackRaw, err := hub.OnRoomJoinSFU(member, `{"room":"r1","identity":"alice","stream":"gs-aaa"}`)
 	if err != nil {
 		t.Fatalf("OnRoomJoinSFU error: %v", err)
@@ -813,11 +821,11 @@ func TestOnRoomJoinSFU_ServerRecomputesStream(t *testing.T) {
 	// 注入 fake resolver 模拟 SRS 服务端流名计算
 	hub.SetStreamResolver(fakeStreamResolver{})
 
-	creator := newMockConn("creator-socket")
+	creator := newAuthedMockConn("creator-socket", "creator")
 	hub.OnRoomCreate(creator, `{"room":"r1"}`)
 
 	// 客户端提报错误 stream，服务端应覆写
-	member := newMockConn("mem-1")
+	member := newAuthedMockConn("mem-1", "alice")
 	ackRaw, err := hub.OnRoomJoinSFU(member, `{"room":"r1","identity":"alice","stream":"client-supplied-bad"}`)
 	if err != nil {
 		t.Fatalf("OnRoomJoinSFU error: %v", err)
@@ -884,9 +892,9 @@ func TestHub_RoomRegistry_JoinLeave(t *testing.T) {
 	hub.server = newMockServer()
 	hub.SetStreamResolver(fakeStreamResolver{})
 
-	conn := newMockConn("sock-1")
+	conn := newAuthedMockConn("sock-1", "user-1")
 	hub.OnRoomCreate(conn, `{"room":"room-a"}`)
-	if _, err := hub.OnRoomJoinSFU(conn, `{"room":"room-a","identity":"alice"}`); err != nil {
+	if _, err := hub.OnRoomJoinSFU(conn, `{"room":"room-a","identity":"user-1"}`); err != nil {
 		t.Fatalf("join: %v", err)
 	}
 
@@ -896,7 +904,7 @@ func TestHub_RoomRegistry_JoinLeave(t *testing.T) {
 		t.Fatalf("expected [room-a], got %v", rooms)
 	}
 	streams := hub.Streams("room-a")
-	if len(streams) != 1 || streams[0] != "server-computed-room-a-alice" {
+	if len(streams) != 1 || streams[0] != "server-computed-room-a-user-1" {
 		t.Fatalf("expected computed stream, got %v", streams)
 	}
 
@@ -919,11 +927,11 @@ func TestHub_RoomRegistry_CallbackReverseLookup(t *testing.T) {
 	hub.server = newMockServer()
 	hub.SetStreamResolver(fakeStreamResolver{})
 
-	conn := newMockConn("sock-1")
+	conn := newAuthedMockConn("sock-1", "user-1")
 	hub.OnRoomCreate(conn, `{"room":"room-b"}`)
-	hub.OnRoomJoinSFU(conn, `{"room":"room-b","identity":"bob"}`)
+	hub.OnRoomJoinSFU(conn, `{"room":"room-b","identity":"user-1"}`)
 
-	stream := "server-computed-room-b-bob"
+	stream := "server-computed-room-b-user-1"
 	// on_publish 回调登记（模拟 SRS 推流确认）
 	hub.RegisterStream(stream)
 
@@ -952,9 +960,9 @@ func TestHub_RoomRegistry_Disconnect(t *testing.T) {
 	hub.server = newMockServer()
 	hub.SetStreamResolver(fakeStreamResolver{})
 
-	conn := newMockConn("sock-1")
+	conn := newAuthedMockConn("sock-1", "user-1")
 	hub.OnRoomCreate(conn, `{"room":"room-c"}`)
-	hub.OnRoomJoinSFU(conn, `{"room":"room-c","identity":"carol"}`)
+	hub.OnRoomJoinSFU(conn, `{"room":"room-c","identity":"user-1"}`)
 
 	hub.OnDisconnect(conn, "transport close")
 
@@ -969,9 +977,9 @@ func TestHub_RoomRegistry_ClearRoom(t *testing.T) {
 	hub.server = newMockServer()
 	hub.SetStreamResolver(fakeStreamResolver{})
 
-	conn := newMockConn("sock-1")
+	conn := newAuthedMockConn("sock-1", "user-1")
 	hub.OnRoomCreate(conn, `{"room":"room-d"}`)
-	hub.OnRoomJoinSFU(conn, `{"room":"room-d","identity":"dan"}`)
+	hub.OnRoomJoinSFU(conn, `{"room":"room-d","identity":"user-1"}`)
 
 	hub.ClearRoom("room-d")
 	if got := hub.Streams("room-d"); got != nil {

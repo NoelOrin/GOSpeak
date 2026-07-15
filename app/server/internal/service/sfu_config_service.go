@@ -25,11 +25,46 @@ type UpdateSFUConfigRequest struct {
 	SRSHost             string `json:"srs_host"`
 	SRSApiPort          string `json:"srs_api_port"`
 	SRSSecret           string `json:"srs_secret"`
+	SRSWHIPURL          string `json:"srs_whip_url"`
+	SRSPublicHost       string `json:"srs_public_host"`
 	DailyAPIKey         string `json:"daily_api_key"`
 	DailyDomain         string `json:"daily_domain"`
 	CFAppID             string `json:"cf_app_id"`
 	CFAppSecret         string `json:"cf_app_secret"`
 	CFStunURL           string `json:"cf_stun_url"`
+}
+
+// PublicSFUConfig 管理后台可读配置视图：密钥字段已脱敏，不回显明文。
+type PublicSFUConfig struct {
+	Provider               string `json:"provider"`
+	LiveKitHost            string `json:"livekit_host"`
+	LiveKitKey             string `json:"livekit_key"`
+	LiveKitSecret          string `json:"livekit_secret"`
+	LiveKitSecretSet       bool   `json:"livekit_secret_set"`
+	AgoraAppID             string `json:"agora_app_id"`
+	AgoraAppCertificate    string `json:"agora_app_certificate"`
+	AgoraAppCertificateSet bool   `json:"agora_app_certificate_set"`
+	AgoraHost              string `json:"agora_host"`
+	AgoraCustomerID        string `json:"agora_customer_id"`
+	AgoraCustomerSecret    string `json:"agora_customer_secret"`
+	AgoraCustomerSecretSet bool   `json:"agora_customer_secret_set"`
+	MediaSoupBridgeURL     string `json:"mediasoup_bridge_url"`
+	MediaSoupHost          string `json:"mediasoup_host"`
+	SRSHost                string `json:"srs_host"`
+	SRSApiPort             string `json:"srs_api_port"`
+	SRSSecret              string `json:"srs_secret"`
+	SRSSecretSet           bool   `json:"srs_secret_set"`
+	SRSWHIPURL             string `json:"srs_whip_url"`
+	SRSPublicHost          string `json:"srs_public_host"`
+	DailyAPIKey            string `json:"daily_api_key"`
+	DailyAPIKeySet         bool   `json:"daily_api_key_set"`
+	DailyDomain            string `json:"daily_domain"`
+	CFAppID                string `json:"cf_app_id"`
+	CFAppSecret            string `json:"cf_app_secret"`
+	CFAppSecretSet         bool   `json:"cf_app_secret_set"`
+	CFStunURL              string `json:"cf_stun_url"`
+	CreatedAt              string `json:"created_at,omitempty"`
+	UpdatedAt              string `json:"updated_at,omitempty"`
 }
 
 type SFUConfigService struct {
@@ -95,24 +130,26 @@ func (s *SFUConfigService) UpdateFromDTO(req *UpdateSFUConfigRequest) (*model.SF
 		cfg = existing
 	}
 
-	// 应用所有请求字段。每个 provider 行独立，行内全量字段写入。
+	// 应用请求字段。密钥类字段为空时保留旧值，避免管理后台脱敏回写清空密钥。
 	cfg.LiveKitHost = req.LiveKitHost
 	cfg.LiveKitKey = req.LiveKitKey
-	cfg.LiveKitSecret = req.LiveKitSecret
+	cfg.LiveKitSecret = pkg.KeepSecret(req.LiveKitSecret, cfg.LiveKitSecret)
 	cfg.AgoraAppID = req.AgoraAppID
-	cfg.AgoraAppCertificate = req.AgoraAppCertificate
+	cfg.AgoraAppCertificate = pkg.KeepSecret(req.AgoraAppCertificate, cfg.AgoraAppCertificate)
 	cfg.AgoraHost = req.AgoraHost
 	cfg.AgoraCustomerID = req.AgoraCustomerID
-	cfg.AgoraCustomerSecret = req.AgoraCustomerSecret
+	cfg.AgoraCustomerSecret = pkg.KeepSecret(req.AgoraCustomerSecret, cfg.AgoraCustomerSecret)
 	cfg.MediaSoupBridgeURL = req.MediaSoupBridgeURL
 	cfg.MediaSoupHost = req.MediaSoupHost
 	cfg.SRSHost = req.SRSHost
 	cfg.SRSApiPort = req.SRSApiPort
-	cfg.SRSSecret = req.SRSSecret
-	cfg.DailyAPIKey = req.DailyAPIKey
+	cfg.SRSSecret = pkg.KeepSecret(req.SRSSecret, cfg.SRSSecret)
+	cfg.SRSWHIPURL = req.SRSWHIPURL
+	cfg.SRSPublicHost = req.SRSPublicHost
+	cfg.DailyAPIKey = pkg.KeepSecret(req.DailyAPIKey, cfg.DailyAPIKey)
 	cfg.DailyDomain = req.DailyDomain
 	cfg.CFAppID = req.CFAppID
-	cfg.CFAppSecret = req.CFAppSecret
+	cfg.CFAppSecret = pkg.KeepSecret(req.CFAppSecret, cfg.CFAppSecret)
 	cfg.CFStunURL = req.CFStunURL
 
 	if err := s.repo.Save(cfg); err != nil {
@@ -237,6 +274,12 @@ func (s *SFUConfigService) ResolveConfig() (*config.Config, error) {
 		if s.baseCfg.SRSSecret == "" {
 			resolved.SRSSecret = cfg.SRSSecret
 		}
+		if s.baseCfg.SRSWHIPURL == "" {
+			resolved.SRSWHIPURL = cfg.SRSWHIPURL
+		}
+		if s.baseCfg.SRSPublicHost == "" {
+			resolved.SRSPublicHost = cfg.SRSPublicHost
+		}
 	case "daily":
 		if s.baseCfg.DailyAPIKey == "" {
 			resolved.DailyAPIKey = cfg.DailyAPIKey
@@ -290,6 +333,8 @@ func (s *SFUConfigService) defaultConfigForProvider(provider string) *model.SFUC
 		cfg.SRSHost = s.baseCfg.SRSHost
 		cfg.SRSApiPort = s.baseCfg.SRSApiPort
 		cfg.SRSSecret = s.baseCfg.SRSSecret
+		cfg.SRSWHIPURL = s.baseCfg.SRSWHIPURL
+		cfg.SRSPublicHost = s.baseCfg.SRSPublicHost
 	case "daily":
 		cfg.DailyAPIKey = s.baseCfg.DailyAPIKey
 		cfg.DailyDomain = s.baseCfg.DailyDomain
@@ -299,4 +344,58 @@ func (s *SFUConfigService) defaultConfigForProvider(provider string) *model.SFUC
 		cfg.CFStunURL = s.baseCfg.CFStunURL
 	}
 	return cfg
+}
+
+// ToPublicSFUConfig 将内部配置转为管理后台安全视图。
+func ToPublicSFUConfig(cfg *model.SFUConfig) *PublicSFUConfig {
+	if cfg == nil {
+		return nil
+	}
+	p := &PublicSFUConfig{
+		Provider:               cfg.Provider,
+		LiveKitHost:            cfg.LiveKitHost,
+		LiveKitKey:             cfg.LiveKitKey,
+		LiveKitSecret:          "",
+		LiveKitSecretSet:       cfg.LiveKitSecret != "",
+		AgoraAppID:             cfg.AgoraAppID,
+		AgoraAppCertificate:    "",
+		AgoraAppCertificateSet: cfg.AgoraAppCertificate != "",
+		AgoraHost:              cfg.AgoraHost,
+		AgoraCustomerID:        cfg.AgoraCustomerID,
+		AgoraCustomerSecret:    "",
+		AgoraCustomerSecretSet: cfg.AgoraCustomerSecret != "",
+		MediaSoupBridgeURL:     cfg.MediaSoupBridgeURL,
+		MediaSoupHost:          cfg.MediaSoupHost,
+		SRSHost:                cfg.SRSHost,
+		SRSApiPort:             cfg.SRSApiPort,
+		SRSSecret:              "",
+		SRSSecretSet:           cfg.SRSSecret != "",
+		SRSWHIPURL:             cfg.SRSWHIPURL,
+		SRSPublicHost:          cfg.SRSPublicHost,
+		DailyAPIKey:            "",
+		DailyAPIKeySet:         cfg.DailyAPIKey != "",
+		DailyDomain:            cfg.DailyDomain,
+		CFAppID:                cfg.CFAppID,
+		CFAppSecret:            "",
+		CFAppSecretSet:         cfg.CFAppSecret != "",
+		CFStunURL:              cfg.CFStunURL,
+	}
+	if !cfg.CreatedAt.IsZero() {
+		p.CreatedAt = cfg.CreatedAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+	if !cfg.UpdatedAt.IsZero() {
+		p.UpdatedAt = cfg.UpdatedAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+	return p
+}
+
+// ToPublicSFUConfigs 批量脱敏。
+func ToPublicSFUConfigs(cfgs []model.SFUConfig) []PublicSFUConfig {
+	out := make([]PublicSFUConfig, 0, len(cfgs))
+	for i := range cfgs {
+		if pub := ToPublicSFUConfig(&cfgs[i]); pub != nil {
+			out = append(out, *pub)
+		}
+	}
+	return out
 }

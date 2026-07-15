@@ -1,8 +1,11 @@
 package server
 
 import (
+	"GOSpeak/internal/bus"
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/handler"
+	"GOSpeak/internal/jobs"
+	"GOSpeak/internal/logger"
 	"GOSpeak/internal/mediasoup"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
@@ -16,10 +19,10 @@ import (
 	"GOSpeak/internal/signal"
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	ossignal "os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -29,7 +32,8 @@ import (
 	"github.com/googollee/go-socket.io/engineio/transport"
 	"github.com/googollee/go-socket.io/engineio/transport/polling"
 	"github.com/googollee/go-socket.io/engineio/transport/websocket"
-	"github.com/joho/godotenv"
+	"github.com/nats-io/nats.go"
+	goredis "github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -41,20 +45,43 @@ const (
 )
 
 func StartGin(env EnvEnum) {
-	loadingEnv(env)
-
-	if env == Prod || env == "" {
-		gin.SetMode(gin.ReleaseMode)
+	appEnv := string(env)
+	if appEnv == "" {
+		appEnv = string(Prod)
+	}
+	// 进程环境优先；文件仅填充未设置变量
+	config.LoadEnvFiles(appEnv)
+	if os.Getenv("APP_ENV") == "" {
+		_ = os.Setenv("APP_ENV", appEnv)
 	}
 
-	if err := repository.InitDB(); err != nil {
+	cfg := config.MustLoad()
+
+	// 统一日志初始化（先于其它组件，后续 log/fmt 可逐步迁移）
+	if err := logger.Init(logger.OptionsFrom(cfg.LoggerOptions())); err != nil {
+		panic(fmt.Sprintf("failed to init logger: %v", err))
+	}
+	logger.SetupGin()
+	logger.WithComponent("Server").WithFields(logger.Fields{
+		"env":      appEnv,
+		"port":     cfg.ServerPort,
+		"provider": cfg.SFUProvider,
+	}).Info("logger ready")
+
+	if env == Prod || env == "" || cfg.IsProduction() {
+		gin.SetMode(gin.ReleaseMode)
+	}
+	if cfg.GinMode != "" {
+		gin.SetMode(cfg.GinMode)
+	}
+
+	if err := repository.InitDB(cfg); err != nil {
 		panic(fmt.Sprintf("failed to initialize database: %v", err))
 	}
 
-	redis.InitRedis()
+	redis.InitRedis(cfg)
 
-	cfg := config.Load()
-	if env == Prod {
+	if env == Prod || cfg.IsProduction() {
 		redis.SetProductionMode()
 	}
 
@@ -86,7 +113,8 @@ func StartGin(env EnvEnum) {
 	emailSvc := service.NewEmailService(emailConfigSvc.ResolveConfig)
 	emailVerificationSvc := service.NewEmailVerificationService(emailVerificationRepo, userRepo, emailSvc, emailConfigSvc.ResolveConfig)
 	authSvc := service.NewAuthService(userRepo, emailConfigSvc, emailVerificationSvc)
-	userSvc := service.NewUserService(userRepo)
+	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
+	userSvc := service.NewUserService(userRepo, storageSvc)
 	oauthSvc := service.NewOAuthService(oauthProviderRepo, oauthAccountRepo, userRepo)
 	roomSvc := service.NewRoomService(roomRepo)
 	muteSvc := service.NewMuteService(muteRepo, userRepo)
@@ -94,7 +122,6 @@ func StartGin(env EnvEnum) {
 	if err := sfuConfigSvc.SyncFromEnv(); err != nil {
 		panic(fmt.Sprintf("failed to sync sfu config from env: %v", err))
 	}
-	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
 	botTokenRepo := repository.NewBotTokenRepository(repository.DB)
 	botSvc := service.NewBotService(userRepo, botTokenRepo)
 	var sfuProvider sfu.Provider = factory.NewDynamicProvider(sfuConfigSvc.ResolveConfig)
@@ -103,7 +130,8 @@ func StartGin(env EnvEnum) {
 		panic(fmt.Sprintf("failed to resolve sfu config: %v", err))
 	}
 
-	r := gin.Default()
+	r := gin.New()
+	r.Use(logger.GinRecovery(), logger.GinLogger())
 	middleware.SetTokenVersionChecker(authSvc)
 
 	wsTransport := websocket.Default
@@ -116,7 +144,88 @@ func StartGin(env EnvEnum) {
 		},
 	})
 
+	timeout, err := time.ParseDuration(cfg.NATSConnectTimeout)
+	if err != nil || timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+	deliverer := bus.NewSIODeliverer(sioServer)
+	embeddedPort := 0
+	if cfg.NATSEmbeddedPort != "" {
+		p, err := strconv.Atoi(cfg.NATSEmbeddedPort)
+		if err != nil {
+			panic(fmt.Sprintf("invalid NATS_EMBEDDED_PORT %q: %v", cfg.NATSEmbeddedPort, err))
+		}
+		embeddedPort = p
+	}
+	eventBus, closeEventBus, err := bus.Init(bus.InitConfig{
+		URL:            cfg.NATSURL,
+		Prefix:         cfg.NATSSubjectPrefix,
+		Name:           cfg.NATSName,
+		ConnectTimeout: timeout,
+		EmbeddedPort:   embeddedPort,
+		Deliverer:      deliverer,
+	})
+	if err != nil {
+		panic(fmt.Sprintf("failed to init event bus: %v", err))
+	}
+
 	signalHub := signal.NewHub(roomSvc, muteSvc, userSvc, permSvc)
+	signalHub.SetEventBus(eventBus)
+	signalHub.SetStateNotifier(eventBus)
+	permSvc.SetEventBus(eventBus)
+	var natsConn *nats.Conn
+	instanceID := eventBus.InstanceID()
+	if nb, ok := eventBus.(*bus.NATSBus); ok {
+		natsConn = nb.Conn()
+		nb.SetRemoteHook(func(event string, payload interface{}) {
+			if event == service.EventPermissionsInvalidated {
+				permSvc.OnRemoteInvalidate(payload)
+				return
+			}
+			signalHub.HandleRemoteEvent(event, payload)
+		})
+	}
+
+	// membership KV: redis → nats → none (STATE_STORE=auto default)
+	var redisClient *goredis.Client
+	if redis.IsConnected() {
+		redisClient = redis.Client
+	}
+	store, backend, err := bus.ResolveMembershipStore(bus.ResolveMembershipConfig{
+		Mode:   cfg.StateStore,
+		Prefix: cfg.NATSSubjectPrefix,
+		Redis:  redisClient,
+		NATS:   natsConn,
+	})
+	if err != nil {
+		logger.WithComponent("StateStore").Warnf("unavailable mode=%s: %v", cfg.StateStore, err)
+	} else if store != nil {
+		signalHub.SetMembershipStore(store, instanceID)
+		logger.WithComponent("StateStore").Infof("ready backend=%s instance=%s", backend, instanceID)
+	} else {
+		logger.WithComponent("StateStore").Info("backend=none (local membership only)")
+	}
+
+	var jobQueue *bus.JobQueue
+	if nb, ok := eventBus.(*bus.NATSBus); ok && nb.Conn() != nil {
+		q, err := bus.OpenJobQueue(bus.JobQueueConfig{
+			Prefix: cfg.NATSSubjectPrefix,
+			NC:     nb.Conn(),
+		})
+		if err != nil {
+			logger.WithComponent("JobQueue").Warnf("unavailable: %v", err)
+		} else {
+			jobQueue = q
+			signalHub.SetCleanupPublisher(q)
+			if _, err := q.Consume(nb.InstanceID(), func(job bus.JobEnvelope) error {
+				return jobs.Handle(job, signalHub, signalHub)
+			}); err != nil {
+				logger.WithComponent("JobQueue").Errorf("consume failed: %v", err)
+			} else {
+				logger.WithComponent("JobQueue").Infof("consumer started instance=%s", nb.InstanceID())
+			}
+		}
+	}
 	signalHub.SetSFU(sfuProvider)
 	if snr, ok := sfuProvider.(signal.StreamNameResolver); ok {
 		signalHub.SetStreamResolver(snr)
@@ -133,6 +242,9 @@ func StartGin(env EnvEnum) {
 	signalHub.SetupRoutes(sioServer)
 	sfuSvc := service.NewSFUService(sfuProvider, signalHub)
 	signalH := handler.NewSignalHandler(sfuSvc)
+	if jobQueue != nil {
+		signalH.SetJobs(jobQueue)
+	}
 	cfMediaSvc := service.NewCloudflareMediaService(sfuConfigSvc.ResolveConfig)
 	cfH := handler.NewCloudflareHandler(cfMediaSvc)
 	srsCallbackH := handler.NewSRSCallbackHandlerWithResolver(signalHub, func() string {
@@ -145,6 +257,9 @@ func StartGin(env EnvEnum) {
 		}
 		return cfg.SRSSecret
 	})
+	if jobQueue != nil {
+		srsCallbackH.SetJobs(jobQueue)
+	}
 
 	authH := handler.NewAuthHandler(authSvc)
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)
@@ -155,11 +270,11 @@ func StartGin(env EnvEnum) {
 	roomH := handler.NewRoomHandler(roomSvc, permSvc)
 	permH := handler.NewPermissionHandler(permSvc)
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
-	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc)
+	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc, signalHub)
 	storageH := handler.NewStorageHandler(storageSvc)
 	botH := handler.NewBotHandler(botSvc)
 
-	monitorH := handler.NewMonitorHandler(signalHub, cfg)
+	monitorH := handler.NewMonitorHandler(signalHub, cfg, eventBus)
 
 	// 启动签名密钥轮换检查
 	go redis.KeyRotationLoop()
@@ -196,12 +311,12 @@ func StartGin(env EnvEnum) {
 		Bot:         botH,
 	})
 
-	port := os.Getenv("SERVER_PORT")
+	port := cfg.ServerPort
 	if port == "" {
 		port = "8998"
 	}
 
-	fmt.Printf("[Swagger] API 文档地址: http://localhost:%s/swagger/index.html\n", port)
+	logger.WithComponent("Swagger").Infof("API 文档地址: http://localhost:%s/swagger/index.html", port)
 
 	srv := &http.Server{
 		Addr:    ":" + port,
@@ -213,79 +328,64 @@ func StartGin(env EnvEnum) {
 		quit := make(chan os.Signal, 1)
 		ossignal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 		<-quit
-		log.Println("[Server] shutting down...")
+		logger.WithComponent("Server").Info("shutting down...")
 
 		if err := sioServer.Close(); err != nil {
-			log.Printf("[Socket.IO] close error: %v", err)
+			logger.WithComponent("Socket.IO").Warnf("close error: %v", err)
 		}
-		log.Println("[Socket.IO] connections closed")
+		logger.WithComponent("Socket.IO").Info("connections closed")
+
+		closeEventBus()
+		logger.WithComponent("EventBus").Info("closed")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(ctx); err != nil {
-			log.Printf("[HTTP] shutdown error: %v", err)
+			logger.WithComponent("HTTP").Errorf("shutdown error: %v", err)
 		}
 	}()
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("[HTTP] listen error: %v", err)
+		logger.WithComponent("HTTP").Fatalf("listen error: %v", err)
 	}
-}
-
-func loadingEnv(env EnvEnum) {
-	switch env {
-	case Dev:
-		if err := loadEnvFile("./.env.dev"); err != nil {
-			panic(err)
-		}
-	case Prod:
-		// Docker / K8s 通过 env_file 或环境变量注入, .env.prod 可不存在
-		if err := loadEnvFile("./.env.prod"); err != nil {
-			log.Printf("[Config] .env.prod not loaded (%v); using process environment", err)
-		}
-	}
-}
-
-func loadEnvFile(path string) error {
-	return godotenv.Load(path)
 }
 
 func seedPermissions(permRepo *repository.PermissionRepository) {
 	// 种子权限定义
 	for i := range model.DefaultPermissions {
 		if err := permRepo.CreateIfNotExists(&model.DefaultPermissions[i]); err != nil {
-			fmt.Printf("[Seed] 创建权限 %s 失败: %v\n", model.DefaultPermissions[i].Code, err)
+			logger.WithComponent("Seed").Warnf("创建权限 %s 失败: %v", model.DefaultPermissions[i].Code, err)
 		}
 	}
 
 	// 种子角色-权限映射
 	for roleName, codes := range model.DefaultRolePermissions {
 		if err := permRepo.EnsureRolePermissions(roleName, codes); err != nil {
-			fmt.Printf("[Seed] 同步角色 %s 权限失败: %v\n", roleName, err)
+			logger.WithComponent("Seed").Warnf("同步角色 %s 权限失败: %v", roleName, err)
 		}
 	}
-	fmt.Println("[Seed] 权限系统初始化完成")
+	logger.WithComponent("Seed").Info("权限系统初始化完成")
 }
 
 func seedRoles(roleRepo *repository.RoleRepository) {
 	for i := range model.DefaultRoles {
 		if err := roleRepo.CreateIfNotExists(&model.DefaultRoles[i]); err != nil {
-			fmt.Printf("[Seed] 创建角色 %s 失败: %v\n", model.DefaultRoles[i].Name, err)
+			logger.WithComponent("Seed").Warnf("创建角色 %s 失败: %v", model.DefaultRoles[i].Name, err)
 		}
 	}
 	roles, err := roleRepo.List()
 	if err != nil {
-		fmt.Printf("[Seed] 加载角色列表失败: %v\n", err)
+		logger.WithComponent("Seed").Errorf("加载角色列表失败: %v", err)
 		return
 	}
 	model.LoadRoleCache(roles)
-	fmt.Printf("[Seed] 已加载 %d 个角色\n", len(roles))
+	logger.WithComponent("Seed").Infof("已加载 %d 个角色", len(roles))
 }
 
 func seedAdminUser(userRepo *repository.UserRepository) {
-	hashedPwd, err := bcrypt.GenerateFromPassword([]byte("123123"), bcrypt.DefaultCost)
+	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(service.DefaultAdminPassword), bcrypt.DefaultCost)
 	if err != nil {
-		fmt.Printf("[Seed] 生成密码哈希失败: %v\n", err)
+		logger.WithComponent("Seed").Errorf("生成密码哈希失败: %v", err)
 		return
 	}
 
@@ -301,16 +401,13 @@ func seedAdminUser(userRepo *repository.UserRepository) {
 		Role:        "admin",
 	}
 	if err := userRepo.Create(admin); err != nil {
-		fmt.Printf("[Seed] 创建管理员用户失败: %v\n", err)
+		logger.WithComponent("Seed").Errorf("创建管理员用户失败: %v", err)
 		return
 	}
-	fmt.Println("[Seed] 已创建管理员用户: admin / 123123")
+	logger.WithComponent("Seed").Infof("已创建管理员用户: admin / %s", service.DefaultAdminPassword)
 }
 
 func init() {
-	log.SetFlags(log.Llongfile | log.Lmicroseconds | log.Ldate)
-
+	// 日志完整初始化在 StartGin 的 config 加载之后；此处仅做最小兜底
 	gin.DisableConsoleColor()
-	// f, _ := os.Create("gin.log")
-	// gin.DefaultWriter = io.MultiWriter(f, os.Stdout)
 }

@@ -50,3 +50,52 @@ components/
 - 列表渲染使用 `<For each={}>` 组件
 - 下拉菜单使用 DaisyUI `dropdown` 类名
 - 弹窗使用 DaisyUI modal 或自定义 `commonModal`
+
+## 组件抽离粒度
+
+目标：**按变更边界拆，不按行数机械拆**。页面保持编排层，可复用 UI/规则下沉。
+
+### 放置规则
+
+| 类型 | 位置 | 例子 |
+|------|------|------|
+| 路由编排 | `pages/**/index.tsx` | 权限守卫、`createResource`、提交动作 |
+| 页面私有 UI | `pages/**/components/*` | 某管理页的表格/表单/卡片 |
+| 跨页面复用 UI | `components/**` | `FormField`、`ProviderIcon`、`Users` 无关的通用件 |
+| 领域逻辑 | `hooks/` / `stores/` / `api/` | 会话、状态、HTTP |
+
+`routeFileIgnorePattern: "components"` 已忽略路由下 `components/` 目录，页面私有组件放这里不会生成路由。
+
+### 何时拆
+
+- 单文件混有 **2 个以上独立 UI 区块**（列表 + 表单 + 弹窗）
+- 含可单测的纯逻辑（校验、preset、字段映射）
+- 同构表单字段重复（抽 `FormField` / 配置表单）
+- 行数 > 300 且可读性下降
+
+### 何时不拆 / 应合并
+
+- 纯 re-export 或 1:1 换名包装（如 `useRoomJoinSession`）
+- 只有一行 JSX 的透传组件（除非作为布局槽位语义）
+- 拆完后 props 超过 ~15 个且无复用——优先留在页面或改用局部 store/memo
+- DaisyUI 单类名包装（`divider` 等）除非多处定制
+
+### 管理页约定
+
+```
+pages/(app)/manage/<feature>/
+├── index.tsx              # Route + 数据/动作编排（建议 < 350 行）
+└── components/
+    ├── *Table.tsx         # 列表展示
+    ├── *Form.tsx          # 创建/编辑表单
+    ├── constants.ts       # 预设/枚举
+    └── validation.ts      # 纯校验（可选）
+```
+
+已按此模式拆分：`sfu`、`oauth`、`permission`、`users`；登录页弹窗在 `pages/login/components/`。
+
+### 参考良好样本
+
+- `components/dashboard/*`：首页区块拆分清晰
+- `components/room/{components,hooks,session}`：UI / 会话 / 适配分层
+- `components/oauth/ProviderIcon.tsx`：跨登录与 OAuth 管理复用

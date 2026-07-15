@@ -49,26 +49,25 @@ export const darkThemes: ThemeOption[] = [
 	{ name: "synthwave", label: "Synthwave" },
 ];
 
-const _darkThemeNames = new Set(darkThemes.map((t) => t.name));
-
 function getInitialDark(): boolean {
 	const saved = localStorage.getItem(STORAGE_DARK);
 	if (saved !== null) return saved === "true";
 	return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
-function getInitialTheme(isDark: boolean): string {
-	if (isDark) {
-		return localStorage.getItem(STORAGE_THEME_DARK) || "dark";
-	}
-	return localStorage.getItem(STORAGE_THEME_LIGHT) || "acid";
+function getStoredTheme(key: string, fallback: string): string {
+	return localStorage.getItem(key) || fallback;
 }
 
 const initialDark = getInitialDark();
-const initialTheme = getInitialTheme(initialDark);
+const initialLightTheme = getStoredTheme(STORAGE_THEME_LIGHT, "acid");
+const initialDarkTheme = getStoredTheme(STORAGE_THEME_DARK, "dark");
+const initialTheme = initialDark ? initialDarkTheme : initialLightTheme;
 
 const [store, setStore] = createStore({
 	theme: initialTheme,
+	lightTheme: initialLightTheme,
+	darkTheme: initialDarkTheme,
 	isDark: initialDark,
 });
 
@@ -77,30 +76,59 @@ function applyTheme() {
 	document.documentElement.classList.toggle("dark", store.isDark);
 }
 
+function switchLightTheme(name: string) {
+	setStore("lightTheme", name);
+	localStorage.setItem(STORAGE_THEME_LIGHT, name);
+	if (!store.isDark) {
+		setStore("theme", name);
+		applyTheme();
+	}
+}
+
+function switchDarkTheme(name: string) {
+	setStore("darkTheme", name);
+	localStorage.setItem(STORAGE_THEME_DARK, name);
+	if (store.isDark) {
+		setStore("theme", name);
+		applyTheme();
+	}
+}
+
+/** 兼容旧调用：按当前模式写入对应主题 */
 function switchTheme(name: string) {
-	setStore("theme", name);
-	const storageKey = store.isDark ? STORAGE_THEME_DARK : STORAGE_THEME_LIGHT;
-	localStorage.setItem(storageKey, name);
-	applyTheme();
-	console.log("[Theme] theme:", name, "| isDark:", store.isDark);
+	if (store.isDark) {
+		switchDarkTheme(name);
+		return;
+	}
+	switchLightTheme(name);
 }
 
 function toggleDark() {
 	const next = !store.isDark;
-	setStore("isDark", next);
+	const theme = next ? store.darkTheme : store.lightTheme;
+	setStore({
+		isDark: next,
+		theme,
+	});
 	localStorage.setItem(STORAGE_DARK, String(next));
-	// 切换到该模式下上次选择的主题
-	const theme = next
-		? localStorage.getItem(STORAGE_THEME_DARK) || "dark"
-		: localStorage.getItem(STORAGE_THEME_LIGHT) || "acid";
-	setStore("theme", theme);
 	applyTheme();
-	console.log("[Theme] theme:", theme, "| isDark:", next);
+}
+
+function setDarkMode(enabled: boolean) {
+	if (enabled === store.isDark) return;
+	toggleDark();
 }
 
 function initTheme() {
 	applyTheme();
 }
 
-export { initTheme, switchTheme, toggleDark };
+export {
+	initTheme,
+	setDarkMode,
+	switchDarkTheme,
+	switchLightTheme,
+	switchTheme,
+	toggleDark,
+};
 export default store;

@@ -10,7 +10,7 @@ type Room struct {
 	ID            uint      `gorm:"primaryKey" json:"id"`
 	UUID          string    `gorm:"type:uuid;uniqueIndex" json:"uuid"`
 	Name          string    `gorm:"index" json:"name"`
-	Password      string    `json:"password"`
+	Password      string    `json:"-"`
 	Description   string    `gorm:"size:255" json:"description"`
 	Limit         uint      `json:"limit"`
 	AudioOnly     bool      `gorm:"not null;default:true" json:"audio_only"`

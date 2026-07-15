@@ -1339,7 +1339,7 @@ pnpm dev
 # 1. 管理员登录获取 token
 curl -s -X POST http://localhost:8998/api/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"123123"}'
+  -d '{"username":"admin","password":"admin123"}'
 # 提取 admin_token
 
 # 2. 创建 Bot

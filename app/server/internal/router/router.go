@@ -1,6 +1,7 @@
 package router
 
 import (
+	"GOSpeak/internal/config"
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/middleware"
 	authRoutes "GOSpeak/internal/router/routes/auth"
@@ -105,7 +106,10 @@ func serveSPA(r *gin.Engine) {
 	var hasFile func(path string) bool
 	var serveIndex func(c *gin.Context)
 
-	staticDir := os.Getenv("STATIC_DIR")
+	staticDir := ""
+	if cfg := config.Current(); cfg != nil {
+		staticDir = cfg.StaticDir
+	}
 	if staticDir == "" {
 		for _, candidate := range []string{"/app/static", "./static"} {
 			if st, err := os.Stat(candidate); err == nil && st.IsDir() {

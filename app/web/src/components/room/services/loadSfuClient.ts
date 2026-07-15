@@ -5,6 +5,7 @@ import type {
 	SFUClientOptions,
 	SFUProvider,
 } from "@gospeak/sfu-client/types";
+import { showToast } from "solid-notifications";
 
 const STORAGE_LAST_SFU_PROVIDER = "lastSfuProvider";
 
@@ -33,6 +34,7 @@ export function getRememberedSfuProvider(): SFUProvider | undefined {
 	return undefined;
 }
 
+/** 预热 provider chunk；失败抛错（调用方可 catch 后仍继续刷新）。 */
 export function preloadSfuClient(provider: SFUProvider): Promise<void> {
 	if (preloadedProviders.has(provider)) {
 		return Promise.resolve();
@@ -43,6 +45,7 @@ export function preloadSfuClient(provider: SFUProvider): Promise<void> {
 		.catch((error) => {
 			preloadedProviders.delete(provider);
 			console.warn("[SFU] preload failed:", provider, error);
+			throw error;
 		});
 }
 
@@ -51,6 +54,11 @@ export async function loadSfuClient(
 	options?: SFUClientOptions,
 ): Promise<SFUClient> {
 	rememberSfuProvider(provider);
-	await preloadSfuClient(provider);
-	return createSFUClient(provider, options);
+	try {
+		await preloadSfuClient(provider);
+		return await createSFUClient(provider, options);
+	} catch (error) {
+		showToast("新语音后端资源加载失败，请刷新后重试", { type: "error" });
+		throw error;
+	}
 }

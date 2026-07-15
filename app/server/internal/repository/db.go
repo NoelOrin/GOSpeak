@@ -1,15 +1,19 @@
 package repository
 
 import (
+	"GOSpeak/internal/config"
 	"GOSpeak/internal/model"
+	"database/sql"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
-	"github.com/glebarez/sqlite"
 )
 
 type DatabaseEnum string
@@ -22,16 +26,19 @@ const (
 
 var DB *gorm.DB
 
-func InitDB() error {
-	dbType := getDBType()
+func InitDB(cfg *config.Config) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
+	}
+	dbType := DatabaseEnum(cfg.DBType)
 	var err error
 	switch dbType {
 	case PostgreSQL:
-		DB, err = connectPostgreSQL()
+		DB, err = connectPostgreSQL(cfg)
 	case SQLite:
-		DB, err = connectSQLite()
+		DB, err = connectSQLite(cfg)
 	case MySQL:
-		DB, err = connectMySQL()
+		DB, err = connectMySQL(cfg)
 	default:
 		return fmt.Errorf("unsupported database type: %s", dbType)
 	}
@@ -50,83 +57,259 @@ func InitDB() error {
 	if err := migrateOldSFUConfig(DB); err != nil {
 		return err
 	}
+	if err := migrateStorageConfigSchema(DB); err != nil {
+		return err
+	}
 
 	return autoMigrate()
 }
 
-func getDBType() DatabaseEnum {
-	dbType := os.Getenv("DB_TYPE")
-	if dbType == "" {
-		return SQLite
-	}
-	return DatabaseEnum(dbType)
-}
-
-func connectPostgreSQL() (*gorm.DB, error) {
-	dsn := os.Getenv("DB_DSN")
+func connectPostgreSQL(cfg *config.Config) (*gorm.DB, error) {
+	dsn := cfg.DBDSN
 	if dsn == "" {
+		user := cfg.DBUser
+		if user == "" {
+			user = "postgres"
+		}
+		password := cfg.DBPassword
+		if password == "" {
+			password = "postgres"
+		}
+		host := cfg.DBHost
+		if host == "" {
+			host = "localhost"
+		}
+		port := cfg.DBPort
+		if port == "" {
+			port = "5432"
+		}
 		dsn = fmt.Sprintf(
 			"host=%s user=%s password=%s dbname=myapp port=%s sslmode=disable",
-			getEnv("DB_HOST", "localhost"),
-			getEnv("DB_USER", "postgres"),
-			getEnv("DB_PASSWORD", "postgres"),
-			getEnv("DB_PORT", "5432"),
+			host, user, password, port,
 		)
 	}
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, err
+	}
+	if err := configureDBPool(db, cfg); err != nil {
+		return nil, err
+	}
+	return db, nil
 }
 
-func connectSQLite() (*gorm.DB, error) {
-	path := os.Getenv("DB_PATH")
+func connectSQLite(cfg *config.Config) (*gorm.DB, error) {
+	path := cfg.DBPath
 	if path == "" {
 		if err := os.MkdirAll("db", 0755); err != nil {
 			return nil, fmt.Errorf("failed to create db directory: %w", err)
 		}
 		path = "db/app.db"
+	} else if dir := parentDir(path); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create db directory: %w", err)
+		}
 	}
-	walEnabled := os.Getenv("DB_WAL") == "true"
+	// glebarez/modernc 使用 _pragma=...，旧的 _journal_mode/_busy_timeout 不会生效。
+	// WAL + busy_timeout 可降低热重载/并发写时的 SQLITE_BUSY，并支持多连接并发读。
+	// 非 WAL 时连接池会强制 MaxOpenConns=1，避免 DELETE 日志模式写锁竞争。
 	journalMode := "DELETE"
-	if walEnabled {
+	if cfg.DBWAL {
 		journalMode = "WAL"
 	}
-	dsn := path + fmt.Sprintf("?_journal_mode=%s&_busy_timeout=5000", journalMode)
+	dsn := fmt.Sprintf(
+		"%s?_pragma=busy_timeout(10000)&_pragma=journal_mode(%s)&_pragma=foreign_keys(1)",
+		path, journalMode,
+	)
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
+		return nil, err
+	}
+	if err := configureDBPool(db, cfg); err != nil {
 		return nil, err
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, err
 	}
-	sqlDB.Exec(fmt.Sprintf("PRAGMA journal_mode=%s", journalMode))
-	if walEnabled {
-		sqlDB.Exec("PRAGMA synchronous=NORMAL")
-	} else {
-		sqlDB.Exec("PRAGMA synchronous=FULL")
+	if _, err := sqlDB.Exec(fmt.Sprintf("PRAGMA journal_mode=%s", journalMode)); err != nil {
+		return nil, fmt.Errorf("set journal_mode=%s: %w", journalMode, err)
 	}
-	sqlDB.Exec("PRAGMA foreign_keys=ON")
+	if _, err := sqlDB.Exec("PRAGMA busy_timeout=10000"); err != nil {
+		return nil, fmt.Errorf("set busy_timeout: %w", err)
+	}
+	if cfg.DBWAL {
+		if _, err := sqlDB.Exec("PRAGMA synchronous=NORMAL"); err != nil {
+			return nil, fmt.Errorf("set synchronous=NORMAL: %w", err)
+		}
+	} else {
+		if _, err := sqlDB.Exec("PRAGMA synchronous=FULL"); err != nil {
+			return nil, fmt.Errorf("set synchronous=FULL: %w", err)
+		}
+	}
+	if _, err := sqlDB.Exec("PRAGMA foreign_keys=ON"); err != nil {
+		return nil, fmt.Errorf("set foreign_keys=ON: %w", err)
+	}
 	return db, nil
 }
 
-func connectMySQL() (*gorm.DB, error) {
-	dsn := os.Getenv("DB_DSN")
+func connectMySQL(cfg *config.Config) (*gorm.DB, error) {
+	dsn := cfg.DBDSN
 	if dsn == "" {
+		user := cfg.DBUser
+		if user == "" {
+			user = "root"
+		}
+		host := cfg.DBHost
+		if host == "" {
+			host = "localhost"
+		}
+		port := cfg.DBPort
+		if port == "" {
+			port = "3306"
+		}
 		dsn = fmt.Sprintf(
 			"%s:%s@tcp(%s:%s)/myapp?charset=utf8mb4&parseTime=True&loc=Local",
-			getEnv("DB_USER", "root"),
-			getEnv("DB_PASSWORD", ""),
-			getEnv("DB_HOST", "localhost"),
-			getEnv("DB_PORT", "3306"),
+			user, cfg.DBPassword, host, port,
 		)
 	}
-	return gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, err
+	}
+	if err := configureDBPool(db, cfg); err != nil {
+		return nil, err
+	}
+	return db, nil
 }
 
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+// 连接池写死在代码内，不提供环境变量覆盖。
+// SQLite 非 WAL：单连接；WAL：小连接池支持并发读。
+// PostgreSQL/MySQL：固定生产向默认值。
+const (
+	sqliteWALMaxOpenConns = 4
+	sqliteWALMaxIdleConns = 4
+
+	rdbmsMaxOpenConns = 25
+	rdbmsMaxIdleConns = 10
+)
+
+var (
+	rdbmsConnMaxLifetime  = 30 * time.Minute
+	rdbmsConnMaxIdleTime = 5 * time.Minute
+)
+
+type dbPoolConfig struct {
+	maxOpenConns    int
+	maxIdleConns    int
+	connMaxLifetime  time.Duration
+	connMaxIdleTime time.Duration
+}
+
+func dbPoolFor(cfg *config.Config) dbPoolConfig {
+	if cfg != nil && cfg.DBType == string(SQLite) {
+		if cfg.DBWAL {
+			return dbPoolConfig{
+				maxOpenConns: sqliteWALMaxOpenConns,
+				maxIdleConns: sqliteWALMaxIdleConns,
+			}
+		}
+		return dbPoolConfig{maxOpenConns: 1, maxIdleConns: 1}
 	}
-	return defaultValue
+	return dbPoolConfig{
+		maxOpenConns:    rdbmsMaxOpenConns,
+		maxIdleConns:    rdbmsMaxIdleConns,
+		connMaxLifetime:  rdbmsConnMaxLifetime,
+		connMaxIdleTime: rdbmsConnMaxIdleTime,
+	}
+}
+
+func configureDBPool(db *gorm.DB, cfg *config.Config) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+	applyDBPool(sqlDB, dbPoolFor(cfg))
+	return nil
+}
+
+func applyDBPool(sqlDB *sql.DB, pool dbPoolConfig) {
+	sqlDB.SetMaxOpenConns(pool.maxOpenConns)
+	sqlDB.SetMaxIdleConns(pool.maxIdleConns)
+	sqlDB.SetConnMaxLifetime(pool.connMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(pool.connMaxIdleTime)
+}
+
+func parentDir(path string) string {
+	for i := len(path) - 1; i >= 0; i-- {
+		if path[i] == '/' || path[i] == '\\' {
+			return path[:i]
+		}
+	}
+	return ""
+}
+
+// migrateStorageConfigSchema 修复 storage_configs 上不安全的 GORM default。
+// 旧模型把 allowed_types / path_prefix 写成 gorm default，逗号与斜杠会被
+// glebarez migrator 截断，生成非法 CREATE TABLE ...__temp SQL 并 panic。
+// 这里在 AutoMigrate 前把表重建为无危险 default 的干净结构，并保留已有数据。
+func migrateStorageConfigSchema(db *gorm.DB) error {
+	if !db.Migrator().HasTable("storage_configs") {
+		return nil
+	}
+
+	var ddl string
+	if err := db.Raw(
+		"SELECT sql FROM sqlite_master WHERE type = ? AND name = ?",
+		"table", "storage_configs",
+	).Scan(&ddl).Error; err != nil || ddl == "" {
+		// 非 SQLite 或无法读取 sqlite_master：跳过，交给 AutoMigrate。
+		return nil
+	}
+
+	// 旧 default 或非 gorm 风格 DDL（无反引号列名）都会让 glebarez migrator 解析失败。
+	needsRebuild := strings.Contains(ddl, "image/jpeg,image/png") ||
+		strings.Contains(ddl, `DEFAULT "uploads/"`) ||
+		strings.Contains(ddl, "DEFAULT 'uploads/'") ||
+		strings.Contains(ddl, "allowed_types text DEFAULT") ||
+		strings.Contains(ddl, "`allowed_types` text DEFAULT") ||
+		!strings.Contains(ddl, "`provider_type`")
+	if !needsRebuild {
+		return nil
+	}
+
+	tx := db.Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	// 使用 glebarez/gORM 常见的反引号单行 DDL，避免 migrator 解析多行/无引号列名失败。
+	if err := tx.Exec("CREATE TABLE `storage_configs__rebuild` (`id` integer PRIMARY KEY AUTOINCREMENT,`provider_type` text,`endpoint` text,`bucket` text,`region` text,`access_key` text,`secret_key` text,`public_base_url` text,`path_prefix` text,`max_file_size` integer,`allowed_types` text,`created_at` datetime,`updated_at` datetime)").Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("migrate storage_configs schema: create rebuild table: %w", err)
+	}
+	if err := tx.Exec(`INSERT INTO storage_configs__rebuild (
+	id, provider_type, endpoint, bucket, region, access_key, secret_key,
+	public_base_url, path_prefix, max_file_size, allowed_types, created_at, updated_at
+)
+SELECT
+	id, provider_type, endpoint, bucket, region, access_key, secret_key,
+	public_base_url, path_prefix, max_file_size, allowed_types, created_at, updated_at
+FROM storage_configs`).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("migrate storage_configs schema: copy data: %w", err)
+	}
+	if err := tx.Exec(`DROP TABLE storage_configs`).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("migrate storage_configs schema: drop old table: %w", err)
+	}
+	if err := tx.Exec(`ALTER TABLE storage_configs__rebuild RENAME TO storage_configs`).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("migrate storage_configs schema: rename rebuild table: %w", err)
+	}
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("migrate storage_configs schema: commit: %w", err)
+	}
+	return nil
 }
 
 // migrateOldSFUConfig handles migration from the old single-row sfu_configs

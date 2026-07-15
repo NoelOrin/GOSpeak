@@ -3,7 +3,9 @@ import type { VoicePhase } from "@/components/room/session/voiceSessionTypes";
 import {
 	playJoinSound,
 	playLeaveSound,
+	setNotificationSoundEnabled,
 } from "@/handler_audio/notificationSounds";
+import AudioDeviceStore from "@/stores/audioDeviceStore";
 import { socketStore } from "@/stores/socketStore";
 import userStore from "@/stores/userStore";
 
@@ -14,6 +16,11 @@ import userStore from "@/stores/userStore";
  * 音效实现留在 handler_audio/notificationSounds，SFUClient 只负责媒体会话生命周期。
  */
 export function useRoomSounds(phase: () => VoicePhase) {
+	// 同步设置页开关
+	createEffect(() => {
+		setNotificationSoundEnabled(AudioDeviceStore.state.notificationSounds);
+	});
+
 	onMount(() => {
 		const dispose = socketStore.onPresence((event) => {
 			const current = socketStore.selectedRoomInfo()?.name;

@@ -19,12 +19,17 @@ export default store;
 ## Stores
 
 ### socketStore.ts
-Socket.IO 连接与房间状态管理。
-- 连接/断开 Socket.IO
-- 房间 CRUD（创建/加入/离开/列表）
-- 成员列表同步（`members: MemberInfo[]`）
-- 选中房间状态（`selectedRoomInfo`）
-- 事件常量 `EVENTS`（与后端 `signal/events.go` 一致）
+实时信令编排 facade（不是所有逻辑的容器）。
+
+内部组合：
+- `socket/client.ts`：transport
+- `socket/tabLock.ts`：单标签页独占
+- `socket/roomState.ts`：房间/成员纯状态变换
+- `socket/mediasoupSignal.ts`：MediaSoup 信令
+- `socket/providerReload.ts`：SFU 热切换刷新
+- `socket/types.ts`：领域类型
+
+对外仍导出 `socketStore` 单例与类型，调用方默认继续从 `@/stores/socketStore` 导入。
 
 ### userStore.ts
 当前用户信息（登录状态、用户名等）。

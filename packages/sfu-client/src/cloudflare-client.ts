@@ -453,12 +453,16 @@ export class CloudflareSFUClient implements SFUClient {
 	}
 
 	private async createLocalAudioTrack(): Promise<MediaStreamTrack> {
-		const stream = await navigator.mediaDevices.getUserMedia({
-			audio: {
+		const audioConstraints: MediaTrackConstraints = {
 				echoCancellation: this.options.audioCapture?.echoCancellation ?? true,
 				noiseSuppression: this.options.audioCapture?.noiseSuppression ?? true,
 				autoGainControl: this.options.audioCapture?.autoGainControl ?? true,
-			},
+			};
+		if (this.options.audioCapture?.deviceId) {
+			audioConstraints.deviceId = { exact: this.options.audioCapture.deviceId };
+		}
+		const stream = await navigator.mediaDevices.getUserMedia({
+			audio: audioConstraints,
 			video: false,
 		});
 		const track = stream.getAudioTracks()[0];

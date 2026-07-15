@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
-	_ "github.com/caarlos0/env/v9"
-	"github.com/sirupsen/logrus"
-	"GOSpeak/cmd"
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"GOSpeak/cmd"
+	"GOSpeak/internal/logger"
 )
 
 // @title           GoRTC API
@@ -34,13 +34,14 @@ func init() {
 	if ok {
 		dir := filepath.Dir(file)
 		if err := os.Chdir(dir); err != nil {
-			logrus.Warnf("failed to chdir to %s: %v", dir, err)
+			logger.Warnf("failed to chdir to %s: %v", dir, err)
 		}
 	}
 }
 
 func main() {
-	logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
+	// 完整配置驱动初始化在 server 启动时完成；此处仅保证入口可用
+	_ = logger.Init(logger.Options{Level: "info", Format: "text", Output: "stdout"})
 
 	if err := cmd.RootCmd.Execute(); err != nil {
 		_, err := fmt.Fprintln(os.Stderr, err)

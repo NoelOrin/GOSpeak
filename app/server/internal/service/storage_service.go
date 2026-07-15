@@ -27,6 +27,22 @@ type UpdateStorageConfigRequest struct {
 	AllowedTypes  string `json:"allowed_types"`
 }
 
+// PublicStorageConfig 管理后台存储配置视图：密钥不回显明文。
+type PublicStorageConfig struct {
+	ProviderType  string `json:"provider_type"`
+	Endpoint      string `json:"endpoint"`
+	Bucket        string `json:"bucket"`
+	Region        string `json:"region"`
+	AccessKey     string `json:"access_key"`
+	AccessKeySet  bool   `json:"access_key_set"`
+	SecretKey     string `json:"secret_key"`
+	SecretKeySet  bool   `json:"secret_key_set"`
+	PublicBaseURL string `json:"public_base_url"`
+	PathPrefix    string `json:"path_prefix"`
+	MaxFileSize   int    `json:"max_file_size"`
+	AllowedTypes  string `json:"allowed_types"`
+}
+
 // StorageService 存储服务，管理存储配置和 provider 生命周期
 type StorageService struct {
 	repo     *repository.StorageConfigRepository
@@ -71,12 +87,8 @@ func (s *StorageService) UpdateConfig(cfg model.StorageConfig) error {
 	// 如果 access_key/secret_key 为空，保留原值
 	existing, err := s.repo.GetConfig()
 	if err == nil && existing != nil {
-		if cfg.AccessKey == "" {
-			cfg.AccessKey = existing.AccessKey
-		}
-		if cfg.SecretKey == "" {
-			cfg.SecretKey = existing.SecretKey
-		}
+		cfg.AccessKey = pkg.KeepSecret(cfg.AccessKey, existing.AccessKey)
+		cfg.SecretKey = pkg.KeepSecret(cfg.SecretKey, existing.SecretKey)
 	}
 
 	if err := s.repo.SaveConfig(&cfg); err != nil {
@@ -90,7 +102,7 @@ func (s *StorageService) UpdateConfig(cfg model.StorageConfig) error {
 }
 
 // UpdateConfigFromDTO updates storage configuration from a handler-level DTO.
-func (s *StorageService) UpdateConfigFromDTO(req UpdateStorageConfigRequest) error {
+func (s *StorageService) UpdateConfigFromDTO(req UpdateStorageConfigRequest) (*PublicStorageConfig, error) {
 	cfg := model.StorageConfig{
 		ProviderType:  req.ProviderType,
 		Endpoint:      req.Endpoint,
@@ -103,7 +115,14 @@ func (s *StorageService) UpdateConfigFromDTO(req UpdateStorageConfigRequest) err
 		MaxFileSize:   req.MaxFileSize,
 		AllowedTypes:  req.AllowedTypes,
 	}
-	return s.UpdateConfig(cfg)
+	if err := s.UpdateConfig(cfg); err != nil {
+		return nil, err
+	}
+	saved, err := s.GetConfig()
+	if err != nil {
+		return nil, err
+	}
+	return ToPublicStorageConfig(saved), nil
 }
 
 // ReloadProvider 重建存储 provider
@@ -182,5 +201,26 @@ func (s *StorageService) getEnvFallbackConfig() *model.StorageConfig {
 		PathPrefix:    s.cfg.StoragePathPrefix,
 		MaxFileSize:   5,
 		AllowedTypes:  "image/jpeg,image/png,image/gif,image/webp",
+	}
+}
+
+// ToPublicStorageConfig 转为管理后台安全视图。
+func ToPublicStorageConfig(cfg *model.StorageConfig) *PublicStorageConfig {
+	if cfg == nil {
+		return nil
+	}
+	return &PublicStorageConfig{
+		ProviderType:  cfg.ProviderType,
+		Endpoint:      cfg.Endpoint,
+		Bucket:        cfg.Bucket,
+		Region:        cfg.Region,
+		AccessKey:     "",
+		AccessKeySet:  cfg.AccessKey != "",
+		SecretKey:     "",
+		SecretKeySet:  cfg.SecretKey != "",
+		PublicBaseURL: cfg.PublicBaseURL,
+		PathPrefix:    cfg.PathPrefix,
+		MaxFileSize:   cfg.MaxFileSize,
+		AllowedTypes:  cfg.AllowedTypes,
 	}
 }

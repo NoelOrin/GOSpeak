@@ -56,6 +56,7 @@ app/server/
 │   ├── permcode/           # Permission code constants
 │   ├── signal/             # Socket.IO signaling hub
 │   ├── redis/              # Optional Redis client (blacklist, JWT key rotation)
+│   ├── logger/             # Unified logrus wrapper (level/format/output + gin middleware)
 │   └── pkg/                # Shared utilities
 │       ├── errors.go       # Business error codes + AppError
 │       ├── response.go     # Unified JSON response
@@ -282,7 +283,7 @@ if err := c.ShouldBindJSON(&req); err != nil {
 
 ## Configuration
 
-All configuration is injected via environment variables (`.env.dev` for dev, `deploy/env/app.*.env` for Docker). `config.Load()` reads them with the defaults below.
+All configuration is injected via environment variables (`.env.dev` for dev, `deploy/env/app.*.env` for Docker). Startup loads env files without overriding process env (`process > .env.<env> > .env > defaults`), then `config.Load()` parses into a typed `Config` via `caarlos0/env`, normalizes aliases (e.g. `PostgresSQL` → `PostgreSQL`), validates, and exposes `config.Current()` for packages that cannot take an explicit dependency injection.
 
 ### Database
 
@@ -293,9 +294,9 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | `DB_PORT` | `5432` | DB port |
 | `DB_USER` | — | DB user |
 | `DB_PASSWORD` | — | DB password |
-| `DB_PATH` | `app.db` | SQLite file path |
+| `DB_PATH` | `db/app.db` | SQLite file path |
 | `DB_DSN` | — | Custom DSN (overrides the field-by-field settings) |
-| `DB_WAL` | `false` | SQLite WAL mode |
+| `DB_WAL` | `false` | SQLite WAL mode（并发读建议开启）|
 
 ### JWT
 
@@ -360,9 +361,20 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SERVER_PORT` | `8098` | HTTP listen port |
+| `SERVER_PORT` | `8998` | HTTP listen port |
 | `STATIC_DIR` | — | Frontend static dir (SPA hosting in prod) |
 | `GIN_MODE` | `debug` | Gin mode (`release` in prod) |
+
+### Logging
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_LEVEL` | dev=`debug` / prod=`info` | `trace` / `debug` / `info` / `warn` / `error` |
+| `LOG_FORMAT` | dev=`text` / prod=`json` | `text` / `json` |
+| `LOG_OUTPUT` | `stdout` | `stdout` / `stderr` / `file` / `both` |
+| `LOG_FILE` | `logs/app.log` | path when output is `file`/`both` |
+| `LOG_CALLER` | `false` | print caller file:line |
+
 
 - Auto-migration is enabled — all models are synced on startup in `repository/db.go`.
 
@@ -571,6 +583,7 @@ All middleware is in `internal/middleware/auth.go`.
 Access control is **permission-based**, layered on top of roles.
 
 - **Roles** (`roles` table): seeded with `admin`, `user`, `ban`. The `ban` role is intercepted by `BanCheck()` and always gets `FORBIDDEN`.
+- **Default admin account**: first boot seeds user `admin` / `admin123` when missing (`service.DefaultAdminPassword`). Login returns `need_change_password=true` while still on the default password; change it immediately in production.
 - **Permissions** (`permissions` table): each row holds a `permcode` constant such as `user:read`, `room:create`, `sfu:manage`, `mute:manage`, `bot:manage`, `storage:delete`, `oauth:manage`, `email_config:read`, `role:manage`, `signal:kick`.
 - **Role → Permission mapping** (`role_permissions` table): links a role name to permission IDs. `RequirePermission` resolves a user's effective permissions from their `role`.
 - **Bot tokens** (`bot_tokens`): carry an explicit `permissions` list in the JWT (`Claims.Permissions`). Bot-scoped permissions are whitelisted via `model.BotScopedPermissions` so bots cannot reach platform-admin surfaces.

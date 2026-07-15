@@ -21,19 +21,7 @@ func (h *EmailConfigHandler) Get(c *gin.Context) {
 		pkg.HandleError(c, err)
 		return
 	}
-	pkg.Success(c, gin.H{
-		"enabled":             cfg.Enabled,
-		"smtp_host":           cfg.SMTPHost,
-		"smtp_port":           cfg.SMTPPort,
-		"smtp_username":       cfg.SMTPUsername,
-		"smtp_password":       "",
-		"smtp_from":           cfg.SMTPFrom,
-		"smtp_from_name":      cfg.SMTPFromName,
-		"email_code_ttl":      cfg.EmailCodeTTL,
-		"email_send_cooldown": cfg.EmailSendCooldown,
-		"email_code_secret":   "",
-		"available":           h.svc.IsVerificationAvailable(),
-	})
+	pkg.Success(c, service.ToPublicEmailConfig(cfg, h.svc.IsVerificationAvailable()))
 }
 
 func (h *EmailConfigHandler) Update(c *gin.Context) {
@@ -47,17 +35,5 @@ func (h *EmailConfigHandler) Update(c *gin.Context) {
 		pkg.HandleError(c, err)
 		return
 	}
-	pkg.Success(c, gin.H{
-		"enabled":             cfg.Enabled,
-		"smtp_host":           cfg.SMTPHost,
-		"smtp_port":           cfg.SMTPPort,
-		"smtp_username":       cfg.SMTPUsername,
-		"smtp_password":       "",
-		"smtp_from":           cfg.SMTPFrom,
-		"smtp_from_name":      cfg.SMTPFromName,
-		"email_code_ttl":      cfg.EmailCodeTTL,
-		"email_send_cooldown": cfg.EmailSendCooldown,
-		"email_code_secret":   "",
-		"available":           h.svc.IsVerificationAvailable(),
-	})
+	pkg.Success(c, service.ToPublicEmailConfig(cfg, h.svc.IsVerificationAvailable()))
 }

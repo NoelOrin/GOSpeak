@@ -76,6 +76,7 @@ export class AgoraSFUClient implements SFUClient {
 		await this.client.join(resolvedAppId, channelName, token, identity);
 		this.hasJoined = true;
 		this.localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack({
+			microphoneId: this.options.audioCapture?.deviceId || undefined,
 			AEC: this.options.audioCapture?.echoCancellation ?? true,
 			ANS: this.options.audioCapture?.noiseSuppression ?? true,
 			AGC: this.options.audioCapture?.autoGainControl ?? true,

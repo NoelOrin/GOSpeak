@@ -23,6 +23,15 @@ func (r *OAuthProviderRepository) GetByName(name string) (*model.OAuthProvider, 
 	return &provider, nil
 }
 
+func (r *OAuthProviderRepository) GetByID(id uint) (*model.OAuthProvider, error) {
+	var provider model.OAuthProvider
+	err := r.db.First(&provider, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &provider, nil
+}
+
 func (r *OAuthProviderRepository) List() ([]model.OAuthProvider, error) {
 	var providers []model.OAuthProvider
 	err := r.db.Find(&providers).Error

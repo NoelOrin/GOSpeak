@@ -7,9 +7,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"os"
 
-	"github.com/sirupsen/logrus"
+	"GOSpeak/internal/config"
+	"GOSpeak/internal/logger"
 )
 
 // devFallbackKey 仅用于开发环境，绝不可用于生产
@@ -17,16 +17,20 @@ const devFallbackKey = "00000000000000000000000000000000000000000000000000000000
 
 // getEncryptKey 获取加密密钥（32字节 hex 编码 → 32字节）
 func getEncryptKey() []byte {
-	hexKey := os.Getenv("STORAGE_ENCRYPT_KEY")
-	appEnv := os.Getenv("APP_ENV")
-	isDev := appEnv == "development" || appEnv == "dev"
+	cfg := config.Current()
+	hexKey := ""
+	isDev := true
+	if cfg != nil {
+		hexKey = cfg.StorageEncryptKey
+		isDev = !cfg.IsProduction()
+	}
 
 	if hexKey == "" {
 		if isDev {
-			logrus.Warn("[Storage] ⚠️ STORAGE_ENCRYPT_KEY not set, using INSECURE dev fallback key — NEVER use in production")
+			logger.Warn("[Storage] ⚠️ STORAGE_ENCRYPT_KEY not set, using INSECURE dev fallback key — NEVER use in production")
 			hexKey = devFallbackKey
 		} else {
-			logrus.Fatal("[Storage] STORAGE_ENCRYPT_KEY is required in production. Set a 64-char hex string (32 bytes) and restart.")
+			logger.Fatal("[Storage] STORAGE_ENCRYPT_KEY is required in production. Set a 64-char hex string (32 bytes) and restart.")
 		}
 	}
 
@@ -34,9 +38,9 @@ func getEncryptKey() []byte {
 	if err != nil || len(key) != 32 {
 		if isDev && hexKey == devFallbackKey {
 			// dev fallback key is valid by definition, any error is a code bug
-			logrus.Fatal("[Storage] dev fallback key is invalid, this is a code bug")
+			logger.Fatal("[Storage] dev fallback key is invalid, this is a code bug")
 		}
-		logrus.Fatal("[Storage] STORAGE_ENCRYPT_KEY must be a 64-char hex string (32 bytes). Got invalid key.")
+		logger.Fatal("[Storage] STORAGE_ENCRYPT_KEY must be a 64-char hex string (32 bytes). Got invalid key.")
 	}
 	return key
 }
@@ -66,7 +70,7 @@ func EncryptSecret(plaintext string) (string, error) {
 	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
-// DecryptSecret 解密 base64 编码的 AES-256-GCM 密文
+// DecryptSecret 解密 base64 编码的 AES-GCM 密文
 func DecryptSecret(encoded string) (string, error) {
 	if encoded == "" {
 		return "", nil

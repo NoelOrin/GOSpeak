@@ -194,3 +194,25 @@ docker compose -f deploy/docker-compose.yml --profile srs --profile app down
 # 清数据 volume:
 # docker compose -f deploy/docker-compose.yml --profile srs --profile app down -v
 ```
+
+### NATS 信号事件总线
+
+- **默认**：`NATS_URL` 为空时，gospeak 进程内嵌 nats-server（默认随机本机端口；可用 `NATS_EMBEDDED_PORT` 固定，如 `4222`），单二进制零依赖。
+- **外部优先**：`NATS_URL` 非空时先探测可用性（`NATS_CONNECT_TIMEOUT`，默认 2s）。
+  - 探测成功 → 连外部，不启内嵌（`eventbus_mode=external`）
+  - 探测失败 → 打 Warn，回退内嵌（`eventbus_mode=embedded`，`eventbus_fallback_from_external=true`），进程不退出
+
+- **阶段二（状态共享）**：房间 membership/stream 存储优先级 **`STATE_STORE=auto` → redis → nats → none**。
+  - `redis`：已有 Redis 时优先（`REDIS_HOST`），NATS 只做事件总线。
+  - `nats`：JetStream KV（`{prefix}_membership` / `{prefix}_stream`）；外部 NATS 需 `-js`。
+  - `none`：仅本机内存。
+  成员变更仍经 `state:room-changed` 内部事件通知对端从存储重算列表。 成员变更后发布内部事件 `state:room-changed`，对端从 KV 重算并**本机**推送 `room:updated` / `room:list:result`（不再跨实例直接 fanout 带人数快照）。
+- **多副本**：所有实例必须实际连上**同一个**外部 NATS。若探测失败回退内嵌，则跨实例 fanout 失效（各嵌各的）。
+- **监控**：SSE health 含 `eventbus_mode`、`eventbus_connected`、`eventbus_fallback_from_external`。
+- **启用外部 NATS 示例**：
+
+```bash
+NATS_URL=nats://nats:4222
+docker compose --profile nats --profile app up -d
+```
+

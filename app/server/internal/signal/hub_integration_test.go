@@ -13,7 +13,7 @@ func TestRoomLifecycle_CreateJoinLeave(t *testing.T) {
 	hub.server = server
 
 	// Step 1: Create room
-	creator := newMockConn("creator-socket")
+	creator := newAuthedMockConn("creator-socket", "creator")
 	hub.OnRoomCreate(creator, `{"room":"meeting-room"}`)
 
 	if _, exists := hub.rooms["meeting-room"]; !exists {
@@ -24,7 +24,7 @@ func TestRoomLifecycle_CreateJoinLeave(t *testing.T) {
 	}
 
 	// Step 2: User 1 signaling ready + SFU confirmed
-	user1 := newMockConn("socket-user1")
+	user1 := newAuthedMockConn("socket-user1", "alice")
 	ack1, err := hub.OnRoomJoin(user1, `{"room":"meeting-room","identity":"alice"}`)
 	if err != nil {
 		t.Fatalf("Step 2: OnRoomJoin unexpected error: %v", err)
@@ -56,7 +56,7 @@ func TestRoomLifecycle_CreateJoinLeave(t *testing.T) {
 	}
 
 	// Step 3: User 2 signaling ready + SFU confirmed
-	user2 := newMockConn("socket-user2")
+	user2 := newAuthedMockConn("socket-user2", "bob")
 	ack2, err := hub.OnRoomJoin(user2, `{"room":"meeting-room","identity":"bob"}`)
 	if err != nil {
 		t.Fatalf("Step 3: OnRoomJoin unexpected error: %v", err)
@@ -88,7 +88,7 @@ func TestRoomLifecycle_CreateJoinLeave(t *testing.T) {
 	}
 
 	// Step 4: List rooms
-	lister := newMockConn("socket-lister")
+	lister := newAuthedMockConn("socket-lister", "lister")
 	hub.OnRoomList(lister)
 
 	emittedList, ok := lister.emitted[EventRoomListResult].([]interface{})
@@ -129,7 +129,7 @@ func TestRoomLifecycle_CreateJoinLeave(t *testing.T) {
 	}
 
 	// Step 7: Verify no rooms remain
-	finalList := newMockConn("socket-final")
+	finalList := newAuthedMockConn("socket-final", "final")
 	hub.OnRoomList(finalList)
 
 	emittedFinal, _ := finalList.emitted[EventRoomListResult].([]interface{})
@@ -147,29 +147,29 @@ func TestRoomLifecycle_MultipleRooms(t *testing.T) {
 	hub.server = server
 
 	for _, roomName := range []string{"room-1", "room-2", "room-3"} {
-		creator := newMockConn("creator-" + roomName)
+		creator := newAuthedMockConn("creator-"+roomName, "creator-"+roomName)
 		hub.OnRoomCreate(creator, `{"room":"`+roomName+`"}`)
 	}
 
-	user1 := newMockConn("socket-1")
+	user1 := newAuthedMockConn("socket-1", "user1")
 	if _, err := hub.OnRoomJoin(user1, `{"room":"room-1","identity":"user1"}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	hub.OnRoomJoinSFU(user1, `{"room":"room-1","identity":"user1"}`)
 
-	user2 := newMockConn("socket-2")
+	user2 := newAuthedMockConn("socket-2", "user2")
 	if _, err := hub.OnRoomJoin(user2, `{"room":"room-2","identity":"user2"}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	hub.OnRoomJoinSFU(user2, `{"room":"room-2","identity":"user2"}`)
 
-	user3 := newMockConn("socket-3")
+	user3 := newAuthedMockConn("socket-3", "user3")
 	if _, err := hub.OnRoomJoin(user3, `{"room":"room-1","identity":"user3"}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	hub.OnRoomJoinSFU(user3, `{"room":"room-1","identity":"user3"}`)
 
-	user4 := newMockConn("socket-4")
+	user4 := newAuthedMockConn("socket-4", "user4")
 	if _, err := hub.OnRoomJoin(user4, `{"room":"room-3","identity":"user4"}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestRoomLifecycle_RejoinAfterLeave(t *testing.T) {
 	server := newMockServer()
 	hub.server = server
 
-	user := newMockConn("socket-1")
+	user := newAuthedMockConn("socket-1", "alice")
 
 	// First join + SFU confirm
 	if _, err := hub.OnRoomJoin(user, `{"room":"test-room","identity":"alice"}`); err != nil {
@@ -261,7 +261,7 @@ func TestRoomLifecycle_SameUserMultipleRooms(t *testing.T) {
 	server := newMockServer()
 	hub.server = server
 
-	user := newMockConn("socket-1")
+	user := newAuthedMockConn("socket-1", "alice")
 
 	if _, err := hub.OnRoomJoin(user, `{"room":"room-1","identity":"alice"}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -303,7 +303,7 @@ func TestRoomLifecycle_CreatedAtTimestamp(t *testing.T) {
 	server := newMockServer()
 	hub.server = server
 
-	creator := newMockConn("creator")
+	creator := newAuthedMockConn("creator", "creator")
 	before := time.Now()
 	hub.OnRoomCreate(creator, `{"room":"test-room"}`)
 	after := time.Now()

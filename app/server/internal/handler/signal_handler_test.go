@@ -61,6 +61,15 @@ func setupRouter(sfu *mockSFU) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	h := NewSignalHandler(service.NewSFUService(sfu, nil))
+	// 模拟 JWTAuth 注入 username
+	r.Use(func(c *gin.Context) {
+		if c.GetHeader("X-Test-User") != "" {
+			c.Set("username", c.GetHeader("X-Test-User"))
+		} else {
+			c.Set("username", "user-1")
+		}
+		c.Next()
+	})
 	r.POST("/token", h.GetJoinToken)
 	r.POST("/signal", h.Signal)
 	r.GET("/rooms", h.ListRooms)
@@ -139,6 +148,7 @@ func TestGetJoinToken_MissingRoom(t *testing.T) {
 func TestGetJoinToken_MissingIdentity(t *testing.T) {
 	r := setupRouter(&mockSFU{})
 
+	// identity 可省略：服务端用 JWT username 覆盖
 	body := `{"room":"test-room"}`
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/token", strings.NewReader(body))
@@ -146,8 +156,12 @@ func TestGetJoinToken_MissingIdentity(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	resp := parseResp(t, w.Body.String())
-	if resp.Code != pkg.INVALID_PARAMS {
-		t.Fatalf("expected INVALID_PARAMS (2001), got %d", resp.Code)
+	if resp.Code != pkg.SUCCESS {
+		t.Fatalf("expected SUCCESS, got %d", resp.Code)
+	}
+	data := resp.Data.(map[string]interface{})
+	if data["identity"] != "user-1" {
+		t.Fatalf("expected identity from JWT, got %v", data["identity"])
 	}
 }
 

@@ -7,7 +7,7 @@ import { createMemo } from "solid-js";
 import { showToast } from "solid-notifications";
 import CreateRoomModal from "@/components/modal/createRoomModal";
 import { socketStore } from "@/stores/socketStore";
-import userStore from "@/stores/userStore";
+import { hasPermission } from "@/utils/permissions";
 
 interface QuickActionsProps {
 	compact?: boolean;
@@ -15,7 +15,7 @@ interface QuickActionsProps {
 
 const QuickActions = (props: QuickActionsProps) => {
 	const navigate = useNavigate();
-	const isAdmin = createMemo(() => userStore.user()?.role === "admin");
+	const canManage = createMemo(() => hasPermission("role:manage"));
 	let createRoomModalRef!: HTMLDialogElement;
 
 	const handleCreateRoom = () => {
@@ -92,7 +92,7 @@ const QuickActions = (props: QuickActionsProps) => {
 						</div>
 						<ArrowRight size={20} />
 					</button>
-					{isAdmin() ? (
+					{canManage() ? (
 						<button
 							type="button"
 							class={`btn justify-between rounded-lg border-0 bg-base-200 px-4 text-left normal-case hover:bg-base-300 ${props.compact ? "h-18" : "h-24"}`}

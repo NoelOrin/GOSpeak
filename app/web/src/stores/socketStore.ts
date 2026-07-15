@@ -1,67 +1,63 @@
+// 1. imports + re-exports + module helpers
 import type { SFUProvider } from "@gospeak/sfu-client/types";
 import { createMemo, createRoot, createSignal } from "solid-js";
 import { showToast } from "solid-notifications";
+import { preloadSfuClient } from "@/components/room/services/loadSfuClient";
+// NOTE: store -> audio 写入是已知耦合；房间 UI 直接读 speakingStore。
+// 若后续要彻底解耦，改为 onActiveSpeakers 订阅，由 useRoomAudioBridge/voiceChat 写入。
 import { setSpeakingIdentities } from "@/handler_audio/speakingStore";
 import { createSocketClient } from "@/socket/client";
 import { EVENTS } from "@/socket/events";
+import { createMediasoupSignal } from "@/socket/mediasoupSignal";
+import { createProviderReloadHandler } from "@/socket/providerReload";
+import {
+	addCreatedRoom,
+	applyMemberJoinedShell,
+	applyMemberLeft,
+	applyMemberUpdated,
+	mergeRoomUpdated,
+	upsertRoomMembersFromAck,
+} from "@/socket/roomState";
+import { createTabLock } from "@/socket/tabLock";
 import userStore from "@/stores/userStore";
 
 export { EVENTS } from "@/socket/events";
 
-export interface MemberInfo {
-	id: string;
-	identity: string;
-	name: string;
-	displayName: string;
-	avatar: string;
-	isMuted: boolean;
-	isMicMuted: boolean;
-	joinedAt: number;
-	stream?: string;
-}
+// 2. tabLock / providerReload helpers
+const tabLock = createTabLock({
+	channelName: "gospeak_socket_tab",
+	tabId:
+		typeof crypto !== "undefined" && "randomUUID" in crypto
+			? crypto.randomUUID()
+			: `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+	probeTimeoutMs: 150,
+});
 
-export interface RoomInfo {
-	id: number;
-	uuid: string;
-	name: string;
-	hasPassword: boolean;
-	description?: string;
-	limit: number;
-	audioOnly?: boolean;
-	allowAudience?: boolean;
-	members: MemberInfo[];
-	count: number;
-	createdAt: number;
-	/** @internal 临时传递密码，不从服务器获取 */
-	_password?: string;
-}
+const handleProviderChanged = createProviderReloadHandler({
+	showToast,
+	preloadSfuClient,
+});
 
-export interface MuteEvent {
-	user_id: number;
-	permanent: boolean;
-	expires_at: string | null;
-	reason: string;
-}
+export type {
+	ActivityEvent,
+	MemberInfo,
+	MuteEvent,
+	RoomInfo,
+	RoomPresenceEvent,
+	UnmuteEvent,
+} from "@/socket/types";
 
-export interface UnmuteEvent {
-	user_id: number;
-}
-
-export interface ActivityEvent {
-	type: "member_joined" | "member_left" | "room_joined" | "room_left";
-	room: string;
-	identity?: string;
-	timestamp: number;
-}
-
-export interface RoomPresenceEvent {
-	type: "member_joined" | "member_left";
-	room: string;
-	identity: string;
-	timestamp: number;
-}
+import type {
+	ActivityEvent,
+	MemberInfo,
+	MuteEvent,
+	RoomInfo,
+	RoomPresenceEvent,
+	UnmuteEvent,
+} from "@/socket/types";
 
 export const socketStore = createRoot(() => {
+	// 3. adapter + signals
 	const adapter = createSocketClient();
 
 	const [connected, setConnected] = createSignal(false);
@@ -85,8 +81,7 @@ export const socketStore = createRoot(() => {
 	} | null>(null);
 	const [connecting, setConnecting] = createSignal(false);
 
-	const producerReadyListeners = new Set<(info: any) => void>();
-	const producerClosedListeners = new Set<(info: any) => void>();
+	// 4. listener sets (activity/presence/kicked)
 	const activityListeners = new Set<(event: ActivityEvent) => void>();
 	const presenceListeners = new Set<(event: RoomPresenceEvent) => void>();
 	const kickedListeners = new Set<() => void>();
@@ -99,6 +94,7 @@ export const socketStore = createRoot(() => {
 		for (const listener of presenceListeners) listener(event);
 	}
 
+	// 5. lifecycle callbacks (onConnected/onDisconnected/onConnectError)
 	// 生命周期回调：注册一次，每次 connect/disconnect/connect_error 都会触发
 	adapter.onConnected(() => {
 		setConnecting(false);
@@ -119,6 +115,9 @@ export const socketStore = createRoot(() => {
 		console.log("[Socket] disconnected:", reason);
 	});
 
+	// 6. connect / bindServerEvents / disconnect
+	let serverEventsBound = false;
+
 	function connect() {
 		if (adapter.isConnected() || connecting()) return;
 		const token = userStore.accessToken();
@@ -126,10 +125,29 @@ export const socketStore = createRoot(() => {
 			showToast("请先登录", { type: "warning" });
 			return;
 		}
-		const socketUrl = import.meta.env.VITE_SOCKET_URL || "";
+		// 源头禁止多标签页连接：BroadcastChannel 探测，同一浏览器仅允许一个活动标签页持有 socket
 		setConnecting(true);
-		adapter.connect(socketUrl, token);
+		void tabLock.claim().then((ok) => {
+			if (!ok) {
+				setConnecting(false);
+				showToast("已在其他标签页连接，请关闭其他标签页后重试", {
+					type: "error",
+				});
+				return;
+			}
+			if (adapter.isConnected()) {
+				setConnecting(false);
+				return;
+			}
+			const socketUrl = import.meta.env.VITE_SOCKET_URL || "";
+			adapter.connect(socketUrl, token);
+			if (serverEventsBound) return;
+			serverEventsBound = true;
+			bindServerEvents();
+		});
+	}
 
+	function bindServerEvents() {
 		adapter.onServerEvent(
 			EVENTS.ROOM_CREATED,
 			(room: RoomInfo & { error?: string }) => {
@@ -138,10 +156,7 @@ export const socketStore = createRoot(() => {
 					showToast(`创建房间失败: ${room.error}`, { type: "error" });
 					return;
 				}
-				setRooms((prev) => {
-					if (prev.some((r) => r.name === room.name)) return prev;
-					return [...prev, room];
-				});
+				setRooms((prev) => addCreatedRoom(prev, room));
 			},
 		);
 
@@ -151,40 +166,7 @@ export const socketStore = createRoot(() => {
 			// 仅覆盖服务端实际返回的字段（name/hasPassword/members/count/createdAt），
 			// 保留 DB 字段（id/uuid/description/limit/audioOnly/allowAudience）不被零值覆盖。
 			// members 由 rooms[] 派生，无需单独维护。
-			setRooms((prev) => {
-				const idx = prev.findIndex((r) => r.name === room.name);
-				if (idx < 0) {
-					// 列表里还没有时补一条，避免 leave/join 广播丢更新
-					return [
-						...prev,
-						{
-							id: room.id ?? 0,
-							uuid: room.uuid ?? "",
-							name: room.name,
-							hasPassword: room.hasPassword,
-							description: room.description,
-							limit: room.limit ?? 0,
-							audioOnly: room.audioOnly,
-							allowAudience: room.allowAudience,
-							members: room.members ?? [],
-							count: room.count ?? room.members?.length ?? 0,
-							createdAt: room.createdAt ?? Date.now(),
-						},
-					];
-				}
-				return prev.map((r) =>
-					r.name === room.name
-						? {
-								...r,
-								name: room.name,
-								hasPassword: room.hasPassword,
-								members: room.members ?? [],
-								count: room.count ?? room.members?.length ?? 0,
-								createdAt: room.createdAt ?? r.createdAt,
-							}
-						: r,
-				);
-			});
+			setRooms((prev) => mergeRoomUpdated(prev, room));
 		});
 
 		adapter.onServerEvent(
@@ -197,32 +179,7 @@ export const socketStore = createRoot(() => {
 			}) => {
 				console.log("[Socket] member:joined", data.identity);
 				// 即时追加 shell 成员，富化字段由后续 room:updated 覆盖。
-				setRooms((prev) =>
-					prev.map((r) =>
-						r.name === data.room
-							? {
-									...r,
-									count: r.count + 1,
-									members: r.members.some((m) => m.id === data.id)
-										? r.members
-										: [
-												...r.members,
-												{
-													id: data.id,
-													identity: data.identity,
-													name: "",
-													displayName: "",
-													avatar: "",
-													isMuted: false,
-													isMicMuted: false,
-													joinedAt: Date.now(),
-													stream: data.stream,
-												},
-											],
-								}
-							: r,
-					),
-				);
+				setRooms((prev) => applyMemberJoinedShell(prev, data));
 				emitActivity({
 					type: "member_joined",
 					room: data.room,
@@ -242,17 +199,7 @@ export const socketStore = createRoot(() => {
 			EVENTS.MEMBER_LEFT as string,
 			(data: { room: string; identity: string; id: string }) => {
 				console.log("[Socket] member:left", data.identity);
-				setRooms((prev) =>
-					prev.map((r) =>
-						r.name === data.room
-							? {
-									...r,
-									count: Math.max(0, r.count - 1),
-									members: r.members.filter((m) => m.id !== data.id),
-								}
-							: r,
-					),
-				);
+				setRooms((prev) => applyMemberLeft(prev, data));
 				emitActivity({
 					type: "member_left",
 					room: data.room,
@@ -272,20 +219,7 @@ export const socketStore = createRoot(() => {
 			EVENTS.MEMBER_UPDATED,
 			(data: { room: string; identity: string; isMicMuted: boolean }) => {
 				// members 由 rooms[] 派生，仅更新 rooms[] 即可
-				setRooms((prev) =>
-					prev.map((r) =>
-						r.name === data.room
-							? {
-									...r,
-									members: r.members.map((m) =>
-										m.identity === data.identity
-											? { ...m, isMicMuted: data.isMicMuted }
-											: m,
-									),
-								}
-							: r,
-					),
-				);
+				setRooms((prev) => applyMemberUpdated(prev, data));
 			},
 		);
 
@@ -309,17 +243,13 @@ export const socketStore = createRoot(() => {
 			},
 		);
 
-		adapter.onServerEvent(EVENTS.SFU_PRODUCER_READY, (info: any) => {
-			for (const listener of producerReadyListeners) listener(info);
-		});
-
-		adapter.onServerEvent(EVENTS.SFU_PRODUCER_CLOSED, (info: any) => {
-			for (const listener of producerClosedListeners) listener(info);
-		});
+		mediasoupSignal.bindServerEvents();
 
 		// 用户级禁言事件：允许收听，不允许发布本地音轨
+		// 必须按 user_id 过滤，避免全服广播误伤其他客户端
 		adapter.onServerEvent(EVENTS.USER_MUTED, (data: MuteEvent) => {
 			console.log("[Socket] user:muted", data.user_id);
+			if (data.user_id !== userStore.user()?.id) return;
 			showToast(
 				data.permanent
 					? "你已被永久禁言，当前为仅收听模式"
@@ -336,6 +266,7 @@ export const socketStore = createRoot(() => {
 
 		adapter.onServerEvent(EVENTS.USER_UNMUTED, (data: UnmuteEvent) => {
 			console.log("[Socket] user:unmuted", data.user_id);
+			if (data.user_id !== userStore.user()?.id) return;
 			showToast("你的禁言已被解除，可以重新发言", { type: "success" });
 			setSpeechRestricted(false);
 			setSpeechRestrictionInfo(null);
@@ -347,16 +278,36 @@ export const socketStore = createRoot(() => {
 				setSpeakingIdentities(event?.identities ?? []);
 			},
 		);
+
+		// SFU 热切换：强制断连并 0.5s 后刷新；join 中途同样直接刷新
+		adapter.onServerEvent(
+			EVENTS.SFU_PROVIDER_CHANGED,
+			(data: { provider?: string }) => {
+				// 先断 socket，再刷新
+				try {
+					adapter.disconnect();
+				} catch {
+					// ignore
+				}
+				setConnecting(false);
+				setConnected(false);
+				setCurrentRoom(null);
+				setSelectedRoomInfo(null);
+				setActiveSFUProvider(undefined);
+				handleProviderChanged(data?.provider);
+			},
+		);
 	}
 
 	function disconnect() {
-		producerReadyListeners.clear();
-		producerClosedListeners.clear();
+		mediasoupSignal.clearListeners();
 		activityListeners.clear();
 		presenceListeners.clear();
 		kickedListeners.clear();
 		adapter.offAllServerEvents();
+		serverEventsBound = false;
 		adapter.disconnect();
+		tabLock.release();
 		setConnecting(false);
 		setConnected(false);
 		setCurrentRoom(null);
@@ -365,6 +316,7 @@ export const socketStore = createRoot(() => {
 		setActiveSFUProvider(undefined);
 	}
 
+	// 7. room APIs (create/join/leave/list/kick/select)
 	function createRoom(name: string, password?: string) {
 		adapter.emitFireAndForget(EVENTS.ROOM_CREATE, { room: name, password });
 	}
@@ -375,6 +327,11 @@ export const socketStore = createRoot(() => {
 	): Promise<any> {
 		return adapter.emitAck(event, payload);
 	}
+
+	const mediasoupSignal = createMediasoupSignal({
+		emitAck: (event, payload) => signalEmit(event, payload),
+		onServerEvent: (event, cb) => adapter.onServerEvent(event, cb),
+	});
 
 	function clearCurrentRoom() {
 		setCurrentRoom(null);
@@ -432,29 +389,9 @@ export const socketStore = createRoot(() => {
 				// ack 返回完整成员列表，即时 upsert rooms[]（不等 room:updated）
 				if (data.members) {
 					const ackMembers: MemberInfo[] = data.members;
-					setRooms((prev) => {
-						const exists = prev.some((r) => r.name === data.room);
-						if (!exists) {
-							return [
-								...prev,
-								{
-									id: 0,
-									uuid: "",
-									name: data.room,
-									hasPassword: false,
-									limit: 0,
-									members: ackMembers,
-									count: ackMembers.length,
-									createdAt: Date.now(),
-								},
-							];
-						}
-						return prev.map((r) =>
-							r.name === data.room
-								? { ...r, members: ackMembers, count: ackMembers.length }
-								: r,
-						);
-					});
+					setRooms((prev) =>
+						upsertRoomMembersFromAck(prev, data.room, ackMembers),
+					);
 				}
 				emitActivity({
 					type: "room_joined",
@@ -466,12 +403,13 @@ export const socketStore = createRoot(() => {
 			});
 	}
 
+	// 8. mediasoup API forwarding
 	function getRouterCapabilities(room: string) {
-		return signalEmit(EVENTS.SFU_GET_ROUTER_CAPABILITIES, { room });
+		return mediasoupSignal.getRouterCapabilities(room);
 	}
 
 	function createTransport(room: string, direction: "send" | "recv") {
-		return signalEmit(EVENTS.SFU_CREATE_TRANSPORT, { room, direction });
+		return mediasoupSignal.createTransport(room, direction);
 	}
 
 	function connectTransport(
@@ -479,11 +417,7 @@ export const socketStore = createRoot(() => {
 		transportId: string,
 		dtlsParameters: unknown,
 	) {
-		return signalEmit(EVENTS.SFU_CONNECT_TRANSPORT, {
-			room,
-			transportId,
-			dtlsParameters,
-		});
+		return mediasoupSignal.connectTransport(room, transportId, dtlsParameters);
 	}
 
 	function produce(
@@ -493,13 +427,13 @@ export const socketStore = createRoot(() => {
 		rtpParameters: unknown,
 		appData: unknown,
 	) {
-		return signalEmit(EVENTS.SFU_PRODUCE, {
+		return mediasoupSignal.produce(
 			room,
 			transportId,
 			kind,
 			rtpParameters,
 			appData,
-		});
+		);
 	}
 
 	function consume(
@@ -508,26 +442,20 @@ export const socketStore = createRoot(() => {
 		producerId: string,
 		rtpCapabilities: unknown,
 	) {
-		return signalEmit(EVENTS.SFU_CONSUME, {
+		return mediasoupSignal.consume(
 			room,
 			transportId,
 			producerId,
 			rtpCapabilities,
-		});
+		);
 	}
 
 	function onProducerReady(cb: (info: any) => void): () => void {
-		producerReadyListeners.add(cb);
-		return () => {
-			producerReadyListeners.delete(cb);
-		};
+		return mediasoupSignal.onProducerReady(cb);
 	}
 
 	function onProducerClosed(cb: (info: any) => void): () => void {
-		producerClosedListeners.add(cb);
-		return () => {
-			producerClosedListeners.delete(cb);
-		};
+		return mediasoupSignal.onProducerClosed(cb);
 	}
 
 	function onActivity(cb: (event: ActivityEvent) => void): () => void {
@@ -566,6 +494,7 @@ export const socketStore = createRoot(() => {
 		});
 	}
 
+	// 9. mic/speaking emits
 	function emitMicState(room: string, identity: string, isMicMuted: boolean) {
 		adapter.emitFireAndForget(EVENTS.MEMBER_MIC_STATE, {
 			room,
@@ -594,6 +523,22 @@ export const socketStore = createRoot(() => {
 		setActiveSFUProvider(provider);
 	}
 
+	// 标签页关闭时释放 owner，允许其他标签页接管
+	if (typeof window !== "undefined") {
+		window.addEventListener("beforeunload", () => {
+			tabLock.release();
+		});
+		// 若异常出现他页 claimed，本页主动让出
+		tabLock.setOnForeignClaim(() => {
+			if (!adapter.isConnected() && !connecting()) return;
+			showToast("连接已切换到其他标签页", { type: "warning" });
+			disconnect();
+		});
+		// 确保 channel 已建立，能响应 probe
+		tabLock.ensureListening();
+	}
+
+	// 10. return public API
 	return {
 		connected,
 		rooms,

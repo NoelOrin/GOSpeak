@@ -30,6 +30,7 @@ function onTrackSubscribed({ identity, track }: RemoteTrackInfo) {
 	audioElement.style.display = "none";
 	document.body.appendChild(audioElement);
 	audioElements.set(identity, audioElement);
+	void applySinkId(audioElement);
 	const playResult = audioElement.play?.();
 	if (playResult && typeof (playResult as Promise<void>).catch === "function") {
 		void (playResult as Promise<void>).catch(() => {
@@ -50,6 +51,28 @@ function onTrackUnsubscribed(identity: string) {
 }
 
 let boundClient: SFUClient | null = null;
+
+let preferredSinkId = "";
+
+async function applySinkId(el: HTMLMediaElement) {
+	const anyEl = el as HTMLMediaElement & {
+		setSinkId?: (id: string) => Promise<void>;
+	};
+	if (!preferredSinkId || typeof anyEl.setSinkId !== "function") return;
+	try {
+		await anyEl.setSinkId(preferredSinkId);
+	} catch (err) {
+		console.warn("[audio] setSinkId failed", err);
+	}
+}
+
+/** 设置远端音频输出设备（扬声器）。空字符串表示系统默认。 */
+export function setAudioOutputDevice(deviceId: string) {
+	preferredSinkId = deviceId || "";
+	for (const el of audioElements.values()) {
+		void applySinkId(el);
+	}
+}
 
 export function setupAudioHandler(client: SFUClient) {
 	if (boundClient === client) return;

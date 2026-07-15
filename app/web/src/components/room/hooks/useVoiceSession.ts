@@ -261,6 +261,7 @@ export function useVoiceSession() {
 								},
 								audioOptions: {
 									audioCapture: {
+										deviceId: audioSettings.selectedAudioInput || undefined,
 										echoCancellation: audioSettings.echoCancellation,
 										noiseSuppression: audioSettings.noiseSuppression,
 										autoGainControl: audioSettings.autoGainControl,

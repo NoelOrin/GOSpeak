@@ -80,3 +80,25 @@ func TestRequireOwnerOrPermissionAllowsMatchingOwner(t *testing.T) {
 		t.Fatalf("expected SUCCESS, got %d", resp.Code)
 	}
 }
+
+func TestPermissionGranted_PrefersClaimsPermissions(t *testing.T) {
+	checker := testPermissionChecker{allowed: false}
+	claims := &pkg.Claims{Role: "user", Permissions: []string{"signal:kick"}}
+	if !PermissionGranted(claims, claims.Role, "signal:kick", checker) {
+		t.Fatal("bot/token permissions should grant signal:kick")
+	}
+	if PermissionGranted(claims, claims.Role, "mute:manage", checker) {
+		t.Fatal("missing claim permission should deny")
+	}
+}
+
+func TestPermissionGranted_FallsBackToRoleChecker(t *testing.T) {
+	checker := testPermissionChecker{allowed: true}
+	if !PermissionGranted(nil, "admin", "signal:kick", checker) {
+		t.Fatal("role checker fallback should grant")
+	}
+	deny := testPermissionChecker{allowed: false}
+	if PermissionGranted(&pkg.Claims{Role: "user"}, "user", "signal:kick", deny) {
+		t.Fatal("role without permission should deny")
+	}
+}

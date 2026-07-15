@@ -133,16 +133,14 @@ const MemberCard = ({ member }: { member: MemberInfo }) => {
 			</div>
 			<div class="flex justify-between items-center px-2 py-1">
 				<span class="text-sm font-medium truncate">{displayName()}</span>
-				<Show when={!isMe() && hasPermission("signal:kick")}>
+				<Show when={!isMe()}>
 					<div class="dropdown dropdown-end">
 						<button class="dark:text-white btn-square btn btn-xs" tabIndex={0}>
 							<SvgIcon name="more" />
 						</button>
 						<div tabIndex={-1} class="z-1 px-0 py-1 w-24 dropdown-content menu">
 							<div class="flex flex-col bg-base-100 shadow-sm rounded-lg overflow-hidden join">
-								<button type="button" class="list-item" onClick={handleKick}>
-									踢出
-								</button>
+								{/* 本地听感静音：仅影响当前客户端，不需要管理权限 */}
 								<button
 									type="button"
 									class="list-item"
@@ -150,6 +148,12 @@ const MemberCard = ({ member }: { member: MemberInfo }) => {
 								>
 									{isMuted() ? "取消静音" : "静音"}
 								</button>
+								{/* 踢人：服务端动作，需 signal:kick */}
+								<Show when={hasPermission("signal:kick")}>
+									<button type="button" class="list-item" onClick={handleKick}>
+										踢出
+									</button>
+								</Show>
 							</div>
 						</div>
 					</div>

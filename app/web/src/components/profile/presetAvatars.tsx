@@ -17,23 +17,28 @@ const PresetAvatars = (props: PresetAvatarsProps) => {
 
 	return (
 		<div class="w-full">
-			<div class="text-sm font-medium mb-2 opacity-70">预设头像</div>
+			<div class="mb-2 text-sm font-medium text-base-content/60">预设头像</div>
 			<Show
 				when={!query.isLoading}
 				fallback={<span class="loading loading-dots loading-sm" />}
 			>
 				<Show
 					when={query.data && query.data.length > 0}
-					fallback={<div class="text-sm opacity-50">暂无预设头像</div>}
+					fallback={
+						<div class="text-sm text-base-content/45">暂无预设头像</div>
+					}
 				>
-					<div class="grid grid-cols-6 gap-2">
+					<div class="grid grid-cols-5 gap-2 sm:grid-cols-6">
 						<For each={query.data}>
 							{(url) => (
 								<button
 									type="button"
-									class={`avatar rounded-full size-12 ring-2 ring-offset-1 ring-offset-base-100 cursor-pointer transition-all hover:scale-110 ${
-										props.selected === url ? "ring-primary" : "ring-transparent"
-									}`}
+									class="avatar size-11 cursor-pointer rounded-full ring-2 ring-offset-1 ring-offset-base-100 transition hover:scale-105 sm:size-12"
+									classList={{
+										"ring-base-content/50": props.selected === url,
+										"ring-transparent hover:ring-base-content/20":
+											props.selected !== url,
+									}}
 									onClick={() => props.onSelect(url)}
 								>
 									<img src={url} alt="预设头像" class="rounded-full" />

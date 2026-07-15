@@ -34,6 +34,18 @@
 | `user` | 普通用户 | `room:create`, `room:read`, `user:read`, `role:read` |
 | `ban` | 被封禁用户 | 无任何权限 |
 
+### 默认管理员账号
+
+首次启动 `seedAdminUser` 会在库中不存在 `admin` 时自动创建：
+
+| 字段 | 值 |
+|------|-----|
+| 用户名 | `admin` |
+| 默认密码 | `admin123` |
+
+常量定义：`service.DefaultAdminPassword`（`app/server/internal/service/auth_service.go`）。  
+登录时若密码仍为默认值，返回 `need_change_password=true`，应走 `POST /api/v1/auth/first_change_password` 强制改密。**生产环境务必立即修改。**
+
 ---
 
 ## 三、默认角色权限矩阵
