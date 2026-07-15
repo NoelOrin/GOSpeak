@@ -6,7 +6,7 @@ export default function PermissionCard(props: {
 	onToggle: (code: string, checked: boolean) => void;
 }) {
 	return (
-		<label class="flex min-h-20 items-start gap-3 rounded-md border border-base-300 p-3 hover:bg-base-200 cursor-pointer">
+		<label class="flex min-h-20 cursor-pointer items-start gap-3 rounded-xl border border-base-300 p-3 hover:bg-base-200/40">
 			<input
 				type="checkbox"
 				class="checkbox checkbox-sm mt-1"

@@ -2,6 +2,12 @@ import Pencil from "lucide-solid/icons/pencil";
 import Trash2 from "lucide-solid/icons/trash-2";
 import { For, Show } from "solid-js";
 import type { OAuthProvider } from "@/api/oauth";
+import {
+	ManageSection,
+	ManageTag,
+	manageTableHeadClass,
+	manageTableRowClass,
+} from "@/components/manage/ManageShell";
 import ProviderIcon from "@/components/oauth/ProviderIcon";
 import { NATIVE_PROVIDERS } from "./presets";
 
@@ -17,23 +23,23 @@ export default function OAuthProviderTable(props: OAuthProviderTableProps) {
 	const isNative = (providerName: string) => NATIVE_PROVIDERS.has(providerName);
 
 	return (
-		<div>
+		<ManageSection title="已配置提供商" padded={false}>
 			<Show
 				when={!props.loading}
-				fallback={<div class="loading loading-spinner loading-sm" />}
+				fallback={<div class="loading loading-spinner loading-sm m-4" />}
 			>
 				<Show
 					when={props.providers.length > 0}
 					fallback={
-						<div class="text-base-content/50 py-8 text-center text-sm">
+						<div class="m-4 rounded-xl border border-dashed border-base-300 bg-base-200/20 py-10 text-center text-sm text-base-content/55">
 							暂无 OAuth 提供商配置，点击「添加」开始配置
 						</div>
 					}
 				>
 					<div class="overflow-x-auto">
-						<table class="table table-zebra table-sm">
+						<table class="table table-sm">
 							<thead>
-								<tr>
+								<tr class={manageTableHeadClass}>
 									<th>名称</th>
 									<th>显示名称</th>
 									<th>类型</th>
@@ -45,7 +51,7 @@ export default function OAuthProviderTable(props: OAuthProviderTableProps) {
 							<tbody>
 								<For each={props.providers}>
 									{(p) => (
-										<tr>
+										<tr class={manageTableRowClass}>
 											<td class="font-medium">
 												<div class="flex items-center gap-2">
 													<ProviderIcon name={p.name} size={16} />
@@ -56,11 +62,9 @@ export default function OAuthProviderTable(props: OAuthProviderTableProps) {
 											<td>
 												<Show
 													when={isNative(p.name)}
-													fallback={
-														<span class="badge badge-info badge-sm">通用</span>
-													}
+													fallback={<ManageTag>通用</ManageTag>}
 												>
-													<span class="badge badge-ghost badge-sm">内置</span>
+													<ManageTag>内置</ManageTag>
 												</Show>
 											</td>
 											<td class="max-w-48 truncate text-xs text-base-content/60">
@@ -69,13 +73,9 @@ export default function OAuthProviderTable(props: OAuthProviderTableProps) {
 											<td>
 												<Show
 													when={p.enabled}
-													fallback={
-														<span class="badge badge-ghost badge-sm">
-															已禁用
-														</span>
-													}
+													fallback={<ManageTag>已禁用</ManageTag>}
 												>
-													<span class="badge badge-success badge-sm">启用</span>
+													<ManageTag>启用</ManageTag>
 												</Show>
 											</td>
 											<td>
@@ -89,7 +89,7 @@ export default function OAuthProviderTable(props: OAuthProviderTableProps) {
 													</button>
 													<button
 														type="button"
-														class="btn btn-ghost btn-xs text-error"
+														class="btn btn-ghost btn-xs text-base-content/60"
 														disabled={props.deletingId === p.id}
 														onClick={() => props.onDelete(p)}
 													>
@@ -110,6 +110,6 @@ export default function OAuthProviderTable(props: OAuthProviderTableProps) {
 					</div>
 				</Show>
 			</Show>
-		</div>
+		</ManageSection>
 	);
 }

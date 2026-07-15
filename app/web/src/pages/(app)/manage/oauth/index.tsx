@@ -12,6 +12,7 @@ import {
 	type OAuthProvider,
 	updateProvider,
 } from "@/api/oauth";
+import { ManageHeader, ManagePage } from "@/components/manage/ManageShell";
 import { hasPermission } from "@/utils/permissions";
 import OAuthProviderForm from "./components/OAuthProviderForm";
 import OAuthProviderTable from "./components/OAuthProviderTable";
@@ -219,32 +220,36 @@ function OAuthPage() {
 		new Set((providersData()?.data ?? []).map((p) => p.name));
 
 	return (
-		<div class="flex h-full min-h-0 flex-col gap-4 p-4 overflow-auto">
-			<div class="flex items-center justify-between">
-				<div class="flex items-center gap-2">
-					<LogIn size={20} />
-					<h3 class="font-bold text-lg">OAuth 登录配置</h3>
-				</div>
-				<div class="flex gap-2">
-					<button
-						class="btn btn-ghost btn-sm"
-						onClick={() => void refetch()}
-						title="刷新"
-					>
-						<RefreshCcw size={16} />
-					</button>
-					<Show when={formMode() === "hidden"}>
-						<button class="btn btn-primary btn-sm" onClick={openCreateForm}>
-							<Plus size={16} /> 添加
+		<ManagePage>
+			<ManageHeader
+				icon={<LogIn size={18} />}
+				title="OAuth 登录配置"
+				description="管理第三方登录提供商"
+				actions={
+					<>
+						<button
+							class="btn btn-ghost btn-sm btn-square"
+							onClick={() => void refetch()}
+							title="刷新"
+						>
+							<RefreshCcw size={16} />
 						</button>
-					</Show>
-					<Show when={formMode() !== "hidden"}>
-						<button class="btn btn-ghost btn-sm" onClick={closeForm}>
-							<X size={16} /> 关闭
-						</button>
-					</Show>
-				</div>
-			</div>
+						<Show when={formMode() === "hidden"}>
+							<button
+								class="btn btn-sm border border-base-300 bg-base-100 text-base-content shadow-none hover:bg-base-200"
+								onClick={openCreateForm}
+							>
+								<Plus size={16} /> 添加
+							</button>
+						</Show>
+						<Show when={formMode() !== "hidden"}>
+							<button class="btn btn-ghost btn-sm" onClick={closeForm}>
+								<X size={16} /> 关闭
+							</button>
+						</Show>
+					</>
+				}
+			/>
 
 			{/* 预设选择 */}
 			<Show when={formMode() === "preset"}>
@@ -307,6 +312,6 @@ function OAuthPage() {
 				onEdit={openEditForm}
 				onDelete={(p) => void handleDelete(p)}
 			/>
-		</div>
+		</ManagePage>
 	);
 }

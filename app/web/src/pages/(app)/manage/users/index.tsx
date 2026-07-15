@@ -1,8 +1,10 @@
 import { createFileRoute, redirect } from "@tanstack/solid-router";
+import Users from "lucide-solid/icons/users";
 import { createResource, createSignal, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import { cancelMute, createMute, listMutes, type MuteRecord } from "@/api/mute";
 import { deleteUser, listUsers, updateUserRole } from "@/api/user";
+import { ManageHeader, ManagePage } from "@/components/manage/ManageShell";
 import userStore from "@/stores/userStore";
 import { formatRemaining } from "@/utils/format";
 import { hasPermission } from "@/utils/permissions";
@@ -150,8 +152,13 @@ function UsersPage() {
 	};
 
 	return (
-		<div class="flex h-full min-h-0 flex-col gap-4 p-4">
-			{/* ========== 用户列表 ========== */}
+		<ManagePage>
+			<ManageHeader
+				icon={<Users size={18} />}
+				title="用户管理"
+				description="查看用户、调整角色，并快速处理禁言"
+			/>
+
 			<UsersTable
 				loading={_usersData.loading}
 				users={users()}
@@ -174,9 +181,6 @@ function UsersPage() {
 			/>
 
 			<Show when={canManageMute()}>
-				<div class="border-base-300 border-t" />
-
-				{/* ========== 快速禁言 ========== */}
 				<QuickMuteForm
 					users={users()}
 					userMap={userMap()}
@@ -192,9 +196,6 @@ function UsersPage() {
 					onSubmit={() => void handleMute()}
 				/>
 
-				<div class="border-base-300 border-t" />
-
-				{/* ========== 活跃禁言列表 ========== */}
 				<ActiveMuteList
 					loading={mutes.loading}
 					mutes={mutes() ?? []}
@@ -204,6 +205,6 @@ function UsersPage() {
 					onCancel={(userId) => void handleCancelMute(userId)}
 				/>
 			</Show>
-		</div>
+		</ManagePage>
 	);
 }

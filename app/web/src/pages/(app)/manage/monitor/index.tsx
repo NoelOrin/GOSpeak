@@ -12,6 +12,7 @@ import Server from "lucide-solid/icons/server";
 import Users from "lucide-solid/icons/users";
 import XCircle from "lucide-solid/icons/x-circle";
 import { createSignal, onCleanup, onMount } from "solid-js";
+import { ManageHeader, ManagePage } from "@/components/manage/ManageShell";
 import userStore from "@/stores/userStore";
 import { hasPermission } from "@/utils/permissions";
 
@@ -108,12 +109,12 @@ function MonitorPage() {
 	const snap = () => data();
 
 	return (
-		<div class="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
-			<div class="flex items-center gap-2">
-				<Activity size={18} />
-				<h3 class="font-bold text-lg">服务监控</h3>
-				<span class="text-xs text-base-content/50 ml-2">{status()}</span>
-			</div>
+		<ManagePage>
+			<ManageHeader
+				icon={<Activity size={18} />}
+				title="服务监控"
+				description={status()}
+			/>
 
 			{/* Connection Error */}
 			{error() && <div class="alert alert-warning text-sm py-2">{error()}</div>}
@@ -349,7 +350,7 @@ function MonitorPage() {
 			<div class="text-xs text-base-content/40 text-right">
 				{snap()?.timestamp ? `最近更新: ${snap()?.timestamp}` : "无数据"}
 			</div>
-		</div>
+		</ManagePage>
 	);
 }
 
@@ -361,8 +362,8 @@ function MetricCard(props: {
 	badge?: any;
 }) {
 	return (
-		<div class="card bg-base-200/50 shadow-sm">
-			<div class="card-body p-3">
+		<div class="rounded-2xl border border-base-300/80 bg-base-100 shadow-sm">
+			<div class="p-3">
 				<div class="flex items-center gap-1.5 text-base-content/60 text-xs mb-1">
 					{props.icon}
 					{props.label}
@@ -382,8 +383,7 @@ function MetricCard(props: {
 
 function SectionTitle(props: { children: any }) {
 	return (
-		<div class="mt-2 mb-1 flex items-center gap-2 text-base-content/70 text-xs font-semibold tracking-wide uppercase">
-			<span class="bg-base-content/30 h-3 w-1 rounded-full" />
+		<div class="mt-1 mb-1 text-xs font-semibold tracking-wide text-base-content/55">
 			{props.children}
 		</div>
 	);

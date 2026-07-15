@@ -1,10 +1,16 @@
 import { createFileRoute, redirect } from "@tanstack/solid-router";
 import Ban from "lucide-solid/icons/ban";
 import UserCheck from "lucide-solid/icons/user-check";
-import Users from "lucide-solid/icons/users";
 import { createResource, createSignal, For, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import { listUsers, updateUserRole } from "@/api/user";
+import {
+	ManageHeader,
+	ManagePage,
+	ManageSection,
+	manageTableHeadClass,
+	manageTableRowClass,
+} from "@/components/manage/ManageShell";
 import { hasPermission } from "@/utils/permissions";
 
 const BAN_ROLE = "ban";
@@ -66,36 +72,34 @@ function BanPage() {
 	};
 
 	return (
-		<div class="flex h-full min-h-0 flex-col gap-4 p-4">
-			<div class="flex items-center gap-2 mb-3">
-				<Ban size={20} />
-				<h3 class="font-bold text-lg">封禁管理</h3>
-			</div>
-			{/* ========== 已封禁用户 ========== */}
-			<div>
-				<div class="mb-3 flex items-center gap-2 font-semibold text-sm">
-					<Ban size={16} class="text-error" />
-					<span>已封禁用户</span>
-					<span class="text-base-content/50 text-xs">
-						({bannedUsers().length} 人)
-					</span>
-				</div>
+		<ManagePage>
+			<ManageHeader
+				icon={<Ban size={18} />}
+				title="封禁管理"
+				description="封禁后用户无法登录与访问"
+			/>
+
+			<ManageSection
+				title="已封禁用户"
+				description={`${bannedUsers().length} 人`}
+				padded={false}
+			>
 				<Show
 					when={!usersData.loading}
-					fallback={<div class="loading loading-spinner loading-sm" />}
+					fallback={<div class="loading loading-spinner loading-sm m-4" />}
 				>
 					<Show
 						when={bannedUsers().length > 0}
 						fallback={
-							<div class="text-base-content/50 py-8 text-center text-sm">
+							<div class="m-4 rounded-xl border border-dashed border-base-300 bg-base-200/20 py-10 text-center text-sm text-base-content/55">
 								暂无封禁用户
 							</div>
 						}
 					>
 						<div class="overflow-x-auto">
-							<table class="table table-zebra table-sm">
+							<table class="table table-sm">
 								<thead>
-									<tr>
+									<tr class={manageTableHeadClass}>
 										<th>ID</th>
 										<th>用户名</th>
 										<th>显示名</th>
@@ -105,16 +109,20 @@ function BanPage() {
 								<tbody>
 									<For each={bannedUsers()}>
 										{(user) => (
-											<tr>
-												<td class="font-mono text-xs">{user.id}</td>
-												<td class="font-medium text-error">{user.name}</td>
-												<td>{user.display_name || "—"}</td>
+											<tr class={manageTableRowClass}>
+												<td class="font-mono text-xs text-base-content/70">
+													{user.id}
+												</td>
+												<td class="font-semibold">{user.name}</td>
+												<td class="text-base-content/75">
+													{user.display_name || "—"}
+												</td>
 												<td>
 													<button
 														type="button"
-														class="btn btn-ghost btn-xs text-success"
+														class="btn btn-ghost btn-xs text-base-content/60"
 														disabled={unbanningId() === user.id}
-														onClick={() => handleUnban(user.id)}
+														onClick={() => void handleUnban(user.id)}
 													>
 														<UserCheck size={14} />
 														解除封禁
@@ -128,27 +136,19 @@ function BanPage() {
 						</div>
 					</Show>
 				</Show>
-			</div>
+			</ManageSection>
 
-			<div class="border-base-300 border-t" />
-
-			{/* ========== 封禁用户 ========== */}
-			<div>
-				<div class="mb-3 flex items-center gap-2 font-semibold text-sm">
-					<Users size={16} />
-					<span>封禁用户</span>
-					<span class="text-base-content/50 text-xs">
-						（将用户角色设为 ban，该用户将无法登录）
-					</span>
-				</div>
-				<div class="flex items-end gap-3">
-					<div class="form-control">
-						<label class="label py-1" for="ban-select-user">
-							<span class="label-text text-xs">选择用户</span>
+			<ManageSection title="添加封禁" description="将用户角色设为 ban">
+				<div class="flex flex-wrap items-end gap-3">
+					<div class="form-control min-w-60 flex-1">
+						<label class="label py-1" for="ban-user">
+							<span class="label-text text-xs font-medium text-base-content/70">
+								用户
+							</span>
 						</label>
 						<select
-							id="ban-select-user"
-							class="select select-bordered select-sm w-52"
+							id="ban-user"
+							class="select select-bordered select-sm bg-base-100"
 							value={targetUserId()}
 							onChange={(e) =>
 								setTargetUserId(
@@ -168,15 +168,15 @@ function BanPage() {
 					</div>
 					<button
 						type="button"
-						class="btn btn-error btn-sm gap-2"
+						class="btn btn-sm border border-base-300 bg-base-100 text-base-content shadow-none hover:bg-base-200"
 						disabled={!targetUserId() || banning()}
-						onClick={handleBan}
+						onClick={() => void handleBan()}
 					>
 						<Ban size={15} />
 						确认封禁
 					</button>
 				</div>
-			</div>
-		</div>
+			</ManageSection>
+		</ManagePage>
 	);
 }

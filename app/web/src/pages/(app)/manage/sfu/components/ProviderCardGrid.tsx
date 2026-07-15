@@ -1,7 +1,10 @@
 import type { SFUProvider } from "@gospeak/sfu-client/types";
 import Check from "lucide-solid/icons/check";
 import CircleAlert from "lucide-solid/icons/circle-alert";
-import { For, Show } from "solid-js";
+import Cloud from "lucide-solid/icons/cloud";
+import Radio from "lucide-solid/icons/radio";
+import Server from "lucide-solid/icons/server";
+import { For, type JSX, Show } from "solid-js";
 import type { SFUConfig } from "@/api/sfu";
 import {
 	DISABLED_PROVIDERS,
@@ -17,12 +20,21 @@ export interface ProviderCardGridProps {
 	onSelect: (provider: SFUProvider) => void;
 }
 
+const PROVIDER_ICONS: Record<SFUProvider, () => JSX.Element> = {
+	livekit: () => <Radio size={16} />,
+	agora: () => <Radio size={16} />,
+	mediasoup: () => <Server size={16} />,
+	srs: () => <Server size={16} />,
+	daily: () => <Cloud size={16} />,
+	cloudflare: () => <Cloud size={16} />,
+};
+
 export default function ProviderCardGrid(props: ProviderCardGridProps) {
 	const isProviderDisabled = (provider: SFUProvider) =>
 		DISABLED_PROVIDERS.includes(provider);
 
 	return (
-		<div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+		<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
 			<For each={PROVIDER_OPTIONS}>
 				{(option) => {
 					const isActive = () => option.value === props.activeProvider;
@@ -33,42 +45,82 @@ export default function ProviderCardGrid(props: ProviderCardGridProps) {
 						);
 						return cfg ? isProviderConfigured(option.value, cfg) : false;
 					};
+					const disabled = () =>
+						!!props.disabled || isProviderDisabled(option.value);
+
 					return (
 						<button
 							type="button"
-							class="btn h-auto min-h-0 justify-start gap-3 rounded-box border px-3 py-3 text-left"
+							class="group relative flex min-h-[5.25rem] flex-col justify-between gap-3 overflow-hidden rounded-2xl border px-4 py-3.5 text-left transition-all duration-150"
 							classList={{
-								"btn-primary": isSelected(),
-								"btn-ghost border-base-300": !isSelected(),
-								"opacity-60": isProviderDisabled(option.value),
+								"border-base-content/25 bg-base-100 shadow-sm ring-1 ring-base-content/10":
+									isSelected() && !disabled(),
+								"border-base-300/80 bg-base-100 hover:border-base-content/15 hover:bg-base-200/40 hover:shadow-sm":
+									!isSelected() && !disabled(),
+								"border-base-300 bg-base-200/30 opacity-55": disabled(),
+								"cursor-not-allowed": disabled(),
 							}}
-							disabled={props.disabled || isProviderDisabled(option.value)}
+							disabled={disabled()}
 							onClick={() => props.onSelect(option.value)}
 						>
-							<div class="flex flex-col items-start gap-1">
-								<div class="flex items-center gap-2">
-									<span class="font-semibold">{option.label}</span>
-									<Show when={isActive()}>
-										<span class="badge badge-sm badge-success gap-1">
-											<Check size={12} />
-											当前
-										</span>
-									</Show>
-								</div>
-								<div class="flex items-center gap-1">
+							<div class="flex w-full items-start justify-between gap-3">
+								<div class="flex min-w-0 items-center gap-2.5">
 									<span
-										class="inline-block size-2 rounded-full"
+										class="flex size-9 shrink-0 items-center justify-center rounded-xl border"
 										classList={{
-											"bg-success": configured(),
-											"bg-base-content/30": !configured(),
+											"border-base-content/20 bg-base-200 text-base-content":
+												isSelected(),
+											"border-base-300 bg-base-200/70 text-base-content/65":
+												!isSelected(),
 										}}
-									/>
-									<span class="text-xs opacity-70">
-										{configured() ? "已配置" : "未配置"}
+									>
+										{PROVIDER_ICONS[option.value]()}
 									</span>
+									<div class="min-w-0">
+										<div class="flex min-w-0 items-center gap-2">
+											<span
+												class="truncate text-sm font-semibold"
+												classList={{
+													"text-base-content": true,
+												}}
+											>
+												{option.label}
+											</span>
+											<Show when={isActive()}>
+												<span class="inline-flex shrink-0 items-center gap-1 rounded-full border border-base-300 bg-base-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-base-content/70">
+													<Check size={10} />
+													当前
+												</span>
+											</Show>
+										</div>
+										<div class="mt-1 flex items-center gap-1.5 text-xs text-base-content/55">
+											<span
+												class="inline-block size-1.5 rounded-full"
+												classList={{
+													"bg-base-content/55": configured(),
+													"bg-base-content/25": !configured(),
+												}}
+											/>
+											<span>{configured() ? "已配置" : "未配置"}</span>
+										</div>
+									</div>
 								</div>
+
+								<span
+									class="mt-1 size-2.5 shrink-0 rounded-full border"
+									classList={{
+										"border-base-content/40 bg-base-content/70": isSelected(),
+										"border-base-content/20 bg-transparent": !isSelected(),
+									}}
+								/>
+							</div>
+
+							<div class="flex min-h-4 items-center justify-between gap-2">
+								<span class="text-[11px] text-base-content/40">
+									{isActive() ? "运行中" : "点击选择"}
+								</span>
 								<Show when={isProviderDisabled(option.value)}>
-									<span class="text-xs text-warning flex items-center gap-1">
+									<span class="inline-flex items-center gap-1 text-[11px] font-medium text-base-content/55">
 										<CircleAlert size={12} />
 										暂不可用
 									</span>

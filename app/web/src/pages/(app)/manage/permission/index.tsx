@@ -20,6 +20,11 @@ import {
 	syncRolePermissions,
 	updateRole,
 } from "@/api/permission";
+import {
+	ManageHeader,
+	ManagePage,
+	ManageSection,
+} from "@/components/manage/ManageShell";
 import { hasPermission } from "@/utils/permissions";
 import PermissionGrid from "./components/PermissionGrid";
 import RoleList from "./components/RoleList";
@@ -249,23 +254,24 @@ function PermissionPage() {
 	};
 
 	return (
-		<div class="flex h-full min-h-0 flex-col gap-4 p-4 overflow-hidden">
-			<div class="flex items-center justify-between gap-3">
-				<div class="flex items-center gap-2">
-					<ShieldCheck size={20} />
-					<h3 class="font-bold text-lg">权限</h3>
-				</div>
-				<button
-					type="button"
-					class="btn btn-primary btn-sm gap-2"
-					disabled={!selectedRole() || saving() || !isDirty()}
-					onClick={savePermissions}
-					title="保存权限"
-				>
-					<Save size={16} />
-					保存
-				</button>
-			</div>
+		<ManagePage class="overflow-hidden">
+			<ManageHeader
+				icon={<ShieldCheck size={18} />}
+				title="权限"
+				description="管理角色与权限分配"
+				actions={
+					<button
+						type="button"
+						class="btn btn-sm gap-2 border border-base-300 bg-base-100 text-base-content shadow-none hover:bg-base-200"
+						disabled={!selectedRole() || saving() || !isDirty()}
+						onClick={savePermissions}
+						title="保存权限"
+					>
+						<Save size={16} />
+						保存
+					</button>
+				}
+			/>
 
 			<Show when={loadError()}>
 				<div class="alert alert-error py-2 text-sm">
@@ -273,34 +279,44 @@ function PermissionPage() {
 				</div>
 			</Show>
 
-			<div class="grid min-h-0 flex-1 grid-cols-[12rem_1fr] gap-4 max-md:grid-cols-1">
-				<RoleList
-					selectedRole={selectedRole()}
-					setSelectedRole={setSelectedRole}
-					roles={roles()}
-					rolesLoading={!!roles.loading}
-					renaming={renaming()}
-					deleting={deleting()}
-					editingRoleId={editingRoleId()}
-					editingName={editingName()}
-					setEditingRoleId={setEditingRoleId}
-					setEditingName={setEditingName}
-					newRoleName={newRoleName()}
-					setNewRoleName={setNewRoleName}
-					creating={creating()}
-					onStartRename={startRename}
-					onCancelRename={cancelRename}
-					onConfirmRename={confirmRename}
-					onCreateRole={handleCreateRole}
-					onDeleteRole={handleDeleteRole}
-				/>
-				<PermissionGrid
-					groupedPermissions={groupedPermissions()}
-					selectedCodes={selectedCodes()}
-					loading={rolePermLoading()}
-					onToggle={togglePermission}
-				/>
-			</div>
-		</div>
+			<ManageSection
+				class="min-h-0 flex-1"
+				bodyClass="flex min-h-0 flex-1 flex-col overflow-hidden p-0 md:p-0"
+				padded={false}
+			>
+				<div class="grid min-h-0 flex-1 grid-cols-[12rem_minmax(0,1fr)] gap-0 max-md:grid-cols-1 max-md:grid-rows-[auto_minmax(0,1fr)]">
+					<div class="min-h-0 overflow-y-auto overflow-x-hidden border-r border-base-300/70 p-3 max-md:border-r-0 max-md:border-b">
+						<RoleList
+							selectedRole={selectedRole()}
+							setSelectedRole={setSelectedRole}
+							roles={roles()}
+							rolesLoading={!!roles.loading}
+							renaming={renaming()}
+							deleting={deleting()}
+							editingRoleId={editingRoleId()}
+							editingName={editingName()}
+							setEditingRoleId={setEditingRoleId}
+							setEditingName={setEditingName}
+							newRoleName={newRoleName()}
+							setNewRoleName={setNewRoleName}
+							creating={creating()}
+							onStartRename={startRename}
+							onCancelRename={cancelRename}
+							onConfirmRename={confirmRename}
+							onCreateRole={handleCreateRole}
+							onDeleteRole={handleDeleteRole}
+						/>
+					</div>
+					<div class="min-h-0 overflow-y-auto overflow-x-hidden p-4">
+						<PermissionGrid
+							groupedPermissions={groupedPermissions()}
+							selectedCodes={selectedCodes()}
+							loading={rolePermLoading()}
+							onToggle={togglePermission}
+						/>
+					</div>
+				</div>
+			</ManageSection>
+		</ManagePage>
 	);
 }

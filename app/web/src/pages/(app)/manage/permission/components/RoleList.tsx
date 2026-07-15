@@ -29,7 +29,7 @@ export default function RoleList(props: {
 	onDeleteRole: (role: { id: number; name: string }) => void;
 }) {
 	return (
-		<div class="min-h-0 overflow-auto border-base-300 border-r pr-3 max-md:border-r-0 max-md:border-b max-md:pb-3">
+		<div class="min-h-0">
 			<div class="flex flex-col gap-1">
 				<For each={props.roles || []}>
 					{(role) => (
@@ -98,7 +98,7 @@ export default function RoleList(props: {
 									<Show when={!isDefaultRole(role.name)}>
 										<button
 											type="button"
-											class="btn btn-ghost btn-xs text-error"
+											class="btn btn-ghost btn-xs text-base-content/60"
 											disabled={props.deleting}
 											onClick={(e) => {
 												e.stopPropagation();

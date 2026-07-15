@@ -3,9 +3,14 @@ import Gavel from "lucide-solid/icons/gavel";
 import InfinityIcon from "lucide-solid/icons/infinity";
 import Trash from "lucide-solid/icons/trash";
 import UserCheck from "lucide-solid/icons/user-check";
-import Users from "lucide-solid/icons/users";
 import { For, Show } from "solid-js";
 import type { MuteRecord } from "@/api/mute";
+import {
+	ManageSection,
+	ManageTag,
+	manageTableHeadClass,
+	manageTableRowClass,
+} from "@/components/manage/ManageShell";
 
 export interface UserRow {
 	id: number;
@@ -31,45 +36,45 @@ export interface UsersTableProps {
 	onDelete: (userId: number) => void;
 }
 
+function roleLabel(role: string) {
+	if (role === "admin") return "管理员";
+	if (role === "ban") return "封禁";
+	return "用户";
+}
+
 export default function UsersTable(props: UsersTableProps) {
 	return (
-		<>
-			<div class="flex items-center justify-between gap-3">
-				<div class="flex items-center gap-2">
-					<Users size={18} />
-					<h3 class="font-bold text-lg">用户列表</h3>
-					<span class="text-base-content/50 text-xs">
-						({props.users.length} 人)
-					</span>
-				</div>
-			</div>
-
+		<ManageSection
+			title="用户列表"
+			description={`共 ${props.users.length} 人`}
+			padded={false}
+		>
 			<div class="overflow-x-auto">
 				<Show
 					when={!props.loading}
 					fallback={
-						<div class="loading loading-spinner loading-sm py-8 mx-auto block" />
+						<div class="loading loading-spinner loading-sm mx-auto block py-10" />
 					}
 				>
 					<Show
 						when={props.users.length > 0}
 						fallback={
-							<div class="text-base-content/50 py-8 text-center text-sm">
+							<div class="m-4 rounded-xl border border-dashed border-base-300 bg-base-200/20 py-10 text-center text-sm text-base-content/55">
 								暂无用户
 							</div>
 						}
 					>
-						<table class="table table-zebra table-sm">
+						<table class="table table-sm">
 							<thead>
-								<tr>
-									<th>ID</th>
+								<tr class={manageTableHeadClass}>
+									<th class="w-16">ID</th>
 									<th>用户名</th>
 									<th>显示名</th>
-									<th>角色</th>
+									<th class="w-24">角色</th>
 									<Show when={props.canManageMute}>
-										<th>禁言</th>
+										<th class="w-28">禁言</th>
 									</Show>
-									<th>操作</th>
+									<th class="w-48">操作</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -79,55 +84,52 @@ export default function UsersTable(props: UsersTableProps) {
 										const muted = () => !!mute();
 										const isSelf = () => props.selfId === user.id;
 										return (
-											<tr classList={{ "bg-warning/5": muted() }}>
-												<td class="font-mono text-xs">{user.id}</td>
-												<td class="font-medium">{user.name}</td>
-												<td>{user.display_name || "—"}</td>
+											<tr
+												class={manageTableRowClass}
+												classList={{ "bg-base-200/25": muted() }}
+											>
+												<td class="font-mono text-xs text-base-content/60">
+													{user.id}
+												</td>
 												<td>
-													<span
-														class="badge badge-xs"
-														classList={{
-															"badge-primary": user.role === "admin",
-															"badge-ghost": user.role !== "admin",
-														}}
-													>
-														{user.role === "admin"
-															? "管理员"
-															: user.role === "ban"
-																? "封禁"
-																: "用户"}
-													</span>
+													<div class="font-medium text-base-content">
+														{user.name}
+													</div>
+												</td>
+												<td class="text-base-content/70">
+													{user.display_name || "—"}
+												</td>
+												<td>
+													<ManageTag>{roleLabel(user.role)}</ManageTag>
 												</td>
 												<Show when={props.canManageMute}>
 													<td>
 														<Show
 															when={muted()}
-															fallback={
-																<span class="text-base-content/40 text-xs">
-																	正常
-																</span>
-															}
+															fallback={<ManageTag>正常</ManageTag>}
 														>
-															<span class="flex items-center gap-1 text-error font-medium text-xs">
-																{(mute()?.permanent ?? false) ? (
-																	<InfinityIcon size={12} />
-																) : (
-																	<Clock size={12} />
-																)}
-																{(mute()?.permanent ?? false)
-																	? "永久"
-																	: props.formatRemaining(
-																			mute()?.expires_at ?? null,
-																		)}
-															</span>
+															<ManageTag>
+																<span class="inline-flex items-center gap-1">
+																	{(mute()?.permanent ?? false) ? (
+																		<InfinityIcon size={11} />
+																	) : (
+																		<Clock size={11} />
+																	)}
+																	{(mute()?.permanent ?? false)
+																		? "永久"
+																		: props.formatRemaining(
+																				mute()?.expires_at ?? null,
+																			)}
+																</span>
+															</ManageTag>
 														</Show>
 													</td>
 												</Show>
 												<td>
-													<div class="flex items-center gap-1">
+													<div class="flex items-center gap-1.5">
 														<Show when={props.canUpdateUser}>
 															<select
-																class="select select-bordered select-xs w-20"
+																class="select select-bordered select-xs w-24 bg-base-100"
 																value={user.role}
 																disabled={isSelf()}
 																onChange={(e) =>
@@ -139,13 +141,7 @@ export default function UsersTable(props: UsersTableProps) {
 															>
 																<For each={props.roles}>
 																	{(r) => (
-																		<option value={r}>
-																			{r === "admin"
-																				? "管理员"
-																				: r === "ban"
-																					? "封禁"
-																					: "用户"}
-																		</option>
+																		<option value={r}>{roleLabel(r)}</option>
 																	)}
 																</For>
 															</select>
@@ -156,30 +152,33 @@ export default function UsersTable(props: UsersTableProps) {
 																fallback={
 																	<button
 																		type="button"
-																		class="btn btn-ghost btn-xs text-warning"
+																		class="btn btn-ghost btn-xs text-base-content/55"
+																		title="禁言"
 																		onClick={() => props.onStartMute(user.id)}
 																	>
-																		<Gavel size={13} />
+																		<Gavel size={14} />
 																	</button>
 																}
 															>
 																<button
 																	type="button"
-																	class="btn btn-ghost btn-xs text-error"
+																	class="btn btn-ghost btn-xs text-base-content/55"
+																	title="解除禁言"
 																	disabled={props.cancellingId === user.id}
 																	onClick={() => props.onCancelMute(user.id)}
 																>
-																	<UserCheck size={13} />
+																	<UserCheck size={14} />
 																</button>
 															</Show>
 														</Show>
 														<Show when={props.canDeleteUser && !isSelf()}>
 															<button
 																type="button"
-																class="btn btn-ghost btn-xs text-error/60"
+																class="btn btn-ghost btn-xs text-base-content/55"
+																title="删除用户"
 																onClick={() => props.onDelete(user.id)}
 															>
-																<Trash size={13} />
+																<Trash size={14} />
 															</button>
 														</Show>
 													</div>
@@ -193,6 +192,6 @@ export default function UsersTable(props: UsersTableProps) {
 					</Show>
 				</Show>
 			</div>
-		</>
+		</ManageSection>
 	);
 }

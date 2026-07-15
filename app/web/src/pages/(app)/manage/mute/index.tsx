@@ -8,6 +8,15 @@ import { createResource, createSignal, For, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import { cancelMute, createMute, listMutes } from "@/api/mute";
 import { listUsers } from "@/api/user";
+import {
+	ManageHeader,
+	ManagePage,
+	ManageSection,
+	ManageTag,
+	manageTableHeadClass,
+	manageTableRowClass,
+} from "@/components/manage/ManageShell";
+import MuteDurationPicker from "@/components/manage/MuteDurationPicker";
 import { formatRemaining } from "@/utils/format";
 import { hasPermission } from "@/utils/permissions";
 
@@ -93,38 +102,39 @@ function MutePage() {
 	};
 
 	return (
-		<div class="flex h-full min-h-0 flex-col gap-4 p-4">
-			<div class="flex items-center justify-between gap-3">
-				<div class="flex items-center gap-2">
-					<Gavel size={20} />
-					<h3 class="font-bold text-lg">禁言管理</h3>
-				</div>
-			</div>
+		<ManagePage>
+			<ManageHeader
+				icon={<Gavel size={18} />}
+				title="禁言管理"
+				description="查看并管理当前有效禁言"
+			/>
 
-			<div class="min-h-0 flex-1 overflow-auto">
-				<div class="mb-3 flex items-center gap-2 font-semibold text-sm">
-					<UserX size={16} />
-					<span>当前禁言列表</span>
-					<span class="text-base-content/50 text-xs">
-						({mutes()?.length || 0} 条)
+			<ManageSection
+				title="当前禁言列表"
+				description={`${mutes()?.length || 0} 条`}
+				padded={false}
+				actions={
+					<span class="flex size-8 items-center justify-center rounded-lg border border-base-300 bg-base-100 text-base-content/50">
+						<UserX size={16} />
 					</span>
-				</div>
+				}
+			>
 				<Show
 					when={!mutes.loading}
-					fallback={<div class="loading loading-spinner loading-sm" />}
+					fallback={<div class="loading loading-spinner loading-sm m-4" />}
 				>
 					<Show
 						when={(mutes()?.length || 0) > 0}
 						fallback={
-							<div class="text-base-content/50 py-8 text-center text-sm">
+							<div class="m-4 rounded-xl border border-dashed border-base-300 bg-base-200/20 py-10 text-center text-sm text-base-content/55">
 								暂无禁言记录
 							</div>
 						}
 					>
 						<div class="overflow-x-auto">
-							<table class="table table-zebra table-xs">
+							<table class="table table-sm">
 								<thead>
-									<tr>
+									<tr class={manageTableHeadClass}>
 										<th>用户</th>
 										<th>类型</th>
 										<th>剩余时间</th>
@@ -136,38 +146,37 @@ function MutePage() {
 								<tbody>
 									<For each={mutes()}>
 										{(mute) => (
-											<tr>
-												<td>
+											<tr class={manageTableRowClass}>
+												<td class="font-semibold">
 													{userMap().get(mute.user_id) || `#${mute.user_id}`}
 												</td>
 												<td>
-													{mute.permanent ? (
-														<span class="flex items-center gap-1 text-error font-medium text-xs">
-															<InfinityIcon size={13} />
-															永久
+													<ManageTag>
+														<span class="inline-flex items-center gap-1">
+															{mute.permanent ? (
+																<InfinityIcon size={12} />
+															) : (
+																<Clock size={12} />
+															)}
+															{mute.permanent ? "永久" : "定时"}
 														</span>
-													) : (
-														<span class="flex items-center gap-1 text-warning font-medium text-xs">
-															<Clock size={13} />
-															定时
-														</span>
-													)}
+													</ManageTag>
 												</td>
-												<td class="font-mono text-xs">
+												<td class="font-mono text-xs text-base-content/75">
 													{mute.permanent
 														? "永久"
 														: formatRemaining(mute.expires_at)}
 												</td>
-												<td class="max-w-40 truncate text-xs">
+												<td class="max-w-40 truncate text-xs text-base-content/75">
 													{mute.reason || "—"}
 												</td>
-												<td class="text-xs">
+												<td class="text-xs text-base-content/75">
 													{userMap().get(mute.muter_id) || `#${mute.muter_id}`}
 												</td>
 												<td>
 													<button
 														type="button"
-														class="btn btn-ghost btn-xs text-error"
+														class="btn btn-ghost btn-xs text-base-content/60"
 														disabled={cancellingId() === mute.user_id}
 														onClick={() => handleCancelMute(mute.user_id)}
 													>
@@ -183,23 +192,27 @@ function MutePage() {
 						</div>
 					</Show>
 				</Show>
-			</div>
+			</ManageSection>
 
-			<div class="border-base-300 border-t" />
-
-			<div>
-				<div class="mb-3 flex items-center gap-2 font-semibold text-sm">
-					<Gavel size={16} />
-					<span>添加禁言</span>
-				</div>
-				<div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+			<ManageSection
+				title="添加禁言"
+				description="选择用户与时长后立即生效"
+				actions={
+					<span class="flex size-8 items-center justify-center rounded-lg border border-base-300 bg-base-100 text-base-content/50">
+						<Gavel size={16} />
+					</span>
+				}
+			>
+				<div class="grid grid-cols-1 gap-4 xl:grid-cols-[220px_minmax(0,1fr)_240px]">
 					<div class="form-control">
 						<label class="label py-1" for="mute-user">
-							<span class="label-text text-xs">用户</span>
+							<span class="label-text text-xs font-medium text-base-content/70">
+								用户
+							</span>
 						</label>
 						<select
 							id="mute-user"
-							class="select select-bordered select-sm"
+							class="select select-bordered select-sm bg-base-100"
 							value={userId()}
 							onChange={(e) =>
 								setUserId(
@@ -211,65 +224,39 @@ function MutePage() {
 							<For each={users()?.users || []}>
 								{(u) => (
 									<option value={u.id}>
-										{u.display_name} ({u.name})
+										{u.display_name || u.name} ({u.name})
 									</option>
 								)}
 							</For>
 						</select>
 					</div>
 
-					<div class="form-control">
+					<div class="form-control min-w-0">
 						<div class="label py-1">
-							<span class="label-text text-xs">类型</span>
+							<span class="label-text text-xs font-medium text-base-content/70">
+								禁言时长
+							</span>
 						</div>
-						<div class="flex items-center gap-3 pt-1">
-							<label class="flex items-center gap-1.5 text-xs">
-								<input
-									type="radio"
-									name="mute-type"
-									class="radio radio-xs"
-									checked={!permanent()}
-									onChange={() => setPermanent(false)}
-								/>
-								定时
-							</label>
-							<label class="flex items-center gap-1.5 text-xs">
-								<input
-									type="radio"
-									name="mute-type"
-									class="radio radio-xs"
-									checked={permanent()}
-									onChange={() => setPermanent(true)}
-								/>
-								永久
-							</label>
-						</div>
+						<MuteDurationPicker
+							permanent={permanent()}
+							duration={duration()}
+							onChange={(value) => {
+								setPermanent(value.permanent);
+								setDuration(value.duration);
+							}}
+						/>
 					</div>
-
-					<Show when={!permanent()}>
-						<div class="form-control">
-							<label class="label py-1" for="mute-duration">
-								<span class="label-text text-xs">时长（秒）</span>
-							</label>
-							<input
-								id="mute-duration"
-								type="number"
-								class="input input-bordered input-sm"
-								value={duration()}
-								onInput={(e) => setDuration(Number(e.currentTarget.value) || 0)}
-								min={1}
-							/>
-						</div>
-					</Show>
 
 					<div class="form-control">
 						<label class="label py-1" for="mute-reason">
-							<span class="label-text text-xs">原因</span>
+							<span class="label-text text-xs font-medium text-base-content/70">
+								原因
+							</span>
 						</label>
 						<input
 							id="mute-reason"
 							type="text"
-							class="input input-bordered input-sm"
+							class="input input-bordered input-sm bg-base-100 placeholder:text-base-content/40"
 							placeholder="违规发言"
 							value={reason()}
 							onInput={(e) => setReason(e.currentTarget.value)}
@@ -277,10 +264,10 @@ function MutePage() {
 					</div>
 				</div>
 
-				<div class="mt-3 flex justify-end">
+				<div class="mt-4 flex justify-end">
 					<button
 						type="button"
-						class="btn btn-primary btn-sm gap-2"
+						class="btn btn-sm gap-2 border border-base-300 bg-base-100 text-base-content shadow-none hover:bg-base-200"
 						disabled={!userId() || submitting()}
 						onClick={handleMute}
 					>
@@ -288,7 +275,7 @@ function MutePage() {
 						确认禁言
 					</button>
 				</div>
-			</div>
-		</div>
+			</ManageSection>
+		</ManagePage>
 	);
 }

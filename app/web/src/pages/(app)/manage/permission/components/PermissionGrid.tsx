@@ -14,7 +14,7 @@ export default function PermissionGrid(props: {
 	onToggle: (code: string, checked: boolean) => void;
 }) {
 	return (
-		<div class="min-h-0 overflow-auto relative">
+		<div class="relative min-h-0">
 			<Show
 				when={props.groupedPermissions.length > 0}
 				fallback={<div class="loading loading-spinner loading-md" />}

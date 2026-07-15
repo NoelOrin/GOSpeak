@@ -85,8 +85,8 @@ export default function OAuthProviderForm(props: OAuthProviderFormProps) {
 	const closeForm = () => props.onCancel();
 
 	return (
-		<div class="card bg-base-200 shadow-sm">
-			<div class="card-body gap-3">
+		<section class="rounded-2xl border border-base-300/80 bg-base-100 p-4 shadow-sm md:p-5">
+			<div class="flex flex-col gap-3">
 				<div class="flex items-center gap-2">
 					<Show when={!isEditing()}>
 						<button
@@ -100,14 +100,20 @@ export default function OAuthProviderForm(props: OAuthProviderFormProps) {
 						{isEditing() ? "编辑提供商" : `配置 ${displayName() || name()}`}
 					</h3>
 					<Show when={!isNative(name()) && !isEditing()}>
-						<span class="badge badge-info badge-sm">通用 OAuth2</span>
+						<span class="inline-flex items-center rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[11px] font-medium text-base-content/75">
+							通用 OAuth2
+						</span>
 					</Show>
 					<Show when={isNative(name())}>
-						<span class="badge badge-ghost badge-sm">内置实现</span>
+						<span class="inline-flex items-center rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[11px] font-medium text-base-content/75">
+							内置实现
+						</span>
 					</Show>
 				</div>
 
-				<div class="divider my-0 text-xs text-base-content/40">基本信息</div>
+				<div class="mt-1 text-xs font-semibold text-base-content/50">
+					基本信息
+				</div>
 				<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
 					<FormField label="名称（唯一标识）">
 						<input
@@ -139,7 +145,9 @@ export default function OAuthProviderForm(props: OAuthProviderFormProps) {
 					</FormField>
 				</div>
 
-				<div class="divider my-0 text-xs text-base-content/40">OAuth 端点</div>
+				<div class="mt-1 text-xs font-semibold text-base-content/50">
+					OAuth 端点
+				</div>
 				<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
 					<FormField label="Client ID">
 						<input
@@ -209,7 +217,7 @@ export default function OAuthProviderForm(props: OAuthProviderFormProps) {
 				</div>
 
 				<Show when={showFieldMapping()}>
-					<div class="divider my-0 text-xs text-base-content/40">
+					<div class="mt-1 text-xs font-semibold text-base-content/50">
 						用户信息字段映射
 					</div>
 					<p class="text-xs text-base-content/50">
@@ -268,7 +276,7 @@ export default function OAuthProviderForm(props: OAuthProviderFormProps) {
 				<div class="flex gap-2">
 					<button
 						type="button"
-						class="btn btn-primary btn-sm"
+						class="btn btn-sm border border-base-300 bg-base-100 text-base-content shadow-none hover:bg-base-200"
 						classList={{ "btn-disabled": saving() }}
 						onClick={handleSave}
 					>
@@ -286,6 +294,6 @@ export default function OAuthProviderForm(props: OAuthProviderFormProps) {
 					</button>
 				</div>
 			</div>
-		</div>
+		</section>
 	);
 }

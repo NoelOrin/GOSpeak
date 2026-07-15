@@ -29,7 +29,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 		<>
 			{/* LiveKit config fields */}
 			<Show when={selectedProvider() === "livekit"}>
-				<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+				<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
 					<FormField label="Host" error={errors().livekit_host}>
 						<input
 							type="text"
@@ -45,7 +45,6 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 							disabled={saving()}
 						/>
 					</FormField>
-					<div />
 					<FormField label="API Key" error={errors().livekit_key}>
 						<input
 							type="text"
@@ -85,7 +84,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 
 			{/* Agora config fields */}
 			<Show when={selectedProvider() === "agora"}>
-				<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+				<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
 					<FormField label="App ID" error={errors().agora_app_id}>
 						<input
 							type="text"
@@ -180,7 +179,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 
 			{/* MediaSoup config fields */}
 			<Show when={selectedProvider() === "mediasoup"}>
-				<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+				<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
 					<FormField label="Bridge URL" error={errors().mediasoup_bridge_url}>
 						<input
 							type="text"
@@ -216,7 +215,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 
 			{/* SRS config fields */}
 			<Show when={selectedProvider() === "srs"}>
-				<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+				<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
 					<FormField label="Host" error={errors().srs_host}>
 						<input
 							type="text"
@@ -301,7 +300,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 
 			{/* Daily config fields */}
 			<Show when={selectedProvider() === "daily"}>
-				<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+				<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
 					<FormField label="API Key" error={errors().daily_api_key}>
 						<input
 							type="password"
@@ -341,7 +340,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 
 			{/* Cloudflare Realtime config fields */}
 			<Show when={selectedProvider() === "cloudflare"}>
-				<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+				<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
 					<FormField label="App ID" error={errors().cf_app_id}>
 						<input
 							type="text"

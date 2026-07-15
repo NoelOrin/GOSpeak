@@ -13,8 +13,8 @@ export interface ProviderPresetPickerProps {
 
 export default function ProviderPresetPicker(props: ProviderPresetPickerProps) {
 	return (
-		<div class="card bg-base-200 shadow-sm">
-			<div class="card-body gap-4">
+		<section class="rounded-2xl border border-base-300/80 bg-base-100 p-4 shadow-sm md:p-5">
+			<div class="flex flex-col gap-4">
 				<div class="flex items-center gap-2">
 					<button
 						type="button"
@@ -36,7 +36,7 @@ export default function ProviderPresetPicker(props: ProviderPresetPickerProps) {
 							return (
 								<button
 									type="button"
-									class="flex flex-col items-center gap-2 rounded-lg border border-base-300 p-4 transition hover:border-primary hover:bg-primary/5"
+									class="flex flex-col items-center gap-2 rounded-xl border border-base-300 p-4 transition hover:border-base-content/20 hover:bg-base-200/40"
 									classList={{
 										"opacity-50 cursor-not-allowed": alreadyExists(),
 									}}
@@ -46,7 +46,9 @@ export default function ProviderPresetPicker(props: ProviderPresetPickerProps) {
 									<ProviderIcon name={preset.name} size={32} />
 									<span class="text-sm font-medium">{preset.label}</span>
 									<Show when={alreadyExists()}>
-										<span class="badge badge-ghost badge-xs">已配置</span>
+										<span class="inline-flex items-center rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[10px] font-medium text-base-content/70">
+											已配置
+										</span>
 									</Show>
 								</button>
 							);
@@ -56,7 +58,7 @@ export default function ProviderPresetPicker(props: ProviderPresetPickerProps) {
 					{/* 自定义 */}
 					<button
 						type="button"
-						class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-base-300 p-4 transition hover:border-primary hover:bg-primary/5"
+						class="flex flex-col items-center gap-2 rounded-xl border border-dashed border-base-300 p-4 transition hover:border-base-content/20 hover:bg-base-200/40"
 						onClick={props.onCustom}
 					>
 						<div class="flex h-8 w-8 items-center justify-center rounded-full bg-base-300">
@@ -67,6 +69,6 @@ export default function ProviderPresetPicker(props: ProviderPresetPickerProps) {
 					</button>
 				</div>
 			</div>
-		</div>
+		</section>
 	);
 }

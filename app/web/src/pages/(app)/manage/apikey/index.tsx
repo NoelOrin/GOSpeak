@@ -12,6 +12,14 @@ import {
 	revokeBotKey,
 } from "@/api/apikey";
 import { listPermissions, type PermissionItem } from "@/api/permission";
+import {
+	ManageHeader,
+	ManagePage,
+	ManageSection,
+	ManageTag,
+	manageTableHeadClass,
+	manageTableRowClass,
+} from "@/components/manage/ManageShell";
 import { hasPermission } from "@/utils/permissions";
 
 const EXPIRY_OPTIONS = [
@@ -137,44 +145,51 @@ function ApiKeyPage() {
 	};
 
 	return (
-		<div class="flex h-full min-h-0 flex-col gap-4 p-4 overflow-auto">
-			<div class="flex items-center gap-2">
-				<KeyRound size={20} />
-				<h3 class="font-bold text-lg">Bot API Key 管理</h3>
-			</div>
+		<ManagePage>
+			<ManageHeader
+				icon={<KeyRound size={18} />}
+				title="BOT 密钥"
+				description="创建并管理机器人访问密钥"
+			/>
 
-			{/* 新建表单 */}
-			<div class="card bg-base-200 shadow-sm">
-				<div class="card-body gap-3">
-					<h3 class="font-bold text-base">生成新密钥</h3>
+			<ManageSection title="生成新密钥" description="选择权限与过期时间">
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend text-[14px]">名称</legend>
+					<input
+						type="text"
+						class="input input-bordered input-sm w-full"
+						placeholder="如 night-record-bot"
+						value={name()}
+						onInput={(e) => setName(e.target.value)}
+					/>
+				</fieldset>
 
-					<fieldset class="fieldset">
-						<legend class="fieldset-legend text-[14px]">名称</legend>
-						<input
-							type="text"
-							class="input input-bordered input-sm w-full"
-							placeholder="如 night-record-bot"
-							value={name()}
-							onInput={(e) => setName(e.target.value)}
-						/>
-					</fieldset>
-
-					<fieldset class="fieldset">
-						<legend class="fieldset-legend text-[14px]">
-							权限（直接授予 Bot，不依赖角色）
-						</legend>
-						<Show
-							when={!(permissionsData() === undefined)}
-							fallback={<div class="loading loading-spinner loading-sm" />}
-						>
-							<div class="grid grid-cols-2 gap-2 xl:grid-cols-3 max-md:grid-cols-1">
-								<For each={botPermissions()}>
-									{(perm) => (
-										<label class="flex min-h-20 items-start gap-3 rounded-md border border-base-300 p-3 hover:bg-base-200 cursor-pointer">
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend text-[14px]">
+						权限（直接授予 Bot，不依赖角色）
+					</legend>
+					<Show
+						when={!(permissionsData() === undefined)}
+						fallback={<div class="loading loading-spinner loading-sm" />}
+					>
+						<div class="grid grid-cols-2 gap-2 xl:grid-cols-3 max-md:grid-cols-1">
+							<For each={botPermissions()}>
+								{(perm) => {
+									const checked = () =>
+										selectedPermissions().includes(perm.code);
+									return (
+										<label
+											class="flex min-h-20 cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors"
+											classList={{
+												"border-base-content/25 bg-base-200/50": checked(),
+												"border-base-300 hover:border-base-content/15 hover:bg-base-200/30":
+													!checked(),
+											}}
+										>
 											<input
 												type="checkbox"
 												class="checkbox checkbox-sm mt-1"
-												checked={selectedPermissions().includes(perm.code)}
+												checked={checked()}
 												onChange={() => togglePermission(perm.code)}
 											/>
 											<span class="min-w-0 flex-1">
@@ -189,13 +204,15 @@ function ApiKeyPage() {
 												</span>
 											</span>
 										</label>
-									)}
-								</For>
-							</div>
-						</Show>
-					</fieldset>
+									);
+								}}
+							</For>
+						</div>
+					</Show>
+				</fieldset>
 
-					<fieldset class="fieldset">
+				<div class="mt-2 flex flex-wrap items-end justify-between gap-3">
+					<fieldset class="fieldset min-w-52 flex-1">
 						<legend class="fieldset-legend text-[14px]">过期时间</legend>
 						<select
 							class="select select-bordered select-sm w-full max-w-xs"
@@ -207,24 +224,26 @@ function ApiKeyPage() {
 							</For>
 						</select>
 					</fieldset>
+					<button
+						type="button"
+						class="btn btn-sm border border-base-300 bg-base-100 text-base-content shadow-none hover:bg-base-200"
+						classList={{ "btn-disabled": creating() }}
+						onClick={handleCreate}
+					>
+						<Show when={creating()} fallback="生成密钥">
+							<span class="loading loading-spinner loading-xs" /> 生成中...
+						</Show>
+					</button>
+				</div>
 
-					<div>
-						<button
-							type="button"
-							class="btn btn-primary btn-sm"
-							classList={{ "btn-disabled": creating() }}
-							onClick={handleCreate}
-						>
-							<Show when={creating()} fallback="生成密钥">
-								<span class="loading loading-spinner loading-xs" /> 生成中...
-							</Show>
-						</button>
-					</div>
-
-					<Show when={newPlainKey()}>
-						<div class="alert alert-warning text-sm">
-							<KeyRound size={16} />
-							<div class="flex-1 break-all">
+				<Show when={newPlainKey()}>
+					<div class="mt-3 rounded-xl border border-base-300 bg-base-200/30 px-4 py-3 text-sm">
+						<div class="flex items-start gap-2">
+							<KeyRound
+								size={16}
+								class="mt-0.5 shrink-0 text-base-content/50"
+							/>
+							<div class="min-w-0 flex-1 break-all">
 								<div class="font-medium">
 									请立即保存此明文 Key（仅显示一次）：
 								</div>
@@ -238,29 +257,27 @@ function ApiKeyPage() {
 								<Copy size={14} /> 复制
 							</button>
 						</div>
-					</Show>
-				</div>
-			</div>
+					</div>
+				</Show>
+			</ManageSection>
 
-			{/* 密钥列表 */}
-			<div>
-				<div class="mb-2 font-semibold text-sm">已创建的密钥</div>
+			<ManageSection title="已创建的密钥" padded={false}>
 				<Show
 					when={!keysData.loading}
-					fallback={<div class="loading loading-spinner loading-sm" />}
+					fallback={<div class="loading loading-spinner loading-sm m-4" />}
 				>
 					<Show
 						when={(keysData()?.data?.length ?? 0) > 0}
 						fallback={
-							<div class="text-base-content/50 py-8 text-center text-sm">
+							<div class="m-4 rounded-xl border border-dashed border-base-300 bg-base-200/20 py-10 text-center text-sm text-base-content/55">
 								暂无 BOT 密钥
 							</div>
 						}
 					>
 						<div class="overflow-x-auto">
-							<table class="table table-zebra table-sm">
+							<table class="table table-sm">
 								<thead>
-									<tr>
+									<tr class={manageTableHeadClass}>
 										<th>名称</th>
 										<th>权限</th>
 										<th>过期时间</th>
@@ -271,39 +288,30 @@ function ApiKeyPage() {
 								<tbody>
 									<For each={keysData()?.data ?? []}>
 										{(key) => (
-											<tr>
+											<tr class={manageTableRowClass}>
 												<td class="font-medium">{key.name}</td>
 												<td>
 													<div class="flex flex-wrap gap-1">
 														<For each={key.permissions}>
 															{(perm) => (
-																<span class="badge badge-ghost badge-sm">
-																	{permissionLabel(perm)}
-																</span>
+																<ManageTag>{permissionLabel(perm)}</ManageTag>
 															)}
 														</For>
 													</div>
 												</td>
-												<td class="text-xs">{formatExpiry(key.expires_at)}</td>
+												<td class="text-xs text-base-content/75">
+													{formatExpiry(key.expires_at)}
+												</td>
 												<td>
-													<Show
-														when={!key.revoked}
-														fallback={
-															<span class="badge badge-error badge-sm">
-																已吊销
-															</span>
-														}
-													>
-														<span class="badge badge-success badge-sm">
-															有效
-														</span>
-													</Show>
+													<ManageTag>
+														{key.revoked ? "已吊销" : "有效"}
+													</ManageTag>
 												</td>
 												<td>
 													<Show when={!key.revoked}>
 														<button
 															type="button"
-															class="btn btn-ghost btn-xs text-error"
+															class="btn btn-ghost btn-xs text-base-content/60"
 															disabled={revokingUuid() === key.uuid}
 															onClick={() => handleRevoke(key)}
 														>
@@ -325,7 +333,7 @@ function ApiKeyPage() {
 						</div>
 					</Show>
 				</Show>
-			</div>
-		</div>
+			</ManageSection>
+		</ManagePage>
 	);
 }

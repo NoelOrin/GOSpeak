@@ -2,9 +2,11 @@ import { DEFAULT_SFU_PROVIDER, PROVIDER_LABELS } from "@gospeak/sfu-client";
 import type { SFUProvider } from "@gospeak/sfu-client/types";
 import { createFileRoute, redirect } from "@tanstack/solid-router";
 import ArrowRight from "lucide-solid/icons/arrow-right";
+import Info from "lucide-solid/icons/info";
 import RefreshCcw from "lucide-solid/icons/refresh-ccw";
 import Save from "lucide-solid/icons/save";
 import ServerCog from "lucide-solid/icons/server-cog";
+import TriangleAlert from "lucide-solid/icons/triangle-alert";
 import { createEffect, createResource, createSignal, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import {
@@ -15,6 +17,7 @@ import {
 	type UpdateSFUConfigParams,
 	updateSFUConfig,
 } from "@/api/sfu";
+import { ManageHeader, ManagePage } from "@/components/manage/ManageShell";
 import { hasPermission } from "@/utils/permissions";
 import CapabilityBadge from "./components/CapabilityBadge";
 import {
@@ -191,21 +194,22 @@ function SFUPage() {
 				</div>
 			}
 		>
-			<div class="p-4 flex flex-col gap-4">
-				<div class="flex items-center justify-between gap-3">
-					<div class="flex items-center gap-2">
-						<ServerCog size={20} />
-						<h3 class="font-bold text-lg">SFU 提供商</h3>
-					</div>
-					<button
-						class="btn btn-ghost btn-sm"
-						onClick={() => void refetchList()}
-						disabled={saving()}
-						title="重新加载"
-					>
-						<RefreshCcw size={16} />
-					</button>
-				</div>
+			<ManagePage>
+				<ManageHeader
+					icon={<ServerCog size={18} />}
+					title="SFU 提供商"
+					description="选择实时语音后端，并配置对应连接参数"
+					actions={
+						<button
+							class="btn btn-ghost btn-sm btn-square"
+							onClick={() => void refetchList()}
+							disabled={saving()}
+							title="重新加载"
+						>
+							<RefreshCcw size={16} />
+						</button>
+					}
+				/>
 
 				<Show when={providersResponse.error}>
 					<div class="alert alert-error text-sm">
@@ -215,116 +219,140 @@ function SFUPage() {
 					</div>
 				</Show>
 
-				<div class="divider my-0 text-xs text-base-content/40">提供商选择</div>
-
-				<ProviderCardGrid
-					activeProvider={activeProvider()}
-					selectedProvider={selectedProvider()}
-					providers={providersResponse()?.providers ?? []}
-					disabled={saving()}
-					onSelect={(provider) => {
-						setSelectedProvider(provider);
-						setForm((current) => ({ ...current, provider }));
-						setErrors({});
-					}}
-				/>
-
-				{/* Current provider capabilities */}
-				<div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-					<CapabilityBadge
-						label="参与者列表"
-						active={capabilities().supportsParticipants}
-					/>
-					<CapabilityBadge
-						label="专属信令适配"
-						active={capabilities().requiresSignalAdapter}
-					/>
-					<CapabilityBadge
-						label="信令踢人"
-						active={capabilities().kickViaSignal}
-					/>
-				</div>
-
-				{/* Active state info + switch/save buttons */}
-				<div class="flex flex-wrap items-center justify-between gap-3">
-					<div class="rounded-box border border-base-300 bg-base-200/40 px-4 py-3 text-sm text-base-content/70">
-						当前激活{" "}
-						<span class="font-medium text-base-content">
-							{PROVIDER_LABELS[activeProvider()]}
-						</span>
-						。成员静音仍为前端本地远端轨道静音，不依赖服务端能力。
+				<section class="rounded-2xl border border-base-300/80 bg-base-100 p-4 shadow-sm md:p-5">
+					<div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+						<div>
+							<div class="text-sm font-semibold">提供商选择</div>
+							<p class="mt-0.5 text-xs text-base-content/50">
+								当前激活{" "}
+								<span class="font-medium text-base-content">
+									{PROVIDER_LABELS[activeProvider()]}
+								</span>
+								，点击卡片可切换查看配置
+							</p>
+						</div>
+						<div class="flex flex-wrap items-center gap-1.5">
+							<CapabilityBadge
+								label="参与者列表"
+								active={capabilities().supportsParticipants}
+							/>
+							<CapabilityBadge
+								label="专属信令适配"
+								active={capabilities().requiresSignalAdapter}
+							/>
+							<CapabilityBadge
+								label="信令踢人"
+								active={capabilities().kickViaSignal}
+							/>
+						</div>
 					</div>
-				</div>
 
-				{/* Non-active provider notice */}
-				<Show when={showSwitch()}>
-					<div class="rounded-box border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
-						<div class="flex items-center justify-between gap-2">
-							<span class="text-base-content/70">
+					<ProviderCardGrid
+						activeProvider={activeProvider()}
+						selectedProvider={selectedProvider()}
+						providers={providersResponse()?.providers ?? []}
+						disabled={saving()}
+						onSelect={(provider) => {
+							setSelectedProvider(provider);
+							setForm((current) => ({ ...current, provider }));
+							setErrors({});
+						}}
+					/>
+				</section>
+
+				<section class="space-y-3">
+					<div class="flex items-start gap-2.5 rounded-2xl border border-base-300/80 bg-base-100 px-4 py-3 text-sm text-base-content/70 shadow-sm">
+						<Info size={16} class="mt-0.5 shrink-0 text-base-content/45" />
+						<div>
+							当前激活{" "}
+							<span class="font-medium text-base-content">
+								{PROVIDER_LABELS[activeProvider()]}
+							</span>
+							。成员静音仍为前端本地远端轨道静音，不依赖服务端能力。
+						</div>
+					</div>
+
+					<Show when={showSwitch()}>
+						<div class="flex items-start gap-2.5 rounded-2xl border border-base-300/80 bg-base-200/30 px-4 py-3 text-sm text-base-content/75">
+							<Info size={16} class="mt-0.5 shrink-0 text-base-content/45" />
+							<div>
 								当前查看{" "}
 								<span class="font-medium text-base-content">
 									{PROVIDER_LABELS[selectedProvider() ?? activeProvider()]}
 								</span>
 								的配置，尚未激活。保存配置将自动激活，或直接切换。
-							</span>
+							</div>
+						</div>
+					</Show>
+
+					<Show when={DISABLED_PROVIDERS.includes("mediasoup")}>
+						<div class="flex items-start gap-2.5 rounded-2xl border border-warning/20 bg-warning/8 px-4 py-3 text-sm text-base-content/70">
+							<TriangleAlert
+								size={16}
+								class="mt-0.5 shrink-0 text-base-content/45"
+							/>
+							<div>MediaSoup 当前保留展示但暂不开放配置与切换。</div>
+						</div>
+					</Show>
+				</section>
+
+				<section class="rounded-2xl border border-base-300/80 bg-base-100 p-4 shadow-sm md:p-5">
+					<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+						<div>
+							<div class="text-sm font-semibold">
+								{PROVIDER_LABELS[selectedProvider() ?? activeProvider()]} 配置
+							</div>
+							<p class="mt-0.5 text-xs text-base-content/50">
+								密钥字段留空表示保留已有配置
+							</p>
+						</div>
+						<div class="flex items-center gap-2">
+							<Show when={showSwitch()}>
+								<button
+									type="button"
+									class="btn btn-sm border border-base-300 bg-base-100 text-base-content/80 shadow-none hover:bg-base-200"
+									onClick={() => {
+										const provider = selectedProvider();
+										if (provider) void handleSwitch(provider);
+									}}
+									disabled={saving()}
+								>
+									<Show when={saving()} fallback={<ArrowRight size={16} />}>
+										<span class="loading loading-spinner loading-xs" />
+									</Show>
+									{saving() ? "切换中..." : "切换到此提供商"}
+								</button>
+							</Show>
+							<button
+								type="button"
+								class="btn btn-sm border border-base-300 bg-base-100 text-base-content shadow-none hover:bg-base-200"
+								classList={{ "btn-disabled": saving() }}
+								onClick={handleSave}
+							>
+								<Show when={saving()} fallback={<Save size={16} />}>
+									<span class="loading loading-spinner loading-xs" />
+								</Show>
+								{saving() ? "保存中..." : "保存并激活"}
+							</button>
 						</div>
 					</div>
-				</Show>
 
-				<Show when={DISABLED_PROVIDERS.includes("mediasoup")}>
-					<div class="rounded-box border border-warning/20 bg-warning/8 px-4 py-3 text-sm text-base-content/70">
-						MediaSoup 当前保留展示但暂不开放配置与切换。
-					</div>
-				</Show>
-
-				<div class="divider my-0 text-xs text-base-content/40">
-					{PROVIDER_LABELS[selectedProvider() ?? activeProvider()]} 配置
-				</div>
-
-				<Show when={selectedProvider()}>
-					{(provider) => (
-						<ProviderConfigForm
-							provider={provider()}
-							form={form()}
-							errors={errors()}
-							secretFlags={secretFlags()}
-							saving={saving()}
-							updateField={updateField}
-						/>
-					)}
-				</Show>
-
-				{/* Action buttons row */}
-				<div class="flex items-center justify-end gap-3 pt-2">
-					<Show when={showSwitch()}>
-						<button
-							type="button"
-							class="btn btn-soft btn-sm"
-							onClick={() => {
-								const provider = selectedProvider();
-								if (provider) void handleSwitch(provider);
-							}}
-							disabled={saving()}
-						>
-							<Show when={saving()} fallback={<ArrowRight size={16} />}>
-								<span class="loading loading-spinner loading-xs" />
-							</Show>
-							{saving() ? "切换中..." : "切换到此提供商"}
-						</button>
+					<Show when={selectedProvider()}>
+						{(provider) => (
+							<div class="rounded-xl border border-base-300/70 bg-base-200/20 p-3 md:p-4">
+								<ProviderConfigForm
+									provider={provider()}
+									form={form()}
+									errors={errors()}
+									secretFlags={secretFlags()}
+									saving={saving()}
+									updateField={updateField}
+								/>
+							</div>
+						)}
 					</Show>
-					<button
-						type="button"
-						class="btn btn-primary btn-sm"
-						classList={{ "btn-disabled": saving() }}
-						onClick={handleSave}
-					>
-						<Show when={saving()} fallback={<Save size={16} />}>
-							<span class="loading loading-spinner loading-xs" />
-						</Show>
-						{saving() ? "保存中..." : "保存并激活"}
-					</button>
-				</div>
-			</div>
+				</section>
+			</ManagePage>
 		</Show>
 	);
 }
