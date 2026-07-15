@@ -56,6 +56,7 @@ app/server/
 │   ├── permcode/           # Permission code constants
 │   ├── signal/             # Socket.IO signaling hub
 │   ├── redis/              # Optional Redis client (blacklist, JWT key rotation)
+│   ├── logger/             # Unified logrus wrapper (level/format/output + gin middleware)
 │   └── pkg/                # Shared utilities
 │       ├── errors.go       # Business error codes + AppError
 │       ├── response.go     # Unified JSON response
@@ -363,6 +364,17 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | `SERVER_PORT` | `8998` | HTTP listen port |
 | `STATIC_DIR` | — | Frontend static dir (SPA hosting in prod) |
 | `GIN_MODE` | `debug` | Gin mode (`release` in prod) |
+
+### Logging
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_LEVEL` | dev=`debug` / prod=`info` | `trace` / `debug` / `info` / `warn` / `error` |
+| `LOG_FORMAT` | dev=`text` / prod=`json` | `text` / `json` |
+| `LOG_OUTPUT` | `stdout` | `stdout` / `stderr` / `file` / `both` |
+| `LOG_FILE` | `logs/app.log` | path when output is `file`/`both` |
+| `LOG_CALLER` | `false` | print caller file:line |
+
 
 - Auto-migration is enabled — all models are synced on startup in `repository/db.go`.
 
