@@ -5,106 +5,19 @@ import { preloadSfuClient } from "@/components/room/services/loadSfuClient";
 import { setSpeakingIdentities } from "@/handler_audio/speakingStore";
 import { createSocketClient } from "@/socket/client";
 import { EVENTS } from "@/socket/events";
+import { createTabLock } from "@/socket/tabLock";
 import userStore from "@/stores/userStore";
 
 export { EVENTS } from "@/socket/events";
 
-const TAB_CHANNEL_NAME = "gospeak_socket_tab";
-const TAB_PROBE_TIMEOUT_MS = 150;
-const TAB_ID =
-	typeof crypto !== "undefined" && "randomUUID" in crypto
-		? crypto.randomUUID()
-		: `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-type TabMessage =
-	| { type: "probe"; from: string }
-	| { type: "owner"; from: string }
-	| { type: "claimed"; from: string }
-	| { type: "release"; from: string };
-
-let tabChannel: BroadcastChannel | null = null;
-let isSocketTabOwner = false;
-let onForeignClaim: (() => void) | null = null;
-
-function getTabChannel(): BroadcastChannel | null {
-	if (
-		typeof window === "undefined" ||
-		typeof BroadcastChannel === "undefined"
-	) {
-		return null;
-	}
-	if (!tabChannel) {
-		tabChannel = new BroadcastChannel(TAB_CHANNEL_NAME);
-		tabChannel.onmessage = (ev: MessageEvent<TabMessage>) => {
-			const msg = ev.data;
-			if (!msg || msg.from === TAB_ID) return;
-			if (msg.type === "probe" && isSocketTabOwner) {
-				// 已有持有者时回应，阻止其他标签页连接
-				tabChannel?.postMessage({
-					type: "owner",
-					from: TAB_ID,
-				} satisfies TabMessage);
-				return;
-			}
-			if (msg.type === "claimed" && isSocketTabOwner) {
-				// 理论上不应发生；若他页抢占成功，本页让出
-				onForeignClaim?.();
-			}
-		};
-	}
-	return tabChannel;
-}
-
-/** 通过 BroadcastChannel 探测是否已有标签页持有 socket；无则声明自己为 owner。 */
-async function claimSocketTabLock(): Promise<boolean> {
-	const ch = getTabChannel();
-	if (!ch) {
-		// 不支持 BroadcastChannel 时放行
-		isSocketTabOwner = true;
-		return true;
-	}
-	if (isSocketTabOwner) return true;
-
-	return await new Promise<boolean>((resolve) => {
-		let settled = false;
-		const finish = (ok: boolean) => {
-			if (settled) return;
-			settled = true;
-			ch.removeEventListener("message", onMsg as EventListener);
-			window.clearTimeout(timer);
-			if (ok) {
-				isSocketTabOwner = true;
-				ch.postMessage({ type: "claimed", from: TAB_ID } satisfies TabMessage);
-			}
-			resolve(ok);
-		};
-
-		const onMsg = (ev: MessageEvent<TabMessage>) => {
-			const msg = ev.data;
-			if (!msg || msg.from === TAB_ID) return;
-			if (msg.type === "owner" || msg.type === "claimed") {
-				finish(false);
-			}
-		};
-
-		ch.addEventListener("message", onMsg as EventListener);
-		ch.postMessage({ type: "probe", from: TAB_ID } satisfies TabMessage);
-		const timer = window.setTimeout(() => finish(true), TAB_PROBE_TIMEOUT_MS);
-	});
-}
-
-function releaseSocketTabLock(): void {
-	if (!isSocketTabOwner) return;
-	isSocketTabOwner = false;
-	try {
-		getTabChannel()?.postMessage({
-			type: "release",
-			from: TAB_ID,
-		} satisfies TabMessage);
-	} catch {
-		// ignore
-	}
-}
+const tabLock = createTabLock({
+	channelName: "gospeak_socket_tab",
+	tabId:
+		typeof crypto !== "undefined" && "randomUUID" in crypto
+			? crypto.randomUUID()
+			: `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+	probeTimeoutMs: 150,
+});
 
 function handleProviderChanged(provider?: string): void {
 	console.log("[Socket] sfu:provider-changed", provider);
@@ -120,12 +33,12 @@ function handleProviderChanged(provider?: string): void {
 }
 
 export type {
-	MemberInfo,
-	RoomInfo,
-	MuteEvent,
-	UnmuteEvent,
 	ActivityEvent,
+	MemberInfo,
+	MuteEvent,
+	RoomInfo,
 	RoomPresenceEvent,
+	UnmuteEvent,
 } from "@/socket/types";
 
 import type {
@@ -206,7 +119,7 @@ export const socketStore = createRoot(() => {
 		}
 		// 源头禁止多标签页连接：BroadcastChannel 探测，同一浏览器仅允许一个活动标签页持有 socket
 		setConnecting(true);
-		void claimSocketTabLock().then((ok) => {
+		void tabLock.claim().then((ok) => {
 			if (!ok) {
 				setConnecting(false);
 				showToast("已在其他标签页连接，请关闭其他标签页后重试", {
@@ -477,7 +390,7 @@ export const socketStore = createRoot(() => {
 		adapter.offAllServerEvents();
 		serverEventsBound = false;
 		adapter.disconnect();
-		releaseSocketTabLock();
+		tabLock.release();
 		setConnecting(false);
 		setConnected(false);
 		setCurrentRoom(null);
@@ -718,16 +631,16 @@ export const socketStore = createRoot(() => {
 	// 标签页关闭时释放 owner，允许其他标签页接管
 	if (typeof window !== "undefined") {
 		window.addEventListener("beforeunload", () => {
-			releaseSocketTabLock();
+			tabLock.release();
 		});
 		// 若异常出现他页 claimed，本页主动让出
-		onForeignClaim = () => {
+		tabLock.setOnForeignClaim(() => {
 			if (!adapter.isConnected() && !connecting()) return;
 			showToast("连接已切换到其他标签页", { type: "warning" });
 			disconnect();
-		};
+		});
 		// 确保 channel 已建立，能响应 probe
-		getTabChannel();
+		tabLock.ensureListening();
 	}
 
 	return {
