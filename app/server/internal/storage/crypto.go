@@ -7,7 +7,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"os"
+
+	"GOSpeak/internal/config"
 
 	"github.com/sirupsen/logrus"
 )
@@ -17,9 +18,13 @@ const devFallbackKey = "00000000000000000000000000000000000000000000000000000000
 
 // getEncryptKey 获取加密密钥（32字节 hex 编码 → 32字节）
 func getEncryptKey() []byte {
-	hexKey := os.Getenv("STORAGE_ENCRYPT_KEY")
-	appEnv := os.Getenv("APP_ENV")
-	isDev := appEnv == "development" || appEnv == "dev"
+	cfg := config.Current()
+	hexKey := ""
+	isDev := true
+	if cfg != nil {
+		hexKey = cfg.StorageEncryptKey
+		isDev = !cfg.IsProduction()
+	}
 
 	if hexKey == "" {
 		if isDev {
@@ -66,7 +71,7 @@ func EncryptSecret(plaintext string) (string, error) {
 	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
-// DecryptSecret 解密 base64 编码的 AES-256-GCM 密文
+// DecryptSecret 解密 base64 编码的 AES-GCM 密文
 func DecryptSecret(encoded string) (string, error) {
 	if encoded == "" {
 		return "", nil

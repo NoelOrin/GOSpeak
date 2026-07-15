@@ -1,6 +1,8 @@
 package bus
 
 import (
+	"fmt"
+	"net"
 	"testing"
 	"time"
 
@@ -53,3 +55,73 @@ func TestStartEmbeddedServer_JetStreamAvailable(t *testing.T) {
 		t.Fatal("AccountInfo returned nil")
 	}
 }
+
+func TestStartEmbeddedServerOnPort_Fixed(t *testing.T) {
+	es, err := StartEmbeddedServerOnPort(0)
+	if err != nil {
+		t.Fatalf("bootstrap free port server: %v", err)
+	}
+	// Borrow a free port by starting random, then rebind via second start after shutdown
+	// using OS-assigned free port discovery from first ClientURL is flaky; instead use port 0
+	// and validate fixed path with a known free TCP port.
+	es.Shutdown()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen free port: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+
+	es, err = StartEmbeddedServerOnPort(port)
+	if err != nil {
+		t.Fatalf("StartEmbeddedServerOnPort(%d): %v", port, err)
+	}
+	defer es.Shutdown()
+
+	want := fmt.Sprintf("nats://127.0.0.1:%d", port)
+	if es.ClientURL() != want {
+		t.Fatalf("ClientURL = %q, want %q", es.ClientURL(), want)
+	}
+	nc, err := nats.Connect(es.ClientURL(), nats.Timeout(2*time.Second))
+	if err != nil {
+		t.Fatalf("connect fixed port: %v", err)
+	}
+	defer nc.Close()
+}
+
+func TestInit_EmbeddedPortFixed(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen free port: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+
+	b, cleanup, err := Init(InitConfig{
+		URL:          "",
+		Prefix:       "gospeak",
+		EmbeddedPort: port,
+		Deliverer:    nopDeliverer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if b.Mode() != "embedded" {
+		t.Fatalf("mode = %q, want embedded", b.Mode())
+	}
+	nb, ok := b.(*NATSBus)
+	if !ok {
+		t.Fatal("expected *NATSBus")
+	}
+	want := fmt.Sprintf("nats://127.0.0.1:%d", port)
+	if nb.Conn() == nil || nb.Conn().ConnectedUrl() != want {
+		got := ""
+		if nb.Conn() != nil {
+			got = nb.Conn().ConnectedUrl()
+		}
+		t.Fatalf("ConnectedUrl = %q, want %q", got, want)
+	}
+}
+

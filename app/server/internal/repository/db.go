@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"GOSpeak/internal/config"
 	"GOSpeak/internal/model"
 	"fmt"
 	"os"
@@ -22,16 +23,19 @@ const (
 
 var DB *gorm.DB
 
-func InitDB() error {
-	dbType := getDBType()
+func InitDB(cfg *config.Config) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
+	}
+	dbType := DatabaseEnum(cfg.DBType)
 	var err error
 	switch dbType {
 	case PostgreSQL:
-		DB, err = connectPostgreSQL()
+		DB, err = connectPostgreSQL(cfg)
 	case SQLite:
-		DB, err = connectSQLite()
+		DB, err = connectSQLite(cfg)
 	case MySQL:
-		DB, err = connectMySQL()
+		DB, err = connectMySQL(cfg)
 	default:
 		return fmt.Errorf("unsupported database type: %s", dbType)
 	}
@@ -54,39 +58,47 @@ func InitDB() error {
 	return autoMigrate()
 }
 
-func getDBType() DatabaseEnum {
-	dbType := os.Getenv("DB_TYPE")
-	if dbType == "" {
-		return SQLite
-	}
-	return DatabaseEnum(dbType)
-}
-
-func connectPostgreSQL() (*gorm.DB, error) {
-	dsn := os.Getenv("DB_DSN")
+func connectPostgreSQL(cfg *config.Config) (*gorm.DB, error) {
+	dsn := cfg.DBDSN
 	if dsn == "" {
+		user := cfg.DBUser
+		if user == "" {
+			user = "postgres"
+		}
+		password := cfg.DBPassword
+		if password == "" {
+			password = "postgres"
+		}
+		host := cfg.DBHost
+		if host == "" {
+			host = "localhost"
+		}
+		port := cfg.DBPort
+		if port == "" {
+			port = "5432"
+		}
 		dsn = fmt.Sprintf(
 			"host=%s user=%s password=%s dbname=myapp port=%s sslmode=disable",
-			getEnv("DB_HOST", "localhost"),
-			getEnv("DB_USER", "postgres"),
-			getEnv("DB_PASSWORD", "postgres"),
-			getEnv("DB_PORT", "5432"),
+			host, user, password, port,
 		)
 	}
 	return gorm.Open(postgres.Open(dsn), &gorm.Config{})
 }
 
-func connectSQLite() (*gorm.DB, error) {
-	path := os.Getenv("DB_PATH")
+func connectSQLite(cfg *config.Config) (*gorm.DB, error) {
+	path := cfg.DBPath
 	if path == "" {
 		if err := os.MkdirAll("db", 0755); err != nil {
 			return nil, fmt.Errorf("failed to create db directory: %w", err)
 		}
 		path = "db/app.db"
+	} else if dir := parentDir(path); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create db directory: %w", err)
+		}
 	}
-	walEnabled := os.Getenv("DB_WAL") == "true"
 	journalMode := "DELETE"
-	if walEnabled {
+	if cfg.DBWAL {
 		journalMode = "WAL"
 	}
 	dsn := path + fmt.Sprintf("?_journal_mode=%s&_busy_timeout=5000", journalMode)
@@ -99,7 +111,7 @@ func connectSQLite() (*gorm.DB, error) {
 		return nil, err
 	}
 	sqlDB.Exec(fmt.Sprintf("PRAGMA journal_mode=%s", journalMode))
-	if walEnabled {
+	if cfg.DBWAL {
 		sqlDB.Exec("PRAGMA synchronous=NORMAL")
 	} else {
 		sqlDB.Exec("PRAGMA synchronous=FULL")
@@ -108,25 +120,36 @@ func connectSQLite() (*gorm.DB, error) {
 	return db, nil
 }
 
-func connectMySQL() (*gorm.DB, error) {
-	dsn := os.Getenv("DB_DSN")
+func connectMySQL(cfg *config.Config) (*gorm.DB, error) {
+	dsn := cfg.DBDSN
 	if dsn == "" {
+		user := cfg.DBUser
+		if user == "" {
+			user = "root"
+		}
+		host := cfg.DBHost
+		if host == "" {
+			host = "localhost"
+		}
+		port := cfg.DBPort
+		if port == "" {
+			port = "3306"
+		}
 		dsn = fmt.Sprintf(
 			"%s:%s@tcp(%s:%s)/myapp?charset=utf8mb4&parseTime=True&loc=Local",
-			getEnv("DB_USER", "root"),
-			getEnv("DB_PASSWORD", ""),
-			getEnv("DB_HOST", "localhost"),
-			getEnv("DB_PORT", "3306"),
+			user, cfg.DBPassword, host, port,
 		)
 	}
 	return gorm.Open(mysql.Open(dsn), &gorm.Config{})
 }
 
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+func parentDir(path string) string {
+	for i := len(path) - 1; i >= 0; i-- {
+		if path[i] == '/' || path[i] == '\\' {
+			return path[:i]
+		}
 	}
-	return defaultValue
+	return ""
 }
 
 // migrateOldSFUConfig handles migration from the old single-row sfu_configs

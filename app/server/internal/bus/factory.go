@@ -15,7 +15,9 @@ type InitConfig struct {
 	Prefix         string
 	Name           string
 	ConnectTimeout time.Duration
-	Deliverer      Deliverer
+	// EmbeddedPort 内嵌 NATS 监听端口；<=0 表示随机端口。
+	EmbeddedPort int
+	Deliverer    Deliverer
 	// RemoteHook 可选：peer 事件在本地投递后回调（用于 Hub 控制面清理等）。
 	RemoteHook func(event string, payload interface{})
 }
@@ -68,7 +70,7 @@ func Init(cfg InitConfig) (EventBus, func(), error) {
 	}
 
 	if mode == "embedded" {
-		es, err := StartEmbeddedServer()
+		es, err := StartEmbeddedServerOnPort(cfg.EmbeddedPort)
 		if err != nil {
 			return nil, func() {}, fmt.Errorf("bus init embedded: %w", err)
 		}

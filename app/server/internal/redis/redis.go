@@ -2,9 +2,9 @@
 package redis
 
 import (
+	"GOSpeak/internal/config"
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -15,32 +15,28 @@ import (
 // Client 全局 Redis 客户端。REDIS_HOST 为空时为 nil，所有使用者需判断。
 var Client *redis.Client
 
-// InitRedis 根据环境变量初始化 Redis 连接。
+// InitRedis 根据配置初始化 Redis 连接。
 // REDIS_HOST 为空时跳过连接，不 panic、不报错。
-func InitRedis() {
-	host := os.Getenv("REDIS_HOST")
+func InitRedis(cfg *config.Config) {
+	if cfg == nil {
+		fmt.Println("[Redis] config is nil, skipping Redis connection")
+		return
+	}
+	host := cfg.RedisHost
 	if host == "" {
 		fmt.Println("[Redis] REDIS_HOST not set, skipping Redis connection")
 		return
 	}
 
-	port := os.Getenv("REDIS_PORT")
+	port := cfg.RedisPort
 	if port == "" {
 		port = "6379"
 	}
 
-	password := os.Getenv("REDIS_PASSWORD")
-
-	db := 0
-	if dbStr := os.Getenv("REDIS_DB"); dbStr != "" {
-		if n, err := strconv.Atoi(dbStr); err == nil {
-			db = n
-		}
-	}
-
+	db := cfg.RedisDBIndex()
 	client := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%s", host, port),
-		Password: password,
+		Password: cfg.RedisPassword,
 		DB:       db,
 	})
 
@@ -60,12 +56,12 @@ func IsConnected() bool {
 
 // RedisStats Redis 详细状态，用于监控面板。
 type RedisStats struct {
-	Connected    bool    `json:"connected"`
-	PingMs       int64   `json:"ping_ms"`
-	DBSize       int64   `json:"db_size"`
-	UsedMemoryMB float64 `json:"used_memory_mb"`
+	Connected        bool    `json:"connected"`
+	PingMs           int64   `json:"ping_ms"`
+	DBSize           int64   `json:"db_size"`
+	UsedMemoryMB     float64 `json:"used_memory_mb"`
 	UsedMemoryPeakMB float64 `json:"used_memory_peak_mb"`
-	ConnectedClients int64 `json:"connected_clients"`
+	ConnectedClients int64   `json:"connected_clients"`
 }
 
 // GetStats 返回 Redis 详细状态。Client 为 nil 时仅返回 Connected=false。

@@ -14,17 +14,29 @@ type EmbeddedServer struct {
 	storeDir string // JetStream StoreDir，Shutdown 时清理
 }
 
-// StartEmbeddedServer 启动仅监听本机随机端口的内嵌 NATS（含 JetStream）。
-// Port=-1 避免与宿主机/其他副本抢 4222。
+// StartEmbeddedServer 启动仅监听本机的内嵌 NATS（含 JetStream）。
+// port <= 0 时使用随机端口（Port=-1），避免与宿主机/其他副本抢 4222。
+// port > 0 时固定监听 127.0.0.1:port。
 func StartEmbeddedServer() (*EmbeddedServer, error) {
+	return StartEmbeddedServerOnPort(0)
+}
+
+// StartEmbeddedServerOnPort 按指定端口启动内嵌 NATS。
+// port <= 0 表示随机端口。
+func StartEmbeddedServerOnPort(port int) (*EmbeddedServer, error) {
 	dir, err := os.MkdirTemp("", "gospeak-nats-js-*")
 	if err != nil {
 		return nil, fmt.Errorf("nats embedded: temp store dir: %w", err)
 	}
 
+	listenPort := port
+	if listenPort <= 0 {
+		listenPort = -1
+	}
+
 	opts := &natsserver.Options{
 		Host:       "127.0.0.1",
-		Port:       -1,
+		Port:       listenPort,
 		NoLog:      true,
 		NoSigs:     true,
 		MaxPayload: 1 << 20, // 1MiB，信令 JSON 足够
@@ -40,6 +52,9 @@ func StartEmbeddedServer() (*EmbeddedServer, error) {
 	if !ns.ReadyForConnections(5 * time.Second) {
 		ns.Shutdown()
 		_ = os.RemoveAll(dir)
+		if port > 0 {
+			return nil, fmt.Errorf("nats embedded: not ready for connections on 127.0.0.1:%d", port)
+		}
 		return nil, fmt.Errorf("nats embedded: not ready for connections")
 	}
 	return &EmbeddedServer{ns: ns, storeDir: dir}, nil

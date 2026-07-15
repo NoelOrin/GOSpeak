@@ -2,14 +2,10 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/joho/godotenv"
+
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"GOSpeak/server"
-)
-
-var (
-	envFlag string
 )
 
 var RootCmd = &cobra.Command{
@@ -21,12 +17,11 @@ var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "start server",
 	Run: func(cmd *cobra.Command, args []string) {
-		_ = godotenv.Load()
 		env, _ := cmd.Flags().GetString("env")
 		if env != "" {
 			server.StartGin(server.EnvEnum(env))
 		} else {
-			server.StartGin("prod")
+			server.StartGin(server.Prod)
 		}
 	},
 }

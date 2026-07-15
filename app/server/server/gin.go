@@ -23,6 +23,7 @@ import (
 	"os"
 	ossignal "os/signal"
 	"syscall"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -33,7 +34,6 @@ import (
 	"github.com/googollee/go-socket.io/engineio/transport"
 	"github.com/googollee/go-socket.io/engineio/transport/polling"
 	"github.com/googollee/go-socket.io/engineio/transport/websocket"
-	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -45,20 +45,32 @@ const (
 )
 
 func StartGin(env EnvEnum) {
-	loadingEnv(env)
-
-	if env == Prod || env == "" {
-		gin.SetMode(gin.ReleaseMode)
+	appEnv := string(env)
+	if appEnv == "" {
+		appEnv = string(Prod)
+	}
+	// 进程环境优先；文件仅填充未设置变量
+	config.LoadEnvFiles(appEnv)
+	if os.Getenv("APP_ENV") == "" {
+		_ = os.Setenv("APP_ENV", appEnv)
 	}
 
-	if err := repository.InitDB(); err != nil {
+	cfg := config.MustLoad()
+
+	if env == Prod || env == "" || cfg.IsProduction() {
+		gin.SetMode(gin.ReleaseMode)
+	}
+	if cfg.GinMode != "" {
+		gin.SetMode(cfg.GinMode)
+	}
+
+	if err := repository.InitDB(cfg); err != nil {
 		panic(fmt.Sprintf("failed to initialize database: %v", err))
 	}
 
-	redis.InitRedis()
+	redis.InitRedis(cfg)
 
-	cfg := config.Load()
-	if env == Prod {
+	if env == Prod || cfg.IsProduction() {
 		redis.SetProductionMode()
 	}
 
@@ -125,11 +137,20 @@ func StartGin(env EnvEnum) {
 		timeout = 2 * time.Second
 	}
 	deliverer := bus.NewSIODeliverer(sioServer)
+	embeddedPort := 0
+	if cfg.NATSEmbeddedPort != "" {
+		p, err := strconv.Atoi(cfg.NATSEmbeddedPort)
+		if err != nil {
+			panic(fmt.Sprintf("invalid NATS_EMBEDDED_PORT %q: %v", cfg.NATSEmbeddedPort, err))
+		}
+		embeddedPort = p
+	}
 	eventBus, closeEventBus, err := bus.Init(bus.InitConfig{
 		URL:            cfg.NATSURL,
 		Prefix:         cfg.NATSSubjectPrefix,
 		Name:           cfg.NATSName,
 		ConnectTimeout: timeout,
+		EmbeddedPort:   embeddedPort,
 		Deliverer:      deliverer,
 	})
 	if err != nil {
@@ -278,7 +299,7 @@ func StartGin(env EnvEnum) {
 		Bot:         botH,
 	})
 
-	port := os.Getenv("SERVER_PORT")
+	port := cfg.ServerPort
 	if port == "" {
 		port = "8998"
 	}
@@ -317,23 +338,7 @@ func StartGin(env EnvEnum) {
 	}
 }
 
-func loadingEnv(env EnvEnum) {
-	switch env {
-	case Dev:
-		if err := loadEnvFile("./.env.dev"); err != nil {
-			panic(err)
-		}
-	case Prod:
-		// Docker / K8s 通过 env_file 或环境变量注入, .env.prod 可不存在
-		if err := loadEnvFile("./.env.prod"); err != nil {
-			log.Printf("[Config] .env.prod not loaded (%v); using process environment", err)
-		}
-	}
-}
 
-func loadEnvFile(path string) error {
-	return godotenv.Load(path)
-}
 
 func seedPermissions(permRepo *repository.PermissionRepository) {
 	// 种子权限定义

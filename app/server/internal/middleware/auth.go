@@ -1,11 +1,11 @@
 package middleware
 
 import (
+	"GOSpeak/internal/config"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/redis"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -240,9 +240,9 @@ func BanCheck() gin.HandlerFunc {
 
 func CORS() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		allowed := os.Getenv("CORS_ORIGIN")
-		if allowed == "" {
-			allowed = "*"
+		allowed := "*"
+		if cfg := config.Current(); cfg != nil && cfg.CORSOrigin != "" {
+			allowed = cfg.CORSOrigin
 		}
 		c.Header("Access-Control-Allow-Origin", allowed)
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")

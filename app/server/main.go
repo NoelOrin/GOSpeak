@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	_ "github.com/caarlos0/env/v9"
 	"github.com/sirupsen/logrus"
 	"GOSpeak/cmd"
 	"os"

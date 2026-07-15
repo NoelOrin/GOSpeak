@@ -197,7 +197,7 @@ docker compose -f deploy/docker-compose.yml --profile srs --profile app down
 
 ### NATS 信号事件总线
 
-- **默认**：`NATS_URL` 为空时，gospeak 进程内嵌 nats-server（随机本机端口），单二进制零依赖。
+- **默认**：`NATS_URL` 为空时，gospeak 进程内嵌 nats-server（默认随机本机端口；可用 `NATS_EMBEDDED_PORT` 固定，如 `4222`），单二进制零依赖。
 - **外部优先**：`NATS_URL` 非空时先探测可用性（`NATS_CONNECT_TIMEOUT`，默认 2s）。
   - 探测成功 → 连外部，不启内嵌（`eventbus_mode=external`）
   - 探测失败 → 打 Warn，回退内嵌（`eventbus_mode=embedded`，`eventbus_fallback_from_external=true`），进程不退出

@@ -8,8 +8,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"os"
 	"time"
+
+	"GOSpeak/internal/config"
 )
 
 const (
@@ -130,12 +131,17 @@ func GetAllSigningKeys() [][]byte {
 // 开发环境未配置 JWT_KEY 时回退到硬编码默认值；
 // 生产环境未配置且未连接 Redis 时直接 panic，避免使用公开的默认密钥签发任意角色的合法 token。
 func staticKey() []byte {
-	key := os.Getenv("JWT_KEY")
-	if key == "" {
+	key := ""
+	if cfg := config.Current(); cfg != nil {
+		key = cfg.JWTKey
+	}
+	if key == "" || key == "default-secret" {
 		if production {
 			panic("JWT_KEY must be set in production (or connect Redis for key rotation)")
 		}
-		key = "default-secret"
+		if key == "" {
+			key = "default-secret"
+		}
 	}
 	return []byte(key)
 }
@@ -145,17 +151,18 @@ func staticKey() []byte {
 func randomKey() string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return os.Getenv("JWT_KEY")
+		if cfg := config.Current(); cfg != nil && cfg.JWTKey != "" {
+			return cfg.JWTKey
+		}
+		return "default-secret"
 	}
 	return base64.StdEncoding.EncodeToString(b)
 }
 
 // keyTTL 解析 JWT_KEY_TTL 环境变量，非法或空值时默认 24 小时。
 func keyTTL() time.Duration {
-	if s := os.Getenv("JWT_KEY_TTL"); s != "" {
-		if d, err := time.ParseDuration(s); err == nil && d > 0 {
-			return d
-		}
+	if cfg := config.Current(); cfg != nil {
+		return cfg.JWTKeyTTLDuration()
 	}
 	return 24 * time.Hour
 }
