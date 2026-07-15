@@ -3,99 +3,129 @@ package bus
 import (
 	"fmt"
 	"log"
+	"os"
+	"strings"
+	"time"
 )
 
-// InitConfig 是 Init 的参数。
+// InitConfig 启动 EventBus 的参数。
+// URL 空 = 直接内嵌；非空 = 先探测外部，可用则 external，不可用则回退内嵌。
 type InitConfig struct {
-	InstanceID    string
-	SubjectPrefix string
-	NATSURL       string
-	Deliverer     Deliverer
+	URL            string
+	Prefix         string
+	Name           string
+	ConnectTimeout time.Duration
+	Deliverer      Deliverer
 }
 
-// Stats 暴露 NATSBus 内部状态，用于监控和测试。
+// Stats 供监控面板与测试。
 type Stats struct {
-	Mode                 string
-	Connected            bool
-	FallbackFromExternal bool
-	URL                  string
+	Mode                 string `json:"mode"`
+	Connected            bool   `json:"connected"`
+	InstanceID           string `json:"instance_id"`
+	FallbackFromExternal bool   `json:"fallback_from_external"`
 }
 
-// GetStats 返回 NATSBus 的状态快照。
-func GetStats(b *NATSBus) Stats {
-	return Stats{
-		Mode:                 b.mode,
-		Connected:            b.connected.Load(),
-		FallbackFromExternal: b.fallbackFromExternal,
-		URL:                  b.url,
+// Init 创建 EventBus。
+// cleanup 必须在进程退出时调用：先 Close bus，再 Shutdown 内嵌（若有）。
+func Init(cfg InitConfig) (EventBus, func(), error) {
+	if cfg.Deliverer == nil {
+		return nil, func() {}, fmt.Errorf("bus init: nil Deliverer")
 	}
-}
-
-// Init 探测外部 NATS 可用性后决定内嵌/外部。
-//
-// 决策逻辑:
-//
-//	if NATSURL == "":
-//	    startEmbedded(); connect(ClientURL); mode=embedded
-//	else:
-//	    if probe(NATSURL) OK:
-//	        connect external; mode=external; no embed
-//	    else:
-//	        log warning; startEmbedded; mode=embedded; FallbackFromExternal=true
-func Init(cfg InitConfig) (nb *NATSBus, embed *EmbeddedServer, err error) {
-	// 情况 1: 未配置外部 NATS → 直接起内嵌
-	if cfg.NATSURL == "" {
-		es, startErr := StartEmbeddedServer()
-		if startErr != nil {
-			return nil, nil, fmt.Errorf("bus init: start embedded: %w", startErr)
-		}
-		nb, connErr := NewNATSBus(NATSBusConfig{
-			InstanceID:    cfg.InstanceID,
-			SubjectPrefix: cfg.SubjectPrefix,
-			URL:           es.ClientURL(),
-			Deliverer:     cfg.Deliverer,
-		})
-		if connErr != nil {
-			es.Shutdown()
-			return nil, nil, fmt.Errorf("bus init: connect embedded: %w", connErr)
-		}
-		return nb, es, nil
+	if cfg.Prefix == "" {
+		cfg.Prefix = "gospeak"
+	}
+	if cfg.ConnectTimeout <= 0 {
+		cfg.ConnectTimeout = 2 * time.Second
 	}
 
-	// 情况 2: 配置了外部 NATS — 先探测
-	probeErr := ProbeExternal(cfg.NATSURL)
-	if probeErr == nil {
-		// 外部可达
-		nb, connErr := NewNATSBus(NATSBusConfig{
-			InstanceID:    cfg.InstanceID,
-			SubjectPrefix: cfg.SubjectPrefix,
-			URL:           cfg.NATSURL,
-			Mode:          "external",
-			Deliverer:     cfg.Deliverer,
-		})
-		if connErr != nil {
-			return nil, nil, fmt.Errorf("bus init: connect external: %w", connErr)
-		}
-		return nb, nil, nil
+	instanceID := cfg.Name
+	if instanceID == "" {
+		host, _ := os.Hostname()
+		instanceID = fmt.Sprintf("gospeak-%s-%d", sanitize(host), os.Getpid())
+	}
+	name := cfg.Name
+	if name == "" {
+		name = instanceID
 	}
 
-	// 外部不可达 — 降级到内嵌
-	log.Printf("warn: probe external nats %s failed (%v), falling back to embedded", cfg.NATSURL, probeErr)
-	es, startErr := StartEmbeddedServer()
-	if startErr != nil {
-		return nil, nil, fmt.Errorf("bus init: probe fail (%v) and start embedded: %w", probeErr, startErr)
+	url := strings.TrimSpace(cfg.URL)
+	mode := "embedded"
+	fallbackFromExternal := false
+	var embedded *EmbeddedServer
+
+	if url != "" {
+		if err := ProbeExternal(url, cfg.ConnectTimeout); err != nil {
+			log.Printf("[EventBus] external nats unavailable (%s): %v; fallback to embedded", url, err)
+			fallbackFromExternal = true
+			url = ""
+		} else {
+			mode = "external"
+			log.Printf("[EventBus] external nats probe ok: %s instance=%s", url, instanceID)
+		}
 	}
-	nb, connErr := NewNATSBus(NATSBusConfig{
-		InstanceID:           cfg.InstanceID,
-		SubjectPrefix:        cfg.SubjectPrefix,
-		URL:                  es.ClientURL(),
-		Mode:                 "embedded",
-		FallbackFromExternal: true,
+
+	if mode == "embedded" {
+		es, err := StartEmbeddedServer()
+		if err != nil {
+			return nil, func() {}, fmt.Errorf("bus init embedded: %w", err)
+		}
+		embedded = es
+		url = es.ClientURL()
+		if fallbackFromExternal {
+			log.Printf("[EventBus] embedded nats started (fallback): %s instance=%s", url, instanceID)
+		} else {
+			log.Printf("[EventBus] embedded nats started: %s instance=%s", url, instanceID)
+		}
+	}
+
+	nb, err := NewNATSBus(NATSBusConfig{
+		URL:                  url,
+		SubjectPrefix:        cfg.Prefix,
+		InstanceID:           instanceID,
+		Mode:                 mode,
+		FallbackFromExternal: fallbackFromExternal,
 		Deliverer:            cfg.Deliverer,
 	})
-	if connErr != nil {
-		es.Shutdown()
-		return nil, nil, fmt.Errorf("bus init: probe fail (%v) and connect embedded: %w", probeErr, connErr)
+	// keep Name unused except for instance identity above; nats.Connect name optional in NewNATSBus
+	_ = name
+	if err != nil {
+		if embedded != nil {
+			embedded.Shutdown()
+		}
+		return nil, func() {}, err
 	}
-	return nb, es, nil
+
+	cleanup := func() {
+		_ = nb.Close()
+		if embedded != nil {
+			embedded.Shutdown()
+			log.Printf("[EventBus] embedded nats stopped")
+		}
+	}
+	return nb, cleanup, nil
+}
+
+func sanitize(s string) string {
+	s = strings.ReplaceAll(s, " ", "-")
+	if s == "" {
+		return "unknown"
+	}
+	return s
+}
+
+// GetStats 返回 EventBus 状态快照。
+func GetStats(b EventBus) Stats {
+	if b == nil {
+		return Stats{Mode: "none", Connected: false}
+	}
+	st := Stats{
+		Mode:       b.Mode(),
+		Connected:  b.IsConnected(),
+		InstanceID: b.InstanceID(),
+	}
+	if nb, ok := b.(*NATSBus); ok {
+		st.FallbackFromExternal = nb.fallbackFromExternal
+	}
+	return st
 }
