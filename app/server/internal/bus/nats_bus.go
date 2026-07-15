@@ -125,6 +125,9 @@ func (b *NATSBus) IsConnected() bool {
 
 func (b *NATSBus) InstanceID() string { return b.instanceID }
 
+// Conn returns the underlying NATS connection (for JetStream KV/jobs reuse).
+func (b *NATSBus) Conn() *nats.Conn { return b.nc }
+
 // SetDeliverer 设置本地投递接口，可在启动后替换。
 func (b *NATSBus) SetDeliverer(d Deliverer) {
 	if d != nil {
