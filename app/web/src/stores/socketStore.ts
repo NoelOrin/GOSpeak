@@ -1,7 +1,10 @@
+// 1. imports + re-exports + module helpers
 import type { SFUProvider } from "@gospeak/sfu-client/types";
 import { createMemo, createRoot, createSignal } from "solid-js";
 import { showToast } from "solid-notifications";
 import { preloadSfuClient } from "@/components/room/services/loadSfuClient";
+// NOTE: store -> audio 写入是已知耦合；房间 UI 直接读 speakingStore。
+// 若后续要彻底解耦，改为 onActiveSpeakers 订阅，由 useRoomAudioBridge/voiceChat 写入。
 import { setSpeakingIdentities } from "@/handler_audio/speakingStore";
 import { createSocketClient } from "@/socket/client";
 import { EVENTS } from "@/socket/events";
@@ -20,6 +23,7 @@ import userStore from "@/stores/userStore";
 
 export { EVENTS } from "@/socket/events";
 
+// 2. tabLock / providerReload helpers
 const tabLock = createTabLock({
 	channelName: "gospeak_socket_tab",
 	tabId:
@@ -53,6 +57,7 @@ import type {
 } from "@/socket/types";
 
 export const socketStore = createRoot(() => {
+	// 3. adapter + signals
 	const adapter = createSocketClient();
 
 	const [connected, setConnected] = createSignal(false);
@@ -76,6 +81,7 @@ export const socketStore = createRoot(() => {
 	} | null>(null);
 	const [connecting, setConnecting] = createSignal(false);
 
+	// 4. listener sets (activity/presence/kicked)
 	const activityListeners = new Set<(event: ActivityEvent) => void>();
 	const presenceListeners = new Set<(event: RoomPresenceEvent) => void>();
 	const kickedListeners = new Set<() => void>();
@@ -88,6 +94,7 @@ export const socketStore = createRoot(() => {
 		for (const listener of presenceListeners) listener(event);
 	}
 
+	// 5. lifecycle callbacks (onConnected/onDisconnected/onConnectError)
 	// 生命周期回调：注册一次，每次 connect/disconnect/connect_error 都会触发
 	adapter.onConnected(() => {
 		setConnecting(false);
@@ -108,6 +115,7 @@ export const socketStore = createRoot(() => {
 		console.log("[Socket] disconnected:", reason);
 	});
 
+	// 6. connect / bindServerEvents / disconnect
 	let serverEventsBound = false;
 
 	function connect() {
@@ -308,6 +316,7 @@ export const socketStore = createRoot(() => {
 		setActiveSFUProvider(undefined);
 	}
 
+	// 7. room APIs (create/join/leave/list/kick/select)
 	function createRoom(name: string, password?: string) {
 		adapter.emitFireAndForget(EVENTS.ROOM_CREATE, { room: name, password });
 	}
@@ -394,6 +403,7 @@ export const socketStore = createRoot(() => {
 			});
 	}
 
+	// 8. mediasoup API forwarding
 	function getRouterCapabilities(room: string) {
 		return mediasoupSignal.getRouterCapabilities(room);
 	}
@@ -484,6 +494,7 @@ export const socketStore = createRoot(() => {
 		});
 	}
 
+	// 9. mic/speaking emits
 	function emitMicState(room: string, identity: string, isMicMuted: boolean) {
 		adapter.emitFireAndForget(EVENTS.MEMBER_MIC_STATE, {
 			room,
@@ -527,6 +538,7 @@ export const socketStore = createRoot(() => {
 		tabLock.ensureListening();
 	}
 
+	// 10. return public API
 	return {
 		connected,
 		rooms,

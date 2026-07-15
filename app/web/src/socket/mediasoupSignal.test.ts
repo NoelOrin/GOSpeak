@@ -50,11 +50,13 @@ describe("createMediasoupSignal", () => {
 	});
 
 	it("fans out producer ready/closed listeners and supports unsubscribe", () => {
-		const handlers = new Map<string, Function>();
-		const onServerEvent = vi.fn((event: string, cb: Function) => {
-			handlers.set(event, cb);
-			return () => handlers.delete(event);
-		});
+		const handlers = new Map<string, (data: unknown) => void>();
+		const onServerEvent = vi.fn(
+			(event: string, cb: (data: unknown) => void) => {
+				handlers.set(event, cb);
+				return () => handlers.delete(event);
+			},
+		);
 		const api = createMediasoupSignal({
 			emitAck: vi.fn(),
 			onServerEvent: onServerEvent as any,
@@ -80,11 +82,13 @@ describe("createMediasoupSignal", () => {
 	});
 
 	it("clearListeners drops all producer listeners", () => {
-		const handlers = new Map<string, Function>();
-		const onServerEvent = vi.fn((event: string, cb: Function) => {
-			handlers.set(event, cb);
-			return () => handlers.delete(event);
-		});
+		const handlers = new Map<string, (data: unknown) => void>();
+		const onServerEvent = vi.fn(
+			(event: string, cb: (data: unknown) => void) => {
+				handlers.set(event, cb);
+				return () => handlers.delete(event);
+			},
+		);
 		const api = createMediasoupSignal({
 			emitAck: vi.fn(),
 			onServerEvent: onServerEvent as any,

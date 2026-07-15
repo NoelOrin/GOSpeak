@@ -55,37 +55,12 @@
 ### 2. socketStore 音频解耦
 
 **文件**: `app/web/src/stores/socketStore.ts`
-**问题**: socketStore import `handler_audio` 播放音效，store 层承担副作用。
-**修复**: 新建 `useRoomAudio` hook，监听 socket 的 member:joined/left 事件
+**现状**: 拆分后 `socketStore` 仍直接调用 `setSpeakingIdentities`（`handler_audio/speakingStore`）。这是已知 store → audio 耦合，房间 UI 直接读 `speakingStore`。
 
-```ts
-// hooks/useRoomAudio.ts
-import { useEffect } from "react";
-import { useSocket } from "@/stores/socketStore";
-
-export function useRoomAudio(roomName: string) {
-  const socket = useSocket();
-
-  useEffect(() => {
-    if (!socket) return;
-    const onJoined = () => { /* playJoinSound */ };
-    const onLeft = () => { /* playLeaveSound */ };
-    socket.on("member:joined", onJoined);
-    socket.on("member:left", onLeft);
-    return () => {
-      socket.off("member:joined", onJoined);
-      socket.off("member:left", onLeft);
-    };
-  }, [socket, roomName]);
-}
-```
-
-**修改文件**: 
-- 新建 `hooks/useRoomAudio.ts`
-- 修改 `stores/socketStore.ts` — 删除 handler_audio import
-- 调用方（roomDetail 或 RoomPage）使用 `useRoomAudio()`
-
----
+**后续解耦方向（未在本轮做）**:
+- 增加 `socketStore.onActiveSpeakers(cb)`
+- 由 `useRoomAudioBridge` / `voiceChat` 订阅后写入 `speakingStore`
+- 删除 store 对 `handler_audio` 的直接 import
 
 ### 3. roomDetail 拆 hooks
 
