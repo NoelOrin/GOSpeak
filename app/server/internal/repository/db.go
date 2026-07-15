@@ -5,12 +5,13 @@ import (
 	"GOSpeak/internal/model"
 	"fmt"
 	"os"
+	"strings"
 
 	"gorm.io/gorm"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
-	"github.com/glebarez/sqlite"
 )
 
 type DatabaseEnum string
@@ -52,6 +53,9 @@ func InitDB(cfg *config.Config) error {
 	}
 
 	if err := migrateOldSFUConfig(DB); err != nil {
+		return err
+	}
+	if err := migrateStorageConfigSchema(DB); err != nil {
 		return err
 	}
 
@@ -150,6 +154,69 @@ func parentDir(path string) string {
 		}
 	}
 	return ""
+}
+
+// migrateStorageConfigSchema 修复 storage_configs 上不安全的 GORM default。
+// 旧模型把 allowed_types / path_prefix 写成 gorm default，逗号与斜杠会被
+// glebarez migrator 截断，生成非法 CREATE TABLE ...__temp SQL 并 panic。
+// 这里在 AutoMigrate 前把表重建为无危险 default 的干净结构，并保留已有数据。
+func migrateStorageConfigSchema(db *gorm.DB) error {
+	if !db.Migrator().HasTable("storage_configs") {
+		return nil
+	}
+
+	var ddl string
+	if err := db.Raw(
+		"SELECT sql FROM sqlite_master WHERE type = ? AND name = ?",
+		"table", "storage_configs",
+	).Scan(&ddl).Error; err != nil || ddl == "" {
+		// 非 SQLite 或无法读取 sqlite_master：跳过，交给 AutoMigrate。
+		return nil
+	}
+
+	// 旧 default 或非 gorm 风格 DDL（无反引号列名）都会让 glebarez migrator 解析失败。
+	needsRebuild := strings.Contains(ddl, "image/jpeg,image/png") ||
+		strings.Contains(ddl, `DEFAULT "uploads/"`) ||
+		strings.Contains(ddl, "DEFAULT 'uploads/'") ||
+		strings.Contains(ddl, "allowed_types text DEFAULT") ||
+		strings.Contains(ddl, "`allowed_types` text DEFAULT") ||
+		!strings.Contains(ddl, "`provider_type`")
+	if !needsRebuild {
+		return nil
+	}
+
+	tx := db.Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	// 使用 glebarez/gORM 常见的反引号单行 DDL，避免 migrator 解析多行/无引号列名失败。
+	if err := tx.Exec("CREATE TABLE `storage_configs__rebuild` (`id` integer PRIMARY KEY AUTOINCREMENT,`provider_type` text,`endpoint` text,`bucket` text,`region` text,`access_key` text,`secret_key` text,`public_base_url` text,`path_prefix` text,`max_file_size` integer,`allowed_types` text,`created_at` datetime,`updated_at` datetime)").Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("migrate storage_configs schema: create rebuild table: %w", err)
+	}
+	if err := tx.Exec(`INSERT INTO storage_configs__rebuild (
+	id, provider_type, endpoint, bucket, region, access_key, secret_key,
+	public_base_url, path_prefix, max_file_size, allowed_types, created_at, updated_at
+)
+SELECT
+	id, provider_type, endpoint, bucket, region, access_key, secret_key,
+	public_base_url, path_prefix, max_file_size, allowed_types, created_at, updated_at
+FROM storage_configs`).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("migrate storage_configs schema: copy data: %w", err)
+	}
+	if err := tx.Exec(`DROP TABLE storage_configs`).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("migrate storage_configs schema: drop old table: %w", err)
+	}
+	if err := tx.Exec(`ALTER TABLE storage_configs__rebuild RENAME TO storage_configs`).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("migrate storage_configs schema: rename rebuild table: %w", err)
+	}
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("migrate storage_configs schema: commit: %w", err)
+	}
+	return nil
 }
 
 // migrateOldSFUConfig handles migration from the old single-row sfu_configs
