@@ -143,13 +143,33 @@ func (q *JobQueue) PublishSFUCleanup(ctx context.Context, room, identity string,
 
 // Consume starts a durable push consumer for all jobs (queue group = workers).
 // handler errors Nak; success Ack.
-func (q *JobQueue) Consume(durable string, handler JobHandler) (*nats.Subscription, error) {
-	if durable == "" {
-		durable = "worker"
+func sanitizeDurable(s string) string {
+	// JetStream durable names: A-Z a-z 0-9 - _ / = only; no '.' from hostnames.
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '/', r == '=':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
 	}
+	out := b.String()
+	if out == "" {
+		return "worker"
+	}
+	return out
+}
+
+func (q *JobQueue) Consume(durable string, handler JobHandler) (*nats.Subscription, error) {
+	// WorkQueue stream: only one consumer definition is allowed. All instances
+	// share one durable + queue group; NATS load-balances deliveries.
+	_ = durable
+	durableName := sanitizeDurable(q.prefix + "-worker")
+	queueGroup := sanitizeDurable(q.prefix + "-workers")
 	sub, err := q.js.QueueSubscribe(
 		q.prefix+".jobs.>",
-		q.prefix+"-workers",
+		queueGroup,
 		func(msg *nats.Msg) {
 			var job JobEnvelope
 			if err := json.Unmarshal(msg.Data, &job); err != nil {
@@ -164,7 +184,7 @@ func (q *JobQueue) Consume(durable string, handler JobHandler) (*nats.Subscripti
 			}
 			_ = msg.Ack()
 		},
-		nats.Durable(durable),
+		nats.Durable(durableName),
 		nats.ManualAck(),
 		nats.AckWait(30*time.Second),
 		nats.MaxDeliver(5),
