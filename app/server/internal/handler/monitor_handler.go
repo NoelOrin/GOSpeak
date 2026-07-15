@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"GOSpeak/internal/bus"
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/redis"
@@ -24,14 +25,16 @@ import (
 type MonitorHandler struct {
 	startTime  time.Time
 	signalHub  *gpsignal.Hub
+	eventBus   bus.EventBus
 	dbPath     string
 	cpuSampler *cpuSampler
 }
 
-func NewMonitorHandler(signalHub *gpsignal.Hub, cfg *config.Config) *MonitorHandler {
+func NewMonitorHandler(signalHub *gpsignal.Hub, cfg *config.Config, eventBus bus.EventBus) *MonitorHandler {
 	h := &MonitorHandler{
 		startTime: time.Now(),
 		signalHub: signalHub,
+		eventBus:  eventBus,
 		dbPath:    cfg.DBPath,
 	}
 	h.cpuSampler = newCPUSampler()
@@ -132,6 +135,12 @@ type healthSnapshot struct {
 	RedisUsedMemoryMB   float64 `json:"redis_used_memory_mb"`
 	RedisUsedMemoryPeakMB float64 `json:"redis_used_memory_peak_mb"`
 	RedisConnectedClients int64 `json:"redis_connected_clients"`
+
+	// EventBus
+	EventBusMode                 string `json:"eventbus_mode"`
+	EventBusConnected            bool   `json:"eventbus_connected"`
+	EventBusInstanceID           string `json:"eventbus_instance_id"`
+	EventBusFallbackFromExternal bool   `json:"eventbus_fallback_from_external"`
 }
 
 func (h *MonitorHandler) collect() healthSnapshot {
@@ -195,6 +204,12 @@ func (h *MonitorHandler) collect() healthSnapshot {
 	snap.RedisUsedMemoryMB = rs.UsedMemoryMB
 	snap.RedisUsedMemoryPeakMB = rs.UsedMemoryPeakMB
 	snap.RedisConnectedClients = rs.ConnectedClients
+
+	es := bus.GetStats(h.eventBus)
+	snap.EventBusMode = es.Mode
+	snap.EventBusConnected = es.Connected
+	snap.EventBusInstanceID = es.InstanceID
+	snap.EventBusFallbackFromExternal = es.FallbackFromExternal
 
 	return snap
 }

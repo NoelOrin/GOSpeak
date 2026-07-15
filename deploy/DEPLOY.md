@@ -194,3 +194,21 @@ docker compose -f deploy/docker-compose.yml --profile srs --profile app down
 # 清数据 volume:
 # docker compose -f deploy/docker-compose.yml --profile srs --profile app down -v
 ```
+
+### NATS 信号事件总线
+
+- **默认**：`NATS_URL` 为空时，gospeak 进程内嵌 nats-server（随机本机端口），单二进制零依赖。
+- **外部优先**：`NATS_URL` 非空时先探测可用性（`NATS_CONNECT_TIMEOUT`，默认 2s）。
+  - 探测成功 → 连外部，不启内嵌（`eventbus_mode=external`）
+  - 探测失败 → 打 Warn，回退内嵌（`eventbus_mode=embedded`，`eventbus_fallback_from_external=true`），进程不退出
+
+- **阶段二（状态共享）**：内嵌/外部 NATS 启用 JetStream；gospeak 使用 KV (`{prefix}_membership` / `{prefix}_stream`) 跨实例共享在线成员与 stream 映射。 外部 NATS 需 `-js`（compose profile `nats` 已开启）。KV 不可用时降级为仅本机内存状态。
+- **多副本**：所有实例必须实际连上**同一个**外部 NATS。若探测失败回退内嵌，则跨实例 fanout 失效（各嵌各的）。
+- **监控**：SSE health 含 `eventbus_mode`、`eventbus_connected`、`eventbus_fallback_from_external`。
+- **启用外部 NATS 示例**：
+
+```bash
+NATS_URL=nats://nats:4222
+docker compose --profile nats --profile app up -d
+```
+
