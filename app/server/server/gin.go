@@ -136,6 +136,7 @@ func StartGin(env EnvEnum) {
 
 	signalHub := signal.NewHub(roomSvc, muteSvc, userSvc, permSvc)
 	signalHub.SetEventBus(eventBus)
+	signalHub.SetStateNotifier(eventBus)
 	permSvc.SetEventBus(eventBus)
 	if nb, ok := eventBus.(*bus.NATSBus); ok {
 		nb.SetRemoteHook(func(event string, payload interface{}) {

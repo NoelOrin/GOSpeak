@@ -64,6 +64,16 @@ func (m *memStateStore) DeleteStream(ctx context.Context, stream string) error {
 	return nil
 }
 
+func (m *memStateStore) ListRoomNames(ctx context.Context) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, 0, len(m.rooms))
+	for k := range m.rooms {
+		out = append(out, k)
+	}
+	return out, nil
+}
+
 func TestHub_JoinSFU_WritesMembershipKV(t *testing.T) {
 	store := newMemStateStore()
 	hub := NewHub(nil, nil, nil, nil)
@@ -136,5 +146,88 @@ func TestHub_SyncRoomToStore_DeletesEmpty(t *testing.T) {
 	store.mu.Unlock()
 	if ok {
 		t.Fatal("expected KV room deleted when local missing")
+	}
+}
+
+
+type captureNotifier struct {
+	mu     sync.Mutex
+	events []string
+	rooms  []string
+}
+
+func (c *captureNotifier) PublishInternal(ctx context.Context, event string, payload interface{}) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.events = append(c.events, event)
+	if m, ok := payload.(map[string]interface{}); ok {
+		if r, ok := m["room"].(string); ok {
+			c.rooms = append(c.rooms, r)
+		}
+	}
+	return nil
+}
+
+func TestHub_SyncRoomToStore_NotifiesPeers(t *testing.T) {
+	store := newMemStateStore()
+	note := &captureNotifier{}
+	hub := NewHub(nil, nil, nil, nil)
+	hub.SetMembershipStore(store, "inst-a")
+	hub.SetStateNotifier(note)
+	hub.mu.Lock()
+	hub.rooms["r1"] = &Room{
+		Name: "r1",
+		Members: map[string]*MemberInfo{"s1": {ID: "s1", Identity: "alice"}},
+		MicMuted: map[string]bool{},
+		Speaking: map[string]bool{},
+	}
+	hub.mu.Unlock()
+	hub.syncRoomToStore("r1")
+	note.mu.Lock()
+	defer note.mu.Unlock()
+	if len(note.events) != 1 || note.events[0] != EventStateRoomChanged {
+		t.Fatalf("events=%v", note.events)
+	}
+	if len(note.rooms) != 1 || note.rooms[0] != "r1" {
+		t.Fatalf("rooms=%v", note.rooms)
+	}
+}
+
+func TestHub_GetMergedRooms_IncludesKVOnlyRoom(t *testing.T) {
+	store := newMemStateStore()
+	store.rooms["remote-only"] = bus.RoomMembersSnapshot{
+		Room: "remote-only",
+		Members: []bus.MemberRecord{{Identity: "bob", InstanceID: "other"}},
+	}
+	hub := NewHub(nil, nil, nil, nil)
+	hub.SetMembershipStore(store, "inst-a")
+	rooms := hub.getMergedRooms()
+	found := false
+	for _, r := range rooms {
+		if r.Name == "remote-only" && r.Count == 1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected remote-only room in list, got %+v", rooms)
+	}
+}
+
+func TestHub_ApplyRemoteRoomState_BroadcastsLocal(t *testing.T) {
+	store := newMemStateStore()
+	store.rooms["r1"] = bus.RoomMembersSnapshot{
+		Room: "r1",
+		Members: []bus.MemberRecord{{Identity: "bob", InstanceID: "other"}},
+	}
+	hub := NewHub(nil, nil, nil, nil)
+	hub.SetMembershipStore(store, "inst-a")
+	server := newMockServer()
+	hub.server = server
+	hub.ApplyRemoteRoomState("r1")
+	if server.broadcasts[EventRoomUpdated] == nil {
+		t.Fatal("expected room:updated local broadcast")
+	}
+	if server.broadcasts[EventRoomListResult] == nil {
+		t.Fatal("expected room:list:result local broadcast")
 	}
 }

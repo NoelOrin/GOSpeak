@@ -492,4 +492,7 @@ GOSpeak 在进程内通过 EventBus 做信令 fanout：
 
 内部事件使用 `PublishInternal`（subject `{prefix}.internal`），例如权限缓存失效 `cache:permissions-invalidated`，不经 Socket.IO Deliverer。
 
+房间人数视图：membership JetStream KV 为跨实例真相源；本机 join/leave 写 KV 后 `PublishInternal(state:room-changed)`，对端 `ApplyRemoteRoomState` 从 KV 合并并本地广播 `room:updated`/`room:list:result`。Socket 连接与踢人控制仍在本机 Hub。
+
+
 

@@ -169,6 +169,27 @@ func (s *StateStore) DeleteStream(ctx context.Context, stream string) error {
 	return s.strm.Delete("stream." + sanitizeKey(stream))
 }
 
+
+// ListRoomNames returns room names currently present in membership KV.
+func (s *StateStore) ListRoomNames(ctx context.Context) ([]string, error) {
+	_ = ctx
+	keys, err := s.mem.Keys()
+	if err != nil {
+		// empty bucket surfaces as ErrNoKeysFound on some nats versions
+		if err == nats.ErrNoKeysFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if strings.HasPrefix(k, "room.") {
+			out = append(out, strings.TrimPrefix(k, "room."))
+		}
+	}
+	return out, nil
+}
+
 // Close closes the underlying connection only when OpenStateStore created it.
 func (s *StateStore) Close() error {
 	if s == nil {

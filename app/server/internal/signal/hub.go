@@ -117,6 +117,7 @@ type Hub struct {
 	membershipStore    membershipStore
 	instanceID         string
 	cleanupPub         cleanupPublisher
+	stateNotifier      stateNotifier
 }
 
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
@@ -307,10 +308,7 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 			h.broadcastRoomList()
 			continue
 		}
-		h.mu.RLock()
-		info := h.roomInfoLocked(name)
-		h.mu.RUnlock()
-		h.localNamespace(EventRoomUpdated, info)
+		h.broadcastRoomUpdatedLocal(name)
 	}
 
 	log.Printf("[Signal] client disconnected: %s, reason: %s", s.ID(), reason)
@@ -360,7 +358,7 @@ func (h *Hub) OnRoomCreate(s socketio.Conn, data string) {
 	log.Printf("[Signal] room created: %s by %s", req.Room, s.ID())
 
 	s.Emit(EventRoomCreated, roomInfo)
-	h.localNamespace(EventRoomUpdated, roomInfo)
+	h.broadcastRoomUpdatedLocal(roomInfo.Name)
 }
 
 // ─── 加入房间 ───
@@ -559,10 +557,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 		"stream":   req.Stream,
 	})
 
-	h.mu.RLock()
-	info := h.roomInfoLocked(req.Room)
-	h.mu.RUnlock()
-	h.localNamespace(EventRoomUpdated, info)
+	h.broadcastRoomUpdatedLocal(req.Room)
 
 	return marshalAck(map[string]interface{}{
 		"ok":       true,
@@ -647,10 +642,7 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 		h.broadcastRoomList()
 	} else {
 		// NOTE: roomInfoLocked 在 !exists 时返回零值 RoomInfo（并发删房场景安全）
-		h.mu.RLock()
-		info := h.roomInfoLocked(req.Room)
-		h.mu.RUnlock()
-		h.localNamespace(EventRoomUpdated, info)
+		h.broadcastRoomUpdatedLocal(req.Room)
 	}
 
 	return marshalAck(map[string]interface{}{
@@ -805,10 +797,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 		h.deleteRoomSafe(req.Room)
 		h.broadcastRoomList()
 	} else {
-		h.mu.RLock()
-		info := h.roomInfoLocked(req.Room)
-		h.mu.RUnlock()
-		h.localNamespace(EventRoomUpdated, info)
+		h.broadcastRoomUpdatedLocal(req.Room)
 		if targetWasSpeaking {
 			h.broadcastActiveSpeakers(req.Room)
 		}
@@ -975,6 +964,27 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 			info.Count = len(merged)
 		}
 		dbRooms[name] = info
+	}
+
+	// KV 中仅远端存在的活跃房间也并入列表（跨实例可见）
+	if h.membershipStore != nil {
+		if names, err := h.membershipStore.ListRoomNames(context.Background()); err == nil {
+			for _, name := range names {
+				if name == "" {
+					continue
+				}
+				if _, ok := dbRooms[name]; ok {
+					// already present; still refresh members/count from merge
+					info := dbRooms[name]
+					merged := h.GetRoomMembersMerged(name)
+					info.Members = merged
+					info.Count = len(merged)
+					dbRooms[name] = info
+					continue
+				}
+				dbRooms[name] = h.roomInfoMerged(name)
+			}
+		}
 	}
 
 	result := make([]RoomInfo, 0, len(dbRooms))
@@ -1280,18 +1290,29 @@ func (h *Hub) ForceSFUProviderSwitch(provider string) {
 // HandleRemoteEvent 处理来自其他实例的控制面事件。
 // 当前仅对 sfu:provider-changed 做本机房间清理；其余事件已由 EventBus 投递到本地 Socket.IO。
 func (h *Hub) HandleRemoteEvent(event string, payload interface{}) {
-	if event != EventSFUProviderChanged {
-		return
-	}
-	provider := ""
-	switch p := payload.(type) {
-	case map[string]interface{}:
-		if v, ok := p["provider"].(string); ok {
-			provider = v
+	switch event {
+	case EventSFUProviderChanged:
+		provider := ""
+		switch p := payload.(type) {
+		case map[string]interface{}:
+			if v, ok := p["provider"].(string); ok {
+				provider = v
+			}
 		}
+		log.Printf("[Signal] remote SFU provider switch received: %s", provider)
+		h.clearLocalRoomsForSFUSwitch()
+	case EventStateRoomChanged:
+		room := ""
+		switch p := payload.(type) {
+		case map[string]interface{}:
+			if v, ok := p["room"].(string); ok {
+				room = v
+			}
+		}
+		h.ApplyRemoteRoomState(room)
+	default:
+		// other events already delivered to local Socket.IO by EventBus
 	}
-	log.Printf("[Signal] remote SFU provider switch received: %s", provider)
-	h.clearLocalRoomsForSFUSwitch()
 }
 
 // clearLocalRoomsForSFUSwitch 清理本机信令房间与 stream 视图（不重复广播 provider-changed）。
@@ -1395,7 +1416,7 @@ func (h *Hub) getMembersLocked(roomName string) []MemberInfo {
 func (h *Hub) roomInfoLocked(roomName string) RoomInfo {
 	room, exists := h.rooms[roomName]
 	if !exists {
-		return RoomInfo{}
+		return RoomInfo{Name: roomName, Members: []MemberInfo{}, Count: 0}
 	}
 	return RoomInfo{
 		Name:        room.Name,
