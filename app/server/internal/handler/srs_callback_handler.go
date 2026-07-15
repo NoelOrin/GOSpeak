@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -10,10 +11,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type streamJobPublisher interface {
+	PublishSRS(ctx context.Context, action, stream string) error
+}
+
 type SRSCallbackHandler struct {
 	hub           *signal.Hub
 	secret        string
 	resolveSecret func() string
+	jobs          streamJobPublisher
 }
 
 func NewSRSCallbackHandler(hub *signal.Hub, secret string) *SRSCallbackHandler {
@@ -22,6 +28,10 @@ func NewSRSCallbackHandler(hub *signal.Hub, secret string) *SRSCallbackHandler {
 
 func NewSRSCallbackHandlerWithResolver(hub *signal.Hub, resolve func() string) *SRSCallbackHandler {
 	return &SRSCallbackHandler{hub: hub, resolveSecret: resolve}
+}
+
+func (h *SRSCallbackHandler) SetJobs(j streamJobPublisher) {
+	h.jobs = j
 }
 
 func (h *SRSCallbackHandler) currentSecret() string {
@@ -50,10 +60,18 @@ func (h *SRSCallbackHandler) HandleCallback(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"code": 0})
 			return
 		}
-		h.hub.RegisterStream(stream)
+		if h.jobs != nil {
+			_ = h.jobs.PublishSRS(c.Request.Context(), "on_publish", stream)
+		} else {
+			h.hub.RegisterStream(stream)
+		}
 		c.JSON(http.StatusOK, gin.H{"code": 0})
 	case "on_unpublish":
-		h.hub.UnregisterStream(stream)
+		if h.jobs != nil {
+			_ = h.jobs.PublishSRS(c.Request.Context(), "on_unpublish", stream)
+		} else {
+			h.hub.UnregisterStream(stream)
+		}
 		c.JSON(http.StatusOK, gin.H{"code": 0})
 	case "on_stop":
 		c.JSON(http.StatusOK, gin.H{"code": 0})

@@ -2,6 +2,7 @@ package server
 
 import (
 	"GOSpeak/internal/bus"
+	"GOSpeak/internal/jobs"
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/mediasoup"
@@ -148,6 +149,27 @@ func StartGin(env EnvEnum) {
 			log.Printf("[EventBus] membership state store ready instance=%s", nb.InstanceID())
 		}
 	}
+
+	var jobQueue *bus.JobQueue
+	if nb, ok := eventBus.(*bus.NATSBus); ok && nb.Conn() != nil {
+		q, err := bus.OpenJobQueue(bus.JobQueueConfig{
+			Prefix: cfg.NATSSubjectPrefix,
+			NC:     nb.Conn(),
+		})
+		if err != nil {
+			log.Printf("[JobQueue] unavailable: %v", err)
+		} else {
+			jobQueue = q
+			signalHub.SetCleanupPublisher(q)
+			if _, err := q.Consume(nb.InstanceID(), func(job bus.JobEnvelope) error {
+				return jobs.Handle(job, signalHub, signalHub)
+			}); err != nil {
+				log.Printf("[JobQueue] consume failed: %v", err)
+			} else {
+				log.Printf("[JobQueue] consumer started instance=%s", nb.InstanceID())
+			}
+		}
+	}
 	signalHub.SetSFU(sfuProvider)
 	if snr, ok := sfuProvider.(signal.StreamNameResolver); ok {
 		signalHub.SetStreamResolver(snr)
@@ -164,10 +186,16 @@ func StartGin(env EnvEnum) {
 	signalHub.SetupRoutes(sioServer)
 	sfuSvc := service.NewSFUService(sfuProvider, signalHub)
 	signalH := handler.NewSignalHandler(sfuSvc)
+	if jobQueue != nil {
+		signalH.SetJobs(jobQueue)
+	}
 	cfMediaSvc := service.NewCloudflareMediaService(sfuConfigSvc.ResolveConfig)
 	cfH := handler.NewCloudflareHandler(cfMediaSvc)
 	srsCallbackH := handler.NewSRSCallbackHandlerWithResolver(signalHub, func() string {
 		resolved, err := sfuConfigSvc.ResolveConfig()
+	if jobQueue != nil {
+		srsCallbackH.SetJobs(jobQueue)
+	}
 		if err != nil || resolved == nil {
 			return cfg.SRSSecret
 		}

@@ -46,6 +46,11 @@ type eventBus interface {
 	PublishRoom(ctx context.Context, room, event string, payload interface{}) error
 }
 
+// cleanupPublisher enqueues SFU cleanup jobs (phase-3). Nil = inline goroutine.
+type cleanupPublisher interface {
+	PublishSFUCleanup(ctx context.Context, room, identity string, deleteRoom bool) error
+}
+
 // roomStore abstracts DB room listing for Hub.
 type roomStore interface {
 	List(page, pageSize int) ([]model.Room, int64, error)
@@ -111,6 +116,7 @@ type Hub struct {
 	participantCleanup ParticipantCleanupHandler
 	membershipStore    membershipStore
 	instanceID         string
+	cleanupPub         cleanupPublisher
 }
 
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
@@ -271,17 +277,25 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 	// 竞态（连接已 failed 时库 serveRead 状态错乱触发 gorilla panic）。
 	// 丢后台 goroutine，handler 立即返回。
 	if len(cleanups) > 0 {
-		go func(cleanups []disconnectCleanup) {
+		if h.cleanupPub != nil {
 			for _, c := range cleanups {
-				h.removeParticipantSafe(c.room, c.identity)
-				if c.deleted {
-					h.deleteRoomSafe(c.room)
-				}
-				if h.participantCleanup != nil {
-					h.participantCleanup.OnParticipantLeft(c.room, c.identity)
+				if err := h.cleanupPub.PublishSFUCleanup(context.Background(), c.room, c.identity, c.deleted); err != nil {
+					log.Printf("[Signal] enqueue sfu cleanup: %v", err)
 				}
 			}
-		}(cleanups)
+		} else {
+			go func(cleanups []disconnectCleanup) {
+				for _, c := range cleanups {
+					h.removeParticipantSafe(c.room, c.identity)
+					if c.deleted {
+						h.deleteRoomSafe(c.room)
+					}
+					if h.participantCleanup != nil {
+						h.participantCleanup.OnParticipantLeft(c.room, c.identity)
+					}
+				}
+			}(cleanups)
+		}
 	}
 
 	for _, name := range updatedRooms {
@@ -1171,6 +1185,10 @@ func (h *Hub) SetEventBus(b eventBus) {
 	h.eventBus = b
 }
 
+func (h *Hub) SetCleanupPublisher(p cleanupPublisher) {
+	h.cleanupPub = p
+}
+
 func (h *Hub) publishRoom(room, event string, data interface{}) {
 	if h.eventBus != nil {
 		if err := h.eventBus.PublishRoom(context.Background(), room, event, data); err != nil {
@@ -1231,6 +1249,21 @@ func (h *Hub) deleteRoomSafe(room string) {
 			return
 		}
 		log.Printf("[Signal] failed to delete SFU room: %v", err)
+	}
+}
+
+
+// CleanupParticipant is used by async job consumers for SFU-side cleanup.
+// identity empty + deleteRoom cleans the SFU room only.
+func (h *Hub) CleanupParticipant(room, identity string, deleteRoom bool) {
+	if identity != "" {
+		h.removeParticipantSafe(room, identity)
+		if h.participantCleanup != nil {
+			h.participantCleanup.OnParticipantLeft(room, identity)
+		}
+	}
+	if deleteRoom {
+		h.deleteRoomSafe(room)
 	}
 }
 
