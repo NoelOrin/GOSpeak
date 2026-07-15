@@ -2,59 +2,34 @@ import { DEFAULT_SFU_PROVIDER, PROVIDER_LABELS } from "@gospeak/sfu-client";
 import type { SFUProvider } from "@gospeak/sfu-client/types";
 import { createFileRoute, redirect } from "@tanstack/solid-router";
 import ArrowRight from "lucide-solid/icons/arrow-right";
-import Check from "lucide-solid/icons/check";
-import CircleAlert from "lucide-solid/icons/circle-alert";
 import RefreshCcw from "lucide-solid/icons/refresh-ccw";
 import Save from "lucide-solid/icons/save";
 import ServerCog from "lucide-solid/icons/server-cog";
-import {
-	createEffect,
-	createResource,
-	createSignal,
-	For,
-	Show,
-} from "solid-js";
+import { createEffect, createResource, createSignal, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import {
 	getSFUConfigByProvider,
 	getSFUProviderCapabilities,
 	listSFUProviders,
-	type SFUConfig,
 	switchSFUProvider,
 	type UpdateSFUConfigParams,
 	updateSFUConfig,
 } from "@/api/sfu";
 import { hasPermission } from "@/utils/permissions";
-
-type FieldErrors = Partial<Record<keyof UpdateSFUConfigParams, string>>;
-
-const clean = (v: string): string =>
-	v.trim().replace(/^["'\\\s]+|["'\\\s]+$/g, "");
-
-const isPort = (v: string): boolean => {
-	const n = Number(v);
-	return /^\d+$/.test(v.trim()) && n >= 1 && n <= 65535;
-};
-
-const isUrl = (v: string, schemes: string[]): boolean => {
-	const s = clean(v);
-	if (!s) return false;
-	try {
-		const u = new URL(s);
-		return schemes.includes(u.protocol.replace(":", ""));
-	} catch {
-		return false;
-	}
-};
-
-const isHost = (v: string): boolean => {
-	const s = clean(v);
-	if (!s) return false;
-	if (/[/\\]"'/.test(s)) return false;
-	if (s.includes("://")) return false;
-	if (s.includes("/")) return false;
-	return /^[a-zA-Z0-9.\-_:]+$/.test(s);
-};
+import CapabilityBadge from "./components/CapabilityBadge";
+import {
+	DISABLED_PROVIDERS,
+	emptyForm,
+	emptySecretFlags,
+	type SecretFlags,
+} from "./components/constants";
+import ProviderCardGrid from "./components/ProviderCardGrid";
+import ProviderConfigForm from "./components/ProviderConfigForm";
+import {
+	cleanForm,
+	type FieldErrors,
+	validateSFUForm,
+} from "./components/validation";
 
 export const Route = createFileRoute("/(app)/manage/sfu/")({
 	beforeLoad: () => {
@@ -69,63 +44,6 @@ export const Route = createFileRoute("/(app)/manage/sfu/")({
 	},
 });
 
-const emptyForm: UpdateSFUConfigParams = {
-	provider: DEFAULT_SFU_PROVIDER,
-	livekit_host: "",
-	livekit_key: "",
-	livekit_secret: "",
-	agora_app_id: "",
-	agora_app_certificate: "",
-	agora_host: "",
-	agora_customer_id: "",
-	agora_customer_secret: "",
-	mediasoup_bridge_url: "",
-	mediasoup_host: "",
-	srs_host: "",
-	srs_api_port: "1985",
-	srs_secret: "",
-	srs_whip_url: "",
-	srs_public_host: "",
-	daily_api_key: "",
-	daily_domain: "",
-	cf_app_id: "",
-	cf_app_secret: "",
-	cf_stun_url: "stun.cloudflare.com:3478",
-};
-
-const PROVIDER_OPTIONS: { value: SFUProvider; label: string }[] = [
-	{ value: "livekit", label: "LiveKit" },
-	{ value: "agora", label: "Agora" },
-	{ value: "mediasoup", label: "MediaSoup" },
-	{ value: "srs", label: "SRS" },
-	{ value: "daily", label: "Daily" },
-	{ value: "cloudflare", label: "Cloudflare" },
-];
-
-const DISABLED_PROVIDERS: SFUProvider[] = ["mediasoup"];
-
-function isProviderConfigured(
-	provider: SFUProvider,
-	config: Partial<SFUConfig> & { provider?: SFUProvider },
-): boolean {
-	switch (provider) {
-		case "livekit":
-			return !!config.livekit_host;
-		case "agora":
-			return !!config.agora_app_id;
-		case "mediasoup":
-			return !!(config.mediasoup_bridge_url || config.mediasoup_host);
-		case "srs":
-			return !!config.srs_host;
-		case "daily":
-			return !!(config.daily_api_key_set || config.daily_domain);
-		case "cloudflare":
-			return !!config.cf_app_id;
-		default:
-			return false;
-	}
-}
-
 function SFUPage() {
 	const [providersResponse, { refetch: refetchList }] =
 		createResource(listSFUProviders);
@@ -133,22 +51,14 @@ function SFUPage() {
 		SFUProvider | undefined
 	>();
 	const [form, setForm] = createSignal<UpdateSFUConfigParams>(emptyForm);
-	const [secretFlags, setSecretFlags] = createSignal({
-		livekit_secret_set: false,
-		agora_app_certificate_set: false,
-		agora_customer_secret_set: false,
-		srs_secret_set: false,
-		daily_api_key_set: false,
-		cf_app_secret_set: false,
-	});
+	const [secretFlags, setSecretFlags] = createSignal<SecretFlags>(
+		emptySecretFlags(),
+	);
 	const [errors, setErrors] = createSignal<FieldErrors>({});
 	const [saving, setSaving] = createSignal(false);
 
 	const activeProvider = () =>
 		providersResponse()?.active ?? DEFAULT_SFU_PROVIDER;
-
-	const providerConfig = (p: SFUProvider) =>
-		providersResponse()?.providers.find((c) => c.provider === p);
 
 	// Initialize selectedProvider = activeProvider
 	createEffect(() => {
@@ -168,7 +78,6 @@ function SFUPage() {
 			populateForm(local);
 			return;
 		}
-		// Fallback: fetch individually
 		getSFUConfigByProvider(p)
 			.then((cfg) => populateForm(cfg))
 			.catch(() => populateForm({ ...emptyForm, provider: p }));
@@ -212,9 +121,6 @@ function SFUPage() {
 	const capabilities = () =>
 		getSFUProviderCapabilities(selectedProvider() ?? activeProvider());
 
-	const isProviderDisabled = (provider: SFUProvider) =>
-		DISABLED_PROVIDERS.includes(provider);
-
 	const updateField = <K extends keyof UpdateSFUConfigParams>(
 		key: K,
 		value: UpdateSFUConfigParams[K],
@@ -228,87 +134,8 @@ function SFUPage() {
 		});
 	};
 
-	const validate = (): FieldErrors => {
-		const f = form();
-		const e: FieldErrors = {};
-		const p = f.provider;
-
-		const flags = secretFlags();
-		const require = (key: keyof UpdateSFUConfigParams, msg: string) => {
-			if (!clean(String(f[key] ?? ""))) e[key] = msg;
-		};
-		const requireSecret = (
-			key: keyof UpdateSFUConfigParams,
-			set: boolean,
-			msg: string,
-		) => {
-			if (!set && !clean(String(f[key] ?? ""))) e[key] = msg;
-		};
-
-		if (p === "livekit") {
-			if (!isUrl(f.livekit_host, ["ws", "wss"]))
-				e.livekit_host = "需要 ws:// 或 wss:// 开头的合法 URL";
-			require("livekit_key", "API Key 必填");
-			requireSecret(
-				"livekit_secret",
-				flags.livekit_secret_set,
-				"API Secret 必填",
-			);
-		} else if (p === "agora") {
-			require("agora_app_id", "App ID 必填");
-			requireSecret(
-				"agora_app_certificate",
-				flags.agora_app_certificate_set,
-				"App Certificate 必填",
-			);
-			require("agora_customer_id", "Customer ID 必填");
-			requireSecret(
-				"agora_customer_secret",
-				flags.agora_customer_secret_set,
-				"Customer Secret 必填",
-			);
-			if (f.agora_host && !isUrl(f.agora_host, ["http", "https"]))
-				e.agora_host = "需要 http(s):// 开头的合法 URL";
-		} else if (p === "mediasoup") {
-			if (!isUrl(f.mediasoup_bridge_url, ["http", "https"]))
-				e.mediasoup_bridge_url = "需要 http(s):// 开头的合法 URL";
-			if (!isUrl(f.mediasoup_host, ["ws", "wss"]))
-				e.mediasoup_host = "需要 ws:// 或 wss:// 开头的合法 URL";
-		} else if (p === "srs") {
-			if (!isHost(f.srs_host))
-				e.srs_host = "需要域名或 IP, 不含 scheme / 路径 / 引号";
-			if (!isPort(f.srs_api_port)) e.srs_api_port = "1-65535 数字";
-			requireSecret("srs_secret", flags.srs_secret_set, "Secret 必填");
-			if (
-				f.srs_public_host &&
-				!isUrl(f.srs_public_host, ["http", "https", "ws", "wss"])
-			)
-				e.srs_public_host = "需要 http(s)/ws(s) URL，或留空";
-			if (
-				f.srs_whip_url &&
-				!(
-					f.srs_whip_url.startsWith("/") ||
-					isUrl(f.srs_whip_url, ["http", "https"])
-				)
-			)
-				e.srs_whip_url = "需要绝对路径或 http(s) URL";
-		} else if (p === "daily") {
-			requireSecret("daily_api_key", flags.daily_api_key_set, "API Key 必填");
-			if (!isHost(f.daily_domain))
-				e.daily_domain = "需要域名, 不含 scheme / 路径 / 引号";
-		} else if (p === "cloudflare") {
-			require("cf_app_id", "App ID 必填");
-			requireSecret(
-				"cf_app_secret",
-				flags.cf_app_secret_set,
-				"App Secret 必填",
-			);
-		}
-		return e;
-	};
-
 	const handleSave = async () => {
-		const e = validate();
+		const e = validateSFUForm(form(), secretFlags());
 		setErrors(e);
 		if (Object.keys(e).length > 0) {
 			showToast("请修正配置错误", { type: "error" });
@@ -316,13 +143,7 @@ function SFUPage() {
 		}
 		setSaving(true);
 		try {
-			const cleaned = { ...form() };
-			for (const k of Object.keys(cleaned) as (keyof UpdateSFUConfigParams)[]) {
-				if (typeof cleaned[k] === "string") {
-					cleaned[k] = clean(cleaned[k] as string) as never;
-				}
-			}
-			const saved = await updateSFUConfig(cleaned);
+			const saved = await updateSFUConfig(cleanForm(form()));
 			populateForm(saved);
 			void refetchList();
 			showToast(
@@ -396,82 +217,17 @@ function SFUPage() {
 
 				<div class="divider my-0 text-xs text-base-content/40">提供商选择</div>
 
-				{/* Provider card grid with status indicators */}
-				<div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-					<For each={PROVIDER_OPTIONS}>
-						{(option) => {
-							const isActive = activeProvider() === option.value;
-							const isSelected = selectedProvider() === option.value;
-							const cfg = providerConfig(option.value);
-							const configured = cfg
-								? isProviderConfigured(option.value, cfg)
-								: false;
-							return (
-								<button
-									type="button"
-									class="btn btn-sm justify-between px-3 h-auto min-h-12 py-2"
-									classList={{
-										"bg-white border-base-content/20 ring-2 ring-base-content/20 shadow-none":
-											(isSelected || isActive) &&
-											!isProviderDisabled(option.value),
-										"btn-ghost shadow-none hover:bg-base-200":
-											!isSelected &&
-											!isActive &&
-											!isProviderDisabled(option.value),
-										"btn-ghost shadow-none cursor-not-allowed opacity-60":
-											isProviderDisabled(option.value),
-									}}
-									onClick={() => {
-										if (isProviderDisabled(option.value)) return;
-										setSelectedProvider(option.value);
-									}}
-									disabled={saving() || isProviderDisabled(option.value)}
-								>
-									<div class="flex flex-col items-start gap-1">
-										<div class="flex items-center gap-2">
-											<span
-												classList={{
-													"font-medium": isActive,
-												}}
-											>
-												{option.label}
-											</span>
-											<Show when={isActive}>
-												<span class="rounded-full bg-base-content/12 text-base-content px-1.5 py-0 text-[10px] font-medium">
-													当前使用
-												</span>
-											</Show>
-										</div>
-										<div class="flex items-center gap-1">
-											<Show
-												when={configured}
-												fallback={
-													<span class="rounded-full bg-base-300 px-1.5 py-0 text-[11px] text-base-content/45 flex items-center gap-1">
-														<CircleAlert
-															size={10}
-															class="text-base-content/40"
-														/>
-														未配置
-													</span>
-												}
-											>
-												<span class="rounded-full bg-base-300 px-1.5 py-0 text-[11px] text-base-content/55 flex items-center gap-1">
-													<Check size={10} class="text-success" />
-													已配置
-												</span>
-											</Show>
-											<Show when={isProviderDisabled(option.value)}>
-												<span class="rounded-full bg-base-300 px-2 py-0.5 text-[11px] text-base-content/55">
-													暂禁用
-												</span>
-											</Show>
-										</div>
-									</div>
-								</button>
-							);
-						}}
-					</For>
-				</div>
+				<ProviderCardGrid
+					activeProvider={activeProvider()}
+					selectedProvider={selectedProvider()}
+					providers={providersResponse()?.providers ?? []}
+					disabled={saving()}
+					onSelect={(provider) => {
+						setSelectedProvider(provider);
+						setForm((current) => ({ ...current, provider }));
+						setErrors({});
+					}}
+				/>
 
 				{/* Current provider capabilities */}
 				<div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -525,377 +281,17 @@ function SFUPage() {
 					{PROVIDER_LABELS[selectedProvider() ?? activeProvider()]} 配置
 				</div>
 
-				{/* LiveKit config fields */}
-				<Show when={selectedProvider() === "livekit"}>
-					<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-						<Field label="Host" error={errors().livekit_host}>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().livekit_host,
-								}}
-								placeholder="wss://livekit.example.com"
-								value={form().livekit_host}
-								onInput={(event) =>
-									updateField("livekit_host", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-						<div />
-						<Field label="API Key" error={errors().livekit_key}>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().livekit_key,
-								}}
-								placeholder="API key"
-								value={form().livekit_key}
-								onInput={(event) =>
-									updateField("livekit_key", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-						<Field label="API Secret" error={errors().livekit_secret}>
-							<input
-								type="password"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().livekit_secret,
-								}}
-								placeholder={
-									secretFlags().livekit_secret_set
-										? "已配置，留空保留"
-										: "API secret"
-								}
-								value={form().livekit_secret}
-								onInput={(event) =>
-									updateField("livekit_secret", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-					</div>
-				</Show>
-
-				{/* Agora config fields */}
-				<Show when={selectedProvider() === "agora"}>
-					<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-						<Field label="App ID" error={errors().agora_app_id}>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().agora_app_id,
-								}}
-								placeholder="Agora App ID"
-								value={form().agora_app_id}
-								onInput={(event) =>
-									updateField("agora_app_id", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-						<Field label="REST Host" error={errors().agora_host}>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().agora_host,
-								}}
-								placeholder="https://api.agora.io"
-								value={form().agora_host}
-								onInput={(event) =>
-									updateField("agora_host", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-						<Field
-							label="App Certificate"
-							error={errors().agora_app_certificate}
-						>
-							<input
-								type="password"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().agora_app_certificate,
-								}}
-								placeholder={
-									secretFlags().agora_app_certificate_set
-										? "已配置，留空保留"
-										: "App certificate"
-								}
-								value={form().agora_app_certificate}
-								onInput={(event) =>
-									updateField(
-										"agora_app_certificate",
-										event.currentTarget.value,
-									)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-						<Field
-							label="Customer Secret"
-							error={errors().agora_customer_secret}
-						>
-							<input
-								type="password"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().agora_customer_secret,
-								}}
-								placeholder={
-									secretFlags().agora_customer_secret_set
-										? "已配置，留空保留"
-										: "Customer secret"
-								}
-								value={form().agora_customer_secret}
-								onInput={(event) =>
-									updateField(
-										"agora_customer_secret",
-										event.currentTarget.value,
-									)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-						<Field label="Customer ID" error={errors().agora_customer_id}>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().agora_customer_id,
-								}}
-								placeholder="Customer ID"
-								value={form().agora_customer_id}
-								onInput={(event) =>
-									updateField("agora_customer_id", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-					</div>
-				</Show>
-
-				{/* MediaSoup config fields */}
-				<Show when={selectedProvider() === "mediasoup"}>
-					<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-						<Field label="Bridge URL" error={errors().mediasoup_bridge_url}>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().mediasoup_bridge_url,
-								}}
-								placeholder="https://mediasoup-bridge.example.com"
-								value={form().mediasoup_bridge_url}
-								onInput={(event) =>
-									updateField("mediasoup_bridge_url", event.currentTarget.value)
-								}
-								disabled={saving() || true}
-							/>
-						</Field>
-						<Field label="Host" error={errors().mediasoup_host}>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().mediasoup_host,
-								}}
-								placeholder="wss://mediasoup.example.com"
-								value={form().mediasoup_host}
-								onInput={(event) =>
-									updateField("mediasoup_host", event.currentTarget.value)
-								}
-								disabled={saving() || true}
-							/>
-						</Field>
-					</div>
-				</Show>
-
-				{/* SRS config fields */}
-				<Show when={selectedProvider() === "srs"}>
-					<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-						<Field label="Host" error={errors().srs_host}>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().srs_host,
-								}}
-								placeholder="srs.example.com"
-								value={form().srs_host}
-								onInput={(event) =>
-									updateField("srs_host", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-						<Field label="API Port" error={errors().srs_api_port}>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().srs_api_port,
-								}}
-								placeholder="1985"
-								value={form().srs_api_port}
-								onInput={(event) =>
-									updateField("srs_api_port", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-						<Field label="Secret" error={errors().srs_secret}>
-							<input
-								type="password"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().srs_secret,
-								}}
-								placeholder={
-									secretFlags().srs_secret_set
-										? "已配置，留空保留"
-										: "Bearer secret"
-								}
-								value={form().srs_secret}
-								onInput={(event) =>
-									updateField("srs_secret", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-						<Field label="WHIP URL" error={errors().srs_whip_url}>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().srs_whip_url,
-								}}
-								placeholder="/rtc/v1/whip/ 或 https://srs.example.com/rtc/v1/whip/"
-								value={form().srs_whip_url}
-								onInput={(event) =>
-									updateField("srs_whip_url", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-						<Field label="Public Host" error={errors().srs_public_host}>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().srs_public_host,
-								}}
-								placeholder="https://voice.example.com 或留空使用 Host"
-								value={form().srs_public_host}
-								onInput={(event) =>
-									updateField("srs_public_host", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-					</div>
-				</Show>
-
-				{/* Daily config fields */}
-				<Show when={selectedProvider() === "daily"}>
-					<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-						<Field label="API Key" error={errors().daily_api_key}>
-							<input
-								type="password"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().daily_api_key,
-								}}
-								placeholder={
-									secretFlags().daily_api_key_set
-										? "已配置，留空保留"
-										: "Daily API key"
-								}
-								value={form().daily_api_key}
-								onInput={(event) =>
-									updateField("daily_api_key", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-						<Field label="Domain" error={errors().daily_domain}>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().daily_domain,
-								}}
-								placeholder="your-team.daily.co"
-								value={form().daily_domain}
-								onInput={(event) =>
-									updateField("daily_domain", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-					</div>
-				</Show>
-
-				{/* Cloudflare Realtime config fields */}
-				<Show when={selectedProvider() === "cloudflare"}>
-					<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-						<Field label="App ID" error={errors().cf_app_id}>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().cf_app_id,
-								}}
-								placeholder="Cloudflare Realtime App ID"
-								value={form().cf_app_id}
-								onInput={(event) =>
-									updateField("cf_app_id", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-						<Field label="STUN URL" error={errors().cf_stun_url}>
-							<input
-								type="text"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().cf_stun_url,
-								}}
-								placeholder="stun.cloudflare.com:3478"
-								value={form().cf_stun_url}
-								onInput={(event) =>
-									updateField("cf_stun_url", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-						<Field label="App Secret" error={errors().cf_app_secret}>
-							<input
-								type="password"
-								class="input input-bordered input-sm w-full"
-								classList={{
-									"input-error": !!errors().cf_app_secret,
-								}}
-								placeholder={
-									secretFlags().cf_app_secret_set
-										? "已配置，留空保留"
-										: "Cloudflare Realtime App Secret"
-								}
-								value={form().cf_app_secret}
-								onInput={(event) =>
-									updateField("cf_app_secret", event.currentTarget.value)
-								}
-								disabled={saving()}
-							/>
-						</Field>
-					</div>
+				<Show when={selectedProvider()}>
+					{(provider) => (
+						<ProviderConfigForm
+							provider={provider()}
+							form={form()}
+							errors={errors()}
+							secretFlags={secretFlags()}
+							saving={saving()}
+							updateField={updateField}
+						/>
+					)}
 				</Show>
 
 				{/* Action buttons row */}
@@ -932,43 +328,3 @@ function SFUPage() {
 		</Show>
 	);
 }
-
-interface FieldProps {
-	label: string;
-	error?: string;
-	children: any;
-}
-
-const Field = (props: FieldProps) => (
-	<fieldset class="fieldset">
-		<legend class="fieldset-legend text-[14px]">{props.label}</legend>
-		{props.children}
-		<Show when={props.error}>
-			<p class="mt-1 text-xs text-error">{props.error}</p>
-		</Show>
-	</fieldset>
-);
-
-interface CapabilityBadgeProps {
-	label: string;
-	active: boolean;
-}
-
-const CapabilityBadge = (props: CapabilityBadgeProps) => (
-	<div
-		class="rounded-box flex items-center justify-center gap-2 border px-3 py-2 text-xs"
-		classList={{
-			"border-base-300 bg-base-200/70 text-base-content/75": props.active,
-			"border-base-300 bg-base-100 text-base-content/45": !props.active,
-		}}
-	>
-		<span
-			class="inline-block size-2 rounded-full"
-			classList={{
-				"bg-base-content/55": props.active,
-				"bg-base-content/30": !props.active,
-			}}
-		/>
-		<span>{props.label}</span>
-	</div>
-);

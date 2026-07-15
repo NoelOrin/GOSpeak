@@ -1,18 +1,11 @@
 import { createFileRoute, redirect } from "@tanstack/solid-router";
-import Check from "lucide-solid/icons/check";
-import Pencil from "lucide-solid/icons/pencil";
-import Plus from "lucide-solid/icons/plus";
 import Save from "lucide-solid/icons/save";
 import ShieldCheck from "lucide-solid/icons/shield-check";
-import ShieldX from "lucide-solid/icons/shield-x";
-import Trash2 from "lucide-solid/icons/trash-2";
-import X from "lucide-solid/icons/x";
 import {
 	createEffect,
 	createMemo,
 	createResource,
 	createSignal,
-	For,
 	Show,
 } from "solid-js";
 import { showToast } from "solid-notifications";
@@ -23,12 +16,14 @@ import {
 	listPermissions,
 	listRoles,
 	type PermissionItem,
-	type RoleItem,
 	type RolePermissionsData,
 	syncRolePermissions,
 	updateRole,
 } from "@/api/permission";
 import { hasPermission } from "@/utils/permissions";
+import PermissionGrid from "./components/PermissionGrid";
+import RoleList from "./components/RoleList";
+import { DOMAIN_LABELS, getDomain, isDefaultRole } from "./components/utils";
 
 export const Route = createFileRoute("/(app)/manage/permission/")({
 	beforeLoad: () => {
@@ -42,240 +37,6 @@ export const Route = createFileRoute("/(app)/manage/permission/")({
 		icon: "icon-manage",
 	},
 });
-
-const DOMAIN_LABELS: Record<string, string> = {
-	bot: "BOT",
-	room: "房间",
-	user: "用户",
-	role: "角色",
-	signal: "信令",
-	sfu: "SFU",
-};
-
-const getDomain = (permission: PermissionItem) =>
-	permission.code.split(":")[0] || "other";
-
-const isDefaultRole = (name: string) =>
-	name === "admin" || name === "user" || name === "ban";
-
-// ─── RoleList ─────────────────────────────────────────────
-
-function RoleList(props: {
-	selectedRole: string;
-	setSelectedRole: (name: string) => void;
-	roles: RoleItem[] | undefined;
-	rolesLoading: boolean;
-	renaming: boolean;
-	deleting: boolean;
-	editingRoleId: number | null;
-	editingName: string;
-	setEditingRoleId: (id: number | null) => void;
-	setEditingName: (name: string) => void;
-	newRoleName: string;
-	setNewRoleName: (name: string) => void;
-	creating: boolean;
-	onStartRename: (role: { id: number; name: string }) => void;
-	onCancelRename: () => void;
-	onConfirmRename: () => void;
-	onCreateRole: () => void;
-	onDeleteRole: (role: { id: number; name: string }) => void;
-}) {
-	return (
-		<div class="min-h-0 overflow-auto border-base-300 border-r pr-3 max-md:border-r-0 max-md:border-b max-md:pb-3">
-			<div class="flex flex-col gap-1">
-				<For each={props.roles || []}>
-					{(role) => (
-						<div class="relative group">
-							<Show
-								when={props.editingRoleId === role.id}
-								fallback={
-									<button
-										type="button"
-										class="btn btn-ghost justify-start gap-2 truncate w-full"
-										classList={{
-											"btn-active": props.selectedRole === role.name,
-										}}
-										onClick={() => props.setSelectedRole(role.name)}
-										title={role.name}
-									>
-										<ShieldCheck size={16} />
-										<span class="truncate">{role.name}</span>
-									</button>
-								}
-							>
-								<div class="flex items-center gap-1 px-1">
-									<input
-										type="text"
-										class="input input-xs input-bordered flex-1 min-w-0"
-										value={props.editingName}
-										onInput={(e) => props.setEditingName(e.currentTarget.value)}
-										onKeyDown={(e) => {
-											if (e.key === "Enter") props.onConfirmRename();
-											if (e.key === "Escape") props.onCancelRename();
-										}}
-										disabled={props.renaming}
-									/>
-									<button
-										type="button"
-										class="btn btn-ghost btn-xs"
-										disabled={props.renaming}
-										onClick={props.onConfirmRename}
-									>
-										<Check size={14} />
-									</button>
-									<button
-										type="button"
-										class="btn btn-ghost btn-xs"
-										disabled={props.renaming}
-										onClick={props.onCancelRename}
-									>
-										<X size={14} />
-									</button>
-								</div>
-							</Show>
-							<Show when={props.editingRoleId !== role.id}>
-								<div class="absolute right-1 top-1/2 -translate-y-1/2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-									<button
-										type="button"
-										class="btn btn-ghost btn-xs"
-										disabled={props.renaming}
-										onClick={(e) => {
-											e.stopPropagation();
-											props.onStartRename(role);
-										}}
-										title="重命名"
-									>
-										<Pencil size={13} />
-									</button>
-									<Show when={!isDefaultRole(role.name)}>
-										<button
-											type="button"
-											class="btn btn-ghost btn-xs text-error"
-											disabled={props.deleting}
-											onClick={(e) => {
-												e.stopPropagation();
-												props.onDeleteRole(role);
-											}}
-											title="删除角色"
-										>
-											<Trash2 size={13} />
-										</button>
-									</Show>
-								</div>
-							</Show>
-						</div>
-					)}
-				</For>
-			</div>
-			<div class="mt-2 flex gap-1">
-				<input
-					type="text"
-					class="input input-sm input-bordered flex-1 min-w-0"
-					placeholder="新角色名"
-					value={props.newRoleName}
-					onInput={(e) => props.setNewRoleName(e.currentTarget.value)}
-					onKeyDown={(e) => {
-						if (e.key === "Enter") props.onCreateRole();
-					}}
-				/>
-				<button
-					type="button"
-					class="btn btn-sm btn-ghost"
-					disabled={!props.newRoleName.trim() || props.creating}
-					onClick={props.onCreateRole}
-					title="创建角色"
-				>
-					<Plus size={16} />
-				</button>
-			</div>
-		</div>
-	);
-}
-
-// ─── PermissionCard ────────────────────────────────────────
-
-function PermissionCard(props: {
-	permission: PermissionItem;
-	checked: boolean;
-	onToggle: (code: string, checked: boolean) => void;
-}) {
-	return (
-		<label class="flex min-h-20 items-start gap-3 rounded-md border border-base-300 p-3 hover:bg-base-200 cursor-pointer">
-			<input
-				type="checkbox"
-				class="checkbox checkbox-sm mt-1"
-				checked={props.checked}
-				onChange={(e) =>
-					props.onToggle(props.permission.code, e.currentTarget.checked)
-				}
-			/>
-			<span class="min-w-0 flex-1">
-				<span class="block truncate font-medium text-sm">
-					{props.permission.name}
-				</span>
-				<span class="mt-1 block break-all font-mono text-base-content/50 text-xs">
-					{props.permission.code}
-				</span>
-				<span class="mt-1 line-clamp-2 block text-base-content/60 text-xs">
-					{props.permission.description}
-				</span>
-			</span>
-		</label>
-	);
-}
-
-// ─── PermissionGrid ───────────────────────────────────────
-
-function PermissionGrid(props: {
-	groupedPermissions: {
-		domain: string;
-		label: string;
-		items: PermissionItem[];
-	}[];
-	selectedCodes: Set<string>;
-	loading: boolean;
-	onToggle: (code: string, checked: boolean) => void;
-}) {
-	return (
-		<div class="min-h-0 overflow-auto relative">
-			<Show
-				when={props.groupedPermissions.length > 0}
-				fallback={<div class="loading loading-spinner loading-md" />}
-			>
-				<Show when={props.loading}>
-					<div class="absolute inset-x-0 top-0 flex justify-center py-2 z-10">
-						<div class="loading loading-spinner loading-sm" />
-					</div>
-				</Show>
-				<div class="flex flex-col gap-5">
-					<For each={props.groupedPermissions}>
-						{(group) => (
-							<section>
-								<div class="mb-2 flex items-center gap-2 text-base-content/70 text-sm">
-									<ShieldX size={15} />
-									<span>{group.label}</span>
-								</div>
-								<div class="grid grid-cols-2 gap-2 xl:grid-cols-3 max-md:grid-cols-1">
-									<For each={group.items}>
-										{(permission) => (
-											<PermissionCard
-												permission={permission}
-												checked={props.selectedCodes.has(permission.code)}
-												onToggle={props.onToggle}
-											/>
-										)}
-									</For>
-								</div>
-							</section>
-						)}
-					</For>
-				</div>
-			</Show>
-		</div>
-	);
-}
-
-// ─── PermissionPage ────────────────────────────────────────
 
 function PermissionPage() {
 	const [selectedRole, setSelectedRole] = createSignal("");

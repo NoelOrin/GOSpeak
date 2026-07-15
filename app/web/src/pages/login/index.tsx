@@ -6,14 +6,13 @@ import {
 	firstChangePassword as firstChangePasswordApi,
 	getProfile,
 	login as loginApi,
-	resetPassword as resetPasswordApi,
 } from "@/api/auth";
-import { sendEmailCode } from "@/api/email";
 import { getEnabledProviders, getOAuthLoginURL } from "@/api/oauth";
 import { Form } from "@/components/form";
-import PasswordChangeForm from "@/components/form/PasswordChangeForm";
 import ProviderIcon from "@/components/oauth/ProviderIcon";
 import userStore from "@/stores/userStore";
+import ForcePasswordChangeModal from "./components/ForcePasswordChangeModal";
+import ForgotPasswordModal from "./components/ForgotPasswordModal";
 
 export const Route = createFileRoute("/login/")({
 	beforeLoad: () => {
@@ -254,154 +253,40 @@ function LoginPage() {
 			</div>
 
 			{/* 忘记密码 Modal */}
-			<Show when={showForgotModal()}>
-				<dialog ref={forgotDialogRef} class="modal" onClose={closeForgotModal}>
-					<div class="modal-box">
-						<h3 class="font-bold text-lg mb-4">重置密码</h3>
-						<Show
-							when={forgotStep() === "email"}
-							fallback={
-								<form
-									onSubmit={async (e) => {
-										e.preventDefault();
-										const formEl = e.target as HTMLFormElement;
-										const pwd = (
-											formEl.querySelector(
-												'input[name="newPassword"]',
-											) as HTMLInputElement
-										).value;
-										try {
-											await resetPasswordApi(forgotEmail(), forgotCode(), pwd);
-											closeForgotModal();
-											showToast("密码已重置，请登录", { type: "success" });
-										} catch (err: any) {
-											showToast(
-												err?.response?.data?.msg || err?.message || "重置失败",
-												{ type: "error" },
-											);
-										}
-									}}
-								>
-									<fieldset class="fieldset mb-3">
-										<legend class="fieldset-legend text-[14px]">邮箱</legend>
-										<input
-											type="email"
-											value={forgotEmail()}
-											disabled
-											class="input w-full"
-										/>
-									</fieldset>
-									<fieldset class="fieldset mb-3">
-										<legend class="fieldset-legend text-[14px]">验证码</legend>
-										<input
-											type="text"
-											placeholder="请输入邮箱验证码"
-											class="input w-full"
-											onInput={(e) => setForgotCode(e.currentTarget.value)}
-										/>
-									</fieldset>
-									<fieldset class="fieldset mb-3">
-										<legend class="fieldset-legend text-[14px]">新密码</legend>
-										<input
-											type="password"
-											name="newPassword"
-											placeholder="请输入新密码"
-											class="input w-full"
-										/>
-									</fieldset>
-									<button type="submit" class="btn btn-primary w-full">
-										重置密码
-									</button>
-								</form>
-							}
-						>
-							<form
-								onSubmit={async (e) => {
-									e.preventDefault();
-									setCodeSending(true);
-									try {
-										await sendEmailCode({
-											email: forgotEmail(),
-											scene: "reset_password",
-										});
-										setForgotStep("code");
-										showToast("验证码已发送", { type: "success" });
-									} catch (err: any) {
-										showToast(
-											err?.response?.data?.msg || err?.message || "发送失败",
-											{ type: "error" },
-										);
-									} finally {
-										setCodeSending(false);
-									}
-								}}
-							>
-								<fieldset class="fieldset mb-3">
-									<legend class="fieldset-legend text-[14px]">邮箱</legend>
-									<input
-										type="email"
-										required
-										placeholder="请输入注册邮箱"
-										class="input w-full"
-										value={forgotEmail()}
-										onInput={(e) => setForgotEmail(e.currentTarget.value)}
-									/>
-								</fieldset>
-								<button
-									type="submit"
-									class="btn btn-primary w-full"
-									disabled={codeSending()}
-								>
-									{codeSending() ? "发送中..." : "发送验证码"}
-								</button>
-							</form>
-						</Show>
-						<div class="modal-action">
-							<form method="dialog">
-								<button class="btn" onClick={closeForgotModal}>
-									取消
-								</button>
-							</form>
-						</div>
-					</div>
-					<form method="dialog" class="modal-backdrop">
-						<button onClick={closeForgotModal}>close</button>
-					</form>
-				</dialog>
-			</Show>
+			<ForgotPasswordModal
+				open={showForgotModal()}
+				email={forgotEmail()}
+				code={forgotCode()}
+				step={forgotStep()}
+				codeSending={codeSending()}
+				dialogRef={(el) => {
+					forgotDialogRef = el;
+				}}
+				onClose={closeForgotModal}
+				setEmail={setForgotEmail}
+				setCode={setForgotCode}
+				setStep={setForgotStep}
+				setCodeSending={setCodeSending}
+			/>
 
 			{/* Admin 首次登录强制改密 Modal */}
-			<Show when={showChangeModal()}>
-				<dialog ref={changeDialogRef} class="modal" onClose={closeChangeModal}>
-					<div class="modal-box">
-						<h3 class="font-bold text-lg mb-2">修改密码</h3>
-						<p class="text-sm text-base-content/60 mb-4">
-							检测到您使用的是默认密码，请修改密码后继续。
-						</p>
-						<PasswordChangeForm
-							showOldPassword={false}
-							showName={true}
-							submitText="修改密码"
-							onSubmit={async ({ newPassword, name }) => {
-								const result = await firstChangePasswordApi(
-									newPassword ?? "",
-									name,
-								);
-								await userStore.login(
-									result.user,
-									result.access_token,
-									result.refresh_token,
-								);
-								closeChangeModal();
-								navigate({ to: "/" });
-							}}
-						/>
-					</div>
-					<form method="dialog" class="modal-backdrop">
-						<button>close</button>
-					</form>
-				</dialog>
-			</Show>
+			<ForcePasswordChangeModal
+				open={showChangeModal()}
+				dialogRef={(el) => {
+					changeDialogRef = el;
+				}}
+				onClose={closeChangeModal}
+				onSubmit={async ({ newPassword, name }) => {
+					const result = await firstChangePasswordApi(newPassword ?? "", name);
+					await userStore.login(
+						result.user,
+						result.access_token,
+						result.refresh_token,
+					);
+					closeChangeModal();
+					navigate({ to: "/" });
+				}}
+			/>
 		</div>
 	);
 }
