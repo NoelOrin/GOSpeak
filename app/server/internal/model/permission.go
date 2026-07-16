@@ -46,7 +46,11 @@ const (
 
 	PermOAuthRead   = permcode.PermOAuthRead
 	PermOAuthManage = permcode.PermOAuthManage
+
+	PermPluginRead   = permcode.PermPluginRead
+	PermPluginManage = permcode.PermPluginManage
 )
+
 
 // DefaultPermissions 种子权限列表
 var DefaultPermissions = []Permission{
@@ -76,7 +80,11 @@ var DefaultPermissions = []Permission{
 
 	{Code: PermOAuthRead, Name: "查看 OAuth 配置", Description: "查看第三方/自建 OAuth 登录提供商配置"},
 	{Code: PermOAuthManage, Name: "管理 OAuth 配置", Description: "创建、修改、删除 OAuth 登录提供商"},
+
+	{Code: PermPluginRead, Name: "查看插件", Description: "查看后端插件列表与配置"},
+	{Code: PermPluginManage, Name: "管理插件", Description: "启用/停用插件并修改插件配置"},
 }
+
 
 // RolePermission 角色-权限关联表
 type RolePermission struct {
@@ -95,6 +103,7 @@ var BotScopedPermissions = []string{
 	PermRoomRead,
 	PermUserRead,
 	PermSignalKick,
+	PermRoomCreate,
 	PermMuteManage,
 }
 
@@ -113,10 +122,12 @@ var DefaultRolePermissions = map[string][]string{
 		PermRoomCreate, PermRoomRead, PermRoomUpdate, PermRoomDelete,
 		PermUserRead, PermUserUpdate, PermUserDelete,
 		PermRoleRead, PermRoleManage,
-		PermSignalKick, PermMuteManage, PermSFUManage, PermBotManage,
+		PermSignalKick,
+	PermRoomCreate, PermMuteManage, PermSFUManage, PermBotManage,
 		PermEmailConfigRead, PermEmailConfigManage,
 		PermStorageRead, PermStorageManage, PermStorageDelete,
 		PermOAuthRead, PermOAuthManage,
+		PermPluginRead, PermPluginManage,
 	},
 	"user": {
 		PermRoomCreate, PermRoomRead,
