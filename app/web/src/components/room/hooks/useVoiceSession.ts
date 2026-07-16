@@ -22,7 +22,12 @@ import {
 	onCleanup,
 	onMount,
 } from "solid-js";
-import { dismissToast, showToast } from "solid-notifications";
+import {
+	dismissToast,
+	removeToast,
+	showToast,
+	updateToast,
+} from "solid-notifications";
 import { getJoinToken, resolveSFUProvider } from "@/api/sfu";
 import { cleanupAudioHandler, setupAudioHandler } from "@/handler_audio";
 import AudioDeviceStore from "@/stores/audioDeviceStore";
@@ -41,6 +46,14 @@ import {
 const RECONNECTING_TOAST_ID = "voice-session-reconnecting";
 
 function showReconnectingToast() {
+	// 同 id 重复 showToast 会叠多个实例；优先 update，避免 dismiss 只关掉其中一个
+	const updated = updateToast({
+		id: RECONNECTING_TOAST_ID,
+		content: "正在重连...",
+		type: "info",
+		duration: false,
+	});
+	if (updated) return;
 	showToast("正在重连...", {
 		id: RECONNECTING_TOAST_ID,
 		type: "info",
@@ -49,10 +62,19 @@ function showReconnectingToast() {
 }
 
 function clearReconnectingToast() {
-	try {
-		dismissToast({ id: RECONNECTING_TOAST_ID });
-	} catch {
-		// toast 可能尚未创建或已关闭
+	// solid-notifications 同 id 可能叠多个实例，dismiss/remove 每次只处理一个
+	for (let i = 0; i < 8; i++) {
+		try {
+			dismissToast({ id: RECONNECTING_TOAST_ID });
+		} catch {
+			// toast 可能尚未创建或已关闭
+		}
+		try {
+			removeToast({ id: RECONNECTING_TOAST_ID });
+		} catch {
+			// 没有更多同 id toast
+			break;
+		}
 	}
 }
 
@@ -91,6 +113,8 @@ export function useVoiceSession() {
 	let activeJoinClient: SFUClient | null = null;
 	// 幂等守卫：同一 client 的 leaveRoom 并发只执行一次
 	const leaving = new WeakSet<SFUClient>();
+	// 重连中 client 集合：不依赖 session status 刷新时序，避免 onReconnected 竞态漏清 toast
+	const reconnectingClients = new WeakSet<SFUClient>();
 
 	const abortCurrentJoin = () => {
 		joinAbortController?.abort();
@@ -136,6 +160,14 @@ export function useVoiceSession() {
 		return isVoiceInteractive(phase());
 	});
 	const isReconnecting = createMemo(() => phase() === "reconnecting");
+	// toast 生命周期以 phase 为准：离开 reconnecting 必关，避免回调漏清
+	createEffect(() => {
+		if (isReconnecting()) {
+			showReconnectingToast();
+		} else {
+			clearReconnectingToast();
+		}
+	});
 	const isLoading = createMemo(() => !isJoined() && isVoiceLoading(phase()));
 	const phaseLabel = createMemo(() => voicePhaseLabel(phase()));
 	const joinState = createMemo<JoinState>(() => toLegacyJoinState(phase()));
@@ -150,6 +182,7 @@ export function useVoiceSession() {
 	const teardownClient = async (client: SFUClient) => {
 		if (leaving.has(client)) return;
 		leaving.add(client);
+		reconnectingClients.delete(client);
 		await client.leaveRoom().catch(() => {});
 		await client.destroy().catch(() => {});
 		if (activeJoinClient === client) {
@@ -307,19 +340,21 @@ export function useVoiceSession() {
 						}
 
 						createdClient = client;
-						activeJoinClient = createdClient;
+						const joinedClient = client;
+						activeJoinClient = joinedClient;
 						socketStore.setCurrentSFUProvider(joinedProvider);
 
 						// join 全部成功后才挂断连/重连回调，避免连接阶段瞬态误报
-						createdClient.onDisconnected((info) => {
+						joinedClient.onDisconnected((info) => {
 							if (signal.aborted) return;
 							const cur = session();
 							// 仅当当前 session 仍指向该 client 且处于活跃态才视为异常断连
-							if (cur?.client !== createdClient) return;
+							if (cur?.client !== joinedClient) return;
 							if (
 								cur?.status !== "ready" &&
 								cur?.status !== "media_ready" &&
-								cur?.status !== "reconnecting"
+								cur?.status !== "reconnecting" &&
+								!reconnectingClients.has(joinedClient)
 							) {
 								return;
 							}
@@ -328,36 +363,50 @@ export function useVoiceSession() {
 								info?.reason === "DUPLICATE_IDENTITY"
 									? "该账号已在其他设备加入此房间"
 									: "连接已断开";
-							clearReconnectingToast();
+							reconnectingClients.delete(joinedClient);
 							setSession((s) =>
-								s && s.client === createdClient
+								s && s.client === joinedClient
 									? { ...s, status: "failed", error: disconnectedMsg }
 									: s,
 							);
+							// phase effect 会清 reconnecting toast
 							showToast(disconnectedMsg, { type: "error" });
 							void teardownSession(cur);
 						});
-						createdClient.onReconnecting?.(() => {
+						joinedClient.onReconnecting?.(() => {
 							if (signal.aborted) return;
 							const cur = session();
-							if (cur?.client !== createdClient) return;
-							if (cur?.status !== "ready" && cur?.status !== "media_ready") {
+							if (cur?.client !== joinedClient) return;
+							if (
+								cur?.status !== "ready" &&
+								cur?.status !== "media_ready" &&
+								cur?.status !== "reconnecting"
+							) {
 								return;
 							}
+							reconnectingClients.add(joinedClient);
 							setSession((s) =>
-								s && s.client === createdClient
+								s && s.client === joinedClient
 									? { ...s, status: "reconnecting", error: null }
 									: s,
 							);
-							showReconnectingToast();
+							// toast 由 phase effect 统一展示
 						});
-						createdClient.onReconnected?.(() => {
+						joinedClient.onReconnected?.(() => {
 							if (signal.aborted) return;
 							const cur = session();
-							if (cur?.client !== createdClient) return;
-							if (cur?.status !== "reconnecting") return;
+							if (cur?.client !== joinedClient) return;
+							// 用 WeakSet 标记，规避 session status 尚未 flush 时的漏清
+							const wasReconnecting =
+								reconnectingClients.has(joinedClient) ||
+								cur?.status === "reconnecting";
+							reconnectingClients.delete(joinedClient);
+							if (!wasReconnecting) {
+								clearReconnectingToast();
+								return;
+							}
 							setSession((s) =>
-								s && s.client === createdClient
+								s && s.client === joinedClient
 									? { ...s, status: "ready", error: null }
 									: s,
 							);
