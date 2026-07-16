@@ -12,6 +12,7 @@ import {
 	revokeBotKey,
 } from "@/api/apikey";
 import { listPermissions, type PermissionItem } from "@/api/permission";
+import ConfirmModal from "@/components/common/ConfirmModal";
 import {
 	ManageHeader,
 	ManagePage,
@@ -61,6 +62,8 @@ function ApiKeyPage() {
 	const [creating, setCreating] = createSignal(false);
 	const [newPlainKey, setNewPlainKey] = createSignal("");
 	const [revokingUuid, setRevokingUuid] = createSignal<string | null>(null);
+	const [revokeTarget, setRevokeTarget] = createSignal<BotAPIKey | null>(null);
+	let revokeDialogRef!: HTMLDialogElement;
 
 	const permissionLabel = (code: string) =>
 		permissionsData()?.find((p: PermissionItem) => p.code === code)?.name ||
@@ -126,8 +129,21 @@ function ApiKeyPage() {
 		}
 	};
 
-	const handleRevoke = async (key: BotAPIKey) => {
-		if (!confirm(`确认吊销密钥「${key.name}」？此操作不可撤销。`)) return;
+	const openRevokeModal = (key: BotAPIKey) => {
+		setRevokeTarget(key);
+		queueMicrotask(() => {
+			revokeDialogRef?.showModal();
+		});
+	};
+
+	const closeRevokeModal = () => {
+		revokeDialogRef?.close();
+		setRevokeTarget(null);
+	};
+
+	const handleRevoke = async () => {
+		const key = revokeTarget();
+		if (!key) return;
 		setRevokingUuid(key.uuid);
 		try {
 			const res = await revokeBotKey(key.uuid);
@@ -136,6 +152,7 @@ function ApiKeyPage() {
 				return;
 			}
 			showToast("密钥已吊销", { type: "success" });
+			closeRevokeModal();
 			refetch();
 		} catch (e: any) {
 			showToast(e?.message || "吊销失败", { type: "error" });
@@ -313,7 +330,7 @@ function ApiKeyPage() {
 															type="button"
 															class="btn btn-ghost btn-xs text-base-content/60"
 															disabled={revokingUuid() === key.uuid}
-															onClick={() => handleRevoke(key)}
+															onClick={() => openRevokeModal(key)}
 														>
 															<Show
 																when={revokingUuid() === key.uuid}
@@ -334,6 +351,22 @@ function ApiKeyPage() {
 					</Show>
 				</Show>
 			</ManageSection>
+
+			<ConfirmModal
+				open={!!revokeTarget()}
+				title="吊销密钥"
+				message={
+					<span>确认吊销密钥「{revokeTarget()?.name}」？此操作不可撤销。</span>
+				}
+				confirmText="吊销"
+				confirmClass="btn btn-error"
+				loading={!!revokingUuid()}
+				dialogRef={(el) => {
+					revokeDialogRef = el;
+				}}
+				onClose={closeRevokeModal}
+				onConfirm={handleRevoke}
+			/>
 		</ManagePage>
 	);
 }
