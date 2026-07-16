@@ -8,6 +8,13 @@ export enum EventType {
 	OnRoomUpdated = "OnRoomUpdated",
 	OnRoomLeft = "OnRoomLeft",
 	OnMemberStateChanged = "OnMemberStateChanged",
+	OnMemberJoined = "OnMemberJoined",
+	OnMemberLeft = "OnMemberLeft",
+	OnMemberKicked = "OnMemberKicked",
+	OnUserMuted = "OnUserMuted",
+	OnUserUnmuted = "OnUserUnmuted",
+	OnSpeechPartial = "OnSpeechPartial",
+	OnSpeechFinal = "OnSpeechFinal",
 	OnPluginLoaded = "OnPluginLoaded",
 	OnPluginUnloaded = "OnPluginUnloaded",
 	OnPluginError = "OnPluginError",
@@ -65,6 +72,26 @@ export interface MemberStateEvent {
 	timestamp: number;
 }
 
+export interface UserMuteEvent {
+	eventType: EventType.OnUserMuted | EventType.OnUserUnmuted;
+	userId: number;
+	duration?: number;
+	permanent?: boolean;
+	reason?: string;
+	expiresAt?: string;
+	timestamp: number;
+}
+
+export interface SpeechEvent {
+	eventType: EventType.OnSpeechPartial | EventType.OnSpeechFinal;
+	room: string;
+	speaker: string;
+	text: string;
+	isFinal: boolean;
+	confidence?: number;
+	timestamp: number;
+}
+
 export interface PluginErrorEvent {
 	eventType: EventType.OnPluginError;
 	pluginName: string;
@@ -87,6 +114,8 @@ export type BotEvent =
 	| MessageEvent
 	| RoomEvent
 	| MemberStateEvent
+	| UserMuteEvent
+	| SpeechEvent
 	| PluginErrorEvent
 	| LifecycleEvent;
 
