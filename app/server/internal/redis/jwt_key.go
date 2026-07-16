@@ -30,8 +30,13 @@ func SetProductionMode() {
 
 // GetSigningKey 获取当前有效的 JWT 签名密钥。
 // 密钥永不过期（无 TTL），由 RotateSigningKey 主动轮换。
+// 开发环境且未接 Redis 时固定使用 JWT_KEY，避免内嵌 NATS 重启导致随机密钥丢失、强制重新登录。
 func GetSigningKey() []byte {
 	if Client == nil {
+		// 开发态：静态密钥优先，不把随机密钥写进易失 AuthStore。
+		if !production {
+			return staticKey()
+		}
 		if secondaryAuth != nil {
 			if val, ok, err := secondaryAuth.GetSigningKey(); err == nil && ok && val != "" {
 				return []byte(val)
@@ -73,7 +78,8 @@ func GetSigningKey() []byte {
 // 基于 jwt:signing_key:created_at 与当前时间的差值判断。
 func ShouldRotateKey() bool {
 	if Client == nil {
-		if secondaryAuth == nil {
+		// 开发态静态密钥不参与轮换。
+		if !production || secondaryAuth == nil {
 			return false
 		}
 		createdAt, ok, err := secondaryAuth.GetCreatedAt()
@@ -97,7 +103,8 @@ func ShouldRotateKey() bool {
 // 返回新密钥。
 func RotateSigningKey() []byte {
 	if Client == nil {
-		if secondaryAuth == nil {
+		// 开发态始终返回静态 JWT_KEY。
+		if !production || secondaryAuth == nil {
 			return staticKey()
 		}
 		if old, ok, err := secondaryAuth.GetSigningKey(); err == nil && ok && old != "" {
@@ -140,6 +147,10 @@ func RotateSigningKey() []byte {
 // 用于 Token 校验时逐一尝试，解决密钥轮换后旧 Token 无法验签的问题。
 func GetAllSigningKeys() [][]byte {
 	if Client == nil {
+		// 开发态仅校验静态密钥，避免读到重启前残留的随机密钥集合。
+		if !production {
+			return [][]byte{staticKey()}
+		}
 		if secondaryAuth != nil {
 			var keys [][]byte
 			active := ""
