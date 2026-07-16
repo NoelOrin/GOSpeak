@@ -64,25 +64,19 @@ func TestInit_ExternalURL_Available_UsesExternalNoEmbed(t *testing.T) {
 	}
 }
 
-func TestInit_ExternalURL_Unavailable_FallsBackEmbedded(t *testing.T) {
-	b, cleanup, err := Init(InitConfig{
+func TestInit_ExternalURL_ProbeFailed_NoFallback(t *testing.T) {
+	_, cleanup, err := Init(InitConfig{
 		URL:            "nats://127.0.0.1:1",
 		Prefix:         "gospeak",
 		ConnectTimeout: 300 * time.Millisecond,
 		Deliverer:      nopDeliverer{},
 	})
-	if err != nil {
-		t.Fatalf("should fallback embedded, not fail: %v", err)
+	if err == nil {
+		cleanup()
+		t.Fatal("expected probe failure error, no embedded fallback")
 	}
-	defer cleanup()
-	if b.Mode() != "embedded" {
-		t.Fatalf("mode = %q, want embedded fallback", b.Mode())
-	}
-	if !b.IsConnected() {
-		t.Fatal("expected connected to embedded")
-	}
-	if !GetStats(b).FallbackFromExternal {
-		t.Fatal("expected FallbackFromExternal=true")
+	if !strings.Contains(err.Error(), "probe failed") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -98,21 +92,5 @@ func TestProbeExternal_OKAndFail(t *testing.T) {
 	}
 	if err := ProbeExternal("nats://127.0.0.1:1", 200*time.Millisecond); err == nil {
 		t.Fatal("probe bad url should fail")
-	}
-}
-
-func TestInit_ExternalBadURL_MessageContainsProbe(t *testing.T) {
-	b, cleanup, err := Init(InitConfig{
-		URL:            "nats://127.0.0.1:1",
-		Prefix:         "gospeak",
-		ConnectTimeout: 200 * time.Millisecond,
-		Deliverer:      nopDeliverer{},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cleanup()
-	if !strings.Contains(b.Mode(), "embedded") {
-		t.Fatalf("mode=%s", b.Mode())
 	}
 }
