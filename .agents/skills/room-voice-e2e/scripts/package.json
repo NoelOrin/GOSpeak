@@ -1,0 +1,16 @@
+{
+  "name": "room-voice-e2e-runner",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node run-room-voice-e2e.mjs",
+    "test:join": "node run-room-voice-e2e.mjs --suite join",
+    "test:switch": "node run-room-voice-e2e.mjs --suite switch",
+    "test:rapid": "node run-room-voice-e2e.mjs --suite rapid-switch",
+    "test:media": "node run-room-voice-e2e.mjs --suite media",
+    "test:multi": "node run-room-voice-e2e.mjs --suite multi-user"
+  },
+  "dependencies": {
+    "playwright": "^1.61.1"
+  }
+}

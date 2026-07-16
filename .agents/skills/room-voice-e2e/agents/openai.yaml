@@ -1,0 +1,4 @@
+interface:
+  display_name: "房间语音 E2E 测试"
+  short_description: "Automate GOSpeak room join/switch/media e2e"
+  default_prompt: "用 room-voice-e2e skill 跑一遍进入房间、切换房间、快速切房、推拉流和本地多人房间音频流测试"
