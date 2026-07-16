@@ -10,6 +10,7 @@ import (
 	emailConfigRoutes "GOSpeak/internal/router/routes/email_config"
 	muteRoutes "GOSpeak/internal/router/routes/mute"
 	oauthRoutes "GOSpeak/internal/router/routes/oauth"
+	pluginRoutes "GOSpeak/internal/router/routes/plugin"
 	permissionRoutes "GOSpeak/internal/router/routes/permission"
 	roleRoutes "GOSpeak/internal/router/routes/role"
 	roomRoutes "GOSpeak/internal/router/routes/room"
@@ -51,6 +52,9 @@ type Handlers struct {
 	Monitor     *handler.MonitorHandler
 	SRSCallback *handler.SRSCallbackHandler
 	Bot         *handler.BotHandler
+	Plugin      *handler.PluginHandler
+	// PluginHost 用于挂载插件自定义路由
+	PluginHost  interface{ MountRoutes(*gin.RouterGroup) }
 }
 
 func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
@@ -88,6 +92,13 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	storageRoutes.Register(protected.Group("/storage"), h.Storage)
 	emailConfigRoutes.RegisterProtected(protected.Group("/email"), h.EmailConfig)
 	botRoutes.RegisterProtected(protected.Group("/bot"), h.Bot)
+	if h.Plugin != nil {
+		pluginRoutes.RegisterProtected(protected.Group("/plugins"), h.Plugin)
+	}
+	if h.PluginHost != nil {
+		// 插件自注册路由：/api/v1/plugins/:name/*
+		h.PluginHost.MountRoutes(protected.Group("/plugins"))
+	}
 
 	return r
 }

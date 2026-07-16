@@ -1,6 +1,8 @@
 # GOSpeak — 单二进制跨平台打包
 #
 # 前端产物在编译前复制到 internal/webui/dist，经 go:embed 打进二进制。
+# Bot 基础插件（bot-base）源码 + assets 同样经 go:embed 打进二进制，
+# 启动后端时由插件 Registry 同步注册并启动，无需额外 sidecar 文件。
 # 运行时无需再附带 static/ 目录（仍可用 STATIC_DIR 覆盖外挂静态资源）。
 #
 # CGO_ENABLED=0 默认纯 Go 交叉编译；本地 make 也可直接使用。
@@ -64,19 +66,26 @@ web:
 sync-web:
 	$(call sync_web)
 
+# Bot 基础插件 assets 已纳入源码 go:embed（internal/plugin/builtin/botbase/assets）。
+# 无需额外 sync 步骤；编译二进制时自动嵌入，启动时同步拉起。
+bot-embed-check:
+	@test -f internal/plugin/builtin/botbase/assets/manifest.json
+	@test -f internal/plugin/builtin/botbase/assets/default_config.json
+	@echo "✓  bot-base embed assets present"
+
 # ── Linux ─────────────────────────────────────────────────────
 linux: linux-amd64 linux-arm64
 
 linux-amd64: web linux-amd64-bin
 linux-arm64: web linux-arm64-bin
 
-linux-amd64-bin: | $(BUILDDIR)
+linux-amd64-bin: bot-embed-check | $(BUILDDIR)
 	@echo ">> Building linux/amd64 (embedded web) …"
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 		go build $(LDFLAGS) -o $(BUILDDIR)/gospeak-linux-amd64 main.go
 	@echo "✓  $(BUILDDIR)/gospeak-linux-amd64"
 
-linux-arm64-bin: | $(BUILDDIR)
+linux-arm64-bin: bot-embed-check | $(BUILDDIR)
 	@echo ">> Building linux/arm64 (embedded web) …"
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
 		go build $(LDFLAGS) -o $(BUILDDIR)/gospeak-linux-arm64 main.go
@@ -96,13 +105,13 @@ darwin: darwin-amd64 darwin-arm64
 darwin-amd64: web darwin-amd64-bin
 darwin-arm64: web darwin-arm64-bin
 
-darwin-amd64-bin: | $(BUILDDIR)
+darwin-amd64-bin: bot-embed-check | $(BUILDDIR)
 	@echo ">> Building darwin/amd64 (embedded web) …"
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 \
 		go build $(LDFLAGS) -o $(BUILDDIR)/gospeak-darwin-amd64 main.go
 	@echo "✓  $(BUILDDIR)/gospeak-darwin-amd64"
 
-darwin-arm64-bin: | $(BUILDDIR)
+darwin-arm64-bin: bot-embed-check | $(BUILDDIR)
 	@echo ">> Building darwin/arm64 (embedded web) …"
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 \
 		go build $(LDFLAGS) -o $(BUILDDIR)/gospeak-darwin-arm64 main.go

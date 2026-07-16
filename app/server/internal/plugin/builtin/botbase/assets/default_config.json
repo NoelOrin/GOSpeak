@@ -1,0 +1,25 @@
+{
+  "side_server": {
+    "enabled": false,
+    "addr": "127.0.0.1:9200"
+  },
+  "default_provider": "openai",
+  "llm_providers": [
+    {
+      "name": "openai",
+      "display_name": "OpenAI",
+      "protocol": "openai-compatible",
+      "base_url": "https://api.openai.com/v1",
+      "model": "gpt-4o-mini",
+      "enabled": false
+    },
+    {
+      "name": "gemini",
+      "display_name": "Google Gemini",
+      "protocol": "gemini-response",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta",
+      "model": "gemini-2.0-flash",
+      "enabled": false
+    }
+  ]
+}

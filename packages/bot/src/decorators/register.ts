@@ -1,5 +1,4 @@
 import type { Plugin, PluginMetadata } from "../core/plugin";
-import { registerPlugin } from "../core/registry";
 
 export interface PluginMetaInput {
 	name: string;
@@ -9,20 +8,12 @@ export interface PluginMetaInput {
 	repo?: string;
 }
 
+/**
+ * 仅挂载插件元数据到类上，真正 registerPlugin 推迟到 loadPlugin。
+ * 这样动态 import 时可以用正确的 modulePath 注册。
+ */
 export function RegisterPlugin(meta: PluginMetaInput) {
 	return <T extends new (...args: any[]) => Plugin>(target: T): T => {
-		const modulePath =
-			(target as unknown as { __modulePath?: string }).__modulePath ??
-			target.name;
-		registerPlugin(modulePath, {
-			name: meta.name,
-			author: meta.author,
-			desc: meta.desc,
-			version: meta.version,
-			repo: meta.repo,
-			activated: true,
-			handlerNames: [],
-		});
 		(target as unknown as { __pluginMeta?: PluginMetadata }).__pluginMeta = {
 			name: meta.name,
 			author: meta.author,
@@ -43,7 +34,16 @@ export function setPluginModulePath(
 	(target as unknown as { __modulePath?: string }).__modulePath = modulePath;
 }
 
-export function getPluginModulePath(instance: Plugin): string {
-	const ctor = instance.constructor as unknown as { __modulePath?: string };
-	return ctor.__modulePath ?? instance.constructor.name;
+export function getPluginModulePath(instance: Plugin | object): string {
+	const ctor =
+		typeof instance === "function"
+			? (instance as unknown as { __modulePath?: string })
+			: (instance.constructor as unknown as { __modulePath?: string });
+	return (
+		ctor.__modulePath ??
+		(typeof instance === "function"
+			? (instance as { name?: string }).name
+			: instance.constructor.name) ??
+		"unknown"
+	);
 }
