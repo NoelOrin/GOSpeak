@@ -3,6 +3,16 @@ import type { MemberRef, RoomRef } from "../core/types";
 import type { GOSpeakApiClient } from "./apiClient";
 import type { GOSpeakSocketClient } from "./socketClient";
 
+export interface SpeakHooks {
+	speak?(roomId: string, text: string): Promise<void>;
+	publishPcm?(
+		roomId: string,
+		pcm16: Int16Array,
+		sampleRate?: number,
+	): Promise<void>;
+	stopSpeaking?(roomId: string): Promise<void>;
+}
+
 /**
  * CapabilityRouter wires plugin context operations to the correct backend channels:
  * - Chat → socket bot:message (no REST endpoint)
@@ -10,6 +20,7 @@ import type { GOSpeakSocketClient } from "./socketClient";
  * - Mute → REST mute API (POST /api/v1/mute/create|cancel)
  * - Rooms → REST API + socket join/leave
  * - Users → REST API
+ * - Speak/publishPcm → publish adapter (Phase 4)
  *
  * Plugins must NOT fetch arbitrary REST paths — only ctx.* through this router.
  */
@@ -22,6 +33,7 @@ export class CapabilityRouter implements ChatClient, RoomClient, VoiceClient {
 			leaveRoom(name: string): void;
 			joinedRooms: string[];
 		},
+		private readonly speakHooks: SpeakHooks = {},
 	) {}
 
 	// ── ChatClient (socket-only) ──
@@ -74,7 +86,6 @@ export class CapabilityRouter implements ChatClient, RoomClient, VoiceClient {
 		// This is a degraded path: we look up the user ID and call muteUser.
 		// For proper local mic mute, clients should react to the user:muted socket event.
 		if (muted) {
-			// Look up user first
 			const user = await this.api.getUserByIdentity(identity);
 			await this.api.muteUser(
 				user.id,
@@ -99,6 +110,29 @@ export class CapabilityRouter implements ChatClient, RoomClient, VoiceClient {
 		_volume: number,
 	): Promise<void> {
 		// Client-local operation, no server action
+	}
+
+	async speak(roomId: string, text: string): Promise<void> {
+		if (!this.speakHooks.speak) {
+			throw new Error("speak is not enabled on this bot runtime");
+		}
+		await this.speakHooks.speak(roomId, text);
+	}
+
+	async publishPcm(
+		roomId: string,
+		pcm16: Int16Array,
+		sampleRate?: number,
+	): Promise<void> {
+		if (!this.speakHooks.publishPcm) {
+			throw new Error("publishPcm is not enabled on this bot runtime");
+		}
+		await this.speakHooks.publishPcm(roomId, pcm16, sampleRate);
+	}
+
+	async stopSpeaking(roomId: string): Promise<void> {
+		if (!this.speakHooks.stopSpeaking) return;
+		await this.speakHooks.stopSpeaking(roomId);
 	}
 
 	// ── 禁言查询 (REST) ──

@@ -7,8 +7,28 @@ import {
 	getHandlersByEventType,
 	listPlugins,
 } from "../core/registry";
-import { createBotEvent, EventType, type LifecycleEvent } from "../core/types";
-import { type PcmStream, PcmStreamHub } from "../media";
+import {
+	createBotEvent,
+	EventType,
+	type LifecycleEvent,
+	type SpeechEvent,
+} from "../core/types";
+import {
+	ListenRoomRegistry,
+	LiveKitPublishAdapter,
+	MediaListenService,
+	type PcmStream,
+	PcmStreamHub,
+	parseRoomList,
+	type SFUPublishAdapter,
+} from "../media";
+import {
+	createSpeechBusBridge,
+	PassthroughSpeechPipeline,
+	type SpeechPipeline,
+} from "../speech";
+import { ASRManager, createASRProvider } from "../speech/asr";
+import { SineTTSProvider, type TTSProvider } from "../tts";
 import { createKVStore, GOSpeakApiClient } from "./apiClient";
 import { AuthClient, type AuthCredentials } from "./authClient";
 import { CapabilityRouter } from "./capabilityRouter";
@@ -34,8 +54,16 @@ export interface BotConfig {
 	pluginDir?: string;
 	/** Watch pluginDir for runtime load/reload (default true when pluginDir set) */
 	watchPlugins?: boolean;
-	/** Auto-join these rooms on start */
+	/** Auto-join these rooms on start (signaling only) */
 	autoJoinRooms?: string[];
+	/** Rooms to listen (SFU side) on start */
+	listenRooms?: string[];
+	/** Enable media listen + speech pipeline (default true when listenRooms set) */
+	enableListen?: boolean;
+	/** Use real ASR manager instead of passthrough mock pipeline */
+	enableASR?: boolean;
+	/** Enable TTS speak / publishPcm (Phase 4) */
+	enableSpeak?: boolean;
 	/** Debounce for plugin file changes (ms) */
 	pluginWatchDebounceMs?: number;
 	/** Per-plugin configuration map, keyed by plugin name */
@@ -48,6 +76,7 @@ export interface BotStatus {
 	handlerCount: number;
 	startedAt: number;
 	loggedIn: boolean;
+	listenRooms: string[];
 }
 
 export class BotRunner {
@@ -63,6 +92,16 @@ export class BotRunner {
 	private _pcmHub = new PcmStreamHub();
 	private _caps!: CapabilityRouter;
 	private _scheduler = new Scheduler();
+	private _listenRegistry = new ListenRoomRegistry();
+	private _listenService: MediaListenService | null = null;
+	private _speechPipeline: SpeechPipeline | null = null;
+	private _asrManager: ASRManager | null = null;
+	private _unsubPcm: (() => void) | null = null;
+	private _unsubSpeech: (() => void) | null = null;
+	private _publishAdapter: SFUPublishAdapter | null = null;
+	private _tts: TTSProvider | null = null;
+	private _speakQueues = new Map<string, Promise<void>>();
+	private _speakingRooms = new Set<string>();
 
 	constructor(config: BotConfig, logger?: ILogger) {
 		this.config = config;
@@ -77,6 +116,7 @@ export class BotRunner {
 				.length,
 			startedAt: this.startedAt,
 			loggedIn: this.auth?.isLoggedIn ?? false,
+			listenRooms: this._listenRegistry.list(),
 		};
 	}
 
@@ -86,6 +126,10 @@ export class BotRunner {
 
 	get authClient(): AuthClient {
 		return this.auth;
+	}
+
+	get listenRegistry(): ListenRoomRegistry {
+		return this._listenRegistry;
 	}
 
 	/**
@@ -150,7 +194,11 @@ export class BotRunner {
 			logger: this.logger,
 		});
 
-		this._caps = new CapabilityRouter(this.api, this.socket, this);
+		this._caps = new CapabilityRouter(this.api, this.socket, this, {
+			speak: (room, text) => this.speak(room, text),
+			publishPcm: (room, pcm, rate) => this.publishPcm(room, pcm, rate),
+			stopSpeaking: (room) => this.stopSpeaking(room),
+		});
 
 		this.bus = new EventBus({
 			buildContext: (pluginName) => this.buildPluginCtx(pluginName),
@@ -163,6 +211,10 @@ export class BotRunner {
 				this.logger.error("Event dispatch error:", err);
 			});
 		});
+
+		// Seed listen rooms from config (env merged in main.ts)
+		const initialListen = parseRoomList(this.config.listenRooms);
+		if (initialListen.length) this._listenRegistry.setAll(initialListen);
 
 		this.pluginManager = new PluginManager({
 			pluginDir: this.config.pluginDir,
@@ -180,7 +232,7 @@ export class BotRunner {
 		await this.pluginManager.start();
 		await this.socket.connect();
 
-		// Auto-join configured rooms
+		// Auto-join configured rooms (signaling)
 		if (this.config.autoJoinRooms && this.config.autoJoinRooms.length > 0) {
 			for (const room of this.config.autoJoinRooms) {
 				try {
@@ -192,8 +244,10 @@ export class BotRunner {
 			}
 		}
 
+		await this.startMediaPipeline();
+
 		this.logger.info(
-			`Bot started — ${this.status.pluginCount} plugins, ${this.status.handlerCount} handlers`,
+			`Bot started — ${this.status.pluginCount} plugins, ${this.status.handlerCount} handlers, listen=${this._listenRegistry.list().join(",") || "-"}`,
 		);
 
 		await this.fireLifecycleEvent(EventType.OnBotLoaded);
@@ -205,6 +259,22 @@ export class BotRunner {
 			this._refreshTimer = null;
 		}
 		this._scheduler.clearAll();
+		this._unsubPcm?.();
+		this._unsubPcm = null;
+		this._unsubSpeech?.();
+		this._unsubSpeech = null;
+		this._speechPipeline?.dispose();
+		this._speechPipeline = null;
+		this._asrManager?.dispose();
+		this._asrManager = null;
+		if (this._listenService) {
+			await this._listenService.stop();
+			this._listenService = null;
+		}
+		if (this._publishAdapter) {
+			await this._publishAdapter.dispose();
+			this._publishAdapter = null;
+		}
 		this._pcmHub.clear();
 		this.socket?.disconnect();
 		if (this.pluginManager) {
@@ -217,7 +287,7 @@ export class BotRunner {
 	}
 
 	async sendChat(roomId: string, content: string): Promise<void> {
-		await this.api.send(roomId, content);
+		this.socket.sendBotMessage(roomId, content);
 	}
 
 	async joinRoom(roomName: string, opts?: { sfu?: boolean }): Promise<void> {
@@ -241,6 +311,63 @@ export class BotRunner {
 
 	get joinedRooms(): string[] {
 		return this.socket.rooms;
+	}
+
+	/** Phase 4: synthesize + publish PCM to room */
+	async speak(roomId: string, text: string): Promise<void> {
+		if (!this.config.enableSpeak && !this._tts) {
+			// lazy init if not configured but called
+			this._tts = new SineTTSProvider();
+			this._publishAdapter =
+				this._publishAdapter ?? new LiveKitPublishAdapter(this.logger);
+		}
+		if (!this._tts || !this._publishAdapter) {
+			throw new Error("speak not enabled");
+		}
+		const prev = this._speakQueues.get(roomId) ?? Promise.resolve();
+		const next = prev
+			.catch(() => {})
+			.then(async () => {
+				this._speakingRooms.add(roomId);
+				try {
+					const token = await this.api.getSFUToken(roomId);
+					await this._publishAdapter!.join({
+						room: roomId,
+						identity: this.config.identity,
+						token: token.token,
+						serverUrl: token.serverUrl,
+					});
+					const pcm = await this._tts!.synthesize(text);
+					await this._publishAdapter!.publishPcm(roomId, pcm, 16000);
+				} finally {
+					this._speakingRooms.delete(roomId);
+				}
+			});
+		this._speakQueues.set(roomId, next);
+		await next;
+	}
+
+	async publishPcm(
+		roomId: string,
+		pcm16: Int16Array,
+		sampleRate = 16000,
+	): Promise<void> {
+		if (!this._publishAdapter) {
+			this._publishAdapter = new LiveKitPublishAdapter(this.logger);
+		}
+		const token = await this.api.getSFUToken(roomId);
+		await this._publishAdapter.join({
+			room: roomId,
+			identity: this.config.identity,
+			token: token.token,
+			serverUrl: token.serverUrl,
+		});
+		await this._publishAdapter.publishPcm(roomId, pcm16, sampleRate);
+	}
+
+	async stopSpeaking(roomId: string): Promise<void> {
+		await this._publishAdapter?.unpublish(roomId);
+		this._speakingRooms.delete(roomId);
 	}
 
 	/** 运行时加载：从绝对路径或 pluginDir 内相对路径加载插件 */
@@ -281,6 +408,67 @@ export class BotRunner {
 		return this.pluginManager?.list() ?? listPlugins();
 	}
 
+	private async startMediaPipeline(): Promise<void> {
+		const enableListen =
+			this.config.enableListen ??
+			(this._listenRegistry.list().length > 0 ||
+				Boolean(this.config.listenRooms?.length));
+
+		if (!enableListen) return;
+
+		// Speech / ASR path
+		const bridge = createSpeechBusBridge((event: SpeechEvent) => {
+			void this.bus.dispatch(event).catch((err) => {
+				this.logger.error("Speech event dispatch error:", err);
+			});
+		});
+
+		if (this.config.enableASR) {
+			const provider = createASRProvider(process.env);
+			this._asrManager = new ASRManager({
+				provider,
+				botIdentity: this.config.identity,
+				onResult: bridge,
+			});
+			this._unsubPcm = this._pcmHub.subscribe((frame) => {
+				// pause ASR while speaking in same room to reduce self-feedback
+				if (this._speakingRooms.has(frame.room)) return;
+				this._asrManager?.write(frame);
+			});
+			this.logger.info(`[asr] provider=${provider.name}`);
+		} else {
+			this._speechPipeline = new PassthroughSpeechPipeline({
+				framesPerFinal: 5,
+			});
+			this._unsubSpeech = this._speechPipeline.onResult(bridge);
+			this._unsubPcm = this._pcmHub.subscribe((frame) => {
+				if (this._speakingRooms.has(frame.room)) return;
+				this._speechPipeline?.write(frame);
+			});
+			this.logger.info("[speech] using passthrough mock pipeline");
+		}
+
+		if (this.config.enableSpeak) {
+			this._tts = new SineTTSProvider();
+			this._publishAdapter = new LiveKitPublishAdapter(this.logger);
+		}
+
+		this._listenService = new MediaListenService({
+			registry: this._listenRegistry,
+			pcmSink: this._pcmHub,
+			logger: this.logger,
+			identity: this.config.identity,
+			getSFUToken: (room) => this.api.getSFUToken(room),
+			joinSignaling: (room) => this.joinRoom(room),
+			leaveSignaling: (room) => this.leaveRoom(room),
+			onTrackEnded: (info) => {
+				this._asrManager?.endTrack(info.room, info.identity);
+				this._speechPipeline?.endTrack(info.room, info.identity);
+			},
+		});
+		await this._listenService.start();
+	}
+
 	private buildPluginCtx(pluginName: string): BotContext {
 		return {
 			logger: this.logger,
@@ -301,6 +489,12 @@ export class BotRunner {
 					this._scheduler.once(`${pluginName}:${id}`, ms, fn),
 				clear: (id) => this._scheduler.clear(`${pluginName}:${id}`),
 				clearAll: () => this._scheduler.clearByPrefix(`${pluginName}:`),
+			},
+			listen: {
+				add: (room) => this._listenRegistry.add(room),
+				remove: (room) => this._listenRegistry.remove(room),
+				list: () => this._listenRegistry.list(),
+				clear: () => this._listenRegistry.clear(),
 			},
 			kv: createKVStore(),
 			hasPermission: (_level, _member) => true,

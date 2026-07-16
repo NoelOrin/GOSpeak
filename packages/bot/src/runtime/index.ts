@@ -8,6 +8,7 @@ export type {
 export { AuthClient } from "./authClient";
 export type { BotConfig, BotStatus } from "./botRunner";
 export { BotRunner } from "./botRunner";
+export type { SpeakHooks } from "./capabilityRouter";
 export { CapabilityRouter } from "./capabilityRouter";
 export type { SchedulerTask } from "./scheduler";
 export { Scheduler } from "./scheduler";

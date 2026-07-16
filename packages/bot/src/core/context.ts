@@ -34,6 +34,14 @@ export interface VoiceClient {
 		identity: string,
 		volume: number,
 	): Promise<void>;
+	/** Phase 4: TTS speak into room (optional) */
+	speak?(roomId: string, text: string): Promise<void>;
+	publishPcm?(
+		roomId: string,
+		pcm16: Int16Array,
+		sampleRate?: number,
+	): Promise<void>;
+	stopSpeaking?(roomId: string): Promise<void>;
 }
 
 export interface KeyValueStore {
@@ -64,6 +72,13 @@ export interface BotContext {
 		once(id: string, ms: number, fn: () => void | Promise<void>): void;
 		clear(id: string): void;
 		clearAll(): void;
+	};
+	/** Optional listen registry ops (Phase 2) */
+	readonly listen?: {
+		add(room: string): boolean;
+		remove(room: string): boolean;
+		list(): string[];
+		clear(): string[];
 	};
 	hasPermission(level: PermissionLevel, member?: MemberRef): boolean;
 }

@@ -42,6 +42,12 @@ function makeCtx() {
 			clear: () => {},
 			clearAll: () => {},
 		},
+		listen: {
+			add: () => true,
+			remove: () => true,
+			list: () => [],
+			clear: () => [],
+		},
 		kv: {
 			get: async () => undefined,
 			set: async () => {},

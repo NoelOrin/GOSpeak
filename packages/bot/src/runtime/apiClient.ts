@@ -27,7 +27,10 @@ interface SFUTokenResult {
 	room: string;
 	identity: string;
 	provider?: string;
+	stream?: string;
+	streamToken?: string;
 	capabilities?: Record<string, unknown>;
+	clientInfo?: Record<string, unknown>;
 }
 
 interface RoomCreateResult {
@@ -234,9 +237,13 @@ export class GOSpeakApiClient implements ChatClient, RoomClient, VoiceClient {
 
 	// ── SFU Token ──
 
-	async getSFUToken(
-		room: string,
-	): Promise<{ token: string; serverUrl: string }> {
+	async getSFUToken(room: string): Promise<{
+		token: string;
+		serverUrl: string;
+		provider?: string;
+		stream?: string;
+		streamToken?: string;
+	}> {
 		const data = await this.request<SFUTokenResult>(
 			"POST",
 			"/api/v1/signal/token",
@@ -245,6 +252,9 @@ export class GOSpeakApiClient implements ChatClient, RoomClient, VoiceClient {
 		return {
 			token: data.token,
 			serverUrl: data.serverUrl,
+			provider: data.provider,
+			stream: data.stream,
+			streamToken: data.streamToken,
 		};
 	}
 
