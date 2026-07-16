@@ -330,15 +330,18 @@ export class BotRunner {
 			.then(async () => {
 				this._speakingRooms.add(roomId);
 				try {
+					const publisher = this._publishAdapter;
+					const tts = this._tts;
+					if (!publisher || !tts) throw new Error("speak not enabled");
 					const token = await this.api.getSFUToken(roomId);
-					await this._publishAdapter!.join({
+					await publisher.join({
 						room: roomId,
 						identity: this.config.identity,
 						token: token.token,
 						serverUrl: token.serverUrl,
 					});
-					const pcm = await this._tts!.synthesize(text);
-					await this._publishAdapter!.publishPcm(roomId, pcm, 16000);
+					const pcm = await tts.synthesize(text);
+					await publisher.publishPcm(roomId, pcm, 16000);
 				} finally {
 					this._speakingRooms.delete(roomId);
 				}
