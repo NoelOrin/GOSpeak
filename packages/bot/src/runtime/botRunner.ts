@@ -1,15 +1,14 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
 import type { BotContext, Logger as ILogger } from "../core/context";
 import { EventBus } from "../core/eventBus";
-import { initPlugin, loadPlugin } from "../core/loader";
-import type { Plugin } from "../core/plugin";
+import type { PluginMetadata } from "../core/plugin";
+import { PluginManager } from "../core/pluginManager";
 import {
 	clearRegistry,
 	getHandlersByEventType,
-	removeHandlersByModule,
+	listPlugins,
 } from "../core/registry";
 import { createBotEvent, EventType, type LifecycleEvent } from "../core/types";
+import { type PcmStream, PcmStreamHub } from "../media";
 import { createKVStore, GOSpeakApiClient } from "./apiClient";
 import { AuthClient, type AuthCredentials } from "./authClient";
 import { GOSpeakSocketClient } from "./socketClient";
@@ -31,6 +30,10 @@ export interface BotConfig {
 	displayName: string;
 	/** Directory to scan for plugin modules */
 	pluginDir?: string;
+	/** Watch pluginDir for runtime load/reload (default true when pluginDir set) */
+	watchPlugins?: boolean;
+	/** Debounce for plugin file changes (ms) */
+	pluginWatchDebounceMs?: number;
 	/** Per-plugin configuration map, keyed by plugin name */
 	pluginConfigs?: Record<string, Record<string, unknown>>;
 }
@@ -51,9 +54,9 @@ export class BotRunner {
 	private socket!: GOSpeakSocketClient;
 	private auth!: AuthClient;
 	private startedAt = 0;
-	private _plugins: { instance: Plugin; name: string }[] = [];
-	private _loadedPaths = new Set<string>();
+	private pluginManager: PluginManager | null = null;
 	private _refreshTimer: NodeJS.Timeout | null = null;
+	private _pcmHub = new PcmStreamHub();
 
 	constructor(config: BotConfig, logger?: ILogger) {
 		this.config = config;
@@ -63,7 +66,7 @@ export class BotRunner {
 	get status(): BotStatus {
 		return {
 			connected: this.socket?.isConnected ?? false,
-			pluginCount: this._plugins.length,
+			pluginCount: this.pluginManager?.pluginCount ?? 0,
 			handlerCount: getHandlersByEventType(EventType.AdapterMessage, false)
 				.length,
 			startedAt: this.startedAt,
@@ -77,6 +80,20 @@ export class BotRunner {
 
 	get authClient(): AuthClient {
 		return this.auth;
+	}
+
+	/**
+	 * 进程内 PCM 可读流接口。
+	 * 旁听 adapter: `pcmHub.publish(frame)`
+	 * 外部/ASR: `pcmStream.subscribe(...)` / `pcmStream.open(...)`
+	 */
+	get pcmStream(): PcmStream {
+		return this._pcmHub;
+	}
+
+	/** 同 pcmStream，暴露 publish 给旁听写入侧 */
+	get pcmHub(): PcmStreamHub {
+		return this._pcmHub;
 	}
 
 	async start(): Promise<void> {
@@ -138,11 +155,24 @@ export class BotRunner {
 			});
 		});
 
-		await this.loadAllPlugins();
+		this.pluginManager = new PluginManager({
+			pluginDir: this.config.pluginDir,
+			watch: this.config.watchPlugins,
+			debounceMs: this.config.pluginWatchDebounceMs,
+			buildContext: (pluginName) => this.buildPluginCtx(pluginName),
+			logger: this.logger,
+			onLoaded: async (name) => {
+				await this.fireLifecycleEvent(EventType.OnPluginLoaded, name);
+			},
+			onUnloaded: async (name) => {
+				await this.fireLifecycleEvent(EventType.OnPluginUnloaded, name);
+			},
+		});
+		await this.pluginManager.start();
 		await this.socket.connect();
 
 		this.logger.info(
-			`Bot started — ${this._plugins.length} plugins, ${this.status.handlerCount} handlers`,
+			`Bot started — ${this.status.pluginCount} plugins, ${this.status.handlerCount} handlers`,
 		);
 
 		await this.fireLifecycleEvent(EventType.OnBotLoaded);
@@ -153,14 +183,14 @@ export class BotRunner {
 			clearInterval(this._refreshTimer);
 			this._refreshTimer = null;
 		}
+		this._pcmHub.clear();
 		this.socket?.disconnect();
-		for (const p of this._plugins) {
-			await p.instance.onUnload?.();
+		if (this.pluginManager) {
+			await this.pluginManager.stop();
+			this.pluginManager = null;
 		}
 		await this.auth?.logout();
 		clearRegistry();
-		this._plugins = [];
-		this._loadedPaths.clear();
 		this.logger.info("Bot stopped");
 	}
 
@@ -176,8 +206,8 @@ export class BotRunner {
 		}
 
 		if (opts?.sfu) {
-			const sfuToken = await this.api.getSFUToken(roomName, identity);
-			await this.socket.joinRoomSFU(roomName, identity, sfuToken.stream);
+			const sfuToken = await this.api.getSFUToken(roomName);
+			await this.socket.joinRoomSFU(roomName, identity, sfuToken.serverUrl);
 		} else {
 			this.socket.joinRoom(roomName, identity);
 		}
@@ -191,22 +221,42 @@ export class BotRunner {
 		return this.socket.rooms;
 	}
 
-	async reloadPlugin(name: string): Promise<void> {
-		const old = this._plugins.find((p) => p.name === name);
-		if (!old) return;
-		const absPath = [...this._loadedPaths].find(
-			(p) => path.basename(p, path.extname(p)) === name,
-		);
-		if (!absPath) {
-			this.logger.warn(`Cannot reload plugin ${name}: module path not tracked`);
-			return;
+	/** 运行时加载：从绝对路径或 pluginDir 内相对路径加载插件 */
+	async loadPlugin(pathOrName: string): Promise<PluginMetadata> {
+		if (!this.pluginManager) {
+			throw new Error("Bot not started");
 		}
-		const modulePath = `user_plugins/${name}`;
-		removeHandlersByModule(modulePath);
-		await old.instance.onUnload?.();
-		this._plugins = this._plugins.filter((p) => p.name !== name);
-		await this.loadSinglePlugin(absPath);
-		this.logger.info(`Reloaded plugin: ${name}`);
+		const managed = await this.pluginManager.loadFromPath(pathOrName, true);
+		return managed.metadata;
+	}
+
+	/** 运行时卸载 */
+	async unloadPlugin(name: string): Promise<void> {
+		if (!this.pluginManager) return;
+		await this.pluginManager.unload(name);
+	}
+
+	/** 运行时重载（不传 name 则全量） */
+	async reloadPlugin(name?: string): Promise<void> {
+		if (!this.pluginManager) return;
+		await this.pluginManager.reload(name);
+	}
+
+	/** 安装外部插件到 pluginDir 并加载 */
+	async installPlugin(sourcePath: string): Promise<PluginMetadata> {
+		if (!this.pluginManager) throw new Error("Bot not started");
+		const managed = await this.pluginManager.installFromPath(sourcePath);
+		return managed.metadata;
+	}
+
+	/** 启用/禁用插件（不卸载） */
+	setPluginActivated(name: string, activated: boolean): void {
+		this.pluginManager?.setActivated(name, activated);
+	}
+
+	/** 当前已加载插件元数据 */
+	listPlugins(): PluginMetadata[] {
+		return this.pluginManager?.list() ?? listPlugins();
 	}
 
 	private buildPluginCtx(pluginName: string): BotContext {
@@ -228,52 +278,6 @@ export class BotRunner {
 			kv: createKVStore(),
 			hasPermission: (_level, _member) => true,
 		};
-	}
-
-	private async loadAllPlugins(): Promise<void> {
-		const pluginDir = this.config.pluginDir;
-		if (!pluginDir) {
-			this.logger.info("No pluginDir configured; skipping auto-discovery");
-			return;
-		}
-		if (!fs.existsSync(pluginDir)) {
-			this.logger.warn(`Plugin directory not found: ${pluginDir}`);
-			return;
-		}
-
-		const entries = fs.readdirSync(pluginDir, { withFileTypes: true });
-		const pluginFiles = entries.filter(
-			(e: fs.Dirent) =>
-				e.isFile() && (e.name.endsWith(".ts") || e.name.endsWith(".js")),
-		);
-
-		for (const file of pluginFiles) {
-			const absPath = path.resolve(pluginDir, file.name);
-			if (this._loadedPaths.has(absPath)) continue;
-			await this.loadSinglePlugin(absPath);
-		}
-	}
-
-	private async loadSinglePlugin(absPath: string): Promise<void> {
-		try {
-			const modulePath = `user_plugins/${path.basename(absPath, path.extname(absPath))}`;
-			const loaded = await loadPlugin(absPath, modulePath);
-			initPlugin(loaded, (name) => this.buildPluginCtx(name));
-			this._plugins.push({
-				instance: loaded.instance,
-				name: loaded.metadata.name,
-			});
-			this._loadedPaths.add(absPath);
-			await this.fireLifecycleEvent(
-				EventType.OnPluginLoaded,
-				loaded.metadata.name,
-			);
-			this.logger.info(
-				`Loaded plugin: ${loaded.metadata.name} (${modulePath})`,
-			);
-		} catch (err) {
-			this.logger.error(`Failed to load plugin ${absPath}:`, err);
-		}
 	}
 
 	private async fireLifecycleEvent(

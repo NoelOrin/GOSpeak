@@ -13,6 +13,46 @@ export interface ApiClientOptions {
 	logger: Logger;
 }
 
+// ─── Backend response types ───
+
+interface ApiResponse<T> {
+	code: number;
+	msg: string;
+	data: T;
+}
+
+interface SFUTokenResult {
+	token: string;
+	serverUrl: string;
+	room: string;
+	identity: string;
+	provider?: string;
+	capabilities?: Record<string, unknown>;
+}
+
+interface RoomCreateResult {
+	id: number;
+	uuid: string;
+	name: string;
+	description: string;
+	limit: number;
+	audio_only: boolean;
+	allow_audience: boolean;
+	created_by: string;
+	created_at: string;
+	updated_at: string;
+}
+
+interface UserInfoResult {
+	id: number;
+	uuid: string;
+	name: string;
+	display_name: string;
+	avatar: string;
+	email: string;
+	role: string;
+}
+
 export class GOSpeakApiClient implements ChatClient, RoomClient, VoiceClient {
 	private opts: ApiClientOptions;
 	logger: Logger;
@@ -40,54 +80,67 @@ export class GOSpeakApiClient implements ChatClient, RoomClient, VoiceClient {
 			headers: this.headers,
 			body: body ? JSON.stringify(body) : undefined,
 		});
-		const json = (await res.json()) as { code: number; msg: string; data: T };
+		const json = (await res.json()) as ApiResponse<T>;
 		if (json.code !== 0) throw new Error(`API error ${json.code}: ${json.msg}`);
 		return json.data;
 	}
 
 	// ── ChatClient ──
-	async send(roomId: string, content: string): Promise<void> {
-		await this.request("POST", "/api/v1/chat/send", { roomId, content });
+	// Chat is socket-only via bot:message. These throw to prevent misuse.
+	async send(_roomId: string, _content: string): Promise<void> {
+		throw new Error(
+			"Chat is socket-only — use socketClient or BotRunner instead of apiClient.send",
+		);
 	}
 
 	async reply(
-		event: { room: { id: string }; sender: { identity: string } },
-		content: string,
+		_event: { room: { id: string }; sender: { identity: string } },
+		_content: string,
 	): Promise<void> {
-		await this.request("POST", "/api/v1/chat/send", {
-			roomId: event.room.id,
-			content,
-			replyTo: event.sender.identity,
-		});
+		throw new Error(
+			"Chat is socket-only — use socketClient or BotRunner instead of apiClient.reply",
+		);
 	}
 
 	// ── RoomClient ──
+
 	async listRooms(): Promise<RoomRef[]> {
-		const data = await this.request<{ rooms: { id: string; name: string }[] }>(
+		const rooms = await this.request<{ name: string; memberCount?: number }[]>(
 			"GET",
 			"/api/v1/signal/rooms",
 		);
-		return (data.rooms ?? []).map((r) => ({ id: r.id, name: r.name }));
-	}
-
-	async getMembers(roomId: string): Promise<MemberRef[]> {
-		const data = await this.request<{
-			participants: { identity: string; name: string; role: string }[];
-		}>("GET", `/api/v1/signal/participants?room=${encodeURIComponent(roomId)}`);
-		return (data.participants ?? []).map((p) => ({
-			identity: p.identity,
-			name: p.name,
-			role: p.role as MemberRef["role"],
+		return (rooms ?? []).map((r) => ({
+			id: r.name,
+			name: r.name,
 		}));
 	}
 
-	async createRoom(name: string, _limit?: number): Promise<RoomRef> {
-		const data = await this.request<{ id: string; name: string }>(
+	async getMembers(roomId: string): Promise<MemberRef[]> {
+		const participants = await this.request<
+			{ identity: string; joinedAt?: number }[]
+		>("GET", `/api/v1/signal/participants?room=${encodeURIComponent(roomId)}`);
+		return (participants ?? []).map((p) => ({
+			identity: p.identity,
+			name: p.identity,
+			role: "member" as MemberRef["role"],
+		}));
+	}
+
+	async createRoom(
+		name: string,
+		limit?: number,
+		password?: string,
+	): Promise<RoomRef> {
+		const data = await this.request<RoomCreateResult>(
 			"POST",
-			"/api/v1/signal/token",
-			{ room: name },
+			"/api/v1/room/create",
+			{
+				name,
+				...(limit ? { limit } : {}),
+				...(password ? { password } : {}),
+			},
 		);
-		return { id: data.id, name: data.name };
+		return { id: data.uuid || String(data.id), name: data.name };
 	}
 
 	// join/leave/joined are implemented by BotRunner via socketClient, not here.
@@ -106,23 +159,21 @@ export class GOSpeakApiClient implements ChatClient, RoomClient, VoiceClient {
 	}
 
 	// ── VoiceClient ──
+
 	async muteMember(
-		roomId: string,
-		identity: string,
-		muted: boolean,
+		_roomId: string,
+		_identity: string,
+		_muted: boolean,
 	): Promise<void> {
-		await this.request("POST", "/api/v1/sfu/mute", {
-			room: roomId,
-			identity,
-			muted,
-		});
+		throw new Error(
+			"No REST endpoint for SFU mute — use the mute API (POST /api/v1/mute/create|cancel) or socket signaling",
+		);
 	}
 
-	async removeMember(roomId: string, identity: string): Promise<void> {
-		await this.request("POST", "/api/v1/sfu/remove-participant", {
-			room: roomId,
-			identity,
-		});
+	async removeMember(_roomId: string, _identity: string): Promise<void> {
+		throw new Error(
+			"Kick is socket-only via room:kick — use socketClient.kickMember or BotRunner",
+		);
 	}
 
 	async setMemberVolume(
@@ -136,13 +187,25 @@ export class GOSpeakApiClient implements ChatClient, RoomClient, VoiceClient {
 	}
 
 	// ── 用户查询 ──
+
 	async getUserByIdentity(
 		identity: string,
 	): Promise<{ id: number; name: string; role: string; uuid: string }> {
-		return this.request("POST", "/api/v1/user/info", { identity });
+		const data = await this.request<UserInfoResult>(
+			"POST",
+			"/api/v1/user/info",
+			{ identity },
+		);
+		return {
+			id: data.id,
+			uuid: data.uuid,
+			name: data.name,
+			role: data.role,
+		};
 	}
 
-	// ── 禁言管理 ──
+	// ── 禁言管理（正确的 REST 路径）──
+
 	async muteUser(
 		userId: number,
 		duration: number,
@@ -170,11 +233,19 @@ export class GOSpeakApiClient implements ChatClient, RoomClient, VoiceClient {
 	}
 
 	// ── SFU Token ──
+
 	async getSFUToken(
 		room: string,
-		identity: string,
-	): Promise<{ token: string; serverUrl: string; stream?: string }> {
-		return this.request("POST", "/api/v1/signal/token", { room, identity });
+	): Promise<{ token: string; serverUrl: string }> {
+		const data = await this.request<SFUTokenResult>(
+			"POST",
+			"/api/v1/signal/token",
+			{ room },
+		);
+		return {
+			token: data.token,
+			serverUrl: data.serverUrl,
+		};
 	}
 
 	/** Allow token refresh for long-lived bot sessions */
