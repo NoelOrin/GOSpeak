@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/plugin"
 
 	"github.com/gin-gonic/gin"
@@ -63,14 +64,14 @@ func New() *Plugin {
 	if err != nil {
 		// 兜底：embed 异常时仍可启动
 		cfg = Config{
-			SideServer: SideServerConfig{Enabled: true, Addr: "127.0.0.1:9200"},
+			SideServer: SideServerConfig{Enabled: false, Addr: "127.0.0.1:9200"},
 			LLMProviders: []LLMProviderConfig{
 				{
 					Name:     "openai",
 					Display:  "OpenAI",
 					Protocol: "openai-compatible",
 					BaseURL:  "https://api.openai.com/v1",
-					Model:    "gpt-4o-mini",
+					Model:    "",
 					Enabled:  false,
 				},
 				{
@@ -78,11 +79,11 @@ func New() *Plugin {
 					Display:  "Google Gemini",
 					Protocol: "gemini-response",
 					BaseURL:  "https://generativelanguage.googleapis.com/v1beta",
-					Model:    "gemini-2.0-flash",
+					Model:    "",
 					Enabled:  false,
 				},
 			},
-			DefaultProvider: "openai",
+			DefaultProvider: "",
 		}
 	}
 	return &Plugin{cfg: cfg}
@@ -185,6 +186,7 @@ func (p *Plugin) Init(host plugin.Host) error {
 		r.GET("/llm/providers", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"providers": p.publicProviders()})
 		})
+		r.POST("/llm/models", p.handleListModels)
 	})
 
 	return nil
@@ -208,6 +210,25 @@ func (p *Plugin) Start(ctx context.Context) error {
 	mux.HandleFunc("/llm/providers", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"providers": p.publicProviders()})
+	})
+	mux.HandleFunc("/llm/models", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		var req listModelsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		models, err := p.resolveAndListModels(r.Context(), req)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"models": models})
 	})
 
 	addr := cfg.SideServer.Addr
@@ -353,3 +374,62 @@ var (
 	_ plugin.Configurable = (*Plugin)(nil)
 )
 
+type listModelsRequest struct {
+	// Provider 已保存供应商 name；若提供则优先用已保存 base_url/protocol/api_key
+	Provider string `json:"provider"`
+	// 也可直接传草稿字段（编辑未保存时）
+	Protocol string `json:"protocol"`
+	BaseURL  string `json:"base_url"`
+	APIKey   string `json:"api_key"`
+	// Model 当前选择，仅用于回传；不参与列表查询
+	Model string `json:"model"`
+}
+
+func (p *Plugin) handleListModels(c *gin.Context) {
+	var req listModelsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	models, err := p.resolveAndListModels(c.Request.Context(), req)
+	if err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	pkg.Success(c, gin.H{"models": models})
+}
+
+func (p *Plugin) resolveAndListModels(ctx context.Context, req listModelsRequest) ([]string, error) {
+	protocol := strings.TrimSpace(req.Protocol)
+	baseURL := strings.TrimSpace(req.BaseURL)
+	apiKey := strings.TrimSpace(req.APIKey)
+
+	if name := strings.TrimSpace(req.Provider); name != "" {
+		p.mu.Lock()
+		var found *LLMProviderConfig
+		for i := range p.cfg.LLMProviders {
+			if p.cfg.LLMProviders[i].Name == name {
+				found = &p.cfg.LLMProviders[i]
+				break
+			}
+		}
+		if found != nil {
+			if protocol == "" {
+				protocol = found.Protocol
+			}
+			if baseURL == "" {
+				baseURL = found.BaseURL
+			}
+			if apiKey == "" {
+				apiKey = found.APIKey
+			}
+		}
+		p.mu.Unlock()
+	}
+
+	return listRemoteModels(ctx, listModelsInput{
+		Protocol: protocol,
+		BaseURL:  baseURL,
+		APIKey:   apiKey,
+	})
+}

@@ -1,6 +1,7 @@
 package botbase
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -22,6 +23,10 @@ func TestLoadEmbeddedDefaultConfig(t *testing.T) {
 	for _, p := range cfg.LLMProviders {
 		if p.Protocol == "gemini-response" {
 			foundGemini = true
+		}
+		// 默认配置不应预填 model，交由用户从 API 选择
+		if strings.TrimSpace(p.Model) != "" {
+			t.Fatalf("default model should be empty, got %q for %s", p.Model, p.Name)
 		}
 	}
 	if !foundGemini {
