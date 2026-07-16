@@ -117,7 +117,7 @@ const MANAGE_TABS: ManageTab[] = [
 	{
 		path: "bot-plugins",
 		to: "/manage/bot-plugins",
-		label: "Bot 插件",
+		label: "BOT 插件",
 		icon: Blocks,
 		permissions: ["plugin:read", "plugin:manage", "bot:manage"],
 	},

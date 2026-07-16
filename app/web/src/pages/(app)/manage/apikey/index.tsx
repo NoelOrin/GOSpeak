@@ -39,7 +39,7 @@ export const Route = createFileRoute("/(app)/manage/apikey/")({
 	},
 	component: ApiKeyPage,
 	staticData: {
-		title: "Bot 密钥",
+		title: "BOT 密钥",
 		icon: "icon-manage",
 	},
 });
@@ -90,7 +90,7 @@ function ApiKeyPage() {
 			return;
 		}
 		if (!selected.every((c) => BOT_ALLOWED_PERMISSION_CODES.includes(c))) {
-			showToast("存在不允许授予 Bot 的权限", { type: "error" });
+			showToast("存在不允许授予 BOT 的权限", { type: "error" });
 			return;
 		}
 		setCreating(true);
