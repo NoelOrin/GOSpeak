@@ -1,5 +1,5 @@
 import type { UpdateSFUConfigParams } from "@/api/sfu";
-import type { SecretFlags } from "./constants";
+import { PROVIDER_FIELD_KEYS, type SecretFlags } from "./constants";
 
 export type FieldErrors = Partial<Record<keyof UpdateSFUConfigParams, string>>;
 
@@ -51,7 +51,7 @@ export function validateSFUForm(
 	};
 
 	if (p === "livekit") {
-		if (!isUrl(f.livekit_host, ["ws", "wss"]))
+		if (!isUrl(f.livekit_host ?? "", ["ws", "wss"]))
 			e.livekit_host = "需要 ws:// 或 wss:// 开头的合法 URL";
 		require("livekit_key", "API Key 必填");
 		requireSecret(
@@ -75,14 +75,14 @@ export function validateSFUForm(
 		if (f.agora_host && !isUrl(f.agora_host, ["http", "https"]))
 			e.agora_host = "需要 http(s):// 开头的合法 URL";
 	} else if (p === "mediasoup") {
-		if (!isUrl(f.mediasoup_bridge_url, ["http", "https"]))
+		if (!isUrl(f.mediasoup_bridge_url ?? "", ["http", "https"]))
 			e.mediasoup_bridge_url = "需要 http(s):// 开头的合法 URL";
-		if (!isUrl(f.mediasoup_host, ["ws", "wss"]))
+		if (!isUrl(f.mediasoup_host ?? "", ["ws", "wss"]))
 			e.mediasoup_host = "需要 ws:// 或 wss:// 开头的合法 URL";
 	} else if (p === "srs") {
-		if (!isHost(f.srs_host))
+		if (!isHost(f.srs_host ?? ""))
 			e.srs_host = "需要域名或 IP, 不含 scheme / 路径 / 引号";
-		if (!isPort(f.srs_api_port)) e.srs_api_port = "1-65535 数字";
+		if (!isPort(f.srs_api_port ?? "")) e.srs_api_port = "1-65535 数字";
 		requireSecret("srs_secret", flags.srs_secret_set, "Secret 必填");
 		if (
 			f.srs_public_host &&
@@ -99,7 +99,7 @@ export function validateSFUForm(
 			e.srs_whip_url = "需要绝对路径或 http(s) URL";
 	} else if (p === "daily") {
 		requireSecret("daily_api_key", flags.daily_api_key_set, "API Key 必填");
-		if (!isHost(f.daily_domain))
+		if (!isHost(f.daily_domain ?? ""))
 			e.daily_domain = "需要域名, 不含 scheme / 路径 / 引号";
 	} else if (p === "cloudflare") {
 		require("cf_app_id", "App ID 必填");
@@ -108,12 +108,13 @@ export function validateSFUForm(
 	return e;
 }
 
+/** 仅清洗并保留当前 provider 的字段，提交体不再夹带其他 SFU 参数。 */
 export function cleanForm(form: UpdateSFUConfigParams): UpdateSFUConfigParams {
-	const cleaned = { ...form };
-	for (const k of Object.keys(cleaned) as (keyof UpdateSFUConfigParams)[]) {
-		if (typeof cleaned[k] === "string") {
-			cleaned[k] = clean(cleaned[k] as string) as never;
-		}
+	const provider = form.provider;
+	const cleaned: UpdateSFUConfigParams = { provider };
+	for (const key of PROVIDER_FIELD_KEYS[provider]) {
+		const value = form[key];
+		cleaned[key] = (typeof value === "string" ? clean(value) : value) as never;
 	}
 	return cleaned;
 }

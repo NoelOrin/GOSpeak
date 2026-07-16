@@ -33,9 +33,11 @@ import { hasPermission } from "@/utils/permissions";
 import CapabilityBadge from "./components/CapabilityBadge";
 import {
 	DISABLED_PROVIDERS,
-	emptyForm,
+	emptyFormForProvider,
 	emptySecretFlags,
+	pickProviderForm,
 	type SecretFlags,
+	secretFlagsFromConfig,
 } from "./components/constants";
 import ProviderCardGrid from "./components/ProviderCardGrid";
 import ProviderConfigForm from "./components/ProviderConfigForm";
@@ -64,15 +66,33 @@ function SFUPage() {
 	const [selectedProvider, setSelectedProvider] = createSignal<
 		SFUProvider | undefined
 	>();
-	const [form, setForm] = createSignal<UpdateSFUConfigParams>(emptyForm);
-	const [secretFlags, setSecretFlags] = createSignal<SecretFlags>(
-		emptySecretFlags(),
-	);
+	// 每个 provider 独立草稿，切换查看时不互相覆盖、不丢未保存输入。
+	const [drafts, setDrafts] = createSignal<
+		Partial<Record<SFUProvider, UpdateSFUConfigParams>>
+	>({});
+	const [secretFlagsByProvider, setSecretFlagsByProvider] = createSignal<
+		Partial<Record<SFUProvider, SecretFlags>>
+	>({});
+	const [loadedProviders, setLoadedProviders] = createSignal<
+		Partial<Record<SFUProvider, true>>
+	>({});
 	const [errors, setErrors] = createSignal<FieldErrors>({});
 	const [saving, setSaving] = createSignal(false);
 
 	const activeProvider = () =>
 		providersResponse()?.active ?? DEFAULT_SFU_PROVIDER;
+
+	const selected = () => selectedProvider() ?? activeProvider();
+
+	const form = (): UpdateSFUConfigParams => {
+		const provider = selected();
+		return drafts()[provider] ?? emptyFormForProvider(provider);
+	};
+
+	const secretFlags = (): SecretFlags => {
+		const provider = selected();
+		return secretFlagsByProvider()[provider] ?? emptySecretFlags();
+	};
 
 	// Initialize selectedProvider = activeProvider
 	createEffect(() => {
@@ -82,63 +102,76 @@ function SFUPage() {
 		}
 	});
 
-	// When selectedProvider changes, load its config into the form
+	// When selectedProvider changes, load its own draft/config only once unless refreshed.
 	createEffect(() => {
-		const p = selectedProvider();
-		if (!p) return;
+		const provider = selectedProvider();
+		if (!provider) return;
+		if (loadedProviders()[provider]) return;
+
 		const listData = providersResponse();
-		const local = listData?.providers.find((c) => c.provider === p);
+		const local = listData?.providers.find((c) => c.provider === provider);
 		if (local) {
-			populateForm(local);
+			populateProvider(provider, local, { preserveDraft: true });
 			return;
 		}
-		getSFUConfigByProvider(p)
-			.then((cfg) => populateForm(cfg))
-			.catch(() => populateForm({ ...emptyForm, provider: p }));
+
+		getSFUConfigByProvider(provider)
+			.then((cfg) => populateProvider(provider, cfg, { preserveDraft: true }))
+			.catch(() =>
+				populateProvider(provider, { provider }, { preserveDraft: true }),
+			);
 	});
 
-	function populateForm(data: { provider: SFUProvider; [key: string]: any }) {
+	function populateProvider(
+		provider: SFUProvider,
+		data: Partial<UpdateSFUConfigParams> & {
+			provider?: SFUProvider;
+			livekit_secret_set?: boolean;
+			agora_app_certificate_set?: boolean;
+			agora_customer_secret_set?: boolean;
+			srs_secret_set?: boolean;
+			daily_api_key_set?: boolean;
+			cf_app_secret_set?: boolean;
+		},
+		options?: { preserveDraft?: boolean },
+	) {
 		// 密钥字段不回填明文；仅记录是否已配置，提交时留空表示保留旧值。
-		setSecretFlags({
-			livekit_secret_set: !!data.livekit_secret_set,
-			agora_app_certificate_set: !!data.agora_app_certificate_set,
-			agora_customer_secret_set: !!data.agora_customer_secret_set,
-			srs_secret_set: !!data.srs_secret_set,
-			daily_api_key_set: !!data.daily_api_key_set,
-			cf_app_secret_set: !!data.cf_app_secret_set,
+		setSecretFlagsByProvider((current) => ({
+			...current,
+			[provider]: secretFlagsFromConfig(data),
+		}));
+
+		const base = pickProviderForm(provider, data);
+		// 密钥永远不回填明文
+		for (const key of [
+			"livekit_secret",
+			"agora_app_certificate",
+			"agora_customer_secret",
+			"srs_secret",
+			"daily_api_key",
+			"cf_app_secret",
+		] as const) {
+			if (key in base) base[key] = "";
+		}
+
+		setDrafts((current) => {
+			if (options?.preserveDraft && current[provider]) {
+				return current;
+			}
+			return {
+				...current,
+				[provider]: base,
+			};
 		});
-		setForm({
-			provider: data.provider,
-			livekit_host: data.livekit_host || "",
-			livekit_key: data.livekit_key || "",
-			livekit_secret: "",
-			agora_app_id: data.agora_app_id || "",
-			agora_app_certificate: "",
-			agora_host: data.agora_host || "",
-			agora_customer_id: data.agora_customer_id || "",
-			agora_customer_secret: "",
-			mediasoup_bridge_url: data.mediasoup_bridge_url || "",
-			mediasoup_host: data.mediasoup_host || "",
-			srs_host: data.srs_host || "",
-			srs_api_port: data.srs_api_port || "1985",
-			srs_secret: "",
-			srs_whip_url: data.srs_whip_url || "",
-			srs_public_host: data.srs_public_host || "",
-			daily_api_key: "",
-			daily_domain: data.daily_domain || "",
-			cf_app_id: data.cf_app_id || "",
-			cf_app_secret: "",
-			cf_stun_url: data.cf_stun_url || "stun.cloudflare.com:3478",
-		});
+		setLoadedProviders((current) => ({ ...current, [provider]: true }));
 	}
 
 	const capabilities = () => {
-		const provider = selectedProvider() ?? activeProvider();
+		const provider = selected();
 		const fromAPI = providersResponse()?.capabilities?.[provider];
 		return getSFUProviderCapabilities(provider, fromAPI);
 	};
 
-	const selected = () => selectedProvider() ?? activeProvider();
 	const enforcementProfile = () => {
 		const provider = selected();
 		const fromAPI = providersResponse()?.capabilities?.[provider];
@@ -149,7 +182,18 @@ function SFUPage() {
 		key: K,
 		value: UpdateSFUConfigParams[K],
 	) => {
-		setForm((current) => ({ ...current, [key]: value }));
+		const provider = selected();
+		setDrafts((current) => {
+			const prev = current[provider] ?? emptyFormForProvider(provider);
+			return {
+				...current,
+				[provider]: {
+					...prev,
+					provider,
+					[key]: value,
+				},
+			};
+		});
 		setErrors((cur) => {
 			if (!cur[key]) return cur;
 			const next = { ...cur };
@@ -159,7 +203,8 @@ function SFUPage() {
 	};
 
 	const handleSave = async () => {
-		const e = validateSFUForm(form(), secretFlags());
+		const current = form();
+		const e = validateSFUForm(current, secretFlags());
 		setErrors(e);
 		if (Object.keys(e).length > 0) {
 			showToast("请修正配置错误", { type: "error" });
@@ -167,11 +212,13 @@ function SFUPage() {
 		}
 		setSaving(true);
 		try {
-			const saved = await updateSFUConfig(cleanForm(form()));
-			populateForm(saved);
+			// 只提交当前 provider 字段，其他 SFU 配置保持不动。
+			const saved = await updateSFUConfig(cleanForm(current));
+			populateProvider(saved.provider, saved);
+			setSelectedProvider(saved.provider);
 			void refetchList();
 			showToast(
-				`${PROVIDER_LABELS[form().provider]} 配置已保存并激活，所有客户端将强制刷新`,
+				`${PROVIDER_LABELS[saved.provider]} 配置已保存并激活，所有客户端将强制刷新`,
 				{ type: "success" },
 			);
 		} catch (error) {
@@ -187,7 +234,13 @@ function SFUPage() {
 		setSaving(true);
 		try {
 			const cfg = await switchSFUProvider(provider);
-			populateForm(cfg);
+			// 切换激活态不覆盖未保存草稿，只刷新密钥已配置标记。
+			populateProvider(provider, cfg, { preserveDraft: true });
+			setSecretFlagsByProvider((current) => ({
+				...current,
+				[provider]: secretFlagsFromConfig(cfg),
+			}));
+			setSelectedProvider(provider);
 			void refetchList();
 			showToast(`已切换到 ${PROVIDER_LABELS[provider]}，所有客户端将强制刷新`, {
 				type: "success",
@@ -271,8 +324,8 @@ function SFUPage() {
 						providers={providersResponse()?.providers ?? []}
 						disabled={saving()}
 						onSelect={(provider) => {
+							// 仅切换查看目标；各 provider 草稿独立保存。
 							setSelectedProvider(provider);
-							setForm((current) => ({ ...current, provider }));
 							setErrors({});
 						}}
 					/>
@@ -381,7 +434,7 @@ function SFUPage() {
 								{PROVIDER_LABELS[selectedProvider() ?? activeProvider()]} 配置
 							</div>
 							<p class="mt-0.5 text-xs text-base-content/50">
-								密钥字段留空表示保留已有配置
+								仅编辑当前提供商参数；密钥留空表示保留已有配置
 							</p>
 						</div>
 						<div class="flex items-center gap-2">

@@ -130,27 +130,36 @@ func (s *SFUConfigService) UpdateFromDTO(req *UpdateSFUConfigRequest) (*model.SF
 		cfg = existing
 	}
 
-	// 应用请求字段。密钥类字段为空时保留旧值，避免管理后台脱敏回写清空密钥。
-	cfg.LiveKitHost = req.LiveKitHost
-	cfg.LiveKitKey = req.LiveKitKey
-	cfg.LiveKitSecret = pkg.KeepSecret(req.LiveKitSecret, cfg.LiveKitSecret)
-	cfg.AgoraAppID = req.AgoraAppID
-	cfg.AgoraAppCertificate = pkg.KeepSecret(req.AgoraAppCertificate, cfg.AgoraAppCertificate)
-	cfg.AgoraHost = req.AgoraHost
-	cfg.AgoraCustomerID = req.AgoraCustomerID
-	cfg.AgoraCustomerSecret = pkg.KeepSecret(req.AgoraCustomerSecret, cfg.AgoraCustomerSecret)
-	cfg.MediaSoupBridgeURL = req.MediaSoupBridgeURL
-	cfg.MediaSoupHost = req.MediaSoupHost
-	cfg.SRSHost = req.SRSHost
-	cfg.SRSApiPort = req.SRSApiPort
-	cfg.SRSSecret = pkg.KeepSecret(req.SRSSecret, cfg.SRSSecret)
-	cfg.SRSWHIPURL = req.SRSWHIPURL
-	cfg.SRSPublicHost = req.SRSPublicHost
-	cfg.DailyAPIKey = pkg.KeepSecret(req.DailyAPIKey, cfg.DailyAPIKey)
-	cfg.DailyDomain = req.DailyDomain
-	cfg.CFAppID = req.CFAppID
-	cfg.CFAppSecret = pkg.KeepSecret(req.CFAppSecret, cfg.CFAppSecret)
-	cfg.CFStunURL = req.CFStunURL
+	// 仅更新当前 provider 自己的字段。
+	// 密钥类字段为空时保留旧值，避免管理后台脱敏回写清空密钥。
+	switch req.Provider {
+	case "livekit":
+		cfg.LiveKitHost = req.LiveKitHost
+		cfg.LiveKitKey = req.LiveKitKey
+		cfg.LiveKitSecret = pkg.KeepSecret(req.LiveKitSecret, cfg.LiveKitSecret)
+	case "agora":
+		cfg.AgoraAppID = req.AgoraAppID
+		cfg.AgoraAppCertificate = pkg.KeepSecret(req.AgoraAppCertificate, cfg.AgoraAppCertificate)
+		cfg.AgoraHost = req.AgoraHost
+		cfg.AgoraCustomerID = req.AgoraCustomerID
+		cfg.AgoraCustomerSecret = pkg.KeepSecret(req.AgoraCustomerSecret, cfg.AgoraCustomerSecret)
+	case "mediasoup":
+		cfg.MediaSoupBridgeURL = req.MediaSoupBridgeURL
+		cfg.MediaSoupHost = req.MediaSoupHost
+	case "srs":
+		cfg.SRSHost = req.SRSHost
+		cfg.SRSApiPort = req.SRSApiPort
+		cfg.SRSSecret = pkg.KeepSecret(req.SRSSecret, cfg.SRSSecret)
+		cfg.SRSWHIPURL = req.SRSWHIPURL
+		cfg.SRSPublicHost = req.SRSPublicHost
+	case "daily":
+		cfg.DailyAPIKey = pkg.KeepSecret(req.DailyAPIKey, cfg.DailyAPIKey)
+		cfg.DailyDomain = req.DailyDomain
+	case "cloudflare":
+		cfg.CFAppID = req.CFAppID
+		cfg.CFAppSecret = pkg.KeepSecret(req.CFAppSecret, cfg.CFAppSecret)
+		cfg.CFStunURL = req.CFStunURL
+	}
 
 	if err := s.repo.Save(cfg); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())

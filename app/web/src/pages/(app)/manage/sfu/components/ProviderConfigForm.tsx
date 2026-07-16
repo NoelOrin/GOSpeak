@@ -38,7 +38,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 								"input-error": !!errors().livekit_host,
 							}}
 							placeholder="wss://livekit.example.com"
-							value={form().livekit_host}
+							value={form().livekit_host ?? ""}
 							onInput={(event) =>
 								updateField("livekit_host", event.currentTarget.value)
 							}
@@ -53,7 +53,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 								"input-error": !!errors().livekit_key,
 							}}
 							placeholder="API key"
-							value={form().livekit_key}
+							value={form().livekit_key ?? ""}
 							onInput={(event) =>
 								updateField("livekit_key", event.currentTarget.value)
 							}
@@ -72,7 +72,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 									? "已配置，留空保留"
 									: "API secret"
 							}
-							value={form().livekit_secret}
+							value={form().livekit_secret ?? ""}
 							onInput={(event) =>
 								updateField("livekit_secret", event.currentTarget.value)
 							}
@@ -93,7 +93,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 								"input-error": !!errors().agora_app_id,
 							}}
 							placeholder="Agora App ID"
-							value={form().agora_app_id}
+							value={form().agora_app_id ?? ""}
 							onInput={(event) =>
 								updateField("agora_app_id", event.currentTarget.value)
 							}
@@ -108,7 +108,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 								"input-error": !!errors().agora_host,
 							}}
 							placeholder="https://api.agora.io"
-							value={form().agora_host}
+							value={form().agora_host ?? ""}
 							onInput={(event) =>
 								updateField("agora_host", event.currentTarget.value)
 							}
@@ -130,7 +130,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 									? "已配置，留空保留"
 									: "App certificate"
 							}
-							value={form().agora_app_certificate}
+							value={form().agora_app_certificate ?? ""}
 							onInput={(event) =>
 								updateField("agora_app_certificate", event.currentTarget.value)
 							}
@@ -152,7 +152,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 									? "已配置，留空保留"
 									: "Customer secret"
 							}
-							value={form().agora_customer_secret}
+							value={form().agora_customer_secret ?? ""}
 							onInput={(event) =>
 								updateField("agora_customer_secret", event.currentTarget.value)
 							}
@@ -167,7 +167,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 								"input-error": !!errors().agora_customer_id,
 							}}
 							placeholder="Customer ID"
-							value={form().agora_customer_id}
+							value={form().agora_customer_id ?? ""}
 							onInput={(event) =>
 								updateField("agora_customer_id", event.currentTarget.value)
 							}
@@ -188,7 +188,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 								"input-error": !!errors().mediasoup_bridge_url,
 							}}
 							placeholder="https://mediasoup-bridge.example.com"
-							value={form().mediasoup_bridge_url}
+							value={form().mediasoup_bridge_url ?? ""}
 							onInput={(event) =>
 								updateField("mediasoup_bridge_url", event.currentTarget.value)
 							}
@@ -203,7 +203,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 								"input-error": !!errors().mediasoup_host,
 							}}
 							placeholder="wss://mediasoup.example.com"
-							value={form().mediasoup_host}
+							value={form().mediasoup_host ?? ""}
 							onInput={(event) =>
 								updateField("mediasoup_host", event.currentTarget.value)
 							}
@@ -224,7 +224,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 								"input-error": !!errors().srs_host,
 							}}
 							placeholder="srs.example.com"
-							value={form().srs_host}
+							value={form().srs_host ?? ""}
 							onInput={(event) =>
 								updateField("srs_host", event.currentTarget.value)
 							}
@@ -239,7 +239,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 								"input-error": !!errors().srs_api_port,
 							}}
 							placeholder="1985"
-							value={form().srs_api_port}
+							value={form().srs_api_port ?? ""}
 							onInput={(event) =>
 								updateField("srs_api_port", event.currentTarget.value)
 							}
@@ -258,7 +258,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 									? "已配置，留空保留"
 									: "Bearer secret"
 							}
-							value={form().srs_secret}
+							value={form().srs_secret ?? ""}
 							onInput={(event) =>
 								updateField("srs_secret", event.currentTarget.value)
 							}
@@ -273,7 +273,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 								"input-error": !!errors().srs_whip_url,
 							}}
 							placeholder="/rtc/v1/whip/ 或 https://srs.example.com/rtc/v1/whip/"
-							value={form().srs_whip_url}
+							value={form().srs_whip_url ?? ""}
 							onInput={(event) =>
 								updateField("srs_whip_url", event.currentTarget.value)
 							}
@@ -288,7 +288,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 								"input-error": !!errors().srs_public_host,
 							}}
 							placeholder="https://voice.example.com 或留空使用 Host"
-							value={form().srs_public_host}
+							value={form().srs_public_host ?? ""}
 							onInput={(event) =>
 								updateField("srs_public_host", event.currentTarget.value)
 							}
@@ -313,7 +313,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 									? "已配置，留空保留"
 									: "Daily API key"
 							}
-							value={form().daily_api_key}
+							value={form().daily_api_key ?? ""}
 							onInput={(event) =>
 								updateField("daily_api_key", event.currentTarget.value)
 							}
@@ -328,7 +328,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 								"input-error": !!errors().daily_domain,
 							}}
 							placeholder="your-team.daily.co"
-							value={form().daily_domain}
+							value={form().daily_domain ?? ""}
 							onInput={(event) =>
 								updateField("daily_domain", event.currentTarget.value)
 							}
@@ -349,7 +349,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 								"input-error": !!errors().cf_app_id,
 							}}
 							placeholder="Cloudflare Realtime App ID"
-							value={form().cf_app_id}
+							value={form().cf_app_id ?? ""}
 							onInput={(event) =>
 								updateField("cf_app_id", event.currentTarget.value)
 							}
@@ -364,7 +364,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 								"input-error": !!errors().cf_stun_url,
 							}}
 							placeholder="stun.cloudflare.com:3478"
-							value={form().cf_stun_url}
+							value={form().cf_stun_url ?? ""}
 							onInput={(event) =>
 								updateField("cf_stun_url", event.currentTarget.value)
 							}
@@ -383,7 +383,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 									? "已配置，留空保留"
 									: "Cloudflare Realtime App Secret"
 							}
-							value={form().cf_app_secret}
+							value={form().cf_app_secret ?? ""}
 							onInput={(event) =>
 								updateField("cf_app_secret", event.currentTarget.value)
 							}

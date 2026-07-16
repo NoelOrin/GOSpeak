@@ -542,16 +542,22 @@ export interface SFUConfig {
 	updated_at?: string;
 }
 
-export type UpdateSFUConfigParams = Omit<
-	SFUConfig,
-	| "created_at"
-	| "updated_at"
-	| "livekit_secret_set"
-	| "agora_app_certificate_set"
-	| "agora_customer_secret_set"
-	| "srs_secret_set"
-	| "daily_api_key_set"
-	| "cf_app_secret_set"
+/** 更新请求只要求 provider；其余字段按当前 SFU 提供商局部提交。 */
+export type UpdateSFUConfigParams = {
+	provider: SFUProvider;
+} & Partial<
+	Omit<
+		SFUConfig,
+		| "provider"
+		| "created_at"
+		| "updated_at"
+		| "livekit_secret_set"
+		| "agora_app_certificate_set"
+		| "agora_customer_secret_set"
+		| "srs_secret_set"
+		| "daily_api_key_set"
+		| "cf_app_secret_set"
+	>
 >;
 
 export interface SFUProvidersListResponse {
