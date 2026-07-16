@@ -37,7 +37,7 @@ export class LiveKitListenAdapter implements SFUListenAdapter {
 		// Attempt dynamic import of livekit-client; if unavailable, keep membership bookkeeping
 		// so MediaListenService can still reconcile, and log a clear warning.
 		try {
-			// @ts-expect-error optional peer dependency
+			// optional dependency — may be absent in minimal installs
 			await import("livekit-client");
 			this.logger?.info(
 				`[livekit-listen] joined ${params.room} as ${params.identity}`,
