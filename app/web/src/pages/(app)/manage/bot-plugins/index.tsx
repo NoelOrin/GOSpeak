@@ -1,9 +1,10 @@
 import { createFileRoute, redirect } from "@tanstack/solid-router";
 import Blocks from "lucide-solid/icons/blocks";
-import Plus from "lucide-solid/icons/plus";
+import LayoutGrid from "lucide-solid/icons/layout-grid";
+import List from "lucide-solid/icons/list";
 import RefreshCcw from "lucide-solid/icons/refresh-ccw";
-import Save from "lucide-solid/icons/save";
-import Trash2 from "lucide-solid/icons/trash-2";
+import Search from "lucide-solid/icons/search";
+import Settings2 from "lucide-solid/icons/settings-2";
 import {
 	createEffect,
 	createMemo,
@@ -18,27 +19,18 @@ import {
 	ManageHeader,
 	ManagePage,
 	ManageSection,
+	manageTableHeadClass,
+	manageTableRowClass,
 } from "@/components/manage/ManageShell";
 import { hasPermission } from "@/utils/permissions";
-
-const LLM_PROTOCOLS = [
-	{ value: "openai-compatible", label: "OpenAI Compatible" },
-	{ value: "anthropic", label: "Anthropic" },
-	{ value: "gemini", label: "Gemini" },
-	{ value: "gemini-response", label: "Gemini Response API" },
-	{ value: "ollama", label: "Ollama" },
-	{ value: "custom-http", label: "Custom HTTP" },
-] as const;
-
-type LLMProviderForm = {
-	name: string;
-	display_name: string;
-	protocol: string;
-	base_url: string;
-	api_key: string;
-	model: string;
-	enabled: boolean;
-};
+import PluginSettingsModal from "./components/PluginSettingsModal";
+import {
+	kindLabel,
+	type LLMProviderForm,
+	PAGE_SIZE_OPTIONS,
+	statusMeta,
+	type ViewMode,
+} from "./components/shared";
 
 export const Route = createFileRoute("/(app)/manage/bot-plugins/")({
 	beforeLoad: () => {
@@ -48,46 +40,37 @@ export const Route = createFileRoute("/(app)/manage/bot-plugins/")({
 	},
 	component: BotPluginsPage,
 	staticData: {
-		title: "Bot 插件",
+		title: "BOT 插件",
 		icon: "icon-manage",
 	},
 });
-
-function emptyProvider(): LLMProviderForm {
-	return {
-		name: "",
-		display_name: "",
-		protocol: "openai-compatible",
-		base_url: "",
-		api_key: "",
-		model: "",
-		enabled: true,
-	};
-}
 
 function BotPluginsPage() {
 	const canManage = () =>
 		hasPermission("plugin:manage") || hasPermission("bot:manage");
 
 	const [pluginsData, { refetch }] = createResource(() => listPlugins());
-	const [selectedName, setSelectedName] = createSignal<string>("bot-base");
+	const [query, setQuery] = createSignal("");
+	const [statusFilter, setStatusFilter] = createSignal("all");
+	const [kindFilter, setKindFilter] = createSignal("all");
+	const [viewMode, setViewMode] = createSignal<ViewMode>("cards");
+	const [page, setPage] = createSignal(1);
+	const [pageSize, setPageSize] = createSignal<number>(12);
+
+	const [settingsOpen, setSettingsOpen] = createSignal(false);
+	const [editingPlugin, setEditingPlugin] = createSignal<PluginInfo | null>(
+		null,
+	);
 	const [saving, setSaving] = createSignal(false);
 
-	// form state for bot-base
 	const [enabled, setEnabled] = createSignal(true);
 	const [sideEnabled, setSideEnabled] = createSignal(false);
 	const [sideAddr, setSideAddr] = createSignal("127.0.0.1:9200");
-	const [defaultProvider, setDefaultProvider] = createSignal("openai");
+	const [defaultProvider, setDefaultProvider] = createSignal("");
 	const [providers, setProviders] = createSignal<LLMProviderForm[]>([]);
 
-	const selected = createMemo(() => {
-		const list = pluginsData() ?? [];
-		return list.find((p) => p.name === selectedName()) ?? list[0];
-	});
-
-	const hydrate = (info?: PluginInfo) => {
+	const hydrate = (info?: PluginInfo | null) => {
 		if (!info) return;
-		setSelectedName(info.name);
 		setEnabled(!!info.enabled);
 		const cfg = info.config ?? {};
 		const side = (cfg.side_server ?? {}) as {
@@ -106,7 +89,6 @@ function BotPluginsPage() {
 				display_name: String(p.display_name ?? p.name ?? ""),
 				protocol: String(p.protocol ?? "openai-compatible"),
 				base_url: String(p.base_url ?? ""),
-				// 后端不回传明文 key；编辑时留空表示不修改（提交时若空则保留旧值）
 				api_key: "",
 				model: String(p.model ?? ""),
 				enabled: p.enabled !== false,
@@ -114,40 +96,71 @@ function BotPluginsPage() {
 		);
 	};
 
-	createEffect(() => {
-		const info = selected();
-		if (info) hydrate(info);
+	const filteredPlugins = createMemo(() => {
+		const q = query().trim().toLowerCase();
+		const status = statusFilter();
+		const kind = kindFilter();
+		return (pluginsData() ?? []).filter((p) => {
+			if (status !== "all" && p.status !== status) return false;
+			if (kind !== "all" && p.kind !== kind) return false;
+			if (!q) return true;
+			const haystack = [
+				p.name,
+				p.display_name,
+				p.author,
+				p.desc,
+				p.version,
+				p.kind,
+				p.status,
+			]
+				.filter(Boolean)
+				.join(" ")
+				.toLowerCase();
+			return haystack.includes(q);
+		});
 	});
 
-	const statusClass = (status?: string) => {
-		switch (status) {
-			case "running":
-				return "badge-success";
-			case "failed":
-				return "badge-error";
-			case "stopped":
-				return "badge-warning";
-			default:
-				return "badge-ghost";
-		}
+	const totalPages = createMemo(() =>
+		Math.max(1, Math.ceil(filteredPlugins().length / pageSize())),
+	);
+
+	const pagedPlugins = createMemo(() => {
+		const start = (page() - 1) * pageSize();
+		return filteredPlugins().slice(start, start + pageSize());
+	});
+
+	const pageNumbers = createMemo(() => {
+		const total = totalPages();
+		const current = page();
+		const windowSize = 5;
+		let start = Math.max(1, current - Math.floor(windowSize / 2));
+		const end = Math.min(total, start + windowSize - 1);
+		start = Math.max(1, end - windowSize + 1);
+		return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+	});
+
+	createEffect(() => {
+		query();
+		statusFilter();
+		kindFilter();
+		pageSize();
+		setPage(1);
+	});
+
+	createEffect(() => {
+		const total = totalPages();
+		if (page() > total) setPage(total);
+	});
+
+	const openSettings = (plugin: PluginInfo) => {
+		setEditingPlugin(plugin);
+		hydrate(plugin);
+		setSettingsOpen(true);
 	};
 
-	const addProvider = () => {
-		setProviders((prev) => [...prev, emptyProvider()]);
-	};
-
-	const removeProvider = (idx: number) => {
-		setProviders((prev) => prev.filter((_, i) => i !== idx));
-	};
-
-	const updateProviderField = <K extends keyof LLMProviderForm>(
-		idx: number,
-		key: K,
-		value: LLMProviderForm[K],
-	) => {
-		setProviders((prev) =>
-			prev.map((p, i) => (i === idx ? { ...p, [key]: value } : p)),
-		);
+	const closeSettings = () => {
+		setSettingsOpen(false);
+		setEditingPlugin(null);
 	};
 
 	const handleSave = async () => {
@@ -155,10 +168,9 @@ function BotPluginsPage() {
 			showToast("无插件管理权限", { type: "error" });
 			return;
 		}
-		const info = selected();
+		const info = editingPlugin();
 		if (!info) return;
 
-		// merge api_key: empty means keep existing
 		const existing = Array.isArray(info.config?.llm_providers)
 			? (info.config?.llm_providers as any[])
 			: [];
@@ -205,14 +217,17 @@ function BotPluginsPage() {
 
 		setSaving(true);
 		try {
-			await updatePlugin({
+			const updated = await updatePlugin({
 				name: info.name,
 				enabled: enabled(),
 				config,
 				restart: true,
 			});
 			showToast("插件配置已保存", { type: "success" });
+			setEditingPlugin(updated);
+			hydrate(updated);
 			await refetch();
+			closeSettings();
 		} catch (e: any) {
 			showToast(e?.message || "保存失败", { type: "error" });
 		} finally {
@@ -220,16 +235,24 @@ function BotPluginsPage() {
 		}
 	};
 
+	const rangeText = createMemo(() => {
+		const total = filteredPlugins().length;
+		if (total === 0) return "共 0 个插件";
+		const start = (page() - 1) * pageSize() + 1;
+		const end = Math.min(page() * pageSize(), total);
+		return `显示 ${start}-${end} / 共 ${total} 个`;
+	});
+
 	return (
 		<ManagePage>
 			<ManageHeader
 				icon={<Blocks size={18} />}
-				title="Bot 插件"
-				description="管理后端挂载的 Bot 基础插件、Side Server 与大模型供应商"
+				title="BOT 插件"
+				description="浏览后端挂载的 BOT 插件，点击卡片进入二级设置"
 				actions={
 					<button
 						type="button"
-						class="btn btn-ghost btn-sm gap-1"
+						class="btn btn-ghost btn-sm gap-1.5"
 						onClick={() => refetch()}
 					>
 						<RefreshCcw size={14} />
@@ -238,340 +261,297 @@ function BotPluginsPage() {
 				}
 			/>
 
-			<div class="grid gap-4 lg:grid-cols-[260px_1fr]">
-				<ManageSection title="已注册插件" description="后端多组件注册列表">
-					<div class="flex flex-col gap-2">
-						<Show
-							when={!(pluginsData.loading && !pluginsData())}
-							fallback={<div class="skeleton h-16 w-full" />}
+			<ManageSection
+				title="插件目录"
+				description="支持搜索、筛选、分页，以及卡片 / 列表切换"
+				actions={
+					<div class="flex items-center gap-1 rounded-xl border border-base-300/80 bg-base-100 p-1">
+						<button
+							type="button"
+							class="btn btn-ghost btn-xs gap-1"
+							classList={{ "btn-active": viewMode() === "cards" }}
+							onClick={() => setViewMode("cards")}
 						>
-							<For each={pluginsData() ?? []}>
-								{(p) => (
-									<button
-										type="button"
-										class="btn btn-ghost justify-start h-auto min-h-0 py-3 px-3"
-										classList={{ "btn-active": selectedName() === p.name }}
-										onClick={() => {
-											setSelectedName(p.name);
-											hydrate(p);
-										}}
-									>
-										<div class="flex w-full flex-col items-start gap-1 text-left">
-											<div class="flex w-full items-center justify-between gap-2">
-												<span class="font-medium">
-													{p.display_name || p.name}
-												</span>
-												<span class={`badge badge-sm ${statusClass(p.status)}`}>
-													{p.status}
-												</span>
-											</div>
-											<span class="text-xs opacity-60">
-												{p.name} · v{p.version}
-											</span>
-										</div>
-									</button>
-								)}
-							</For>
-						</Show>
+							<LayoutGrid size={14} />
+							卡片
+						</button>
+						<button
+							type="button"
+							class="btn btn-ghost btn-xs gap-1"
+							classList={{ "btn-active": viewMode() === "list" }}
+							onClick={() => setViewMode("list")}
+						>
+							<List size={14} />
+							列表
+						</button>
 					</div>
-				</ManageSection>
-
-				<div class="flex flex-col gap-4">
-					<Show
-						when={selected()}
-						fallback={<div class="opacity-60">暂无插件</div>}
+				}
+			>
+				<div class="mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto">
+					<label class="input input-bordered input-sm flex min-w-[14rem] flex-1 items-center gap-2">
+						<Search size={14} class="shrink-0 text-base-content/40" />
+						<input
+							type="search"
+							class="min-w-0 grow bg-transparent outline-none"
+							placeholder="搜索名称、作者、描述..."
+							value={query()}
+							onInput={(e) => setQuery(e.currentTarget.value)}
+						/>
+					</label>
+					<select
+						class="select select-bordered select-sm w-28 shrink-0"
+						value={statusFilter()}
+						onChange={(e) => setStatusFilter(e.currentTarget.value)}
 					>
-						{(info) => (
-							<>
-								<ManageSection
-									title={info().display_name || info().name}
-									description={info().desc || "无描述"}
-								>
-									<div class="flex flex-wrap items-center gap-2 text-sm">
-										<span class="badge badge-sm badge-ghost">
-											{info().kind}
-										</span>
-										<span
-											class={`badge badge-sm ${statusClass(info().status)}`}
-										>
-											{info().status}
-										</span>
-										<span class="opacity-60">作者 {info().author || "-"}</span>
-										<span class="opacity-60">版本 {info().version}</span>
-									</div>
-									<Show when={info().error}>
-										<div class="alert alert-error text-sm mt-2">
-											{info().error}
-										</div>
-									</Show>
-									<Show when={(info().side_servers?.length ?? 0) > 0}>
-										<div class="mt-2 text-sm">
-											<div class="font-medium mb-1">Side Servers</div>
-											<ul class="list-disc pl-5 opacity-80">
-												<For each={info().side_servers ?? []}>
-													{(s) => (
-														<li>
-															{s.name}: {s.url}
-														</li>
-													)}
-												</For>
-											</ul>
-										</div>
-									</Show>
-								</ManageSection>
+						<option value="all">全部状态</option>
+						<option value="running">运行中</option>
+						<option value="stopped">已停止</option>
+						<option value="starting">启动中</option>
+						<option value="failed">失败</option>
+						<option value="registered">已注册</option>
+					</select>
+					<select
+						class="select select-bordered select-sm w-28 shrink-0"
+						value={kindFilter()}
+						onChange={(e) => setKindFilter(e.currentTarget.value)}
+					>
+						<option value="all">全部类型</option>
+						<option value="builtin">内置</option>
+						<option value="external">外部</option>
+					</select>
+					<select
+						class="select select-bordered select-sm w-24 shrink-0"
+						value={String(pageSize())}
+						onChange={(e) => setPageSize(Number(e.currentTarget.value))}
+					>
+						<For each={[...PAGE_SIZE_OPTIONS]}>
+							{(size) => <option value={size}>{size} / 页</option>}
+						</For>
+					</select>
+				</div>
 
-								<ManageSection
-									title="基础开关"
-									description="启用插件并配置可选小服务端"
-								>
-									<label class="label cursor-pointer justify-start gap-3">
-										<input
-											type="checkbox"
-											class="toggle toggle-primary"
-											checked={enabled()}
-											disabled={!canManage()}
-											onChange={(e) => setEnabled(e.currentTarget.checked)}
-										/>
-										<span class="label-text">启用插件</span>
-									</label>
-
-									<label class="label cursor-pointer justify-start gap-3">
-										<input
-											type="checkbox"
-											class="toggle"
-											checked={sideEnabled()}
-											disabled={!canManage()}
-											onChange={(e) => setSideEnabled(e.currentTarget.checked)}
-										/>
-										<span class="label-text">
-											启用 Side Server（插件自启小服务）
-										</span>
-									</label>
-
-									<fieldset class="fieldset">
-										<legend class="fieldset-legend text-[14px]">
-											Side Server 地址
-										</legend>
-										<input
-											type="text"
-											class="input input-bordered input-sm w-full max-w-md"
-											value={sideAddr()}
-											disabled={!canManage() || !sideEnabled()}
-											placeholder="127.0.0.1:9200 或 127.0.0.1:0"
-											onInput={(e) => setSideAddr(e.currentTarget.value)}
-										/>
-									</fieldset>
-								</ManageSection>
-
-								<ManageSection
-									title="大模型供应商"
-									description="多供应商 / 多协议配置（OpenAI Compatible / Anthropic / Gemini Response / Ollama / Custom）"
-									actions={
-										<button
-											type="button"
-											class="btn btn-ghost btn-sm gap-1"
-											disabled={!canManage()}
-											onClick={addProvider}
-										>
-											<Plus size={14} />
-											添加供应商
-										</button>
-									}
-								>
-									<fieldset class="fieldset mb-3">
-										<legend class="fieldset-legend text-[14px]">
-											默认供应商
-										</legend>
-										<select
-											class="select select-bordered select-sm w-full max-w-md"
-											value={defaultProvider()}
-											disabled={!canManage()}
-											onChange={(e) =>
-												setDefaultProvider(e.currentTarget.value)
-											}
-										>
-											<option value="">（未指定）</option>
-											<For each={providers()}>
-												{(p) => (
-													<option value={p.name}>
-														{p.display_name || p.name}
-													</option>
-												)}
-											</For>
-										</select>
-									</fieldset>
-
-									<div class="flex flex-col gap-3">
-										<Show
-											when={providers().length > 0}
-											fallback={
-												<div class="text-sm opacity-60">
-													暂无供应商，点击右上角添加
-												</div>
-											}
-										>
-											<For each={providers()}>
-												{(p, idx) => (
-													<div class="rounded-box border border-base-300 bg-base-100 p-3">
-														<div class="mb-2 flex items-center justify-between gap-2">
-															<div class="font-medium text-sm">
-																供应商 #{idx() + 1}
-															</div>
-															<button
-																type="button"
-																class="btn btn-ghost btn-xs text-error"
-																disabled={!canManage()}
-																onClick={() => removeProvider(idx())}
-															>
-																<Trash2 size={14} />
-															</button>
-														</div>
-														<div class="grid gap-2 md:grid-cols-2">
-															<label class="form-control">
-																<span class="label-text text-xs">Name</span>
-																<input
-																	class="input input-bordered input-sm"
-																	value={p.name}
-																	disabled={!canManage()}
-																	onInput={(e) =>
-																		updateProviderField(
-																			idx(),
-																			"name",
-																			e.currentTarget.value,
-																		)
-																	}
-																/>
-															</label>
-															<label class="form-control">
-																<span class="label-text text-xs">显示名</span>
-																<input
-																	class="input input-bordered input-sm"
-																	value={p.display_name}
-																	disabled={!canManage()}
-																	onInput={(e) =>
-																		updateProviderField(
-																			idx(),
-																			"display_name",
-																			e.currentTarget.value,
-																		)
-																	}
-																/>
-															</label>
-															<label class="form-control">
-																<span class="label-text text-xs">协议</span>
-																<select
-																	class="select select-bordered select-sm"
-																	value={p.protocol}
-																	disabled={!canManage()}
-																	onChange={(e) =>
-																		updateProviderField(
-																			idx(),
-																			"protocol",
-																			e.currentTarget.value,
-																		)
-																	}
+				<Show
+					when={!(pluginsData.loading && !pluginsData())}
+					fallback={
+						<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+							<For each={[1, 2, 3, 4, 5, 6]}>
+								{() => <div class="skeleton h-40 w-full rounded-2xl" />}
+							</For>
+						</div>
+					}
+				>
+					<Show
+						when={filteredPlugins().length > 0}
+						fallback={
+							<div class="rounded-2xl border border-dashed border-base-300 px-4 py-14 text-center">
+								<div class="text-sm font-medium text-base-content/70">
+									没有匹配的插件
+								</div>
+								<div class="mt-1 text-xs text-base-content/45">
+									试试调整搜索词或筛选条件
+								</div>
+							</div>
+						}
+					>
+						<Show
+							when={viewMode() === "cards"}
+							fallback={
+								<div class="overflow-x-auto rounded-2xl border border-base-300/80">
+									<table class="table table-sm">
+										<thead>
+											<tr class={manageTableHeadClass}>
+												<th>插件</th>
+												<th class="w-28">类型</th>
+												<th class="w-28">状态</th>
+												<th class="w-24">版本</th>
+												<th class="w-28">启用</th>
+												<th class="w-28">操作</th>
+											</tr>
+										</thead>
+										<tbody>
+											<For each={pagedPlugins()}>
+												{(plugin) => {
+													const meta = () => statusMeta(plugin.status);
+													return (
+														<tr class={manageTableRowClass}>
+															<td>
+																<div class="min-w-0">
+																	<div class="truncate font-medium text-base-content">
+																		{plugin.display_name || plugin.name}
+																	</div>
+																	<div class="mt-0.5 truncate font-mono text-[11px] text-base-content/45">
+																		{plugin.name}
+																	</div>
+																	<div class="mt-1 line-clamp-1 text-xs text-base-content/50">
+																		{plugin.desc || "无描述"}
+																	</div>
+																</div>
+															</td>
+															<td>
+																<span class="inline-flex items-center rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[11px] font-medium text-base-content/70">
+																	{kindLabel(plugin.kind)}
+																</span>
+															</td>
+															<td>
+																<span
+																	class={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${meta().chip}`}
 																>
-																	<For each={[...LLM_PROTOCOLS]}>
-																		{(opt) => (
-																			<option value={opt.value}>
-																				{opt.label}
-																			</option>
-																		)}
-																	</For>
-																</select>
-															</label>
-															<label class="form-control">
-																<span class="label-text text-xs">Model</span>
-																<input
-																	class="input input-bordered input-sm"
-																	value={p.model}
-																	disabled={!canManage()}
-																	onInput={(e) =>
-																		updateProviderField(
-																			idx(),
-																			"model",
-																			e.currentTarget.value,
-																		)
-																	}
-																/>
-															</label>
-															<label class="form-control md:col-span-2">
-																<span class="label-text text-xs">Base URL</span>
-																<input
-																	class="input input-bordered input-sm"
-																	value={p.base_url}
-																	disabled={!canManage()}
-																	placeholder="https://api.openai.com/v1"
-																	onInput={(e) =>
-																		updateProviderField(
-																			idx(),
-																			"base_url",
-																			e.currentTarget.value,
-																		)
-																	}
-																/>
-															</label>
-															<label class="form-control md:col-span-2">
-																<span class="label-text text-xs">
-																	API Key（留空表示不修改已保存密钥）
+																	<span
+																		class={`size-1.5 rounded-full ${meta().dot}`}
+																	/>
+																	{meta().label}
 																</span>
-																<input
-																	type="password"
-																	class="input input-bordered input-sm"
-																	value={p.api_key}
-																	disabled={!canManage()}
-																	placeholder="sk-..."
-																	onInput={(e) =>
-																		updateProviderField(
-																			idx(),
-																			"api_key",
-																			e.currentTarget.value,
-																		)
-																	}
-																/>
-															</label>
-															<label class="label cursor-pointer justify-start gap-2">
-																<input
-																	type="checkbox"
-																	class="checkbox checkbox-sm"
-																	checked={p.enabled}
-																	disabled={!canManage()}
-																	onChange={(e) =>
-																		updateProviderField(
-																			idx(),
-																			"enabled",
-																			e.currentTarget.checked,
-																		)
-																	}
-																/>
-																<span class="label-text text-sm">
-																	启用该供应商
+															</td>
+															<td class="font-mono text-xs text-base-content/60">
+																v{plugin.version || "-"}
+															</td>
+															<td>
+																<span class="inline-flex items-center rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[11px] font-medium text-base-content/65">
+																	{plugin.enabled ? "已启用" : "已禁用"}
 																</span>
-															</label>
+															</td>
+															<td>
+																<button
+																	type="button"
+																	class="btn btn-ghost btn-xs gap-1"
+																	onClick={() => openSettings(plugin)}
+																>
+																	<Settings2 size={13} />
+																	设置
+																</button>
+															</td>
+														</tr>
+													);
+												}}
+											</For>
+										</tbody>
+									</table>
+								</div>
+							}
+						>
+							<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+								<For each={pagedPlugins()}>
+									{(plugin) => {
+										const meta = () => statusMeta(plugin.status);
+										return (
+											<article class="flex h-full flex-col rounded-2xl border border-base-300/80 bg-base-100 p-4 transition-colors hover:bg-base-200/20">
+												<div class="flex items-start justify-between gap-3">
+													<div class="min-w-0">
+														<div class="truncate text-sm font-semibold text-base-content">
+															{plugin.display_name || plugin.name}
+														</div>
+														<div class="mt-1 truncate font-mono text-[11px] text-base-content/45">
+															{plugin.name}
 														</div>
 													</div>
-												)}
-											</For>
-										</Show>
-									</div>
-								</ManageSection>
+													<span
+														class={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${meta().chip}`}
+													>
+														<span
+															class={`size-1.5 rounded-full ${meta().dot}`}
+														/>
+														{meta().label}
+													</span>
+												</div>
 
-								<div class="flex justify-end">
-									<button
-										type="button"
-										class="btn btn-primary gap-1"
-										disabled={!canManage() || saving()}
-										onClick={() => void handleSave()}
-									>
-										<Save size={14} />
-										{saving() ? "保存中..." : "保存并重启插件"}
-									</button>
-								</div>
-							</>
-						)}
+												<p class="mt-3 line-clamp-2 min-h-10 text-xs leading-5 text-base-content/55">
+													{plugin.desc || "无描述"}
+												</p>
+
+												<div class="mt-3 flex flex-wrap items-center gap-1.5">
+													<span class="rounded-md border border-base-300/80 bg-base-100 px-1.5 py-0.5 text-[11px] text-base-content/55">
+														{kindLabel(plugin.kind)}
+													</span>
+													<span class="rounded-md border border-base-300/80 bg-base-100 px-1.5 py-0.5 text-[11px] text-base-content/55">
+														v{plugin.version || "-"}
+													</span>
+													<span class="rounded-md border border-base-300/80 bg-base-100 px-1.5 py-0.5 text-[11px] text-base-content/55">
+														{plugin.enabled ? "已启用" : "已禁用"}
+													</span>
+													<Show when={plugin.author}>
+														<span class="rounded-md border border-base-300/80 bg-base-100 px-1.5 py-0.5 text-[11px] text-base-content/55">
+															{plugin.author}
+														</span>
+													</Show>
+												</div>
+
+												<div class="mt-auto flex items-center justify-between gap-2 pt-4">
+													<div class="truncate text-[11px] text-base-content/40">
+														{(plugin.side_servers?.length ?? 0) > 0
+															? `${plugin.side_servers?.length} 个 Side Server`
+															: "无 Side Server"}
+													</div>
+													<button
+														type="button"
+														class="btn btn-outline btn-sm gap-1.5"
+														onClick={() => openSettings(plugin)}
+													>
+														<Settings2 size={14} />
+														设置
+													</button>
+												</div>
+											</article>
+										);
+									}}
+								</For>
+							</div>
+						</Show>
 					</Show>
+				</Show>
+
+				<div class="mt-4 flex flex-col gap-3 border-t border-base-300/70 pt-4 sm:flex-row sm:items-center sm:justify-between">
+					<div class="text-xs text-base-content/50">{rangeText()}</div>
+					<div class="flex flex-wrap items-center gap-1.5">
+						<button
+							type="button"
+							class="btn btn-ghost btn-xs"
+							disabled={page() <= 1}
+							onClick={() => setPage((p) => Math.max(1, p - 1))}
+						>
+							上一页
+						</button>
+						<For each={pageNumbers()}>
+							{(n) => (
+								<button
+									type="button"
+									class="btn btn-ghost btn-xs min-w-8"
+									classList={{ "btn-active": page() === n }}
+									onClick={() => setPage(n)}
+								>
+									{n}
+								</button>
+							)}
+						</For>
+						<button
+							type="button"
+							class="btn btn-ghost btn-xs"
+							disabled={page() >= totalPages()}
+							onClick={() => setPage((p) => Math.min(totalPages(), p + 1))}
+						>
+							下一页
+						</button>
+					</div>
 				</div>
-			</div>
+			</ManageSection>
+
+			<PluginSettingsModal
+				open={settingsOpen}
+				plugin={editingPlugin}
+				canManage={canManage}
+				saving={saving}
+				enabled={enabled}
+				setEnabled={setEnabled}
+				sideEnabled={sideEnabled}
+				setSideEnabled={setSideEnabled}
+				sideAddr={sideAddr}
+				setSideAddr={setSideAddr}
+				defaultProvider={defaultProvider}
+				setDefaultProvider={setDefaultProvider}
+				providers={providers}
+				setProviders={setProviders}
+				onClose={closeSettings}
+				onSave={handleSave}
+			/>
 		</ManagePage>
 	);
 }

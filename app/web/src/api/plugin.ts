@@ -38,6 +38,15 @@ export interface UpdatePluginInput {
 	restart?: boolean;
 }
 
+export interface ListPluginModelsInput {
+	/** 已保存供应商 name；可与草稿字段一起传 */
+	provider?: string;
+	protocol?: string;
+	base_url?: string;
+	api_key?: string;
+	model?: string;
+}
+
 export async function listPlugins(): Promise<PluginInfo[]> {
 	const res = (await apiClient.post({
 		url: "/api/v1/plugins/list",
@@ -63,4 +72,16 @@ export async function updatePlugin(
 	})) as AxiosResponse<Result<PluginInfo>>;
 	if (!res.data.data) throw new Error("empty response");
 	return res.data.data;
+}
+
+/** 通过供应商 Base URL 拉取可用模型列表，供用户选择 */
+export async function listPluginModels(
+	pluginName: string,
+	input: ListPluginModelsInput,
+): Promise<string[]> {
+	const res = (await apiClient.post({
+		url: `/api/v1/plugins/${encodeURIComponent(pluginName)}/llm/models`,
+		data: input,
+	})) as AxiosResponse<Result<{ models?: string[] }>>;
+	return res.data.data?.models ?? [];
 }
