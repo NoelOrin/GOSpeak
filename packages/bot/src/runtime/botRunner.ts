@@ -11,10 +11,11 @@ import { createBotEvent, EventType, type LifecycleEvent } from "../core/types";
 import { type PcmStream, PcmStreamHub } from "../media";
 import { createKVStore, GOSpeakApiClient } from "./apiClient";
 import { AuthClient, type AuthCredentials } from "./authClient";
+import { CapabilityRouter } from "./capabilityRouter";
 import { GOSpeakSocketClient } from "./socketClient";
 
 export interface BotConfig {
-	/** GOSpeak server base URL, e.g. http://localhost:8998  */
+	/** GOSpeak server base URL, e.g. http://localhost:8998 */
 	serverUrl: string;
 	/** WebSocket/Socket.IO endpoint */
 	socketUrl: string;
@@ -57,6 +58,7 @@ export class BotRunner {
 	private pluginManager: PluginManager | null = null;
 	private _refreshTimer: NodeJS.Timeout | null = null;
 	private _pcmHub = new PcmStreamHub();
+	private _caps!: CapabilityRouter;
 
 	constructor(config: BotConfig, logger?: ILogger) {
 		this.config = config;
@@ -138,17 +140,20 @@ export class BotRunner {
 			});
 		}
 
+		this.socket = new GOSpeakSocketClient({
+			url: this.config.socketUrl,
+			token: accessToken,
+			logger: this.logger,
+		});
+
+		this._caps = new CapabilityRouter(this.api, this.socket, this);
+
 		this.bus = new EventBus({
 			buildContext: (pluginName) => this.buildPluginCtx(pluginName),
 			getPluginConfig: (pluginName) =>
 				this.config.pluginConfigs?.[pluginName] ?? {},
 		});
 
-		this.socket = new GOSpeakSocketClient({
-			url: this.config.socketUrl,
-			token: accessToken,
-			logger: this.logger,
-		});
 		this.socket.setEventHandler((event) => {
 			void this.bus.dispatch(event).catch((err) => {
 				this.logger.error("Event dispatch error:", err);
@@ -264,17 +269,10 @@ export class BotRunner {
 			logger: this.logger,
 			config: this.config.pluginConfigs?.[pluginName] ?? {},
 			pluginName,
-			chat: this.api,
-			rooms: {
-				listRooms: () => this.api.listRooms(),
-				getMembers: (roomId: string) => this.api.getMembers(roomId),
-				createRoom: (name: string, limit?: number) =>
-					this.api.createRoom(name, limit),
-				join: (name: string, o?: { sfu?: boolean }) => this.joinRoom(name, o),
-				leave: (name: string) => this.leaveRoom(name),
-				joined: () => this.joinedRooms,
-			},
-			voice: this.api,
+			chat: this._caps,
+			rooms: this._caps,
+			voice: this._caps,
+			users: this._caps,
 			kv: createKVStore(),
 			hasPermission: (_level, _member) => true,
 		};

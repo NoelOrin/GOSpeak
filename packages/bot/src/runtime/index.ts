@@ -8,5 +8,6 @@ export type {
 export { AuthClient } from "./authClient";
 export type { BotConfig, BotStatus } from "./botRunner";
 export { BotRunner } from "./botRunner";
+export { CapabilityRouter } from "./capabilityRouter";
 export type { SocketClientOptions } from "./socketClient";
 export { GOSpeakSocketClient } from "./socketClient";

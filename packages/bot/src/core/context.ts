@@ -49,6 +49,11 @@ export interface BotContext {
 	readonly chat: ChatClient;
 	readonly rooms: RoomClient;
 	readonly voice: VoiceClient;
+	readonly users: {
+		getByIdentity(
+			identity: string,
+		): Promise<{ id: number; name: string; role: string; uuid: string }>;
+	};
 	readonly kv: KeyValueStore;
 	hasPermission(level: PermissionLevel, member?: MemberRef): boolean;
 }

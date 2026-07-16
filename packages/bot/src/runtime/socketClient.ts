@@ -148,6 +148,14 @@ export class GOSpeakSocketClient {
 		});
 	}
 
+	sendBotMessage(room: string, content: string): void {
+		if (!this.connected) {
+			this.logger.warn("socket not connected; cannot send bot message");
+			return;
+		}
+		this.socket?.emit("bot:message", { room, content });
+	}
+
 	kickMember(room: string, targetIdentity: string): void {
 		if (!this.connected) {
 			this.logger.warn("socket not connected; cannot kick member");
