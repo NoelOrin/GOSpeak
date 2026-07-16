@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EventType } from "../core/types";
+import { EventType, type MessageEvent } from "../core/types";
 import { EventAdapter } from "./eventAdapter";
 
 function makePayload(overrides: Record<string, unknown> = {}): string {
@@ -30,13 +30,14 @@ describe("EventAdapter", () => {
 			// First: OnMessageReceived
 			expect(events[0].eventType).toBe(EventType.OnMessageReceived);
 			if (events[0].eventType === EventType.OnMessageReceived) {
-				expect(events[0].content).toBe("/kick alice");
-				expect(events[0].isCommand).toBe(true);
-				expect(events[0].rawCommand?.name).toBe("kick");
-				expect(events[0].rawCommand?.args).toEqual(["alice"]);
-				expect(events[0].sender.identity).toBe("alice");
-				expect(events[0].sender.name).toBe("Alice");
-				expect(events[0].room.name).toBe("test-room");
+				const msg = events[0] as MessageEvent;
+				expect(msg.content).toBe("/kick alice");
+				expect(msg.isCommand).toBe(true);
+				expect(msg.rawCommand?.name).toBe("kick");
+				expect(msg.rawCommand?.args).toEqual(["alice"]);
+				expect(msg.sender.identity).toBe("alice");
+				expect(msg.sender.name).toBe("Alice");
+				expect(msg.room.name).toBe("test-room");
 			}
 
 			// Second: AdapterMessage
@@ -49,8 +50,9 @@ describe("EventAdapter", () => {
 
 			expect(events).toHaveLength(2);
 			if (events[0].eventType === EventType.OnMessageReceived) {
-				expect(events[0].isCommand).toBe(false);
-				expect(events[0].rawCommand).toBeUndefined();
+				const msg = events[0] as MessageEvent;
+				expect(msg.isCommand).toBe(false);
+				expect(msg.rawCommand).toBeUndefined();
 			}
 		});
 
@@ -63,7 +65,8 @@ describe("EventAdapter", () => {
 
 			expect(events).toHaveLength(2);
 			if (events[0].eventType === EventType.OnMessageReceived) {
-				expect(events[0].content).toBe("thanks!");
+				const msg = events[0] as MessageEvent;
+				expect(msg.content).toBe("thanks!");
 			}
 		});
 
@@ -87,9 +90,10 @@ describe("EventAdapter", () => {
 
 			expect(events).toHaveLength(2);
 			if (events[0].eventType === EventType.OnMessageReceived) {
-				expect(events[0].isCommand).toBe(true);
-				expect(events[0].rawCommand?.name).toBe("help");
-				expect(events[0].rawCommand?.args).toEqual(["moderation"]);
+				const msg = events[0] as MessageEvent;
+				expect(msg.isCommand).toBe(true);
+				expect(msg.rawCommand?.name).toBe("help");
+				expect(msg.rawCommand?.args).toEqual(["moderation"]);
 			}
 		});
 
@@ -101,7 +105,8 @@ describe("EventAdapter", () => {
 
 			expect(events).toHaveLength(2);
 			if (events[0].eventType === EventType.OnMessageReceived) {
-				expect(events[0].sender.name).toBe("bot1");
+				const msg = events[0] as MessageEvent;
+				expect(msg.sender.name).toBe("bot1");
 			}
 		});
 	});

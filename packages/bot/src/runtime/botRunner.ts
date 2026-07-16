@@ -459,7 +459,10 @@ export class BotRunner {
 			chat: this._caps,
 			rooms: this._caps,
 			voice: this._caps,
-			users: this._caps,
+			users: {
+				getByIdentity: (identity: string) =>
+					this._caps.getUserByIdentity(identity),
+			},
 			mutes: {
 				list: () => this._caps.listMutes(),
 				status: (userId: number) => this._caps.getMuteStatus(userId),

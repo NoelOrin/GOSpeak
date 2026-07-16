@@ -38,9 +38,9 @@ describe("MediaListenService", () => {
 			pcmSink: hub,
 			logger: logger as any,
 			identity: "bot",
-			getSFUToken,
-			joinSignaling,
-			leaveSignaling,
+			getSFUToken: getSFUToken as any,
+			joinSignaling: joinSignaling as any,
+			leaveSignaling: leaveSignaling as any,
 			router: new SFUListenRouter({
 				createAdapter: () => mockAdapter,
 			}),

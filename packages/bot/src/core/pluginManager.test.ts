@@ -26,6 +26,24 @@ function makeCtx(): BotContext {
 			removeMember: async () => {},
 			setMemberVolume: async () => {},
 		},
+		users: {
+			getByIdentity: async (identity: string) => ({
+				id: 1,
+				name: identity,
+				role: "user",
+				uuid: "u1",
+			}),
+		},
+		mutes: {
+			list: async () => [],
+			status: async () => null,
+		},
+		scheduler: {
+			every: () => {},
+			once: () => {},
+			clear: () => {},
+			clearAll: () => {},
+		},
 		kv: {
 			get: async () => undefined,
 			set: async () => {},
