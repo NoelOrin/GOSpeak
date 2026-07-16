@@ -3,6 +3,7 @@ export type {
 	ChatClient,
 	KeyValueStore,
 	Logger,
+	PluginMessageBus,
 	RoomClient,
 	VoiceClient,
 } from "./context";

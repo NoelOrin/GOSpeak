@@ -90,6 +90,9 @@ export class Demo extends Plugin {
 - `ctx.mutes.list/status` → REST
 - `ctx.listen.add/remove/list/clear` → 旁听集合
 - `ctx.scheduler.every/once` → 定时任务
+- `ctx.kv` → 插件私有 KV（按插件名隔离）
+- `ctx.sharedKv` → 跨插件共享 KV
+- `ctx.bus.publish/subscribe/once` → 插件间一等消息总线（进程内 pub/sub）
 
 ### 内置插件
 

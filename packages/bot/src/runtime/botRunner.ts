@@ -5,6 +5,7 @@ import { PluginManager } from "../core/pluginManager";
 import {
 	clearRegistry,
 	getHandlersByEventType,
+	getPluginMeta,
 	listPlugins,
 } from "../core/registry";
 import {
@@ -28,9 +29,15 @@ import {
 	type SpeechPipeline,
 } from "../speech";
 import { SineTTSProvider, type TTSProvider } from "../tts";
-import { createKVStore, GOSpeakApiClient } from "./apiClient";
+import { GOSpeakApiClient } from "./apiClient";
 import { AuthClient, type AuthCredentials } from "./authClient";
 import { CapabilityRouter } from "./capabilityRouter";
+import {
+	createPluginPrivateKV,
+	createSharedKV,
+	MemoryKVStore,
+} from "./kvStore";
+import { PluginBusHost } from "./pluginBus";
 import { Scheduler } from "./scheduler";
 import { GOSpeakSocketClient } from "./socketClient";
 
@@ -89,6 +96,10 @@ export class BotRunner {
 	private _pcmHub = new PcmStreamHub();
 	private _caps!: CapabilityRouter;
 	private _scheduler = new Scheduler();
+	/** Host-wide KV root — private + shared namespaces live here */
+	private _kvRoot = new MemoryKVStore();
+	/** Plugin-to-plugin pub/sub host */
+	private _pluginBus = new PluginBusHost();
 	private _listenRegistry = new ListenRoomRegistry();
 	private _listenService: MediaListenService | null = null;
 	private _speechPipeline: SpeechPipeline | null = null;
@@ -197,9 +208,12 @@ export class BotRunner {
 		});
 
 		this.bus = new EventBus({
-			buildContext: (pluginName) => this.buildPluginCtx(pluginName),
-			getPluginConfig: (pluginName) =>
-				this.config.pluginConfigs?.[pluginName] ?? {},
+			// EventBus passes handler modulePath; resolve to plugin metadata.name
+			buildContext: (modulePathOrName) => this.buildPluginCtx(modulePathOrName),
+			getPluginConfig: (modulePathOrName) => {
+				const name = getPluginMeta(modulePathOrName)?.name ?? modulePathOrName;
+				return this.config.pluginConfigs?.[name] ?? {};
+			},
 		});
 
 		this.socket.setEventHandler((event) => {
@@ -222,6 +236,8 @@ export class BotRunner {
 				await this.fireLifecycleEvent(EventType.OnPluginLoaded, name);
 			},
 			onUnloaded: async (name) => {
+				this._pluginBus.clearPlugin(name);
+				this._scheduler.clearByPrefix(`${name}:`);
 				await this.fireLifecycleEvent(EventType.OnPluginUnloaded, name);
 			},
 		});
@@ -255,6 +271,7 @@ export class BotRunner {
 			this._refreshTimer = null;
 		}
 		this._scheduler.clearAll();
+		this._pluginBus.clearAll();
 		this._unsubPcm?.();
 		this._unsubPcm = null;
 		this._unsubSpeech?.();
@@ -451,7 +468,13 @@ export class BotRunner {
 		await this._listenService.start();
 	}
 
-	private buildPluginCtx(pluginName: string): BotContext {
+	/**
+	 * Build per-plugin ctx. Argument may be metadata.name (init) or modulePath (dispatch).
+	 * Always resolve to metadata.name so private KV / bus / scheduler stay consistent.
+	 */
+	private buildPluginCtx(modulePathOrName: string): BotContext {
+		const pluginName =
+			getPluginMeta(modulePathOrName)?.name ?? modulePathOrName;
 		return {
 			logger: this.logger,
 			config: this.config.pluginConfigs?.[pluginName] ?? {},
@@ -481,7 +504,9 @@ export class BotRunner {
 				list: () => this._listenRegistry.list(),
 				clear: () => this._listenRegistry.clear(),
 			},
-			kv: createKVStore(),
+			kv: createPluginPrivateKV(this._kvRoot, pluginName),
+			sharedKv: createSharedKV(this._kvRoot),
+			bus: this._pluginBus.forPlugin(pluginName),
 			hasPermission: (_level, _member) => true,
 		};
 	}

@@ -48,6 +48,36 @@ export interface KeyValueStore {
 	get<T = unknown>(key: string): Promise<T | undefined>;
 	set<T = unknown>(key: string, value: T): Promise<void>;
 	delete(key: string): Promise<void>;
+	/** Optional helpers implemented by host stores */
+	has?(key: string): Promise<boolean>;
+	keys?(prefix?: string): Promise<string[]>;
+	clear?(): Promise<void>;
+}
+
+/**
+ * First-class plugin-to-plugin message bus.
+ * Does not go through system EventBus; pure in-process pub/sub.
+ */
+export interface PluginMessageBus {
+	publish<T = unknown>(topic: string, payload?: T): Promise<number>;
+	subscribe<T = unknown>(
+		topic: string,
+		handler: (msg: {
+			topic: string;
+			payload: T;
+			from: string;
+			timestamp: number;
+		}) => void | Promise<void>,
+	): () => void;
+	once<T = unknown>(
+		topic: string,
+		handler: (msg: {
+			topic: string;
+			payload: T;
+			from: string;
+			timestamp: number;
+		}) => void | Promise<void>,
+	): () => void;
 }
 
 export interface BotContext {
@@ -62,7 +92,21 @@ export interface BotContext {
 			identity: string,
 		): Promise<{ id: number; name: string; role: string; uuid: string }>;
 	};
+	/**
+	 * Plugin-private KV (namespaced by pluginName).
+	 * Other plugins cannot read these keys via their own ctx.kv.
+	 */
 	readonly kv: KeyValueStore;
+	/**
+	 * Cross-plugin shared KV (same store for every plugin).
+	 * Use for coordination flags, shared counters, handoff state, etc.
+	 */
+	readonly sharedKv: KeyValueStore;
+	/**
+	 * First-class plugin message bus for direct inter-plugin events.
+	 * publish/subscribe topics without importing other plugins.
+	 */
+	readonly bus: PluginMessageBus;
 	readonly mutes: {
 		list(): Promise<unknown[]>;
 		status(userId: number): Promise<unknown | null>;

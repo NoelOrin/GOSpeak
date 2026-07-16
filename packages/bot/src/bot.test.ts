@@ -55,6 +55,16 @@ function makeCtx(): BotContext {
 			set: async () => {},
 			delete: async () => {},
 		},
+		sharedKv: {
+			get: async () => undefined,
+			set: async () => {},
+			delete: async () => {},
+		},
+		bus: {
+			publish: async () => 0,
+			subscribe: () => () => {},
+			once: () => () => {},
+		},
 		hasPermission: () => true,
 	};
 }

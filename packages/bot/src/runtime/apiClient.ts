@@ -1,6 +1,5 @@
 import type {
 	ChatClient,
-	KeyValueStore,
 	Logger,
 	RoomClient,
 	VoiceClient,
@@ -264,18 +263,4 @@ export class GOSpeakApiClient implements ChatClient, RoomClient, VoiceClient {
 	}
 }
 
-export function createKVStore(): KeyValueStore {
-	const store = new Map<string, string>();
-	return {
-		async get<T>(key: string): Promise<T | undefined> {
-			const v = store.get(key);
-			return v !== undefined ? (JSON.parse(v) as T) : undefined;
-		},
-		async set<T>(key: string, value: T): Promise<void> {
-			store.set(key, JSON.stringify(value));
-		},
-		async delete(key: string): Promise<void> {
-			store.delete(key);
-		},
-	};
-}
+export { createKVStore } from "./kvStore";
