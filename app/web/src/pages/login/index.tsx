@@ -15,8 +15,10 @@ import ForcePasswordChangeModal from "./components/ForcePasswordChangeModal";
 import ForgotPasswordModal from "./components/ForgotPasswordModal";
 
 export const Route = createFileRoute("/login/")({
-	beforeLoad: () => {
-		if (userStore.isLoggedIn()) {
+	beforeLoad: async () => {
+		// 已有会话或 access 过期但仍可无感刷新时，直接进首页
+		const ok = await userStore.ensureSession();
+		if (ok) {
 			throw redirect({ to: "/" });
 		}
 	},

@@ -3,6 +3,7 @@ export interface APIClientAuthBindings {
 	getRefreshToken: () => string;
 	updateAccessToken: (token: string) => Promise<void> | void;
 	clearAuth: () => Promise<void> | void;
+	waitAuthHydrated?: () => Promise<void>;
 }
 
 let bindings: APIClientAuthBindings = {
@@ -12,6 +13,7 @@ let bindings: APIClientAuthBindings = {
 	getRefreshToken: () => "",
 	updateAccessToken: () => undefined,
 	clearAuth: () => undefined,
+	waitAuthHydrated: async () => undefined,
 };
 
 export function bindAPIClientAuth(next: APIClientAuthBindings) {

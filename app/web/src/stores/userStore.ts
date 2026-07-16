@@ -2,6 +2,7 @@ import { del, get, set } from "idb-keyval";
 import { createSignal } from "solid-js";
 import { bindAPIClientAuth } from "@/api/apiClientAuth";
 import { getProfile, logout as logoutApi } from "@/api/auth";
+import { requestAccessTokenByRefreshToken } from "@/api/authTransport";
 
 export interface UserInfo {
 	id: number;
@@ -15,22 +16,40 @@ export interface UserInfo {
 const STORAGE_USER = "user";
 const STORAGE_ACCESS_TOKEN = "accessToken";
 const DB_REFRESH_TOKEN = "refreshToken";
+/** access 剩余不足该时间时主动刷新，避免边界 401 */
+const ACCESS_REFRESH_SKEW_MS = 60_000;
 
 const [user, setUser] = createSignal<UserInfo | null>(null);
 const [userStale, setUserStale] = createSignal(false);
 const [accessToken, setAccessToken] = createSignal("");
 const [refreshToken, setRefreshToken] = createSignal("");
 
+let resolveAuthHydrated: () => void = () => {};
+const authHydrated = new Promise<void>((resolve) => {
+	resolveAuthHydrated = resolve;
+});
+let ensureSessionPromise: Promise<boolean> | null = null;
+
 // 同步从 localStorage 恢复 user 和 accessToken，保证路由守卫立即可用
 const cachedUser = localStorage.getItem(STORAGE_USER);
 const cachedToken = localStorage.getItem(STORAGE_ACCESS_TOKEN);
-if (cachedUser) setUser(JSON.parse(cachedUser));
+if (cachedUser) {
+	try {
+		setUser(JSON.parse(cachedUser));
+	} catch {
+		localStorage.removeItem(STORAGE_USER);
+	}
+}
 if (cachedToken) setAccessToken(cachedToken);
 
-// refreshToken 在 IndexedDB，异步恢复即可
-get<string>(DB_REFRESH_TOKEN).then((rt) => {
-	if (rt) setRefreshToken(rt);
-});
+// refreshToken 在 IndexedDB，需等待恢复后再做无感刷新
+get<string>(DB_REFRESH_TOKEN)
+	.then((rt) => {
+		if (rt) setRefreshToken(rt);
+	})
+	.finally(() => {
+		resolveAuthHydrated();
+	});
 
 // 解码 JWT payload，返回任意字段；解析失败返回 null
 function decodeJWTPayload<T = Record<string, any>>(token: string): T | null {
@@ -42,10 +61,14 @@ function decodeJWTPayload<T = Record<string, any>>(token: string): T | null {
 	}
 }
 
-function isTokenExpired(token: string): boolean {
+function isTokenExpired(token: string, skewMs = 0): boolean {
 	const payload = decodeJWTPayload<{ exp?: number }>(token);
-	if (!payload || typeof payload.exp !== "number") return false;
-	return Date.now() >= payload.exp * 1000;
+	if (!payload || typeof payload.exp !== "number") return true;
+	return Date.now() + skewMs >= payload.exp * 1000;
+}
+
+async function waitAuthHydrated() {
+	await authHydrated;
 }
 
 async function loginAction(u: UserInfo, at: string, rt: string) {
@@ -96,11 +119,54 @@ async function logoutAction() {
 	await clearAuthAction();
 }
 
+/**
+ * 确保会话可用：
+ * - access 仍有效：直接通过
+ * - access 过期/临近过期且 refresh 可用：静默换发 access
+ * - 无法恢复：清会话并返回 false
+ */
+async function ensureSessionAction(): Promise<boolean> {
+	await waitAuthHydrated();
+
+	const at = accessToken();
+	const rt = refreshToken();
+
+	// access 仍有效（含 60s 余量）
+	if (at && !isTokenExpired(at, ACCESS_REFRESH_SKEW_MS)) {
+		return true;
+	}
+
+	// 没有 refresh，只能看 access 是否仍在有效期内
+	if (!rt) {
+		return !!(at && !isTokenExpired(at));
+	}
+
+	if (ensureSessionPromise) {
+		return ensureSessionPromise;
+	}
+
+	ensureSessionPromise = (async () => {
+		try {
+			const newToken = await requestAccessTokenByRefreshToken(rt);
+			await updateAccessTokenAction(newToken);
+			return true;
+		} catch {
+			await clearAuthAction();
+			return false;
+		} finally {
+			ensureSessionPromise = null;
+		}
+	})();
+
+	return ensureSessionPromise;
+}
+
 bindAPIClientAuth({
 	getAccessToken: accessToken,
 	getRefreshToken: refreshToken,
 	updateAccessToken: updateAccessTokenAction,
 	clearAuth: clearAuthAction,
+	waitAuthHydrated,
 });
 
 const userStore = {
@@ -108,10 +174,17 @@ const userStore = {
 	userStale,
 	accessToken,
 	refreshToken,
+	/** 当前 access 仍有效（不含“可静默恢复”的过期会话） */
 	isLoggedIn: () => {
 		const token = accessToken();
 		return !!token && !isTokenExpired(token);
 	},
+	/** 本地仍有会话痕迹（access 或 refresh），可供 ensureSession 尝试恢复 */
+	hasSession: () => {
+		return !!(accessToken() || refreshToken());
+	},
+	waitAuthHydrated,
+	ensureSession: ensureSessionAction,
 	login: loginAction,
 	logout: logoutAction,
 	clearAuth: clearAuthAction,

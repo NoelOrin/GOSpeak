@@ -20,7 +20,13 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// GenerateToken 签发 access_token（24h）。tokenVersion 应来自当前用户的 TokenVersion 字段。
+// AccessTokenTTL 用户 access_token 有效期（配合 refresh_token 做无感刷新）。
+const AccessTokenTTL = 15 * time.Minute
+
+// RefreshTokenTTL refresh_token 有效期。
+const RefreshTokenTTL = 7 * 24 * time.Hour
+
+// GenerateToken 签发 access_token（15m）。tokenVersion 应来自当前用户的 TokenVersion 字段。
 func GenerateToken(username, displayName, userUUID, role string, tokenVersion uint) (string, error) {
 	claims := Claims{
 		Username:     username,
@@ -29,7 +35,7 @@ func GenerateToken(username, displayName, userUUID, role string, tokenVersion ui
 		Role:         role,
 		TokenVersion: tokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(AccessTokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			ID:        newJTI(),
@@ -70,7 +76,7 @@ func GenerateRefreshToken(username, displayName, userUUID, role string, tokenVer
 		Role:         role,
 		TokenVersion: tokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(RefreshTokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			ID:        newJTI(),

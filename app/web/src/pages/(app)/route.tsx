@@ -4,8 +4,10 @@ import Layout from "@/layouts/layout";
 import userStore from "@/stores/userStore";
 
 export const Route = createFileRoute("/(app)")({
-	beforeLoad: () => {
-		if (!userStore.isLoggedIn()) {
+	beforeLoad: async () => {
+		// access 过期时先尝试 refresh_token 无感续期，再决定是否跳登录
+		const ok = await userStore.ensureSession();
+		if (!ok) {
 			throw redirect({ to: "/login" });
 		}
 	},

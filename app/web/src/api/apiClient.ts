@@ -23,17 +23,32 @@ const MUTE_ERROR_CODES = new Set([1016]);
 
 // 刷新状态管理
 let isRefreshing = false;
-let refreshSubscribers: Array<(token: string) => void> = [];
+let refreshSubscribers: Array<{
+	resolve: (token: string) => void;
+	reject: (error: unknown) => void;
+}> = [];
 
-function subscribeTokenRefresh(cb: (token: string) => void) {
-	refreshSubscribers.push(cb);
+function subscribeTokenRefresh(
+	resolve: (token: string) => void,
+	reject: (error: unknown) => void,
+) {
+	refreshSubscribers.push({ resolve, reject });
 }
 
 function onTokenRefreshed(newToken: string) {
-	refreshSubscribers.forEach((cb) => {
-		cb(newToken);
-	});
+	const list = refreshSubscribers;
 	refreshSubscribers = [];
+	list.forEach(({ resolve }) => {
+		resolve(newToken);
+	});
+}
+
+function onTokenRefreshFailed(error: unknown) {
+	const list = refreshSubscribers;
+	refreshSubscribers = [];
+	list.forEach(({ reject }) => {
+		reject(error);
+	});
 }
 
 const createInstance = (baseURL?: string) => {
@@ -98,17 +113,26 @@ const createInstance = (baseURL?: string) => {
 				error.response?.data?.code &&
 				TOKEN_ERROR_CODES.has(error.response.data.code)
 			) {
-				// 有 refresh token 且未重试过，尝试刷新
+				// 等待 IndexedDB 恢复 refresh token，避免冷启动竞态直接踢登录
+				if (auth.waitAuthHydrated) {
+					await auth.waitAuthHydrated();
+				}
+
 				const refreshToken = auth.getRefreshToken();
 				if (!originalRequest._retry && refreshToken) {
 					if (isRefreshing) {
-						return new Promise((resolve) => {
-							subscribeTokenRefresh((newToken) => {
-								if (originalRequest.headers) {
-									originalRequest.headers.Authorization = `Bearer ${newToken}`;
-								}
-								resolve(axiosInstance(originalRequest));
-							});
+						return new Promise((resolve, reject) => {
+							subscribeTokenRefresh(
+								(newToken) => {
+									if (originalRequest.headers) {
+										originalRequest.headers.Authorization = `Bearer ${newToken}`;
+									}
+									resolve(axiosInstance(originalRequest));
+								},
+								(refreshError) => {
+									reject(refreshError);
+								},
+							);
 						});
 					}
 
@@ -125,9 +149,9 @@ const createInstance = (baseURL?: string) => {
 							originalRequest.headers.Authorization = `Bearer ${newToken}`;
 						}
 						return axiosInstance(originalRequest);
-					} catch {
+					} catch (refreshError) {
 						// refresh 失败，清空等待队列再跳登录
-						refreshSubscribers = [];
+						onTokenRefreshFailed(refreshError);
 						await auth.clearAuth();
 						window.location.href = "/login";
 						return Promise.reject(error);

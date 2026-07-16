@@ -22,7 +22,7 @@ import {
 	onCleanup,
 	onMount,
 } from "solid-js";
-import { showToast } from "solid-notifications";
+import { dismissToast, showToast } from "solid-notifications";
 import { getJoinToken, resolveSFUProvider } from "@/api/sfu";
 import { cleanupAudioHandler, setupAudioHandler } from "@/handler_audio";
 import AudioDeviceStore from "@/stores/audioDeviceStore";
@@ -37,6 +37,24 @@ import {
 	type VoicePhase,
 	voicePhaseLabel,
 } from "../session/voiceSessionTypes";
+
+const RECONNECTING_TOAST_ID = "voice-session-reconnecting";
+
+function showReconnectingToast() {
+	showToast("正在重连...", {
+		id: RECONNECTING_TOAST_ID,
+		type: "info",
+		duration: false,
+	});
+}
+
+function clearReconnectingToast() {
+	try {
+		dismissToast({ id: RECONNECTING_TOAST_ID });
+	} catch {
+		// toast 可能尚未创建或已关闭
+	}
+}
 
 type JoinState = "idle" | "connecting" | "joined" | "reconnecting" | "failed";
 
@@ -140,6 +158,7 @@ export function useVoiceSession() {
 	};
 
 	const teardownSession = async (sess: Session) => {
+		clearReconnectingToast();
 		setSession((cur) =>
 			cur === sess ? { ...cur, status: "leaving", error: null } : cur,
 		);
@@ -309,6 +328,7 @@ export function useVoiceSession() {
 								info?.reason === "DUPLICATE_IDENTITY"
 									? "该账号已在其他设备加入此房间"
 									: "连接已断开";
+							clearReconnectingToast();
 							setSession((s) =>
 								s && s.client === createdClient
 									? { ...s, status: "failed", error: disconnectedMsg }
@@ -329,7 +349,7 @@ export function useVoiceSession() {
 									? { ...s, status: "reconnecting", error: null }
 									: s,
 							);
-							showToast("正在重连...", { type: "info" });
+							showReconnectingToast();
 						});
 						createdClient.onReconnected?.(() => {
 							if (signal.aborted) return;
@@ -341,6 +361,7 @@ export function useVoiceSession() {
 									? { ...s, status: "ready", error: null }
 									: s,
 							);
+							clearReconnectingToast();
 							showToast("已重连", { type: "success" });
 						});
 

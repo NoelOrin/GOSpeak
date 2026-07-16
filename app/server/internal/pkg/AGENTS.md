@@ -7,7 +7,7 @@
 | 文件 | 职责 |
 |------|------|
 | errors.go | 业务错误码（`ErrCode`）与 `AppError` 类型 |
-| jwt.go | JWT 生成/解析；每个 Token 携带 ULID 作为 JTI；签名密钥由 `redis.GetSigningKey()` / `GetAllSigningKeys()` 提供（支持密钥轮换与历史密钥）；access 24h、refresh 7d、bot 可永久 |
+| jwt.go | JWT 生成/解析；每个 Token 携带 ULID 作为 JTI；签名密钥由 `redis.GetSigningKey()` / `GetAllSigningKeys()` 提供（支持密钥轮换与历史密钥）；access 15m、refresh 7d、bot 可永久 |
 | response.go | 统一响应封装：`Success` / `Fail` / `HandleError` |
 
 ## 子包
