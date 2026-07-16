@@ -1,12 +1,18 @@
 package agora
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"time"
 
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
 )
+
+// defaultMuteRuleTTL used when caller does not pass mute duration.
+const defaultMuteRuleTTL = 24 * 60 * 60 // 24h
 
 type Service struct {
 	appID          string
@@ -14,6 +20,9 @@ type Service struct {
 	host           string
 	customerID     string
 	customerSecret string
+
+	// muteRules is multi-instance rule id cache (memory / redis / nats KV).
+	muteRules sfu.MuteRuleStore
 }
 
 func NewService(cfg *config.Config) *Service {
@@ -23,13 +32,33 @@ func NewService(cfg *config.Config) *Service {
 		host:           cfg.AgoraHost,
 		customerID:     cfg.AgoraCustomerID,
 		customerSecret: cfg.AgoraCustomerSecret,
+		muteRules:      sfu.NewMemoryMuteRuleStore(),
 	}
+}
+
+// SetMuteRuleStore injects shared mute-rule cache (redis/nats preferred).
+func (s *Service) SetMuteRuleStore(store sfu.MuteRuleStore) {
+	if s == nil {
+		return
+	}
+	if store == nil {
+		s.muteRules = sfu.NewMemoryMuteRuleStore()
+		return
+	}
+	s.muteRules = store
+}
+
+func (s *Service) ProviderName() string { return "agora" }
+
+func (s *Service) Capabilities() sfu.Capabilities {
+	return sfu.CapabilitiesFor("agora")
 }
 
 func (s *Service) GenerateToken(room, identity string) (string, error) {
 	if s.appID == "" || s.appCertificate == "" {
 		return "", pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "AGORA_APP_ID and AGORA_APP_CERTIFICATE are required")
 	}
+	// Account-mode token: identity is a string userAccount, matching kicking-rule uid string.
 	token, err := buildRTCToken(s.appID, s.appCertificate, room, identity)
 	if err != nil {
 		return "", pkg.NewAppError(pkg.SFU_ERROR, err.Error())
@@ -38,7 +67,7 @@ func (s *Service) GenerateToken(room, identity string) (string, error) {
 }
 
 func (s *Service) GenerateAdminToken() (string, error) {
-	return "", nil
+	return "", pkg.NewErrSFUNotSupported()
 }
 
 func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
@@ -65,16 +94,54 @@ func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error
 	return out, nil
 }
 
+// MuteParticipant degraded hard mute via publish privilege rule.
+// Without a rule id, returns error so Hub does NOT claim hard/degraded success.
 func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) error {
-	// Agora 服务端无与 LiveKit 对齐的单轨 mute API；不可伪装成功。
-	return pkg.NewErrSFUNotSupported()
+	return s.MuteParticipantTimed(room, identity, trackSid, muted, defaultMuteRuleTTL)
 }
 
-// RemoveParticipant Agora 服务端无单用户踢出 API：kicking-rule 是 ban 语义
-// （阻止再次加入），而非断开当前会话，与"踢出"语义不符。返回 pkg.ErrSFUNotSupported
-// 让 Hub 优雅降级，依赖 Agora 频道在用户主动离开后的自动回收。
+// MuteParticipantTimed implements sfu.TimedMuteProvider.
+func (s *Service) MuteParticipantTimed(room, identity, trackSid string, muted bool, ttlSeconds int) error {
+	if s.appID == "" {
+		return pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "AGORA_APP_ID is required")
+	}
+	key := muteRuleKey(room, identity)
+	if !muted {
+		return s.clearMuteRule(room, identity, key)
+	}
+	if ttlSeconds <= 0 {
+		ttlSeconds = defaultMuteRuleTTL
+	}
+
+	// Replace any existing rule first (best effort).
+	_ = s.clearMuteRule(room, identity, key)
+
+	ruleID, err := s.restClient().CreateKickingRule(
+		room,
+		identity,
+		ttlSeconds,
+		[]string{"publish_audio", "publish_video"},
+	)
+	if err != nil {
+		return s.mapRESTError(err)
+	}
+	if ruleID <= 0 {
+		return pkg.NewAppError(pkg.SFU_ERROR, "agora mute rule created without id; refuse hard success")
+	}
+
+	_ = s.saveRule(key, ruleID, time.Duration(ttlSeconds)*time.Second)
+	return nil
+}
+
+// RemoveParticipant degraded hard kick: short join_channel rule.
 func (s *Service) RemoveParticipant(room, identity string) error {
-	return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, pkg.ErrSFUNotSupported, "agora: server-side participant removal not supported")
+	if s.appID == "" {
+		return pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "AGORA_APP_ID is required")
+	}
+	if _, err := s.restClient().CreateKickingRule(room, identity, 60, []string{"join_channel"}); err != nil {
+		return s.mapRESTError(err)
+	}
+	return nil
 }
 
 func (s *Service) DeleteRoom(room string) error {
@@ -91,14 +158,8 @@ func (s *Service) GetHost() string {
 	return "https://api.agora.io"
 }
 
-func (s *Service) ProviderName() string {
-	return "agora"
-}
-
 func (s *Service) ClientInfo() map[string]interface{} {
-	return map[string]interface{}{
-		"appId": s.appID,
-	}
+	return map[string]interface{}{"appId": s.appID}
 }
 
 func (s *Service) restClient() *RESTClient {
@@ -110,4 +171,60 @@ func (s *Service) mapRESTError(err error) error {
 		return pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, ErrRESTCredentialsMissing.Error())
 	}
 	return pkg.NewAppError(pkg.SFU_ERROR, err.Error())
+}
+
+func (s *Service) ruleStore() sfu.MuteRuleStore {
+	if s == nil || s.muteRules == nil {
+		return sfu.NewMemoryMuteRuleStore()
+	}
+	return s.muteRules
+}
+
+func (s *Service) saveRule(key string, ruleID int, ttl time.Duration) error {
+	return s.ruleStore().Save(context.Background(), key, ruleID, ttl)
+}
+
+func (s *Service) getRule(key string) int {
+	id, err := s.ruleStore().Get(context.Background(), key)
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
+func (s *Service) deleteRule(key string) {
+	_ = s.ruleStore().Delete(context.Background(), key)
+}
+
+func (s *Service) clearMuteRule(room, identity, key string) error {
+	ruleID := s.getRule(key)
+	// Recovery path: list rules by channel+identity when store miss.
+	if ruleID == 0 {
+		ids, err := s.restClient().FindKickingRuleIDs(room, identity)
+		if err == nil {
+			var last error
+			for _, id := range ids {
+				if err := s.restClient().DeleteKickingRule(id); err != nil {
+					last = err
+				}
+			}
+			s.deleteRule(key)
+			if last != nil {
+				return s.mapRESTError(last)
+			}
+			return nil
+		}
+		// No stored id and list failed: soft-unmute only (policy already cleared).
+		return nil
+	}
+	if err := s.restClient().DeleteKickingRule(ruleID); err != nil {
+		// Keep store key so a later retry can still try delete.
+		return s.mapRESTError(err)
+	}
+	s.deleteRule(key)
+	return nil
+}
+
+func muteRuleKey(room, identity string) string {
+	return fmt.Sprintf("%s|%s", room, identity)
 }

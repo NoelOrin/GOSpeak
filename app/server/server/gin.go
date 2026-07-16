@@ -206,6 +206,35 @@ func StartGin(env EnvEnum) {
 		logger.WithComponent("StateStore").Info("backend=none (local membership only)")
 	}
 
+	// mute rule KV for degraded media mute (Agora kicking-rule ids): redis → nats → memory
+	muteRuleStore, muteRuleBackend := bus.ResolveMuteRuleStore(bus.ResolveMuteRuleConfig{
+		Mode:   cfg.StateStore,
+		Prefix: cfg.NATSSubjectPrefix,
+		Redis:  redisClient,
+		NATS:   natsConn,
+	})
+	if dp, ok := sfuProvider.(*factory.DynamicProvider); ok {
+		dp.SetMuteRuleStore(muteRuleStore)
+	}
+	logger.WithComponent("MuteRuleStore").Infof("ready backend=%s", muteRuleBackend)
+
+	// JWT blacklist + signing key: Redis preferred; otherwise NATS KV so multi-instance logout still works.
+	if !redis.IsConnected() && natsConn != nil {
+		if authStore, err := bus.OpenAuthStore(bus.AuthStoreConfig{
+			Prefix: cfg.NATSSubjectPrefix,
+			NC:     natsConn,
+		}); err != nil {
+			logger.WithComponent("AuthStore").Warnf("nats unavailable: %v", err)
+		} else {
+			redis.SetAuthBackend(authStore)
+			logger.WithComponent("AuthStore").Infof("ready backend=%s", authStore.Backend())
+		}
+	} else if redis.IsConnected() {
+		logger.WithComponent("AuthStore").Info("ready backend=redis")
+	} else {
+		logger.WithComponent("AuthStore").Info("backend=none (static JWT_KEY / no multi-instance blacklist)")
+	}
+
 	var jobQueue *bus.JobQueue
 	if nb, ok := eventBus.(*bus.NATSBus); ok && nb.Conn() != nil {
 		q, err := bus.OpenJobQueue(bus.JobQueueConfig{

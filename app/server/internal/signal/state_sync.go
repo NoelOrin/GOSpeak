@@ -19,6 +19,7 @@ type membershipStore interface {
 	GetRoomMembers(ctx context.Context, room string) (bus.RoomMembersSnapshot, error)
 	DeleteRoomMembers(ctx context.Context, room string) error
 	PutStream(ctx context.Context, stream, room, identity string) error
+	GetStream(ctx context.Context, stream string) (room, identity string, err error)
 	DeleteStream(ctx context.Context, stream string) error
 	ListRoomNames(ctx context.Context) ([]string, error)
 }
@@ -39,45 +40,80 @@ func (h *Hub) SetStateNotifier(n stateNotifier) {
 	h.stateNotifier = n
 }
 
-// syncRoomToStore writes current local membership for roomName to KV.
-// If the room no longer exists locally, deletes the KV key.
+// syncRoomToStore merges this instance's local membership into shared KV.
+// Other instances' members (different InstanceID) are preserved so multi-instance
+// room views stay complete. If this instance has no local members and no remote
+// members remain, the room key is deleted.
 // Best-effort: errors are logged, never fail the socket path.
 func (h *Hub) syncRoomToStore(roomName string) {
 	if h.membershipStore == nil || roomName == "" {
 		return
 	}
+
+	now := time.Now().UnixMilli()
+	local := make([]bus.MemberRecord, 0)
 	h.mu.RLock()
-	room, ok := h.rooms[roomName]
-	if !ok {
-		h.mu.RUnlock()
+	if room, ok := h.rooms[roomName]; ok {
+		local = make([]bus.MemberRecord, 0, len(room.Members))
+		for sid, m := range room.Members {
+			if m == nil {
+				continue
+			}
+			local = append(local, bus.MemberRecord{
+				Room:        roomName,
+				Identity:    m.Identity,
+				SocketHint:  sid,
+				InstanceID:  h.instanceID,
+				Stream:      m.Stream,
+				MicMuted:    room.MicMuted[m.Identity],
+				Speaking:    room.Speaking[m.Identity],
+				UpdatedAtMS: now,
+			})
+		}
+	}
+	h.mu.RUnlock()
+
+	// Start from existing shared snapshot and replace only this instance's slice.
+	merged := make([]bus.MemberRecord, 0, len(local))
+	if prev, err := h.membershipStore.GetRoomMembers(context.Background(), roomName); err == nil {
+		for _, rec := range prev.Members {
+			if rec.Identity == "" {
+				continue
+			}
+			// Drop stale rows owned by this instance; keep peers.
+			// Empty InstanceID is treated as legacy single-writer row and replaced by this sync.
+			if rec.InstanceID == "" || (h.instanceID != "" && rec.InstanceID == h.instanceID) {
+				continue
+			}
+			// Also drop peer rows that collide with a local identity (local wins).
+			collide := false
+			for _, l := range local {
+				if l.Identity == rec.Identity {
+					collide = true
+					break
+				}
+			}
+			if collide {
+				continue
+			}
+			merged = append(merged, rec)
+		}
+	}
+	merged = append(merged, local...)
+
+	if len(merged) == 0 {
 		if err := h.membershipStore.DeleteRoomMembers(context.Background(), roomName); err != nil {
 			log.Printf("[Signal] state store delete room %s: %v", roomName, err)
 		}
 		h.notifyRoomStateChanged(roomName)
 		return
 	}
+
 	snap := bus.RoomMembersSnapshot{
 		Room:      roomName,
-		UpdatedAt: time.Now().UnixMilli(),
-		Members:   make([]bus.MemberRecord, 0, len(room.Members)),
+		UpdatedAt: now,
+		Members:   merged,
 	}
-	for sid, m := range room.Members {
-		if m == nil {
-			continue
-		}
-		snap.Members = append(snap.Members, bus.MemberRecord{
-			Room:        roomName,
-			Identity:    m.Identity,
-			SocketHint:  sid,
-			InstanceID:  h.instanceID,
-			Stream:      m.Stream,
-			MicMuted:    room.MicMuted[m.Identity],
-			Speaking:    room.Speaking[m.Identity],
-			UpdatedAtMS: snap.UpdatedAt,
-		})
-	}
-	h.mu.RUnlock()
-
 	if err := h.membershipStore.PutRoomMembers(context.Background(), snap); err != nil {
 		log.Printf("[Signal] state store put room %s: %v", roomName, err)
 		return

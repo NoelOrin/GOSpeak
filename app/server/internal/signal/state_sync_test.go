@@ -57,6 +57,16 @@ func (m *memStateStore) PutStream(ctx context.Context, stream, room, identity st
 	return nil
 }
 
+func (m *memStateStore) GetStream(ctx context.Context, stream string) (room, identity string, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.strm[stream]
+	if !ok {
+		return "", "", errNotFound
+	}
+	return v[0], v[1], nil
+}
+
 func (m *memStateStore) DeleteStream(ctx context.Context, stream string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -229,5 +239,57 @@ func TestHub_ApplyRemoteRoomState_BroadcastsLocal(t *testing.T) {
 	}
 	if server.broadcasts[EventRoomListResult] == nil {
 		t.Fatal("expected room:list:result local broadcast")
+	}
+}
+
+
+func TestHub_SyncRoomToStore_PreservesRemoteMembers(t *testing.T) {
+	store := newMemStateStore()
+	// pre-seed remote member on another instance
+	_ = store.PutRoomMembers(context.Background(), bus.RoomMembersSnapshot{
+		Room: "r1",
+		Members: []bus.MemberRecord{
+			{Identity: "bob", InstanceID: "inst-b", Stream: "gs-b"},
+		},
+	})
+	hub := NewHub(nil, nil, nil, nil)
+	hub.SetMembershipStore(store, "inst-a")
+
+	// local join alice
+	hub.mu.Lock()
+	hub.rooms["r1"] = &Room{
+		Name: "r1",
+		Members: map[string]*MemberInfo{
+			"s1": {Identity: "alice", Stream: "gs-a"},
+		},
+		MicMuted: map[string]bool{},
+		Speaking: map[string]bool{},
+	}
+	hub.mu.Unlock()
+	hub.syncRoomToStore("r1")
+
+	snap, err := store.GetRoomMembers(context.Background(), "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, m := range snap.Members {
+		got[m.Identity] = m.InstanceID
+	}
+	if got["alice"] != "inst-a" || got["bob"] != "inst-b" {
+		t.Fatalf("expected both members preserved, got %+v", snap.Members)
+	}
+
+	// local leave all: remote bob must remain
+	hub.mu.Lock()
+	delete(hub.rooms, "r1")
+	hub.mu.Unlock()
+	hub.syncRoomToStore("r1")
+	snap, err = store.GetRoomMembers(context.Background(), "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.Members) != 1 || snap.Members[0].Identity != "bob" {
+		t.Fatalf("expected only remote bob, got %+v", snap.Members)
 	}
 }

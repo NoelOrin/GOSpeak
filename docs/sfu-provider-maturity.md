@@ -13,7 +13,7 @@
 | MediaSoup | 完整 | 8/8（token 降级） | token 为 `room:identity` 内部约定，非真实 JWT | `RemoveParticipant` ★ |
 | SRS | 高 | 7/8 | `MuteParticipant` ❌ | — |
 | Daily | 中–高 | 7/8 | `MuteParticipant` ❌ | `RemoveParticipant` ★ |
-| Agora | 中 | 5/8 | `MuteParticipant`/`RemoveParticipant` ❌，`GenerateAdminToken` ⚠️ | — |
+| Agora | 中 | 7/8 | mute/kick = degraded（kicking-rule）；`GenerateAdminToken` ⚠️ | MuteRuleStore: redis→nats→memory |
 | Cloudflare | 低–中 | 6/8 | `List*` 仅进程内内存、`MuteParticipant` ❌、token 为 JSON 配置块 | — |
 
 ### 2. 方法覆盖矩阵
@@ -24,9 +24,9 @@
 | `GenerateAdminToken` | ✅ | ⚠️ | ⚠️ | ✅ | ⚠️ | ✅ |
 | `ListRooms` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ |
 | `ListParticipants` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ |
-| `MuteParticipant` | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| `MuteParticipant` | ✅ | ✅ (禁发布 rule) | ✅ | ✅ (踢推流) | ❌ | ❌ |
 | `MuteRoomParticipant` † | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
-| `RemoveParticipant` | ✅ | ❌ | ✅ ★ | ✅ | ✅ ★ | ✅ |
+| `RemoveParticipant` | ✅ | ✅ (短时 kicking-rule) | ✅ ★ | ✅ | ✅ ★ | ✅ |
 | `DeleteRoom` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `GetHost` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
@@ -37,12 +37,12 @@
 
 | Provider | 方法 | 严重程度 | 当前行为 | 建议 / 状态 |
 |----------|------|----------|----------|-------------|
-| Agora | `MuteParticipant` | 高 | 静默返回 nil（无副作用） | 建议返回 `ErrSFUNotSupported`，与 SRS/Daily/Cloudflare 一致，便于 Hub 统一识别 |
+| Agora | `MuteParticipant` | 中 | 降级 hard：kicking-rule 撤销 publish_*，保留在频道 | unmute 尽量删 rule；否则依赖 TTL/软解禁 |
 | Agora | `GenerateAdminToken` | 中 | 返回空字符串 `""` | 返回真实 token 或 `AppError` |
-| Agora | `RemoveParticipant` | 低 | 返回 `SFU_ERROR` + `ErrSFUNotSupported` cause（无单用户踢人 REST API） | Hub 已优雅降级，依赖频道离会后自动回收 |
+| Agora | `RemoveParticipant` | 低 | 短时 kicking-rule（默认 60s）强制离会 | 语义接近 hard kick，短暂挡重进；非永久 ban |
 | MediaSoup | `GenerateToken` | 中 | 返回 `room:identity` 内部约定，非真实 JWT | 设计如此，可接受 |
 | MediaSoup | `GenerateAdminToken` | 中 | 返回 `mediasoup-admin` | 设计如此，可接受 |
-| SRS | `MuteParticipant` | 中 | `ErrSFUNotSupported`（无服务端轨道静音） | 前端停推/关 track 兜底 |
+| SRS | `MuteParticipant` | 中 | 降级 hard：KickByStreams 强制停推 | unmute 软恢复，前端重新 WHIP |
 | Daily | `MuteParticipant` | 中 | `ErrSFUNotSupported` | 前端停推兜底 |
 | Daily | `GenerateAdminToken` | 低 | 降级调用 `GenerateToken("admin","admin")` | 可接受但不够干净 |
 | Cloudflare | `GenerateToken` | 中 | 返回 JSON 配置块（sessionId/appId/stunUrl），非真实鉴权 token | 设计如此（无原生 token 体系） |
@@ -55,7 +55,7 @@
 | Provider | 路径 | 关键事实 |
 |----------|------|----------|
 | LiveKit | `internal/livekit/client.go` | 唯一全 ✅；`MuteParticipant` 支持按 trackSid 精确静音或按 identity 批量静音；`ProviderName()` = `livekit` |
-| Agora | `internal/agora/provider.go` | Token/列举可用；`MuteParticipant` 静默空操作、`RemoveParticipant` 不支持、`GenerateAdminToken` 空串；`ClientInfo` 暴露 `appId` |
+| Agora | `internal/agora/provider.go` | Token/列举可用；mute/kick 走 kicking-rule（degraded）；rule id 经 MuteRuleStore 跨实例缓存（redis→nats KV→memory）；`GenerateAdminToken` 空串；`ClientInfo` 暴露 `appId` |
 | MediaSoup | `internal/mediasoup/provider.go` | 经 bridge 实现列举/静音/踢人/删房；自有 Socket.IO 信令路径（`sfu:produce` 等）；`ProviderName()` = `mediasoup` |
 | SRS | `internal/srs/provider.go` | WHIP/WHEP；`List*` 经 `RoomRegistry` 聚合真实房间；`StreamProvider`/`ClientInfoProvider`；`GenerateToken` 签发 stream token |
 | Daily | `internal/daily/provider.go` | `RemoveParticipant` 已实现（list→session id）；`MuteParticipant` 不支持；`GenerateAdminToken` 降级 |
@@ -82,6 +82,14 @@ SFU `MuteParticipant` / `MuteRoomParticipant` 是 **服务端轨道级 SFU mute*
 `internal/signal/hub.go` 的 `removeParticipantSafe` 不再硬编码 provider 名，而是直接调用 `sfuProvider.RemoveParticipant(room, identity)`，仅当返回 `pkg.ErrSFUNotSupported` 时静默跳过。因此「踢人是否真正到达 SFU」完全由各 provider 自身实现决定：
 
 - 已实现并会被调用：`livekit`、`mediasoup`、`srs`、`daily`
-- 返回 `ErrSFUNotSupported` 被跳过：`agora`（无单用户断开 API）
+- Agora 现通过短时 kicking-rule 实现 hard kick（短暂挡重进）
 
 这与历史上的「livekit/srs 才调，其余跳过」硬编码表不同，新增 provider 只要实现 `RemoveParticipant` 即自动生效，无需改 Hub。
+
+
+### Enforcement 事件语义
+
+`room:kicked` / `user:muted` / `user:unmuted` 携带 `enforcement`:
+- `hard`：原生媒体强制成功
+- `degraded`：替代 API 强制成功（Agora rule / SRS 踢推流）
+- `soft`：仅信令/策略 + 客户端配合

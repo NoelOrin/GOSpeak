@@ -68,8 +68,9 @@ func (s *Service) GenerateToken(room, identity string) (string, error) {
 	return string(tokenBytes), nil
 }
 
+// GenerateAdminToken is not supported: Cloudflare Realtime sessions are per-participant.
 func (s *Service) GenerateAdminToken() (string, error) {
-	return s.GenerateToken("__admin", "__admin")
+	return "", pkg.NewErrSFUNotSupported()
 }
 
 func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
@@ -157,6 +158,10 @@ func (s *Service) GetHost() string {
 
 func (s *Service) ProviderName() string {
 	return "cloudflare"
+}
+
+func (s *Service) Capabilities() sfu.Capabilities {
+	return sfu.CapabilitiesFor("cloudflare")
 }
 
 

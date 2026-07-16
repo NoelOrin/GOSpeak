@@ -233,10 +233,25 @@ export const socketStore = createRoot(() => {
 
 		adapter.onServerEvent(
 			EVENTS.ROOM_KICKED,
-			(data: { room: string; targetIdentity: string }) => {
-				console.log("[Socket] room:kicked", data.room, data.targetIdentity);
+			(data: {
+				room: string;
+				targetIdentity: string;
+				enforcement?: string;
+			}) => {
+				console.log(
+					"[Socket] room:kicked",
+					data.room,
+					data.targetIdentity,
+					data.enforcement,
+				);
 				if (data.targetIdentity !== userStore.user()?.name) return;
-				showToast("你已被移出房间", { type: "error" });
+				const kickMsg =
+					data.enforcement === "soft"
+						? "你已被移出房间（软踢：请断开本地媒体）"
+						: data.enforcement === "degraded"
+							? "你已被移出房间（降级强制）"
+							: "你已被移出房间";
+				showToast(kickMsg, { type: "error" });
 				setCurrentRoom(null);
 				setSelectedRoomInfo(null);
 				for (const listener of kickedListeners) listener();
@@ -247,22 +262,31 @@ export const socketStore = createRoot(() => {
 
 		// 用户级禁言事件：允许收听，不允许发布本地音轨
 		// 必须按 user_id 过滤，避免全服广播误伤其他客户端
-		adapter.onServerEvent(EVENTS.USER_MUTED, (data: MuteEvent) => {
-			console.log("[Socket] user:muted", data.user_id);
-			if (data.user_id !== userStore.user()?.id) return;
-			showToast(
-				data.permanent
-					? "你已被永久禁言，当前为仅收听模式"
-					: `你已被禁言，当前为仅收听模式${data.reason ? `，原因: ${data.reason}` : ""}`,
-				{ type: "warning" },
-			);
-			setSpeechRestricted(true);
-			setSpeechRestrictionInfo({
-				permanent: data.permanent,
-				expires_at: data.expires_at,
-				reason: data.reason,
-			});
-		});
+		adapter.onServerEvent(
+			EVENTS.USER_MUTED,
+			(data: MuteEvent & { enforcement?: string }) => {
+				console.log("[Socket] user:muted", data.user_id, data.enforcement);
+				if (data.user_id !== userStore.user()?.id) return;
+				const mode =
+					data.enforcement === "hard"
+						? "服务端原生强制停止推流"
+						: data.enforcement === "degraded"
+							? "服务端降级强制停止推流"
+							: "请停止本地推流（软禁言）";
+				showToast(
+					data.permanent
+						? `你已被永久禁言，当前为仅收听模式（${mode}）`
+						: `你已被禁言，当前为仅收听模式（${mode}）${data.reason ? `，原因: ${data.reason}` : ""}`,
+					{ type: "warning" },
+				);
+				setSpeechRestricted(true);
+				setSpeechRestrictionInfo({
+					permanent: data.permanent,
+					expires_at: data.expires_at,
+					reason: data.reason,
+				});
+			},
+		);
 
 		adapter.onServerEvent(EVENTS.USER_UNMUTED, (data: UnmuteEvent) => {
 			console.log("[Socket] user:unmuted", data.user_id);

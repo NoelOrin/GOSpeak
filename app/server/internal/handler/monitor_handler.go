@@ -141,6 +141,9 @@ type healthSnapshot struct {
 	EventBusConnected            bool   `json:"eventbus_connected"`
 	EventBusInstanceID           string `json:"eventbus_instance_id"`
 	EventBusFallbackFromExternal bool   `json:"eventbus_fallback_from_external"`
+
+	// Shared multi-instance backends
+	AuthStoreBackend string `json:"auth_store_backend"`
 }
 
 func (h *MonitorHandler) collect() healthSnapshot {
@@ -210,6 +213,14 @@ func (h *MonitorHandler) collect() healthSnapshot {
 	snap.EventBusConnected = es.Connected
 	snap.EventBusInstanceID = es.InstanceID
 	snap.EventBusFallbackFromExternal = es.FallbackFromExternal
+
+	if redis.IsConnected() {
+		snap.AuthStoreBackend = "redis"
+	} else if name := redis.AuthBackendName(); name != "" {
+		snap.AuthStoreBackend = name
+	} else {
+		snap.AuthStoreBackend = "none"
+	}
 
 	return snap
 }

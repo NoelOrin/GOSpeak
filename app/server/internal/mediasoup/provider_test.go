@@ -1,8 +1,11 @@
 package mediasoup
 
 import (
+	"errors"
 	"sync"
 	"testing"
+
+	"GOSpeak/internal/pkg"
 )
 
 type stubProviderBridge struct {
@@ -107,5 +110,12 @@ func TestRemoveParticipant_Delegates(t *testing.T) {
 	defer stub.mu.Unlock()
 	if stub.closedIdentity != "alice" {
 		t.Fatalf("expected CloseParticipant alice, got %q", stub.closedIdentity)
+	}
+}
+
+func TestGenerateAdminToken_NotSupported(t *testing.T) {
+	svc := &Service{Bridge: NewBridgeClient("http://localhost")}
+	if _, err := svc.GenerateAdminToken(); !errors.Is(err, pkg.ErrSFUNotSupported) {
+		t.Fatalf("GenerateAdminToken: want ErrSFUNotSupported, got %v", err)
 	}
 }

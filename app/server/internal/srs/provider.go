@@ -105,8 +105,33 @@ func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error
 	return out, nil
 }
 
+// MuteParticipant is a degraded hard mute: stop the publisher by kicking the WHIP client.
+// muted=false is a no-op at media layer (client re-publishes after soft unmute policy).
 func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) error {
-	return pkg.NewErrSFUNotSupported()
+	if !muted {
+		return nil
+	}
+	stream := ""
+	if s.registry != nil {
+		if st, ok := s.registry.StreamForIdentity(room, identity); ok {
+			stream = st
+		}
+	}
+	if stream == "" {
+		stream = GenerateStreamName(room, identity)
+	}
+	kicked, remaining, err := s.client.KickByStreams([]string{stream})
+	if err != nil {
+		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
+	}
+	// No active publisher is still success for mute (already not publishing).
+	if kicked == 0 && remaining == 0 {
+		return nil
+	}
+	if remaining > 0 && kicked == 0 {
+		return pkg.NewAppError(pkg.SFU_ERROR, "srs mute force-unpublish failed")
+	}
+	return nil
 }
 
 func (s *Service) RemoveParticipant(room, identity string) error {
@@ -157,6 +182,10 @@ func (s *Service) GetHost() string {
 
 func (s *Service) ProviderName() string {
 	return "srs"
+}
+
+func (s *Service) Capabilities() sfu.Capabilities {
+	return sfu.CapabilitiesFor("srs")
 }
 
 func (s *Service) StreamName(room, identity string) string {

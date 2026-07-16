@@ -82,6 +82,7 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 	if result.Provider != "" {
 		data["provider"] = result.Provider
 	}
+	data["capabilities"] = result.Capabilities
 	for key, value := range result.ClientInfo {
 		data[key] = value
 	}
