@@ -1,4 +1,3 @@
-export { AsrCaptionPlugin } from "./asr-caption";
 export { IdleGuardPlugin } from "./idle-guard";
 export { KeywordReplyPlugin } from "./keyword-reply";
 export { ListenManagerPlugin } from "./listen-manager";

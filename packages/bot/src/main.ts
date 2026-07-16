@@ -10,7 +10,6 @@ const BOT_NAME = process.env.GOSPEAK_BOT_NAME ?? "GOSpeak Bot";
 const AUTO_JOIN_ROOMS = process.env.GOSPEAK_AUTO_JOIN_ROOMS ?? "";
 const LISTEN_ROOMS = process.env.GOSPEAK_LISTEN_ROOMS ?? "";
 const PLUGIN_DIR = process.env.GOSPEAK_PLUGIN_DIR ?? "./plugins";
-const ENABLE_ASR = process.env.GOSPEAK_ENABLE_ASR === "1";
 const ENABLE_SPEAK = process.env.GOSPEAK_ENABLE_SPEAK === "1";
 
 function parseList(v: string): string[] | undefined {
@@ -47,7 +46,6 @@ async function main(): Promise<void> {
 		enableListen:
 			Boolean(parseList(LISTEN_ROOMS)) ||
 			process.env.GOSPEAK_ENABLE_LISTEN === "1",
-		enableASR: ENABLE_ASR,
 		enableSpeak: ENABLE_SPEAK,
 	});
 

@@ -17,7 +17,7 @@ export interface PcmStreamFilter {
 
 /**
  * 进程内 PCM 可读流接口。
- * 外部 ASR / 录制 / 插件通过此接口读取旁听音频帧，不经 HTTP。
+ * 外部录制 / 插件通过此接口读取旁听音频帧，不经 HTTP。
  */
 export interface PcmStream {
 	/** 订阅帧；返回取消函数 */

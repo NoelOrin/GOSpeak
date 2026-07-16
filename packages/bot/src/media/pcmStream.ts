@@ -9,7 +9,7 @@ import type {
 type FrameListener = (frame: AudioFrameEvent) => void;
 
 /**
- * 进程内 PCM 帧总线：旁听 adapter 写入，ASR/插件/外部模块读取。
+ * 进程内 PCM 帧总线：旁听 adapter 写入，插件/外部模块读取。
  * 同时实现 `PcmStream`（读）与 `PcmStreamSink`（写）。
  */
 export class PcmStreamHub implements PcmStream, PcmStreamSink {

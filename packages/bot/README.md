@@ -1,6 +1,6 @@
 # @gospeak/bot
 
-GOSpeak 语音房机器人运行时：插件、Socket 文本桥、旁听/ASR/TTS、Capability Router。
+GOSpeak 语音房机器人运行时：插件、Socket 文本桥、旁听/Speech/TTS、Capability Router。
 
 ## 架构
 
@@ -11,10 +11,10 @@ Go Server (JWT / RBAC / Room / Signal Hub)
 Bot Runtime Host
   Auth · PluginManager · EventBus
   CapabilityRouter · Scheduler
-  MediaListen · ASR · AudioPublish/TTS
+  MediaListen · Speech · AudioPublish/TTS
         │ ctx.*
         ▼
-Plugins (welcome / moderation / listen-manager / asr-caption / voice-react / …)
+Plugins (welcome / moderation / listen-manager / voice-react / …)
 ```
 
 **不变式**
@@ -55,10 +55,6 @@ Bot token 白名单：`room:read`, `room:create`, `user:read`, `signal:kick`, `m
 | `GOSPEAK_AUTO_JOIN_ROOMS` | 启动信令 join，逗号分隔 |
 | `GOSPEAK_LISTEN_ROOMS` | 启动旁听房间 |
 | `GOSPEAK_ENABLE_LISTEN` | 强制开旁听管线 |
-| `GOSPEAK_ENABLE_ASR` | 真 ASR manager（否则 mock passthrough） |
-| `GOSPEAK_ASR_PROVIDER` | `local` / `deepgram` |
-| `GOSPEAK_ASR_URL` | 本地 ASR HTTP |
-| `GOSPEAK_ASR_DEEPGRAM_KEY` | Deepgram key |
 | `GOSPEAK_ENABLE_SPEAK` | TTS + publishPcm |
 
 ## 插件编写
@@ -105,7 +101,6 @@ export class Demo extends Plugin {
 | mute-manager | `/gmute` 服务端禁言 |
 | keyword-reply | 关键词 |
 | listen-manager | `/listen add|remove|list|clear` |
-| asr-caption | `OnSpeechFinal` 字幕 |
 | voice-react | 唤醒词 / 违规词 / 语音踢人 |
 | idle-guard | 定时巡检 |
 

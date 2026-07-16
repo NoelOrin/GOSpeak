@@ -10,7 +10,6 @@ export interface PassthroughPipelineOptions {
 
 /**
  * Dev/test pipeline: counts frames and emits mock SpeechFinal periodically.
- * Real ASR providers replace this in Phase 3.
  */
 export class PassthroughSpeechPipeline implements SpeechPipeline {
 	private listeners = new Set<(r: SpeechResult) => void>();

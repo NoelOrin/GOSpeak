@@ -27,7 +27,6 @@ import {
 	PassthroughSpeechPipeline,
 	type SpeechPipeline,
 } from "../speech";
-import { ASRManager, createASRProvider } from "../speech/asr";
 import { SineTTSProvider, type TTSProvider } from "../tts";
 import { createKVStore, GOSpeakApiClient } from "./apiClient";
 import { AuthClient, type AuthCredentials } from "./authClient";
@@ -60,8 +59,6 @@ export interface BotConfig {
 	listenRooms?: string[];
 	/** Enable media listen + speech pipeline (default true when listenRooms set) */
 	enableListen?: boolean;
-	/** Use real ASR manager instead of passthrough mock pipeline */
-	enableASR?: boolean;
 	/** Enable TTS speak / publishPcm (Phase 4) */
 	enableSpeak?: boolean;
 	/** Debounce for plugin file changes (ms) */
@@ -95,7 +92,6 @@ export class BotRunner {
 	private _listenRegistry = new ListenRoomRegistry();
 	private _listenService: MediaListenService | null = null;
 	private _speechPipeline: SpeechPipeline | null = null;
-	private _asrManager: ASRManager | null = null;
 	private _unsubPcm: (() => void) | null = null;
 	private _unsubSpeech: (() => void) | null = null;
 	private _publishAdapter: SFUPublishAdapter | null = null;
@@ -135,7 +131,7 @@ export class BotRunner {
 	/**
 	 * 进程内 PCM 可读流接口。
 	 * 旁听 adapter: `pcmHub.publish(frame)`
-	 * 外部/ASR: `pcmStream.subscribe(...)` / `pcmStream.open(...)`
+	 * 外部消费者: `pcmStream.subscribe(...)` / `pcmStream.open(...)`
 	 */
 	get pcmStream(): PcmStream {
 		return this._pcmHub;
@@ -265,8 +261,6 @@ export class BotRunner {
 		this._unsubSpeech = null;
 		this._speechPipeline?.dispose();
 		this._speechPipeline = null;
-		this._asrManager?.dispose();
-		this._asrManager = null;
 		if (this._listenService) {
 			await this._listenService.stop();
 			this._listenService = null;
@@ -419,37 +413,23 @@ export class BotRunner {
 
 		if (!enableListen) return;
 
-		// Speech / ASR path
+		// Speech path (passthrough mock)
 		const bridge = createSpeechBusBridge((event: SpeechEvent) => {
 			void this.bus.dispatch(event).catch((err) => {
 				this.logger.error("Speech event dispatch error:", err);
 			});
 		});
 
-		if (this.config.enableASR) {
-			const provider = createASRProvider(process.env);
-			this._asrManager = new ASRManager({
-				provider,
-				botIdentity: this.config.identity,
-				onResult: bridge,
-			});
-			this._unsubPcm = this._pcmHub.subscribe((frame) => {
-				// pause ASR while speaking in same room to reduce self-feedback
-				if (this._speakingRooms.has(frame.room)) return;
-				this._asrManager?.write(frame);
-			});
-			this.logger.info(`[asr] provider=${provider.name}`);
-		} else {
-			this._speechPipeline = new PassthroughSpeechPipeline({
-				framesPerFinal: 5,
-			});
-			this._unsubSpeech = this._speechPipeline.onResult(bridge);
-			this._unsubPcm = this._pcmHub.subscribe((frame) => {
-				if (this._speakingRooms.has(frame.room)) return;
-				this._speechPipeline?.write(frame);
-			});
-			this.logger.info("[speech] using passthrough mock pipeline");
-		}
+		this._speechPipeline = new PassthroughSpeechPipeline({
+			framesPerFinal: 5,
+		});
+		this._unsubSpeech = this._speechPipeline.onResult(bridge);
+		this._unsubPcm = this._pcmHub.subscribe((frame) => {
+			// pause speech while speaking in same room to reduce self-feedback
+			if (this._speakingRooms.has(frame.room)) return;
+			this._speechPipeline?.write(frame);
+		});
+		this.logger.info("[speech] using passthrough mock pipeline");
 
 		if (this.config.enableSpeak) {
 			this._tts = new SineTTSProvider();
@@ -465,7 +445,6 @@ export class BotRunner {
 			joinSignaling: (room) => this.joinRoom(room),
 			leaveSignaling: (room) => this.leaveRoom(room),
 			onTrackEnded: (info) => {
-				this._asrManager?.endTrack(info.room, info.identity);
 				this._speechPipeline?.endTrack(info.room, info.identity);
 			},
 		});
