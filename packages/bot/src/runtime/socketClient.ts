@@ -7,6 +7,7 @@ import {
 	type RoomEvent,
 	type RoomRef,
 } from "../core/types";
+import { EventAdapter } from "./eventAdapter";
 
 type SocketIONamespace = any;
 
@@ -41,6 +42,7 @@ export class GOSpeakSocketClient {
 	private joinedRooms: Map<string, { identity: string }> = new Map();
 	private connectResolve: ((value: void | PromiseLike<void>) => void) | null =
 		null;
+	private _adapter = new EventAdapter();
 
 	constructor(opts: SocketClientOptions) {
 		this.opts = opts;
@@ -308,6 +310,27 @@ export class GOSpeakSocketClient {
 				},
 				timestamp: Date.now(),
 			} as RoomEvent);
+		});
+
+		// bot:command / bot:message — translated into BotEvents via EventAdapter
+		this.socket.on("bot:command", (raw: string) => {
+			const events = this._adapter.adaptBotMessage(
+				raw,
+				EventType.AdapterMessage,
+			);
+			for (const ev of events) {
+				this.emit(ev);
+			}
+		});
+
+		this.socket.on("bot:message", (raw: string) => {
+			const events = this._adapter.adaptBotMessage(
+				raw,
+				EventType.AdapterMessage,
+			);
+			for (const ev of events) {
+				this.emit(ev);
+			}
 		});
 
 		this.socket.on("error", (err: Error) => {
