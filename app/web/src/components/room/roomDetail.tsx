@@ -67,9 +67,11 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 					<div class="flex flex-row w-full h-full">
 						<div class="flex flex-col flex-1">
 							<Show when={isReconnecting()}>
-								<div class="flex items-center gap-2 px-4 h-9 bg-warning/10 border-b border-warning/30 text-xs text-warning">
-									<div class="loading loading-spinner loading-xs" />
-									正在重连...
+								<div class="flex items-center gap-2.5 px-4 h-10 border-b border-warning/50 bg-warning/25">
+									<div class="loading loading-spinner loading-sm text-warning" />
+									<span class="text-sm font-semibold tracking-wide text-warning">
+										正在重连...
+									</span>
 								</div>
 							</Show>
 							<div class="flex justify-between items-center px-4 h-12 border-b border-base-300">
