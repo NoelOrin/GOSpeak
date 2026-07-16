@@ -1,6 +1,7 @@
 package signal
 
 import (
+	"fmt"
 	"testing"
 
 	"GOSpeak/internal/model"
@@ -16,6 +17,15 @@ func (m *mockUserStore) GetByName(name string) (*model.User, error) {
 		return u, nil
 	}
 	return nil, modelNotFound(name)
+}
+
+func (m *mockUserStore) GetByID(id uint) (*model.User, error) {
+	for _, u := range m.users {
+		if u != nil && u.ID == id {
+			return u, nil
+		}
+	}
+	return nil, modelNotFound(fmt.Sprintf("id=%d", id))
 }
 
 type mockPermChecker struct {

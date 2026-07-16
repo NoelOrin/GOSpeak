@@ -21,7 +21,7 @@
 | `/room limit <number>` | admin | 设置房间人数上限 |
 
 事件：
-- `OnRoomJoined` → 自动发送欢迎通知
+- `OnMemberJoined` → 自动发送欢迎通知
 - `OnRoomLeft` → 成员离开通知
 
 ## keyword-reply — 关键词自动回复
@@ -60,4 +60,4 @@
 | `/welcome show` | moderator | 查看当前欢迎语 |
 
 事件：
-- `OnRoomJoined` → 发送欢迎消息
+- `OnMemberJoined` → 发送欢迎消息

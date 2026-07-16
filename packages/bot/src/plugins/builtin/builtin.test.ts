@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { bindHandlerInstances } from "../../core/registry";
 import type { MessageEvent, RoomEvent } from "../../core/types";
 import { EventBus, EventType } from "../../index";
 
@@ -29,10 +28,44 @@ function makeCtx() {
 			removeMember: async () => {},
 			setMemberVolume: async () => {},
 		},
+		users: {
+			getByIdentity: async (identity: string) => ({
+				id: 1,
+				name: identity,
+				role: "user",
+				uuid: "u1",
+			}),
+		},
+		scheduler: {
+			every: () => {},
+			once: () => {},
+			clear: () => {},
+			clearAll: () => {},
+		},
+		listen: {
+			add: () => true,
+			remove: () => true,
+			list: () => [],
+			clear: () => [],
+		},
 		kv: {
 			get: async () => undefined,
 			set: async () => {},
 			delete: async () => {},
+		},
+		sharedKv: {
+			get: async () => undefined,
+			set: async () => {},
+			delete: async () => {},
+		},
+		bus: {
+			publish: async () => 0,
+			subscribe: () => () => {},
+			once: () => () => {},
+		},
+		mutes: {
+			list: async () => [],
+			status: async () => null,
 		},
 		hasPermission: () => true,
 		_sent: sent,
@@ -63,18 +96,22 @@ function roomEvent(type: EventType, identity?: string): RoomEvent {
 	};
 }
 
-import { Plugin } from "../../core/plugin";
+import { fileURLToPath } from "node:url";
+import { initPlugin, loadPlugin } from "../../core/loader";
+import type { Plugin } from "../../core/plugin";
+import { clearRegistry } from "../../core/registry";
 
 async function bootPlugin(moduleSpec: string, ctx: any): Promise<Plugin> {
-	const mod: any = await import(moduleSpec);
-	const PluginCls = Object.values(mod).find(
-		(v: any) => typeof v === "function" && v.prototype instanceof Plugin,
-	) as (new () => Plugin) | undefined;
-	if (!PluginCls) throw new Error(`no Plugin class found in ${moduleSpec}`);
-	const instance = new PluginCls();
-	instance.init(ctx);
-	bindHandlerInstances(instance);
-	return instance;
+	// moduleSpec like "./room-manager" relative to this test file
+	const abs = fileURLToPath(new URL(`${moduleSpec}/index.ts`, import.meta.url));
+	const modulePath = `builtin/${moduleSpec.replace("./", "")}`;
+	clearRegistry();
+	// re-load may need cache bust across tests; use timestamp
+	const loaded = await loadPlugin(abs, modulePath, true);
+	initPlugin(loaded, () => ctx);
+	// ensure onLoad awaited for plugins that load KV state
+	await loaded.instance.onLoad?.();
+	return loaded.instance;
 }
 
 describe("builtin plugins", () => {
@@ -165,7 +202,7 @@ describe("builtin plugins", () => {
 			getPluginConfig: () => ({}),
 		});
 		const res = await bus.dispatch(
-			roomEvent(EventType.OnRoomJoined, "NewUser"),
+			roomEvent(EventType.OnMemberJoined, "NewUser"),
 		);
 		expect(res.executed).toBeGreaterThanOrEqual(1);
 		expect(ctx._sent.some((s: string) => s.includes("NewUser"))).toBe(true);

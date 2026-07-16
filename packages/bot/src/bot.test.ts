@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { BotContext, MessageEvent } from "./core/index";
 import { EventBus, EventType } from "./core/index";
-import { initPlugin, loadPlugin } from "./core/loader";
+import { initPlugin, loadPlugin, registerPendingHandlers } from "./core/loader";
 import { Plugin } from "./core/plugin";
-import { clearRegistry } from "./core/registry";
+import { clearRegistry, registerPlugin, removePlugin } from "./core/registry";
 import { Command } from "./decorators/handlers";
 import { RegisterPlugin } from "./decorators/register";
 import { CommandFilter, PermissionFilter } from "./filters/index";
@@ -32,10 +32,38 @@ function makeCtx(): BotContext {
 			removeMember: async () => {},
 			setMemberVolume: async () => {},
 		},
+		users: {
+			getByIdentity: async (identity: string) => ({
+				id: 1,
+				name: identity,
+				role: "user",
+				uuid: "u1",
+			}),
+		},
+		mutes: {
+			list: async () => [],
+			status: async () => null,
+		},
+		scheduler: {
+			every: () => {},
+			once: () => {},
+			clear: () => {},
+			clearAll: () => {},
+		},
 		kv: {
 			get: async () => undefined,
 			set: async () => {},
 			delete: async () => {},
+		},
+		sharedKv: {
+			get: async () => undefined,
+			set: async () => {},
+			delete: async () => {},
+		},
+		bus: {
+			publish: async () => 0,
+			subscribe: () => () => {},
+			once: () => () => {},
 		},
 		hasPermission: () => true,
 	};
@@ -56,10 +84,30 @@ function msg(
 	};
 }
 
-function boot(instance: Plugin): Plugin {
-	console.log("boot ctx check", makeCtx().chat);
-	instance.metadata;
-	initPlugin({ metadata: instance.metadata, instance }, () => makeCtx());
+function boot(Cls: new () => Plugin, modulePath = "test/demo"): Plugin {
+	clearRegistry();
+	(Cls as unknown as { __modulePath?: string }).__modulePath = modulePath;
+	const meta = (Cls as unknown as { __pluginMeta?: any }).__pluginMeta;
+	registerPlugin(modulePath, {
+		name: meta?.name ?? "demo",
+		author: meta?.author ?? "t",
+		desc: meta?.desc ?? "d",
+		version: meta?.version ?? "0.0.1",
+		activated: true,
+		handlerNames: [],
+	});
+	registerPendingHandlers(Cls, modulePath);
+	const instance = new Cls();
+	initPlugin(
+		{
+			metadata: instance.metadata,
+			instance,
+			modulePath,
+			absPath: modulePath,
+			importUrl: modulePath,
+		},
+		() => makeCtx(),
+	);
 	return instance;
 }
 
@@ -79,9 +127,13 @@ class DemoPlugin extends Plugin {
 	}
 }
 
+afterEach(() => {
+	clearRegistry();
+});
+
 describe("bot plugin runtime", () => {
 	it("registers command handler and dispatches it", async () => {
-		boot(new DemoPlugin());
+		boot(DemoPlugin);
 		const bus = new EventBus({
 			buildContext: () => makeCtx(),
 			getPluginConfig: () => ({}),
@@ -91,7 +143,7 @@ describe("bot plugin runtime", () => {
 	});
 
 	it("skips handlers when filter does not match", async () => {
-		boot(new DemoPlugin());
+		boot(DemoPlugin);
 		const bus = new EventBus({
 			buildContext: () => makeCtx(),
 			getPluginConfig: () => ({}),
@@ -101,7 +153,7 @@ describe("bot plugin runtime", () => {
 	});
 
 	it("blocks non-admin from permission-gated commands", async () => {
-		boot(new DemoPlugin());
+		boot(DemoPlugin);
 		const bus = new EventBus({
 			buildContext: () => makeCtx(),
 			getPluginConfig: () => ({}),
@@ -117,6 +169,7 @@ describe("bot plugin runtime", () => {
 			"example/echo",
 		);
 		expect(loaded.metadata.name).toBe("echo");
+		removePlugin(loaded.modulePath);
 	});
 
 	it("CommandFilter parses command name, alias and args", () => {

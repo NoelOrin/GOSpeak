@@ -1,21 +1,48 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
 import type { BotContext, Logger as ILogger } from "../core/context";
 import { EventBus } from "../core/eventBus";
-import { initPlugin, loadPlugin } from "../core/loader";
-import type { Plugin } from "../core/plugin";
+import type { PluginMetadata } from "../core/plugin";
+import { PluginManager } from "../core/pluginManager";
 import {
 	clearRegistry,
 	getHandlersByEventType,
-	removeHandlersByModule,
+	getPluginMeta,
+	listPlugins,
 } from "../core/registry";
-import { createBotEvent, EventType, type LifecycleEvent } from "../core/types";
-import { createKVStore, GOSpeakApiClient } from "./apiClient";
+import {
+	createBotEvent,
+	EventType,
+	type LifecycleEvent,
+	type SpeechEvent,
+} from "../core/types";
+import {
+	ListenRoomRegistry,
+	LiveKitPublishAdapter,
+	MediaListenService,
+	type PcmStream,
+	PcmStreamHub,
+	parseRoomList,
+	type SFUPublishAdapter,
+} from "../media";
+import {
+	createSpeechBusBridge,
+	PassthroughSpeechPipeline,
+	type SpeechPipeline,
+} from "../speech";
+import { SineTTSProvider, type TTSProvider } from "../tts";
+import { GOSpeakApiClient } from "./apiClient";
 import { AuthClient, type AuthCredentials } from "./authClient";
+import { CapabilityRouter } from "./capabilityRouter";
+import {
+	createPluginPrivateKV,
+	createSharedKV,
+	MemoryKVStore,
+} from "./kvStore";
+import { PluginBusHost } from "./pluginBus";
+import { Scheduler } from "./scheduler";
 import { GOSpeakSocketClient } from "./socketClient";
 
 export interface BotConfig {
-	/** GOSpeak server base URL, e.g. http://localhost:8998  */
+	/** GOSpeak server base URL, e.g. http://localhost:8998 */
 	serverUrl: string;
 	/** WebSocket/Socket.IO endpoint */
 	socketUrl: string;
@@ -31,6 +58,18 @@ export interface BotConfig {
 	displayName: string;
 	/** Directory to scan for plugin modules */
 	pluginDir?: string;
+	/** Watch pluginDir for runtime load/reload (default true when pluginDir set) */
+	watchPlugins?: boolean;
+	/** Auto-join these rooms on start (signaling only) */
+	autoJoinRooms?: string[];
+	/** Rooms to listen (SFU side) on start */
+	listenRooms?: string[];
+	/** Enable media listen + speech pipeline (default true when listenRooms set) */
+	enableListen?: boolean;
+	/** Enable TTS speak / publishPcm (Phase 4) */
+	enableSpeak?: boolean;
+	/** Debounce for plugin file changes (ms) */
+	pluginWatchDebounceMs?: number;
 	/** Per-plugin configuration map, keyed by plugin name */
 	pluginConfigs?: Record<string, Record<string, unknown>>;
 }
@@ -41,6 +80,7 @@ export interface BotStatus {
 	handlerCount: number;
 	startedAt: number;
 	loggedIn: boolean;
+	listenRooms: string[];
 }
 
 export class BotRunner {
@@ -51,9 +91,24 @@ export class BotRunner {
 	private socket!: GOSpeakSocketClient;
 	private auth!: AuthClient;
 	private startedAt = 0;
-	private _plugins: { instance: Plugin; name: string }[] = [];
-	private _loadedPaths = new Set<string>();
+	private pluginManager: PluginManager | null = null;
 	private _refreshTimer: NodeJS.Timeout | null = null;
+	private _pcmHub = new PcmStreamHub();
+	private _caps!: CapabilityRouter;
+	private _scheduler = new Scheduler();
+	/** Host-wide KV root — private + shared namespaces live here */
+	private _kvRoot = new MemoryKVStore();
+	/** Plugin-to-plugin pub/sub host */
+	private _pluginBus = new PluginBusHost();
+	private _listenRegistry = new ListenRoomRegistry();
+	private _listenService: MediaListenService | null = null;
+	private _speechPipeline: SpeechPipeline | null = null;
+	private _unsubPcm: (() => void) | null = null;
+	private _unsubSpeech: (() => void) | null = null;
+	private _publishAdapter: SFUPublishAdapter | null = null;
+	private _tts: TTSProvider | null = null;
+	private _speakQueues = new Map<string, Promise<void>>();
+	private _speakingRooms = new Set<string>();
 
 	constructor(config: BotConfig, logger?: ILogger) {
 		this.config = config;
@@ -63,11 +118,12 @@ export class BotRunner {
 	get status(): BotStatus {
 		return {
 			connected: this.socket?.isConnected ?? false,
-			pluginCount: this._plugins.length,
+			pluginCount: this.pluginManager?.pluginCount ?? 0,
 			handlerCount: getHandlersByEventType(EventType.AdapterMessage, false)
 				.length,
 			startedAt: this.startedAt,
 			loggedIn: this.auth?.isLoggedIn ?? false,
+			listenRooms: this._listenRegistry.list(),
 		};
 	}
 
@@ -77,6 +133,24 @@ export class BotRunner {
 
 	get authClient(): AuthClient {
 		return this.auth;
+	}
+
+	get listenRegistry(): ListenRoomRegistry {
+		return this._listenRegistry;
+	}
+
+	/**
+	 * 进程内 PCM 可读流接口。
+	 * 旁听 adapter: `pcmHub.publish(frame)`
+	 * 外部消费者: `pcmStream.subscribe(...)` / `pcmStream.open(...)`
+	 */
+	get pcmStream(): PcmStream {
+		return this._pcmHub;
+	}
+
+	/** 同 pcmStream，暴露 publish 给旁听写入侧 */
+	get pcmHub(): PcmStreamHub {
+		return this._pcmHub;
 	}
 
 	async start(): Promise<void> {
@@ -121,28 +195,71 @@ export class BotRunner {
 			});
 		}
 
-		this.bus = new EventBus({
-			buildContext: (pluginName) => this.buildPluginCtx(pluginName),
-			getPluginConfig: (pluginName) =>
-				this.config.pluginConfigs?.[pluginName] ?? {},
-		});
-
 		this.socket = new GOSpeakSocketClient({
 			url: this.config.socketUrl,
 			token: accessToken,
 			logger: this.logger,
 		});
+
+		this._caps = new CapabilityRouter(this.api, this.socket, this, {
+			speak: (room, text) => this.speak(room, text),
+			publishPcm: (room, pcm, rate) => this.publishPcm(room, pcm, rate),
+			stopSpeaking: (room) => this.stopSpeaking(room),
+		});
+
+		this.bus = new EventBus({
+			// EventBus passes handler modulePath; resolve to plugin metadata.name
+			buildContext: (modulePathOrName) => this.buildPluginCtx(modulePathOrName),
+			getPluginConfig: (modulePathOrName) => {
+				const name = getPluginMeta(modulePathOrName)?.name ?? modulePathOrName;
+				return this.config.pluginConfigs?.[name] ?? {};
+			},
+		});
+
 		this.socket.setEventHandler((event) => {
 			void this.bus.dispatch(event).catch((err) => {
 				this.logger.error("Event dispatch error:", err);
 			});
 		});
 
-		await this.loadAllPlugins();
+		// Seed listen rooms from config (env merged in main.ts)
+		const initialListen = parseRoomList(this.config.listenRooms);
+		if (initialListen.length) this._listenRegistry.setAll(initialListen);
+
+		this.pluginManager = new PluginManager({
+			pluginDir: this.config.pluginDir,
+			watch: this.config.watchPlugins,
+			debounceMs: this.config.pluginWatchDebounceMs,
+			buildContext: (pluginName) => this.buildPluginCtx(pluginName),
+			logger: this.logger,
+			onLoaded: async (name) => {
+				await this.fireLifecycleEvent(EventType.OnPluginLoaded, name);
+			},
+			onUnloaded: async (name) => {
+				this._pluginBus.clearPlugin(name);
+				this._scheduler.clearByPrefix(`${name}:`);
+				await this.fireLifecycleEvent(EventType.OnPluginUnloaded, name);
+			},
+		});
+		await this.pluginManager.start();
 		await this.socket.connect();
 
+		// Auto-join configured rooms (signaling)
+		if (this.config.autoJoinRooms && this.config.autoJoinRooms.length > 0) {
+			for (const room of this.config.autoJoinRooms) {
+				try {
+					this.socket.joinRoom(room, this.config.identity);
+					this.logger.info(`Auto-joined room: ${room}`);
+				} catch (err) {
+					this.logger.error(`Failed to auto-join room ${room}:`, err);
+				}
+			}
+		}
+
+		await this.startMediaPipeline();
+
 		this.logger.info(
-			`Bot started — ${this._plugins.length} plugins, ${this.status.handlerCount} handlers`,
+			`Bot started — ${this.status.pluginCount} plugins, ${this.status.handlerCount} handlers, listen=${this._listenRegistry.list().join(",") || "-"}`,
 		);
 
 		await this.fireLifecycleEvent(EventType.OnBotLoaded);
@@ -153,19 +270,35 @@ export class BotRunner {
 			clearInterval(this._refreshTimer);
 			this._refreshTimer = null;
 		}
+		this._scheduler.clearAll();
+		this._pluginBus.clearAll();
+		this._unsubPcm?.();
+		this._unsubPcm = null;
+		this._unsubSpeech?.();
+		this._unsubSpeech = null;
+		this._speechPipeline?.dispose();
+		this._speechPipeline = null;
+		if (this._listenService) {
+			await this._listenService.stop();
+			this._listenService = null;
+		}
+		if (this._publishAdapter) {
+			await this._publishAdapter.dispose();
+			this._publishAdapter = null;
+		}
+		this._pcmHub.clear();
 		this.socket?.disconnect();
-		for (const p of this._plugins) {
-			await p.instance.onUnload?.();
+		if (this.pluginManager) {
+			await this.pluginManager.stop();
+			this.pluginManager = null;
 		}
 		await this.auth?.logout();
 		clearRegistry();
-		this._plugins = [];
-		this._loadedPaths.clear();
 		this.logger.info("Bot stopped");
 	}
 
 	async sendChat(roomId: string, content: string): Promise<void> {
-		await this.api.send(roomId, content);
+		this.socket.sendBotMessage(roomId, content);
 	}
 
 	async joinRoom(roomName: string, opts?: { sfu?: boolean }): Promise<void> {
@@ -176,8 +309,8 @@ export class BotRunner {
 		}
 
 		if (opts?.sfu) {
-			const sfuToken = await this.api.getSFUToken(roomName, identity);
-			await this.socket.joinRoomSFU(roomName, identity, sfuToken.stream);
+			const sfuToken = await this.api.getSFUToken(roomName);
+			await this.socket.joinRoomSFU(roomName, identity, sfuToken.serverUrl);
 		} else {
 			this.socket.joinRoom(roomName, identity);
 		}
@@ -191,89 +324,191 @@ export class BotRunner {
 		return this.socket.rooms;
 	}
 
-	async reloadPlugin(name: string): Promise<void> {
-		const old = this._plugins.find((p) => p.name === name);
-		if (!old) return;
-		const absPath = [...this._loadedPaths].find(
-			(p) => path.basename(p, path.extname(p)) === name,
-		);
-		if (!absPath) {
-			this.logger.warn(`Cannot reload plugin ${name}: module path not tracked`);
-			return;
+	/** Phase 4: synthesize + publish PCM to room */
+	async speak(roomId: string, text: string): Promise<void> {
+		if (!this.config.enableSpeak && !this._tts) {
+			// lazy init if not configured but called
+			this._tts = new SineTTSProvider();
+			this._publishAdapter =
+				this._publishAdapter ?? new LiveKitPublishAdapter(this.logger);
 		}
-		const modulePath = `user_plugins/${name}`;
-		removeHandlersByModule(modulePath);
-		await old.instance.onUnload?.();
-		this._plugins = this._plugins.filter((p) => p.name !== name);
-		await this.loadSinglePlugin(absPath);
-		this.logger.info(`Reloaded plugin: ${name}`);
+		if (!this._tts || !this._publishAdapter) {
+			throw new Error("speak not enabled");
+		}
+		const prev = this._speakQueues.get(roomId) ?? Promise.resolve();
+		const next = prev
+			.catch(() => {})
+			.then(async () => {
+				this._speakingRooms.add(roomId);
+				try {
+					const publisher = this._publishAdapter;
+					const tts = this._tts;
+					if (!publisher || !tts) throw new Error("speak not enabled");
+					const token = await this.api.getSFUToken(roomId);
+					await publisher.join({
+						room: roomId,
+						identity: this.config.identity,
+						token: token.token,
+						serverUrl: token.serverUrl,
+					});
+					const pcm = await tts.synthesize(text);
+					await publisher.publishPcm(roomId, pcm, 16000);
+				} finally {
+					this._speakingRooms.delete(roomId);
+				}
+			});
+		this._speakQueues.set(roomId, next);
+		await next;
 	}
 
-	private buildPluginCtx(pluginName: string): BotContext {
+	async publishPcm(
+		roomId: string,
+		pcm16: Int16Array,
+		sampleRate = 16000,
+	): Promise<void> {
+		if (!this._publishAdapter) {
+			this._publishAdapter = new LiveKitPublishAdapter(this.logger);
+		}
+		const token = await this.api.getSFUToken(roomId);
+		await this._publishAdapter.join({
+			room: roomId,
+			identity: this.config.identity,
+			token: token.token,
+			serverUrl: token.serverUrl,
+		});
+		await this._publishAdapter.publishPcm(roomId, pcm16, sampleRate);
+	}
+
+	async stopSpeaking(roomId: string): Promise<void> {
+		await this._publishAdapter?.unpublish(roomId);
+		this._speakingRooms.delete(roomId);
+	}
+
+	/** 运行时加载：从绝对路径或 pluginDir 内相对路径加载插件 */
+	async loadPlugin(pathOrName: string): Promise<PluginMetadata> {
+		if (!this.pluginManager) {
+			throw new Error("Bot not started");
+		}
+		const managed = await this.pluginManager.loadFromPath(pathOrName, true);
+		return managed.metadata;
+	}
+
+	/** 运行时卸载 */
+	async unloadPlugin(name: string): Promise<void> {
+		if (!this.pluginManager) return;
+		await this.pluginManager.unload(name);
+	}
+
+	/** 运行时重载（不传 name 则全量） */
+	async reloadPlugin(name?: string): Promise<void> {
+		if (!this.pluginManager) return;
+		await this.pluginManager.reload(name);
+	}
+
+	/** 安装外部插件到 pluginDir 并加载 */
+	async installPlugin(sourcePath: string): Promise<PluginMetadata> {
+		if (!this.pluginManager) throw new Error("Bot not started");
+		const managed = await this.pluginManager.installFromPath(sourcePath);
+		return managed.metadata;
+	}
+
+	/** 启用/禁用插件（不卸载） */
+	setPluginActivated(name: string, activated: boolean): void {
+		this.pluginManager?.setActivated(name, activated);
+	}
+
+	/** 当前已加载插件元数据 */
+	listPlugins(): PluginMetadata[] {
+		return this.pluginManager?.list() ?? listPlugins();
+	}
+
+	private async startMediaPipeline(): Promise<void> {
+		const enableListen =
+			this.config.enableListen ??
+			(this._listenRegistry.list().length > 0 ||
+				Boolean(this.config.listenRooms?.length));
+
+		if (!enableListen) return;
+
+		// Speech path (passthrough mock)
+		const bridge = createSpeechBusBridge((event: SpeechEvent) => {
+			void this.bus.dispatch(event).catch((err) => {
+				this.logger.error("Speech event dispatch error:", err);
+			});
+		});
+
+		this._speechPipeline = new PassthroughSpeechPipeline({
+			framesPerFinal: 5,
+		});
+		this._unsubSpeech = this._speechPipeline.onResult(bridge);
+		this._unsubPcm = this._pcmHub.subscribe((frame) => {
+			// pause speech while speaking in same room to reduce self-feedback
+			if (this._speakingRooms.has(frame.room)) return;
+			this._speechPipeline?.write(frame);
+		});
+		this.logger.info("[speech] using passthrough mock pipeline");
+
+		if (this.config.enableSpeak) {
+			this._tts = new SineTTSProvider();
+			this._publishAdapter = new LiveKitPublishAdapter(this.logger);
+		}
+
+		this._listenService = new MediaListenService({
+			registry: this._listenRegistry,
+			pcmSink: this._pcmHub,
+			logger: this.logger,
+			identity: this.config.identity,
+			getSFUToken: (room) => this.api.getSFUToken(room),
+			joinSignaling: (room) => this.joinRoom(room),
+			leaveSignaling: (room) => this.leaveRoom(room),
+			onTrackEnded: (info) => {
+				this._speechPipeline?.endTrack(info.room, info.identity);
+			},
+		});
+		await this._listenService.start();
+	}
+
+	/**
+	 * Build per-plugin ctx. Argument may be metadata.name (init) or modulePath (dispatch).
+	 * Always resolve to metadata.name so private KV / bus / scheduler stay consistent.
+	 */
+	private buildPluginCtx(modulePathOrName: string): BotContext {
+		const pluginName =
+			getPluginMeta(modulePathOrName)?.name ?? modulePathOrName;
 		return {
 			logger: this.logger,
 			config: this.config.pluginConfigs?.[pluginName] ?? {},
 			pluginName,
-			chat: this.api,
-			rooms: {
-				listRooms: () => this.api.listRooms(),
-				getMembers: (roomId: string) => this.api.getMembers(roomId),
-				createRoom: (name: string, limit?: number) =>
-					this.api.createRoom(name, limit),
-				join: (name: string, o?: { sfu?: boolean }) => this.joinRoom(name, o),
-				leave: (name: string) => this.leaveRoom(name),
-				joined: () => this.joinedRooms,
+			chat: this._caps,
+			rooms: this._caps,
+			voice: this._caps,
+			users: {
+				getByIdentity: (identity: string) =>
+					this._caps.getUserByIdentity(identity),
 			},
-			voice: this.api,
-			kv: createKVStore(),
+			mutes: {
+				list: () => this._caps.listMutes(),
+				status: (userId: number) => this._caps.getMuteStatus(userId),
+			},
+			scheduler: {
+				every: (id, ms, fn) =>
+					this._scheduler.every(`${pluginName}:${id}`, ms, fn),
+				once: (id, ms, fn) =>
+					this._scheduler.once(`${pluginName}:${id}`, ms, fn),
+				clear: (id) => this._scheduler.clear(`${pluginName}:${id}`),
+				clearAll: () => this._scheduler.clearByPrefix(`${pluginName}:`),
+			},
+			listen: {
+				add: (room) => this._listenRegistry.add(room),
+				remove: (room) => this._listenRegistry.remove(room),
+				list: () => this._listenRegistry.list(),
+				clear: () => this._listenRegistry.clear(),
+			},
+			kv: createPluginPrivateKV(this._kvRoot, pluginName),
+			sharedKv: createSharedKV(this._kvRoot),
+			bus: this._pluginBus.forPlugin(pluginName),
 			hasPermission: (_level, _member) => true,
 		};
-	}
-
-	private async loadAllPlugins(): Promise<void> {
-		const pluginDir = this.config.pluginDir;
-		if (!pluginDir) {
-			this.logger.info("No pluginDir configured; skipping auto-discovery");
-			return;
-		}
-		if (!fs.existsSync(pluginDir)) {
-			this.logger.warn(`Plugin directory not found: ${pluginDir}`);
-			return;
-		}
-
-		const entries = fs.readdirSync(pluginDir, { withFileTypes: true });
-		const pluginFiles = entries.filter(
-			(e: fs.Dirent) =>
-				e.isFile() && (e.name.endsWith(".ts") || e.name.endsWith(".js")),
-		);
-
-		for (const file of pluginFiles) {
-			const absPath = path.resolve(pluginDir, file.name);
-			if (this._loadedPaths.has(absPath)) continue;
-			await this.loadSinglePlugin(absPath);
-		}
-	}
-
-	private async loadSinglePlugin(absPath: string): Promise<void> {
-		try {
-			const modulePath = `user_plugins/${path.basename(absPath, path.extname(absPath))}`;
-			const loaded = await loadPlugin(absPath, modulePath);
-			initPlugin(loaded, (name) => this.buildPluginCtx(name));
-			this._plugins.push({
-				instance: loaded.instance,
-				name: loaded.metadata.name,
-			});
-			this._loadedPaths.add(absPath);
-			await this.fireLifecycleEvent(
-				EventType.OnPluginLoaded,
-				loaded.metadata.name,
-			);
-			this.logger.info(
-				`Loaded plugin: ${loaded.metadata.name} (${modulePath})`,
-			);
-		} catch (err) {
-			this.logger.error(`Failed to load plugin ${absPath}:`, err);
-		}
 	}
 
 	private async fireLifecycleEvent(

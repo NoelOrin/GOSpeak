@@ -178,3 +178,7 @@ func (s *Service) GetHost() string {
 func (s *Service) ProviderName() string {
 	return "livekit"
 }
+
+func (s *Service) Capabilities() sfu.Capabilities {
+	return sfu.CapabilitiesFor("livekit")
+}

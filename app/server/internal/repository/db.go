@@ -346,5 +346,6 @@ func autoMigrate() error {
 		&model.Mute{},
 		&model.StorageConfig{},
 		&model.BotToken{},
+		&model.PluginConfig{},
 	)
 }

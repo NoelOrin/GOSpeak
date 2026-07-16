@@ -8,6 +8,8 @@ import (
 	"GOSpeak/internal/logger"
 	"GOSpeak/internal/mediasoup"
 	"GOSpeak/internal/middleware"
+	"GOSpeak/internal/plugin"
+	"GOSpeak/internal/plugin/builtin"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/redis"
@@ -124,6 +126,30 @@ func StartGin(env EnvEnum) {
 	}
 	botTokenRepo := repository.NewBotTokenRepository(repository.DB)
 	botSvc := service.NewBotService(userRepo, botTokenRepo)
+
+	// 后端插件系统：多组件注册 + 可选 side server
+	pluginConfigRepo := repository.NewPluginConfigRepository(repository.DB)
+	pluginHost := plugin.NewHost(repository.DB, cfg, pluginConfigRepo)
+	pluginReg := plugin.NewRegistry(pluginHost)
+	// 注册二进制内嵌的基础插件（bot-base 等）
+	if err := builtin.RegisterAll(pluginReg); err != nil {
+		panic(fmt.Sprintf("register builtin plugins: %v", err))
+	}
+	logger.WithComponent("Plugin").WithField("embedded", builtin.EmbeddedSummary()).Info("builtin plugins registered")
+	if err := pluginReg.InitAll(); err != nil {
+		panic(fmt.Sprintf("init plugins: %v", err))
+	}
+	// 后端启动时同步启动已启用插件（bot-base 内嵌且默认启用）
+	if err := pluginReg.StartEnabled(context.Background()); err != nil {
+		logger.WithComponent("Plugin").Warnf("start plugins: %v", err)
+	}
+	pluginSvc := service.NewPluginService(pluginReg)
+	for _, info := range pluginSvc.List() {
+		logger.WithComponent("Plugin").Infof(
+			"plugin=%s enabled=%v status=%s side_servers=%d",
+			info.Name, info.Enabled, info.Status, len(info.SideServers),
+		)
+	}
 	var sfuProvider sfu.Provider = factory.NewDynamicProvider(sfuConfigSvc.ResolveConfig)
 	resolvedSFUCfg, err := sfuConfigSvc.ResolveConfig()
 	if err != nil {
@@ -206,6 +232,35 @@ func StartGin(env EnvEnum) {
 		logger.WithComponent("StateStore").Info("backend=none (local membership only)")
 	}
 
+	// mute rule KV for degraded media mute (Agora kicking-rule ids): redis → nats → memory
+	muteRuleStore, muteRuleBackend := bus.ResolveMuteRuleStore(bus.ResolveMuteRuleConfig{
+		Mode:   cfg.StateStore,
+		Prefix: cfg.NATSSubjectPrefix,
+		Redis:  redisClient,
+		NATS:   natsConn,
+	})
+	if dp, ok := sfuProvider.(*factory.DynamicProvider); ok {
+		dp.SetMuteRuleStore(muteRuleStore)
+	}
+	logger.WithComponent("MuteRuleStore").Infof("ready backend=%s", muteRuleBackend)
+
+	// JWT blacklist + signing key: Redis preferred; otherwise NATS KV so multi-instance logout still works.
+	if !redis.IsConnected() && natsConn != nil {
+		if authStore, err := bus.OpenAuthStore(bus.AuthStoreConfig{
+			Prefix: cfg.NATSSubjectPrefix,
+			NC:     natsConn,
+		}); err != nil {
+			logger.WithComponent("AuthStore").Warnf("nats unavailable: %v", err)
+		} else {
+			redis.SetAuthBackend(authStore)
+			logger.WithComponent("AuthStore").Infof("ready backend=%s", authStore.Backend())
+		}
+	} else if redis.IsConnected() {
+		logger.WithComponent("AuthStore").Info("ready backend=redis")
+	} else {
+		logger.WithComponent("AuthStore").Info("backend=none (static JWT_KEY / no multi-instance blacklist)")
+	}
+
 	var jobQueue *bus.JobQueue
 	if nb, ok := eventBus.(*bus.NATSBus); ok && nb.Conn() != nil {
 		q, err := bus.OpenJobQueue(bus.JobQueueConfig{
@@ -273,6 +328,7 @@ func StartGin(env EnvEnum) {
 	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc, signalHub)
 	storageH := handler.NewStorageHandler(storageSvc)
 	botH := handler.NewBotHandler(botSvc)
+	pluginH := handler.NewPluginHandler(pluginSvc)
 
 	monitorH := handler.NewMonitorHandler(signalHub, cfg, eventBus)
 
@@ -309,6 +365,8 @@ func StartGin(env EnvEnum) {
 		Monitor:     monitorH,
 		SRSCallback: srsCallbackH,
 		Bot:         botH,
+		Plugin:      pluginH,
+		PluginHost:  pluginHost,
 	})
 
 	port := cfg.ServerPort
@@ -329,6 +387,9 @@ func StartGin(env EnvEnum) {
 		ossignal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 		<-quit
 		logger.WithComponent("Server").Info("shutting down...")
+
+		pluginReg.StopAll(context.Background())
+		logger.WithComponent("Plugin").Info("plugins stopped")
 
 		if err := sioServer.Close(); err != nil {
 			logger.WithComponent("Socket.IO").Warnf("close error: %v", err)

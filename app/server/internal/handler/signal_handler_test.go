@@ -24,6 +24,17 @@ type mockSFU struct {
 	host             string
 }
 
+func (m *mockSFU) ProviderName() string { return "mock" }
+func (m *mockSFU) Capabilities() sfu.Capabilities {
+	return sfu.Capabilities{
+		ServerMute:  true,
+		ServerKick:  true,
+		DeleteRoom:  true,
+		AdminToken:  true,
+		ListRooms:   true,
+		ListMembers: true,
+	}
+}
 func (m *mockSFU) GenerateToken(room, identity string) (string, error) {
 	if m.tokenFn != nil {
 		return m.tokenFn(room, identity)

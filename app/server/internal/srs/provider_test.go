@@ -427,3 +427,21 @@ func TestKickByStreams_UsesNameNotInternalStreamID(t *testing.T) {
 		t.Fatalf("kickedIDs=%v, want [b3078950]", ts.kickedIDs)
 	}
 }
+
+
+func TestMuteParticipant_UnmuteNoop(t *testing.T) {
+	svc := &Service{client: NewClient("http://127.0.0.1:9")}
+	if err := svc.MuteParticipant("room", "user", "", false); err != nil {
+		t.Fatalf("unmute should be noop success, got %v", err)
+	}
+}
+
+func TestCapabilities_ServerMuteEnabled(t *testing.T) {
+	caps := (&Service{}).Capabilities()
+	if !caps.ServerMute {
+		t.Fatal("srs ServerMute should be true via force-unpublish fallback")
+	}
+	if caps.MuteLevel != "degraded" {
+		t.Fatalf("srs MuteLevel=%q, want degraded", caps.MuteLevel)
+	}
+}

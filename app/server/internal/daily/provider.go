@@ -39,8 +39,9 @@ func (s *Service) GenerateToken(room, identity string) (string, error) {
 	return token, nil
 }
 
+// GenerateAdminToken is not supported: Daily management uses API key, not meeting tokens.
 func (s *Service) GenerateAdminToken() (string, error) {
-	return s.GenerateToken("admin", "admin")
+	return "", pkg.NewErrSFUNotSupported()
 }
 
 func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
@@ -125,6 +126,10 @@ func (s *Service) GetHost() string {
 
 func (s *Service) ProviderName() string {
 	return "daily"
+}
+
+func (s *Service) Capabilities() sfu.Capabilities {
+	return sfu.CapabilitiesFor("daily")
 }
 
 func (s *Service) ClientInfo() map[string]interface{} {

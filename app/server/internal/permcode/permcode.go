@@ -30,4 +30,8 @@ const (
 
 	PermOAuthRead    = "oauth:read"
 	PermOAuthManage  = "oauth:manage"
+
+	PermPluginRead   = "plugin:read"
+	PermPluginManage = "plugin:manage"
 )
+

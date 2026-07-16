@@ -1,3 +1,5 @@
+//go:build !noembedweb
+
 package webui
 
 import (

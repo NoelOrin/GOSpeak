@@ -37,8 +37,9 @@ func (s *Service) GenerateToken(room, identity string) (string, error) {
 	return fmt.Sprintf("%s:%s", room, identity), nil
 }
 
+// GenerateAdminToken is not supported: mediasoup uses bridge auth, not an admin join token.
 func (s *Service) GenerateAdminToken() (string, error) {
-	return "mediasoup-admin", nil
+	return "", pkg.NewErrSFUNotSupported()
 }
 
 func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
@@ -109,6 +110,10 @@ func (s *Service) GetHost() string {
 
 func (s *Service) ProviderName() string {
 	return "mediasoup"
+}
+
+func (s *Service) Capabilities() sfu.Capabilities {
+	return sfu.CapabilitiesFor("mediasoup")
 }
 
 func (s *Service) ClientInfo() map[string]interface{} {

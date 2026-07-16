@@ -1,0 +1,10 @@
+{
+  "name": "bot-base",
+  "display_name": "Bot 基础模块",
+  "version": "0.1.0",
+  "author": "gospeak",
+  "desc": "Bot 基础能力插件：多组件挂载入口、可选 side server、多供应商大模型配置",
+  "kind": "builtin",
+  "embedded": true,
+  "auto_start": true
+}

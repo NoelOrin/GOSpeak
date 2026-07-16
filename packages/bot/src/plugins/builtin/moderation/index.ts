@@ -135,7 +135,7 @@ export class ModerationPlugin extends Plugin {
 		}
 	}
 
-	@On(EventType.OnRoomLeft, { desc: "清理离开成员的静音状态" })
+	@On(EventType.OnMemberLeft, { desc: "清理离开成员的静音状态" })
 	async onMemberLeft(event: MemberEvent): Promise<void> {
 		if (!event.actor) return;
 		const key = `${event.room.id}:${event.actor.identity}`;

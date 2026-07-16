@@ -9,12 +9,13 @@ import (
 
 // JoinTokenResult 是 GetJoinToken 的聚合结果，handler 直接映射为 JSON 响应。
 type JoinTokenResult struct {
-	Token       string
-	ServerURL   string
-	Provider    string
-	ClientInfo  map[string]interface{}
-	Stream      string
-	StreamToken string
+	Token        string
+	ServerURL    string
+	Provider     string
+	ClientInfo   map[string]interface{}
+	Stream       string
+	StreamToken  string
+	Capabilities sfu.Capabilities
 }
 
 // SFUService 是 SFU 调用 + 加入规则校验的 service 中间层。
@@ -52,11 +53,10 @@ func (s *SFUService) GetJoinToken(room, identity, password string) (*JoinTokenRe
 		return nil, err
 	}
 	res := &JoinTokenResult{
-		Token:     token,
-		ServerURL: s.provider.GetHost(),
-	}
-	if p, ok := s.provider.(interface{ ProviderName() string }); ok {
-		res.Provider = p.ProviderName()
+		Token:        token,
+		ServerURL:    s.provider.GetHost(),
+		Provider:     s.provider.ProviderName(),
+		Capabilities: s.provider.Capabilities(),
 	}
 	if p, ok := s.provider.(sfu.ClientInfoProvider); ok {
 		res.ClientInfo = p.ClientInfo()
@@ -78,4 +78,8 @@ func (s *SFUService) ListRooms() ([]sfu.RoomSummary, error) {
 
 func (s *SFUService) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
 	return s.provider.ListParticipants(room)
+}
+
+func (s *SFUService) Capabilities() sfu.Capabilities {
+	return s.provider.Capabilities()
 }

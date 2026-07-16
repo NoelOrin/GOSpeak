@@ -15,6 +15,7 @@ type DynamicProvider struct {
 	resolve           ConfigResolver
 	mu                sync.RWMutex
 	roomRegistry      pkg.RoomRegistry
+	muteRuleStore     sfu.MuteRuleStore
 	cachedFingerprint string
 	cachedProvider    sfu.Provider
 }
@@ -24,14 +25,17 @@ func NewDynamicProvider(resolve ConfigResolver) *DynamicProvider {
 }
 
 func fingerprint(cfg *config.Config) string {
-	return strings.Join([]string{
-		cfg.SFUProvider, cfg.LiveKitHost, cfg.LiveKitKey, cfg.LiveKitSecret,
+	// Keep field list centralized so provider config additions update the cache key.
+	fields := []string{
+		cfg.SFUProvider,
+		cfg.LiveKitHost, cfg.LiveKitKey, cfg.LiveKitSecret,
 		cfg.AgoraAppID, cfg.AgoraAppCertificate, cfg.AgoraHost, cfg.AgoraCustomerID, cfg.AgoraCustomerSecret,
 		cfg.MediaSoupBridgeURL, cfg.MediaSoupHost,
 		cfg.SRSHost, cfg.SRSApiPort, cfg.SRSWHIPURL, cfg.SRSSecret, cfg.SRSPublicHost,
 		cfg.DailyAPIKey, cfg.DailyDomain,
 		cfg.CFAppID, cfg.CFAppSecret, cfg.CFStunURL,
-	}, "|")
+	}
+	return strings.Join(fields, "|")
 }
 
 func (p *DynamicProvider) SetRoomRegistry(r pkg.RoomRegistry) {
@@ -40,6 +44,18 @@ func (p *DynamicProvider) SetRoomRegistry(r pkg.RoomRegistry) {
 	if p.cachedProvider != nil {
 		if rs, ok := p.cachedProvider.(pkg.RoomRegistrySetter); ok {
 			rs.SetRoomRegistry(r)
+		}
+	}
+	p.mu.Unlock()
+}
+
+// SetMuteRuleStore injects multi-instance mute rule cache into providers that need it.
+func (p *DynamicProvider) SetMuteRuleStore(store sfu.MuteRuleStore) {
+	p.mu.Lock()
+	p.muteRuleStore = store
+	if p.cachedProvider != nil {
+		if ms, ok := p.cachedProvider.(sfu.MuteRuleStoreSetter); ok {
+			ms.SetMuteRuleStore(store)
 		}
 	}
 	p.mu.Unlock()
@@ -85,6 +101,18 @@ func (p *DynamicProvider) MuteParticipant(room, identity, trackSid string, muted
 	return provider.MuteParticipant(room, identity, trackSid, muted)
 }
 
+// MuteParticipantTimed forwards TTL-aware mute when the active provider supports it.
+func (p *DynamicProvider) MuteParticipantTimed(room, identity, trackSid string, muted bool, ttlSeconds int) error {
+	provider, err := p.current()
+	if err != nil {
+		return err
+	}
+	if tp, ok := provider.(sfu.TimedMuteProvider); ok {
+		return tp.MuteParticipantTimed(room, identity, trackSid, muted, ttlSeconds)
+	}
+	return provider.MuteParticipant(room, identity, trackSid, muted)
+}
+
 func (p *DynamicProvider) RemoveParticipant(room, identity string) error {
 	provider, err := p.current()
 	if err != nil {
@@ -109,12 +137,41 @@ func (p *DynamicProvider) GetHost() string {
 	return provider.GetHost()
 }
 
+// ProviderName returns the active provider id.
+// Prefer the cached concrete provider only when its fingerprint still matches
+// the latest resolved config, so hot switches never report a stale name.
 func (p *DynamicProvider) ProviderName() string {
 	cfg, err := p.resolve()
-	if err != nil || cfg.SFUProvider == "" {
+	if err != nil {
+		p.mu.RLock()
+		cached := p.cachedProvider
+		p.mu.RUnlock()
+		if cached != nil {
+			return cached.ProviderName()
+		}
+		return "livekit"
+	}
+
+	fp := fingerprint(cfg)
+	p.mu.RLock()
+	cached := p.cachedProvider
+	cachedFp := p.cachedFingerprint
+	p.mu.RUnlock()
+	if cached != nil && cachedFp == fp {
+		return cached.ProviderName()
+	}
+	if cfg.SFUProvider == "" {
 		return "livekit"
 	}
 	return cfg.SFUProvider
+}
+
+func (p *DynamicProvider) Capabilities() sfu.Capabilities {
+	provider, err := p.current()
+	if err != nil {
+		return sfu.Capabilities{}
+	}
+	return provider.Capabilities()
 }
 
 func (p *DynamicProvider) StreamName(room, identity string) string {
@@ -177,6 +234,11 @@ func (p *DynamicProvider) current() (sfu.Provider, error) {
 	if p.roomRegistry != nil {
 		if rs, ok := provider.(pkg.RoomRegistrySetter); ok {
 			rs.SetRoomRegistry(p.roomRegistry)
+		}
+	}
+	if p.muteRuleStore != nil {
+		if ms, ok := provider.(sfu.MuteRuleStoreSetter); ok {
+			ms.SetMuteRuleStore(p.muteRuleStore)
 		}
 	}
 	p.cachedProvider = provider

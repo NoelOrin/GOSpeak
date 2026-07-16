@@ -26,6 +26,18 @@
 		"./runtime": {
 			"types": "./src/runtime/index.ts",
 			"import": "./src/runtime/index.ts"
+		},
+		"./media": {
+			"types": "./src/media/index.ts",
+			"import": "./src/media/index.ts"
+		},
+		"./speech": {
+			"types": "./src/speech/index.ts",
+			"import": "./src/speech/index.ts"
+		},
+		"./tts": {
+			"types": "./src/tts/index.ts",
+			"import": "./src/tts/index.ts"
 		}
 	},
 	"scripts": {
@@ -44,5 +56,8 @@
 		"typescript": "^5.9.3",
 		"@types/node": "^22.0.0",
 		"vitest": "^4.1.9"
+	},
+	"optionalDependencies": {
+		"livekit-client": "^2.9.0"
 	}
 }

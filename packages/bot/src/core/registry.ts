@@ -6,14 +6,24 @@ const pluginMap = new Map<string, PluginMetadata>();
 const pluginInstances = new Map<string, Plugin>();
 
 export function registerHandler(md: HandlerMetadata): void {
+	// Replace same module+handler if re-registering after reload.
+	const idx = handlerRegistry.findIndex(
+		(h) => h.modulePath === md.modulePath && h.handlerName === md.handlerName,
+	);
+	if (idx >= 0) handlerRegistry.splice(idx, 1);
 	handlerRegistry.push(md);
 	handlerRegistry.sort((a, b) => b.priority - a.priority);
 	const plugin = pluginMap.get(md.modulePath);
-	if (plugin) plugin.handlerNames.push(md.handlerName);
+	if (plugin && !plugin.handlerNames.includes(md.handlerName)) {
+		plugin.handlerNames.push(md.handlerName);
+	}
 }
 
 export function registerPlugin(modulePath: string, meta: PluginMetadata): void {
-	pluginMap.set(modulePath, meta);
+	pluginMap.set(modulePath, {
+		...meta,
+		handlerNames: meta.handlerNames ? [...meta.handlerNames] : [],
+	});
 }
 
 export function bindPluginInstance(modulePath: string, instance: Plugin): void {
@@ -22,6 +32,17 @@ export function bindPluginInstance(modulePath: string, instance: Plugin): void {
 
 export function getPluginInstance(modulePath: string): Plugin | undefined {
 	return pluginInstances.get(modulePath);
+}
+
+export function getPluginMeta(modulePath: string): PluginMetadata | undefined {
+	return pluginMap.get(modulePath);
+}
+
+export function findModulePathByName(name: string): string | undefined {
+	for (const [modulePath, meta] of pluginMap) {
+		if (meta.name === name) return modulePath;
+	}
+	return undefined;
 }
 
 export function getHandlersByEventType(
@@ -45,6 +66,15 @@ export function removeHandlersByModule(modulePath: string): void {
 			handlerRegistry.splice(i, 1);
 		}
 	}
+	const meta = pluginMap.get(modulePath);
+	if (meta) meta.handlerNames = [];
+}
+
+/** 完整卸载：handlers + plugin meta + instance */
+export function removePlugin(modulePath: string): void {
+	removeHandlersByModule(modulePath);
+	pluginMap.delete(modulePath);
+	pluginInstances.delete(modulePath);
 }
 
 export function listPlugins(): PluginMetadata[] {

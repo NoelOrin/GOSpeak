@@ -3,11 +3,11 @@ tmp_dir = "tmp"
 
 [build]
   entrypoint = "main.go"
-  cmd = "go build -o ./tmp/main ./main.go"
+  cmd = "go build -tags noembedweb -o ./tmp/main ./main.go"
   bin = "./tmp/main"
   full_bin = "./tmp/main server -e dev"
   include_ext = ["go", "tpl", "tmpl", "html"]
-  exclude_dir = ["tmp", "vendor", "test", "packages", "db", "docs", "scripts", "tmp_tools", "build"]
+  exclude_dir = ["tmp", "vendor", "test", "packages", "db", "docs", "scripts", "tmp_tools", "build", "internal/webui/dist"]
   exclude_regex = ["_test.go"]
   exclude_unchanged = true
   delay = 1000

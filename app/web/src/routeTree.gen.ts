@@ -26,6 +26,7 @@ import { Route as appManageOauthIndexRouteImport } from './pages/(app)/manage/oa
 import { Route as appManageMuteIndexRouteImport } from './pages/(app)/manage/mute/index'
 import { Route as appManageMonitorIndexRouteImport } from './pages/(app)/manage/monitor/index'
 import { Route as appManageEmailIndexRouteImport } from './pages/(app)/manage/email/index'
+import { Route as appManageBotPluginsIndexRouteImport } from './pages/(app)/manage/bot-plugins/index'
 import { Route as appManageBanIndexRouteImport } from './pages/(app)/manage/ban/index'
 import { Route as appManageApikeyIndexRouteImport } from './pages/(app)/manage/apikey/index'
 
@@ -114,6 +115,12 @@ const appManageEmailIndexRoute = appManageEmailIndexRouteImport.update({
   path: '/email/',
   getParentRoute: () => appManageRouteRoute,
 } as any)
+const appManageBotPluginsIndexRoute =
+  appManageBotPluginsIndexRouteImport.update({
+    id: '/bot-plugins/',
+    path: '/bot-plugins/',
+    getParentRoute: () => appManageRouteRoute,
+  } as any)
 const appManageBanIndexRoute = appManageBanIndexRouteImport.update({
   id: '/ban/',
   path: '/ban/',
@@ -136,6 +143,7 @@ export interface FileRoutesByFullPath {
   '/manage/': typeof appManageIndexRoute
   '/manage/apikey/': typeof appManageApikeyIndexRoute
   '/manage/ban/': typeof appManageBanIndexRoute
+  '/manage/bot-plugins/': typeof appManageBotPluginsIndexRoute
   '/manage/email/': typeof appManageEmailIndexRoute
   '/manage/monitor/': typeof appManageMonitorIndexRoute
   '/manage/mute/': typeof appManageMuteIndexRoute
@@ -155,6 +163,7 @@ export interface FileRoutesByTo {
   '/manage': typeof appManageIndexRoute
   '/manage/apikey': typeof appManageApikeyIndexRoute
   '/manage/ban': typeof appManageBanIndexRoute
+  '/manage/bot-plugins': typeof appManageBotPluginsIndexRoute
   '/manage/email': typeof appManageEmailIndexRoute
   '/manage/monitor': typeof appManageMonitorIndexRoute
   '/manage/mute': typeof appManageMuteIndexRoute
@@ -177,6 +186,7 @@ export interface FileRoutesById {
   '/(app)/manage/': typeof appManageIndexRoute
   '/(app)/manage/apikey/': typeof appManageApikeyIndexRoute
   '/(app)/manage/ban/': typeof appManageBanIndexRoute
+  '/(app)/manage/bot-plugins/': typeof appManageBotPluginsIndexRoute
   '/(app)/manage/email/': typeof appManageEmailIndexRoute
   '/(app)/manage/monitor/': typeof appManageMonitorIndexRoute
   '/(app)/manage/mute/': typeof appManageMuteIndexRoute
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/manage/'
     | '/manage/apikey/'
     | '/manage/ban/'
+    | '/manage/bot-plugins/'
     | '/manage/email/'
     | '/manage/monitor/'
     | '/manage/mute/'
@@ -218,6 +229,7 @@ export interface FileRouteTypes {
     | '/manage'
     | '/manage/apikey'
     | '/manage/ban'
+    | '/manage/bot-plugins'
     | '/manage/email'
     | '/manage/monitor'
     | '/manage/mute'
@@ -239,6 +251,7 @@ export interface FileRouteTypes {
     | '/(app)/manage/'
     | '/(app)/manage/apikey/'
     | '/(app)/manage/ban/'
+    | '/(app)/manage/bot-plugins/'
     | '/(app)/manage/email/'
     | '/(app)/manage/monitor/'
     | '/(app)/manage/mute/'
@@ -375,6 +388,13 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof appManageEmailIndexRouteImport
       parentRoute: typeof appManageRouteRoute
     }
+    '/(app)/manage/bot-plugins/': {
+      id: '/(app)/manage/bot-plugins/'
+      path: '/bot-plugins'
+      fullPath: '/manage/bot-plugins/'
+      preLoaderRoute: typeof appManageBotPluginsIndexRouteImport
+      parentRoute: typeof appManageRouteRoute
+    }
     '/(app)/manage/ban/': {
       id: '/(app)/manage/ban/'
       path: '/ban'
@@ -396,6 +416,7 @@ interface appManageRouteRouteChildren {
   appManageIndexRoute: typeof appManageIndexRoute
   appManageApikeyIndexRoute: typeof appManageApikeyIndexRoute
   appManageBanIndexRoute: typeof appManageBanIndexRoute
+  appManageBotPluginsIndexRoute: typeof appManageBotPluginsIndexRoute
   appManageEmailIndexRoute: typeof appManageEmailIndexRoute
   appManageMonitorIndexRoute: typeof appManageMonitorIndexRoute
   appManageMuteIndexRoute: typeof appManageMuteIndexRoute
@@ -410,6 +431,7 @@ const appManageRouteRouteChildren: appManageRouteRouteChildren = {
   appManageIndexRoute: appManageIndexRoute,
   appManageApikeyIndexRoute: appManageApikeyIndexRoute,
   appManageBanIndexRoute: appManageBanIndexRoute,
+  appManageBotPluginsIndexRoute: appManageBotPluginsIndexRoute,
   appManageEmailIndexRoute: appManageEmailIndexRoute,
   appManageMonitorIndexRoute: appManageMonitorIndexRoute,
   appManageMuteIndexRoute: appManageMuteIndexRoute,

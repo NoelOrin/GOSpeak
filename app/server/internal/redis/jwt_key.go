@@ -32,6 +32,20 @@ func SetProductionMode() {
 // 密钥永不过期（无 TTL），由 RotateSigningKey 主动轮换。
 func GetSigningKey() []byte {
 	if Client == nil {
+		if secondaryAuth != nil {
+			if val, ok, err := secondaryAuth.GetSigningKey(); err == nil && ok && val != "" {
+				return []byte(val)
+			}
+			// first start on secondary store
+			newKey := randomKey()
+			now := time.Now().Unix()
+			if err := secondaryAuth.SetSigningKey(newKey, now); err != nil {
+				fmt.Printf("[AuthKV] failed to store JWT signing key: %v\n", err)
+				return staticKey()
+			}
+			_ = secondaryAuth.AddHistoryKey(newKey)
+			return []byte(newKey)
+		}
 		return staticKey()
 	}
 
@@ -59,7 +73,15 @@ func GetSigningKey() []byte {
 // 基于 jwt:signing_key:created_at 与当前时间的差值判断。
 func ShouldRotateKey() bool {
 	if Client == nil {
-		return false
+		if secondaryAuth == nil {
+			return false
+		}
+		createdAt, ok, err := secondaryAuth.GetCreatedAt()
+		if err != nil || !ok {
+			return true
+		}
+		ttl := int64(keyTTL().Seconds())
+		return time.Now().Unix()-createdAt >= ttl
 	}
 	ctx := context.Background()
 	createdAt, err := Client.Get(ctx, jwtKeyCreatedAtKey).Int64()
@@ -75,7 +97,21 @@ func ShouldRotateKey() bool {
 // 返回新密钥。
 func RotateSigningKey() []byte {
 	if Client == nil {
-		return staticKey()
+		if secondaryAuth == nil {
+			return staticKey()
+		}
+		if old, ok, err := secondaryAuth.GetSigningKey(); err == nil && ok && old != "" {
+			_ = secondaryAuth.AddHistoryKey(old)
+		}
+		newKey := randomKey()
+		now := time.Now().Unix()
+		if err := secondaryAuth.SetSigningKey(newKey, now); err != nil {
+			fmt.Printf("[AuthKV] JWT signing key rotate failed: %v\n", err)
+			return staticKey()
+		}
+		_ = secondaryAuth.AddHistoryKey(newKey)
+		fmt.Printf("[AuthKV] JWT signing key rotated, next rotation in %v\n", keyTTL())
+		return []byte(newKey)
 	}
 
 	ctx := context.Background()
@@ -104,6 +140,24 @@ func RotateSigningKey() []byte {
 // 用于 Token 校验时逐一尝试，解决密钥轮换后旧 Token 无法验签的问题。
 func GetAllSigningKeys() [][]byte {
 	if Client == nil {
+		if secondaryAuth != nil {
+			var keys [][]byte
+			active := ""
+			if val, ok, err := secondaryAuth.GetSigningKey(); err == nil && ok {
+				active = val
+				if active != "" {
+					keys = append(keys, []byte(active))
+				}
+			}
+			for _, k := range secondaryAuth.HistoryKeys() {
+				if k != "" && k != active {
+					keys = append(keys, []byte(k))
+				}
+			}
+			if len(keys) > 0 {
+				return keys
+			}
+		}
 		return [][]byte{staticKey()}
 	}
 

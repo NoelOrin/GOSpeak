@@ -115,12 +115,16 @@ func TestService_ListParticipants(t *testing.T) {
 func TestService_MuteParticipant_NotSupported(t *testing.T) {
 	svc := &Service{}
 	err := svc.MuteParticipant("room1", "user1", "track1", true)
-	if err == nil {
-		t.Fatal("expected error for mute not supported")
+	if !errors.Is(err, pkg.ErrSFUNotSupported) {
+		t.Fatalf("expected ErrSFUNotSupported, got %v", err)
 	}
-	var appErr *pkg.AppError
-	if !errors.As(err, &appErr) {
-		t.Fatalf("expected AppError, got %T", err)
+}
+
+func TestService_GenerateAdminToken_NotSupported(t *testing.T) {
+	svc := &Service{}
+	_, err := svc.GenerateAdminToken()
+	if !errors.Is(err, pkg.ErrSFUNotSupported) {
+		t.Fatalf("expected ErrSFUNotSupported, got %v", err)
 	}
 }
 

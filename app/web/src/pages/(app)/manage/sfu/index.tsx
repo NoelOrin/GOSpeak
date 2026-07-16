@@ -7,10 +7,17 @@ import RefreshCcw from "lucide-solid/icons/refresh-ccw";
 import Save from "lucide-solid/icons/save";
 import ServerCog from "lucide-solid/icons/server-cog";
 import TriangleAlert from "lucide-solid/icons/triangle-alert";
-import { createEffect, createResource, createSignal, Show } from "solid-js";
+import {
+	createEffect,
+	createResource,
+	createSignal,
+	For,
+	Show,
+} from "solid-js";
 import { showToast } from "solid-notifications";
 import {
 	getSFUConfigByProvider,
+	getSFUEnforcementProfile,
 	getSFUProviderCapabilities,
 	listSFUProviders,
 	switchSFUProvider,
@@ -125,8 +132,18 @@ function SFUPage() {
 		});
 	}
 
-	const capabilities = () =>
-		getSFUProviderCapabilities(selectedProvider() ?? activeProvider());
+	const capabilities = () => {
+		const provider = selectedProvider() ?? activeProvider();
+		const fromAPI = providersResponse()?.capabilities?.[provider];
+		return getSFUProviderCapabilities(provider, fromAPI);
+	};
+
+	const selected = () => selectedProvider() ?? activeProvider();
+	const enforcementProfile = () => {
+		const provider = selected();
+		const fromAPI = providersResponse()?.capabilities?.[provider];
+		return getSFUEnforcementProfile(provider, fromAPI);
+	};
 
 	const updateField = <K extends keyof UpdateSFUConfigParams>(
 		key: K,
@@ -234,16 +251,16 @@ function SFUPage() {
 						</div>
 						<div class="flex flex-wrap items-center gap-1.5">
 							<CapabilityBadge
-								label="参与者列表"
-								active={capabilities().supportsParticipants}
+								label="服务端静音"
+								active={!!capabilities().serverMute}
 							/>
 							<CapabilityBadge
-								label="专属信令适配"
+								label="服务端踢人"
+								active={!!capabilities().serverKick}
+							/>
+							<CapabilityBadge
+								label="专属信令"
 								active={capabilities().requiresSignalAdapter}
-							/>
-							<CapabilityBadge
-								label="信令踢人"
-								active={capabilities().kickViaSignal}
 							/>
 						</div>
 					</div>
@@ -259,6 +276,66 @@ function SFUPage() {
 							setErrors({});
 						}}
 					/>
+				</section>
+
+				<section class="rounded-2xl border border-base-300/80 bg-base-100 p-4 shadow-sm md:p-5">
+					<div class="mb-3 flex flex-wrap items-start justify-between gap-3">
+						<div>
+							<div class="text-sm font-semibold">
+								{PROVIDER_LABELS[selected()]} · 强制能力对比
+							</div>
+							<p class="mt-0.5 text-xs text-base-content/50">
+								{enforcementProfile().summary}
+							</p>
+						</div>
+						<div class="flex flex-wrap items-center gap-1.5 text-[11px] text-base-content/55">
+							<span class="rounded-full border border-base-300 px-2 py-0.5">
+								hard 原生
+							</span>
+							<span class="rounded-full border border-base-300 px-2 py-0.5">
+								degraded 降级
+							</span>
+							<span class="rounded-full border border-base-300 px-2 py-0.5">
+								soft 信令
+							</span>
+							<span class="rounded-full border border-base-300 px-2 py-0.5 opacity-60">
+								none
+							</span>
+						</div>
+					</div>
+
+					<div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+						<For each={enforcementProfile().details}>
+							{(item) => (
+								<div class="rounded-xl border border-base-300/70 bg-base-200/20 px-3 py-2.5">
+									<div class="mb-1 flex items-center justify-between gap-2">
+										<span class="text-xs font-medium text-base-content">
+											{item.label}
+										</span>
+										<span class="rounded-full border border-base-300 px-2 py-0.5 text-[11px] text-base-content/65">
+											{item.level}
+										</span>
+									</div>
+									<p class="text-[11px] leading-relaxed text-base-content/70">
+										<span class="font-medium text-base-content/80">实现：</span>
+										{item.impl}
+									</p>
+									<p class="mt-1 text-[11px] leading-relaxed text-base-content/50">
+										<span class="font-medium">降级/底座：</span>
+										{item.fallback}
+									</p>
+								</div>
+							)}
+						</For>
+					</div>
+
+					<div class="mt-3 rounded-xl border border-base-300/70 bg-base-200/20 px-3 py-2 text-[11px] text-base-content/55">
+						统一策略：业务/信令 soft 始终执行；媒体强制成功时事件标
+						<code class="mx-1">enforcement=hard|degraded</code>
+						，否则为
+						<code class="mx-1">soft</code>
+						。不会把 soft 伪装成 hard。
+					</div>
 				</section>
 
 				<section class="space-y-3">

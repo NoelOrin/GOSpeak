@@ -3,6 +3,7 @@ package handler
 import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
+	"GOSpeak/internal/sfu"
 
 	"github.com/gin-gonic/gin"
 )
@@ -89,7 +90,8 @@ func (h *SFUConfigHandler) ListProviders(c *gin.Context) {
 		return
 	}
 	pkg.Success(c, gin.H{
-		"providers": service.ToPublicSFUConfigs(cfgs),
-		"active":    active,
+		"providers":    service.ToPublicSFUConfigs(cfgs),
+		"active":       active,
+		"capabilities": sfu.AllProviderCapabilities(),
 	})
 }

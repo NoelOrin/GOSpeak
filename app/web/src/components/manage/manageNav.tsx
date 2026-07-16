@@ -1,6 +1,7 @@
 import { Link, useLocation } from "@tanstack/solid-router";
 import Activity from "lucide-solid/icons/activity";
 import Ban from "lucide-solid/icons/ban";
+import Blocks from "lucide-solid/icons/blocks";
 import Gavel from "lucide-solid/icons/gavel";
 import HardDrive from "lucide-solid/icons/hard-drive";
 import KeyRound from "lucide-solid/icons/key-round";
@@ -22,7 +23,8 @@ type ManagePath =
 	| "email"
 	| "monitor"
 	| "apikey"
-	| "oauth";
+	| "oauth"
+	| "bot-plugins";
 
 type ManageTab = {
 	path: ManagePath;
@@ -36,7 +38,8 @@ type ManageTab = {
 		| "/manage/email"
 		| "/manage/monitor"
 		| "/manage/apikey"
-		| "/manage/oauth";
+		| "/manage/oauth"
+		| "/manage/bot-plugins";
 	label: string;
 	icon: typeof Users;
 	/** 进入该页需要的权限码（任一） */
@@ -110,6 +113,13 @@ const MANAGE_TABS: ManageTab[] = [
 		label: "BOT 密钥",
 		icon: KeyRound,
 		permissions: ["bot:manage"],
+	},
+	{
+		path: "bot-plugins",
+		to: "/manage/bot-plugins",
+		label: "BOT 插件",
+		icon: Blocks,
+		permissions: ["plugin:read", "plugin:manage", "bot:manage"],
 	},
 	// 监控暂无独立权限码，沿用 role:manage 作为管理面入口
 	{

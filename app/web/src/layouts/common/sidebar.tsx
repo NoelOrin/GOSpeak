@@ -1,11 +1,9 @@
 import { useNavigate } from "@tanstack/solid-router";
 import Headphones from "lucide-solid/icons/headphones";
 import Home from "lucide-solid/icons/home";
-import Plus from "lucide-solid/icons/plus";
 import Settings from "lucide-solid/icons/settings";
 import ShieldCheck from "lucide-solid/icons/shield-check";
 import { Show } from "solid-js";
-import Divider from "@/components/common/divider";
 import OptionSquare from "@/components/common/optionSquare";
 import { hasManageAccess } from "@/utils/permissions";
 
@@ -43,13 +41,13 @@ const Sidebar = (props: SidebarProps) => {
 					<ShieldCheck {...iconProps} />
 				</OptionSquare>
 			</Show>
-			<Divider />
-
+			{/* 暂时隐藏「新会话」入口 */}
+			{/* <Divider />
 			<div class="flex flex-col flex-1 items-end space-y-2 h-full">
 				<OptionSquare label="新会话">
 					<Plus {...iconProps} />
 				</OptionSquare>
-			</div>
+			</div> */}
 		</div>
 	);
 };

@@ -35,7 +35,7 @@ const VoiceForm = () => {
 						type="range"
 						min="0"
 						max="100"
-						class="range range-sm range-primary"
+						class="range range-sm w-full"
 						value={data.inputVolume}
 						onInput={(e) => setInputVolume(Number(e.currentTarget.value))}
 					/>
@@ -45,7 +45,7 @@ const VoiceForm = () => {
 						type="range"
 						min="0"
 						max="100"
-						class="range range-sm range-primary"
+						class="range range-sm w-full"
 						value={data.outputVolume}
 						onInput={(e) => setOutputVolume(Number(e.currentTarget.value))}
 					/>
