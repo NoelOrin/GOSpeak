@@ -99,7 +99,7 @@ export class MuteManagerPlugin extends Plugin {
 			return;
 		}
 		try {
-			const user = await this.ctx.users.getByIdentity(username);
+			await this.ctx.users.getByIdentity(username);
 			await this.ctx.voice.muteMember(event.room.id, username, false);
 			await this.ctx.chat.reply(event, `已取消 ${username} 的禁言`);
 		} catch (err) {

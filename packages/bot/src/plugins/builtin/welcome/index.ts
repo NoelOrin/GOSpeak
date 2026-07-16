@@ -78,7 +78,7 @@ export class WelcomePlugin extends Plugin {
 		await this.ctx.chat.reply(event, `欢迎语已更新: ${msg}`);
 	}
 
-	@On(EventType.OnRoomJoined, { desc: "发送欢迎消息" })
+	@On(EventType.OnMemberJoined, { desc: "发送欢迎消息" })
 	async onMemberJoined(event: RoomEvent): Promise<void> {
 		if (!this.enabled || !event.actor) return;
 		const message = this.template.replace("{name}", event.actor.name);

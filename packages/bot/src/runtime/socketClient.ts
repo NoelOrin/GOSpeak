@@ -6,6 +6,7 @@ import {
 	type MemberStateEvent,
 	type RoomEvent,
 	type RoomRef,
+	type UserMuteEvent,
 } from "../core/types";
 import { EventAdapter } from "./eventAdapter";
 
@@ -238,7 +239,7 @@ export class GOSpeakSocketClient {
 		// member:joined → { room, identity, id, stream? }
 		this.socket.on("member:joined", (raw: any) => {
 			this.emit({
-				eventType: EventType.OnRoomJoined,
+				eventType: EventType.OnMemberJoined,
 				room: GOSpeakSocketClient.parseRoomRef(raw),
 				actor: GOSpeakSocketClient.parseMemberRef(raw),
 				timestamp: Date.now(),
@@ -248,7 +249,7 @@ export class GOSpeakSocketClient {
 		// member:left → { room, identity, id }
 		this.socket.on("member:left", (raw: any) => {
 			this.emit({
-				eventType: EventType.OnRoomLeft,
+				eventType: EventType.OnMemberLeft,
 				room: GOSpeakSocketClient.parseRoomRef(raw),
 				actor: GOSpeakSocketClient.parseMemberRef(raw),
 				timestamp: Date.now(),
@@ -269,31 +270,23 @@ export class GOSpeakSocketClient {
 		// user:muted → { user_id, duration, permanent, reason, expires_at? }
 		this.socket.on("user:muted", (raw: any) => {
 			this.emit({
-				eventType: EventType.OnMemberStateChanged,
-				room: { id: "", name: "" },
-				member: {
-					identity: String(raw?.user_id ?? ""),
-					name: String(raw?.user_id ?? ""),
-					role: "member",
-				},
-				muted: true,
+				eventType: EventType.OnUserMuted,
+				userId: Number(raw?.user_id ?? 0),
+				duration: raw?.duration,
+				permanent: raw?.permanent,
+				reason: raw?.reason,
+				expiresAt: raw?.expires_at,
 				timestamp: Date.now(),
-			} as MemberStateEvent);
+			} as UserMuteEvent);
 		});
 
 		// user:unmuted → { user_id }
 		this.socket.on("user:unmuted", (raw: any) => {
 			this.emit({
-				eventType: EventType.OnMemberStateChanged,
-				room: { id: "", name: "" },
-				member: {
-					identity: String(raw?.user_id ?? ""),
-					name: String(raw?.user_id ?? ""),
-					role: "member",
-				},
-				muted: false,
+				eventType: EventType.OnUserUnmuted,
+				userId: Number(raw?.user_id ?? 0),
 				timestamp: Date.now(),
-			} as MemberStateEvent);
+			} as UserMuteEvent);
 		});
 
 		// room:kicked → { room, targetIdentity }
@@ -301,7 +294,7 @@ export class GOSpeakSocketClient {
 			const roomName = typeof raw === "string" ? raw : raw?.room;
 			if (roomName) this.joinedRooms.delete(roomName);
 			this.emit({
-				eventType: EventType.OnRoomLeft,
+				eventType: EventType.OnMemberKicked,
 				room: GOSpeakSocketClient.parseRoomRef(raw),
 				actor: {
 					identity: String(raw?.targetIdentity ?? ""),

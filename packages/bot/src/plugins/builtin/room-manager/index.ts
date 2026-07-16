@@ -123,13 +123,13 @@ export class RoomManagerPlugin extends Plugin {
 		);
 	}
 
-	@On(EventType.OnRoomJoined, { desc: "自动欢迎新成员" })
+	@On(EventType.OnMemberJoined, { desc: "自动欢迎新成员" })
 	async onMemberJoined(event: RoomEvent): Promise<void> {
 		if (!event.actor) return;
 		await this.ctx.chat.send(event.room.id, `${event.actor.name} 加入了房间`);
 	}
 
-	@On(EventType.OnRoomLeft, { desc: "成员离开通知" })
+	@On(EventType.OnMemberLeft, { desc: "成员离开通知" })
 	async onMemberLeft(event: RoomEvent): Promise<void> {
 		if (!event.actor) return;
 		await this.ctx.chat.send(event.room.id, `${event.actor.name} 离开了房间`);

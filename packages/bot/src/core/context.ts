@@ -59,5 +59,11 @@ export interface BotContext {
 		list(): Promise<unknown[]>;
 		status(userId: number): Promise<unknown | null>;
 	};
+	readonly scheduler: {
+		every(id: string, ms: number, fn: () => void | Promise<void>): void;
+		once(id: string, ms: number, fn: () => void | Promise<void>): void;
+		clear(id: string): void;
+		clearAll(): void;
+	};
 	hasPermission(level: PermissionLevel, member?: MemberRef): boolean;
 }

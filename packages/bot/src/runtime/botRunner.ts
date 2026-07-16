@@ -12,6 +12,7 @@ import { type PcmStream, PcmStreamHub } from "../media";
 import { createKVStore, GOSpeakApiClient } from "./apiClient";
 import { AuthClient, type AuthCredentials } from "./authClient";
 import { CapabilityRouter } from "./capabilityRouter";
+import { Scheduler } from "./scheduler";
 import { GOSpeakSocketClient } from "./socketClient";
 
 export interface BotConfig {
@@ -33,6 +34,8 @@ export interface BotConfig {
 	pluginDir?: string;
 	/** Watch pluginDir for runtime load/reload (default true when pluginDir set) */
 	watchPlugins?: boolean;
+	/** Auto-join these rooms on start */
+	autoJoinRooms?: string[];
 	/** Debounce for plugin file changes (ms) */
 	pluginWatchDebounceMs?: number;
 	/** Per-plugin configuration map, keyed by plugin name */
@@ -59,6 +62,7 @@ export class BotRunner {
 	private _refreshTimer: NodeJS.Timeout | null = null;
 	private _pcmHub = new PcmStreamHub();
 	private _caps!: CapabilityRouter;
+	private _scheduler = new Scheduler();
 
 	constructor(config: BotConfig, logger?: ILogger) {
 		this.config = config;
@@ -176,6 +180,18 @@ export class BotRunner {
 		await this.pluginManager.start();
 		await this.socket.connect();
 
+		// Auto-join configured rooms
+		if (this.config.autoJoinRooms && this.config.autoJoinRooms.length > 0) {
+			for (const room of this.config.autoJoinRooms) {
+				try {
+					this.socket.joinRoom(room, this.config.identity);
+					this.logger.info(`Auto-joined room: ${room}`);
+				} catch (err) {
+					this.logger.error(`Failed to auto-join room ${room}:`, err);
+				}
+			}
+		}
+
 		this.logger.info(
 			`Bot started — ${this.status.pluginCount} plugins, ${this.status.handlerCount} handlers`,
 		);
@@ -188,6 +204,7 @@ export class BotRunner {
 			clearInterval(this._refreshTimer);
 			this._refreshTimer = null;
 		}
+		this._scheduler.clearAll();
 		this._pcmHub.clear();
 		this.socket?.disconnect();
 		if (this.pluginManager) {
@@ -273,7 +290,18 @@ export class BotRunner {
 			rooms: this._caps,
 			voice: this._caps,
 			users: this._caps,
-			mutes: this._caps,
+			mutes: {
+				list: () => this._caps.listMutes(),
+				status: (userId: number) => this._caps.getMuteStatus(userId),
+			},
+			scheduler: {
+				every: (id, ms, fn) =>
+					this._scheduler.every(`${pluginName}:${id}`, ms, fn),
+				once: (id, ms, fn) =>
+					this._scheduler.once(`${pluginName}:${id}`, ms, fn),
+				clear: (id) => this._scheduler.clear(`${pluginName}:${id}`),
+				clearAll: () => this._scheduler.clearByPrefix(`${pluginName}:`),
+			},
 			kv: createKVStore(),
 			hasPermission: (_level, _member) => true,
 		};

@@ -28,6 +28,20 @@ function makeCtx() {
 			removeMember: async () => {},
 			setMemberVolume: async () => {},
 		},
+		users: {
+			getByIdentity: async (identity: string) => ({
+				id: 1,
+				name: identity,
+				role: "user",
+				uuid: "u1",
+			}),
+		},
+		scheduler: {
+			every: () => {},
+			once: () => {},
+			clear: () => {},
+			clearAll: () => {},
+		},
 		kv: {
 			get: async () => undefined,
 			set: async () => {},
@@ -172,7 +186,7 @@ describe("builtin plugins", () => {
 			getPluginConfig: () => ({}),
 		});
 		const res = await bus.dispatch(
-			roomEvent(EventType.OnRoomJoined, "NewUser"),
+			roomEvent(EventType.OnMemberJoined, "NewUser"),
 		);
 		expect(res.executed).toBeGreaterThanOrEqual(1);
 		expect(ctx._sent.some((s: string) => s.includes("NewUser"))).toBe(true);

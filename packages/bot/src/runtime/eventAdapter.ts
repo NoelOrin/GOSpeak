@@ -34,7 +34,7 @@ export class EventAdapter {
 	 * Parse a string-encoded broadcastBotMessage payload into one or more BotEvents.
 	 * Used when the socket client receives a bot:command or bot:message event.
 	 */
-	adaptBotMessage(rawPayload: string, eventType: EventType): BotEvent[] {
+	adaptBotMessage(rawPayload: string, _eventType: EventType): BotEvent[] {
 		let msg: BroadcastBotMessage;
 		try {
 			msg = JSON.parse(rawPayload) as BroadcastBotMessage;

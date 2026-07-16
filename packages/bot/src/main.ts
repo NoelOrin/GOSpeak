@@ -7,6 +7,7 @@ const BOT_USERNAME = process.env.GOSPEAK_BOT_USERNAME ?? "";
 const BOT_PASSWORD = process.env.GOSPEAK_BOT_PASSWORD ?? "";
 const BOT_IDENTITY = process.env.GOSPEAK_BOT_IDENTITY ?? "gospeak-bot";
 const BOT_NAME = process.env.GOSPEAK_BOT_NAME ?? "GOSpeak Bot";
+const AUTO_JOIN_ROOMS = process.env.GOSPEAK_AUTO_JOIN_ROOMS ?? "";
 const PLUGIN_DIR = process.env.GOSPEAK_PLUGIN_DIR ?? "./plugins";
 
 async function main(): Promise<void> {
@@ -30,6 +31,11 @@ async function main(): Promise<void> {
 		identity: BOT_IDENTITY,
 		displayName: BOT_NAME,
 		pluginDir: PLUGIN_DIR,
+		autoJoinRooms: AUTO_JOIN_ROOMS
+			? AUTO_JOIN_ROOMS.split(",")
+					.map((s) => s.trim())
+					.filter(Boolean)
+			: undefined,
 	});
 
 	process.on("SIGINT", async () => {
