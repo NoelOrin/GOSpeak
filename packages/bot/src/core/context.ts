@@ -55,5 +55,9 @@ export interface BotContext {
 		): Promise<{ id: number; name: string; role: string; uuid: string }>;
 	};
 	readonly kv: KeyValueStore;
+	readonly mutes: {
+		list(): Promise<unknown[]>;
+		status(userId: number): Promise<unknown | null>;
+	};
 	hasPermission(level: PermissionLevel, member?: MemberRef): boolean;
 }

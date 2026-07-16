@@ -273,6 +273,7 @@ export class BotRunner {
 			rooms: this._caps,
 			voice: this._caps,
 			users: this._caps,
+			mutes: this._caps,
 			kv: createKVStore(),
 			hasPermission: (_level, _member) => true,
 		};

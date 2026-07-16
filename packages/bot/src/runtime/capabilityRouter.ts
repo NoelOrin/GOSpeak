@@ -101,6 +101,16 @@ export class CapabilityRouter implements ChatClient, RoomClient, VoiceClient {
 		// Client-local operation, no server action
 	}
 
+	// ── 禁言查询 (REST) ──
+
+	async listMutes(): Promise<unknown[]> {
+		return this.api.listMutes();
+	}
+
+	async getMuteStatus(userId: number): Promise<unknown | null> {
+		return this.api.getMuteStatus(userId);
+	}
+
 	// ── 用户查询 (REST) ──
 
 	async getUserByIdentity(

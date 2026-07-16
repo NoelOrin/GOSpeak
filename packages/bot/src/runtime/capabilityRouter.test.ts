@@ -13,6 +13,8 @@ function createMockApi() {
 			.mockResolvedValue({ id: 1, uuid: "u1", name: "alice", role: "user" }),
 		muteUser: vi.fn().mockResolvedValue(undefined),
 		unmuteUser: vi.fn().mockResolvedValue(undefined),
+		listMutes: vi.fn().mockResolvedValue([]),
+		getMuteStatus: vi.fn().mockResolvedValue(null),
 	};
 }
 
@@ -126,6 +128,22 @@ describe("CapabilityRouter", () => {
 			const result = await router.getUserByIdentity("alice");
 			expect(api.getUserByIdentity).toHaveBeenCalledWith("alice");
 			expect(result.name).toBe("alice");
+		});
+	});
+
+	describe("mutes", () => {
+		it("listMutes delegates to api", async () => {
+			api.listMutes.mockResolvedValue([{ id: 1, user_id: 1 }]);
+			const result = await (router as any).listMutes();
+			expect(api.listMutes).toHaveBeenCalled();
+			expect(result).toEqual([{ id: 1, user_id: 1 }]);
+		});
+
+		it("getMuteStatus delegates to api", async () => {
+			api.getMuteStatus.mockResolvedValue({ id: 1, user_id: 1 });
+			const result = await (router as any).getMuteStatus(1);
+			expect(api.getMuteStatus).toHaveBeenCalledWith(1);
+			expect(result.user_id).toBe(1);
 		});
 	});
 });
