@@ -170,6 +170,8 @@ func (h *Hub) SetupRoutes(server *socketio.Server) {
 	server.OnEvent("/", EventRoomKick, safeOnEventData(h.OnRoomKick))
 	server.OnEvent("/", EventMemberMicState, safeOnEventData(h.OnMemberMicState))
 	server.OnEvent("/", EventMemberSpeaking, safeOnEventData(h.OnMemberSpeaking))
+	server.OnEvent("/",  EventBotCommand, safeOnEventData(h.PublishBotCommand))
+	server.OnEvent("/",  EventBotMessage, safeOnEventData(h.PublishBotMessage))
 
 	if h.sfuSignalHandler != nil {
 		h.sfuSignalHandler.RegisterRoutes(server)

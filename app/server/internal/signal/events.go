@@ -29,6 +29,10 @@ const (
 	EventMemberUpdated  = "member:updated"
 	EventRoomListResult = "room:list:result"
 
+	// Bot 消息桥（客户端 → 服务端）
+	EventBotCommand = "bot:command"
+	EventBotMessage = "bot:message"
+
 	// 管理操作（客户端 → 服务端）
 	EventMemberMicState = "member:mic-state"
 	EventRoomKick = "room:kick"
