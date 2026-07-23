@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -24,7 +25,24 @@ const (
 	MySQL      DatabaseEnum = "MySQL"
 )
 
-var DB *gorm.DB
+var (
+	dbMu sync.RWMutex
+	DB   *gorm.DB
+)
+
+// setDB atomically writes the global DB handle.
+func setDB(db *gorm.DB) {
+	dbMu.Lock()
+	DB = db
+	dbMu.Unlock()
+}
+
+// getDB returns the global DB handle.
+func getDB() *gorm.DB {
+	dbMu.RLock()
+	defer dbMu.RUnlock()
+	return DB
+}
 
 func InitDB(cfg *config.Config) error {
 	if cfg == nil {
@@ -32,21 +50,23 @@ func InitDB(cfg *config.Config) error {
 	}
 	dbType := DatabaseEnum(cfg.DBType)
 	var err error
+	var db *gorm.DB
 	switch dbType {
 	case PostgreSQL:
-		DB, err = connectPostgreSQL(cfg)
+		db, err = connectPostgreSQL(cfg)
 	case SQLite:
-		DB, err = connectSQLite(cfg)
+		db, err = connectSQLite(cfg)
 	case MySQL:
-		DB, err = connectMySQL(cfg)
+		db, err = connectMySQL(cfg)
 	default:
 		return fmt.Errorf("unsupported database type: %s", dbType)
 	}
 	if err != nil {
 		panic(fmt.Sprintf("数据库连接失败 [%s]: %v", dbType, err))
 	}
+	setDB(db)
 
-	sqlDB, err := DB.DB()
+	sqlDB, err := db.DB()
 	if err != nil {
 		panic(fmt.Sprintf("获取数据库实例失败 [%s]: %v", dbType, err))
 	}
@@ -54,7 +74,7 @@ func InitDB(cfg *config.Config) error {
 		panic(fmt.Sprintf("数据库 Ping 失败 [%s]: %v", dbType, err))
 	}
 
-	if err := migrateOldSFUConfig(DB); err != nil {
+	if err := migrateOldSFUConfig(db); err != nil {
 		return err
 	}
 	if err := migrateStorageConfigSchema(DB); err != nil {

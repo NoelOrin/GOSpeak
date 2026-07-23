@@ -298,7 +298,9 @@ export const socketStore = createRoot(() => {
 		// 发言检测（SRS / Cloudflare）：信令层聚合后广播房间级 active speakers
 		adapter.onServerEvent(
 			EVENTS.ROOM_ACTIVE_SPEAKERS,
-			(event: { identities?: string[] }) => {
+			(event: { room?: string; identities?: string[] }) => {
+				const room = event?.room;
+				if (room && room !== currentRoom()) return;
 				setSpeakingIdentities(event?.identities ?? []);
 			},
 		);

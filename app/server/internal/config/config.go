@@ -72,6 +72,11 @@ type Config struct {
 	NATSName           string `env:"NATS_NAME" envDefault:""`
 	NATSConnectTimeout string `env:"NATS_CONNECT_TIMEOUT" envDefault:"2s"`
 	NATSEmbeddedPort   string `env:"NATS_EMBEDDED_PORT" envDefault:""`
+	NATSUser           string `env:"NATS_USER" envDefault:""`
+	NATSPassword       string `env:"NATS_PASSWORD" envDefault:""`
+	NATSToken          string `env:"NATS_TOKEN" envDefault:""`
+	NATSCredsFile      string `env:"NATS_CREDS_FILE" envDefault:""`
+	NATSTLS            bool   `env:"NATS_TLS" envDefault:"false"`
 	StateStore         string `env:"STATE_STORE" envDefault:"auto"`
 
 	EmailEnabled      bool   `env:"EMAIL_ENABLED" envDefault:"false"`

@@ -240,10 +240,16 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 		identity string
 		deleted  bool
 	}
+	type leaveEvent struct {
+		room     string
+		identity string
+		id       string
+	}
 	var cleanups []disconnectCleanup
 	var updatedRooms []string
 	var speakingChanged []string
 	var deletedStreams []string
+	var leaveEvents []leaveEvent
 	h.mu.Lock()
 	for roomName, room := range h.rooms {
 		if member, ok := room.Members[s.ID()]; ok {
@@ -260,10 +266,10 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 			if wasSpeaking {
 				speakingChanged = append(speakingChanged, roomName)
 			}
-			h.publishRoom(roomName, EventMemberLeft, map[string]interface{}{
-				"room":     roomName,
-				"identity": identity,
-				"id":       s.ID(),
+			leaveEvents = append(leaveEvents, leaveEvent{
+				room:     roomName,
+				identity: identity,
+				id:       s.ID(),
 			})
 			updatedRooms = append(updatedRooms, roomName)
 			deleted := h.deleteRoomIfEmptyLocked(roomName)
@@ -271,6 +277,15 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 		}
 	}
 	h.mu.Unlock()
+
+	// publish after unlock: avoid holding hub mu across NATS/Socket.IO I/O
+	for _, e := range leaveEvents {
+		h.publishRoom(e.room, EventMemberLeft, map[string]interface{}{
+			"room":     e.room,
+			"identity": e.identity,
+			"id":       e.id,
+		})
+	}
 
 	for _, name := range updatedRooms {
 		h.syncRoomToStore(name)

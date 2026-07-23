@@ -19,6 +19,7 @@ import (
 	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/sfu/factory"
 	"GOSpeak/internal/signal"
+	"strings"
 	"context"
 	"fmt"
 	"net/http"
@@ -161,7 +162,7 @@ func StartGin(env EnvEnum) {
 	middleware.SetTokenVersionChecker(authSvc)
 
 	wsTransport := websocket.Default
-	wsTransport.CheckOrigin = func(r *http.Request) bool { return true }
+	wsTransport.CheckOrigin = makeCheckOrigin(cfg.CORSOrigin)
 
 	sioServer := socketio.NewServer(&engineio.Options{
 		Transports: []transport.Transport{
@@ -388,26 +389,52 @@ func StartGin(env EnvEnum) {
 		<-quit
 		logger.WithComponent("Server").Info("shutting down...")
 
-		pluginReg.StopAll(context.Background())
-		logger.WithComponent("Plugin").Info("plugins stopped")
-
-		if err := sioServer.Close(); err != nil {
-			logger.WithComponent("Socket.IO").Warnf("close error: %v", err)
-		}
-		logger.WithComponent("Socket.IO").Info("connections closed")
-
-		closeEventBus()
-		logger.WithComponent("EventBus").Info("closed")
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// 1) stop accepting HTTP first so in-flight handlers can still emit signal
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(ctx); err != nil {
 			logger.WithComponent("HTTP").Errorf("shutdown error: %v", err)
+		}
+
+		pluginReg.StopAll(context.Background())
+		logger.WithComponent("Plugin").Info("plugins stopped")
+
+		// 2) drain signal fanout then close socket connections
+		closeEventBus()
+		logger.WithComponent("EventBus").Info("closed")
+		if err := sioServer.Close(); err != nil {
+			logger.WithComponent("Socket.IO").Warnf("close error: %v", err)
+		} else {
+			logger.WithComponent("Socket.IO").Info("connections closed")
 		}
 	}()
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.WithComponent("HTTP").Fatalf("listen error: %v", err)
+	}
+}
+
+// makeCheckOrigin builds Socket.IO CheckOrigin from CORS_ORIGIN (comma-separated).
+// Empty allowlist keeps legacy open behavior for local dev.
+func makeCheckOrigin(corsOrigin string) func(*http.Request) bool {
+	raw := strings.TrimSpace(corsOrigin)
+	if raw == "" || raw == "*" {
+		return func(*http.Request) bool { return true }
+	}
+	allowed := map[string]struct{}{}
+	for _, o := range strings.Split(raw, ",") {
+		o = strings.TrimSpace(o)
+		if o != "" {
+			allowed[o] = struct{}{}
+		}
+	}
+	return func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // non-browser clients
+		}
+		_, ok := allowed[origin]
+		return ok
 	}
 }
 

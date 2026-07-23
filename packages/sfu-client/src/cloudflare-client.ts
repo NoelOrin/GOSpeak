@@ -99,6 +99,8 @@ export class CloudflareSFUClient implements SFUClient {
 	private localTrack: MediaStreamTrack | null = null;
 	private remoteTracks = new Map<string, CloudflareRemoteAudioTrack>();
 	private peerSessions = new Map<string, string>();
+	/** mid → identity for remote track mapping from tracks/new responses */
+	private midToIdentity = new Map<string, string>();
 	private onActiveSpeakersCb?: (ids: string[]) => void;
 	private onLocalSpeakingChangeCb?: (speaking: boolean) => void;
 	private onRemoteAudioTrackCb?: (info: RemoteTrackInfo) => void;
@@ -275,11 +277,12 @@ export class CloudflareSFUClient implements SFUClient {
 		this.micEnabled = enabled;
 		if (this.localTrack) {
 			this.localTrack.enabled = enabled;
+			if (!enabled) this.onLocalSpeakingChangeCb?.(false);
 			return;
 		}
 		if (enabled && this.hasJoined && this.pc) {
-			this.localTrack = await this.createLocalAudioTrack();
-			this.pc.addTrack(this.localTrack);
+			// New local track requires full tracks/new renegotiation so remote sees audio.
+			await this.publishLocalTrack();
 		}
 	}
 
@@ -409,6 +412,10 @@ export class CloudflareSFUClient implements SFUClient {
 			return;
 		}
 
+		for (const t of resp.tracks ?? []) {
+			if (t.mid) this.midToIdentity.set(t.mid, identity);
+		}
+
 		if (resp.sessionDescription?.sdp) {
 			const desc = resp.sessionDescription;
 			if (desc.type === "offer" || resp.requiresImmediateRenegotiation) {
@@ -442,14 +449,64 @@ export class CloudflareSFUClient implements SFUClient {
 	}
 
 	private identityFromTrackEvent(event: RTCTrackEvent): string {
-		// Cloudflare does not attach identity on track; map by known peer session order is weak.
-		// Prefer the most recently subscribed peer without a track yet.
-		for (const [identity, sessionId] of this.peerSessions) {
-			if (!this.remoteTracks.has(identity) && sessionId) {
-				return identity;
-			}
+		const mid = (event as RTCTrackEvent & { transceiver?: RTCRtpTransceiver }).transceiver?.mid
+			|| event.track?.id
+			|| "";
+		if (mid && this.midToIdentity.has(mid)) {
+			return this.midToIdentity.get(mid) as string;
 		}
-		return event.track?.id || "remote";
+		// Fallback: single pending peer without a track
+		const pending: string[] = [];
+		for (const [identity, sessionId] of this.peerSessions) {
+			if (!this.remoteTracks.has(identity) && sessionId) pending.push(identity);
+		}
+		if (pending.length === 1) return pending[0];
+		return pending[0] || event.track?.id || "remote";
+	}
+
+	/** Publish (or re-publish) local mic via Cloudflare tracks/new + setRemoteDescription. */
+	private async publishLocalTrack(): Promise<void> {
+		if (!this.pc || !this.sessionId) return;
+		this.localTrack = await this.createLocalAudioTrack();
+		const sender = this.pc.addTrack(this.localTrack);
+		const transceiver = this.pc.getTransceivers().find((t) => t.sender === sender);
+		const mid = transceiver?.mid || "0";
+
+		const offer = await this.pc.createOffer();
+		await this.pc.setLocalDescription(offer);
+		await this.waitIceGatheringComplete(this.pc);
+		const localDesc = this.pc.localDescription;
+		if (!localDesc?.sdp) throw new Error("cloudflare local SDP missing");
+
+		const tracksResp = await this.proxyJSON<TracksResponse>(
+			`/api/v1/signal/cloudflare/sessions/${encodeURIComponent(this.sessionId)}/tracks/new`,
+			"POST",
+			{
+				sessionDescription: {
+					type: localDesc.type,
+					sdp: localDesc.sdp,
+				},
+				tracks: [
+					{
+						location: "local",
+						mid,
+						trackName: LOCAL_TRACK_NAME,
+					},
+				],
+			},
+		);
+		if (tracksResp.errorCode) {
+			throw new Error(
+				tracksResp.errorDescription || tracksResp.errorCode || "add tracks failed",
+			);
+		}
+		const answer = tracksResp.sessionDescription;
+		if (answer?.sdp) {
+			await this.pc.setRemoteDescription({
+				type: (answer.type as RTCSdpType) || "answer",
+				sdp: answer.sdp,
+			});
+		}
 	}
 
 	private async createLocalAudioTrack(): Promise<MediaStreamTrack> {
@@ -482,6 +539,7 @@ export class CloudflareSFUClient implements SFUClient {
 		for (const track of this.remoteTracks.values()) track.detach();
 		this.remoteTracks.clear();
 		this.peerSessions.clear();
+		this.midToIdentity.clear();
 		if (this.localTrack) {
 			this.localTrack.stop();
 			this.localTrack = null;
