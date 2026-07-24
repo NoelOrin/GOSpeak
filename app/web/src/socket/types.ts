@@ -19,6 +19,7 @@ export interface RoomInfo {
 	limit: number;
 	audioOnly?: boolean;
 	allowAudience?: boolean;
+	type?: string;
 	members: MemberInfo[];
 	count: number;
 	createdAt: number;

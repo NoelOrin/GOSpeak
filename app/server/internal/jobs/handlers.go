@@ -20,7 +20,7 @@ type SFUCleaner interface {
 }
 
 // Handle dispatches a JobEnvelope to the appropriate handler.
-func Handle(job bus.JobEnvelope, hub StreamRegistrar, cleaner SFUCleaner) error {
+func Handle(job bus.JobEnvelope, hub StreamRegistrar, cleaner SFUCleaner, chat ChatPersister) error {
 	switch job.Type {
 	case "srs":
 		return handleSRS(job.Payload, hub)
@@ -28,6 +28,16 @@ func Handle(job bus.JobEnvelope, hub StreamRegistrar, cleaner SFUCleaner) error 
 		return handleLiveKit(job.Payload, cleaner)
 	case "sfu_cleanup":
 		return handleCleanup(job.Payload, cleaner)
+	case "chat.persist":
+		if chat == nil {
+			return nil
+		}
+		return chat.PersistFromJob(job.Payload)
+	case "chat.mutate":
+		if chat == nil {
+			return nil
+		}
+		return chat.MutateFromJob(job.Payload)
 	default:
 		log.Printf("[Jobs] ignore unknown type=%s", job.Type)
 		return nil

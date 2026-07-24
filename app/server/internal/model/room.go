@@ -15,6 +15,7 @@ type Room struct {
 	Limit         uint      `json:"limit"`
 	AudioOnly     bool      `gorm:"not null;default:true" json:"audio_only"`
 	AllowAudience bool      `gorm:"not null;default:true" json:"allow_audience"`
+	Type          string    `gorm:"size:16;not null;default:voice;index" json:"type"`
 	CreatedBy     string    `gorm:"index;size:64" json:"created_by"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
@@ -29,4 +30,18 @@ func (r *Room) BeforeCreate(_ *gorm.DB) error {
 
 func (r *Room) TableName() string {
 	return "room"
+}
+
+const (
+	RoomTypeText  = "text"
+	RoomTypeVoice = "voice"
+)
+
+func NormalizeRoomType(t string) string {
+	switch t {
+	case RoomTypeText:
+		return RoomTypeText
+	default:
+		return RoomTypeVoice
+	}
 }

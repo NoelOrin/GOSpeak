@@ -21,6 +21,7 @@
     "@tanstack/solid-router": "^1.133.20",
     "@tanstack/solid-router-devtools": "^1.133.20",
     "@tanstack/solid-start": "^1.133.20",
+    "@tanstack/solid-virtual": "^3.13.35",
     "async-validator": "^4.2.5",
     "await-to-js": "^3.0.0",
     "axios": "^1.13.2",

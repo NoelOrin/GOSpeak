@@ -444,7 +444,7 @@ All SFU calls go through `sfu.Provider`. Current service paths already consume t
 
 ## LiveKit Module
 
-Standalone package at `internal/livekit/`. Implements `sfu.Provider` using `github.com/livekit/server-sdk-go/v2`.
+Standalone package at `internal/sfu/providers/livekit/`. Implements `sfu.Provider` using `github.com/livekit/server-sdk-go/v2`.
 
 Constructor: `livekit.NewService(cfg *config.Config) *Service`
 

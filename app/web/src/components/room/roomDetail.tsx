@@ -6,7 +6,14 @@ import { useRoomAudioBridge } from "./hooks/useRoomAudioBridge";
 import { useRoomSounds } from "./hooks/useRoomSounds";
 import { useVoiceSession } from "./hooks/useVoiceSession";
 
-const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
+const RoomDetail = ({
+	ref,
+	mobileHideMembers = false,
+}: {
+	ref?: HTMLDivElement;
+	/** 移动端舞台自管成员 tab，隐藏侧栏 */
+	mobileHideMembers?: boolean;
+}) => {
 	const {
 		selectedRoom,
 		phase,
@@ -30,16 +37,18 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 			<Show
 				when={selectedRoom()}
 				fallback={
-					<div class="text-base-content/40 text-sm">
-						请从左侧列表选择一个房间
+					<div class="text-base-content/40 text-sm px-4 text-center">
+						请从列表选择一个房间
 					</div>
 				}
 			>
 				<Show
 					when={isJoined()}
 					fallback={
-						<div class="flex flex-col items-center gap-4">
-							<div class="text-lg font-bold">{selectedRoom()?.name}</div>
+						<div class="flex flex-col items-center gap-4 px-4">
+							<div class="text-lg font-bold text-center">
+								{selectedRoom()?.name}
+							</div>
 							<Show
 								when={phase() === "failed"}
 								fallback={
@@ -52,7 +61,7 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 								}
 							>
 								<div class="flex flex-col items-center gap-3">
-									<div class="text-sm text-error/70">
+									<div class="text-sm text-error/70 text-center">
 										{error() || phaseLabel()}
 									</div>
 									<button class="btn btn-sm btn-primary" onClick={retry}>
@@ -63,14 +72,14 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 						</div>
 					}
 				>
-					<div class="flex flex-row w-full h-full">
-						<div class="flex flex-col flex-1">
-							<div class="flex justify-between items-center px-4 h-12 border-b border-base-300">
+					<div class="flex flex-row w-full h-full min-w-0">
+						<div class="flex flex-col flex-1 min-w-0">
+							<div class="flex justify-between items-center px-3 sm:px-4 h-12 border-b border-base-300 gap-2">
 								<div class="min-w-0">
 									<div class="font-bold truncate">{currentRoom()}</div>
 								</div>
-								<div class="flex items-center gap-2">
-									<span class="text-sm text-base-content/60">
+								<div class="flex items-center gap-1 sm:gap-2 shrink-0">
+									<span class="text-xs sm:text-sm text-base-content/60 hidden xs:inline sm:inline">
 										{socketStore.members().length} 人在线
 									</span>
 									<button
@@ -83,7 +92,9 @@ const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 							</div>
 							<VoiceChat />
 						</div>
-						<MemberSidebar />
+						<Show when={!mobileHideMembers}>
+							<MemberSidebar />
+						</Show>
 					</div>
 				</Show>
 			</Show>

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"GOSpeak/internal/signal"
-	"GOSpeak/internal/srs"
+	"GOSpeak/internal/sfu/providers/srs"
 
 	"github.com/gin-gonic/gin"
 )

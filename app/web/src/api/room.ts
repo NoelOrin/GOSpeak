@@ -9,6 +9,7 @@ export interface CreateRoomReq {
 	limit: number;
 	audio_only: boolean;
 	allow_audience: boolean;
+	type?: "text" | "voice";
 }
 
 export interface RoomRecord {
@@ -20,6 +21,7 @@ export interface RoomRecord {
 	limit: number;
 	audio_only: boolean;
 	allow_audience: boolean;
+	type?: "text" | "voice";
 	created_by?: string;
 	createdAt?: string;
 	updatedAt?: string;

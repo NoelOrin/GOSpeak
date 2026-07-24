@@ -53,7 +53,7 @@ type cleanupPublisher interface {
 
 // roomStore abstracts DB room listing for Hub.
 type roomStore interface {
-	List(page, pageSize int) ([]model.Room, int64, error)
+	List(page, pageSize int, roomType string) ([]model.Room, int64, error)
 	GetByName(name string) (*model.Room, error)
 }
 
@@ -92,6 +92,11 @@ type ParticipantCleanupHandler interface {
 	OnParticipantLeft(room, identity string)
 }
 
+type connRoomSlots struct {
+	TextRoom  string
+	VoiceRoom string
+}
+
 type Hub struct {
 	server           socketServer
 	eventBus         eventBus
@@ -119,6 +124,8 @@ type Hub struct {
 	instanceID         string
 	cleanupPub         cleanupPublisher
 	stateNotifier      stateNotifier
+	connSlots          map[string]*connRoomSlots // socketID -> slots
+	msgSvc             messageSender
 }
 
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
@@ -132,6 +139,7 @@ func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permCh
 		roomStreams:      make(map[string]map[string]struct{}),
 		streamRoomCache:  make(map[string]string),
 		streamByIdentity: make(map[string]map[string]string),
+		connSlots:        make(map[string]*connRoomSlots),
 	}
 }
 
@@ -172,7 +180,12 @@ func (h *Hub) SetupRoutes(server *socketio.Server) {
 	server.OnEvent("/", EventMemberSpeaking, safeOnEventData(h.OnMemberSpeaking))
 	server.OnEvent("/",  EventBotCommand, safeOnEventData(h.PublishBotCommand))
 	server.OnEvent("/",  EventBotMessage, safeOnEventData(h.PublishBotMessage))
-
+	// Message events
+	server.OnEvent("/", EventMessageSend, safeOnEventDataAck(h.OnMessageSend))
+	server.OnEvent("/", EventMessageEdit, safeOnEventDataAck(h.OnMessageEdit))
+	server.OnEvent("/", EventMessageDelete, safeOnEventDataAck(h.OnMessageDelete))
+	server.OnEvent("/", EventMessageReact, safeOnEventDataAck(h.OnMessageReact))
+	server.OnEvent("/", EventMessageUnreact, safeOnEventDataAck(h.OnMessageUnreact))
 	if h.sfuSignalHandler != nil {
 		h.sfuSignalHandler.RegisterRoutes(server)
 	}
@@ -276,6 +289,7 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 			cleanups = append(cleanups, disconnectCleanup{roomName, identity, deleted})
 		}
 	}
+	delete(h.connSlots, s.ID())
 	h.mu.Unlock()
 
 	// publish after unlock: avoid holding hub mu across NATS/Socket.IO I/O
@@ -467,9 +481,37 @@ func (h *Hub) OnRoomJoin(s socketio.Conn, data string) (string, error) {
 		})
 	}
 
+	// Dual-slot tracking: resolve room type, manage text/voice slot per conn.
+	h.mu.Lock()
+	roomType := model.RoomTypeVoice
+	if h.roomStore != nil {
+		if dbRoom, dbErr := h.roomStore.GetByName(req.Room); dbErr == nil && dbRoom != nil {
+			roomType = model.NormalizeRoomType(dbRoom.Type)
+		}
+	}
+	slots := h.connSlots[s.ID()]
+	if slots == nil {
+		slots = &connRoomSlots{}
+		h.connSlots[s.ID()] = slots
+	}
+	if roomType == model.RoomTypeText {
+		// Switching text rooms: leave old slot
+		if slots.TextRoom != "" && slots.TextRoom != req.Room {
+			s.Leave(slots.TextRoom)
+		}
+		slots.TextRoom = req.Room
+	} else {
+		// Switching voice rooms: leave old slot
+		if slots.VoiceRoom != "" && slots.VoiceRoom != req.Room {
+			s.Leave(slots.VoiceRoom)
+		}
+		slots.VoiceRoom = req.Room
+	}
+	h.mu.Unlock()
+
 	s.Join(req.Room)
 
-	log.Printf("[Signal] %s (%s) signaling ready for room: %s", s.ID(), identity, req.Room)
+	log.Printf("[Signal] %s (%s) signaling ready for room: %s (type=%s)", s.ID(), identity, req.Room, roomType)
 
 	return marshalAck(map[string]interface{}{
 		"room":     req.Room,
@@ -489,6 +531,15 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 		return marshalAck(map[string]interface{}{"error": err.Error()})
 	}
 	req.Identity = identity
+
+	// Text room guard: text rooms have no media, reject SFU join.
+	if h.roomStore != nil {
+		if dbRoom, dbErr := h.roomStore.GetByName(req.Room); dbErr == nil && dbRoom != nil {
+			if model.NormalizeRoomType(dbRoom.Type) == model.RoomTypeText {
+				return marshalAck(map[string]interface{}{"error": "text room has no media"})
+			}
+		}
+	}
 
 	// phase2 复检 mute / limit / password，避免 phase1 通过后状态变化
 	if ok, pwdErr := h.CheckRoomPassword(req.Room, req.Password); !ok {
@@ -950,7 +1001,7 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 	eg.Go(func() error {
 		dbRooms = make(map[string]RoomInfo)
 		if h.roomStore != nil {
-			if rooms, _, err := h.roomStore.List(1, 200); err == nil {
+			if rooms, _, err := h.roomStore.List(1, 200, ""); err == nil {
 				for _, r := range rooms {
 					dbRooms[r.Name] = RoomInfo{
 						ID:            r.ID,
@@ -961,6 +1012,7 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 						Limit:         r.Limit,
 						AudioOnly:     r.AudioOnly,
 						AllowAudience: r.AllowAudience,
+						Type:          r.Type,
 						Members:       []MemberInfo{},
 						Count:         0,
 						CreatedAt:     r.CreatedAt.UnixMilli(),

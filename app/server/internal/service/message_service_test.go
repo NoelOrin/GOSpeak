@@ -1,0 +1,1035 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+	"unicode/utf8"
+
+	"GOSpeak/internal/bus"
+	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/repository"
+
+	"github.com/glebarez/sqlite"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+)
+
+// ─── Fakes ───
+
+type fakeBus struct {
+	mu    sync.Mutex
+	calls []string // event names recorded
+}
+
+func (f *fakeBus) PublishRoom(_ context.Context, room, event string, payload interface{}) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, event)
+	return nil
+}
+
+func (f *fakeBus) reset() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = nil
+}
+
+type fakeQueue struct {
+	mu   sync.Mutex
+	jobs []bus.JobEnvelope
+	err  error // if set, Publish returns this error
+}
+
+func (q *fakeQueue) Publish(_ context.Context, job bus.JobEnvelope) error {
+	if q.err != nil {
+		return q.err
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.jobs = append(q.jobs, job)
+	return nil
+}
+
+func (q *fakeQueue) reset() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.jobs = nil
+	q.err = nil
+}
+
+// memRoomRepo is an in-memory room store implementing roomByUUID.
+type memRoomRepo struct {
+	mu    sync.Mutex
+	rooms map[string]*model.Room
+}
+
+func (r *memRoomRepo) GetByUUID(uuid string) (*model.Room, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	room, ok := r.rooms[uuid]
+	if !ok {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return room, nil
+}
+
+// newMemRoomRepo creates a memRoomRepo with pre-seeded text and voice rooms.
+func newMemRoomRepo() *memRoomRepo {
+	textUUID := uuid.New().String()
+	voiceUUID := uuid.New().String()
+	return &memRoomRepo{
+		rooms: map[string]*model.Room{
+			textUUID: {
+				UUID: textUUID,
+				Name: "test-text-room",
+				Type: model.RoomTypeText,
+			},
+			voiceUUID: {
+				UUID: voiceUUID,
+				Name: "test-voice-room",
+				Type: model.RoomTypeVoice,
+			},
+		},
+	}
+}
+
+// ─── Test Setup ───
+
+// setupMessageServiceTest creates a MessageService with in-memory SQLite-backed
+// MessageRepository and fake bus/queue. Returns the service, fakes, and the
+// pre-seeded text room UUID.
+func setupMessageServiceTest(t *testing.T) (*MessageService, *fakeBus, *fakeQueue, *memRoomRepo, string) {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open in-memory db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Message{}, &model.MessageReaction{}, &model.MessageMention{}); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	msgRepo := repository.NewMessageRepository(db)
+	roomRepo := newMemRoomRepo()
+
+	bus := &fakeBus{}
+	queue := &fakeQueue{}
+
+	svc := NewMessageService(msgRepo, roomRepo)
+	// Do NOT set bus/queue by default — tests that need them wire them explicitly.
+	// Default mode is sync-persist so chained operations (Send→Edit, Send→Delete)
+	// find messages in DB.
+
+	// Find the text room UUID
+	var textUUID string
+	for uuid, r := range roomRepo.rooms {
+		if r.Type == model.RoomTypeText {
+			textUUID = uuid
+			break
+		}
+	}
+
+	return svc, bus, queue, roomRepo, textUUID
+}
+
+// mustFindVoiceUUID returns the pre-seeded voice room UUID.
+func mustFindVoiceUUID(r *memRoomRepo) string {
+	for uuid, room := range r.rooms {
+		if room.Type == model.RoomTypeVoice {
+			return uuid
+		}
+	}
+	return ""
+}
+
+// ─── Helpers ───
+
+func assertNoError(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func assertErrorCode(t *testing.T, err error, code pkg.ErrCode) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected error with code %d, got nil", code)
+	}
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected *pkg.AppError, got %T: %v", err, err)
+	}
+	if appErr.Code != code {
+		t.Fatalf("expected error code %d, got %d: %s", code, appErr.Code, appErr.Message)
+	}
+}
+
+// ─── Send Tests ───
+
+func TestMessageService_Send_Success(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+
+	svc.SetEventBus(bus)
+	svc.SetJobQueue(queue)
+
+	dto, err := svc.Send(textUUID, "alice", "Hello, world!", "", "", nil)
+	assertNoError(t, err)
+
+	if dto == nil {
+		t.Fatal("expected non-nil DTO")
+	}
+	if dto.RoomUUID != textUUID {
+		t.Errorf("expected room_uuid %s, got %s", textUUID, dto.RoomUUID)
+	}
+	if dto.AuthorID != "alice" {
+		t.Errorf("expected author_id alice, got %s", dto.AuthorID)
+	}
+	if dto.Content != "Hello, world!" {
+		t.Errorf("expected content 'Hello, world!', got %s", dto.Content)
+	}
+	if dto.Deleted {
+		t.Error("expected deleted=false")
+	}
+	if dto.UUID == "" {
+		t.Error("expected non-empty UUID")
+	}
+	if dto.CreatedAt.IsZero() {
+		t.Error("expected non-zero CreatedAt")
+	}
+
+	// Bus should have received "message:created"
+	bus.mu.Lock()
+	busCalls := len(bus.calls)
+	bus.mu.Unlock()
+	if busCalls != 1 {
+		t.Errorf("expected 1 bus call, got %d", busCalls)
+	}
+	if len(bus.calls) > 0 && bus.calls[0] != "message:created" {
+		t.Errorf("expected bus event 'message:created', got %s", bus.calls[0])
+	}
+
+	// Queue should have received a chat.persist job
+	queue.mu.Lock()
+	queueJobs := len(queue.jobs)
+	queue.mu.Unlock()
+	if queueJobs != 1 {
+		t.Errorf("expected 1 queue job, got %d", queueJobs)
+	}
+	if queueJobs > 0 {
+		job := queue.jobs[0]
+		if job.Type != "chat.persist" {
+			t.Errorf("expected job type 'chat.persist', got %s", job.Type)
+		}
+		if job.ID != dto.UUID {
+			t.Errorf("expected job ID %s, got %s", dto.UUID, job.ID)
+		}
+	}
+}
+
+func TestMessageService_Send_WithMentions(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+
+	svc.SetEventBus(bus)
+	svc.SetJobQueue(queue)
+
+	mentions := []string{"bob", "charlie"}
+	dto, err := svc.Send(textUUID, "alice", "Hey @bob and @charlie!", "", "", mentions)
+	assertNoError(t, err)
+
+	if len(dto.Mentions) != 2 {
+		t.Errorf("expected 2 mentions, got %d", len(dto.Mentions))
+	}
+
+	// Verify mentions are in the job payload
+	if len(queue.jobs) > 0 {
+		var payload struct {
+			Mentions []string `json:"mentions"`
+		}
+		if err := json.Unmarshal(queue.jobs[0].Payload, &payload); err != nil {
+			t.Fatalf("failed to unmarshal job payload: %v", err)
+		}
+		if len(payload.Mentions) != 2 {
+			t.Errorf("expected 2 mentions in job payload, got %d", len(payload.Mentions))
+		}
+	}
+}
+
+func TestMessageService_Send_WithClientNonce(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+
+	dto, err := svc.Send(textUUID, "alice", "Hello", "", "nonce-123", nil)
+	assertNoError(t, err)
+
+	if dto.ClientNonce != "nonce-123" {
+		t.Errorf("expected client_nonce 'nonce-123', got %s", dto.ClientNonce)
+	}
+}
+
+func TestMessageService_Send_WithReplyTo(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+
+	// First send a message to use as parent
+	parent, err := svc.Send(textUUID, "bob", "Parent message", "", "", nil)
+	assertNoError(t, err)
+
+	// Reset fakes to isolate the reply send
+	bus.reset()
+	queue.reset()
+
+	// Send a reply
+	dto, err := svc.Send(textUUID, "alice", "Reply message", parent.UUID, "", nil)
+	assertNoError(t, err)
+
+	if dto.ReplyTo != parent.UUID {
+		t.Errorf("expected reply_to %s, got %s", parent.UUID, dto.ReplyTo)
+	}
+}
+
+func TestMessageService_Send_InvalidReplyTo(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+
+	_, err := svc.Send(textUUID, "alice", "Reply message", "nonexistent-uuid", "", nil)
+	assertErrorCode(t, err, pkg.INVALID_PARAMS)
+}
+
+func TestMessageService_Send_EmptyContent(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	_, err := svc.Send(textUUID, "alice", "   ", "", "", nil)
+	assertErrorCode(t, err, pkg.INVALID_PARAMS)
+}
+
+func TestMessageService_Send_TooLongContent(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	long := strings.Repeat("a", MaxMessageRunes+1)
+	_, err := svc.Send(textUUID, "alice", long, "", "", nil)
+	assertErrorCode(t, err, pkg.INVALID_PARAMS)
+}
+
+func TestMessageService_Send_MaxRunesBoundary(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	// Exactly 2000 runes — should succeed
+	content := strings.Repeat("a", MaxMessageRunes)
+	if utf8.RuneCountInString(content) != MaxMessageRunes {
+		t.Fatalf("expected %d runes, got %d", MaxMessageRunes, utf8.RuneCountInString(content))
+	}
+	dto, err := svc.Send(textUUID, "alice", content, "", "", nil)
+	assertNoError(t, err)
+	if dto == nil {
+		t.Fatal("expected non-nil DTO")
+	}
+
+	// 2001 runes — should fail
+	contentTooLong := content + "a"
+	_, err = svc.Send(textUUID, "alice", contentTooLong, "", "", nil)
+	assertErrorCode(t, err, pkg.INVALID_PARAMS)
+}
+
+func TestMessageService_Send_VoiceRoom(t *testing.T) {
+	svc, _, _, roomRepo, _ := setupMessageServiceTest(t)
+	voiceUUID := mustFindVoiceUUID(roomRepo)
+	if voiceUUID == "" {
+		t.Fatal("voice room not found")
+	}
+
+	_, err := svc.Send(voiceUUID, "alice", "Hello", "", "", nil)
+	assertErrorCode(t, err, pkg.FORBIDDEN)
+}
+
+func TestMessageService_Send_RoomNotFound(t *testing.T) {
+	svc, _, _, _, _ := setupMessageServiceTest(t)
+
+	_, err := svc.Send("nonexistent-uuid", "alice", "Hello", "", "", nil)
+	assertErrorCode(t, err, pkg.NOT_FOUND)
+}
+
+func TestMessageService_Send_QueueFallback(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+
+	svc.SetEventBus(bus)
+	svc.SetJobQueue(queue)
+	// Make the queue return an error so sync fallback kicks in
+	queue.err = errors.New("nats unavailable")
+
+	dto, err := svc.Send(textUUID, "alice", "Fallback test", "", "", nil)
+	assertNoError(t, err)
+
+	// Broadcast still happened
+	if len(bus.calls) != 1 {
+		t.Errorf("expected 1 bus call, got %d", len(bus.calls))
+	}
+
+	// Message should be persisted directly (sync fallback)
+	msg, err := svc.msgRepo.GetByUUID(dto.UUID)
+	assertNoError(t, err)
+	if msg == nil || msg.Content != "Fallback test" {
+		t.Errorf("expected message to be persisted, got %+v", msg)
+	}
+}
+
+func TestMessageService_Send_NoBusNoQueue(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+	// Remove bus and queue to test bare mode
+	svc.SetEventBus(nil)
+	svc.SetJobQueue(nil)
+
+	dto, err := svc.Send(textUUID, "alice", "Bare mode", "", "", nil)
+	assertNoError(t, err)
+
+	// Should have been persisted synchronously
+	msg, err := svc.msgRepo.GetByUUID(dto.UUID)
+	assertNoError(t, err)
+	if msg == nil || msg.Content != "Bare mode" {
+		t.Errorf("expected message to be persisted in bare mode, got %+v", msg)
+	}
+}
+
+// ─── Edit Tests ───
+
+func TestMessageService_Edit_Success(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+
+	dto, err := svc.Send(textUUID, "alice", "Original", "", "", nil)
+	assertNoError(t, err)
+
+	bus.reset()
+	queue.reset()
+	svc.SetEventBus(bus)
+	svc.SetJobQueue(queue)
+
+	edited, err := svc.Edit(textUUID, dto.UUID, "alice", "Edited content")
+	assertNoError(t, err)
+	if edited.Content != "Edited content" {
+		t.Errorf("expected 'Edited content', got %s", edited.Content)
+	}
+	if edited.EditedAt == nil {
+		t.Error("expected non-nil EditedAt")
+	}
+
+	// Bus got message:updated
+	if len(bus.calls) != 1 || bus.calls[0] != "message:updated" {
+		t.Errorf("expected bus event 'message:updated', got %v", bus.calls)
+	}
+
+	// Queue got chat.mutate
+	if len(queue.jobs) != 1 || queue.jobs[0].Type != "chat.mutate" {
+		t.Errorf("expected 1 chat.mutate job, got %d jobs: %+v", len(queue.jobs), queue.jobs)
+	}
+}
+
+func TestMessageService_Edit_EmptyContent(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+
+	dto, err := svc.Send(textUUID, "alice", "Original", "", "", nil)
+	assertNoError(t, err)
+
+	_, err = svc.Edit(textUUID, dto.UUID, "alice", "  ")
+	assertErrorCode(t, err, pkg.INVALID_PARAMS)
+}
+
+func TestMessageService_Edit_NotAuthor(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+
+	dto, err := svc.Send(textUUID, "alice", "Original", "", "", nil)
+	assertNoError(t, err)
+
+	_, err = svc.Edit(textUUID, dto.UUID, "bob", "Hacked content")
+	assertErrorCode(t, err, pkg.FORBIDDEN)
+}
+
+func TestMessageService_Edit_NotFound(t *testing.T) {
+	svc, _, _, _, _ := setupMessageServiceTest(t)
+
+	_, err := svc.Edit("room-uuid", "nonexistent-uuid", "alice", "Content")
+	assertErrorCode(t, err, pkg.NOT_FOUND)
+}
+
+func TestMessageService_Edit_QueueFallback(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+
+	dto, err := svc.Send(textUUID, "alice", "Original", "", "", nil)
+	assertNoError(t, err)
+
+	bus.reset()
+	queue.err = errors.New("nats unavailable")
+
+	_, err = svc.Edit(textUUID, dto.UUID, "alice", "Sync edited")
+	assertNoError(t, err)
+
+	// Should be updated in DB
+	msg, err := svc.msgRepo.GetByUUID(dto.UUID)
+	assertNoError(t, err)
+	if msg.Content != "Sync edited" {
+		t.Errorf("expected content 'Sync edited', got %s", msg.Content)
+	}
+}
+
+// ─── Delete Tests ───
+
+func TestMessageService_Delete_Success(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+
+	dto, err := svc.Send(textUUID, "alice", "To be deleted", "", "", nil)
+	assertNoError(t, err)
+
+	bus.reset()
+	queue.reset()
+	svc.SetEventBus(bus)
+	svc.SetJobQueue(queue)
+
+	err = svc.Delete(textUUID, dto.UUID, "alice", false)
+	assertNoError(t, err)
+
+	// Bus got message:deleted
+	if len(bus.calls) != 1 || bus.calls[0] != "message:deleted" {
+		t.Errorf("expected bus event 'message:deleted', got %v", bus.calls)
+	}
+
+	// Queue got chat.mutate
+	if len(queue.jobs) != 1 || queue.jobs[0].Type != "chat.mutate" {
+		t.Errorf("expected 1 chat.mutate job, got %d jobs", len(queue.jobs))
+	}
+}
+
+func TestMessageService_Delete_OthersWithoutPermission(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	dto, err := svc.Send(textUUID, "alice", "My message", "", "", nil)
+	assertNoError(t, err)
+
+	err = svc.Delete(textUUID, dto.UUID, "bob", false)
+	assertErrorCode(t, err, pkg.FORBIDDEN)
+}
+
+func TestMessageService_Delete_WithPermission(t *testing.T) {
+	svc, _, queue, _, textUUID := setupMessageServiceTest(t)
+
+	dto, err := svc.Send(textUUID, "alice", "My message", "", "", nil)
+	assertNoError(t, err)
+
+	svc.SetJobQueue(queue)
+	err = svc.Delete(textUUID, dto.UUID, "moderator", true)
+	assertNoError(t, err)
+
+	// Queue should have a job
+	if len(queue.jobs) < 1 {
+		t.Error("expected at least 1 queue job")
+	}
+}
+
+func TestMessageService_Delete_NotFound(t *testing.T) {
+	svc, _, _, _, _ := setupMessageServiceTest(t)
+
+	err := svc.Delete("room-uuid", "nonexistent-uuid", "alice", false)
+	assertErrorCode(t, err, pkg.NOT_FOUND)
+}
+
+func TestMessageService_Delete_QueueFallback(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+
+	dto, err := svc.Send(textUUID, "alice", "To be deleted sync", "", "", nil)
+	assertNoError(t, err)
+
+	svc.SetEventBus(bus)
+	svc.SetJobQueue(queue)
+	queue.err = errors.New("nats unavailable")
+
+	err = svc.Delete(textUUID, dto.UUID, "alice", false)
+	assertNoError(t, err)
+
+	// Broadcast still happened
+	if len(bus.calls) != 1 {
+		t.Errorf("expected 1 bus call after fallback, got %d", len(bus.calls))
+	}
+
+	// Message should be soft-deleted in DB
+	// However, GORM filters soft-deleted by default, so GetByUUID should fail
+	_, err = svc.msgRepo.GetByUUID(dto.UUID)
+	if err == nil {
+		t.Error("expected message to be soft-deleted (GetByUUID should fail)")
+	}
+}
+
+// ─── React Tests ───
+
+func TestMessageService_React_Success(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+
+	dto, err := svc.Send(textUUID, "alice", "Reactable", "", "", nil)
+	assertNoError(t, err)
+
+	svc.SetEventBus(bus)
+	svc.SetJobQueue(queue)
+
+	err = svc.React(textUUID, dto.UUID, "bob", "+1")
+	assertNoError(t, err)
+
+	// Bus got message:reaction
+	if len(bus.calls) != 1 || bus.calls[0] != "message:reaction" {
+		t.Errorf("expected bus event 'message:reaction', got %v", bus.calls)
+	}
+
+	// Queue got chat.mutate
+	if len(queue.jobs) != 1 || queue.jobs[0].Type != "chat.mutate" {
+		t.Errorf("expected 1 chat.mutate job, got %d jobs", len(queue.jobs))
+	}
+}
+
+func TestMessageService_React_EmptyEmoji(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	dto, err := svc.Send(textUUID, "alice", "Reactable", "", "", nil)
+	assertNoError(t, err)
+
+	err = svc.React(textUUID, dto.UUID, "bob", "")
+	assertErrorCode(t, err, pkg.INVALID_PARAMS)
+}
+
+func TestMessageService_React_NotFound(t *testing.T) {
+	svc, _, _, _, _ := setupMessageServiceTest(t)
+
+	err := svc.React("room-uuid", "nonexistent-uuid", "bob", "+1")
+	assertErrorCode(t, err, pkg.NOT_FOUND)
+}
+
+func TestMessageService_React_QueueFallback(t *testing.T) {
+	svc, _, queue, _, textUUID := setupMessageServiceTest(t)
+
+	dto, err := svc.Send(textUUID, "alice", "Reactable", "", "", nil)
+	assertNoError(t, err)
+
+	queue.err = errors.New("nats unavailable")
+	// Reset queue state from Send
+	queue.reset()
+
+	err = svc.React(textUUID, dto.UUID, "bob", "+1")
+	assertNoError(t, err)
+
+	// Reaction should be persisted in DB
+	reactions, err := svc.msgRepo.ListReactions([]string{dto.UUID})
+	assertNoError(t, err)
+	if len(reactions) != 1 {
+		t.Errorf("expected 1 reaction, got %d", len(reactions))
+	}
+	if reactions[0].Emoji != "+1" {
+		t.Errorf("expected emoji '+1', got %s", reactions[0].Emoji)
+	}
+	if reactions[0].UserID != "bob" {
+		t.Errorf("expected user_id 'bob', got %s", reactions[0].UserID)
+	}
+}
+
+// ─── Unreact Tests ───
+
+func TestMessageService_Unreact_Success(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+
+	dto, err := svc.Send(textUUID, "alice", "Reactable", "", "", nil)
+	assertNoError(t, err)
+
+	// Add reaction first (sync, no bus/queue needed)
+	err = svc.React(textUUID, dto.UUID, "bob", "+1")
+	assertNoError(t, err)
+
+	svc.SetEventBus(bus)
+	svc.SetJobQueue(queue)
+
+	err = svc.Unreact(textUUID, dto.UUID, "bob", "+1")
+	assertNoError(t, err)
+
+	// Bus got message:reaction
+	if len(bus.calls) != 1 || bus.calls[0] != "message:reaction" {
+		t.Errorf("expected bus event 'message:reaction', got %v", bus.calls)
+	}
+
+	// Queue got chat.mutate
+	if len(queue.jobs) != 1 || queue.jobs[0].Type != "chat.mutate" {
+		t.Errorf("expected 1 chat.mutate job, got %d jobs", len(queue.jobs))
+	}
+}
+
+func TestMessageService_Unreact_EmptyEmoji(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	dto, err := svc.Send(textUUID, "alice", "Reactable", "", "", nil)
+	assertNoError(t, err)
+
+	err = svc.Unreact(textUUID, dto.UUID, "bob", "")
+	assertErrorCode(t, err, pkg.INVALID_PARAMS)
+}
+
+func TestMessageService_Unreact_QueueFallback(t *testing.T) {
+	svc, _, queue, _, textUUID := setupMessageServiceTest(t)
+
+	dto, err := svc.Send(textUUID, "alice", "Reactable", "", "", nil)
+	assertNoError(t, err)
+
+	// Add reaction first
+	err = svc.React(textUUID, dto.UUID, "bob", "+1")
+	assertNoError(t, err)
+
+	queue.err = errors.New("nats unavailable")
+	queue.reset()
+
+	// Cancel the last reset's clearing by re-setting error
+	queue.err = errors.New("nats unavailable")
+
+	err = svc.Unreact(textUUID, dto.UUID, "bob", "+1")
+	assertNoError(t, err)
+
+	// Reaction should be removed from DB
+	reactions, err := svc.msgRepo.ListReactions([]string{dto.UUID})
+	assertNoError(t, err)
+	if len(reactions) != 0 {
+		t.Errorf("expected 0 reactions after unreact, got %d", len(reactions))
+	}
+}
+
+// ─── ListHistory Tests ───
+
+func TestMessageService_ListHistory_Empty(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, "", 50)
+	assertNoError(t, err)
+
+	if len(items) != 0 {
+		t.Errorf("expected 0 items, got %d", len(items))
+	}
+	if hasMore {
+		t.Error("expected hasMore=false for empty room")
+	}
+	if nextBefore != "" {
+		t.Errorf("expected empty nextBefore, got %s", nextBefore)
+	}
+}
+
+func TestMessageService_ListHistory_ReturnsMessages(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	// Send 3 messages
+	msg1, err := svc.Send(textUUID, "alice", "First", "", "", nil)
+	assertNoError(t, err)
+	_, err = svc.Send(textUUID, "bob", "Second", "", "", nil)
+	assertNoError(t, err)
+	msg3, err := svc.Send(textUUID, "alice", "Third", "", "", nil)
+	assertNoError(t, err)
+
+	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, "", 100)
+	assertNoError(t, err)
+
+	// Items should be in ASC order (oldest first)
+	if len(items) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(items))
+	}
+	if items[0].UUID != msg1.UUID {
+		t.Errorf("expected first item UUID %s, got %s", msg1.UUID, items[0].UUID)
+	}
+	if items[2].UUID != msg3.UUID {
+		t.Errorf("expected last item UUID %s, got %s", msg3.UUID, items[2].UUID)
+	}
+
+	if hasMore {
+		t.Error("expected hasMore=false for 3 messages with limit 100")
+	}
+	if nextBefore != "" {
+		t.Errorf("expected empty nextBefore, got %s", nextBefore)
+	}
+}
+
+func TestMessageService_ListHistory_ClampLimit(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	// Send messages to test clamping
+	for i := 0; i < 60; i++ {
+		_, err := svc.Send(textUUID, "alice", "msg", "", "", nil)
+		assertNoError(t, err)
+	}
+
+	// limit = 0 defaults to 100
+	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, "", 0)
+	assertNoError(t, err)
+	if len(items) != 60 {
+		t.Errorf("expected 60 items with default limit, got %d", len(items))
+	}
+	if hasMore {
+		t.Error("expected hasMore=false for 60 messages")
+	}
+	if nextBefore != "" {
+		t.Errorf("expected empty nextBefore, got %s", nextBefore)
+	}
+
+	// limit < 50 should clamp to 50
+	items, hasMore, nextBefore, err = svc.ListHistory(textUUID, "", 10)
+	assertNoError(t, err)
+	if len(items) != 50 {
+		t.Errorf("expected 50 items (clamped from 10), got %d", len(items))
+	}
+	if !hasMore {
+		t.Error("expected hasMore=true when more messages exist")
+	}
+	if nextBefore == "" {
+		t.Error("expected non-empty nextBefore when hasMore")
+	}
+}
+
+func TestMessageService_ListHistory_LimitCap(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	// Send 250 messages
+	for i := 0; i < 250; i++ {
+		_, err := svc.Send(textUUID, "alice", "msg", "", "", nil)
+		assertNoError(t, err)
+	}
+
+	// limit > 200 should clamp to 200
+	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, "", 1000)
+	assertNoError(t, err)
+	if len(items) != 200 {
+		t.Errorf("expected 200 items (capped from 1000), got %d", len(items))
+	}
+	if !hasMore {
+		t.Error("expected hasMore=true for 250 msgs with limit 200")
+	}
+	if nextBefore == "" {
+		t.Error("expected non-empty nextBefore when hasMore")
+	}
+}
+
+func TestMessageService_ListHistory_Pagination(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	// Send 120 messages (enough for 3 pages of 50)
+	var uuids []string
+	for i := 0; i < 120; i++ {
+		dto, err := svc.Send(textUUID, "alice", "msg", "", "", nil)
+		assertNoError(t, err)
+		uuids = append(uuids, dto.UUID)
+	}
+
+	// First page: get 50 messages (limit clamped to 50 minimum)
+	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, "", 50)
+	assertNoError(t, err)
+	if len(items) != 50 {
+		t.Fatalf("expected 50 items on page 1, got %d", len(items))
+	}
+	if !hasMore {
+		t.Error("expected hasMore=true on page 1")
+	}
+	if nextBefore == "" {
+		t.Error("expected non-empty nextBefore on page 1")
+	}
+
+	// Second page: pass nextBefore
+	items2, hasMore2, nextBefore2, err := svc.ListHistory(textUUID, nextBefore, 50)
+	assertNoError(t, err)
+	if len(items2) != 50 {
+		t.Fatalf("expected 50 items on page 2, got %d", len(items2))
+	}
+	if !hasMore2 {
+		t.Error("expected hasMore=true on page 2")
+	}
+
+	// Third page: should get remaining 20
+	items3, hasMore3, nextBefore3, err := svc.ListHistory(textUUID, nextBefore2, 50)
+	assertNoError(t, err)
+	if len(items3) != 20 {
+		t.Fatalf("expected 20 items on page 3, got %d", len(items3))
+	}
+	if hasMore3 {
+		t.Error("expected hasMore=false on page 3")
+	}
+	if nextBefore3 != "" {
+		t.Errorf("expected empty nextBefore on page 3, got %s", nextBefore3)
+	}
+
+	// Verify no duplicates across pages
+	seen := make(map[string]bool)
+	for _, item := range items {
+		seen[item.UUID] = true
+	}
+	for _, item := range items2 {
+		if seen[item.UUID] {
+			t.Errorf("duplicate UUID %s across pages", item.UUID)
+		}
+		seen[item.UUID] = true
+	}
+	for _, item := range items3 {
+		if seen[item.UUID] {
+			t.Errorf("duplicate UUID %s across pages", item.UUID)
+		}
+		seen[item.UUID] = true
+	}
+	if len(seen) != 120 {
+		t.Errorf("expected 120 unique messages across pages, got %d", len(seen))
+	}
+}
+
+// ─── PersistFromJob Tests ───
+
+func TestMessageService_PersistFromJob_Success(t *testing.T) {
+	svc, _, _, _, _ := setupMessageServiceTest(t)
+
+	now := time.Now().UTC()
+	payload, err := json.Marshal(map[string]interface{}{
+		"uuid":      uuid.New().String(),
+		"room_uuid": uuid.New().String(),
+		"author_id": "alice",
+		"content":   "Persisted from job",
+		"reply_to":  "",
+		"mentions":  []string{},
+		"created_at": now,
+	})
+	assertNoError(t, err)
+
+	err = svc.PersistFromJob(payload)
+	assertNoError(t, err)
+}
+
+func TestMessageService_PersistFromJob_WithMentions(t *testing.T) {
+	svc, _, _, _, _ := setupMessageServiceTest(t)
+
+	now := time.Now().UTC()
+	payload, err := json.Marshal(map[string]interface{}{
+		"uuid":      uuid.New().String(),
+		"room_uuid": uuid.New().String(),
+		"author_id": "alice",
+		"content":   "Persisted with mentions",
+		"reply_to":  "",
+		"mentions":  []string{"bob", "charlie"},
+		"created_at": now,
+	})
+	assertNoError(t, err)
+
+	err = svc.PersistFromJob(payload)
+	assertNoError(t, err)
+}
+
+func TestMessageService_PersistFromJob_InvalidPayload(t *testing.T) {
+	svc, _, _, _, _ := setupMessageServiceTest(t)
+
+	err := svc.PersistFromJob([]byte("invalid json"))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+// ─── MutateFromJob Tests ───
+
+func TestMessageService_MutateFromJob_Edit(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	// Create a message first
+	dto, err := svc.Send(textUUID, "alice", "Original", "", "", nil)
+	assertNoError(t, err)
+
+	now := time.Now().UTC()
+	payload, err := json.Marshal(map[string]interface{}{
+		"action":       "edit",
+		"message_uuid": dto.UUID,
+		"content":      "Edited from job",
+		"timestamp":    now,
+	})
+	assertNoError(t, err)
+
+	err = svc.MutateFromJob(payload)
+	assertNoError(t, err)
+
+	msg, err := svc.msgRepo.GetByUUID(dto.UUID)
+	assertNoError(t, err)
+	if msg.Content != "Edited from job" {
+		t.Errorf("expected 'Edited from job', got %s", msg.Content)
+	}
+}
+
+func TestMessageService_MutateFromJob_Delete(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	dto, err := svc.Send(textUUID, "alice", "To be deleted", "", "", nil)
+	assertNoError(t, err)
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"action":       "delete",
+		"message_uuid": dto.UUID,
+	})
+	assertNoError(t, err)
+
+	err = svc.MutateFromJob(payload)
+	assertNoError(t, err)
+
+	// Message should be soft-deleted
+	_, err = svc.msgRepo.GetByUUID(dto.UUID)
+	if err == nil {
+		t.Error("expected message to be soft-deleted")
+	}
+}
+
+func TestMessageService_MutateFromJob_React(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	dto, err := svc.Send(textUUID, "alice", "Reactable", "", "", nil)
+	assertNoError(t, err)
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"action":       "react",
+		"message_uuid": dto.UUID,
+		"user_id":      "bob",
+		"emoji":        "+1",
+	})
+	assertNoError(t, err)
+
+	err = svc.MutateFromJob(payload)
+	assertNoError(t, err)
+
+	reactions, err := svc.msgRepo.ListReactions([]string{dto.UUID})
+	assertNoError(t, err)
+	if len(reactions) != 1 {
+		t.Errorf("expected 1 reaction, got %d", len(reactions))
+	}
+}
+
+func TestMessageService_MutateFromJob_UnknownAction(t *testing.T) {
+	svc, _, _, _, _ := setupMessageServiceTest(t)
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"action": "unknown_action",
+	})
+	assertNoError(t, err)
+
+	err = svc.MutateFromJob(payload)
+	if err == nil {
+		t.Fatal("expected error for unknown action")
+	}
+}
+
+func TestMessageService_MutateFromJob_InvalidPayload(t *testing.T) {
+	svc, _, _, _, _ := setupMessageServiceTest(t)
+
+	err := svc.MutateFromJob([]byte("invalid json"))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}

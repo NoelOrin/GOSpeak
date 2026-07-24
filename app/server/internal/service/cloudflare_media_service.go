@@ -3,7 +3,7 @@ package service
 import (
 	"strings"
 
-	"GOSpeak/internal/cloudflare"
+	"GOSpeak/internal/sfu/providers/cloudflare"
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
 )

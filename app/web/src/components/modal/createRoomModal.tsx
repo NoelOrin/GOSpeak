@@ -80,6 +80,7 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 					limit: room.limit,
 					audioOnly: room.audio_only,
 					allowAudience: room.allow_audience,
+					type: room.type,
 					members: [],
 					count: 0,
 					createdAt: Date.now(),

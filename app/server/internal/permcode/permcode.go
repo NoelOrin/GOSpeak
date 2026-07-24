@@ -24,6 +24,10 @@ const (
 	PermEmailConfigRead   = "email_config:read"
 	PermEmailConfigManage = "email_config:manage"
 
+	PermMessageSend         = "message:send"
+	PermMessageRead         = "message:read"
+	PermMessageDeleteOthers = "message:delete_others"
+
 	PermStorageRead   = "storage:read"
 	PermStorageManage = "storage:manage"
 	PermStorageDelete = "storage:delete"

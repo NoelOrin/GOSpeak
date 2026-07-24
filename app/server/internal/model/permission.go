@@ -49,6 +49,10 @@ const (
 
 	PermPluginRead   = permcode.PermPluginRead
 	PermPluginManage = permcode.PermPluginManage
+
+	PermMessageSend         = permcode.PermMessageSend
+	PermMessageRead         = permcode.PermMessageRead
+	PermMessageDeleteOthers = permcode.PermMessageDeleteOthers
 )
 
 
@@ -83,6 +87,10 @@ var DefaultPermissions = []Permission{
 
 	{Code: PermPluginRead, Name: "查看插件", Description: "查看后端插件列表与配置"},
 	{Code: PermPluginManage, Name: "管理插件", Description: "启用/停用插件并修改插件配置"},
+
+	{Code: PermMessageSend, Name: "发送消息", Description: "在文字房间发送消息"},
+	{Code: PermMessageRead, Name: "查看消息", Description: "查看文字房间历史消息"},
+	{Code: PermMessageDeleteOthers, Name: "删除他人消息", Description: "删除其他用户的消息"},
 }
 
 
@@ -105,6 +113,8 @@ var BotScopedPermissions = []string{
 	PermSignalKick,
 	PermRoomCreate,
 	PermMuteManage,
+	PermMessageSend,
+	PermMessageRead,
 }
 
 // BotScopedPermissionsSet 返回 Bot 允许权限码集合。
@@ -123,16 +133,18 @@ var DefaultRolePermissions = map[string][]string{
 		PermUserRead, PermUserUpdate, PermUserDelete,
 		PermRoleRead, PermRoleManage,
 		PermSignalKick,
-	PermRoomCreate, PermMuteManage, PermSFUManage, PermBotManage,
+		PermRoomCreate, PermMuteManage, PermSFUManage, PermBotManage,
 		PermEmailConfigRead, PermEmailConfigManage,
 		PermStorageRead, PermStorageManage, PermStorageDelete,
 		PermOAuthRead, PermOAuthManage,
 		PermPluginRead, PermPluginManage,
+		PermMessageSend, PermMessageRead, PermMessageDeleteOthers,
 	},
 	"user": {
 		PermRoomCreate, PermRoomRead,
 		PermUserRead,
 		PermRoleRead,
+		PermMessageSend, PermMessageRead,
 	},
 	"ban": {},
 }

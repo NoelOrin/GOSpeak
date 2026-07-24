@@ -155,26 +155,30 @@ const ManageNav = () => {
 
 	return (
 		<div class="flex flex-col gap-1 p-2 select-none">
-			<div class="px-2 py-2 font-bold text-base">管理</div>
-			<For each={visibleTabs()}>
-				{(tab) => {
-					const Icon = tab.icon;
-					return (
-						<Link
-							to={tab.to}
-							preload="intent"
-							class="btn btn-ghost justify-start gap-2 no-underline"
-							classList={{
-								"btn-active": isActive(tab.path),
-							}}
-							aria-current={isActive(tab.path) ? "page" : undefined}
-						>
-							<Icon size={16} />
-							<span>{tab.label}</span>
-						</Link>
-					);
-				}}
-			</For>
+			<div class="px-2 py-2 font-bold text-base hidden md:block">管理</div>
+			<div class="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-1 md:pb-0">
+				<For each={visibleTabs()}>
+					{(tab) => {
+						const Icon = tab.icon;
+						return (
+							<Link
+								to={tab.to}
+								preload="intent"
+								class="btn btn-ghost btn-sm md:btn-md justify-start gap-1.5 md:gap-2 no-underline shrink-0"
+								classList={{
+									"btn-active": isActive(tab.path),
+								}}
+								aria-current={isActive(tab.path) ? "page" : undefined}
+							>
+								<Icon size={16} />
+								<span class="whitespace-nowrap text-xs md:text-sm">
+									{tab.label}
+								</span>
+							</Link>
+						);
+					}}
+				</For>
+			</div>
 		</div>
 	);
 };

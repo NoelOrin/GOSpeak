@@ -52,9 +52,9 @@ const VoiceChat = ({ ref: _ref }: { ref?: HTMLDivElement }) => {
 	return (
 		<div class="relative w-full h-full overflow-y-auto">
 			<div
-				class="box-border absolute inset-0 justify-center items-center place-content-center gap-2 grid p-4 w-full select-none"
+				class="box-border absolute inset-0 justify-center items-center place-content-center gap-2 grid p-2 sm:p-4 w-full select-none"
 				style={{
-					"grid-template-columns": `repeat(auto-fit, minmax(190px, 1fr))`,
+					"grid-template-columns": `repeat(auto-fit, minmax(min(100%, 140px), 1fr))`,
 				}}
 				ref={(el) => {
 					containerRef = el;
@@ -115,7 +115,7 @@ const MemberCard = ({ member }: { member: MemberInfo }) => {
 	};
 
 	return (
-		<div class="box-border relative flex flex-col flex-1 rounded-xl w-full aspect-5/4 select-none max-h-[80vh]">
+		<div class="box-border relative flex flex-col flex-1 rounded-xl w-full aspect-5/4 select-none max-h-[80vh] min-w-0">
 			<div
 				class="flex justify-center items-center rounded-xl h-full overflow-hidden bg-gradient-to-br from-primary/20 to-secondary/20 transition-all duration-200"
 				classList={{

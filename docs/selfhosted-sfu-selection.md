@@ -52,7 +52,7 @@
 **Provider 实现**: LiveKit SDK 直接调用 gRPC 接口
 
 ```go
-// internal/livekit/client.go — 唯一完整实现
+// internal/sfu/providers/livekit/ — 唯一完整实现
 client.GenerateToken(room, identity)      // ✅
 client.ListRooms()                         // ✅
 client.ListParticipants(room)             // ✅

@@ -2,7 +2,7 @@ import Mic from "lucide-solid/icons/mic";
 import Palette from "lucide-solid/icons/palette";
 import User from "lucide-solid/icons/user";
 import Volume2 from "lucide-solid/icons/volume-2";
-import { type Component, createSignal, For, type JSX, onMount } from "solid-js";
+import { type Component, createSignal, For, type JSX } from "solid-js";
 import { TABS } from "./tab_item";
 import type { SettingTabConfig } from "./tab_item/types";
 
@@ -24,13 +24,9 @@ const ICON_MAP: Record<
 };
 
 const SettingModal: Component<SearchModalProps> = (props) => {
-	onMount(() => {
-		props.ref?.showModal?.();
-	});
-
 	return (
-		<dialog ref={props.ref} class="modal">
-			<div class="modal-box flex h-[min(90vh,820px)] w-full max-w-7xl flex-col overflow-hidden p-0">
+		<dialog ref={props.ref} class="modal modal-bottom sm:modal-middle z-50">
+			<div class="modal-box flex h-[100dvh] sm:h-[min(90vh,820px)] w-full max-w-full sm:max-w-7xl flex-col overflow-hidden p-0 rounded-none sm:rounded-2xl m-0 sm:m-auto z-50">
 				<div class="flex items-center justify-between border-b border-base-300 px-4 py-3">
 					<div>
 						<div class="text-base font-semibold">设置</div>
@@ -52,7 +48,7 @@ const SettingModal: Component<SearchModalProps> = (props) => {
 				</div>
 			</div>
 
-			<form method="dialog" class="modal-backdrop">
+			<form method="dialog" class="modal-backdrop z-40">
 				<button type="submit" aria-label="关闭" />
 			</form>
 		</dialog>
@@ -71,22 +67,24 @@ const SettingContext = (props: { initialTabId?: string }) => {
 	);
 
 	return (
-		<div class="flex h-full w-full overflow-hidden select-none">
-			<aside class="flex w-44 shrink-0 flex-col gap-1 border-r border-base-300 bg-base-200/70 p-2 sm:w-48">
+		<div class="flex h-full w-full flex-col sm:flex-row overflow-hidden select-none">
+			<aside class="flex sm:w-44 md:w-48 shrink-0 flex-row sm:flex-col gap-1 border-b sm:border-b-0 sm:border-r border-base-300 bg-base-200/70 p-2 overflow-x-auto">
 				<For each={TABS}>
 					{(tab, index) => {
 						const Icon = ICON_MAP[tab.icon];
 						return (
 							<button
 								type="button"
-								class="btn btn-ghost h-11 justify-start gap-2 px-3"
+								class="btn btn-ghost h-10 sm:h-11 justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 shrink-0"
 								classList={{
 									"bg-base-100 shadow-sm": activeTab() === index(),
 								}}
 								onClick={() => setActiveTab(index())}
 							>
 								<Icon class="opacity-80" size={16} />
-								<span class="text-sm">{tab.label}</span>
+								<span class="text-xs sm:text-sm whitespace-nowrap">
+									{tab.label}
+								</span>
 							</button>
 						);
 					}}

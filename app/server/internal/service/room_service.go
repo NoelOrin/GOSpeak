@@ -31,7 +31,7 @@ func (s *RoomService) Create(room *model.Room) error {
 
 // CreateRoom creates a room from primitive parameters so the handler
 // layer does not need to import model.
-func (s *RoomService) CreateRoom(name, password, description string, limit uint, audioOnly, allowAudience bool, createdBy string) (*model.Room, error) {
+func (s *RoomService) CreateRoom(name, password, description string, limit uint, audioOnly, allowAudience bool, createdBy, roomType string) (*model.Room, error) {
 	room := &model.Room{
 		Name:          name,
 		Password:      password,
@@ -40,6 +40,11 @@ func (s *RoomService) CreateRoom(name, password, description string, limit uint,
 		AudioOnly:     audioOnly,
 		AllowAudience: allowAudience,
 		CreatedBy:     createdBy,
+		Type:          model.NormalizeRoomType(roomType),
+	}
+	// text rooms: force audio_only true / no SFU expectations
+	if room.Type == model.RoomTypeText {
+		room.AudioOnly = true
 	}
 	if err := s.roomRepo.Create(room); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -84,14 +89,17 @@ func (s *RoomService) GetByName(name string) (*model.Room, error) {
 }
 
 // List 分页查询房间列表，默认每页 20 条。
-func (s *RoomService) List(page, pageSize int) ([]model.Room, int64, error) {
+func (s *RoomService) List(page, pageSize int, roomType string) ([]model.Room, int64, error) {
 	if page < 1 {
 		page = 1
 	}
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-	rooms, total, err := s.roomRepo.List(page, pageSize)
+	if roomType != "" && roomType != model.RoomTypeText && roomType != model.RoomTypeVoice {
+		return nil, 0, pkg.NewAppError(pkg.INVALID_PARAMS, "type must be text, voice, or empty")
+	}
+	rooms, total, err := s.roomRepo.List(page, pageSize, roomType)
 	if err != nil {
 		return nil, 0, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}

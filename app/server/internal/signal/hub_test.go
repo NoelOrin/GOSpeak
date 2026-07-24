@@ -22,7 +22,7 @@ type mockRoomStore struct {
 	rooms []model.Room
 }
 
-func (m *mockRoomStore) List(page, pageSize int) ([]model.Room, int64, error) {
+func (m *mockRoomStore) List(page, pageSize int, roomType string) ([]model.Room, int64, error) {
 	return m.rooms, int64(len(m.rooms)), nil
 }
 

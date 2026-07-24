@@ -54,12 +54,12 @@
 
 | Provider | 路径 | 关键事实 |
 |----------|------|----------|
-| LiveKit | `internal/livekit/client.go` | 唯一全 ✅；`MuteParticipant` 支持按 trackSid 精确静音或按 identity 批量静音；`ProviderName()` = `livekit` |
-| Agora | `internal/agora/provider.go` | Token/列举可用；mute/kick 走 kicking-rule（degraded）；rule id 经 MuteRuleStore 跨实例缓存（redis→nats KV→memory）；`GenerateAdminToken` 空串；`ClientInfo` 暴露 `appId` |
-| MediaSoup | `internal/mediasoup/provider.go` | 经 bridge 实现列举/静音/踢人/删房；自有 Socket.IO 信令路径（`sfu:produce` 等）；`ProviderName()` = `mediasoup` |
-| SRS | `internal/srs/provider.go` | WHIP/WHEP；`List*` 经 `RoomRegistry` 聚合真实房间；`StreamProvider`/`ClientInfoProvider`；`GenerateToken` 签发 stream token |
-| Daily | `internal/daily/provider.go` | `RemoveParticipant` 已实现（list→session id）；`MuteParticipant` 不支持；`GenerateAdminToken` 降级 |
-| Cloudflare | `internal/cloudflare/provider.go` | 无原生 room/token；`GenerateToken` 建 session 返回 JSON 配置；`List*` 仅内存；`StreamProvider`/`ClientInfoProvider` |
+| LiveKit | `internal/sfu/providers/livekit/` | 唯一全 ✅；`MuteParticipant` 支持按 trackSid 精确静音或按 identity 批量静音；`ProviderName()` = `livekit` |
+| Agora | `internal/sfu/providers/agora/` | Token/列举可用；mute/kick 走 kicking-rule（degraded）；rule id 经 MuteRuleStore 跨实例缓存（redis→nats KV→memory）；`GenerateAdminToken` 空串；`ClientInfo` 暴露 `appId` |
+| MediaSoup | `internal/sfu/providers/mediasoup/` | 经 bridge 实现列举/静音/踢人/删房；自有 Socket.IO 信令路径（`sfu:produce` 等）；`ProviderName()` = `mediasoup` |
+| SRS | `internal/sfu/providers/srs/` | WHIP/WHEP；`List*` 经 `RoomRegistry` 聚合真实房间；`StreamProvider`/`ClientInfoProvider`；`GenerateToken` 签发 stream token |
+| Daily | `internal/sfu/providers/daily/` | `RemoveParticipant` 已实现（list→session id）；`MuteParticipant` 不支持；`GenerateAdminToken` 降级 |
+| Cloudflare | `internal/sfu/providers/cloudflare/` | 无原生 room/token；`GenerateToken` 建 session 返回 JSON 配置；`List*` 仅内存；`StreamProvider`/`ClientInfoProvider` |
 
 ### 5. 前端 SFU 客户端（`packages/sfu-client`）
 

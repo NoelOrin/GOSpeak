@@ -29,4 +29,16 @@ export const EVENTS = {
 	SFU_PRODUCER_CLOSED: "sfu:producer-closed",
 	// SFU 热切换：强制断连并刷新
 	SFU_PROVIDER_CHANGED: "sfu:provider-changed",
+	// 文字聊天消息事件
+	MESSAGE_SEND: "message:send",
+	MESSAGE_EDIT: "message:edit",
+	MESSAGE_DELETE: "message:delete",
+	MESSAGE_REACT: "message:react",
+	MESSAGE_UNREACT: "message:unreact",
+	MESSAGE_CREATED: "message:created",
+	MESSAGE_UPDATED: "message:updated",
+	MESSAGE_DELETED: "message:deleted",
+	MESSAGE_REACTION: "message:reaction",
+	MESSAGE_ACK: "message:ack",
+	MESSAGE_ERROR: "message:error",
 } as const;

@@ -24,6 +24,7 @@ type CreateRoomRequest struct {
 	Limit         uint   `json:"limit"`
 	AudioOnly     *bool  `json:"audio_only"`
 	AllowAudience *bool  `json:"allow_audience"`
+	Type          string `json:"type"`
 }
 
 // Create
@@ -55,7 +56,7 @@ func (h *RoomHandler) Create(c *gin.Context) {
 	room, err := h.roomSvc.CreateRoom(
 		req.Name, req.Password, req.Description,
 		req.Limit, audioOnly, allowAudience,
-		username.(string),
+		username.(string), req.Type,
 	)
 	if err != nil {
 		pkg.HandleError(c, err)
@@ -105,8 +106,9 @@ func (h *RoomHandler) Get(c *gin.Context) {
 // @Router       /room/list [post]
 func (h *RoomHandler) List(c *gin.Context) {
 	var req struct {
-		Page     int `json:"page"`
-		PageSize int `json:"page_size"`
+		Page     int    `json:"page"`
+		PageSize int    `json:"page_size"`
+		Type     string `json:"type"`
 	}
 	_ = c.ShouldBindJSON(&req)
 	if req.Page <= 0 {
@@ -116,7 +118,7 @@ func (h *RoomHandler) List(c *gin.Context) {
 		req.PageSize = 20
 	}
 
-	rooms, total, err := h.roomSvc.List(req.Page, req.PageSize)
+	rooms, total, err := h.roomSvc.List(req.Page, req.PageSize, req.Type)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return

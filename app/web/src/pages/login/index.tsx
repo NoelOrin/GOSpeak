@@ -151,11 +151,13 @@ function LoginPage() {
 	}));
 
 	return (
-		<div class="flex items-center justify-center w-screen h-screen bg-base-200">
-			<div class="card w-96 bg-base-100 shadow-xl">
-				<div class="card-body">
+		<div class="flex items-center justify-center w-screen min-h-screen h-screen bg-base-200 p-4 overflow-y-auto">
+			<div class="card w-full max-w-sm sm:max-w-md bg-base-100 shadow-xl">
+				<div class="card-body p-5 sm:p-8">
 					<div class="text-center mb-2">
-						<h1 class="text-3xl font-bold tracking-tight">GOSpeak</h1>
+						<h1 class="text-2xl sm:text-3xl font-bold tracking-tight">
+							GOSpeak
+						</h1>
 						<p class="text-base-content/50 text-sm mt-1">登录你的账号</p>
 					</div>
 

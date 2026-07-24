@@ -26,6 +26,7 @@ type RoomInfo struct {
 	HasPassword   bool         `json:"hasPassword"`
 	Description   string       `json:"description"`
 	Limit         uint         `json:"limit"`
+	Type          string       `json:"type"`
 	AudioOnly     bool         `json:"audioOnly"`
 	AllowAudience bool         `json:"allowAudience"`
 	Members       []MemberInfo `json:"members"`

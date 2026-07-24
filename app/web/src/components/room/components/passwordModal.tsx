@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import { chatStore } from "@/stores/chatStore";
 import { type RoomInfo, socketStore } from "@/stores/socketStore";
 
 interface PasswordModalProps {
@@ -13,8 +14,16 @@ const PasswordModal = ({ room, onClose }: PasswordModalProps) => {
 		e.preventDefault();
 		const pwd = password();
 		if (!pwd) return;
-		// 设置选择的房间，把密码暂存到 selectedRoomInfo 上供 joinRoom 使用
-		socketStore.selectRoom({ ...room, _password: pwd });
+		if (room.type === "text") {
+			chatStore.joinTextRoom({
+				uuid: room.uuid,
+				name: room.name,
+				password: pwd,
+			});
+		} else {
+			// 设置选择的房间，把密码暂存到 selectedRoomInfo 上供 joinRoom 使用
+			socketStore.selectRoom({ ...room, _password: pwd });
+		}
 		onClose();
 	};
 

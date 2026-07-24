@@ -6,7 +6,7 @@ import (
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/jobs"
 	"GOSpeak/internal/logger"
-	"GOSpeak/internal/mediasoup"
+	"GOSpeak/internal/sfu/providers/mediasoup"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/plugin"
 	"GOSpeak/internal/plugin/builtin"
@@ -102,6 +102,7 @@ func StartGin(env EnvEnum) {
 	muteRepo := repository.NewMuteRepository(repository.DB)
 	sfuConfigRepo := repository.NewSFUConfigRepository(repository.DB)
 	storageConfigRepo := repository.NewStorageConfigRepository(repository.DB)
+	messageRepo := repository.NewMessageRepository(repository.DB)
 
 	// 初始化权限系统
 	seedPermissions(permRepo)
@@ -120,6 +121,7 @@ func StartGin(env EnvEnum) {
 	userSvc := service.NewUserService(userRepo, storageSvc)
 	oauthSvc := service.NewOAuthService(oauthProviderRepo, oauthAccountRepo, userRepo)
 	roomSvc := service.NewRoomService(roomRepo)
+	messageSvc := service.NewMessageService(messageRepo, roomRepo)
 	muteSvc := service.NewMuteService(muteRepo, userRepo)
 	sfuConfigSvc := service.NewSFUConfigService(sfuConfigRepo, cfg)
 	if err := sfuConfigSvc.SyncFromEnv(); err != nil {
@@ -200,6 +202,8 @@ func StartGin(env EnvEnum) {
 	signalHub.SetEventBus(eventBus)
 	signalHub.SetStateNotifier(eventBus)
 	permSvc.SetEventBus(eventBus)
+	messageSvc.SetEventBus(eventBus)
+	signalHub.SetMessageService(messageSvc)
 	var natsConn *nats.Conn
 	instanceID := eventBus.InstanceID()
 	if nb, ok := eventBus.(*bus.NATSBus); ok {
@@ -273,8 +277,9 @@ func StartGin(env EnvEnum) {
 		} else {
 			jobQueue = q
 			signalHub.SetCleanupPublisher(q)
+			messageSvc.SetJobQueue(q)
 			if _, err := q.Consume(nb.InstanceID(), func(job bus.JobEnvelope) error {
-				return jobs.Handle(job, signalHub, signalHub)
+				return jobs.Handle(job, signalHub, signalHub, messageSvc)
 			}); err != nil {
 				logger.WithComponent("JobQueue").Errorf("consume failed: %v", err)
 			} else {
@@ -324,6 +329,7 @@ func StartGin(env EnvEnum) {
 	oauthH := handler.NewOAuthHandler(oauthSvc)
 	roleH := handler.NewRoleHandler(roleSvc)
 	roomH := handler.NewRoomHandler(roomSvc, permSvc)
+		msgH := handler.NewMessageHandler(messageSvc, permSvc)
 	permH := handler.NewPermissionHandler(permSvc)
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
 	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc, signalHub)
@@ -359,6 +365,7 @@ func StartGin(env EnvEnum) {
 		Room:        roomH,
 		Permission:  permH,
 		Mute:        muteH,
+		Message:  msgH,
 		SFUConfig:   sfuConfigH,
 		Storage:     storageH,
 		Email:       emailH,

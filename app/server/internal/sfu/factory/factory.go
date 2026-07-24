@@ -4,13 +4,13 @@ import (
 	"GOSpeak/internal/config"
 	"fmt"
 
-	"GOSpeak/internal/agora"
-	"GOSpeak/internal/cloudflare"
-	"GOSpeak/internal/daily"
-	"GOSpeak/internal/livekit"
-	"GOSpeak/internal/mediasoup"
+	"GOSpeak/internal/sfu/providers/agora"
+	"GOSpeak/internal/sfu/providers/cloudflare"
+	"GOSpeak/internal/sfu/providers/daily"
+	"GOSpeak/internal/sfu/providers/livekit"
+	"GOSpeak/internal/sfu/providers/mediasoup"
 	"GOSpeak/internal/sfu"
-	"GOSpeak/internal/srs"
+	"GOSpeak/internal/sfu/providers/srs"
 )
 
 func NewProvider(cfg *config.Config) (sfu.Provider, error) {

@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"GOSpeak/internal/cloudflare"
+	"GOSpeak/internal/sfu/providers/cloudflare"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
 

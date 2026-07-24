@@ -2,6 +2,7 @@ import clsx from "clsx";
 import CirclePlus from "lucide-solid/icons/circle-plus";
 import { createSignal, For, onMount, Show } from "solid-js";
 import CreateRoomModal from "@/components/modal/createRoomModal";
+import { chatStore } from "@/stores/chatStore";
 import { type RoomInfo, socketStore } from "@/stores/socketStore";
 import { hasPermission } from "@/utils/permissions";
 import Divider from "../common/divider";
@@ -26,6 +27,8 @@ const RoomItem = (props: RoomItemPropsType) => {
 	const handleJoin = () => {
 		if (props.room.hasPassword) {
 			setShowPasswordModal(true);
+		} else if (props.room.type === "text") {
+			chatStore.joinTextRoom({ uuid: props.room.uuid, name: props.room.name });
 		} else {
 			socketStore.selectRoom(props.room);
 		}
@@ -38,9 +41,7 @@ const RoomItem = (props: RoomItemPropsType) => {
 					"tooltip tooltip-right w-full",
 					isSelected() && !props.isActive ? "tooltip-open" : "",
 				)}
-				data-tip={
-					props.room.hasPassword ? "🔒 双击输入密码加入" : "双击进入房间"
-				}
+				data-tip={props.room.hasPassword ? "🔒 输入密码加入" : "进入房间"}
 			>
 				<button
 					class={clsx(
@@ -48,6 +49,11 @@ const RoomItem = (props: RoomItemPropsType) => {
 						props.isActive ? "btn-active" : "",
 						isSelected() && !props.isActive ? "bg-base-200" : "",
 					)}
+					onClick={() => {
+						if (window.matchMedia("(max-width: 767px)").matches) {
+							handleJoin();
+						}
+					}}
 					onDblClick={() => {
 						handleJoin();
 					}}
@@ -88,7 +94,10 @@ const RoomItem = (props: RoomItemPropsType) => {
 								/>
 							</svg>
 						</span>
-						<span class="text-[14px] leading-0">{props.room.name}</span>
+						<span class="text-[14px] leading-0">
+							{props.room.type === "text" ? "# " : ""}
+							{props.room.name}
+						</span>
 						<Show when={props.room.hasPassword}>
 							<span class="text-base-content/50">
 								<svg

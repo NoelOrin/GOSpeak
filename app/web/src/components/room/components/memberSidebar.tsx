@@ -58,7 +58,7 @@ const MemberListItem = (props: MemberItemProps) => {
 };
 
 // ---------- MemberSidebar ----------
-const MemberSidebar = () => {
+const MemberSidebar = (props: { fullWidth?: boolean } = {}) => {
 	const [selectedIdentity, setSelectedIdentity] = createSignal<{
 		identity: string;
 		x: number;
@@ -84,7 +84,13 @@ const MemberSidebar = () => {
 	};
 
 	return (
-		<div class="relative flex flex-col w-52 border-l border-base-300 h-full overflow-hidden shrink-0">
+		<div
+			class="relative flex flex-col h-full overflow-hidden shrink-0"
+			classList={{
+				"w-full border-0": props.fullWidth,
+				"w-52 border-l border-base-300": !props.fullWidth,
+			}}
+		>
 			<div class="flex items-center px-3 h-10 border-b border-base-300 text-xs font-bold text-base-content/70">
 				成员 ({socketStore.members().length})
 			</div>

@@ -1,14 +1,14 @@
 # 项目缺口全景
 
-**更新**: 2026-07-03
+**更新**: 2026-07-25
 
 ## 成熟度评估
 
 | 层 | 完成度 | 说明 |
 |----|--------|------|
-| 后端核心 | ~85% | 认证/用户/房间/信令/SFU 抽象层完备 |
-| 后端测试 | ~20% | 仅 auth/oauth/signal/user 有集成测试 |
-| 前端核心 | ~60% | 房间加入/离开/音频控制可用，大功能缺失 |
+| 后端核心 | ~90% | 认证/用户/房间/信令/SFU 抽象层 + 文本聊天完备 |
+| 后端测试 | ~30% | auth/oauth/signal/user + message service/repository 有测试 |
+| 前端核心 | ~70% | 房间加入/离开/音频控制 + 文字聊天面板可用 |
 | 前端测试 | 0% | Vitest 零文件，无 Playwright E2E |
 | 文档 | ~70% | 架构/部署/API 参考齐，测试/贡献指南缺 |
 
@@ -16,11 +16,13 @@
 
 ## 功能缺失
 
-### 文本聊天 — 🔴 最大缺口
+### 文本聊天 — 🟢 MVP 已交付
 
-后端: 无 chat model/repo/service/handler/route，信令层无聊天事件。
-前端: `chat/input.tsx` `chat/output.tsx` 实为音频控件 (mic/speaker 音量)，非文本聊天。
-全链路空白。
+后端: Message model/repo/service/handler/route 完整实现，信令层 message:* 事件齐全，
+broadcast-first + JetStream async persist 架构，双槽 Hub (text/voice)。
+前端: chatStore + MessageList (virtual scroll) + MessageInput + TextRoomPanel 完整可用，
+垂直分栏 layout 支持文字/语音房间同时在线。
+剩余: 附件上传、消息搜索、线程回复、Markdown 渲染。
 
 ### bot 模块 — 🟡 未启动
 

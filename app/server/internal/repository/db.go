@@ -80,6 +80,12 @@ func InitDB(cfg *config.Config) error {
 	if err := migrateStorageConfigSchema(DB); err != nil {
 		return err
 	}
+	if err := migrateBotTokensSchema(DB); err != nil {
+		return err
+	}
+	if err := migrateEmailVerificationCodesSchema(DB); err != nil {
+		return err
+	}
 
 	return autoMigrate()
 }
@@ -349,6 +355,88 @@ func migrateOldSFUConfig(db *gorm.DB) error {
 	return db.Migrator().DropTable("sfu_configs")
 }
 
+// migrateBotTokensSchema 修复 bot_tokens DDL 中的 glebarez/modernec 不兼容问题：
+// 1) `permissions_json TEXT` 无反引号列名
+// 2) `DEFAULT "user"` 双引号字面量（modernc 会误解析为标识符）
+func migrateBotTokensSchema(db *gorm.DB) error {
+	if !db.Migrator().HasTable("bot_tokens") {
+		return nil
+	}
+	var ddl string
+	if err := db.Raw(
+		"SELECT sql FROM sqlite_master WHERE type = ? AND name = ?",
+		"table", "bot_tokens",
+	).Scan(&ddl).Error; err != nil || ddl == "" {
+		return nil
+	}
+	// 无反引号列名 或 DEFAULT "xxx" 双引号字面量
+	if !strings.Contains(ddl, "permissions_json TEXT") && !strings.Contains(ddl, `DEFAULT "user"`) {
+		return nil
+	}
+
+	tx := db.Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if err := tx.Exec(`CREATE TABLE "bot_tokens__rebuild" (` +
+		"`id` integer PRIMARY KEY AUTOINCREMENT," +
+		"`uuid` uuid," +
+		"`name` text," +
+		"`user_uuid` uuid," +
+		"`role` text DEFAULT 'user'," +
+		"`revoked` numeric DEFAULT false," +
+		"`permissions` text," +
+		"`expires_at` datetime," +
+		"`created_at` datetime," +
+		"`updated_at` datetime," +
+		"`created_by` text," +
+		"`last_used_at` datetime" +
+		`)`).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("migrate bot_tokens: create rebuild table: %w", err)
+	}
+	if err := tx.Exec(`INSERT INTO "bot_tokens__rebuild" (
+		id, uuid, name, user_uuid, role, revoked, permissions,
+		expires_at, created_at, updated_at, created_by, last_used_at
+	) SELECT
+		id, uuid, name, user_uuid, role, revoked, permissions,
+		expires_at, created_at, updated_at, created_by, last_used_at
+	FROM bot_tokens`).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("migrate bot_tokens: copy data: %w", err)
+	}
+	if err := tx.Exec(`DROP TABLE bot_tokens`).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("migrate bot_tokens: drop old table: %w", err)
+	}
+	if err := tx.Exec(`ALTER TABLE "bot_tokens__rebuild" RENAME TO bot_tokens`).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("migrate bot_tokens: rename rebuild table: %w", err)
+	}
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("migrate bot_tokens: commit: %w", err)
+	}
+	return nil
+}
+
+// migrateEmailVerificationCodesSchema 清理 email_verification_codes 上历史残留的
+// 无反引号索引 DDL（glebarez 解析多行/无反引号索引定义时会 panic）。
+func migrateEmailVerificationCodesSchema(db *gorm.DB) error {
+	if !db.Migrator().HasTable("email_verification_codes") {
+		return nil
+	}
+	// 只查 SQLite 风格索引（glebarez 仅用于 SQLite）
+	if db.Migrator().HasIndex("email_verification_codes", "idx_email_codes_email_scene_created") {
+		if err := db.Migrator().DropIndex("email_verification_codes", "idx_email_codes_email_scene_created"); err != nil {
+			// fallback: raw SQL
+			if err2 := db.Exec(`DROP INDEX IF EXISTS idx_email_codes_email_scene_created`).Error; err2 != nil {
+				return fmt.Errorf("migrate email_verification_codes: drop legacy index: %w", err2)
+			}
+		}
+	}
+	return nil
+}
+
 func autoMigrate() error {
 	return DB.AutoMigrate(
 		&model.Role{},
@@ -367,5 +455,8 @@ func autoMigrate() error {
 		&model.StorageConfig{},
 		&model.BotToken{},
 		&model.PluginConfig{},
+		&model.Message{},
+		&model.MessageReaction{},
+		&model.MessageMention{},
 	)
 }

@@ -31,6 +31,7 @@ type RoomInfo = {
 	limit: number;
 	audioOnly?: boolean;
 	allowAudience?: boolean;
+	type?: "text" | "voice";
 	members: MemberInfo[];
 	count: number;
 	createdAt: number;

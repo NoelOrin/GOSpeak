@@ -50,4 +50,19 @@ const (
 
 	// SFU 热切换：通知所有客户端断连并刷新
 	EventSFUProviderChanged = "sfu:provider-changed"
+
+	// 消息事件（客户端 → 服务端）
+	EventMessageSend     = "message:send"
+	EventMessageEdit     = "message:edit"
+	EventMessageDelete   = "message:delete"
+	EventMessageReact    = "message:react"
+	EventMessageUnreact  = "message:unreact"
+
+	// 消息事件（服务端推送）
+	EventMessageCreated  = "message:created"
+	EventMessageUpdated  = "message:updated"
+	EventMessageDeleted  = "message:deleted"
+	EventMessageReaction = "message:reaction"
+	EventMessageAck      = "message:ack"
+	EventMessageError    = "message:error"
 )
