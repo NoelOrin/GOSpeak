@@ -8,6 +8,7 @@ import (
 	botRoutes "GOSpeak/internal/router/routes/bot"
 	emailRoutes "GOSpeak/internal/router/routes/email"
 	emailConfigRoutes "GOSpeak/internal/router/routes/email_config"
+	messageRoutes "GOSpeak/internal/router/routes/message"
 	muteRoutes "GOSpeak/internal/router/routes/mute"
 	oauthRoutes "GOSpeak/internal/router/routes/oauth"
 	pluginRoutes "GOSpeak/internal/router/routes/plugin"
@@ -45,6 +46,7 @@ type Handlers struct {
 	Room        *handler.RoomHandler
 	Permission  *handler.PermissionHandler
 	Mute        *handler.MuteHandler
+	Message     *handler.MessageHandler
 	SFUConfig   *handler.SFUConfigHandler
 	Storage     *handler.StorageHandler
 	Email       *handler.EmailVerificationHandler
@@ -87,6 +89,9 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	roleRoutes.RegisterProtected(protected.Group("/role"), h.Role)
 	muteRoutes.RegisterProtected(protected.Group("/mute"), h.Mute)
 	roomRoutes.RegisterProtected(protected.Group("/room"), h.Room)
+	if h.Message != nil {
+		messageRoutes.RegisterProtected(protected.Group("/message"), h.Message)
+	}
 	permissionRoutes.RegisterProtected(protected.Group("/permission"), h.Permission)
 	sfuConfigRoutes.RegisterProtected(protected.Group("/sfu"), h.SFUConfig)
 	storageRoutes.Register(protected.Group("/storage"), h.Storage)

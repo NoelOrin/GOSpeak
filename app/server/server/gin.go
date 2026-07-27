@@ -100,6 +100,7 @@ func StartGin(env EnvEnum) {
 	emailVerificationRepo := repository.NewEmailVerificationCodeRepository(repository.DB)
 	permRepo := repository.NewPermissionRepository(repository.DB)
 	muteRepo := repository.NewMuteRepository(repository.DB)
+	messageRepo := repository.NewMessageRepository(repository.DB)
 	sfuConfigRepo := repository.NewSFUConfigRepository(repository.DB)
 	storageConfigRepo := repository.NewStorageConfigRepository(repository.DB)
 
@@ -200,6 +201,8 @@ func StartGin(env EnvEnum) {
 	signalHub.SetEventBus(eventBus)
 	signalHub.SetStateNotifier(eventBus)
 	permSvc.SetEventBus(eventBus)
+	messageSvc := service.NewMessageService(messageRepo, eventBus)
+	signalHub.SetMessageService(messageSvc)
 	var natsConn *nats.Conn
 	instanceID := eventBus.InstanceID()
 	if nb, ok := eventBus.(*bus.NATSBus); ok {
@@ -326,6 +329,7 @@ func StartGin(env EnvEnum) {
 	roomH := handler.NewRoomHandler(roomSvc, permSvc)
 	permH := handler.NewPermissionHandler(permSvc)
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
+	messageH := handler.NewMessageHandler(messageSvc)
 	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc, signalHub)
 	storageH := handler.NewStorageHandler(storageSvc)
 	botH := handler.NewBotHandler(botSvc)
@@ -359,6 +363,7 @@ func StartGin(env EnvEnum) {
 		Room:        roomH,
 		Permission:  permH,
 		Mute:        muteH,
+		Message:     messageH,
 		SFUConfig:   sfuConfigH,
 		Storage:     storageH,
 		Email:       emailH,
