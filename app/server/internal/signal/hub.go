@@ -25,14 +25,61 @@ type Room struct {
 	Name     string
 	Password string
 	Members  map[string]*MemberInfo // socketID -> MemberInfo
-	MicMuted map[string]bool
-	// Speaking 维护房间内各成员本地发言态（仅 SRS/Cloudflare 等无 SFU 原生 active speaker 的 provider 上报）。
-	// 与 MicMuted 类似，仅用于信令层聚合广播，不持久化。
+	// ByIdentity 身份索引，O(1) 查成员（本地 fallback 时为 O(1)，不再遍历 Members）。
+	ByIdentity map[string]*MemberInfo // identity -> MemberInfo
+	MicMuted   map[string]bool
+	// Speaking 维护房间内各成员本地发言状态（仅 SRS/Cloudflare 等不 SFU 原生 active speaker 的 provider 上报）。
+	// 与 MicMuted 类似，仅用于日志れ聚广播，不持久化。
 	Speaking  map[string]bool
 	CreatedAt time.Time
 }
 
-// socketServer abstracts the socketio.Server methods used by Hub, enabling testing.
+// roomSetMember writes both Members (by socketID) and ByIdentity index.
+// Caller must hold h.mu write-lock.
+func roomSetMember(room *Room, sid, identity string, member *MemberInfo) {
+	room.Members[sid] = member
+	if identity != "" && room.ByIdentity != nil {
+		room.ByIdentity[identity] = member
+	}
+}
+
+// roomDelMember removes from both Members and ByIdentity. Caller must hold write-lock.
+func roomDelMember(room *Room, sid string) {
+	if m, ok := room.Members[sid]; ok {
+		if m.Identity != "" && room.ByIdentity != nil {
+			delete(room.ByIdentity, m.Identity)
+		}
+	}
+	delete(room.Members, sid)
+}
+
+// roomLookupIdentity O(1) identity lookup with index fallback.
+func roomLookupIdentity(room *Room, identity string) *MemberInfo {
+	if room.ByIdentity != nil {
+		return room.ByIdentity[identity]
+	}
+	for _, m := range room.Members {
+		if m.Identity == identity {
+			return m
+		}
+	}
+	return nil
+}
+
+// roomInitByIdentity lazy-inits ByIdentity from existing Members.
+func roomInitByIdentity(room *Room) {
+	if room.ByIdentity != nil {
+		return
+	}
+	room.ByIdentity = make(map[string]*MemberInfo, len(room.Members))
+	for _, m := range room.Members {
+		if m.Identity != "" {
+			room.ByIdentity[m.Identity] = m
+		}
+	}
+}
+
+//// socketServer abstracts the socketio.Server methods used by Hub, enabling testing.
 type socketServer interface {
 	BroadcastToNamespace(namespace string, event string, args ...interface{}) bool
 	BroadcastToRoom(namespace string, room string, event string, args ...interface{}) bool
@@ -259,7 +306,7 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 			identity := member.Identity
 			stream := member.Stream
 			wasSpeaking := room.Speaking[identity]
-			delete(room.Members, s.ID())
+			roomDelMember(room, s.ID())
 			delete(room.Speaking, identity)
 			delete(room.MicMuted, identity)
 			h.unregisterStreamLocked(roomName, identity, stream)
@@ -552,7 +599,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 		}
 		h.rooms[req.Room] = room
 	}
-	room.Members[s.ID()] = member
+	roomSetMember(room, s.ID(), identity, member)
 	h.registerStreamLocked(req.Room, identity, req.Stream)
 	memberList := h.getMembersLocked(req.Room)
 	h.mu.Unlock()
@@ -625,7 +672,7 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 			identity = member.Identity
 			wasSpeaking = room.Speaking[identity]
 			stream = member.Stream
-			delete(room.Members, s.ID())
+			roomDelMember(room, s.ID())
 			delete(room.Speaking, identity)
 			delete(room.MicMuted, identity)
 			h.unregisterStreamLocked(req.Room, identity, stream)
@@ -770,7 +817,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 			targetSocketID = sid
 			targetStream = m.Stream
 			targetWasSpeaking = room.Speaking[m.Identity]
-			delete(room.Members, sid)
+			roomDelMember(room, sid)
 			delete(room.Speaking, m.Identity)
 			delete(room.MicMuted, m.Identity)
 			h.unregisterStreamLocked(req.Room, m.Identity, targetStream)
@@ -1263,18 +1310,26 @@ func (h *Hub) SetMessageService(svc messageSender) {
 
 // IsRoomMember checks if identity is currently in room's member list.
 func (h *Hub) IsRoomMember(room, identity string) bool {
+	// 1. 优先读 KV（无锁，跨实例可见）
+	if h.membershipStore != nil {
+		if snap, err := h.membershipStore.GetRoomMembers(context.Background(), room); err == nil {
+			for _, m := range snap.Members {
+				if m.Identity == identity {
+					return true
+				}
+			}
+		}
+	}
+
+	// 2. KV 未命中 → fallback 本地 map
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	r, ok := h.rooms[room]
 	if !ok {
 		return false
 	}
-	for _, m := range r.Members {
-		if m.Identity == identity {
-			return true
-		}
-	}
-	return false
+	roomInitByIdentity(r)
+	return roomLookupIdentity(r, identity) != nil
 }
 
 func (h *Hub) publishRoom(room, event string, data interface{}) {
@@ -1420,7 +1475,7 @@ func (h *Hub) clearLocalRoomsForSFUSwitch() {
 				streamsToDelete = append(streamsToDelete, stream)
 			}
 			h.unregisterStreamLocked(roomName, identity, stream)
-			delete(room.Members, sid)
+			roomDelMember(room, sid)
 			delete(room.Speaking, identity)
 			delete(room.MicMuted, identity)
 			if h.server != nil {

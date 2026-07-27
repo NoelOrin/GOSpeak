@@ -49,15 +49,20 @@ type errString string
 func (e errString) Error() string { return string(e) }
 
 func seedKickRoom(hub *Hub, room string, members map[string]string) {
-	// members: socketID -> identity
+	// members: mapped to socketID
 	hub.rooms[room] = &Room{
 		Name:     room,
 		Members:  make(map[string]*MemberInfo),
+		ByIdentity: make(map[string]*MemberInfo),
 		MicMuted: make(map[string]bool),
 		Speaking: make(map[string]bool),
 	}
 	for sid, identity := range members {
-		hub.rooms[room].Members[sid] = &MemberInfo{Identity: identity, Name: identity}
+		m := &MemberInfo{Identity: identity, Name: identity}
+		hub.rooms[room].Members[sid] = m
+		if identity != "" {
+			hub.rooms[room].ByIdentity[identity] = m
+		}
 	}
 }
 

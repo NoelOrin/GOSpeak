@@ -1,6 +1,7 @@
 package signal
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"GOSpeak/internal/bus"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 
@@ -987,5 +989,80 @@ func TestHub_RoomRegistry_ClearRoom(t *testing.T) {
 	}
 	if got := hub.Rooms(); len(got) != 0 {
 		t.Fatalf("expected no rooms after ClearRoom, got %v", got)
+	}
+}
+
+// ─── IsRoomMember KV-priority tests ───
+
+func TestIsRoomMember_KVPriority_FindsInKV(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.server = newMockServer()
+
+	kv := newMemStateStore()
+	kv.PutRoomMembers(context.Background(), bus.RoomMembersSnapshot{
+		Room: "room-x",
+		Members: []bus.MemberRecord{
+			{Room: "room-x", Identity: "charlie", InstanceID: "inst-other"},
+		},
+	})
+	hub.SetMembershipStore(kv, "inst-local")
+
+	// local rooms is empty
+	if !hub.IsRoomMember("room-x", "charlie") {
+		t.Fatal("expected IsRoomMember true from KV, got false")
+	}
+	if hub.IsRoomMember("room-x", "unknown") {
+		t.Fatal("expected IsRoomMember false for unknown identity")
+	}
+}
+
+func TestIsRoomMember_KVPriority_MissThenLocal(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.server = newMockServer()
+	seedKickRoom(hub, "room-y", map[string]string{"sock-1": "dave"})
+
+	kv := newMemStateStore()
+	hub.SetMembershipStore(kv, "inst-local")
+
+	// KV miss — room-y not in KV
+	if !hub.IsRoomMember("room-y", "dave") {
+		t.Fatal("expected IsRoomMember true from local fallback, got false")
+	}
+}
+
+func TestIsRoomMember_KVPriority_NotFound(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.server = newMockServer()
+	seedKickRoom(hub, "room-z", map[string]string{"sock-1": "eve"})
+
+	kv := newMemStateStore()
+	hub.SetMembershipStore(kv, "inst-local")
+
+	if hub.IsRoomMember("room-z", "stranger") {
+		t.Fatal("expected IsRoomMember false for stranger, got true")
+	}
+}
+
+func TestIsRoomMember_KVPriority_NilMembershipStore(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.server = newMockServer()
+	seedKickRoom(hub, "room-a", map[string]string{"sock-1": "alice"})
+
+	// membershipStore is nil — should use local map directly
+	if !hub.IsRoomMember("room-a", "alice") {
+		t.Fatal("expected IsRoomMember true from local with nil KV")
+	}
+}
+
+func TestIsRoomMember_KVPriority_KVMissReturnsFalse(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.server = newMockServer()
+
+	kv := newMemStateStore()
+	hub.SetMembershipStore(kv, "inst-local")
+
+	// Neither KV nor local has anyone
+	if hub.IsRoomMember("empty-room", "nobody") {
+		t.Fatal("expected false for empty room")
 	}
 }
