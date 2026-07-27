@@ -119,6 +119,7 @@ type Hub struct {
 	instanceID         string
 	cleanupPub         cleanupPublisher
 	stateNotifier      stateNotifier
+	messageSvc         messageSender
 }
 
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
@@ -172,6 +173,7 @@ func (h *Hub) SetupRoutes(server *socketio.Server) {
 	server.OnEvent("/", EventMemberSpeaking, safeOnEventData(h.OnMemberSpeaking))
 	server.OnEvent("/",  EventBotCommand, safeOnEventData(h.PublishBotCommand))
 	server.OnEvent("/",  EventBotMessage, safeOnEventData(h.PublishBotMessage))
+	server.OnEvent("/", EventMessageSend, safeOnEventData(h.OnMessageSend))
 
 	if h.sfuSignalHandler != nil {
 		h.sfuSignalHandler.RegisterRoutes(server)
@@ -1252,6 +1254,10 @@ func (h *Hub) SetEventBus(b eventBus) {
 
 func (h *Hub) SetCleanupPublisher(p cleanupPublisher) {
 	h.cleanupPub = p
+}
+
+func (h *Hub) SetMessageService(svc messageSender) {
+	h.messageSvc = svc
 }
 
 func (h *Hub) publishRoom(room, event string, data interface{}) {

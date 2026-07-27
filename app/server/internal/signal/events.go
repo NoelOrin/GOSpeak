@@ -50,4 +50,10 @@ const (
 
 	// SFU 热切换：通知所有客户端断连并刷新
 	EventSFUProviderChanged = "sfu:provider-changed"
+
+	// 消息（客户端 → 服务端）
+	EventMessageSend = "message:send"
+
+	// 消息推送（服务端 → 客户端）
+	EventMessageNew = "message:new"
 )
