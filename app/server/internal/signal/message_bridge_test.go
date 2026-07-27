@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"GOSpeak/internal/model"
 	"GOSpeak/internal/service"
 )
 
@@ -187,5 +188,26 @@ func TestOnMessageSend_MissingRoom_Denied(t *testing.T) {
 
 	if svc.n != 0 {
 		t.Fatalf("expected 0 Send calls for missing room, got %d", svc.n)
+	}
+}
+
+// stubMuteStore always returns muted.
+type stubMuteStore struct{}
+func (m *stubMuteStore) IsMutedByIdentity(identity string) (bool, *model.Mute, error) {
+	return true, &model.Mute{UserID: 1, Permanent: true}, nil
+}
+
+func TestOnMessageSend_Muted_Denied(t *testing.T) {
+	hub := NewHub(nil, &stubMuteStore{}, nil, nil)
+	hub.server = newMockServer()
+	seedKickRoom(hub, "room-a", map[string]string{
+		"sock-1": "alice",
+	})
+	svc := &stubMsgSvc{}
+	hub.SetMessageService(svc)
+	conn := newAuthedMockConn("sock-1", "alice")
+	hub.OnMessageSend(conn, `{"room":"room-a","content":"hi"}`)
+	if svc.n != 0 {
+		t.Fatalf("expected 0 Send calls for muted user, got %d", svc.n)
 	}
 }

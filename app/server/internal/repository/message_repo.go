@@ -18,15 +18,7 @@ func (r *MessageRepository) Create(msg *model.Message) error {
 	return r.db.Create(msg).Error
 }
 
-// ListByRoom returns up to limit active messages in ascending id order.
-// If beforeULID is non-empty, only rows with id < beforeULID.
 func (r *MessageRepository) ListByRoom(roomUUID, beforeULID string, limit int) ([]model.Message, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 100 {
-		limit = 100
-	}
 	q := r.db.Where("room_uuid = ? AND status = ?", roomUUID, model.MessageStatusActive)
 	if beforeULID != "" {
 		q = q.Where("id < ?", beforeULID)

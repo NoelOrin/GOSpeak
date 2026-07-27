@@ -2,6 +2,8 @@ package signal
 
 import (
 	"context"
+	"sync"
+	"time"
 
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
@@ -9,7 +11,8 @@ import (
 	socketio "github.com/googollee/go-socket.io"
 )
 
-// messageSendPayload is the client→server payload for message:send.
+const messageRateInterval = 250 * time.Millisecond
+
 type messageSendPayload struct {
 	Room    string `json:"room"`
 	Content string `json:"content"`
@@ -17,22 +20,36 @@ type messageSendPayload struct {
 	ReplyTo string `json:"replyTo,omitempty"`
 }
 
-// messageSender abstracts MessageService for the bridge.
 type messageSender interface {
 	Send(ctx context.Context, in service.MessageSendInput) (*service.MessageDTO, error)
 }
 
-// OnMessageSend handles message:send events from clients.
-// Validates the sender is a room member, then delegates to MessageService.
-// Fanout (message:new) is handled by MessageService → EventBus, not here.
-func (h *Hub) OnMessageSend(s socketio.Conn, data string) {
+type msgRateEntry struct {
+	mu   sync.Mutex
+	last time.Time
+}
+
+func (h *Hub) allowMessageSend(identity string) bool {
+	v, _ := h.msgRate.LoadOrStore(identity, &msgRateEntry{})
+	e := v.(*msgRateEntry)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	now := time.Now()
+	if now.Sub(e.last) < messageRateInterval {
+		return false
+	}
+	e.last = now
+	return true
+}
+
+func (h *Hub) OnMessageSend(s socketio.Conn, data string) (string, error) {
 	if h.messageSvc == nil {
-		return
+		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, "service unavailable")
 	}
 
 	var req messageSendPayload
 	if err := parseJSON(data, &req); err != nil || req.Room == "" {
-		return
+		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "invalid request")
 	}
 
 	text := req.Content
@@ -40,15 +57,18 @@ func (h *Hub) OnMessageSend(s socketio.Conn, data string) {
 		text = req.Text
 	}
 	if text == "" {
-		return
+		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "empty content")
 	}
 
 	identity := claimsIdentity(s)
 	if identity == "" {
-		return
+		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "not authenticated")
 	}
 
-	// Must be a member of the room
+	if !h.allowMessageSend(identity) {
+		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "rate limited")
+	}
+
 	h.mu.RLock()
 	room, exists := h.rooms[req.Room]
 	var member *MemberInfo
@@ -63,7 +83,14 @@ func (h *Hub) OnMessageSend(s socketio.Conn, data string) {
 	h.mu.RUnlock()
 
 	if member == nil {
-		return
+		return "", pkg.NewAppError(pkg.NOT_FOUND, "not in room")
+	}
+
+	if h.muteStore != nil {
+		muted, _, muteErr := h.muteStore.IsMutedByIdentity(identity)
+		if muteErr == nil && muted {
+			return "", pkg.NewAppError(pkg.FORBIDDEN, "muted")
+		}
 	}
 
 	display := member.DisplayName
@@ -78,7 +105,7 @@ func (h *Hub) OnMessageSend(s socketio.Conn, data string) {
 		}
 	}
 
-	_, _ = h.messageSvc.Send(context.Background(), service.MessageSendInput{
+	dto, err := h.messageSvc.Send(context.Background(), service.MessageSendInput{
 		RoomKey:        req.Room,
 		SenderIdentity: identity,
 		SenderDisplay:  display,
@@ -86,4 +113,8 @@ func (h *Hub) OnMessageSend(s socketio.Conn, data string) {
 		Content:        text,
 		ReplyToID:      req.ReplyTo,
 	})
+	if err != nil {
+		return "", err
+	}
+	return dto.ID, nil
 }

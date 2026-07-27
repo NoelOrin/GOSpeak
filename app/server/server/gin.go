@@ -329,7 +329,7 @@ func StartGin(env EnvEnum) {
 	roomH := handler.NewRoomHandler(roomSvc, permSvc)
 	permH := handler.NewPermissionHandler(permSvc)
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
-	messageH := handler.NewMessageHandler(messageSvc)
+	messageH := handler.NewMessageHandler(messageSvc, signalHub)
 	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc, signalHub)
 	storageH := handler.NewStorageHandler(storageSvc)
 	botH := handler.NewBotHandler(botSvc)

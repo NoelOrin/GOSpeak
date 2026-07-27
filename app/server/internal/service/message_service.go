@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"log"
 	"time"
 	"unicode/utf8"
 
@@ -25,7 +26,6 @@ type MessageEventBus interface {
 }
 
 type MessageSendInput struct {
-	RoomUUID       string
 	RoomKey        string
 	SenderIdentity string
 	SenderDisplay  string
@@ -59,10 +59,6 @@ func NewMessageService(repo *repository.MessageRepository, bus MessageEventBus) 
 	return &MessageService{repo: repo, bus: bus}
 }
 
-func (s *MessageService) SetEventBus(bus MessageEventBus) {
-	s.bus = bus
-}
-
 func (s *MessageService) Send(ctx context.Context, in MessageSendInput) (*MessageDTO, error) {
 	if in.RoomKey == "" || in.SenderIdentity == "" {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "room and sender required")
@@ -71,11 +67,11 @@ func (s *MessageService) Send(ctx context.Context, in MessageSendInput) (*Messag
 	if content == "" || utf8.RuneCountInString(content) > MaxMessageRunes {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "invalid content")
 	}
-	id, err := ulid.New(ulid.Timestamp(time.Now()), rand.Reader)
+	now := time.Now().UTC()
+	id, err := ulid.New(ulid.Timestamp(now), rand.Reader)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR)
 	}
-	now := time.Now().UTC()
 	row := &model.Message{
 		ID:             id.String(),
 		RoomUUID:       in.RoomKey,
@@ -93,7 +89,7 @@ func (s *MessageService) Send(ctx context.Context, in MessageSendInput) (*Messag
 	dto := toMessageDTO(row)
 	if s.bus != nil {
 		if err := s.bus.PublishRoom(ctx, in.RoomKey, EventMessageNew, dto); err != nil {
-			_ = err
+			log.Printf("[IM] publish message:new room=%s id=%s: %v", in.RoomKey, dto.ID, err)
 		}
 	}
 	return &dto, nil

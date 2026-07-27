@@ -120,6 +120,7 @@ type Hub struct {
 	cleanupPub         cleanupPublisher
 	stateNotifier      stateNotifier
 	messageSvc         messageSender
+	msgRate            sync.Map
 }
 
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
@@ -173,7 +174,7 @@ func (h *Hub) SetupRoutes(server *socketio.Server) {
 	server.OnEvent("/", EventMemberSpeaking, safeOnEventData(h.OnMemberSpeaking))
 	server.OnEvent("/",  EventBotCommand, safeOnEventData(h.PublishBotCommand))
 	server.OnEvent("/",  EventBotMessage, safeOnEventData(h.PublishBotMessage))
-	server.OnEvent("/", EventMessageSend, safeOnEventData(h.OnMessageSend))
+	server.OnEvent("/", EventMessageSend, safeOnEventDataAck(h.OnMessageSend))
 
 	if h.sfuSignalHandler != nil {
 		h.sfuSignalHandler.RegisterRoutes(server)
@@ -1258,6 +1259,22 @@ func (h *Hub) SetCleanupPublisher(p cleanupPublisher) {
 
 func (h *Hub) SetMessageService(svc messageSender) {
 	h.messageSvc = svc
+}
+
+// IsRoomMember checks if identity is currently in room's member list.
+func (h *Hub) IsRoomMember(room, identity string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	r, ok := h.rooms[room]
+	if !ok {
+		return false
+	}
+	for _, m := range r.Members {
+		if m.Identity == identity {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Hub) publishRoom(room, event string, data interface{}) {

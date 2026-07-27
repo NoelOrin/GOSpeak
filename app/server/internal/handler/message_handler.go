@@ -7,12 +7,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type MessageHandler struct {
-	svc *service.MessageService
+// RoomMemberChecker checks if identity is a room member.
+type RoomMemberChecker interface {
+	IsRoomMember(room, identity string) bool
 }
 
-func NewMessageHandler(svc *service.MessageService) *MessageHandler {
-	return &MessageHandler{svc: svc}
+type MessageHandler struct {
+	svc         *service.MessageService
+	memberCheck RoomMemberChecker
+}
+
+func NewMessageHandler(svc *service.MessageService, mc RoomMemberChecker) *MessageHandler {
+	return &MessageHandler{svc: svc, memberCheck: mc}
 }
 
 func (h *MessageHandler) List(c *gin.Context) {
@@ -25,6 +31,19 @@ func (h *MessageHandler) List(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
+
+	if h.memberCheck != nil {
+		username, exists := c.Get("username")
+		if !exists {
+			pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+			return
+		}
+		if !h.memberCheck.IsRoomMember(req.Room, username.(string)) {
+			pkg.Fail(c, pkg.NOT_FOUND, "not in room")
+			return
+		}
+	}
+
 	out, err := h.svc.List(c.Request.Context(), req.Room, req.Before, req.Limit)
 	if err != nil {
 		pkg.HandleError(c, err)
