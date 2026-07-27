@@ -32,7 +32,6 @@ func (r *MessageRepository) ListByRoom(roomUUID, beforeULID string, limit int) (
 		q = q.Where("id < ?", beforeULID)
 	}
 	var rows []model.Message
-	// fetch newest page then reverse to ascending
 	err := q.Order("id DESC").Limit(limit).Find(&rows).Error
 	if err != nil {
 		return nil, err
