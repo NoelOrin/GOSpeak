@@ -41,8 +41,38 @@ func setupMsgSvc(t *testing.T) (*MessageService, *memBus) {
 	return svc, bus
 }
 
-func TestMessageService_Send_PublishesAndPersists(t *testing.T) {
+func TestMessageService_Send_PersistsAsync(t *testing.T) {
+	svc, _ := setupMsgSvc(t)
+	var wg sync.WaitGroup
+	svc.SetAsyncWG(&wg)
+
+	dto, err := svc.Send(context.Background(), MessageSendInput{
+		RoomKey:        "lobby",
+		SenderIdentity: "alice",
+		SenderDisplay:  "Alice",
+		SenderRole:     "user",
+		Content:        "hello",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wg.Wait() // wait for async DB write
+
+	list, err := svc.List(context.Background(), "lobby", "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Messages) != 1 || list.Messages[0].ID != dto.ID {
+		t.Fatalf("expected 1 persisted message, got %+v", list)
+	}
+}
+
+func TestMessageService_Send_ReturnsDTOAndBroadcasts(t *testing.T) {
 	svc, bus := setupMsgSvc(t)
+	var wg sync.WaitGroup
+	svc.SetAsyncWG(&wg)
+
 	dto, err := svc.Send(context.Background(), MessageSendInput{
 		RoomKey:        "lobby",
 		SenderIdentity: "alice",
@@ -54,17 +84,13 @@ func TestMessageService_Send_PublishesAndPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	if dto.ID == "" || dto.Content != "hello" {
-		t.Fatalf("%+v", dto)
+		t.Fatalf("bad dto: %+v", dto)
 	}
+
+	wg.Wait() // 等待异步广播完成
+
 	if bus.calls != 1 || bus.event != "message:new" || bus.room != "lobby" {
-		t.Fatalf("bus=%+v", bus)
-	}
-	list, err := svc.List(context.Background(), "lobby", "", 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(list.Messages) != 1 || list.Messages[0].ID != dto.ID {
-		t.Fatalf("%+v", list)
+		t.Fatalf("bus not called: %+v", bus)
 	}
 }
 

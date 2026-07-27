@@ -38,7 +38,12 @@ func (h *MessageHandler) List(c *gin.Context) {
 			pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 			return
 		}
-		if !h.memberCheck.IsRoomMember(req.Room, username.(string)) {
+		name, ok := username.(string)
+		if !ok {
+			pkg.Fail(c, pkg.INTERNAL_ERROR, "invalid context")
+			return
+		}
+		if !h.memberCheck.IsRoomMember(req.Room, name) {
 			pkg.Fail(c, pkg.NOT_FOUND, "not in room")
 			return
 		}
