@@ -176,7 +176,7 @@ func StartGin(env EnvEnum) {
 	if err != nil || timeout <= 0 {
 		timeout = 2 * time.Second
 	}
-	deliverer := bus.NewSIODeliverer(sioServer)
+	deliverer := bus.NewConcurrentDeliverer(sioServer, 0)
 	embeddedPort := 0
 	if cfg.NATSEmbeddedPort != "" {
 		p, err := strconv.Atoi(cfg.NATSEmbeddedPort)
