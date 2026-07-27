@@ -69,19 +69,35 @@ func (h *Hub) OnMessageSend(s socketio.Conn, data string) (string, error) {
 		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "rate limited")
 	}
 
-	h.mu.RLock()
-	room, exists := h.rooms[req.Room]
 	var member *MemberInfo
-	if exists {
-		for _, m := range room.Members {
-			if m.Identity == identity {
-				member = m
-				break
+
+	// 1. 优先读 KV（无锁，跨实例可见）
+	if h.membershipStore != nil {
+		if snap, err := h.membershipStore.GetRoomMembers(context.Background(), req.Room); err == nil {
+			for _, rec := range snap.Members {
+				if rec.Identity == identity {
+					member = &MemberInfo{Identity: rec.Identity, Name: rec.Identity}
+					break
+				}
 			}
 		}
 	}
-	h.mu.RUnlock()
 
+	// 2. KV 未命中 → fallback 本地 map（需 RLock）
+	if member == nil {
+		h.mu.RLock()
+		if room, exists := h.rooms[req.Room]; exists {
+			for _, m := range room.Members {
+				if m.Identity == identity {
+					member = m
+					break
+				}
+			}
+		}
+		h.mu.RUnlock()
+	}
+
+	// 3. 确认不在房间里
 	if member == nil {
 		return "", pkg.NewAppError(pkg.NOT_FOUND, "not in room")
 	}
