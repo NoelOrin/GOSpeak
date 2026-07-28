@@ -24,7 +24,7 @@ func (r *MessageRepository) ListByRoom(roomUUID, beforeULID string, limit int) (
 		q = q.Where("id < ?", beforeULID)
 	}
 	var rows []model.Message
-	err := q.Order("id DESC").Limit(limit).Find(&rows).Error
+	err := q.Order("id DESC").Limit(limit).Select("id","room_uuid","sender_identity","sender_display","sender_role","content","reply_to_id","status","created_at").Find(&rows).Error
 	if err != nil {
 		return nil, err
 	}

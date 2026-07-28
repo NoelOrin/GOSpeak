@@ -184,6 +184,10 @@ func (s *MessageService) writeWorker() {
 			if s.persist(job.msg) {
 				continue
 			}
+			// 一次直接写 DB（不再 sleep 重试，留给 DLQ 的 30s 定时器处理）
+			if err := s.repo.Create(job.msg); err == nil {
+				continue
+			}
 			log.Printf("[IM] write worker exhausted: room=%s id=%s", job.room, job.msg.ID)
 			select {
 			case s.deadCh <- job.msg:

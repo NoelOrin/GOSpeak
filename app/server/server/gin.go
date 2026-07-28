@@ -405,6 +405,8 @@ func StartGin(env EnvEnum) {
 		logger.WithComponent("Plugin").Info("plugins stopped")
 
 		// 2) drain signal fanout then close socket connections
+		messageSvc.Shutdown()
+		logger.WithComponent("Message").Info("write queue closed")
 		closeEventBus()
 		logger.WithComponent("EventBus").Info("closed")
 		if err := sioServer.Close(); err != nil {

@@ -1333,6 +1333,8 @@ func (h *Hub) IsRoomMember(room, identity string) bool {
 }
 
 func (h *Hub) publishRoom(room, event string, data interface{}) {
+	// eventBus 由启动路径初始化（embedded NATS / external NATS），生产环境始终在线。
+	// 下面的 BroadcastToRoom 直调仅在 eventBus 为 nil 时使用（仅测试机的裸 socket.io 路径）。
 	if h.eventBus != nil {
 		if err := h.eventBus.PublishRoom(context.Background(), room, event, data); err != nil {
 			log.Printf("[Signal] eventbus publish room %s %s: %v", room, event, err)

@@ -50,3 +50,11 @@ func (d *ConcurrentDeliverer) BroadcastToRoom(room, event string, data interface
 		d.server.BroadcastToRoom("/", room, event, data)
 	}
 }
+
+// Close depletes the goroutine semaphore to prevent further submits.
+func (d *ConcurrentDeliverer) Close() {
+	if d == nil || d.sem == nil {
+		return
+	}
+	close(d.sem)
+}
