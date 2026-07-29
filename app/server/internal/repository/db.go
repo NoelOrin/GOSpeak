@@ -368,5 +368,7 @@ func autoMigrate() error {
 		&model.BotToken{},
 		&model.PluginConfig{},
 		&model.Message{},
+		&model.Guild{},
+		&model.GuildMember{},
 	)
 }
