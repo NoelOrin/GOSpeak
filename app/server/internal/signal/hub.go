@@ -100,7 +100,7 @@ type cleanupPublisher interface {
 
 // roomStore abstracts DB room listing for Hub.
 type roomStore interface {
-	List(page, pageSize int) ([]model.Room, int64, error)
+	List(page, pageSize int, guildUUID string) ([]model.Room, int64, error)
 	GetByName(name string) (*model.Room, error)
 }
 
@@ -1000,7 +1000,7 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 	eg.Go(func() error {
 		dbRooms = make(map[string]RoomInfo)
 		if h.roomStore != nil {
-			if rooms, _, err := h.roomStore.List(1, 200); err == nil {
+			if rooms, _, err := h.roomStore.List(1, 200, ""); err == nil {
 				for _, r := range rooms {
 					dbRooms[r.Name] = RoomInfo{
 						ID:            r.ID,

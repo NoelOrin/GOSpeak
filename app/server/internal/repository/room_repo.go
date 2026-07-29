@@ -35,11 +35,15 @@ func (r *RoomRepository) GetByName(name string) (*model.Room, error) {
 	return &room, err
 }
 
-func (r *RoomRepository) List(page, pageSize int) ([]model.Room, int64, error) {
+func (r *RoomRepository) List(page, pageSize int, guildUUID string) ([]model.Room, int64, error) {
 	var rooms []model.Room
 	var total int64
-	r.db.Model(&model.Room{}).Count(&total)
-	err := r.db.Order("created_at ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rooms).Error
+	query := r.db.Model(&model.Room{})
+	if guildUUID != "" {
+		query = query.Where("guild_uuid = ?", guildUUID)
+	}
+	query.Count(&total)
+	err := query.Order("created_at ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rooms).Error
 	return rooms, total, err
 }
 
