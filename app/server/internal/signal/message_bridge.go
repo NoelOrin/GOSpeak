@@ -132,3 +132,81 @@ func (h *Hub) OnMessageSend(c ws.ClientMessenger, data string) (string, error) {
 	}
 	return dto.ID, nil
 }
+
+
+type privateMessagePayload struct {
+	TargetIdentity string `json:"target_identity"`
+	Content       string `json:"content"`
+	Text          string `json:"text"`
+	ReplyTo       string `json:"replyTo,omitempty"`
+}
+
+// OnPrivateMessageSend handles a direct (private) message from a client.
+// The sender's identity is taken from the JWT, not the client payload.
+func (h *Hub) OnPrivateMessageSend(c ws.ClientMessenger, data string) (string, error) {
+	if h.messageSvc == nil {
+		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, "service unavailable")
+	}
+
+	var req privateMessagePayload
+	if err := parseJSON(data, &req); err != nil || req.TargetIdentity == "" {
+		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "invalid request: target_identity required")
+	}
+
+	text := req.Content
+	if text == "" {
+		text = req.Text
+	}
+	if text == "" {
+		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "empty content")
+	}
+
+	identity := clientIdentity(c)
+	if identity == "" {
+		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "not authenticated")
+	}
+
+	if !h.allowMessageSend(identity) {
+		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "rate limited")
+	}
+
+	if identity == req.TargetIdentity {
+		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "cannot send to self")
+	}
+
+	// Verify target user exists
+	if h.userStore != nil {
+		target, err := h.userStore.GetByName(req.TargetIdentity)
+		if err != nil || target == nil {
+			return "", pkg.NewAppError(pkg.NOT_FOUND, "target user not found")
+		}
+	}
+
+	// Resolve sender display name
+	display := identity
+	if h.userStore != nil {
+		if u, err := h.userStore.GetByName(identity); err == nil && u != nil {
+			if u.DisplayName != "" {
+				display = u.DisplayName
+			}
+		}
+	}
+
+	role := "member"
+	if claims := c.Claims(); claims != nil && claims.Role != "" {
+		role = claims.Role
+	}
+
+	dto, err := h.messageSvc.Send(context.Background(), service.MessageSendInput{
+		SenderIdentity: identity,
+		SenderDisplay:  display,
+		SenderRole:     role,
+		Content:        text,
+		ReplyToID:      req.ReplyTo,
+		TargetIdentity: req.TargetIdentity,
+	})
+	if err != nil {
+		return "", err
+	}
+	return dto.ID, nil
+}

@@ -56,4 +56,7 @@ const (
 
 	// 消息推送（服务端 → 客户端）
 	EventMessageNew = "message:new"
+
+	// 私聊消息（客户端 → 服务端）
+	EventPrivateSend = "private:send"
 )

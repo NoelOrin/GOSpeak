@@ -223,6 +223,7 @@ func (h *Hub) SetupFanout(fanout ws.Broadcaster, handler *ws.HandlerRegistry) {
 	handler.Handle(EventBotCommand, safeHandler(h.PublishBotCommand))
 	handler.Handle(EventBotMessage, safeHandler(h.PublishBotMessage))
 	handler.HandleAck(EventMessageSend, safeHandlerAck(h.OnMessageSend))
+	handler.HandleAck(EventPrivateSend, safeHandlerAck(h.OnPrivateMessageSend))
 
 	if h.sfuSignalHandler != nil {
 		h.sfuSignalHandler.RegisterWS(handler.HandleAck)
@@ -257,6 +258,10 @@ func resolveIdentity(c ws.ClientMessenger, requested string) (string, error) {
 // and claims are available via c.Claims().
 func (h *Hub) OnConnect(c ws.ClientMessenger) error {
 	log.Printf("[Signal] client connected: %s", c.ID())
+	// Join personal room for direct message delivery: __user:{identity}
+	if identity := clientIdentity(c); identity != "" {
+		h.fanout.Join("__user:"+identity, c.ID())
+	}
 	return nil
 }
 
@@ -276,6 +281,10 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	var speakingChanged []string
 	var deletedStreams []string
 	var leaveEvents []leaveEvent
+	// Leave personal room on disconnect
+	if identity := clientIdentity(c); identity != "" {
+		h.fanout.Leave("__user:"+identity, c.ID())
+	}
 	h.mu.Lock()
 	for roomName, room := range h.rooms {
 		if member, ok := room.Members[c.ID()]; ok {
