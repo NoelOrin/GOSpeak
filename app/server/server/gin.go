@@ -19,7 +19,6 @@ import (
 	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/sfu/factory"
 	"GOSpeak/internal/signal"
-	"strings"
 	"context"
 	"fmt"
 	"net/http"
@@ -30,11 +29,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	socketio "github.com/googollee/go-socket.io"
-	engineio "github.com/googollee/go-socket.io/engineio"
-	"github.com/googollee/go-socket.io/engineio/transport"
-	"github.com/googollee/go-socket.io/engineio/transport/polling"
-	"github.com/googollee/go-socket.io/engineio/transport/websocket"
+	"GOSpeak/internal/ws"
 	"github.com/nats-io/nats.go"
 	goredis "github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
@@ -164,21 +159,14 @@ func StartGin(env EnvEnum) {
 	r.Use(logger.GinRecovery(), logger.GinLogger())
 	middleware.SetTokenVersionChecker(authSvc)
 
-	wsTransport := websocket.Default
-	wsTransport.CheckOrigin = makeCheckOrigin(cfg.CORSOrigin)
-
-	sioServer := socketio.NewServer(&engineio.Options{
-		Transports: []transport.Transport{
-			polling.Default,
-			wsTransport,
-		},
-	})
+	wsFanout := ws.NewFanout()
+	wsHandler := ws.NewHandlerRegistry()
 
 	timeout, err := time.ParseDuration(cfg.NATSConnectTimeout)
 	if err != nil || timeout <= 0 {
 		timeout = 2 * time.Second
 	}
-	deliverer := bus.NewConcurrentDeliverer(sioServer, 0)
+	deliverer := bus.NewWSDeliverer(wsFanout)
 	embeddedPort := 0
 	if cfg.NATSEmbeddedPort != "" {
 		p, err := strconv.Atoi(cfg.NATSEmbeddedPort)
@@ -300,7 +288,7 @@ func StartGin(env EnvEnum) {
 		msSignal := mediasoup.NewMediasoupSignal(msService.Bridge, signalHub.BroadcastToRoom)
 		signalHub.SetSFUSignalHandler(msSignal)
 	}
-	signalHub.SetupRoutes(sioServer)
+	signalHub.SetupFanout(wsFanout, wsHandler)
 	sfuSvc := service.NewSFUService(sfuProvider, signalHub)
 	signalH := handler.NewSignalHandler(sfuSvc)
 	if jobQueue != nil {
@@ -343,18 +331,13 @@ func StartGin(env EnvEnum) {
 	// 启动签名密钥轮换检查
 	go redis.KeyRotationLoop()
 
-	// 启动 Socket.IO 事件循环
-	go func() {
-		if err := sioServer.Serve(); err != nil {
-			fmt.Printf("[Socket.IO] serve error: %v\n", err)
-		}
-	}()
-
-	wsAuth := middleware.WSAuth()
+	// WS 升级路由（JWT 鉴权由 Upgrader 内部完成）
+	wsUpgrader := ws.NewUpgrader(ws.UpgraderConfig{
+		Fanout:  wsFanout,
+		Handler: wsHandler,
+	})
 	cors := middleware.CORS()
-	r.GET("/socket.io/*any", cors, wsAuth, gin.WrapH(sioServer))
-	r.POST("/socket.io/*any", cors, wsAuth, gin.WrapH(sioServer))
-	r.OPTIONS("/socket.io/*any", cors, wsAuth, gin.WrapH(sioServer))
+	r.GET("/ws", cors, gin.WrapH(wsUpgrader))
 
 	router.SetupRoutes(r, &router.Handlers{
 		Auth:        authH,
@@ -413,11 +396,7 @@ func StartGin(env EnvEnum) {
 		logger.WithComponent("Message").Info("write queue closed")
 		closeEventBus()
 		logger.WithComponent("EventBus").Info("closed")
-		if err := sioServer.Close(); err != nil {
-			logger.WithComponent("Socket.IO").Warnf("close error: %v", err)
-		} else {
-			logger.WithComponent("Socket.IO").Info("connections closed")
-		}
+		// WS connections close when the HTTP server shuts down
 	}()
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -425,29 +404,6 @@ func StartGin(env EnvEnum) {
 	}
 }
 
-// makeCheckOrigin builds Socket.IO CheckOrigin from CORS_ORIGIN (comma-separated).
-// Empty allowlist keeps legacy open behavior for local dev.
-func makeCheckOrigin(corsOrigin string) func(*http.Request) bool {
-	raw := strings.TrimSpace(corsOrigin)
-	if raw == "" || raw == "*" {
-		return func(*http.Request) bool { return true }
-	}
-	allowed := map[string]struct{}{}
-	for _, o := range strings.Split(raw, ",") {
-		o = strings.TrimSpace(o)
-		if o != "" {
-			allowed[o] = struct{}{}
-		}
-	}
-	return func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return true // non-browser clients
-		}
-		_, ok := allowed[origin]
-		return ok
-	}
-}
 
 func seedPermissions(permRepo *repository.PermissionRepository) {
 	// 种子权限定义

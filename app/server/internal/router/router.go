@@ -30,7 +30,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	socketio "github.com/googollee/go-socket.io"
 
 	"GOSpeak/internal/webui"
 
@@ -113,12 +112,6 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	return r
 }
 
-func SetupSocketRoutes(server *socketio.Server, signalHub interface {
-	SetupRoutes(*socketio.Server)
-}) {
-	signalHub.SetupRoutes(server)
-}
-
 // serveSPA 托管前端构建产物。
 // 路径优先级：STATIC_DIR > /app/static > ./static > go:embed 内嵌资源。
 // 开发环境前端走 Vite；无外部目录且未嵌入前端时静默跳过。
@@ -180,7 +173,7 @@ func serveSPA(r *gin.Engine) {
 
 	r.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
-		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/socket.io") || strings.HasPrefix(path, "/swagger") {
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws") || strings.HasPrefix(path, "/swagger") {
 			c.Status(http.StatusNotFound)
 			return
 		}
