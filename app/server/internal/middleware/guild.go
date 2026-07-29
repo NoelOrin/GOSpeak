@@ -1,17 +1,32 @@
 package middleware
 
 import (
+	"sync"
+
 	"GOSpeak/internal/pkg"
 
 	"github.com/gin-gonic/gin"
 )
 
 // guildChecker 在启动时通过 SetGuildChecker 注入，由 GuildService.IsMember 实现。
-var guildChecker func(guildUUID, userUUID string) bool
+// 使用 RWMutex 保护，避免并发测试与生产请求之间的 data race。
+var (
+	guildCheckerMu sync.RWMutex
+	guildChecker   func(guildUUID, userUUID string) bool
+)
 
 // SetGuildChecker 注入 Guild 成员校验函数。
 func SetGuildChecker(checker func(guildUUID, userUUID string) bool) {
+	guildCheckerMu.Lock()
+	defer guildCheckerMu.Unlock()
 	guildChecker = checker
+}
+
+// getGuildChecker 返回当前的 Guild 成员校验函数（并发安全）。
+func getGuildChecker() func(guildUUID, userUUID string) bool {
+	guildCheckerMu.RLock()
+	defer guildCheckerMu.RUnlock()
+	return guildChecker
 }
 
 // RequireGuildMember 校验当前用户是否为指定 Guild 的成员。
@@ -37,7 +52,8 @@ func RequireGuildMember() gin.HandlerFunc {
 		}
 		c.Set("guild_uuid", guildUUID)
 
-		if guildChecker == nil {
+		checker := getGuildChecker()
+		if checker == nil {
 			pkg.Fail(c, pkg.INTERNAL_ERROR, "guild checker not configured")
 			c.Abort()
 			return
@@ -56,7 +72,7 @@ func RequireGuildMember() gin.HandlerFunc {
 			return
 		}
 
-		if !guildChecker(guildUUID, userUUID) {
+		if !checker(guildUUID, userUUID) {
 			pkg.Fail(c, pkg.FORBIDDEN, "not a member of this guild")
 			c.Abort()
 			return

@@ -54,9 +54,9 @@ func (GuildMember) TableName() string {
 func generateInviteCode() string {
 	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	u := uuid.New()
-	b := make([]byte, 8)
+	var b [8]byte
 	for i := range b {
-		b[i] = charset[u.ID()%uint32(len(charset))]
+		b[i] = charset[int(u[i])%len(charset)]
 	}
-	return string(b)
+	return string(b[:])
 }

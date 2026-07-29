@@ -7,12 +7,38 @@ import (
 	"GOSpeak/internal/model"
 )
 
+// UserOption 是 CreateTestUser 的功能选项。
+type UserOption func(u *model.User)
+
+// WithPassword 设置用户密码。
+func WithPassword(pwd string) UserOption {
+	return func(u *model.User) { u.Password = pwd }
+}
+
+// WithRole 设置用户角色。
+func WithRole(role string) UserOption {
+	return func(u *model.User) { u.Role = role }
+}
+
+// WithUserUUID 设置用户 UUID（自动生成时不需要）。
+func WithUserUUID(uuid string) UserOption {
+	return func(u *model.User) { u.UUID = uuid }
+}
+
+// WithDisplayName 设置显示名称。
+func WithDisplayName(name string) UserOption {
+	return func(u *model.User) { u.DisplayName = name }
+}
+
 // CreateTestUser 在测试数据库中创建一个用户。
-func CreateTestUser(db *gorm.DB, name string) *model.User {
+func CreateTestUser(db *gorm.DB, name string, opts ...UserOption) *model.User {
 	user := &model.User{
 		Name:     name,
 		Password: "testpass",
 		Role:     "user",
+	}
+	for _, o := range opts {
+		o(user)
 	}
 	if err := db.Create(user).Error; err != nil {
 		panic("CreateTestUser: " + err.Error())
@@ -20,11 +46,27 @@ func CreateTestUser(db *gorm.DB, name string) *model.User {
 	return user
 }
 
+// GuildOption 是 CreateTestGuild 的功能选项。
+type GuildOption func(g *model.Guild)
+
+// WithGuildInviteCode 设置邀请码。
+func WithGuildInviteCode(code string) GuildOption {
+	return func(g *model.Guild) { g.InviteCode = code }
+}
+
+// WithGuildMaxRooms 设置房间上限。
+func WithGuildMaxRooms(limit int) GuildOption {
+	return func(g *model.Guild) { g.MaxRooms = uint(limit) }
+}
+
 // CreateTestGuild 在测试数据库中创建一个 Guild。
-func CreateTestGuild(db *gorm.DB, name, ownerUUID string) *model.Guild {
+func CreateTestGuild(db *gorm.DB, name, ownerUUID string, opts ...GuildOption) *model.Guild {
 	guild := &model.Guild{
 		Name:      name,
 		OwnerUUID: ownerUUID,
+	}
+	for _, o := range opts {
+		o(guild)
 	}
 	if err := db.Create(guild).Error; err != nil {
 		panic("CreateTestGuild: " + err.Error())
