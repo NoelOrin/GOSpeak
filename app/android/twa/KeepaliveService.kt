@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 
 /**
  * 前台保活 Service。
@@ -23,13 +24,12 @@ class KeepaliveService : Service() {
         const val CHANNEL_ID = "gospeak_voice_keepalive"
         const val NOTIFICATION_ID = 1001
         const val ACTION_STOP = "com.gospeak.twa.STOP_KEEPALIVE"
+        private const val TAG = "KeepaliveService"
     }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        val notification = buildNotification()
-        startForeground(NOTIFICATION_ID, notification)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -37,6 +37,18 @@ class KeepaliveService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+
+        // 每次 onStartCommand 都重建通知，确保 Service 被系统重启后通知仍在。
+        try {
+            val notification = buildNotification()
+            startForeground(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            // Android 13+ 如果用户拒绝了 FOREGROUND_SERVICE_MICROPHONE 权限
+            // 或通知权限，startForeground 会抛 ForegroundServiceStartNotAllowedException。
+            // 降级处理：不崩溃，仅记录日志（前台保活失败，但 app 仍然可用）。
+            Log.w(TAG, "startForeground failed, keepalive degraded: ${e.message}")
+        }
+
         // 如果 Service 被杀，系统自动重启（带初始 intent）
         return START_REDELIVER_INTENT
     }
