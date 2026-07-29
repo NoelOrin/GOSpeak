@@ -98,6 +98,15 @@ type cleanupPublisher interface {
 	PublishSFUCleanup(ctx context.Context, room, identity string, deleteRoom bool) error
 }
 
+// roomKey generates a guild-scoped composite key for room map isolation.
+// Platform-level rooms (no GuildUUID) use a "platform:" prefix for backward compatibility.
+func roomKey(guildUUID, roomName string) string {
+	if guildUUID == "" {
+		return roomName
+	}
+	return guildUUID + ":" + roomName
+}
+
 // roomStore abstracts DB room listing for Hub.
 type roomStore interface {
 	List(page, pageSize int, guildUUID string) ([]model.Room, int64, error)
@@ -411,7 +420,7 @@ func (h *Hub) OnRoomCreate(s socketio.Conn, data string) {
 	}
 
 	h.mu.Lock()
-	if _, exists := h.rooms[req.Room]; exists {
+	if _, exists := h.rooms[roomKey(req.GuildUUID, req.Room)]; exists {
 		h.mu.Unlock()
 		s.Emit(EventRoomCreated, map[string]interface{}{
 			"error": "room already exists",
@@ -419,7 +428,7 @@ func (h *Hub) OnRoomCreate(s socketio.Conn, data string) {
 		return
 	}
 
-	h.rooms[req.Room] = &Room{
+	h.rooms[roomKey(req.GuildUUID, req.Room)] = &Room{
 		Name:      req.Room,
 		Password:  req.Password,
 		Members:   make(map[string]*MemberInfo),
@@ -588,7 +597,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 			"identity": identity,
 		})
 	}
-	room, exists := h.rooms[req.Room]
+	room, exists := h.rooms[roomKey(req.GuildUUID, req.Room)]
 	if !exists {
 		room = &Room{
 			Name:      req.Room,
@@ -597,7 +606,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 			Speaking:  make(map[string]bool),
 			CreatedAt: time.Now(),
 		}
-		h.rooms[req.Room] = room
+		h.rooms[roomKey(req.GuildUUID, req.Room)] = room
 	}
 	roomSetMember(room, s.ID(), identity, member)
 	h.registerStreamLocked(req.Room, identity, req.Stream)
@@ -611,9 +620,9 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 	log.Printf("[Signal] sfu confirmed: %s in %s", s.ID(), req.Room)
 
 	h.mu.RLock()
-	_, memberExists := h.rooms[req.Room]
+	_, memberExists := h.rooms[roomKey(req.GuildUUID, req.Room)]
 	if memberExists {
-		_, memberExists = h.rooms[req.Room].Members[s.ID()]
+		_, memberExists = h.rooms[roomKey(req.GuildUUID, req.Room)].Members[s.ID()]
 	}
 	h.mu.RUnlock()
 	if !memberExists {
@@ -667,7 +676,7 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 	wasSpeaking := false
 	roomDeleted := false
 	h.mu.Lock()
-	if room, exists := h.rooms[req.Room]; exists {
+	if room, exists := h.rooms[roomKey(req.GuildUUID, req.Room)]; exists {
 		if member, ok := room.Members[s.ID()]; ok {
 			identity = member.Identity
 			wasSpeaking = room.Speaking[identity]
@@ -745,6 +754,7 @@ func (h *Hub) OnRoomList(s socketio.Conn) {
 func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 	var req struct {
 		Room           string `json:"room"`
+		GuildUUID      string `json:"guild_uuid,omitempty"`
 		TargetIdentity string `json:"targetIdentity"`
 	}
 	if err := parseJSON(data, &req); err != nil || req.Room == "" || req.TargetIdentity == "" {
@@ -753,7 +763,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 
 	// 取踢人者身份并校验 signal:kick 权限；DB/缓存查询在锁外执行，避免持锁等 IO
 	h.mu.Lock()
-	room, exists := h.rooms[req.Room]
+	room, exists := h.rooms[roomKey(req.GuildUUID, req.Room)]
 	if !exists {
 		h.mu.Unlock()
 		return
@@ -802,7 +812,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 
 	// 权限通过，重新加锁执行踢出
 	h.mu.Lock()
-	room, exists = h.rooms[req.Room]
+	room, exists = h.rooms[roomKey(req.GuildUUID, req.Room)]
 	if !exists {
 		h.mu.Unlock()
 		return
@@ -895,6 +905,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 func (h *Hub) OnMemberMicState(s socketio.Conn, data string) {
 	var req struct {
 		Room       string `json:"room"`
+		GuildUUID  string `json:"guild_uuid,omitempty"`
 		Identity   string `json:"identity"`
 		IsMicMuted bool   `json:"isMicMuted"`
 	}
@@ -903,7 +914,7 @@ func (h *Hub) OnMemberMicState(s socketio.Conn, data string) {
 	}
 
 	h.mu.Lock()
-	room, ok := h.rooms[req.Room]
+	room, ok := h.rooms[roomKey(req.GuildUUID, req.Room)]
 	if !ok {
 		h.mu.Unlock()
 		return
@@ -931,16 +942,17 @@ func (h *Hub) OnMemberMicState(s socketio.Conn, data string) {
 // 仅持有本地麦克风的成员可上报自身状态，避免伪造他人发言态。
 func (h *Hub) OnMemberSpeaking(s socketio.Conn, data string) {
 	var req struct {
-		Room     string `json:"room"`
-		Identity string `json:"identity"`
-		Speaking bool   `json:"speaking"`
+		Room      string `json:"room"`
+		GuildUUID string `json:"guild_uuid,omitempty"`
+		Identity  string `json:"identity"`
+		Speaking  bool   `json:"speaking"`
 	}
 	if err := parseJSON(data, &req); err != nil || req.Room == "" || req.Identity == "" {
 		return
 	}
 
 	h.mu.Lock()
-	room, ok := h.rooms[req.Room]
+	room, ok := h.rooms[roomKey(req.GuildUUID, req.Room)]
 	if !ok {
 		h.mu.Unlock()
 		return
