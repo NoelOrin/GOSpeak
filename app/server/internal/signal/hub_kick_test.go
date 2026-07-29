@@ -49,15 +49,20 @@ type errString string
 func (e errString) Error() string { return string(e) }
 
 func seedKickRoom(hub *Hub, room string, members map[string]string) {
-	// members: socketID -> identity
+	// members: mapped to socketID
 	hub.rooms[room] = &Room{
 		Name:     room,
 		Members:  make(map[string]*MemberInfo),
+		ByIdentity: make(map[string]*MemberInfo),
 		MicMuted: make(map[string]bool),
 		Speaking: make(map[string]bool),
 	}
 	for sid, identity := range members {
-		hub.rooms[room].Members[sid] = &MemberInfo{Identity: identity, Name: identity}
+		m := &MemberInfo{Identity: identity, Name: identity}
+		hub.rooms[room].Members[sid] = m
+		if identity != "" {
+			hub.rooms[room].ByIdentity[identity] = m
+		}
 	}
 }
 
@@ -71,18 +76,17 @@ func TestOnRoomKick_BotWithClaimPermissionCanKickUser(t *testing.T) {
 		"user": {},
 	}}
 	hub := NewHub(nil, nil, users, perms)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-1", map[string]string{
 		"bot-socket": "bot_helper",
 		"alice-sock": "alice",
 	})
 
-	bot := newMockConn("bot-socket")
-	bot.SetContext(&pkg.Claims{
+	bot := &mockClient{id: "bot-socket", claims: &pkg.Claims{
 		Username:    "bot_helper",
 		Role:        "user",
 		Permissions: []string{"signal:kick"},
-	})
+	}}
 
 	hub.OnRoomKick(bot, `{"room":"room-1","targetIdentity":"alice"}`)
 
@@ -100,18 +104,17 @@ func TestOnRoomKick_BotWithoutPermissionDenied(t *testing.T) {
 		"user": {},
 	}}
 	hub := NewHub(nil, nil, users, perms)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-1", map[string]string{
 		"bot-socket": "bot_helper",
 		"alice-sock": "alice",
 	})
 
-	bot := newMockConn("bot-socket")
-	bot.SetContext(&pkg.Claims{
+	bot := &mockClient{id: "bot-socket", claims: &pkg.Claims{
 		Username:    "bot_helper",
 		Role:        "user",
 		Permissions: []string{"mute:manage"}, // 无 kick
-	})
+	}}
 
 	hub.OnRoomKick(bot, `{"room":"room-1","targetIdentity":"alice"}`)
 
@@ -127,18 +130,17 @@ func TestOnRoomKick_BotCannotKickAdmin(t *testing.T) {
 	}}
 	perms := &mockPermChecker{rolePerms: map[string]map[string]bool{}}
 	hub := NewHub(nil, nil, users, perms)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-1", map[string]string{
 		"bot-socket": "bot_helper",
 		"admin-sock": "root",
 	})
 
-	bot := newMockConn("bot-socket")
-	bot.SetContext(&pkg.Claims{
+	bot := &mockClient{id: "bot-socket", claims: &pkg.Claims{
 		Username:    "bot_helper",
 		Role:        "user",
 		Permissions: []string{"signal:kick"},
-	})
+	}}
 
 	hub.OnRoomKick(bot, `{"room":"room-1","targetIdentity":"root"}`)
 
@@ -156,15 +158,14 @@ func TestOnRoomKick_HumanAdminCanKickAdmin(t *testing.T) {
 		"admin": {"signal:kick": true},
 	}}
 	hub := NewHub(nil, nil, users, perms)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-1", map[string]string{
 		"root-sock":  "root",
 		"admin-sock": "admin2",
 	})
 
 	// 人类 admin token 不带 permissions 列表，走 role 映射
-	caller := newMockConn("root-sock")
-	caller.SetContext(&pkg.Claims{Username: "root", Role: "admin"})
+	caller := &mockClient{id: "root-sock", claims: &pkg.Claims{Username: "root", Role: "admin"}}
 
 	hub.OnRoomKick(caller, `{"room":"room-1","targetIdentity":"admin2"}`)
 

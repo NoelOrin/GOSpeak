@@ -29,6 +29,7 @@ import { Route as appManageEmailIndexRouteImport } from './pages/(app)/manage/em
 import { Route as appManageBotPluginsIndexRouteImport } from './pages/(app)/manage/bot-plugins/index'
 import { Route as appManageBanIndexRouteImport } from './pages/(app)/manage/ban/index'
 import { Route as appManageApikeyIndexRouteImport } from './pages/(app)/manage/apikey/index'
+import { Route as appGuildGuildUUIDIndexRouteImport } from './pages/(app)/guild/$guildUUID/index'
 
 const appRouteRoute = appRouteRouteImport.update({
   id: '/(app)',
@@ -131,6 +132,11 @@ const appManageApikeyIndexRoute = appManageApikeyIndexRouteImport.update({
   path: '/apikey/',
   getParentRoute: () => appManageRouteRoute,
 } as any)
+const appGuildGuildUUIDIndexRoute = appGuildGuildUUIDIndexRouteImport.update({
+  id: '/guild/$guildUUID/',
+  path: '/guild/$guildUUID/',
+  getParentRoute: () => appRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof appIndexRouteRoute
@@ -141,6 +147,7 @@ export interface FileRoutesByFullPath {
   '/index/': typeof appIndexIndexRoute
   '/link/': typeof appLinkIndexRoute
   '/manage/': typeof appManageIndexRoute
+  '/guild/$guildUUID/': typeof appGuildGuildUUIDIndexRoute
   '/manage/apikey/': typeof appManageApikeyIndexRoute
   '/manage/ban/': typeof appManageBanIndexRoute
   '/manage/bot-plugins/': typeof appManageBotPluginsIndexRoute
@@ -161,6 +168,7 @@ export interface FileRoutesByTo {
   '/index': typeof appIndexIndexRoute
   '/link': typeof appLinkIndexRoute
   '/manage': typeof appManageIndexRoute
+  '/guild/$guildUUID': typeof appGuildGuildUUIDIndexRoute
   '/manage/apikey': typeof appManageApikeyIndexRoute
   '/manage/ban': typeof appManageBanIndexRoute
   '/manage/bot-plugins': typeof appManageBotPluginsIndexRoute
@@ -184,6 +192,7 @@ export interface FileRoutesById {
   '/(app)/index/': typeof appIndexIndexRoute
   '/(app)/link/': typeof appLinkIndexRoute
   '/(app)/manage/': typeof appManageIndexRoute
+  '/(app)/guild/$guildUUID/': typeof appGuildGuildUUIDIndexRoute
   '/(app)/manage/apikey/': typeof appManageApikeyIndexRoute
   '/(app)/manage/ban/': typeof appManageBanIndexRoute
   '/(app)/manage/bot-plugins/': typeof appManageBotPluginsIndexRoute
@@ -207,6 +216,7 @@ export interface FileRouteTypes {
     | '/index/'
     | '/link/'
     | '/manage/'
+    | '/guild/$guildUUID/'
     | '/manage/apikey/'
     | '/manage/ban/'
     | '/manage/bot-plugins/'
@@ -227,6 +237,7 @@ export interface FileRouteTypes {
     | '/index'
     | '/link'
     | '/manage'
+    | '/guild/$guildUUID'
     | '/manage/apikey'
     | '/manage/ban'
     | '/manage/bot-plugins'
@@ -249,6 +260,7 @@ export interface FileRouteTypes {
     | '/(app)/index/'
     | '/(app)/link/'
     | '/(app)/manage/'
+    | '/(app)/guild/$guildUUID/'
     | '/(app)/manage/apikey/'
     | '/(app)/manage/ban/'
     | '/(app)/manage/bot-plugins/'
@@ -409,6 +421,13 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof appManageApikeyIndexRouteImport
       parentRoute: typeof appManageRouteRoute
     }
+    '/(app)/guild/$guildUUID/': {
+      id: '/(app)/guild/$guildUUID/'
+      path: '/guild/$guildUUID'
+      fullPath: '/guild/$guildUUID/'
+      preLoaderRoute: typeof appGuildGuildUUIDIndexRouteImport
+      parentRoute: typeof appRouteRoute
+    }
   }
 }
 
@@ -453,6 +472,7 @@ interface appRouteRouteChildren {
   appChannelIndexRoute: typeof appChannelIndexRoute
   appIndexIndexRoute: typeof appIndexIndexRoute
   appLinkIndexRoute: typeof appLinkIndexRoute
+  appGuildGuildUUIDIndexRoute: typeof appGuildGuildUUIDIndexRoute
 }
 
 const appRouteRouteChildren: appRouteRouteChildren = {
@@ -462,6 +482,7 @@ const appRouteRouteChildren: appRouteRouteChildren = {
   appChannelIndexRoute: appChannelIndexRoute,
   appIndexIndexRoute: appIndexIndexRoute,
   appLinkIndexRoute: appLinkIndexRoute,
+  appGuildGuildUUIDIndexRoute: appGuildGuildUUIDIndexRoute,
 }
 
 const appRouteRouteWithChildren = appRouteRoute._addFileChildren(

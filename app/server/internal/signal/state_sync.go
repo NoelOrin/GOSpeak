@@ -222,7 +222,7 @@ func (h *Hub) roomInfoMerged(roomName string) RoomInfo {
 
 // broadcastRoomUpdatedLocal pushes room:updated to local sockets using merged view.
 func (h *Hub) broadcastRoomUpdatedLocal(roomName string) {
-	if h.server == nil || roomName == "" {
+	if h.fanout == nil || roomName == "" {
 		return
 	}
 	info := h.roomInfoMerged(roomName)

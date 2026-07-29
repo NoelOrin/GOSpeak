@@ -2,6 +2,8 @@ package router
 
 import (
 	"GOSpeak/internal/config"
+	conversationRoutes "GOSpeak/internal/router/routes/conversation"
+	guildRoutes "GOSpeak/internal/router/routes/guild"
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/middleware"
 	authRoutes "GOSpeak/internal/router/routes/auth"
@@ -29,7 +31,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	socketio "github.com/googollee/go-socket.io"
 
 	"GOSpeak/internal/webui"
 
@@ -54,7 +55,9 @@ type Handlers struct {
 	Monitor     *handler.MonitorHandler
 	SRSCallback *handler.SRSCallbackHandler
 	Bot         *handler.BotHandler
-	Plugin      *handler.PluginHandler
+	Plugin       *handler.PluginHandler
+	Guild        *handler.GuildHandler
+	Conversation *handler.ConversationHandler
 	// PluginHost 用于挂载插件自定义路由
 	PluginHost  interface{ MountRoutes(*gin.RouterGroup) }
 }
@@ -98,18 +101,18 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	if h.Plugin != nil {
 		pluginRoutes.RegisterProtected(protected.Group("/plugins"), h.Plugin)
 	}
+	if h.Conversation != nil {
+		conversationRoutes.RegisterProtected(protected.Group("/conversation"), h.Conversation)
+	}
 	if h.PluginHost != nil {
-		// 插件自注册路由：/api/v1/plugins/:name/*
+		// route registry: /api/v1/plugins/:name/*
 		h.PluginHost.MountRoutes(protected.Group("/plugins"))
+	}
+	if h.Guild != nil {
+		guildRoutes.Register(protected.Group("/guild"), h.Guild)
 	}
 
 	return r
-}
-
-func SetupSocketRoutes(server *socketio.Server, signalHub interface {
-	SetupRoutes(*socketio.Server)
-}) {
-	signalHub.SetupRoutes(server)
 }
 
 // serveSPA 托管前端构建产物。
@@ -173,7 +176,7 @@ func serveSPA(r *gin.Engine) {
 
 	r.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
-		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/socket.io") || strings.HasPrefix(path, "/swagger") {
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws") || strings.HasPrefix(path, "/swagger") {
 			c.Status(http.StatusNotFound)
 			return
 		}

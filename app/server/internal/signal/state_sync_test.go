@@ -231,13 +231,13 @@ func TestHub_ApplyRemoteRoomState_BroadcastsLocal(t *testing.T) {
 	}
 	hub := NewHub(nil, nil, nil, nil)
 	hub.SetMembershipStore(store, "inst-a")
-	server := newMockServer()
-	hub.server = server
+	server := newMockBroadcaster()
+	hub.fanout = server
 	hub.ApplyRemoteRoomState("r1")
-	if server.broadcasts[EventRoomUpdated] == nil {
+	if len(server.broadcasts[EventRoomUpdated]) == 0 {
 		t.Fatal("expected room:updated local broadcast")
 	}
-	if server.broadcasts[EventRoomListResult] == nil {
+	if len(server.broadcasts[EventRoomListResult]) == 0 {
 		t.Fatal("expected room:list:result local broadcast")
 	}
 }
