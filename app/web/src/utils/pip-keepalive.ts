@@ -221,7 +221,9 @@ export class KeepaliveAdapter {
 		if (this.platform === Platform.IOS) {
 			this._ensureVideoElement();
 			this._videoEl!.srcObject = stream;
-			this._videoEl!.play().catch(() => {});
+			this._videoEl!.play().catch((err: unknown) => {
+				this._log("video play() rejected:", err);
+			});
 		}
 
 		this._log("stream attached");
@@ -646,7 +648,10 @@ export class KeepaliveAdapter {
 	// ---- 页面可见性自动控制 ----
 
 	private _onPageHide(): void {
-		if (this._opts.autoEnterOnBackground && this.platform === Platform.IOS) {
+		if (
+			this._opts.autoEnterOnBackground &&
+			(this.platform === Platform.IOS || this.platform === Platform.AndroidTWA)
+		) {
 			this.enter();
 		}
 	}
@@ -659,13 +664,18 @@ export class KeepaliveAdapter {
 
 	private _onVisibilityChange(): void {
 		if (document.visibilityState === "hidden") {
-			if (this._opts.autoEnterOnBackground && this.platform === Platform.IOS) {
+			if (
+				this._opts.autoEnterOnBackground &&
+				(this.platform === Platform.IOS ||
+					this.platform === Platform.AndroidTWA) &&
+				this._state === State.Idle
+			) {
 				this.enter();
 			}
 		}
 		if (document.visibilityState === "visible") {
 			if (this._opts.autoExitOnForeground) {
-				this.exit();
+				if (this._state === State.Active) this.exit();
 			}
 		}
 	}
