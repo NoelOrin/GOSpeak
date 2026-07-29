@@ -277,6 +277,18 @@ if err := c.ShouldBindJSON(&req); err != nil {
 | GET | `/ping` | No | — | Health check |
 | GET | `/swagger/*any` | No | — | Swagger UI |
 | GET | `/uploads/*` | No | — | Static avatar/uploads |
+| POST | `/api/v1/guild/create` | JWT | `guild:create` | GuildHandler.Create |
+| POST | `/api/v1/guild/get` | JWT | `guild:read` | GuildHandler.Get |
+| POST | `/api/v1/guild/list` | JWT | `guild:read` | GuildHandler.List |
+| POST | `/api/v1/guild/list-public` | JWT | — | GuildHandler.ListPublic |
+| POST | `/api/v1/guild/my-guilds` | JWT | — | GuildHandler.MyGuilds |
+| POST | `/api/v1/guild/update` | JWT | `guild:manage` | GuildHandler.Update |
+| POST | `/api/v1/guild/delete` | JWT | `guild:delete` | GuildHandler.Delete |
+| POST | `/api/v1/guild/join` | JWT | — | GuildHandler.Join |
+| POST | `/api/v1/guild/leave` | JWT | — | GuildHandler.Leave |
+| POST | `/api/v1/guild/kick` | JWT | `guild:kick` | GuildHandler.Kick |
+| POST | `/api/v1/guild/members` | JWT | `guild:read` | GuildHandler.Members |
+
 | WS | `/socket.io/*` | No | — | Socket.IO signaling |
 
 ---
@@ -551,6 +563,56 @@ Repositories: `OAuthProviderRepo`, `OAuthAccountRepo` — standard CRUD.
 | POST | `/api/v1/oauth/admin/providers` | Yes (admin) | OAuthHandler.CreateProvider |
 | PUT | `/api/v1/oauth/admin/providers` | Yes (admin) | OAuthHandler.UpdateProvider |
 | DELETE | `/api/v1/oauth/admin/providers/:id` | Yes (admin) | OAuthHandler.DeleteProvider |
+
+---
+
+## Guild (多语音服务器)
+
+GOSpeak 支持多 Server（类 Discord Guild）架构。每个 `Guild` 是房间、成员、角色的顶层归属容器。
+
+### 数据模型
+
+| 表 | 说明 |
+|----|------|
+| `guilds` | 语音服务器：UUID、名称、Owner、邀请码、房间上限、公开/私有 |
+| `guild_members` | 用户-Guild 多对多关系：RoleName (owner/admin/member/guest) |
+
+### Guild 角色层级
+
+```
+owner (4) > admin (3) > member (2) > guest (1)
+```
+
+### Room 归属
+
+`Room.GuildUUID` 外键关联到 Guild。空值表示平台级房间（向后兼容存量数据）。
+新增房间可指定 `guild_uuid` 将其归属到特定 Guild。
+
+### Signal 命名空间隔离
+
+Signal Hub 中使用 `roomKey(guildUUID, roomName)` 复合键隔离不同 Guild 的同名房间。
+平台级房间（GuildUUID 为空）使用纯 roomName 作为 Map Key（向后兼容）。
+
+### 中间件
+
+- `RequireGuildMember()` — 校验当前用户是指定 Guild 的成员。从 URL/Query/Body 中获取 `guild_uuid`。
+
+### 权限码
+
+| Code | 说明 |
+|------|------|
+| `guild:create` | 创建语音服务器 |
+| `guild:read` | 查看语音服务器列表 |
+| `guild:manage` | 修改语音服务器设置 |
+| `guild:delete` | 删除语音服务器 |
+| `guild:invite` | 生成和管理邀请码 |
+| `guild:kick` | 将成员移出语音服务器 |
+| `guild:role:manage` | 管理语音服务器内角色和权限 |
+
+### 迁移策略
+
+启动时若不存在任何 Guild，自动创建 "Default Server" 并将存量 `guild_uuid` 为空的房间归入其中。
+无需手动迁移脚本。
 
 ---
 
