@@ -81,7 +81,15 @@ func InitDB(cfg *config.Config) error {
 		return err
 	}
 
-	return autoMigrate()
+	if err := autoMigrate(); err != nil {
+		return err
+	}
+
+	if err := migrateDefaultGuild(DB); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func connectPostgreSQL(cfg *config.Config) (*gorm.DB, error) {
@@ -371,4 +379,23 @@ func autoMigrate() error {
 		&model.Guild{},
 		&model.GuildMember{},
 	)
+}
+
+// migrateDefaultGuild 创建默认 Guild 并将无归属的存量房间归入其中。
+// 仅在没有任何 Guild 存在时执行，确保存量数据平滑迁移到多 Servers 架构。
+func migrateDefaultGuild(db *gorm.DB) error {
+	var count int64
+	db.Model(&model.Guild{}).Count(&count)
+	if count > 0 {
+		return nil
+	}
+	defaultGuild := &model.Guild{
+		Name: "Default Server", Description: "系统默认语音服务器", IsPublic: false,
+	}
+	if err := db.Create(defaultGuild).Error; err != nil {
+		return err
+	}
+	// 将现有无 guild_uuid 的房间归入默认 Guild
+	return db.Model(&model.Room{}).Where("guild_uuid = ?", "").
+		Update("guild_uuid", defaultGuild.UUID).Error
 }
