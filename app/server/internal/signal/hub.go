@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -1405,6 +1406,40 @@ func (h *Hub) ForceSFUProviderSwitch(provider string) {
 	h.clearLocalRoomsForSFUSwitch()
 	log.Printf("[Signal] SFU provider switched to %s, forced all sessions offline", provider)
 }
+
+
+// OnGuildDelete 清理指定 Guild 下所有信令房间（房间键前缀匹配）。
+// - 断开所有在线成员连接
+// - 删除本地 rooms map 中的条目
+// - 调用 SFU Provider 清理实际房间
+func (h *Hub) OnGuildDelete(guildUUID string) {
+	if guildUUID == "" {
+		return
+	}
+	prefix := guildUUID + ":"
+
+	var sfuRooms []string
+	h.mu.Lock()
+	for key, room := range h.rooms {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		// 收集 SFU 房间名（去掉 guild 前缀的原始 roomName）
+		sfuRooms = append(sfuRooms, room.Name)
+		// 断开所有成员
+		for sid := range room.Members {
+			h.fanout.Remove(sid)
+		}
+		delete(h.rooms, key)
+	}
+	h.mu.Unlock()
+
+	// 清理 SFU 侧
+	for _, room := range sfuRooms {
+		h.deleteRoomSafe(room)
+	}
+}
+
 
 // HandleRemoteEvent 处理来自其他实例的控制面事件。
 // 当前仅对 sfu:provider-changed 做本机房间清理；其余事件已由 EventBus 投递到本地 Socket.IO。

@@ -7,10 +7,7 @@ import (
 // 跨阶段全链路：Guild 隔离 + WS 事件流联合测试
 
 func TestGuildWS_CreateRoom_WithGuildUUID(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	fanout := newMockBroadcaster()
-	hub.fanout = fanout
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
 
 	conn := newAuthedMockClient("sock-1", "user-1")
 
@@ -28,10 +25,7 @@ func TestGuildWS_CreateRoom_WithGuildUUID(t *testing.T) {
 }
 
 func TestGuildWS_DifferentGuilds_SameRoomName(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	fanout := newMockBroadcaster()
-	hub.fanout = fanout
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
 
 	connA := newAuthedMockClient("sock-a", "user-a")
 	connB := newAuthedMockClient("sock-b", "user-b")
@@ -59,10 +53,7 @@ func TestGuildWS_DifferentGuilds_SameRoomName(t *testing.T) {
 }
 
 func TestGuildWS_PlatformRoom_BackwardCompat(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	fanout := newMockBroadcaster()
-	hub.fanout = fanout
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
 
 	conn := newAuthedMockClient("sock-1", "user-1")
 
@@ -88,9 +79,7 @@ func TestGuildWS_PlatformRoom_BackwardCompat(t *testing.T) {
 }
 
 func TestGuildWS_RoomList_AllGuilds(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	hub.fanout = newMockBroadcaster()
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
 
 	conn := newAuthedMockClient("sock-1", "user-1")
 
@@ -99,17 +88,13 @@ func TestGuildWS_RoomList_AllGuilds(t *testing.T) {
 	hub.OnRoomCreate(conn, `{"room":"alpha","guild_uuid":"guild-b"}`)
 
 	rooms := hub.getMergedRooms()
-	// getMergedRooms returns all rooms regardless of guild
 	if len(rooms) != 3 {
 		t.Fatalf("expected 3 rooms total, got %d", len(rooms))
 	}
 }
 
 func TestGuildWS_Kick_CrossGuildIsolation(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	fanout := newMockBroadcaster()
-	hub.fanout = fanout
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
 
 	connA := newAuthedMockClient("sock-a", "user-a")
 	connB := newAuthedMockClient("sock-b", "user-b")
@@ -139,12 +124,7 @@ func TestGuildWS_Kick_CrossGuildIsolation(t *testing.T) {
 }
 
 func TestGuildWS_TransferOwnership_NoTokenInvalidation(t *testing.T) {
-	// Transferring guild ownership does not invalidate JWT tokens.
-	// Permissions are checked at request time via GuildMember role.
-	// This test verifies the Hub doesn't have token-related cleanup
-	// during ownership transfer.
-	hub := NewHub(nil, nil, nil, nil)
-	hub.fanout = newMockBroadcaster()
+	hub := newTestHub()
 
 	conn := newAuthedMockClient("sock-1", "user-1")
 
@@ -161,10 +141,7 @@ func TestGuildWS_TransferOwnership_NoTokenInvalidation(t *testing.T) {
 }
 
 func TestGuildWS_GuildDeleted_Cleanup(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	fanout := newMockBroadcaster()
-	hub.fanout = fanout
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
 
 	conn := newAuthedMockClient("sock-1", "user-1")
 
@@ -173,20 +150,21 @@ func TestGuildWS_GuildDeleted_Cleanup(t *testing.T) {
 	hub.OnRoomCreate(conn, `{"room":"r2","guild_uuid":"guild-a"}`)
 	hub.OnRoomCreate(conn, `{"room":"r1","guild_uuid":"guild-b"}`)
 
-	hub.mu.Lock()
-	// Simulate guild-a deletion by removing its rooms from hub.rooms
-	for key := range hub.rooms {
-		if key == "guild-a:r1" || key == "guild-a:r2" {
-			delete(hub.rooms, key)
-		}
-	}
-	hub.mu.Unlock()
+	hub.OnGuildDelete("guild-a")
 
 	hub.mu.RLock()
-	_, guildBRoom := hub.rooms["guild-b:r1"]
+	_, guildAR1 := hub.rooms["guild-a:r1"]
+	_, guildAR2 := hub.rooms["guild-a:r2"]
+	_, guildBR1 := hub.rooms["guild-b:r1"]
 	hub.mu.RUnlock()
 
-	if !guildBRoom {
+	if guildAR1 {
+		t.Fatal("guild-a:r1 should be removed after guild deletion")
+	}
+	if guildAR2 {
+		t.Fatal("guild-a:r2 should be removed after guild deletion")
+	}
+	if !guildBR1 {
 		t.Fatal("guild-b:r1 should survive guild-a deletion")
 	}
 }

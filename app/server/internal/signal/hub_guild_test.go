@@ -24,9 +24,7 @@ func TestHub_RoomKey_Format(t *testing.T) {
 }
 
 func TestHub_GuildRoomIsolation(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	hub.fanout = newMockBroadcaster()
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
 
 	guildA := newAuthedMockClient("sock-a", "user-a")
 	guildB := newAuthedMockClient("sock-b", "user-b")
@@ -51,9 +49,7 @@ func TestHub_GuildRoomIsolation(t *testing.T) {
 }
 
 func TestHub_GuildRoomCreate(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	hub.fanout = newMockBroadcaster()
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
 
 	conn := newAuthedMockClient("sock-1", "user-1")
 	hub.OnRoomCreate(conn, `{"room":"game-room","guild_uuid":"guild-x","password":"secret"}`)
@@ -75,9 +71,7 @@ func TestHub_GuildRoomCreate(t *testing.T) {
 }
 
 func TestHub_PlatformRoomCompat(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	hub.fanout = newMockBroadcaster()
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
 
 	conn := newAuthedMockClient("sock-1", "user-1")
 
@@ -101,9 +95,7 @@ func TestHub_PlatformRoomCompat(t *testing.T) {
 }
 
 func TestHub_GuildDisconnect_CrossGuildIsolation(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	hub.fanout = newMockBroadcaster()
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
 
 	connA := newAuthedMockClient("sock-a", "user-a")
 	connB := newAuthedMockClient("sock-b", "user-b")
@@ -134,10 +126,8 @@ func TestHub_GuildDisconnect_CrossGuildIsolation(t *testing.T) {
 }
 
 func TestHub_GuildRoomBroadcast(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	fanout := newMockBroadcaster()
-	hub.fanout = fanout
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
+	fanout := hub.fanout.(*mockBroadcaster)
 
 	conn := newAuthedMockClient("sock-1", "user-1")
 	hub.OnRoomCreate(conn, `{"room":"lobby","guild_uuid":"guild-a"}`)
@@ -151,9 +141,7 @@ func TestHub_GuildRoomBroadcast(t *testing.T) {
 }
 
 func TestHub_GuildMemberVisibility(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	hub.fanout = newMockBroadcaster()
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
 
 	conn := newAuthedMockClient("sock-1", "user-1")
 

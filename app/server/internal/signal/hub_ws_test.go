@@ -5,10 +5,7 @@ import (
 )
 
 func TestHub_WithBroadcaster_RoomCreate(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	fanout := newMockBroadcaster()
-	hub.fanout = fanout
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
 
 	conn := newAuthedMockClient("sock-1", "user-1")
 	hub.OnRoomCreate(conn, `{"room":"test-room"}`)
@@ -22,10 +19,8 @@ func TestHub_WithBroadcaster_RoomCreate(t *testing.T) {
 }
 
 func TestHub_WithBroadcaster_RoomJoin(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	fanout := newMockBroadcaster()
-	hub.fanout = fanout
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
+	fanout := hub.fanout.(*mockBroadcaster)
 
 	conn := newAuthedMockClient("sock-1", "user-1")
 	hub.OnRoomCreate(conn, `{"room":"test-room"}`)
@@ -40,10 +35,8 @@ func TestHub_WithBroadcaster_RoomJoin(t *testing.T) {
 }
 
 func TestHub_WithBroadcaster_ClientDisconnect(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	fanout := newMockBroadcaster()
-	hub.fanout = fanout
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
+	fanout := hub.fanout.(*mockBroadcaster)
 
 	conn := newAuthedMockClient("sock-1", "user-1")
 
@@ -69,10 +62,8 @@ func TestHub_WithBroadcaster_ClientDisconnect(t *testing.T) {
 }
 
 func TestHub_WithBroadcaster_NamespaceBroadcast(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	fanout := newMockBroadcaster()
-	hub.fanout = fanout
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
+	fanout := hub.fanout.(*mockBroadcaster)
 
 	conn := newAuthedMockClient("sock-1", "user-1")
 	hub.OnConnect(conn)
@@ -86,10 +77,7 @@ func TestHub_WithBroadcaster_NamespaceBroadcast(t *testing.T) {
 }
 
 func TestHub_Fanout_ACL_Isolation(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	fanout := newMockBroadcaster()
-	hub.fanout = fanout
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
 
 	connA := newAuthedMockClient("sock-a", "user-a")
 	connB := newAuthedMockClient("sock-b", "user-b")
@@ -110,9 +98,7 @@ func TestHub_Fanout_ACL_Isolation(t *testing.T) {
 }
 
 func TestHub_Rooms_DisplayNames(t *testing.T) {
-	hub := NewHub(nil, nil, nil, nil)
-	hub.fanout = newMockBroadcaster()
-	hub.SetStreamResolver(fakeStreamResolver{})
+	hub := newTestHub()
 
 	conn := newAuthedMockClient("sock-1", "user-1")
 
