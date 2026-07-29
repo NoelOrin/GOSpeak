@@ -114,11 +114,17 @@ export const chatCache = {
 							cursor.delete();
 							deleted++;
 							cursor.continue();
+						} else {
+							// Deletion complete (or cursor exhausted)
+							resolve();
 						}
 					};
+					cursorReq.onerror = () => reject(cursorReq.error);
+				} else {
+					resolve();
 				}
 			};
-			tx.oncomplete = () => resolve();
+			countReq.onerror = () => reject(countReq.error);
 			tx.onerror = () => reject(tx.error);
 		});
 	},

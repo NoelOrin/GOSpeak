@@ -5,6 +5,7 @@ import (
 
 	"GOSpeak/internal/model"
 
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm"
 )
 
@@ -18,7 +19,15 @@ func NewConversationRepository(db *gorm.DB) *ConversationRepository {
 
 // Upsert inserts or updates a conversation participant row (PK = ConversationID).
 func (r *ConversationRepository) Upsert(cp *model.ConversationParticipant) error {
-	return r.db.Save(cp).Error
+	return r.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "conversation_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"last_message_id",
+			"last_content",
+			"last_sender_identity",
+			"last_message_at",
+		}),
+	}).Create(cp).Error
 }
 
 // ListByIdentity returns all conversations involving the given identity,

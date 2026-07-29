@@ -132,6 +132,7 @@ func (s *MessageService) Send(ctx context.Context, in MessageSendInput) (*Messag
 		Content:        content,
 		ReplyToID:      strPtrOrNil(in.ReplyToID),
 		Status:         model.MessageStatusActive,
+		ConversationType: model.ConversationTypeRoom,
 		CreatedAt:      now,
 	}
 	dto := toMessageDTO(row)
@@ -362,9 +363,6 @@ func (s *MessageService) SendDirect(ctx context.Context, in MessageSendInput) (*
 		}
 		if err := s.conversationRepo.Upsert(cp); err != nil {
 			log.Printf("[IM] conversation upsert failed conv=%s: %v", convID, err)
-		}
-		if err := s.conversationRepo.UpdateLastMessage(convID, id.String(), content, in.SenderIdentity, now); err != nil {
-			log.Printf("[IM] update last message failed conv=%s: %v", convID, err)
 		}
 		if err := s.conversationRepo.IncrementUnread(convID, in.SenderIdentity); err != nil {
 			log.Printf("[IM] increment unread failed conv=%s: %v", convID, err)

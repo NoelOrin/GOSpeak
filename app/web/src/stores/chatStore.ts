@@ -137,7 +137,12 @@ export const chatStore = createRoot(() => {
 		setLoadingMessages((prev) => ({ ...prev, [id]: true }));
 		try {
 			const result = await getConversationMessages(id, undefined, MAX_MESSAGES);
-			setMessages((prev) => ({ ...prev, [id]: result.messages }));
+			setMessages((prev) => {
+				const existing = prev[id] || [];
+				const apiIds = new Set(result.messages.map((m) => m.id));
+				const wsOnly = existing.filter((m) => !apiIds.has(m.id));
+				return { ...prev, [id]: [...result.messages, ...wsOnly] };
+			});
 			setHasMore((prev) => ({ ...prev, [id]: !!result.nextCursor }));
 			// Write to IDB cache
 			const cached = result.messages.map((m) => msgToCached(id, m));
@@ -204,7 +209,7 @@ export const chatStore = createRoot(() => {
 		}
 		// No existing conversation — send a message to create one
 		// We'll create a temporary convID and let the WS event fill it in
-		const tempID = "new:" + identity;
+		const tempID = `new:${identity}`;
 		setActiveConversationID(null);
 		// The user will need to send a message to start the conversation
 		// For now just set a marker

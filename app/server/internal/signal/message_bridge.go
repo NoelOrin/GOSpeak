@@ -42,6 +42,26 @@ func (h *Hub) allowMessageSend(identity string) bool {
 	return true
 }
 
+// resolveSenderDisplay looks up a user-friendly display name for the given identity.
+func (h *Hub) resolveSenderDisplay(identity string) string {
+	if h.userStore != nil {
+		if u, err := h.userStore.GetByName(identity); err == nil && u != nil {
+			if u.DisplayName != "" {
+				return u.DisplayName
+			}
+		}
+	}
+	return identity
+}
+
+// resolveSenderRole extracts the role from connection claims, defaulting to "member".
+func resolveSenderRole(c ws.ClientMessenger) string {
+	role := "member"
+	if claims := c.Claims(); claims != nil && claims.Role != "" {
+		role = claims.Role
+	}
+	return role
+}
 func (h *Hub) OnMessageSend(c ws.ClientMessenger, data string) (string, error) {
 	if h.messageSvc == nil {
 		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, "service unavailable")
@@ -114,10 +134,7 @@ func (h *Hub) OnMessageSend(c ws.ClientMessenger, data string) (string, error) {
 		display = member.Name
 	}
 
-	role := "member"
-	if claims := c.Claims(); claims != nil && claims.Role != "" {
-		role = claims.Role
-	}
+	role := resolveSenderRole(c)
 
 	dto, err := h.messageSvc.Send(context.Background(), service.MessageSendInput{
 		RoomKey:        req.Room,
@@ -183,19 +200,8 @@ func (h *Hub) OnPrivateMessageSend(c ws.ClientMessenger, data string) (string, e
 	}
 
 	// Resolve sender display name
-	display := identity
-	if h.userStore != nil {
-		if u, err := h.userStore.GetByName(identity); err == nil && u != nil {
-			if u.DisplayName != "" {
-				display = u.DisplayName
-			}
-		}
-	}
-
-	role := "member"
-	if claims := c.Claims(); claims != nil && claims.Role != "" {
-		role = claims.Role
-	}
+	display := h.resolveSenderDisplay(identity)
+	role := resolveSenderRole(c)
 
 	dto, err := h.messageSvc.Send(context.Background(), service.MessageSendInput{
 		SenderIdentity: identity,

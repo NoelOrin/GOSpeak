@@ -223,7 +223,11 @@ func (h *Hub) SetupFanout(fanout ws.Broadcaster, handler *ws.HandlerRegistry) {
 	handler.Handle(EventBotCommand, safeHandler(h.PublishBotCommand))
 	handler.Handle(EventBotMessage, safeHandler(h.PublishBotMessage))
 	handler.HandleAck(EventMessageSend, safeHandlerAck(h.OnMessageSend))
-	handler.HandleAck(EventPrivateSend, safeHandlerAck(h.OnPrivateMessageSend))
+	handler.Handle(EventPrivateSend, safeHandler(func(c ws.ClientMessenger, data string) {
+		if _, err := h.OnPrivateMessageSend(c, data); err != nil {
+			log.Printf("[Signal] private message send error: %v", err)
+		}
+	}))
 
 	if h.sfuSignalHandler != nil {
 		h.sfuSignalHandler.RegisterWS(handler.HandleAck)
@@ -260,7 +264,9 @@ func (h *Hub) OnConnect(c ws.ClientMessenger) error {
 	log.Printf("[Signal] client connected: %s", c.ID())
 	// Join personal room for direct message delivery: __user:{identity}
 	if identity := clientIdentity(c); identity != "" {
-		h.fanout.Join("__user:"+identity, c.ID())
+		if h.fanout != nil {
+			h.fanout.Join("__user:"+identity, c.ID())
+		}
 	}
 	return nil
 }
@@ -283,7 +289,9 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	var leaveEvents []leaveEvent
 	// Leave personal room on disconnect
 	if identity := clientIdentity(c); identity != "" {
-		h.fanout.Leave("__user:"+identity, c.ID())
+		if h.fanout != nil {
+			h.fanout.Leave("__user:"+identity, c.ID())
+		}
 	}
 	h.mu.Lock()
 	for roomName, room := range h.rooms {
