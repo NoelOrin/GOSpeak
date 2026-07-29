@@ -273,9 +273,10 @@ func TestGuildHandler_Kick_NotAdmin(t *testing.T) {
 		t.Fatalf("seed guild: %v", err)
 	}
 	db.Create(&model.GuildMember{GuildUUID: g.UUID, UserUUID: "member-1", RoleName: "member"})
+	db.Create(&model.GuildMember{GuildUUID: g.UUID, UserUUID: "member-2", RoleName: "member"})
 
 	// member tries to kick another member (should fail - not admin/owner)
-	w := postGuildJSON(t, router, "/api/v1/guild/kick", `{"guild_uuid":"`+g.UUID+`","user_uuid":"member-1"}`, map[string]string{"X-User-UUID": "member-1"})
+	w := postGuildJSON(t, router, "/api/v1/guild/kick", `{"guild_uuid":"`+g.UUID+`","user_uuid":"member-2"}`, map[string]string{"X-User-UUID": "member-1"})
 	resp := parseGuildResp(t, w.Body.String())
 	// Expect FORBIDDEN (1013) since member-1 is not owner/admin
 	if code := intCode(resp["code"]); code != 1013 {

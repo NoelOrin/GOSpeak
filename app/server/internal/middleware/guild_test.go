@@ -31,6 +31,7 @@ func setupGuildMiddlewareRouter(checker func(uuid, userUUID string) bool) *gin.E
 
 func TestRequireGuildMember_NoUUID(t *testing.T) {
 	r := setupGuildMiddlewareRouter(func(uuid, userUUID string) bool { return true })
+	t.Cleanup(func() { SetGuildChecker(nil) })
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{}`))
@@ -45,6 +46,7 @@ func TestRequireGuildMember_NoUUID(t *testing.T) {
 
 func TestRequireGuildMember_NotMember(t *testing.T) {
 	r := setupGuildMiddlewareRouter(func(uuid, userUUID string) bool { return false })
+	t.Cleanup(func() { SetGuildChecker(nil) })
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{"guild_uuid":"guild-1"}`))
@@ -59,6 +61,7 @@ func TestRequireGuildMember_NotMember(t *testing.T) {
 
 func TestRequireGuildMember_Success(t *testing.T) {
 	r := setupGuildMiddlewareRouter(func(uuid, userUUID string) bool { return true })
+	t.Cleanup(func() { SetGuildChecker(nil) })
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{"guild_uuid":"guild-1"}`))
@@ -75,6 +78,7 @@ func TestRequireGuildMember_NoAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	SetGuildChecker(func(uuid, userUUID string) bool { return true })
+	t.Cleanup(func() { SetGuildChecker(nil) })
 
 	// No auth middleware — user_uuid not set in context
 	r.POST("/test", RequireGuildMember(), func(c *gin.Context) {
@@ -89,8 +93,4 @@ func TestRequireGuildMember_NoAuth(t *testing.T) {
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 (no auth in ctx), got %d", w.Code)
 	}
-}
-
-func init() {
-	SetGuildChecker(nil)
 }

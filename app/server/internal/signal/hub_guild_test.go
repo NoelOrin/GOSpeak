@@ -100,7 +100,7 @@ func TestHub_PlatformRoomCompat(t *testing.T) {
 	}
 }
 
-func TestHub_GuildMemberKick(t *testing.T) {
+func TestHub_GuildDisconnect_CrossGuildIsolation(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
 	hub.fanout = newMockBroadcaster()
 	hub.SetStreamResolver(fakeStreamResolver{})

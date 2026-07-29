@@ -13,12 +13,14 @@ type testClient struct {
 	emitted []interface{}
 }
 
-func (c *testClient) ID() string                                { return c.id }
-func (c *testClient) Claims() *pkg.Claims                        { return c.claims }
-func (c *testClient) Send(v interface{}) bool                    { c.emitted = append(c.emitted, v); return true }
-func (c *testClient) SendACK(id, event string, data interface{}) { c.Send(ack{id: id, event: event, data: data}) }
+func (c *testClient) ID() string                               { return c.id }
+func (c *testClient) Claims() *pkg.Claims                       { return c.claims }
+func (c *testClient) Send(v interface{}) bool                   { c.emitted = append(c.emitted, v); return true }
+func (c *testClient) SendACK(id, event string, data interface{}) {
+	c.emitted = append(c.emitted, ack{id: id, event: event, data: data})
+}
 func (c *testClient) SendErrorACK(id, event string, code int, msg string) {
-	c.Send(errAck{id: id, event: event, code: code, msg: msg})
+	c.emitted = append(c.emitted, errAck{id: id, event: event, code: code, msg: msg})
 }
 func (c *testClient) Close() {}
 
@@ -61,6 +63,13 @@ func TestHandlerRegistry_Dispatch_Ack(t *testing.T) {
 	if len(tc.emitted) != 1 {
 		t.Fatalf("expected 1 ACK, got %d", len(tc.emitted))
 	}
+	a, ok := tc.emitted[0].(ack)
+	if !ok {
+		t.Fatalf("expected ack struct, got %T", tc.emitted[0])
+	}
+	if a.id != "req-1" || a.event != "event:ack" {
+		t.Fatalf("ack fields: id=%s event=%s", a.id, a.event)
+	}
 }
 
 func TestHandlerRegistry_Dispatch_UnknownEvent(t *testing.T) {
@@ -86,6 +95,9 @@ func TestHandlerRegistry_Dispatch_PanicRecover(t *testing.T) {
 	if len(tc.emitted) == 0 {
 		t.Fatal("expected error ACK after panic")
 	}
+	if _, ok := tc.emitted[0].(errAck); !ok {
+		t.Fatal("expected errAck struct after panic")
+	}
 }
 
 func TestHandlerRegistry_Dispatch_AckError(t *testing.T) {
@@ -100,6 +112,9 @@ func TestHandlerRegistry_Dispatch_AckError(t *testing.T) {
 	if len(tc.emitted) != 1 {
 		t.Fatalf("expected 1 error ACK, got %d", len(tc.emitted))
 	}
+	if _, ok := tc.emitted[0].(errAck); !ok {
+		t.Fatal("expected errAck struct")
+	}
 }
 
 func TestHandlerRegistry_Dispatch_NullData(t *testing.T) {
@@ -111,6 +126,9 @@ func TestHandlerRegistry_Dispatch_NullData(t *testing.T) {
 
 	r.Dispatch(&testClient{id: "c1"}, Message{Event: "event:null", Data: []byte(`null`)})
 
+	// When dispatch sees JSON null, it should pass empty string to handler.
+	// This is the current behavior — producers that need null vs "" should
+	// encode an explicit string wrapper if required.
 	if receivedData != "" {
 		t.Fatalf("expected empty string for null data, got %q", receivedData)
 	}

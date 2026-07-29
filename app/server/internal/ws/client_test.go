@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"sync"
 	"testing"
 
 	"GOSpeak/internal/pkg"
@@ -32,6 +33,10 @@ func TestClient_Send(t *testing.T) {
 		}
 	default:
 		t.Fatal("expected data in writeCh")
+	}
+	// Drain writeCh so the next test starts clean
+	for len(c.writeCh) > 0 {
+		<-c.writeCh
 	}
 }
 
@@ -100,22 +105,22 @@ func TestClientConcurrentSend(t *testing.T) {
 	c := NewTestClient("c1", nil)
 
 	// Concurrent writes should not race (verified with -race)
-	done := make(chan bool)
+	var wg sync.WaitGroup
+	wg.Add(2)
 	go func() {
+		defer wg.Done()
 		for i := 0; i < 10; i++ {
 			c.Send(map[string]int{"val": i})
 		}
-		done <- true
 	}()
 	go func() {
+		defer wg.Done()
 		for i := 0; i < 10; i++ {
 			c.Send(map[string]int{"val": i + 100})
 		}
-		done <- true
 	}()
 
-	<-done
-	<-done
+	wg.Wait()
 	// Drain writeCh
 	for len(c.writeCh) > 0 {
 		<-c.writeCh

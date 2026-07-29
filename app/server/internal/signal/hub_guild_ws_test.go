@@ -87,7 +87,7 @@ func TestGuildWS_PlatformRoom_BackwardCompat(t *testing.T) {
 	}
 }
 
-func TestGuildWS_RoomList_Isolation(t *testing.T) {
+func TestGuildWS_RoomList_AllGuilds(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
 	hub.fanout = newMockBroadcaster()
 	hub.SetStreamResolver(fakeStreamResolver{})

@@ -44,6 +44,18 @@ func TestExtractToken_Empty(t *testing.T) {
 	}
 }
 
+// TestExtractToken_PlainHeader verifies that a raw Authorization header
+// without Bearer prefix is returned as-is (intentional: supports custom auth schemes).
+func TestExtractToken_PlainHeader(t *testing.T) {
+	r := httptest.NewRequest("GET", "/ws", nil)
+	r.Header.Set("Authorization", "raw-token-no-bearer")
+
+	token := extractToken(r)
+	if token != "raw-token-no-bearer" {
+		t.Fatalf("expected 'raw-token-no-bearer', got %q", token)
+	}
+}
+
 func TestExtractToken_BearerPriority(t *testing.T) {
 	// Authorization header should take priority over cookie
 	r := httptest.NewRequest("GET", "/ws", nil)
@@ -53,15 +65,5 @@ func TestExtractToken_BearerPriority(t *testing.T) {
 	token := extractToken(r)
 	if token != "header-token" {
 		t.Fatalf("expected 'header-token' from Authorization, got %q", token)
-	}
-}
-
-func TestExtractToken_AuthWithoutBearer(t *testing.T) {
-	r := httptest.NewRequest("GET", "/ws", nil)
-	r.Header.Set("Authorization", "raw-token-no-bearer")
-
-	token := extractToken(r)
-	if token != "raw-token-no-bearer" {
-		t.Fatalf("expected 'raw-token-no-bearer', got %q", token)
 	}
 }

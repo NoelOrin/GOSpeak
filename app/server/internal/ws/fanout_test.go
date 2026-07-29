@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -84,7 +85,7 @@ func TestFanout_BroadcastToNamespace(t *testing.T) {
 func TestFanout_ForEach(t *testing.T) {
 	f := NewFanout()
 	for i := 0; i < 3; i++ {
-		c := NewTestClient(string(rune('a'+i)), nil)
+		c := NewTestClient(fmt.Sprintf("c%d", i), nil)
 		f.Add(c)
 		f.Join("room-y", c.ID())
 	}
