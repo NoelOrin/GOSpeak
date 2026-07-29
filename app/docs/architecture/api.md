@@ -60,11 +60,24 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
-| POST | `/api/v1/room/create` | `room:create` | 创建房间（密码、人数上限、音视频、观众席）|
+| POST | `/api/v1/room/create` | `room:create` | 创建房间（type/password/limit/audioOnly/audience）|
 | POST | `/api/v1/room/list` | `room:read` | 房间列表 |
 | POST | `/api/v1/room/get` | `room:read` | 房间详情 |
 | POST | `/api/v1/room/update` | `room:update` | 更新房间 |
 | POST | `/api/v1/room/delete` | `room:delete` | 删除房间 |
+
+`room:create` 支持 `type` 字段：`voice`（语音房间，默认）或 `text`（文字聊天房间）。
+
+## 消息 API（JWT + `message:*`）
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| POST | `/api/v1/room/messages/list` | `message:read` | 消息历史列表（游标分页，按 createdAt 倒序）|
+| POST | `/api/v1/room/messages/send` | `message:send` | 发送消息 |
+| POST | `/api/v1/room/messages/edit` | `message:send` | 编辑自己的消息 |
+| POST | `/api/v1/room/messages/delete` | `message:send` / `message:delete_others` | 删除消息（自己或他人）|
+| POST | `/api/v1/room/messages/react` | `message:send` | 添加反应表情 |
+| POST | `/api/v1/room/messages/unreact` | `message:send` | 移除反应表情 |
 
 ## 角色 API（JWT + `role:*`）
 
@@ -119,6 +132,13 @@
 | POST | `/api/v1/email/verify_code` | — | 校验验证码 |
 | POST | `/api/v1/email/config` | `email_config:read` | 邮箱配置 |
 | POST | `/api/v1/email/update-config` | `email_config:manage` | 更新邮箱配置 |
+
+## 插件 API（JWT + `plugin:*`）
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| POST | `/api/v1/plugin/config` | `plugin:read` | 获取插件配置列表 |
+| POST | `/api/v1/plugin/update-config` | `plugin:manage` | 更新插件配置 |
 
 ## 信令 API
 
@@ -197,15 +217,25 @@ SRS 模式下还包含：`whipUrl`、`stream` 等 WHIP/WHEP 字段。
 
 **端点**: `ws://<host>/socket.io/`
 
-### 客户端 → 服务端
+### 客户端 → 服务端（信令）
 | 事件 | 数据 | 说明 |
 |------|------|------|
 | `room:create` | `{ room }` | 创建房间 |
 | `room:join` | `{ room, identity }` | 加入房间 |
 | `room:leave` | `{ room }` | 离开房间 |
 | `room:list` | — | 请求房间列表 |
+| `bot:message` | `{ ... }` | Bot 消息发布 |
 
-### 服务端 → 客户端
+### 客户端 → 服务端（文字聊天）
+| 事件 | 数据 | 说明 |
+|------|------|------|
+| `message:send` | `{ room_uuid, content, reply_to? }` | 发送消息（Ack 确认）|
+| `message:edit` | `{ uuid, content }` | 编辑消息（Ack 确认）|
+| `message:delete` | `{ uuid }` | 删除消息（Ack 确认）|
+| `message:react` | `{ message_uuid, emoji }` | 添加反应（Ack 确认）|
+| `message:unreact` | `{ message_uuid, emoji }` | 移除反应（Ack 确认）|
+
+### 服务端 → 客户端（信令）
 | 事件 | 数据 | 说明 |
 |------|------|------|
 | `room:created` | `RoomInfo` | 房间已创建 |
@@ -217,6 +247,16 @@ SRS 模式下还包含：`whipUrl`、`stream` 等 WHIP/WHEP 字段。
 | `member:updated` | `MemberInfo` | 成员更新 |
 | `user:muted` / `user:unmuted` | 禁言状态变更 | 用户级仅收听切换 |
 | `room:list:result` | `{ rooms[] }` | 房间列表 |
+
+### 服务端 → 客户端（文字聊天）
+| 事件 | 数据 | 说明 |
+|------|------|------|
+| `message:created` | `Message` | 新消息 |
+| `message:updated` | `Message` | 消息已编辑 |
+| `message:deleted` | `{ uuid }` | 消息已删除 |
+| `message:reaction` | `{ message_uuid, user_id, emoji, add }` | 反应变更 |
+| `message:ack` | `{ tempId, uuid, ... }` | 消息确认（临时 ID 映射）|
+| `message:error` | `{ tempId, error }` | 消息错误 |
 
 ## 错误码
 

@@ -16,6 +16,7 @@ GOSpeak 使用**基于权限（permission-based）的 RBAC**，在角色之上�
 | `user:read` / `user:update` / `user:delete` | 用户查询 / 更新 / 删除 |
 | `role:read` / `role:manage` | 角色读取 / 管理（同时控制权限同步）|
 | `room:create` / `room:read` / `room:update` / `room:delete` | 房间全生命周期 |
+| `message:read` / `message:send` / `message:delete_others` | 文字消息读取 / 发送 / 删除他人消息 |
 | `mute:manage` | 禁言管理 |
 | `sfu:manage` | SFU provider 配置管理 |
 | `storage:read` / `storage:manage` / `storage:delete` | 对象存储读取 / 配置 / 删除 |
@@ -23,6 +24,7 @@ GOSpeak 使用**基于权限（permission-based）的 RBAC**，在角色之上�
 | `email_config:read` / `email_config:manage` | 邮箱配置读取 / 管理 |
 | `oauth:read` / `oauth:manage` | OAuth 提供商读取 / 管理 |
 | `signal:kick` | 信令踢人 |
+| `plugin:read` / `plugin:manage` | 插件读取 / 管理 |
 
 ## 鉴权中间件
 

@@ -29,10 +29,38 @@
 | Password | string | 房间密码 |
 | Description | string | 描述 |
 | Limit | uint | 人数上限 |
+| Type | string | 房间类型：`voice`（语音，默认）/ `text`（文字聊天）|
 | AudioOnly | bool | 仅音频 |
 | AllowAudience | bool | 允许观众席 |
 | CreatedBy | string | 创建者标识 |
 | CreatedAt / UpdatedAt | time.Time | 时间戳 |
+
+## Message（消息）— `messages`
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| ID | uint | 主键 |
+| UUID | string | 唯一标识（UUIDv4）|
+| RoomUUID | string | 所属房间 UUID |
+| AuthorID | string | 发送者用户 UUID |
+| Content | string | 消息内容 |
+| ReplyTo | string | 回复的目标消息 UUID |
+| EditedAt | *time.Time | 编辑时间（nil = 未编辑）|
+| DeletedAt | gorm.DeletedAt | 软删除 |
+| CreatedAt | time.Time | 创建时间 |
+| UpdatedAt | time.Time | 更新时间 |
+
+## MessageReaction（消息反应）— `message_reactions`
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| ID | uint | 主键 |
+| MessageUUID | string | 消息 UUID |
+| UserID | string | 用户 UUID |
+| Emoji | string | 表情符号 |
+| CreatedAt | time.Time | 创建时间 |
+
+唯一约束：`(message_uuid, user_id, emoji)` 联合唯一。
 
 ## UserGroup（用户组）— `user_groups`
 
@@ -187,6 +215,7 @@ type RoomInfo struct {
     HasPassword   bool         `json:"hasPassword"`
     Description   string       `json:"description"`
     Limit         uint         `json:"limit"`
+    Type          string       `json:"type"`
     AudioOnly     bool         `json:"audioOnly"`
     AllowAudience bool         `json:"allowAudience"`
     Members       []MemberInfo `json:"members"`

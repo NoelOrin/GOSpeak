@@ -78,7 +78,7 @@ pnpm start:dev
 1. 打开前端页面
 2. 点击「注册」，创建第一个用户
 3. 注册完成后自动登录，进入主界面
-4. 创建房间 → 加入语音频道
+4. 创建房间 → 加入语音频道或文字聊天
 
 ## 目录结构概览
 
@@ -87,19 +87,27 @@ GOSpeak/
 ├── app/
 │   ├── server/              # Go 后端
 │   │   ├── main.go          # 入口点
-│   │   ├── internal/        # 所有内部包
+│   │   ├── cmd/             # Cobra CLI
+│   │   ├── server/gin.go    # DI 容器
+│   │   ├── internal/
 │   │   │   ├── config/      # 环境配置读取
 │   │   │   ├── handler/     # HTTP 控制器
 │   │   │   ├── service/     # 业务逻辑
 │   │   │   ├── repository/  # DAO 数据访问
 │   │   │   ├── model/       # GORM 数据模型
-│   │   │   ├── sfu/         # SFU 抽象层
-│   │   │   ├── signal/      # Socket.IO 信令
+│   │   │   ├── router/      # 路由注册
+│   │   │   ├── middleware/  # JWT/CORS/权限 RBAC
+│   │   │   ├── sfu/         # SFU 抽象 + 工厂 + 多 Provider
+│   │   │   ├── signal/      # Socket.IO 信令 Hub
+│   │   │   ├── jobs/        # 异步任务
+│   │   │   ├── storage/     # 对象存储抽象
+│   │   │   ├── redis/       # 可选 Redis 客户端
+│   │   │   ├── permcode/    # 权限码常量
+│   │   │   ├── plugin/      # 插件系统
 │   │   │   └── pkg/         # 工具包 (JWT, OAuth, errors)
-│   │   ├── test/            # API 集成测试
-│   │   └── db/              # SQLite 存储目录
+│   │   └── test/            # API 集成测试
 │   ├── web/                 # SolidJS 前端
-│   └── mediasoup-worker/    # MediaSoup Worker
+│   └── mediasoup-worker/    # MediaSoup Worker (via packages/)
 ├── deploy/                  # Docker Compose 编排
 ├── packages/
 │   └── sfu-client/          # 前端 SFU 客户端抽象

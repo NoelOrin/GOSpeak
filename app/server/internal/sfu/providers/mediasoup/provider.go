@@ -9,6 +9,9 @@ import (
 	"GOSpeak/internal/sfu"
 )
 
+var _ sfu.Provider = (*Service)(nil)
+var _ sfu.ClientInfoProvider = (*Service)(nil)
+
 type providerBridge interface {
 	ListParticipants(roomID string) ([]ParticipantInfo, error)
 	CloseParticipant(roomID, identity string) ([]string, error)

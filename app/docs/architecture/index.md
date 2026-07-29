@@ -84,25 +84,35 @@ app/
 │   │   ├── model/       # GORM 实体
 │   │   ├── router/      # 路由注册
 │   │   ├── middleware/  # JWT/CORS/权限 RBAC/封禁
-│   │   ├── sfu/         # SFU 抽象层
-│   │   ├── livekit/     # LiveKit 实现
-│   │   ├── agora/       # Agora 实现
-│   │   ├── daily/       # Daily 实现
-│   │   ├── mediasoup/   # MediaSoup 实现
-│   │   ├── srs/         # SRS 实现（WHIP/WHEP）
-│   │   ├── cloudflare/  # Cloudflare Realtime 实现
-│   │   ├── permcode/    # 权限码常量
+│   │   ├── sfu/         # SFU 抽象 + 工厂 + 多 Provider
 │   │   ├── signal/      # Socket.IO 信令 Hub
+│   │   ├── bus/         # 内存事件总线
+│   │   ├── jobs/        # 异步任务 (消息持久化等)
+│   │   ├── storage/     # 对象存储抽象
 │   │   ├── redis/       # Redis 客户端
-│   │   └── pkg/         # 工具包
+│   │   ├── permcode/    # 权限码常量
+│   │   ├── plugin/      # 插件系统
+│   │   ├── logger/      # 日志
+│   │   ├── webui/       # 嵌入式前端静态文件
+│   │   └── pkg/         # 工具包 (JWT, OAuth, errors)
 │   └── test/            # API 集成测试
-├── web/                 # SolidJS 前端
+├── web/                 # SolidJS 前端 (Vite + TanStack Router)
 │   └── src/
-│       ├── stores/      # 状态管理
-│       ├── components/  # UI 组件
+│       ├── api/         # HTTP 客户端
+│       ├── stores/      # 状态管理 (chat/voice/audio/theme/user/socket)
+│       ├── components/  # UI 组件 (room/textRoom/manage/modal/chat...)
 │       ├── hooks/       # 业务 Hook
-│       └── api/         # HTTP 客户端
-└── mediasoup-worker/    # MediaSoup Worker
+│       ├── layouts/     # 布局组件
+│       ├── pages/       # 路由页面
+│       ├── socket/      # Socket.IO 客户端
+│       ├── types/       # TypeScript 类型
+│       └── utils/       # 工具函数
+│   └── docs/            # VitePress 文档站点
+├── packages/
+│   ├── sfu-client/      # 前端多 SFU 客户端抽象
+│   ├── bot/             # Hono 机器人
+│   └── mediasoup-worker/ # MediaSoup Worker
+└── docs/                # 项目设计文档
 ```
 
 ## SFU 抽象层

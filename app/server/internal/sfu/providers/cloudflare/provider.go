@@ -11,6 +11,9 @@ import (
 	"GOSpeak/internal/sfu"
 )
 
+var _ sfu.Provider = (*Service)(nil)
+var _ sfu.StreamProvider = (*Service)(nil)
+var _ sfu.ClientInfoProvider = (*Service)(nil)
 // Service implements sfu.Provider for Cloudflare Realtime SFU.
 // Cloudflare has no native rooms; sessions are tracked locally after GenerateToken.
 type Service struct {
@@ -20,7 +23,12 @@ type Service struct {
 	registry pkg.RoomRegistry
 
 	mu       sync.RWMutex
-	sessions map[string]map[string]string // room -> identity -> sessionID
+	sessions map[string]map[string]sessionMeta // room -> identity -> meta
+}
+
+type sessionMeta struct {
+	sessionID string
+	joinedAt  int64
 }
 
 func NewService(cfg *config.Config) *Service {
@@ -32,7 +40,7 @@ func NewService(cfg *config.Config) *Service {
 		client:   NewClient(cfg.CFAppID, cfg.CFAppSecret),
 		appID:    cfg.CFAppID,
 		stunURL:  stunURL,
-		sessions: make(map[string]map[string]string),
+		sessions: make(map[string]map[string]sessionMeta),
 	}
 }
 
@@ -52,7 +60,8 @@ func (s *Service) GenerateToken(room, identity string) (string, error) {
 		return "", pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, "cloudflare create session: "+err.Error())
 	}
 
-	s.putSession(room, identity, sessionResp.SessionID)
+	now := time.Now().Unix()
+	s.putSession(room, identity, sessionResp.SessionID, now)
 
 	tokenData := map[string]interface{}{
 		"appId":     s.appID,
@@ -93,10 +102,10 @@ func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error
 
 	members := s.sessions[room]
 	out := make([]sfu.ParticipantSummary, 0, len(members))
-	for identity := range members {
+	for identity, meta := range members {
 		out = append(out, sfu.ParticipantSummary{
 			Identity: identity,
-			JoinedAt: time.Now().Unix(),
+			JoinedAt: meta.joinedAt,
 		})
 	}
 	return out, nil
@@ -111,12 +120,12 @@ func (s *Service) RemoveParticipant(room, identity string) error {
 		return pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "CF_APP_ID is required")
 	}
 
-	sessionID, ok := s.getSession(room, identity)
-	if !ok || sessionID == "" {
+	meta, ok := s.getSession(room, identity)
+	if !ok || meta.sessionID == "" {
 		return nil
 	}
 
-	if err := s.client.DeleteSession(sessionID); err != nil {
+	if err := s.client.DeleteSession(meta.sessionID); err != nil {
 		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, "cloudflare delete session: "+err.Error())
 	}
 	s.deleteSession(room, identity)
@@ -131,18 +140,30 @@ func (s *Service) DeleteRoom(room string) error {
 	s.mu.Lock()
 	members := s.sessions[room]
 	sessionIDs := make([]string, 0, len(members))
-	for _, sessionID := range members {
-		sessionIDs = append(sessionIDs, sessionID)
+	for _, meta := range members {
+		sessionIDs = append(sessionIDs, meta.sessionID)
 	}
 	delete(s.sessions, room)
 	s.mu.Unlock()
 
-	var lastErr error
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		lastErr error
+	)
 	for _, sessionID := range sessionIDs {
-		if err := s.client.DeleteSession(sessionID); err != nil {
-			lastErr = err
-		}
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			if err := s.client.DeleteSession(id); err != nil {
+				mu.Lock()
+				lastErr = err
+				mu.Unlock()
+			}
+		}(sessionID)
 	}
+	wg.Wait()
+
 	if s.registry != nil {
 		s.registry.ClearRoom(room)
 	}
@@ -166,19 +187,19 @@ func (s *Service) Capabilities() sfu.Capabilities {
 
 
 func (s *Service) StreamName(room, identity string) string {
-	sessionID, ok := s.getSession(room, identity)
+	meta, ok := s.getSession(room, identity)
 	if !ok {
 		return ""
 	}
-	return sessionID
+	return meta.sessionID
 }
 
 func (s *Service) StreamInfo(room, identity string) (string, string, error) {
-	sessionID, ok := s.getSession(room, identity)
-	if !ok || sessionID == "" {
+	meta, ok := s.getSession(room, identity)
+	if !ok || meta.sessionID == "" {
 		return "", "", nil
 	}
-	return sessionID, "", nil
+	return meta.sessionID, "", nil
 }
 
 func (s *Service) ClientInfo() map[string]interface{} {
@@ -188,20 +209,20 @@ func (s *Service) ClientInfo() map[string]interface{} {
 	}
 }
 
-func (s *Service) putSession(room, identity, sessionID string) {
+func (s *Service) putSession(room, identity, sessionID string, joinedAt int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.sessions[room] == nil {
-		s.sessions[room] = make(map[string]string)
+		s.sessions[room] = make(map[string]sessionMeta)
 	}
-	s.sessions[room][identity] = sessionID
+	s.sessions[room][identity] = sessionMeta{sessionID: sessionID, joinedAt: joinedAt}
 }
 
-func (s *Service) getSession(room, identity string) (string, bool) {
+func (s *Service) getSession(room, identity string) (sessionMeta, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	sessionID, ok := s.sessions[room][identity]
-	return sessionID, ok
+	m, ok := s.sessions[room][identity]
+	return m, ok
 }
 
 func (s *Service) deleteSession(room, identity string) {

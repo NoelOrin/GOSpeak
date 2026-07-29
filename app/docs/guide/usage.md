@@ -42,6 +42,30 @@ GET /api/v1/oauth/login/qq
 
 点击房间界面中的「离开」按钮，或直接关闭页面，自动离开房间并断开媒体连接。
 
+## 文字聊天
+
+### 创建文字房间
+
+创建房间时将 `type` 设为 `text` 即可创建纯文字聊天房间。文字房间无音视频能力。
+
+### 发送消息
+
+进入文字房间后，底部输入框支持：
+
+- **纯文本消息**：输入文字按回车发送
+- **回复**：悬停消息点击回复图标，输入框显示引用行
+- **表情反应**：悬停消息点击表情图标添加 Emoji 反应
+
+### 编辑与删除
+
+- 悬停自己的消息可编辑或删除
+- 编辑后消息显示「已编辑」标记
+- 管理员可删除他人消息（需 `message:delete_others` 权限）
+
+### 消息持久化
+
+消息通过异步 Job 持久化到数据库（`messages` 表），实时通过 Socket.IO `message:created` 事件广播。
+
 ## 语音控制
 
 ### 基础控制
@@ -98,6 +122,11 @@ GOSpeak 支持明暗主题：
 | `room:join` | C→S | 加入房间 |
 | `room:leave` | C→S | 离开房间 |
 | `room:list` | C→S | 请求房间列表 |
+| `message:send` | C→S | 发送文字消息（Ack 确认）|
+| `message:edit` | C→S | 编辑消息 |
+| `message:delete` | C→S | 删除消息 |
+| `message:react` | C→S | 添加表情反应 |
+| `message:unreact` | C→S | 移除表情反应 |
 | `room:created` | S→C | 房间已创建 |
 | `room:joined` | S→C | 已加入房间（含成员列表）|
 | `room:left` | S→C | 已离开房间 |
@@ -106,6 +135,10 @@ GOSpeak 支持明暗主题：
 | `member:updated` | S→C | 成员状态更新 |
 | `room:updated` | S→C | 房间信息更新 |
 | `room:list:result` | S→C | 房间列表结果 |
+| `message:created` | S→C | 新消息广播 |
+| `message:updated` | S→C | 消息已编辑 |
+| `message:deleted` | S→C | 消息已删除 |
+| `message:reaction` | S→C | 反应变更 |
 
 ### 房间数据流
 
