@@ -3,7 +3,10 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"log"
+	"sort"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -39,17 +42,20 @@ type MessageSendInput struct {
 	SenderRole     string
 	Content        string
 	ReplyToID      string
+	TargetIdentity string
 }
 
 type MessageDTO struct {
-	ID             string `json:"id"`
-	Room           string `json:"room"`
-	Content        string `json:"content"`
-	ReplyToID      string `json:"replyTo,omitempty"`
-	SenderIdentity string `json:"senderIdentity"`
-	SenderDisplay  string `json:"senderDisplay"`
-	SenderRole     string `json:"senderRole"`
-	Timestamp      int64  `json:"timestamp"`
+	ID              string `json:"id"`
+	Room            string `json:"room"`
+	Content         string `json:"content"`
+	ReplyToID       string `json:"replyTo,omitempty"`
+	SenderIdentity  string `json:"senderIdentity"`
+	SenderDisplay   string `json:"senderDisplay"`
+	SenderRole      string `json:"senderRole"`
+	Timestamp       int64  `json:"timestamp"`
+	ConversationID  string `json:"conversationId,omitempty"`
+	TargetIdentity  string `json:"targetIdentity,omitempty"`
 }
 
 type MessageListResult struct {
@@ -70,8 +76,9 @@ type dLEntry struct {
 }
 
 type MessageService struct {
-	repo *repository.MessageRepository
-	bus  MessageEventBus
+	repo            *repository.MessageRepository
+	conversationRepo *repository.ConversationRepository
+	bus             MessageEventBus
 
 	asyncWG  *sync.WaitGroup
 	writeCh  chan *asyncJob
@@ -82,8 +89,8 @@ type MessageService struct {
 	initOnce sync.Once
 }
 
-func NewMessageService(repo *repository.MessageRepository, bus MessageEventBus) *MessageService {
-	s := &MessageService{repo: repo, bus: bus}
+func NewMessageService(repo *repository.MessageRepository, convRepo *repository.ConversationRepository, bus MessageEventBus) *MessageService {
+	s := &MessageService{repo: repo, conversationRepo: convRepo, bus: bus}
 	s.initOnce.Do(func() {
 		s.writeCh = make(chan *asyncJob, writeQueueCap)
 		s.deadCh = make(chan *model.Message, 128)
@@ -101,6 +108,9 @@ func (s *MessageService) SetAsyncWG(wg *sync.WaitGroup) {
 }
 
 func (s *MessageService) Send(ctx context.Context, in MessageSendInput) (*MessageDTO, error) {
+	if in.TargetIdentity != "" {
+		return s.SendDirect(ctx, in)
+	}
 	if in.RoomKey == "" || in.SenderIdentity == "" {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "room and sender required")
 	}
@@ -115,12 +125,12 @@ func (s *MessageService) Send(ctx context.Context, in MessageSendInput) (*Messag
 	}
 	row := &model.Message{
 		ID:             id.String(),
-		RoomUUID:       in.RoomKey,
+		RoomUUID:       strPtr(in.RoomKey),
 		SenderIdentity: in.SenderIdentity,
 		SenderDisplay:  in.SenderDisplay,
 		SenderRole:     in.SenderRole,
 		Content:        content,
-		ReplyToID:      in.ReplyToID,
+		ReplyToID:      strPtrOrNil(in.ReplyToID),
 		Status:         model.MessageStatusActive,
 		CreatedAt:      now,
 	}
@@ -283,15 +293,146 @@ func (s *MessageService) List(_ context.Context, roomKey, before string, limit i
 	return out, nil
 }
 
+// generateConversationID produces a deterministic conversation ID from two identities.
+// The identities are sorted lexicographically so both sides compute the same ID.
+func generateConversationID(a, b string) string {
+	pair := []string{a, b}
+	sort.Strings(pair)
+	h := sha256.Sum256([]byte(pair[0] + ":" + pair[1]))
+	return "direct:" + hex.EncodeToString(h[:8])
+}
+
+// SendDirect creates a direct (private) message between two users.
+// The message is persisted synchronously (lightweight single-row write),
+// and the conversation participant row is upserted with summary + unread.
+func (s *MessageService) SendDirect(ctx context.Context, in MessageSendInput) (*MessageDTO, error) {
+	if in.SenderIdentity == "" || in.TargetIdentity == "" {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "sender and target required")
+	}
+	if in.SenderIdentity == in.TargetIdentity {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "cannot send to self")
+	}
+	content := in.Content
+	if content == "" || utf8.RuneCountInString(content) > MaxMessageRunes {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "invalid content")
+	}
+
+	convID := generateConversationID(in.SenderIdentity, in.TargetIdentity)
+
+	now := time.Now().UTC()
+	id, err := ulid.New(ulid.Timestamp(now), rand.Reader)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR)
+	}
+
+	row := &model.Message{
+		ID:               id.String(),
+		SenderIdentity:   in.SenderIdentity,
+		SenderDisplay:    in.SenderDisplay,
+		SenderRole:       in.SenderRole,
+		Content:          content,
+		ReplyToID:        strPtrOrNil(in.ReplyToID),
+		Status:           model.MessageStatusActive,
+		ConversationType: model.ConversationTypeDirect,
+		ConversationID:   &convID,
+		TargetIdentity:   &in.TargetIdentity,
+		CreatedAt:        now,
+	}
+
+	// Synchronous persist — direct messages are low-volume; no need for async queue.
+	if err := s.repo.Create(row); err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+
+	// Upsert conversation participant row + update summary + increment unread
+	if s.conversationRepo != nil {
+		// Sorted identities for the participant row
+		a, b := in.SenderIdentity, in.TargetIdentity
+		if a > b {
+			a, b = b, a
+		}
+		cp := &model.ConversationParticipant{
+			ConversationID:      convID,
+			IdentityA:          a,
+			IdentityB:          b,
+			LastMessageID:      strPtrOrNil(id.String()),
+			LastContent:        truncateContent(content),
+			LastSenderIdentity: in.SenderIdentity,
+			LastMessageAt:      &now,
+		}
+		if err := s.conversationRepo.Upsert(cp); err != nil {
+			log.Printf("[IM] conversation upsert failed conv=%s: %v", convID, err)
+		}
+		if err := s.conversationRepo.UpdateLastMessage(convID, id.String(), content, in.SenderIdentity, now); err != nil {
+			log.Printf("[IM] update last message failed conv=%s: %v", convID, err)
+		}
+		if err := s.conversationRepo.IncrementUnread(convID, in.SenderIdentity); err != nil {
+			log.Printf("[IM] increment unread failed conv=%s: %v", convID, err)
+		}
+	}
+
+	dto := toDirectMessageDTO(row)
+
+	// Broadcast to both sender and target via event bus
+	if s.bus != nil {
+		if err := s.bus.PublishRoom(ctx, "__user:"+in.SenderIdentity, EventMessageNew, dto); err != nil {
+			log.Printf("[IM] publish private:new sender=%s: %v", in.SenderIdentity, err)
+		}
+		if err := s.bus.PublishRoom(ctx, "__user:"+in.TargetIdentity, EventMessageNew, dto); err != nil {
+			log.Printf("[IM] publish private:new target=%s: %v", in.TargetIdentity, err)
+		}
+	}
+
+	return &dto, nil
+}
+
+func truncateContent(s string) string {
+	runes := []rune(s)
+	if len(runes) > 200 {
+		return string(runes[:200])
+	}
+	return s
+}
+
+func toDirectMessageDTO(m *model.Message) MessageDTO {
+	dto := toMessageDTO(m)
+	if m.ConversationID != nil {
+		dto.ConversationID = *m.ConversationID
+	}
+	if m.TargetIdentity != nil {
+		dto.TargetIdentity = *m.TargetIdentity
+	}
+	return dto
+}
+
 func toMessageDTO(m *model.Message) MessageDTO {
 	return MessageDTO{
 		ID:             m.ID,
-		Room:           m.RoomUUID,
+		Room:           ptrStr(m.RoomUUID),
 		Content:        m.Content,
-		ReplyToID:      m.ReplyToID,
+		ReplyToID:      ptrStr(m.ReplyToID),
 		SenderIdentity: m.SenderIdentity,
 		SenderDisplay:  m.SenderDisplay,
 		SenderRole:     m.SenderRole,
 		Timestamp:      m.CreatedAt.UnixMilli(),
 	}
+}
+
+// strPtr returns a pointer to s.
+func strPtr(s string) *string { return &s }
+
+// strPtrOrNil returns nil for empty string, otherwise a pointer to s.
+func strPtrOrNil(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// ptrStr dereferences a *string safely, returning "" for nil.
+func ptrStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }

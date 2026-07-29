@@ -2,6 +2,7 @@ package router
 
 import (
 	"GOSpeak/internal/config"
+	conversationRoutes "GOSpeak/internal/router/routes/conversation"
 	guildRoutes "GOSpeak/internal/router/routes/guild"
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/middleware"
@@ -54,8 +55,9 @@ type Handlers struct {
 	Monitor     *handler.MonitorHandler
 	SRSCallback *handler.SRSCallbackHandler
 	Bot         *handler.BotHandler
-	Plugin      *handler.PluginHandler
-	Guild       *handler.GuildHandler
+	Plugin       *handler.PluginHandler
+	Guild        *handler.GuildHandler
+	Conversation *handler.ConversationHandler
 	// PluginHost 用于挂载插件自定义路由
 	PluginHost  interface{ MountRoutes(*gin.RouterGroup) }
 }
@@ -101,8 +103,11 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	if h.Plugin != nil {
 		pluginRoutes.RegisterProtected(protected.Group("/plugins"), h.Plugin)
 	}
+	if h.Conversation != nil {
+		conversationRoutes.RegisterProtected(protected.Group("/conversation"), h.Conversation)
+	}
 	if h.PluginHost != nil {
-		// 插件自注册路由：/api/v1/plugins/:name/*
+		// route registry: /api/v1/plugins/:name/*
 		h.PluginHost.MountRoutes(protected.Group("/plugins"))
 	}
 	if h.Guild != nil {

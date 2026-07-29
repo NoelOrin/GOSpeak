@@ -96,6 +96,7 @@ func StartGin(env EnvEnum) {
 	permRepo := repository.NewPermissionRepository(repository.DB)
 	muteRepo := repository.NewMuteRepository(repository.DB)
 	messageRepo := repository.NewMessageRepository(repository.DB)
+	conversationRepo := repository.NewConversationRepository(repository.DB)
 	sfuConfigRepo := repository.NewSFUConfigRepository(repository.DB)
 	storageConfigRepo := repository.NewStorageConfigRepository(repository.DB)
 
@@ -191,7 +192,9 @@ func StartGin(env EnvEnum) {
 	signalHub.SetEventBus(eventBus)
 	signalHub.SetStateNotifier(eventBus)
 	permSvc.SetEventBus(eventBus)
-	messageSvc := service.NewMessageService(messageRepo, eventBus)
+	messageSvc := service.NewMessageService(messageRepo, conversationRepo, eventBus)
+	conversationSvc := service.NewConversationService(conversationRepo, messageRepo)
+	conversationH := handler.NewConversationHandler(conversationSvc)
 	signalHub.SetMessageService(messageSvc)
 	var natsConn *nats.Conn
 	instanceID := eventBus.InstanceID()
@@ -358,7 +361,8 @@ func StartGin(env EnvEnum) {
 		SRSCallback: srsCallbackH,
 		Bot:         botH,
 		Plugin:      pluginH,
-		Guild:       guildH,
+		Guild:        guildH,
+		Conversation: conversationH,
 		PluginHost:  pluginHost,
 	})
 
