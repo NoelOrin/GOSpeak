@@ -10,6 +10,8 @@ const (
 type Message struct {
 	ID             string    `gorm:"primaryKey;size:26;index:idx_msg_room_status_id,priority:3" json:"id"`
 	RoomUUID       string    `gorm:"size:255;index:idx_msg_room_status_id,priority:1;not null" json:"room_uuid"`
+	// GuildUUID 归属的语音服务器 UUID。
+	GuildUUID      string    `gorm:"type:uuid;index" json:"guild_uuid"`
 	SenderIdentity string    `gorm:"size:64;not null" json:"sender_identity"`
 	SenderDisplay  string    `gorm:"size:128" json:"sender_display"`
 	SenderRole     string    `gorm:"size:32" json:"sender_role"`
