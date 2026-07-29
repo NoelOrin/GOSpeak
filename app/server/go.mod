@@ -180,6 +180,7 @@ require (
 	modernc.org/mathutil v1.5.0 // indirect
 	modernc.org/memory v1.4.0 // indirect
 	modernc.org/sqlite v1.20.0 // indirect
+	nhooyr.io/websocket v1.8.17 // indirect
 )
 
 replace github.com/gorilla/websocket => ./patch/gorilla-websocket
