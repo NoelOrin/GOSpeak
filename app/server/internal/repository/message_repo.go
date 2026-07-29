@@ -33,3 +33,25 @@ func (r *MessageRepository) ListByRoom(roomUUID, beforeULID string, limit int) (
 	}
 	return rows, nil
 }
+
+
+// ListByConversation returns direct messages for a conversation, paginated by ULID cursor.
+// beforeULID is an exclusive cursor: rows with id < beforeULID are returned.
+// Results are in ascending order (oldest first) for chat display.
+func (r *MessageRepository) ListByConversation(conversationID, beforeULID string, limit int) ([]model.Message, error) {
+	q := r.db.Where("conversation_type = ? AND conversation_id = ? AND status = ?",
+		model.ConversationTypeDirect, conversationID, model.MessageStatusActive)
+	if beforeULID != "" {
+		q = q.Where("id < ?", beforeULID)
+	}
+	var rows []model.Message
+	err := q.Order("id DESC").Limit(limit).Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	// reverse to ascending for chat display
+	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
+		rows[i], rows[j] = rows[j], rows[i]
+	}
+	return rows, nil
+}
