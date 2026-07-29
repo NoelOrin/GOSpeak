@@ -7,8 +7,8 @@ import (
 	"GOSpeak/internal/pkg"
 )
 
-// decodeBotBroadcast extracts the string-encoded broadcastBotMessage from mockServer args.
-func decodeBotBroadcast(t *testing.T, ms *mockServer, room, event string) *broadcastBotMessage {
+// decodeBotBroadcast extracts the string-encoded broadcastBotMessage from mockBroadcaster args.
+func decodeBotBroadcast(t *testing.T, ms *mockBroadcaster, room, event string) *broadcastBotMessage {
 	t.Helper()
 	casts, ok := ms.roomCasts[room]
 	if !ok {
@@ -32,15 +32,15 @@ func decodeBotBroadcast(t *testing.T, ms *mockServer, room, event string) *broad
 
 func TestPublishBotCommand_BroadcastsToRoom(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "test-room", map[string]string{
 		"socket-1": "user-1",
 	})
 
-	conn := newAuthedMockConn("socket-1", "user-1")
+	conn := newAuthedMockClient("socket-1", "user-1")
 	hub.PublishBotCommand(conn, `{"room":"test-room","text":"/kick alice"}`)
 
-	b := decodeBotBroadcast(t, hub.server.(*mockServer), "test-room", EventBotCommand)
+	b := decodeBotBroadcast(t, hub.fanout.(*mockBroadcaster), "test-room", EventBotCommand)
 	if b == nil {
 		t.Fatal("expected bot:command broadcast")
 	}
@@ -60,15 +60,15 @@ func TestPublishBotCommand_BroadcastsToRoom(t *testing.T) {
 
 func TestPublishBotCommand_NotInRoom_Denied(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "test-room", map[string]string{
 		"socket-1": "user-1",
 	})
 
-	conn := newAuthedMockConn("socket-2", "user-2")
+	conn := newAuthedMockClient("socket-2", "user-2")
 	hub.PublishBotCommand(conn, `{"room":"test-room","text":"/kick alice"}`)
 
-	b := decodeBotBroadcast(t, hub.server.(*mockServer), "test-room", EventBotCommand)
+	b := decodeBotBroadcast(t, hub.fanout.(*mockBroadcaster), "test-room", EventBotCommand)
 	if b != nil {
 		t.Fatal("expected no broadcast for non-member")
 	}
@@ -76,7 +76,7 @@ func TestPublishBotCommand_NotInRoom_Denied(t *testing.T) {
 
 func TestPublishBotCommand_TextTooLong_Denied(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "test-room", map[string]string{
 		"socket-1": "user-1",
 	})
@@ -86,10 +86,10 @@ func TestPublishBotCommand_TextTooLong_Denied(t *testing.T) {
 		longText[i] = 'a'
 	}
 
-	conn := newAuthedMockConn("socket-1", "user-1")
+	conn := newAuthedMockClient("socket-1", "user-1")
 	hub.PublishBotCommand(conn, `{"room":"test-room","text":"`+string(longText)+`"}`)
 
-	b := decodeBotBroadcast(t, hub.server.(*mockServer), "test-room", EventBotCommand)
+	b := decodeBotBroadcast(t, hub.fanout.(*mockBroadcaster), "test-room", EventBotCommand)
 	if b != nil {
 		t.Fatal("expected no broadcast for long text")
 	}
@@ -97,15 +97,15 @@ func TestPublishBotCommand_TextTooLong_Denied(t *testing.T) {
 
 func TestPublishBotCommand_EmptyText_Denied(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "test-room", map[string]string{
 		"socket-1": "user-1",
 	})
 
-	conn := newAuthedMockConn("socket-1", "user-1")
+	conn := newAuthedMockClient("socket-1", "user-1")
 	hub.PublishBotCommand(conn, `{"room":"test-room","text":""}`)
 
-	b := decodeBotBroadcast(t, hub.server.(*mockServer), "test-room", EventBotCommand)
+	b := decodeBotBroadcast(t, hub.fanout.(*mockBroadcaster), "test-room", EventBotCommand)
 	if b != nil {
 		t.Fatal("expected no broadcast for empty text")
 	}
@@ -113,15 +113,15 @@ func TestPublishBotCommand_EmptyText_Denied(t *testing.T) {
 
 func TestPublishBotMessage_WithReplyTo(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "test-room", map[string]string{
 		"socket-1": "user-1",
 	})
 
-	conn := newAuthedMockConn("socket-1", "user-1")
+	conn := newAuthedMockClient("socket-1", "user-1")
 	hub.PublishBotMessage(conn, `{"room":"test-room","content":"Hello bot","replyTo":"target-1"}`)
 
-	b := decodeBotBroadcast(t, hub.server.(*mockServer), "test-room", EventBotMessage)
+	b := decodeBotBroadcast(t, hub.fanout.(*mockBroadcaster), "test-room", EventBotMessage)
 	if b == nil {
 		t.Fatal("expected bot:message broadcast")
 	}
@@ -135,16 +135,16 @@ func TestPublishBotMessage_WithReplyTo(t *testing.T) {
 
 func TestPublishBotCommand_Unauthenticated_Denied(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "test-room", map[string]string{
 		"socket-1": "user-1",
 	})
 
 	// No JWT context
-	conn := newMockConn("socket-1")
+	conn := newMockClient("socket-1")
 	hub.PublishBotCommand(conn, `{"room":"test-room","text":"/kick"}`)
 
-	b := decodeBotBroadcast(t, hub.server.(*mockServer), "test-room", EventBotCommand)
+	b := decodeBotBroadcast(t, hub.fanout.(*mockBroadcaster), "test-room", EventBotCommand)
 	if b != nil {
 		t.Fatal("expected no broadcast for unauthenticated user")
 	}
@@ -152,15 +152,15 @@ func TestPublishBotCommand_Unauthenticated_Denied(t *testing.T) {
 
 func TestPublishBotMessage_FallbackTextToContent(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-a", map[string]string{
 		"sock-1": "alice",
 	})
 
-	conn := newAuthedMockConn("sock-1", "alice")
+	conn := newAuthedMockClient("sock-1", "alice")
 	hub.PublishBotMessage(conn, `{"room":"room-a","content":"hello via content"}`)
 
-	b := decodeBotBroadcast(t, hub.server.(*mockServer), "room-a", EventBotMessage)
+	b := decodeBotBroadcast(t, hub.fanout.(*mockBroadcaster), "room-a", EventBotMessage)
 	if b == nil {
 		t.Fatal("expected broadcast")
 	}
@@ -171,21 +171,23 @@ func TestPublishBotMessage_FallbackTextToContent(t *testing.T) {
 
 func TestPublishBotMessage_BotWithPermissions(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-b", map[string]string{
 		"bot-sock": "helper-bot",
 	})
 
-	conn := newMockConn("bot-sock")
-	conn.SetContext(&pkg.Claims{
-		Username:    "helper-bot",
-		Role:        "user",
-		Permissions: []string{"signal:kick"},
-	})
+	conn := &mockClient{
+		id:     "bot-sock",
+		claims: &pkg.Claims{
+			Username:    "helper-bot",
+			Role:        "user",
+			Permissions: []string{"signal:kick"},
+		},
+	}
 
 	hub.PublishBotMessage(conn, `{"room":"room-b","content":"bot says hi"}`)
 
-	b := decodeBotBroadcast(t, hub.server.(*mockServer), "room-b", EventBotMessage)
+	b := decodeBotBroadcast(t, hub.fanout.(*mockBroadcaster), "room-b", EventBotMessage)
 	if b == nil {
 		t.Fatal("expected broadcast from bot")
 	}

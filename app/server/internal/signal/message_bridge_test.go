@@ -23,7 +23,7 @@ func (s *stubMsgSvc) Send(ctx context.Context, in service.MessageSendInput) (*se
 
 func TestOnMessageSend_SendsToMember(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-a", map[string]string{
 		"sock-1": "alice",
 	})
@@ -31,7 +31,7 @@ func TestOnMessageSend_SendsToMember(t *testing.T) {
 	svc := &stubMsgSvc{}
 	hub.SetMessageService(svc)
 
-	conn := newAuthedMockConn("sock-1", "alice")
+	conn := newAuthedMockClient("sock-1", "alice")
 	hub.OnMessageSend(conn, `{"room":"room-a","content":"hello world"}`)
 
 	if svc.n != 1 {
@@ -50,7 +50,7 @@ func TestOnMessageSend_SendsToMember(t *testing.T) {
 
 func TestOnMessageSend_NotInRoom_Denied(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-a", map[string]string{
 		"sock-1": "alice",
 	})
@@ -58,7 +58,7 @@ func TestOnMessageSend_NotInRoom_Denied(t *testing.T) {
 	svc := &stubMsgSvc{}
 	hub.SetMessageService(svc)
 
-	conn := newAuthedMockConn("sock-2", "bob")
+	conn := newAuthedMockClient("sock-2", "bob")
 	hub.OnMessageSend(conn, `{"room":"room-a","content":"hi"}`)
 
 	if svc.n != 0 {
@@ -68,7 +68,7 @@ func TestOnMessageSend_NotInRoom_Denied(t *testing.T) {
 
 func TestOnMessageSend_EmptyContent_Denied(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-a", map[string]string{
 		"sock-1": "alice",
 	})
@@ -76,7 +76,7 @@ func TestOnMessageSend_EmptyContent_Denied(t *testing.T) {
 	svc := &stubMsgSvc{}
 	hub.SetMessageService(svc)
 
-	conn := newAuthedMockConn("sock-1", "alice")
+	conn := newAuthedMockClient("sock-1", "alice")
 	hub.OnMessageSend(conn, `{"room":"room-a","content":""}`)
 
 	if svc.n != 0 {
@@ -86,7 +86,7 @@ func TestOnMessageSend_EmptyContent_Denied(t *testing.T) {
 
 func TestOnMessageSend_Unauthenticated_Denied(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-a", map[string]string{
 		"sock-1": "alice",
 	})
@@ -94,7 +94,7 @@ func TestOnMessageSend_Unauthenticated_Denied(t *testing.T) {
 	svc := &stubMsgSvc{}
 	hub.SetMessageService(svc)
 
-	conn := newMockConn("sock-1")
+	conn := newMockClient("sock-1")
 	hub.OnMessageSend(conn, `{"room":"room-a","content":"hi"}`)
 
 	if svc.n != 0 {
@@ -104,7 +104,7 @@ func TestOnMessageSend_Unauthenticated_Denied(t *testing.T) {
 
 func TestOnMessageSend_FallbackTextToContent(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-a", map[string]string{
 		"sock-1": "alice",
 	})
@@ -112,7 +112,7 @@ func TestOnMessageSend_FallbackTextToContent(t *testing.T) {
 	svc := &stubMsgSvc{}
 	hub.SetMessageService(svc)
 
-	conn := newAuthedMockConn("sock-1", "alice")
+	conn := newAuthedMockClient("sock-1", "alice")
 	hub.OnMessageSend(conn, `{"room":"room-a","text":"fallback text"}`)
 
 	if svc.n != 1 {
@@ -125,7 +125,7 @@ func TestOnMessageSend_FallbackTextToContent(t *testing.T) {
 
 func TestOnMessageSend_WithReplyTo(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-a", map[string]string{
 		"sock-1": "alice",
 	})
@@ -133,7 +133,7 @@ func TestOnMessageSend_WithReplyTo(t *testing.T) {
 	svc := &stubMsgSvc{}
 	hub.SetMessageService(svc)
 
-	conn := newAuthedMockConn("sock-1", "alice")
+	conn := newAuthedMockClient("sock-1", "alice")
 	hub.OnMessageSend(conn, `{"room":"room-a","content":"replying","replyTo":"msg-123"}`)
 
 	if svc.n != 1 {
@@ -146,19 +146,19 @@ func TestOnMessageSend_WithReplyTo(t *testing.T) {
 
 func TestOnMessageSend_NilService_Noop(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-a", map[string]string{
 		"sock-1": "alice",
 	})
 
-	conn := newAuthedMockConn("sock-1", "alice")
+	conn := newAuthedMockClient("sock-1", "alice")
 	// messageSvc is nil by default — should not panic
 	hub.OnMessageSend(conn, `{"room":"room-a","content":"hi"}`)
 }
 
 func TestOnMessageSend_InvalidJSON_Denied(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-a", map[string]string{
 		"sock-1": "alice",
 	})
@@ -166,7 +166,7 @@ func TestOnMessageSend_InvalidJSON_Denied(t *testing.T) {
 	svc := &stubMsgSvc{}
 	hub.SetMessageService(svc)
 
-	conn := newAuthedMockConn("sock-1", "alice")
+	conn := newAuthedMockClient("sock-1", "alice")
 	hub.OnMessageSend(conn, `not json`)
 
 	if svc.n != 0 {
@@ -176,7 +176,7 @@ func TestOnMessageSend_InvalidJSON_Denied(t *testing.T) {
 
 func TestOnMessageSend_MissingRoom_Denied(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-a", map[string]string{
 		"sock-1": "alice",
 	})
@@ -184,7 +184,7 @@ func TestOnMessageSend_MissingRoom_Denied(t *testing.T) {
 	svc := &stubMsgSvc{}
 	hub.SetMessageService(svc)
 
-	conn := newAuthedMockConn("sock-1", "alice")
+	conn := newAuthedMockClient("sock-1", "alice")
 	hub.OnMessageSend(conn, `{"content":"hi"}`)
 
 	if svc.n != 0 {
@@ -200,13 +200,13 @@ func (m *stubMuteStore) IsMutedByIdentity(identity string) (bool, *model.Mute, e
 
 func TestOnMessageSend_Muted_Denied(t *testing.T) {
 	hub := NewHub(nil, &stubMuteStore{}, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-a", map[string]string{
 		"sock-1": "alice",
 	})
 	svc := &stubMsgSvc{}
 	hub.SetMessageService(svc)
-	conn := newAuthedMockConn("sock-1", "alice")
+	conn := newAuthedMockClient("sock-1", "alice")
 	hub.OnMessageSend(conn, `{"room":"room-a","content":"hi"}`)
 	if svc.n != 0 {
 		t.Fatalf("expected 0 Send calls for muted user, got %d", svc.n)
@@ -217,7 +217,7 @@ func TestOnMessageSend_Muted_Denied(t *testing.T) {
 
 func TestOnMessageSend_KVPriority_FindsInKV(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 
 	// KV store has alice, local rooms is empty
 	kv := newMemStateStore()
@@ -232,7 +232,7 @@ func TestOnMessageSend_KVPriority_FindsInKV(t *testing.T) {
 	svc := &stubMsgSvc{}
 	hub.SetMessageService(svc)
 
-	conn := newAuthedMockConn("sock-1", "alice")
+	conn := newAuthedMockClient("sock-1", "alice")
 	hub.OnMessageSend(conn, `{"room":"room-a","content":"hi from kv"}`)
 
 	if svc.n != 1 {
@@ -248,7 +248,7 @@ func TestOnMessageSend_KVPriority_FindsInKV(t *testing.T) {
 
 func TestOnMessageSend_KVPriority_MissThenLocal(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	// alice is in local rooms
 	seedKickRoom(hub, "room-a", map[string]string{"sock-1": "alice"})
 
@@ -259,7 +259,7 @@ func TestOnMessageSend_KVPriority_MissThenLocal(t *testing.T) {
 	svc := &stubMsgSvc{}
 	hub.SetMessageService(svc)
 
-	conn := newAuthedMockConn("sock-1", "alice")
+	conn := newAuthedMockClient("sock-1", "alice")
 	hub.OnMessageSend(conn, `{"room":"room-a","content":"fallback to local"}`)
 
 	if svc.n != 1 {
@@ -272,7 +272,7 @@ func TestOnMessageSend_KVPriority_MissThenLocal(t *testing.T) {
 
 func TestOnMessageSend_KVPriority_NotFoundInBoth(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-a", map[string]string{"sock-1": "alice"})
 
 	kv := newMemStateStore()
@@ -281,7 +281,7 @@ func TestOnMessageSend_KVPriority_NotFoundInBoth(t *testing.T) {
 	svc := &stubMsgSvc{}
 	hub.SetMessageService(svc)
 
-	conn := newAuthedMockConn("sock-2", "bob")
+	conn := newAuthedMockClient("sock-2", "bob")
 	hub.OnMessageSend(conn, `{"room":"room-a","content":"hi"}`)
 
 	if svc.n != 0 {
@@ -291,7 +291,7 @@ func TestOnMessageSend_KVPriority_NotFoundInBoth(t *testing.T) {
 
 func TestOnMessageSend_KVPriority_KVNotFound_FallsBackToLocal(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-a", map[string]string{"sock-1": "alice"})
 
 	// KV returns error (room missing) → should fall back to local
@@ -301,7 +301,7 @@ func TestOnMessageSend_KVPriority_KVNotFound_FallsBackToLocal(t *testing.T) {
 	svc := &stubMsgSvc{}
 	hub.SetMessageService(svc)
 
-	conn := newAuthedMockConn("sock-1", "alice")
+	conn := newAuthedMockClient("sock-1", "alice")
 	hub.OnMessageSend(conn, `{"room":"room-a","content":"kv miss ok"}`)
 
 	if svc.n != 1 {
@@ -311,14 +311,14 @@ func TestOnMessageSend_KVPriority_KVNotFound_FallsBackToLocal(t *testing.T) {
 
 func TestOnMessageSend_KVPriority_NoKV_LocalOnly(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
-	hub.server = newMockServer()
+	hub.fanout = newMockBroadcaster()
 	seedKickRoom(hub, "room-a", map[string]string{"sock-1": "alice"})
 
 	// membershipStore is nil (no KV configured)
 	svc := &stubMsgSvc{}
 	hub.SetMessageService(svc)
 
-	conn := newAuthedMockConn("sock-1", "alice")
+	conn := newAuthedMockClient("sock-1", "alice")
 	hub.OnMessageSend(conn, `{"room":"room-a","content":"no kv ok"}`)
 
 	if svc.n != 1 {
