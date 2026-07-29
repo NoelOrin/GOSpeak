@@ -31,4 +31,6 @@ export const EVENTS = {
 	SFU_PROVIDER_CHANGED: "sfu:provider-changed",
 	MESSAGE_SEND: "message:send",
 	MESSAGE_NEW: "message:new",
+	PRIVATE_SEND: "private:send",
+	PRIVATE_NEW: "private:new",
 } as const;
