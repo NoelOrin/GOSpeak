@@ -8,7 +8,7 @@ import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
 
-	socketio "github.com/googollee/go-socket.io"
+	"GOSpeak/internal/ws"
 )
 
 const messageRateInterval = 250 * time.Millisecond
@@ -42,7 +42,7 @@ func (h *Hub) allowMessageSend(identity string) bool {
 	return true
 }
 
-func (h *Hub) OnMessageSend(s socketio.Conn, data string) (string, error) {
+func (h *Hub) OnMessageSend(c ws.ClientMessenger, data string) (string, error) {
 	if h.messageSvc == nil {
 		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, "service unavailable")
 	}
@@ -60,7 +60,7 @@ func (h *Hub) OnMessageSend(s socketio.Conn, data string) (string, error) {
 		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "empty content")
 	}
 
-	identity := claimsIdentity(s)
+	identity := clientIdentity(c)
 	if identity == "" {
 		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "not authenticated")
 	}
@@ -115,10 +115,8 @@ func (h *Hub) OnMessageSend(s socketio.Conn, data string) (string, error) {
 	}
 
 	role := "member"
-	if ctx := s.Context(); ctx != nil {
-		if claims, ok := ctx.(*pkg.Claims); ok && claims.Role != "" {
-			role = claims.Role
-		}
+	if claims := c.Claims(); claims != nil && claims.Role != "" {
+		role = claims.Role
 	}
 
 	dto, err := h.messageSvc.Send(context.Background(), service.MessageSendInput{

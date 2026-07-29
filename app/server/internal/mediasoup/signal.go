@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	socketio "github.com/googollee/go-socket.io"
+	"GOSpeak/internal/ws"
 )
 
 const recentCloseTTL = 5 * time.Minute
@@ -47,8 +47,8 @@ func NewMediasoupSignal(bridge *BridgeClient, broadcast BroadcastFn) *MediasoupS
 // 使用 named return (ret/err)：recover 在 defer 中需给命名返回值赋值才能覆盖 panic 路径的结果。
 // panic 时 err 设为 nil：错误已写入 ret 的 JSON body，让 socket.io 走成功 ack 通道把 body 回传客户端，
 // 避免库层 error（NACK/断连）干扰应用层错误语义。debug.Stack 记录调用栈便于定位。
-func safeHandler(fn func(s socketio.Conn, payload string) (string, error)) func(s socketio.Conn, payload string) (ret string, err error) {
-	return func(s socketio.Conn, payload string) (ret string, err error) {
+func safeHandler(fn func(s ws.ClientMessenger, payload string) (string, error)) func(s ws.ClientMessenger, payload string) (ret string, err error) {
+	return func(s ws.ClientMessenger, payload string) (ret string, err error) {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("[mediasoup] handler panic: %v\n%s", r, debug.Stack())
@@ -60,8 +60,8 @@ func safeHandler(fn func(s socketio.Conn, payload string) (string, error)) func(
 	}
 }
 
-func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
-	server.OnEvent("/", "sfu:get-router-capabilities", safeHandler(func(s socketio.Conn, payload string) (string, error) {
+func (m *MediasoupSignal) RegisterWS(register func(event string, fn func(ws.ClientMessenger, string) (string, error))) {
+	register("sfu:get-router-capabilities", safeHandler(func(s ws.ClientMessenger, payload string) (string, error) {
 		var req struct {
 			Room string `json:"room"`
 		}
@@ -80,7 +80,7 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 		return marshalJSON(map[string]interface{}{"rtpCapabilities": rtpCaps}), nil
 	}))
 
-	server.OnEvent("/", "sfu:create-transport", safeHandler(func(s socketio.Conn, payload string) (string, error) {
+	register("sfu:create-transport", safeHandler(func(s ws.ClientMessenger, payload string) (string, error) {
 		var req struct {
 			Room      string `json:"room"`
 			Direction string `json:"direction,omitempty"`
@@ -96,7 +96,7 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 		return marshalJSON(params), nil
 	}))
 
-	server.OnEvent("/", "sfu:connect-transport", safeHandler(func(s socketio.Conn, payload string) (string, error) {
+	register("sfu:connect-transport", safeHandler(func(s ws.ClientMessenger, payload string) (string, error) {
 		var req struct {
 			Room           string          `json:"room"`
 			TransportID    string          `json:"transportId"`
@@ -111,7 +111,7 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 		return `{"ok":true}`, nil
 	}))
 
-	server.OnEvent("/", "sfu:produce", safeHandler(func(s socketio.Conn, payload string) (string, error) {
+	register("sfu:produce", safeHandler(func(s ws.ClientMessenger, payload string) (string, error) {
 		var req struct {
 			Room          string          `json:"room"`
 			TransportID   string          `json:"transportId"`
@@ -142,7 +142,7 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 		return marshalJSON(result), nil
 	}))
 
-	server.OnEvent("/", "sfu:consume", safeHandler(func(s socketio.Conn, payload string) (string, error) {
+	register("sfu:consume", safeHandler(func(s ws.ClientMessenger, payload string) (string, error) {
 		var req struct {
 			Room            string          `json:"room"`
 			TransportID     string          `json:"transportId"`
@@ -159,7 +159,7 @@ func (m *MediasoupSignal) RegisterRoutes(server *socketio.Server) {
 		return marshalJSON(result), nil
 	}))
 
-	server.OnEvent("/", "sfu:close-transport", safeHandler(func(s socketio.Conn, payload string) (string, error) {
+	register("sfu:close-transport", safeHandler(func(s ws.ClientMessenger, payload string) (string, error) {
 		var req struct {
 			Room     string `json:"room"`
 			Identity string `json:"identity"`

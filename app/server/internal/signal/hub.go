@@ -11,13 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
-	socketio "github.com/googollee/go-socket.io"
+	"GOSpeak/internal/ws"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -79,12 +77,7 @@ func roomInitByIdentity(room *Room) {
 	}
 }
 
-//// socketServer abstracts the socketio.Server methods used by Hub, enabling testing.
-type socketServer interface {
-	BroadcastToNamespace(namespace string, event string, args ...interface{}) bool
-	BroadcastToRoom(namespace string, room string, event string, args ...interface{}) bool
-	ForEach(namespace string, room string, f socketio.EachFunc) bool
-}
+// socketServer is replaced by ws.Broadcaster.
 
 // eventBus is the narrow publish surface used by Hub for client fanout.
 // *bus.NATSBus satisfies this without importing the bus package here.
@@ -131,7 +124,7 @@ type permChecker interface {
 
 // SFUSignalHandler 注册 provider 专属的 sfu:* 媒体协商事件。
 type SFUSignalHandler interface {
-	RegisterRoutes(server *socketio.Server)
+	RegisterWS(register func(event string, fn func(ws.ClientMessenger, string) (string, error)))
 }
 
 // broadcastFn 供 provider 模块广播房间事件，无需依赖 Hub 具体类型。
@@ -149,7 +142,7 @@ type ParticipantCleanupHandler interface {
 }
 
 type Hub struct {
-	server           socketServer
+	fanout           ws.Broadcaster
 	eventBus         eventBus
 	sfuProvider      sfu.Provider
 	sfuProviderName  string
@@ -193,8 +186,8 @@ func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permCh
 	}
 }
 
-func (h *Hub) SetServer(server *socketio.Server) {
-	h.server = server
+func (h *Hub) SetFanout(f ws.Broadcaster) {
+	h.fanout = f
 }
 
 func (h *Hub) SetSFU(provider sfu.Provider) {
@@ -214,41 +207,38 @@ func (h *Hub) SetStreamResolver(r StreamNameResolver) {
 
 // ─── 事件注册 ───
 
-func (h *Hub) SetupRoutes(server *socketio.Server) {
-	h.SetServer(server)
+// SetupFanout registers all signal event handlers with the WS HandlerRegistry.
+func (h *Hub) SetupFanout(fanout ws.Broadcaster, handler *ws.HandlerRegistry) {
+	h.SetFanout(fanout)
 
-	server.OnConnect("/", safeOnConnect(h.OnConnect))
-	server.OnDisconnect("/", safeOnDisconnect(h.OnDisconnect))
-	server.OnError("/", safeOnError(h.OnError))
-	server.OnEvent("/", EventRoomCreate, safeOnEventData(h.OnRoomCreate))
-	server.OnEvent("/", EventRoomJoin, safeOnEventDataAck(h.OnRoomJoin))
-	server.OnEvent("/", EventRoomJoinSFU, safeOnEventDataAck(h.OnRoomJoinSFU))
-	server.OnEvent("/", EventRoomLeave, safeOnEventDataAck(h.OnRoomLeave))
-	server.OnEvent("/", EventRoomList, safeOnEventNoData(h.OnRoomList))
-	server.OnEvent("/", EventRoomKick, safeOnEventData(h.OnRoomKick))
-	server.OnEvent("/", EventMemberMicState, safeOnEventData(h.OnMemberMicState))
-	server.OnEvent("/", EventMemberSpeaking, safeOnEventData(h.OnMemberSpeaking))
-	server.OnEvent("/",  EventBotCommand, safeOnEventData(h.PublishBotCommand))
-	server.OnEvent("/",  EventBotMessage, safeOnEventData(h.PublishBotMessage))
-	server.OnEvent("/", EventMessageSend, safeOnEventDataAck(h.OnMessageSend))
+	handler.Handle(EventRoomCreate, safeHandler(h.OnRoomCreate))
+	handler.HandleAck(EventRoomJoin, safeHandlerAck(h.OnRoomJoin))
+	handler.HandleAck(EventRoomJoinSFU, safeHandlerAck(h.OnRoomJoinSFU))
+	handler.HandleAck(EventRoomLeave, safeHandlerAck(h.OnRoomLeave))
+	handler.Handle(EventRoomList, safeHandlerNoData(h.OnRoomList))
+	handler.Handle(EventRoomKick, safeHandler(h.OnRoomKick))
+	handler.Handle(EventMemberMicState, safeHandler(h.OnMemberMicState))
+	handler.Handle(EventMemberSpeaking, safeHandler(h.OnMemberSpeaking))
+	handler.Handle(EventBotCommand, safeHandler(h.PublishBotCommand))
+	handler.Handle(EventBotMessage, safeHandler(h.PublishBotMessage))
+	handler.HandleAck(EventMessageSend, safeHandlerAck(h.OnMessageSend))
 
 	if h.sfuSignalHandler != nil {
-		h.sfuSignalHandler.RegisterRoutes(server)
+		h.sfuSignalHandler.RegisterWS(handler.HandleAck)
 	}
 }
 
 // claimsIdentity 从连接上下文读取 JWT 身份；未鉴权返回空。
-func claimsIdentity(s socketio.Conn) string {
-	ctx := s.Context()
-	if claims, ok := ctx.(*pkg.Claims); ok && claims != nil {
-		return claims.Username
+func clientIdentity(c ws.ClientMessenger) string {
+	if c == nil || c.Claims() == nil {
+		return ""
 	}
-	return ""
+	return c.Claims().Username
 }
 
 // resolveIdentity 强制使用 JWT 身份，忽略客户端伪造的 identity。
-func resolveIdentity(s socketio.Conn, requested string) (string, error) {
-	identity := claimsIdentity(s)
+func resolveIdentity(c ws.ClientMessenger, requested string) (string, error) {
+	identity := clientIdentity(c)
 	if identity == "" {
 		return "", fmt.Errorf("unauthorized")
 	}
@@ -260,40 +250,16 @@ func resolveIdentity(s socketio.Conn, requested string) (string, error) {
 
 // ─── 连接/断开 ───
 
-func (h *Hub) OnConnect(s socketio.Conn) error {
-	// JWT 鉴权：优先从 HTTP 升级请求头提取 Bearer token，
-	// 纯 WebSocket 连接不支持自定义 header，fallback 到 cookie / query。
-	// 与 HTTP JWTAuth 共用 middleware.VerifyToken，保证 TokenVersion/黑名单口径一致。
-	tokenStr := ""
-	authHeader := s.RemoteHeader().Get("Authorization")
-	if authHeader != "" {
-		tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
-		if tokenStr == authHeader {
-			tokenStr = authHeader
-		}
-	}
-	if tokenStr == "" {
-		if cookie, err := (&http.Request{Header: s.RemoteHeader()}).Cookie("gospeak_token"); err == nil {
-			tokenStr = cookie.Value
-		}
-	}
-	if tokenStr == "" {
-		u := s.URL()
-		tokenStr = u.Query().Get("token")
-	}
-	if tokenStr == "" {
-		return fmt.Errorf("authorization token required")
-	}
-	claims, code := middleware.VerifyToken(tokenStr)
-	if code != pkg.SUCCESS {
-		return fmt.Errorf("unauthorized: %s", code.String())
-	}
-	s.SetContext(claims)
-	log.Printf("[Signal] client connected: %s", s.ID())
+// OnConnect is called when a new WS client connects.
+// JWT auth is handled by the Upgrader before the client reaches the Hub;
+// this hook is for logging only. The connection is already authenticated
+// and claims are available via c.Claims().
+func (h *Hub) OnConnect(c ws.ClientMessenger) error {
+	log.Printf("[Signal] client connected: %s", c.ID())
 	return nil
 }
 
-func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
+func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	type disconnectCleanup struct {
 		room     string
 		identity string
@@ -311,11 +277,11 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 	var leaveEvents []leaveEvent
 	h.mu.Lock()
 	for roomName, room := range h.rooms {
-		if member, ok := room.Members[s.ID()]; ok {
+		if member, ok := room.Members[c.ID()]; ok {
 			identity := member.Identity
 			stream := member.Stream
 			wasSpeaking := room.Speaking[identity]
-			roomDelMember(room, s.ID())
+			roomDelMember(room, c.ID())
 			delete(room.Speaking, identity)
 			delete(room.MicMuted, identity)
 			h.unregisterStreamLocked(roomName, identity, stream)
@@ -328,7 +294,7 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 			leaveEvents = append(leaveEvents, leaveEvent{
 				room:     roomName,
 				identity: identity,
-				id:       s.ID(),
+				id:       c.ID(),
 			})
 			updatedRooms = append(updatedRooms, roomName)
 			deleted := h.deleteRoomIfEmptyLocked(roomName)
@@ -358,7 +324,7 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 	}
 
 	// SFU 清理异步：RemoveParticipant/DeleteRoom 是 HTTP/gRPC 调用，可能慢。
-	// 同步阻塞会拉长 OnDisconnect 持续时间，加剧 go-socket.io 内部 goroutine
+	// 同步阻塞会拉长 OnDisconnect 持续时间，加剧连接 goroutine
 	// 竞态（连接已 failed 时库 serveRead 状态错乱触发 gorilla panic）。
 	// 丢后台 goroutine，handler 立即返回。
 	if len(cleanups) > 0 {
@@ -395,36 +361,36 @@ func (h *Hub) OnDisconnect(s socketio.Conn, reason string) {
 		h.broadcastRoomUpdatedLocal(name)
 	}
 
-	log.Printf("[Signal] client disconnected: %s, reason: %s", s.ID(), reason)
+	log.Printf("[Signal] client disconnected: %s", c.ID())
 }
 
 // ─── 房间创建 ───
 
 // OnError 兜底处理 socket.io 层 error（含 OnConnect 返回的 panic error）。
 // 仅记录日志，不做断连等副作用——连接级错误由库自行处理。
-func (h *Hub) OnError(s socketio.Conn, err error) {
-	if s == nil {
+func (h *Hub) OnError(c ws.ClientMessenger, err error) {
+	if c == nil {
 		log.Printf("[Signal] socket error: err=%v", err)
 		return
 	}
-	log.Printf("[Signal] socket error: conn=%s err=%v", s.ID(), err)
+	log.Printf("[Signal] socket error: conn=%s err=%v", c.ID(), err)
 }
 
-func (h *Hub) OnRoomCreate(s socketio.Conn, data string) {
+func (h *Hub) OnRoomCreate(c ws.ClientMessenger, data string) {
 	var req RoomRequest
 	if err := parseJSON(data, &req); err != nil || req.Room == "" {
-		s.Emit(EventRoomCreated, map[string]interface{}{
+		c.Send(map[string]interface{}{"event": EventRoomCreated, "data": map[string]interface{}{
 			"error": "room name is required",
-		})
+		}})
 		return
 	}
 
 	h.mu.Lock()
 	if _, exists := h.rooms[roomKey(req.GuildUUID, req.Room)]; exists {
 		h.mu.Unlock()
-		s.Emit(EventRoomCreated, map[string]interface{}{
+		c.Send(map[string]interface{}{"event": EventRoomCreated, "data": map[string]interface{}{
 			"error": "room already exists",
-		})
+		}})
 		return
 	}
 
@@ -439,18 +405,18 @@ func (h *Hub) OnRoomCreate(s socketio.Conn, data string) {
 	roomInfo := h.roomInfoLocked(req.Room)
 	h.mu.Unlock()
 
-	log.Printf("[Signal] room created: %s by %s", req.Room, s.ID())
+	log.Printf("[Signal] room created: %s by %s", req.Room, c.ID())
 
-	s.Emit(EventRoomCreated, roomInfo)
+	c.Send(map[string]interface{}{"event": EventRoomCreated, "data": roomInfo})
 	h.broadcastRoomUpdatedLocal(roomInfo.Name)
 }
 
 // ─── 加入房间 ───
 //
 // 加入流程分两阶段：
-//  1. OnRoomJoin     — 信令面。仅校验权限 + s.Join() socketio room，不写 h.rooms 成员。
+//  1. OnRoomJoin     — 信令面。仅校验权限 + fanout room join，不写 h.rooms 成员。
 //  2. OnRoomJoinSFU  — 媒体面。SFU 连接确认后写成员 + 广播 MemberJoined/RoomUpdated。
-func (h *Hub) OnRoomJoin(s socketio.Conn, data string) (string, error) {
+func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 	var req RoomRequest
 	if err := parseJSON(data, &req); err != nil || req.Room == "" {
 		return marshalAck(map[string]interface{}{
@@ -458,7 +424,7 @@ func (h *Hub) OnRoomJoin(s socketio.Conn, data string) (string, error) {
 		})
 	}
 
-	identity, err := resolveIdentity(s, req.Identity)
+	identity, err := resolveIdentity(c, req.Identity)
 	if err != nil {
 		return marshalAck(map[string]interface{}{
 			"error": err.Error(),
@@ -516,7 +482,7 @@ func (h *Hub) OnRoomJoin(s socketio.Conn, data string) (string, error) {
 	// 提前拦截重复身份：已通过 OnRoomJoinSFU 写入 h.rooms 的在线用户，新 socket 在 OnRoomJoin 阶段即阻断。
 	// 并发场景由 OnRoomJoinSFU 的 duplicate check 兜底，此处为提前拦截以节省媒体连接开销。
 	h.mu.RLock()
-	dup := h.duplicateIdentityLocked(req.Room, identity, s.ID())
+	dup := h.duplicateIdentityLocked(req.Room, identity, c.ID())
 	h.mu.RUnlock()
 	if dup {
 		return marshalAck(map[string]interface{}{
@@ -526,9 +492,9 @@ func (h *Hub) OnRoomJoin(s socketio.Conn, data string) (string, error) {
 		})
 	}
 
-	s.Join(req.Room)
+	h.fanout.Join(req.Room, c.ID())
 
-	log.Printf("[Signal] %s (%s) signaling ready for room: %s", s.ID(), identity, req.Room)
+	log.Printf("[Signal] %s (%s) signaling ready for room: %s", c.ID(), identity, req.Room)
 
 	return marshalAck(map[string]interface{}{
 		"room":     req.Room,
@@ -537,13 +503,13 @@ func (h *Hub) OnRoomJoin(s socketio.Conn, data string) (string, error) {
 }
 
 // OnRoomJoinSFU 在 SFU 媒体连接确认后写成员并广播加入。
-func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
+func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	var req RoomRequest
 	if err := parseJSON(data, &req); err != nil || req.Room == "" {
 		return marshalAck(map[string]interface{}{"error": "room name is required"})
 	}
 
-	identity, err := resolveIdentity(s, req.Identity)
+	identity, err := resolveIdentity(c, req.Identity)
 	if err != nil {
 		return marshalAck(map[string]interface{}{"error": err.Error()})
 	}
@@ -551,7 +517,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 
 	// phase2 复检 mute / limit / password，避免 phase1 通过后状态变化
 	if ok, pwdErr := h.CheckRoomPassword(req.Room, req.Password); !ok {
-		s.Leave(req.Room)
+		h.fanout.Leave(req.Room, c.ID())
 		if pwdErr != nil {
 			return marshalAck(map[string]interface{}{"error": "room requires password"})
 		}
@@ -560,16 +526,16 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 	if h.muteStore != nil {
 		muted, _, muteErr := h.muteStore.IsMutedByIdentity(identity)
 		if muteErr != nil {
-			s.Leave(req.Room)
+			h.fanout.Leave(req.Room, c.ID())
 			return marshalAck(map[string]interface{}{"error": "mute check failed"})
 		}
 		if muted {
-			s.Leave(req.Room)
+			h.fanout.Leave(req.Room, c.ID())
 			return marshalAck(map[string]interface{}{"error": "user is muted", "muted": true})
 		}
 	}
 	if full, limit, count, _ := h.CheckRoomLimit(req.Room); full {
-		s.Leave(req.Room)
+		h.fanout.Leave(req.Room, c.ID())
 		return marshalAck(map[string]interface{}{"error": "room is full", "limit": limit, "count": count})
 	}
 
@@ -579,7 +545,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 	}
 
 	member := &MemberInfo{
-		ID:       s.ID(),
+		ID:       c.ID(),
 		Identity: identity,
 		JoinedAt: time.Now().UnixMilli(),
 		Stream:   req.Stream,
@@ -587,10 +553,10 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 
 	h.mu.Lock()
 	// 重复身份检查：同一房间不允许同一 identity 用不同 socket 重复加入
-	if h.duplicateIdentityLocked(req.Room, identity, s.ID()) {
+	if h.duplicateIdentityLocked(req.Room, identity, c.ID()) {
 		h.mu.Unlock()
 		// 拒绝加入：回退 phase1 的 s.Join，避免 socket 残留在 socket.io room
-		s.Leave(req.Room)
+		h.fanout.Leave(req.Room, c.ID())
 		return marshalAck(map[string]interface{}{
 			"error":    "duplicate connection not allowed",
 			"room":     req.Room,
@@ -608,7 +574,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 		}
 		h.rooms[roomKey(req.GuildUUID, req.Room)] = room
 	}
-	roomSetMember(room, s.ID(), identity, member)
+	roomSetMember(room, c.ID(), identity, member)
 	h.registerStreamLocked(req.Room, identity, req.Stream)
 	memberList := h.getMembersLocked(req.Room)
 	h.mu.Unlock()
@@ -617,18 +583,18 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 		h.syncStreamPut(req.Stream, req.Room, identity)
 	}
 
-	log.Printf("[Signal] sfu confirmed: %s in %s", s.ID(), req.Room)
+	log.Printf("[Signal] sfu confirmed: %s in %s", c.ID(), req.Room)
 
 	h.mu.RLock()
 	_, memberExists := h.rooms[roomKey(req.GuildUUID, req.Room)]
 	if memberExists {
-		_, memberExists = h.rooms[roomKey(req.GuildUUID, req.Room)].Members[s.ID()]
+		_, memberExists = h.rooms[roomKey(req.GuildUUID, req.Room)].Members[c.ID()]
 	}
 	h.mu.RUnlock()
 	if !memberExists {
-		log.Printf("[Signal] sfu join rejected: %s not in room %s", s.ID(), req.Room)
+		log.Printf("[Signal] sfu join rejected: %s not in room %s", c.ID(), req.Room)
 		// 回退 phase1 的 s.Join，避免 socket 残留在 socket.io room
-		s.Leave(req.Room)
+		h.fanout.Leave(req.Room, c.ID())
 		return marshalAck(map[string]interface{}{
 			"error": "not in room",
 		})
@@ -637,7 +603,7 @@ func (h *Hub) OnRoomJoinSFU(s socketio.Conn, data string) (string, error) {
 	h.publishRoom(req.Room, EventMemberJoined, map[string]interface{}{
 		"room":     req.Room,
 		"identity": identity,
-		"id":       s.ID(),
+		"id":       c.ID(),
 		"stream":   req.Stream,
 	})
 
@@ -661,7 +627,7 @@ func marshalAck(v interface{}) (string, error) {
 
 // ─── 离开房间 ───
 
-func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
+func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 	var req RoomRequest
 	if err := parseJSON(data, &req); err != nil || req.Room == "" {
 		return marshalAck(map[string]interface{}{
@@ -669,7 +635,7 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 		})
 	}
 
-	s.Leave(req.Room)
+	h.fanout.Leave(req.Room, c.ID())
 
 	var identity string
 	var stream string
@@ -677,11 +643,11 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 	roomDeleted := false
 	h.mu.Lock()
 	if room, exists := h.rooms[roomKey(req.GuildUUID, req.Room)]; exists {
-		if member, ok := room.Members[s.ID()]; ok {
+		if member, ok := room.Members[c.ID()]; ok {
 			identity = member.Identity
 			wasSpeaking = room.Speaking[identity]
 			stream = member.Stream
-			roomDelMember(room, s.ID())
+			roomDelMember(room, c.ID())
 			delete(room.Speaking, identity)
 			delete(room.MicMuted, identity)
 			h.unregisterStreamLocked(req.Room, identity, stream)
@@ -710,19 +676,19 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 	}
 
 	if identity == "" {
-		identity = s.ID()
+		identity = c.ID()
 	}
 
-	log.Printf("[Signal] %s (%s) left room: %s", s.ID(), identity, req.Room)
+	log.Printf("[Signal] %s (%s) left room: %s", c.ID(), identity, req.Room)
 
-	s.Emit(EventRoomLeft, map[string]interface{}{
+	c.Send(map[string]interface{}{"event": EventRoomLeft, "data": map[string]interface{}{
 		"room": req.Room,
-	})
+	}})
 
 	h.publishRoom(req.Room, EventMemberLeft, map[string]interface{}{
 		"room":     req.Room,
 		"identity": identity,
-		"id":       s.ID(),
+		"id":       c.ID(),
 	})
 
 	// 房间已空被删除则广播房间列表，否则广播单房间更新（与 OnDisconnect 一致）
@@ -741,17 +707,17 @@ func (h *Hub) OnRoomLeave(s socketio.Conn, data string) (string, error) {
 
 // ─── 房间列表 ───
 
-func (h *Hub) OnRoomList(s socketio.Conn) {
+func (h *Hub) OnRoomList(c ws.ClientMessenger) {
 	rooms := h.getMergedRooms()
-	s.Emit(EventRoomListResult, map[string]interface{}{
+	c.Send(map[string]interface{}{"event": EventRoomListResult, "data": map[string]interface{}{
 		"rooms": rooms,
 		"count": len(rooms),
-	})
+	}})
 }
 
 // ─── 踢出成员 ───
 
-func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
+func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 	var req struct {
 		Room           string `json:"room"`
 		GuildUUID      string `json:"guild_uuid,omitempty"`
@@ -768,7 +734,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 		h.mu.Unlock()
 		return
 	}
-	caller, ok := room.Members[s.ID()]
+	caller, ok := room.Members[c.ID()]
 	if !ok {
 		h.mu.Unlock()
 		return
@@ -777,10 +743,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 	h.mu.Unlock()
 
 	// 权限：优先用连接 JWT claims.Permissions（Bot token），否则回退 role 映射。
-	var claims *pkg.Claims
-	if ctx := s.Context(); ctx != nil {
-		claims, _ = ctx.(*pkg.Claims)
-	}
+	claims := c.Claims()
 	role := ""
 	if claims != nil {
 		role = claims.Role
@@ -818,7 +781,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 		return
 	}
 	var targetSocketID string
-	var targetConn socketio.Conn
+	var targetConn ws.ClientMessenger
 	var targetStream string
 	targetWasSpeaking := false
 	roomDeleted := false
@@ -845,19 +808,21 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 		h.syncStreamDelete(targetStream)
 	}
 
-	// 从 socket.io room 移除目标连接，避免继续收事件
-	if h.server != nil {
-		h.server.ForEach("/", req.Room, func(conn socketio.Conn) {
+	// 从 fanout room 移除目标连接，避免继续收事件
+	if h.fanout != nil {
+		h.fanout.ForEach(req.Room, func(conn ws.ClientMessenger) bool {
 			if conn != nil && conn.ID() == targetSocketID {
 				targetConn = conn
+				return false
 			}
+			return true
 		})
 		if targetConn != nil {
-			targetConn.Leave(req.Room)
+			h.fanout.Leave(req.Room, targetConn.ID())
 		}
 	}
 
-	log.Printf("[Signal] %s kicked %s from room: %s", s.ID(), req.TargetIdentity, req.Room)
+	log.Printf("[Signal] %s kicked %s from room: %s", c.ID(), req.TargetIdentity, req.Room)
 
 	// 信令层踢人始终先生效；SFU 层按 Capabilities.ServerKick 尽力 hard-enforce。
 	enforcement := h.removeParticipantSafe(req.Room, req.TargetIdentity)
@@ -869,11 +834,11 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 		"enforcement":    enforcement,
 	})
 	if targetConn != nil {
-		targetConn.Emit(EventRoomKicked, map[string]interface{}{
+		targetConn.Send(map[string]interface{}{"event": EventRoomKicked, "data": map[string]interface{}{
 			"room":           req.Room,
 			"targetIdentity": req.TargetIdentity,
 			"enforcement":    enforcement,
-		})
+		}})
 	}
 
 	// 通知全员成员离开
@@ -902,7 +867,7 @@ func (h *Hub) OnRoomKick(s socketio.Conn, data string) {
 	}
 }
 
-func (h *Hub) OnMemberMicState(s socketio.Conn, data string) {
+func (h *Hub) OnMemberMicState(c ws.ClientMessenger, data string) {
 	var req struct {
 		Room       string `json:"room"`
 		GuildUUID  string `json:"guild_uuid,omitempty"`
@@ -919,7 +884,7 @@ func (h *Hub) OnMemberMicState(s socketio.Conn, data string) {
 		h.mu.Unlock()
 		return
 	}
-	caller := room.Members[s.ID()]
+	caller := room.Members[c.ID()]
 	if caller == nil || caller.Identity != req.Identity {
 		h.mu.Unlock()
 		return
@@ -940,7 +905,7 @@ func (h *Hub) OnMemberMicState(s socketio.Conn, data string) {
 // OnMemberSpeaking 接收成员本地发言态上报（SRS / Cloudflare 等无 SFU 原生
 // active speaker 的 provider）。服务端按 room 聚合后广播 room:active-speakers。
 // 仅持有本地麦克风的成员可上报自身状态，避免伪造他人发言态。
-func (h *Hub) OnMemberSpeaking(s socketio.Conn, data string) {
+func (h *Hub) OnMemberSpeaking(c ws.ClientMessenger, data string) {
 	var req struct {
 		Room      string `json:"room"`
 		GuildUUID string `json:"guild_uuid,omitempty"`
@@ -957,7 +922,7 @@ func (h *Hub) OnMemberSpeaking(s socketio.Conn, data string) {
 		h.mu.Unlock()
 		return
 	}
-	caller := room.Members[s.ID()]
+	caller := room.Members[c.ID()]
 	if caller == nil || caller.Identity != req.Identity {
 		h.mu.Unlock()
 		return
@@ -989,7 +954,7 @@ func (h *Hub) computeActiveSpeakersLocked(roomName string) []string {
 // broadcastActiveSpeakers 向房间广播当前 active speakers 列表（用于无 SFU 原生
 // active speaker 的 provider）。发言人清空（离开/断连）时也同样广播空列表以重置高亮。
 func (h *Hub) broadcastActiveSpeakers(roomName string) {
-	if h.server == nil {
+	if h.fanout == nil {
 		return
 	}
 	h.mu.RLock()
@@ -1150,7 +1115,7 @@ func (h *Hub) GetRooms() []RoomInfo {
 // broadcastRoomList 向全员推送最新房间列表。
 // 事件名必须是 room:list:result（与 OnRoomList 一致）；room:list 是客户端请求事件，前端不监听。
 func (h *Hub) broadcastRoomList() {
-	if h.server == nil {
+	if h.fanout == nil {
 		return
 	}
 	rooms := h.GetRooms()
@@ -1353,8 +1318,8 @@ func (h *Hub) publishRoom(room, event string, data interface{}) {
 		}
 		return
 	}
-	if h.server != nil {
-		h.server.BroadcastToRoom("/", room, event, data)
+	if h.fanout != nil {
+		h.fanout.BroadcastToRoom(room, event, data)
 	}
 }
 
@@ -1365,16 +1330,16 @@ func (h *Hub) publishNamespace(event string, data interface{}) {
 		}
 		return
 	}
-	if h.server != nil {
-		h.server.BroadcastToNamespace("/", event, data)
+	if h.fanout != nil {
+		h.fanout.BroadcastToNamespace(event, data)
 	}
 }
 
 // localNamespace 仅本机广播，不经 EventBus。
 // 用于携带本机内存状态快照的事件（room:list:result / room:updated），避免跨实例投递错误成员数。
 func (h *Hub) localNamespace(event string, data interface{}) {
-	if h.server != nil {
-		h.server.BroadcastToNamespace("/", event, data)
+	if h.fanout != nil {
+		h.fanout.BroadcastToNamespace(event, data)
 	}
 }
 
@@ -1492,11 +1457,12 @@ func (h *Hub) clearLocalRoomsForSFUSwitch() {
 			roomDelMember(room, sid)
 			delete(room.Speaking, identity)
 			delete(room.MicMuted, identity)
-			if h.server != nil {
-				h.server.ForEach("/", roomName, func(conn socketio.Conn) {
+			if h.fanout != nil {
+				h.fanout.ForEach(roomName, func(conn ws.ClientMessenger) bool {
 					if conn != nil && conn.ID() == sid {
-						conn.Leave(roomName)
+						h.fanout.Leave(roomName, conn.ID())
 					}
+					return true
 				})
 			}
 		}

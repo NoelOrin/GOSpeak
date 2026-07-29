@@ -1,12 +1,11 @@
 package signal
 
 import (
-	"GOSpeak/internal/pkg"
 	"encoding/json"
 	"fmt"
 	"time"
 
-	socketio "github.com/googollee/go-socket.io"
+	"GOSpeak/internal/ws"
 )
 
 // botMessagePayload is the client→server payload for bot:command and bot:message.
@@ -34,17 +33,17 @@ type broadcastBotMessage struct {
 // PublishBotCommand handles bot:command events from clients.
 // Bot commands are text-only (≤500 chars) and only accepted from JWT-authenticated
 // members already present in the room.
-func (h *Hub) PublishBotCommand(s socketio.Conn, data string) {
-	h.publishBotMessage(s, data, EventBotCommand)
+func (h *Hub) PublishBotCommand(c ws.ClientMessenger, data string) {
+	h.publishBotMessage(c, data, EventBotCommand)
 }
 
 // PublishBotMessage handles bot:message events from clients.
 // Same validation as PublishBotCommand but supports optional replyTo.
-func (h *Hub) PublishBotMessage(s socketio.Conn, data string) {
-	h.publishBotMessage(s, data, EventBotMessage)
+func (h *Hub) PublishBotMessage(c ws.ClientMessenger, data string) {
+	h.publishBotMessage(c, data, EventBotMessage)
 }
 
-func (h *Hub) publishBotMessage(s socketio.Conn, data string, event string) {
+func (h *Hub) publishBotMessage(c ws.ClientMessenger, data string, event string) {
 	var req botMessagePayload
 	if err := parseJSON(data, &req); err != nil {
 		return
@@ -65,7 +64,7 @@ func (h *Hub) publishBotMessage(s socketio.Conn, data string, event string) {
 	}
 
 	// JWT identity
-	callerIdentity := claimsIdentity(s)
+	callerIdentity := clientIdentity(c)
 	if callerIdentity == "" {
 		return
 	}
@@ -91,10 +90,7 @@ func (h *Hub) publishBotMessage(s socketio.Conn, data string, event string) {
 	}
 
 	// Build broadcast payload
-	var claims *pkg.Claims
-	if ctx := s.Context(); ctx != nil {
-		claims, _ = ctx.(*pkg.Claims)
-	}
+	claims := c.Claims()
 	displayName := member.DisplayName
 	if displayName == "" {
 		displayName = member.Name
@@ -118,7 +114,7 @@ func (h *Hub) publishBotMessage(s socketio.Conn, data string, event string) {
 	payload, _ := json.Marshal(broadcast)
 
 	// Broadcast to entire room
-	if h.server != nil {
-		h.server.BroadcastToRoom("/", req.Room, event, string(payload))
+	if h.fanout != nil {
+		h.fanout.BroadcastToRoom(req.Room, event, string(payload))
 	}
 }
