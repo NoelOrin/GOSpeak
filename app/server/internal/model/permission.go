@@ -49,6 +49,13 @@ const (
 
 	PermPluginRead   = permcode.PermPluginRead
 	PermPluginManage = permcode.PermPluginManage
+	PermGuildCreate     = permcode.PermGuildCreate
+	PermGuildRead       = permcode.PermGuildRead
+	PermGuildManage     = permcode.PermGuildManage
+	PermGuildDelete     = permcode.PermGuildDelete
+	PermGuildInvite     = permcode.PermGuildInvite
+	PermGuildKick       = permcode.PermGuildKick
+	PermGuildRoleManage = permcode.PermGuildRoleManage
 )
 
 
@@ -83,6 +90,13 @@ var DefaultPermissions = []Permission{
 
 	{Code: PermPluginRead, Name: "查看插件", Description: "查看后端插件列表与配置"},
 	{Code: PermPluginManage, Name: "管理插件", Description: "启用/停用插件并修改插件配置"},
+	{Code: PermGuildCreate, Name: "创建语音服务器", Description: "创建新的语音服务器"},
+	{Code: PermGuildRead, Name: "查看语音服务器", Description: "查看语音服务器列表"},
+	{Code: PermGuildManage, Name: "管理语音服务器", Description: "修改语音服务器设置"},
+	{Code: PermGuildDelete, Name: "删除语音服务器", Description: "删除语音服务器"},
+	{Code: PermGuildInvite, Name: "邀请成员", Description: "生成和管理邀请码"},
+	{Code: PermGuildKick, Name: "踢出成员", Description: "将成员移出语音服务器"},
+	{Code: PermGuildRoleManage, Name: "管理 Guild 角色", Description: "管理语音服务器内的角色和权限"},
 }
 
 
@@ -128,11 +142,14 @@ var DefaultRolePermissions = map[string][]string{
 		PermStorageRead, PermStorageManage, PermStorageDelete,
 		PermOAuthRead, PermOAuthManage,
 		PermPluginRead, PermPluginManage,
+		PermGuildCreate, PermGuildRead, PermGuildManage, PermGuildDelete,
+		PermGuildInvite, PermGuildKick, PermGuildRoleManage,
 	},
 	"user": {
 		PermRoomCreate, PermRoomRead,
 		PermUserRead,
 		PermRoleRead,
+		PermGuildCreate, PermGuildRead,
 	},
 	"ban": {},
 }
