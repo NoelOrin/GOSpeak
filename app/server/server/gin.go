@@ -121,6 +121,8 @@ func StartGin(env EnvEnum) {
 	userSvc := service.NewUserService(userRepo, storageSvc)
 	oauthSvc := service.NewOAuthService(oauthProviderRepo, oauthAccountRepo, userRepo)
 	roomSvc := service.NewRoomService(roomRepo)
+	guildRepo := repository.NewGuildRepository(repository.DB)
+	guildSvc := service.NewGuildService(guildRepo)
 	muteSvc := service.NewMuteService(muteRepo, userRepo)
 	sfuConfigSvc := service.NewSFUConfigService(sfuConfigRepo, cfg)
 	if err := sfuConfigSvc.SyncFromEnv(); err != nil {
@@ -334,6 +336,7 @@ func StartGin(env EnvEnum) {
 	storageH := handler.NewStorageHandler(storageSvc)
 	botH := handler.NewBotHandler(botSvc)
 	pluginH := handler.NewPluginHandler(pluginSvc)
+	guildH := handler.NewGuildHandler(guildSvc, permSvc)
 
 	monitorH := handler.NewMonitorHandler(signalHub, cfg, eventBus)
 
@@ -372,6 +375,7 @@ func StartGin(env EnvEnum) {
 		SRSCallback: srsCallbackH,
 		Bot:         botH,
 		Plugin:      pluginH,
+		Guild:       guildH,
 		PluginHost:  pluginHost,
 	})
 

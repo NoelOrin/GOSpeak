@@ -1,0 +1,257 @@
+package handler
+
+import (
+	"GOSpeak/internal/permcode"
+	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/service"
+
+	"github.com/gin-gonic/gin"
+)
+
+type GuildHandler struct {
+	guildSvc *service.GuildService
+	permSvc  *service.PermissionService
+}
+
+func NewGuildHandler(guildSvc *service.GuildService, permSvc *service.PermissionService) *GuildHandler {
+	return &GuildHandler{guildSvc: guildSvc, permSvc: permSvc}
+}
+
+type CreateGuildRequest struct {
+	Name        string `json:"name" binding:"required"`
+	Description string `json:"description"`
+	IsPublic    bool   `json:"is_public"`
+}
+
+// Create 创建语音服务器。
+func (h *GuildHandler) Create(c *gin.Context) {
+	var req CreateGuildRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	ownerUUID, _ := c.Get("user_uuid")
+	guild, err := h.guildSvc.Create(req.Name, req.Description, ownerUUID.(string), req.IsPublic)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, guild)
+}
+
+type UUIDRequest struct {
+	UUID string `json:"uuid" binding:"required"`
+}
+
+// Get 获取语音服务器详情。
+func (h *GuildHandler) Get(c *gin.Context) {
+	var req UUIDRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	guild, err := h.guildSvc.GetByUUID(req.UUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, guild)
+}
+
+type ListGuildRequest struct {
+	Page     int `json:"page"`
+	PageSize int `json:"page_size"`
+}
+
+// List 列出所有语音服务器。
+func (h *GuildHandler) List(c *gin.Context) {
+	var req ListGuildRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		req.Page = 1
+		req.PageSize = 20
+	}
+	guilds, total, err := h.guildSvc.List(req.Page, req.PageSize)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"guilds": guilds, "total": total})
+}
+
+// ListPublic 列出公开语音服务器。
+func (h *GuildHandler) ListPublic(c *gin.Context) {
+	var req ListGuildRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		req.Page = 1
+		req.PageSize = 20
+	}
+	guilds, total, err := h.guildSvc.ListPublic(req.Page, req.PageSize)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"guilds": guilds, "total": total})
+}
+
+// MyGuilds 返回当前用户加入的 Guild UUID 列表。
+func (h *GuildHandler) MyGuilds(c *gin.Context) {
+	userUUID, _ := c.Get("user_uuid")
+	uuids, err := h.guildSvc.ListUserGuilds(userUUID.(string))
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"guild_uuids": uuids})
+}
+
+type UpdateGuildRequest struct {
+	UUID        string  `json:"uuid" binding:"required"`
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+	IconURL     *string `json:"icon_url"`
+	IsPublic    *bool   `json:"is_public"`
+	MaxRooms    *uint   `json:"max_rooms"`
+}
+
+// Update 更新语音服务器信息。
+func (h *GuildHandler) Update(c *gin.Context) {
+	var req UpdateGuildRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	guild, err := h.guildSvc.GetByUUID(req.UUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	if req.Name != nil {
+		guild.Name = *req.Name
+	}
+	if req.Description != nil {
+		guild.Description = *req.Description
+	}
+	if req.IconURL != nil {
+		guild.IconURL = *req.IconURL
+	}
+	if req.IsPublic != nil {
+		guild.IsPublic = *req.IsPublic
+	}
+	if req.MaxRooms != nil {
+		guild.MaxRooms = *req.MaxRooms
+	}
+	if err := h.guildSvc.Update(guild); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, guild)
+}
+
+type DeleteGuildRequest struct {
+	UUID string `json:"uuid" binding:"required"`
+}
+
+// Delete 删除语音服务器。仅 Owner 和持有 guild:delete 权限的用户可调用。
+func (h *GuildHandler) Delete(c *gin.Context) {
+	var req DeleteGuildRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	userUUID, _ := c.Get("user_uuid")
+	permOK := h.permSvc != nil && h.permSvc.HasPermission(userUUID.(string), permcode.PermGuildDelete)
+	ownerOK := h.guildSvc.IsOwner(req.UUID, userUUID.(string))
+	if !permOK && !ownerOK {
+		pkg.Fail(c, pkg.FORBIDDEN, "not guild owner or missing permission")
+		return
+	}
+	if err := h.guildSvc.Delete(req.UUID); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, nil)
+}
+
+type JoinGuildRequest struct {
+	InviteCode string `json:"invite_code" binding:"required"`
+}
+
+// Join 通过邀请码加入语音服务器。
+func (h *GuildHandler) Join(c *gin.Context) {
+	var req JoinGuildRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	userUUID, _ := c.Get("user_uuid")
+	guild, err := h.guildSvc.Join(req.InviteCode, userUUID.(string))
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, guild)
+}
+
+type LeaveGuildRequest struct {
+	UUID string `json:"uuid" binding:"required"`
+}
+
+// Leave 离开语音服务器。
+func (h *GuildHandler) Leave(c *gin.Context) {
+	var req LeaveGuildRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	userUUID, _ := c.Get("user_uuid")
+	if err := h.guildSvc.Leave(req.UUID, userUUID.(string)); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, nil)
+}
+
+type KickGuildMemberRequest struct {
+	GuildUUID string `json:"guild_uuid" binding:"required"`
+	UserUUID  string `json:"user_uuid" binding:"required"`
+}
+
+// Kick 踢出成员。仅 Owner/Admin 或持有 guild:kick 权限的用户可调用。
+func (h *GuildHandler) Kick(c *gin.Context) {
+	var req KickGuildMemberRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	userUUID, _ := c.Get("user_uuid")
+	permOK := h.permSvc != nil && h.permSvc.HasPermission(userUUID.(string), permcode.PermGuildKick)
+	roleOK := h.guildSvc.HasGuildRole(req.GuildUUID, userUUID.(string), service.GuildRoleAdmin)
+	if !permOK && !roleOK {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient guild role or permission")
+		return
+	}
+	if err := h.guildSvc.Kick(req.GuildUUID, req.UserUUID); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, nil)
+}
+
+type GuildMembersRequest struct {
+	GuildUUID string `json:"guild_uuid" binding:"required"`
+}
+
+// Members 列出语音服务器成员。
+func (h *GuildHandler) Members(c *gin.Context) {
+	var req GuildMembersRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	members, err := h.guildSvc.ListMembers(req.GuildUUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"members": members})
+}
