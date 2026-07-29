@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -38,13 +39,17 @@ func setupGuildHandlerRouter(t *testing.T, guildSvc *service.GuildService) *gin.
 	// permSvc can be nil for tests that don't use permissions
 	h := NewGuildHandler(guildSvc, nil)
 
-	// Mock JWT auth middleware: inject user_uuid from header
+	// Mock JWT auth middleware: inject context keys matching production JWTAuth()
 	r.Use(func(c *gin.Context) {
 		userUUID := c.GetHeader("X-User-UUID")
 		if userUUID == "" {
 			userUUID = "default-user"
 		}
 		c.Set("user_uuid", userUUID)
+		c.Set("username", userUUID)    // username = user_uuid in test fixtures
+		c.Set("role", c.GetHeader("X-User-Role"))
+		c.Set("auth_type", "jwt")
+		c.Set("permissions", []string{})
 		c.Next()
 	})
 
@@ -210,7 +215,7 @@ func TestGuildHandler_ListPagination(t *testing.T) {
 	router := setupGuildHandlerRouter(t, guildSvc)
 
 	for i := 0; i < 3; i++ {
-		g := &model.Guild{Name: "Guild", OwnerUUID: "owner-1"}
+			g := &model.Guild{Name: fmt.Sprintf("Guild-%d", i), OwnerUUID: "owner-1"}
 		if err := db.Create(g).Error; err != nil {
 			t.Fatalf("seed guild: %v", err)
 		}
