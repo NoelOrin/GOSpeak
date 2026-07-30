@@ -1,8 +1,17 @@
 import { createRoot, createSignal } from "solid-js";
+import {
+	type ConversationDTO,
+	getConversationMessages,
+	listConversations,
+	markConversationRead,
+	type PrivateMessageDTO,
+} from "@/api/conversation";
 import { listMessages } from "@/api/message";
 import { EVENTS } from "@/socket/events";
 import { socketStore } from "@/stores/socketStore";
+import userStore from "@/stores/userStore";
 import type { MessageDTO } from "@/types/message";
+import { chatCache } from "@/utils/idb-cache";
 
 // ---------------------------------------------------------------------------
 // Pure util — exported for testing
@@ -311,6 +320,265 @@ export const chatStore = createRoot(() => {
 		}
 	}
 
+	// ------------------------------------------------------------------
+	// Private chat (私聊) state + methods
+	// ------------------------------------------------------------------
+
+	const [conversations, setConversations] = createSignal<ConversationDTO[]>([]);
+	const [activeConversationID, setActiveConversationID] = createSignal<
+		string | null
+	>(null);
+	const [pmMessages, setPmMessages] = createSignal<
+		Record<string, PrivateMessageDTO[]>
+	>({});
+	const [pmHasMore, setPmHasMore] = createSignal<Record<string, boolean>>({});
+	const [pmNextCursor, setPmNextCursor] = createSignal<
+		Record<string, string | null>
+	>({});
+	const [loadingList, setLoadingList] = createSignal(false);
+	const [loadingMessages, setLoadingMessages] = createSignal<
+		Record<string, boolean>
+	>({});
+
+	// Track pending nonces for private messages
+	const pmPendingNonces = new Set<string>();
+	function handlePrivateNew(dto: PrivateMessageDTO) {
+		const convID = dto.conversation_id;
+		if (!convID) {
+			void loadConversations();
+			return;
+		}
+
+		setPmMessages((prev) => {
+			const existing = prev[convID] || [];
+			if (dto.client_nonce && pmPendingNonces.has(dto.client_nonce)) {
+				pmPendingNonces.delete(dto.client_nonce);
+				const filtered = existing.filter(
+					(m) => m.client_nonce !== dto.client_nonce,
+				);
+				return { ...prev, [convID]: [...filtered, dto] };
+			}
+			if (existing.some((m) => m.uuid === dto.uuid)) return prev;
+			return { ...prev, [convID]: [...existing, dto] };
+		});
+
+		void loadConversations();
+
+		if (activeConversationID() === convID) {
+			void markRead(convID);
+		}
+	}
+
+	async function loadConversations() {
+		setLoadingList(true);
+		try {
+			const cached = await chatCache.getConversations();
+			if (cached.length > 0) {
+				setConversations(
+					cached.map((c) => ({
+						conversation_id: c.conversation_id,
+						other_identity: c.other_identity,
+						other_display_name: c.other_display_name,
+						other_avatar: c.other_avatar,
+						last_content: c.last_content,
+						last_sender_identity: c.last_sender_identity,
+						last_message_at: c.last_message_at,
+						unread_count: c.unread_count,
+					})),
+				);
+			}
+			const list = await listConversations();
+			setConversations(list);
+			void chatCache.setConversations(
+				list.map((c) => ({ ...c, cached_at: Date.now() })),
+			);
+		} finally {
+			setLoadingList(false);
+		}
+	}
+
+	async function selectConversation(convID: string) {
+		setActiveConversationID(convID);
+		setLoadingMessages((prev) => ({ ...prev, [convID]: true }));
+		try {
+			const cached = await chatCache.getMessages(convID);
+			if (cached.length > 0) {
+				setPmMessages((prev) => ({
+					...prev,
+					[convID]: cached.map((c) => ({
+						uuid: c.id,
+						author_id: c.sender_identity,
+						content: c.content,
+						created_at: new Date(c.timestamp).toISOString(),
+						deleted: false,
+						reply_to: c.reply_to || undefined,
+						conversation_id: convID,
+					})),
+				}));
+			}
+			const result = await getConversationMessages(convID);
+			setPmMessages((prev) => ({ ...prev, [convID]: result.messages }));
+			setPmHasMore((prev) => ({
+				...prev,
+				[convID]: !!result.next_cursor,
+			}));
+			setPmNextCursor((prev) => ({
+				...prev,
+				[convID]: result.next_cursor || null,
+			}));
+			void chatCache.appendMessages(
+				convID,
+				result.messages.map((m) => ({
+					id: m.uuid,
+					conversation_id: convID,
+					content: m.content,
+					sender_identity: m.author_id,
+					sender_display: "",
+					sender_role: "",
+					timestamp: new Date(m.created_at).getTime(),
+					reply_to: m.reply_to || "",
+					target_identity: m.target_identity || "",
+				})),
+			);
+			void markRead(convID);
+		} finally {
+			setLoadingMessages((prev) => ({ ...prev, [convID]: false }));
+		}
+	}
+
+	async function loadMoreMessages(convID: string) {
+		if (!pmHasMore()[convID] || loadingMessages()[convID]) return;
+		setLoadingMessages((prev) => ({ ...prev, [convID]: true }));
+		try {
+			const cursor = pmNextCursor()[convID];
+			const result = await getConversationMessages(convID, cursor || undefined);
+			setPmMessages((prev) => {
+				const existing = prev[convID] || [];
+				const map = new Map<string, PrivateMessageDTO>();
+				for (const m of result.messages) map.set(m.uuid, m);
+				for (const m of existing) {
+					if (!map.has(m.uuid)) map.set(m.uuid, m);
+				}
+				return { ...prev, [convID]: Array.from(map.values()) };
+			});
+			setPmHasMore((prev) => ({
+				...prev,
+				[convID]: !!result.next_cursor,
+			}));
+			setPmNextCursor((prev) => ({
+				...prev,
+				[convID]: result.next_cursor || null,
+			}));
+		} finally {
+			setLoadingMessages((prev) => ({ ...prev, [convID]: false }));
+		}
+	}
+
+	function sendDirect(convID: string, content: string) {
+		if (!content.trim()) return;
+		const conv = conversations().find((c) => c.conversation_id === convID);
+		if (!conv) return;
+		const targetIdentity = conv.other_identity;
+		const clientNonce = crypto.randomUUID();
+
+		const pending: PrivateMessageDTO = {
+			uuid: clientNonce,
+			author_id: userStore.user()?.name ?? "",
+			content,
+			deleted: false,
+			created_at: new Date().toISOString(),
+			conversation_id: convID,
+			target_identity: targetIdentity,
+			client_nonce: clientNonce,
+		};
+		pmPendingNonces.add(clientNonce);
+		setPmMessages((prev) => {
+			const existing = prev[convID] || [];
+			return { ...prev, [convID]: [...existing, pending] };
+		});
+
+		const socket = socketStore.getSocket();
+		if (socket?.connected) {
+			socket.emit(
+				EVENTS.PRIVATE_SEND,
+				JSON.stringify({
+					target_identity: targetIdentity,
+					content,
+					client_nonce: clientNonce,
+				}),
+				(ack: string) => {
+					try {
+						const resp = typeof ack === "string" ? JSON.parse(ack) : ack;
+						if (resp?.error) {
+							setPmMessages((prev) => {
+								const existing = prev[convID] || [];
+								return {
+									...prev,
+									[convID]: existing.filter(
+										(m) => m.client_nonce !== clientNonce,
+									),
+								};
+							});
+							pmPendingNonces.delete(clientNonce);
+						}
+					} catch {
+						setPmMessages((prev) => {
+							const existing = prev[convID] || [];
+							return {
+								...prev,
+								[convID]: existing.filter(
+									(m) => m.client_nonce !== clientNonce,
+								),
+							};
+						});
+						pmPendingNonces.delete(clientNonce);
+					}
+				},
+			);
+		}
+	}
+
+	async function startConversation(identity: string) {
+		const existing = conversations().find((c) => c.other_identity === identity);
+		if (existing) {
+			await selectConversation(existing.conversation_id);
+			return existing.conversation_id;
+		}
+		// Temporary placeholder conversation
+		const convID = `pm_${identity}`;
+		setConversations((prev) => {
+			if (prev.some((c) => c.other_identity === identity)) return prev;
+			return [
+				...prev,
+				{
+					conversation_id: convID,
+					other_identity: identity,
+					other_display_name: identity,
+					other_avatar: "",
+					last_content: "",
+					last_sender_identity: "",
+					last_message_at: 0,
+					unread_count: 0,
+				},
+			];
+		});
+		setActiveConversationID(convID);
+		return convID;
+	}
+
+	async function markRead(convID: string) {
+		try {
+			await markConversationRead(convID);
+			setConversations((prev) =>
+				prev.map((c) =>
+					c.conversation_id === convID ? { ...c, unread_count: 0 } : c,
+				),
+			);
+		} catch {
+			// Best-effort
+		}
+	}
+
 	return {
 		textRoom,
 		textRoomName,
@@ -330,5 +598,19 @@ export const chatStore = createRoot(() => {
 		applyDeleted,
 		applyReaction,
 		deleteMessage,
+		// Private chat
+		conversations,
+		activeConversationID,
+		pmMessages,
+		pmHasMore,
+		loadingList,
+		loadingMessages,
+		loadConversations,
+		selectConversation,
+		loadMoreMessages,
+		sendDirect,
+		startConversation,
+		markRead,
+		handlePrivateNew,
 	};
 });
