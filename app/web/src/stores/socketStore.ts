@@ -2,6 +2,7 @@
 import type { SFUProvider } from "@gospeak/sfu-client/types";
 import { createMemo, createRoot, createSignal } from "solid-js";
 import { showToast } from "solid-notifications";
+import type { PrivateMessageDTO } from "@/api/conversation";
 import { preloadSfuClient } from "@/components/room/services/loadSfuClient";
 // NOTE: store -> audio 写入是已知耦合；房间 UI 直接读 speakingStore。
 // 若后续要彻底解耦，改为 onActiveSpeakers 订阅，由 useRoomAudioBridge/voiceChat 写入。
@@ -19,6 +20,7 @@ import {
 	upsertRoomMembersFromAck,
 } from "@/socket/roomState";
 import { createTabLock } from "@/socket/tabLock";
+import { chatStore } from "@/stores/chatStore";
 import userStore from "@/stores/userStore";
 
 export { EVENTS } from "@/socket/events";
@@ -323,6 +325,11 @@ export const socketStore = createRoot(() => {
 				handleProviderChanged(data?.provider);
 			},
 		);
+
+		// 全局私聊新消息监听：即使用户未打开任何会话也能收到通知
+		adapter.onServerEvent(EVENTS.PRIVATE_NEW, (dto: PrivateMessageDTO) => {
+			chatStore.handlePrivateNew(dto);
+		});
 	}
 
 	function disconnect() {
