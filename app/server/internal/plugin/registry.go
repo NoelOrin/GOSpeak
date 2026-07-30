@@ -9,10 +9,11 @@ import (
 
 // Registry 多组件注册中心
 type Registry struct {
-	mu      sync.RWMutex
-	plugins map[string]Plugin
-	states  map[string]*runtimeState
-	host    *HostImpl
+	mu        sync.RWMutex
+	plugins   map[string]Plugin
+	states    map[string]*runtimeState
+	host      *HostImpl
+	lifecycle sync.Mutex // 序列化 Init/Start/Stop 防止 WithPlugin TOCTOU
 }
 
 type runtimeState struct {
@@ -73,6 +74,8 @@ func (r *Registry) Names() []string {
 
 // InitAll 初始化全部插件
 func (r *Registry) InitAll() error {
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
 	for _, name := range r.Names() {
 		p, _ := r.Get(name)
 		r.host.WithPlugin(name)
@@ -106,6 +109,8 @@ func (r *Registry) StartEnabled(ctx context.Context) error {
 
 // StartOne 启动指定插件
 func (r *Registry) StartOne(ctx context.Context, name string) error {
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
 	p, ok := r.Get(name)
 	if !ok {
 		return fmt.Errorf("plugin not found: %s", name)
@@ -122,6 +127,13 @@ func (r *Registry) StartOne(ctx context.Context, name string) error {
 
 // StopOne 停止指定插件
 func (r *Registry) StopOne(ctx context.Context, name string) error {
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
+	return r.stopOne(ctx, name)
+}
+
+// stopOne 内部实现，调用方须持有 r.lifecycle
+func (r *Registry) stopOne(ctx context.Context, name string) error {
 	p, ok := r.Get(name)
 	if !ok {
 		return fmt.Errorf("plugin not found: %s", name)
@@ -137,8 +149,10 @@ func (r *Registry) StopOne(ctx context.Context, name string) error {
 
 // StopAll 停止全部
 func (r *Registry) StopAll(ctx context.Context) {
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
 	for _, name := range r.Names() {
-		_ = r.StopOne(ctx, name)
+		_ = r.stopOne(ctx, name)
 	}
 	r.host.StopAllSideServers()
 }

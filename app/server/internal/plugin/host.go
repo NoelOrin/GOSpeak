@@ -102,6 +102,11 @@ func (h *HostImpl) StartSideServer(name, addr string, handler http.Handler) (Sid
 	h.mu.Lock()
 	pluginName := h.currentPlugin
 	h.mu.Unlock()
+	return h.startSideServer(pluginName, name, addr, handler)
+}
+
+// startSideServer 内部实现，避免 WithPlugin TOCTOU 问题。
+func (h *HostImpl) startSideServer(pluginName, name, addr string, handler http.Handler) (SideServer, error) {
 	if pluginName == "" {
 		return nil, fmt.Errorf("StartSideServer requires plugin context")
 	}
@@ -193,23 +198,18 @@ func (h *HostImpl) ListSideServers(pluginName string) []SideServerInfo {
 
 func (h *HostImpl) StopSideServersByPlugin(pluginName string) {
 	h.mu.Lock()
-	keys := make([]string, 0)
+	stopped := make([]*sideServer, 0)
 	for k, s := range h.sideServers {
 		if s.pluginName == pluginName {
-			keys = append(keys, k)
+			stopped = append(stopped, s)
+			delete(h.sideServers, k)
 		}
 	}
 	h.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	for _, k := range keys {
-		h.mu.Lock()
-		s := h.sideServers[k]
-		delete(h.sideServers, k)
-		h.mu.Unlock()
-		if s != nil {
-			_ = s.Stop(ctx)
-		}
+	for _, s := range stopped {
+		_ = s.Stop(ctx)
 	}
 }
 
