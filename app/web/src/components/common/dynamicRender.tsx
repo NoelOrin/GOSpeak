@@ -2,6 +2,7 @@ import { useLocation } from "@tanstack/solid-router";
 import type { JSX } from "solid-js";
 import { createMemo } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import ConversationList from "@/components/chat/conversationList";
 import HomePage from "@/components/home/homePage";
 import ManageNav from "@/components/manage/manageNav";
 import RoomList from "@/components/room/roomList";
@@ -10,6 +11,7 @@ import RoomList from "@/components/room/roomList";
 const PREFIX_MAP: [string, (...args: any[]) => JSX.Element][] = [
 	["/manage", ManageNav],
 	["/channel", RoomList],
+	["/chat", ConversationList],
 	["/", HomePage],
 ];
 

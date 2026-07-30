@@ -17,6 +17,7 @@ import { Route as appIndexRouteRouteImport } from './pages/(app)/index/route'
 import { Route as appIndexIndexRouteImport } from './pages/(app)/index/index'
 import { Route as appManageIndexRouteImport } from './pages/(app)/manage/index'
 import { Route as appLinkIndexRouteImport } from './pages/(app)/link/index'
+import { Route as appChatIndexRouteImport } from './pages/(app)/chat/index'
 import { Route as appChannelIndexRouteImport } from './pages/(app)/channel/index'
 import { Route as appManageUsersIndexRouteImport } from './pages/(app)/manage/users/index'
 import { Route as appManageStorageIndexRouteImport } from './pages/(app)/manage/storage/index'
@@ -68,6 +69,11 @@ const appManageIndexRoute = appManageIndexRouteImport.update({
 const appLinkIndexRoute = appLinkIndexRouteImport.update({
   id: '/link/',
   path: '/link/',
+  getParentRoute: () => appRouteRoute,
+} as any)
+const appChatIndexRoute = appChatIndexRouteImport.update({
+  id: '/chat/',
+  path: '/chat/',
   getParentRoute: () => appRouteRoute,
 } as any)
 const appChannelIndexRoute = appChannelIndexRouteImport.update({
@@ -144,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof appProfileRouteRoute
   '/login/': typeof LoginIndexRoute
   '/channel/': typeof appChannelIndexRoute
+  '/chat/': typeof appChatIndexRoute
   '/index/': typeof appIndexIndexRoute
   '/link/': typeof appLinkIndexRoute
   '/manage/': typeof appManageIndexRoute
@@ -165,6 +172,7 @@ export interface FileRoutesByTo {
   '/profile': typeof appProfileRouteRoute
   '/login': typeof LoginIndexRoute
   '/channel': typeof appChannelIndexRoute
+  '/chat': typeof appChatIndexRoute
   '/index': typeof appIndexIndexRoute
   '/link': typeof appLinkIndexRoute
   '/manage': typeof appManageIndexRoute
@@ -189,6 +197,7 @@ export interface FileRoutesById {
   '/(app)/profile': typeof appProfileRouteRoute
   '/login/': typeof LoginIndexRoute
   '/(app)/channel/': typeof appChannelIndexRoute
+  '/(app)/chat/': typeof appChatIndexRoute
   '/(app)/index/': typeof appIndexIndexRoute
   '/(app)/link/': typeof appLinkIndexRoute
   '/(app)/manage/': typeof appManageIndexRoute
@@ -213,6 +222,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/login/'
     | '/channel/'
+    | '/chat/'
     | '/index/'
     | '/link/'
     | '/manage/'
@@ -234,6 +244,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/login'
     | '/channel'
+    | '/chat'
     | '/index'
     | '/link'
     | '/manage'
@@ -257,6 +268,7 @@ export interface FileRouteTypes {
     | '/(app)/profile'
     | '/login/'
     | '/(app)/channel/'
+    | '/(app)/chat/'
     | '/(app)/index/'
     | '/(app)/link/'
     | '/(app)/manage/'
@@ -335,6 +347,13 @@ declare module '@tanstack/solid-router' {
       path: '/link'
       fullPath: '/link/'
       preLoaderRoute: typeof appLinkIndexRouteImport
+      parentRoute: typeof appRouteRoute
+    }
+    '/(app)/chat/': {
+      id: '/(app)/chat/'
+      path: '/chat'
+      fullPath: '/chat/'
+      preLoaderRoute: typeof appChatIndexRouteImport
       parentRoute: typeof appRouteRoute
     }
     '/(app)/channel/': {
@@ -470,6 +489,7 @@ interface appRouteRouteChildren {
   appManageRouteRoute: typeof appManageRouteRouteWithChildren
   appProfileRouteRoute: typeof appProfileRouteRoute
   appChannelIndexRoute: typeof appChannelIndexRoute
+  appChatIndexRoute: typeof appChatIndexRoute
   appIndexIndexRoute: typeof appIndexIndexRoute
   appLinkIndexRoute: typeof appLinkIndexRoute
   appGuildGuildUUIDIndexRoute: typeof appGuildGuildUUIDIndexRoute
@@ -480,6 +500,7 @@ const appRouteRouteChildren: appRouteRouteChildren = {
   appManageRouteRoute: appManageRouteRouteWithChildren,
   appProfileRouteRoute: appProfileRouteRoute,
   appChannelIndexRoute: appChannelIndexRoute,
+  appChatIndexRoute: appChatIndexRoute,
   appIndexIndexRoute: appIndexIndexRoute,
   appLinkIndexRoute: appLinkIndexRoute,
   appGuildGuildUUIDIndexRoute: appGuildGuildUUIDIndexRoute,

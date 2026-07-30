@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/solid-router";
 import Headphones from "lucide-solid/icons/headphones";
 import Home from "lucide-solid/icons/home";
+import MessageSquare from "lucide-solid/icons/message-square";
 import Settings from "lucide-solid/icons/settings";
 import ShieldCheck from "lucide-solid/icons/shield-check";
 import { Show } from "solid-js";
@@ -31,6 +32,10 @@ const Sidebar = (props: SidebarProps) => {
 				onClick={() => navigate({ to: "/channel", search: { id: 12413 } })}
 			>
 				<Headphones {...iconProps} />
+			</OptionSquare>
+
+			<OptionSquare label="聊天" onClick={() => navigate({ to: "/chat" })}>
+				<MessageSquare {...iconProps} />
 			</OptionSquare>
 
 			<OptionSquare label="设置" onClick={() => props.onOpenSettings?.()}>
