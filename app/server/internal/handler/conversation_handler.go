@@ -99,3 +99,33 @@ func (h *ConversationHandler) MarkRead(c *gin.Context) {
 	}
 	pkg.Success(c, nil)
 }
+
+func (h *ConversationHandler) Send(c *gin.Context) {
+	var req struct {
+		TargetIdentity string `json:"target_identity" binding:"required"`
+		Content        string `json:"content" binding:"required"`
+		ClientNonce    string `json:"client_nonce"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+
+	username, exists := c.Get("username")
+	if !exists {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	identity, ok := username.(string)
+	if !ok {
+		pkg.Fail(c, pkg.INTERNAL_ERROR, "invalid context")
+		return
+	}
+
+	out, err := h.svc.SendDirect(identity, req.TargetIdentity, req.Content, req.ClientNonce)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, out)
+}

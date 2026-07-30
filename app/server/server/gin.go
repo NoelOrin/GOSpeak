@@ -323,6 +323,8 @@ func StartGin(env EnvEnum) {
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
 	guildSvc := service.NewGuildService(repository.NewGuildRepository(repository.DB))
 	conversationSvc := service.NewConversationService(conversationRepo, messageRepo)
+	conversationSvc.SetEventBus(eventBus)
+	signalHub.SetConversationService(conversationSvc)
 	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc, signalHub)
 	storageH := handler.NewStorageHandler(storageSvc)
 	botH := handler.NewBotHandler(botSvc)

@@ -184,6 +184,7 @@ type Hub struct {
 	stateNotifier      stateNotifier
 	connSlots          map[string]*connRoomSlots // socketID -> slots
 	msgSvc             messageSender
+	convSvc            conversationSender
 }
 
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
@@ -236,6 +237,7 @@ func (h *Hub) SetupFanout(fanout ws.Broadcaster, handler *ws.HandlerRegistry) {
 	handler.Handle(EventMemberSpeaking, h.OnMemberSpeaking)
 	handler.Handle(EventBotCommand, h.PublishBotCommand)
 	handler.Handle(EventBotMessage, h.PublishBotMessage)
+	handler.HandleAck(EventPrivateSend, h.OnPrivateMessageSend)
 
 	if h.sfuSignalHandler != nil {
 		h.sfuSignalHandler.RegisterWS(handler.HandleAck)
@@ -335,7 +337,7 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	// publish after unlock: avoid holding hub mu across NATS/Socket.IO I/O
 	for _, e := range leaveEvents {
 		_, logicalName := splitRoomKey(e.room)
-		h.publishRoom(logicalName, EventMemberLeft, map[string]interface{}{
+		h.publishRoom(e.room, EventMemberLeft, map[string]interface{}{
 			"room":     logicalName,
 			"identity": e.identity,
 			"id":       e.id,
@@ -551,7 +553,7 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 	}
 	h.mu.Unlock()
 
-	h.fanout.Join(req.Room, c.ID())
+	h.fanout.Join(roomKey(req.GuildUUID, req.Room), c.ID())
 
 	log.Printf("[Signal] %s (%s) signaling ready for room: %s (type=%s)", c.ID(), identity, req.Room, roomType)
 
@@ -585,7 +587,7 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 
 	// phase2 复检 mute / limit / password，避免 phase1 通过后状态变化
 	if ok, pwdErr := h.CheckRoomPassword(req.GuildUUID, req.Room, req.Password); !ok {
-		h.fanout.Leave(req.Room, c.ID())
+		h.fanout.Leave(roomKey(req.GuildUUID, req.Room), c.ID())
 		if pwdErr != nil {
 			return marshalAck(map[string]interface{}{"error": "room requires password"})
 		}
@@ -594,16 +596,16 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	if h.muteStore != nil {
 		muted, _, muteErr := h.muteStore.IsMutedByIdentity(identity)
 		if muteErr != nil {
-			h.fanout.Leave(req.Room, c.ID())
+			h.fanout.Leave(roomKey(req.GuildUUID, req.Room), c.ID())
 			return marshalAck(map[string]interface{}{"error": "mute check failed"})
 		}
 		if muted {
-			h.fanout.Leave(req.Room, c.ID())
+			h.fanout.Leave(roomKey(req.GuildUUID, req.Room), c.ID())
 			return marshalAck(map[string]interface{}{"error": "user is muted", "muted": true})
 		}
 	}
 	if full, limit, count, _ := h.CheckRoomLimit(req.GuildUUID, req.Room); full {
-		h.fanout.Leave(req.Room, c.ID())
+		h.fanout.Leave(roomKey(req.GuildUUID, req.Room), c.ID())
 		return marshalAck(map[string]interface{}{"error": "room is full", "limit": limit, "count": count})
 	}
 
@@ -624,7 +626,7 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	if h.duplicateIdentityLocked(roomKey(req.GuildUUID, req.Room), identity, c.ID()) {
 		h.mu.Unlock()
 		// 拒绝加入：回退 phase1 的 fanout.Join，避免 socket 残留在 WS room
-		h.fanout.Leave(req.Room, c.ID())
+		h.fanout.Leave(roomKey(req.GuildUUID, req.Room), c.ID())
 		return marshalAck(map[string]interface{}{
 			"error":    "duplicate connection not allowed",
 			"room":     req.Room,
@@ -662,13 +664,13 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	if !memberExists {
 		log.Printf("[Signal] sfu join rejected: %s not in room %s", c.ID(), req.Room)
 		// 回退 phase1 的 fanout.Join，避免 socket 残留在 WS room
-		h.fanout.Leave(req.Room, c.ID())
+		h.fanout.Leave(roomKey(req.GuildUUID, req.Room), c.ID())
 		return marshalAck(map[string]interface{}{
 			"error": "not in room",
 		})
 	}
 
-	h.publishRoom(req.Room, EventMemberJoined, map[string]interface{}{
+	h.publishRoom(roomKey(req.GuildUUID, req.Room), EventMemberJoined, map[string]interface{}{
 		"room":     req.Room,
 		"identity": identity,
 		"id":       c.ID(),
@@ -703,7 +705,7 @@ func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 		})
 	}
 
-	h.fanout.Leave(req.Room, c.ID())
+	h.fanout.Leave(roomKey(req.GuildUUID, req.Room), c.ID())
 
 	var identity string
 	var stream string
@@ -753,7 +755,7 @@ func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 		"room": req.Room,
 	}})
 
-	h.publishRoom(req.Room, EventMemberLeft, map[string]interface{}{
+	h.publishRoom(roomKey(req.GuildUUID, req.Room), EventMemberLeft, map[string]interface{}{
 		"room":     req.Room,
 		"identity": identity,
 		"id":       c.ID(),
@@ -878,7 +880,7 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 
 	// 从 fanout room 移除目标连接，避免继续收事件
 	if h.fanout != nil {
-		h.fanout.ForEach(req.Room, func(conn ws.ClientMessenger) bool {
+		h.fanout.ForEach(roomKey(req.GuildUUID, req.Room), func(conn ws.ClientMessenger) bool {
 			if conn != nil && conn.ID() == targetSocketID {
 				targetConn = conn
 				return false
@@ -886,7 +888,7 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 			return true
 		})
 		if targetConn != nil {
-			h.fanout.Leave(req.Room, targetConn.ID())
+			h.fanout.Leave(roomKey(req.GuildUUID, req.Room), targetConn.ID())
 		}
 	}
 
@@ -896,7 +898,7 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 	enforcement := h.removeParticipantSafe(req.Room, req.TargetIdentity)
 
 	// 通知被踢者；payload 带 targetIdentity，前端按 identity 过滤避免误伤同房他人
-	h.publishRoom(req.Room, EventRoomKicked, map[string]interface{}{
+	h.publishRoom(roomKey(req.GuildUUID, req.Room), EventRoomKicked, map[string]interface{}{
 		"room":           req.Room,
 		"targetIdentity": req.TargetIdentity,
 		"enforcement":    enforcement,
@@ -910,7 +912,7 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 	}
 
 	// 通知全员成员离开
-	h.publishRoom(req.Room, EventMemberLeft, map[string]interface{}{
+	h.publishRoom(roomKey(req.GuildUUID, req.Room), EventMemberLeft, map[string]interface{}{
 		"room":        req.Room,
 		"identity":    req.TargetIdentity,
 		"id":          targetSocketID,
@@ -963,7 +965,7 @@ func (h *Hub) OnMemberMicState(c ws.ClientMessenger, data string) {
 	room.MicMuted[req.Identity] = req.IsMicMuted
 	h.mu.Unlock()
 
-	h.BroadcastToRoom(req.Room, EventMemberUpdated, map[string]interface{}{
+	h.BroadcastToRoom(roomKey(req.GuildUUID, req.Room), EventMemberUpdated, map[string]interface{}{
 		"room":       req.Room,
 		"identity":   req.Identity,
 		"isMicMuted": req.IsMicMuted,
@@ -1029,7 +1031,7 @@ func (h *Hub) broadcastActiveSpeakers(guildUUID, roomName string) {
 	h.mu.RLock()
 	identities := h.computeActiveSpeakersLocked(rk)
 	h.mu.RUnlock()
-	h.publishRoom(roomName, EventRoomActiveSpeakers, map[string]interface{}{
+	h.publishRoom(rk, EventRoomActiveSpeakers, map[string]interface{}{
 		"room":       roomName,
 		"identities": identities,
 	})
@@ -1356,7 +1358,12 @@ func (h *Hub) SetMessageService(svc messageSender) {
 	h.msgSvc = svc
 }
 
+func (h *Hub) SetConversationService(svc conversationSender) {
+	h.convSvc = svc
+}
+
 // IsRoomMember checks if identity is currently in room's member list.
+// room 支持复合键（guildUUID:roomName）或逻辑名；逻辑名回退扫描同后缀 guild 房。
 func (h *Hub) IsRoomMember(room, identity string) bool {
 	// 1. 优先读 KV（无锁，跨实例可见）
 	if h.membershipStore != nil {
@@ -1372,12 +1379,20 @@ func (h *Hub) IsRoomMember(room, identity string) bool {
 	// 2. KV 未命中 → fallback 本地 map
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	r, ok := h.rooms[room]
-	if !ok {
-		return false
+	if r, ok := h.rooms[room]; ok {
+		roomInitByIdentity(r)
+		return roomLookupIdentity(r, identity) != nil
 	}
-	roomInitByIdentity(r)
-	return roomLookupIdentity(r, identity) != nil
+	// 纯逻辑名回退扫描
+	if !strings.Contains(room, ":") {
+		for rk, r := range h.rooms {
+			if _, rn := splitRoomKey(rk); rn == room {
+				roomInitByIdentity(r)
+				return roomLookupIdentity(r, identity) != nil
+			}
+		}
+	}
+	return false
 }
 
 func (h *Hub) publishRoom(room, event string, data interface{}) {
@@ -1661,7 +1676,8 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 	}
 
 	type target struct {
-		room     string
+		room        string // composite key (guildUUID:roomName)
+		logicalRoom string
 		identity string
 	}
 	seen := make(map[string]struct{})
@@ -1672,7 +1688,8 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 			if member.Identity == identity {
 				if _, ok := seen[roomName]; !ok {
 					seen[roomName] = struct{}{}
-					targets = append(targets, target{room: roomName, identity: identity})
+					_, lr := splitRoomKey(roomName)
+					targets = append(targets, target{room: roomName, logicalRoom: lr, identity: identity})
 				}
 				break
 			}
@@ -1694,11 +1711,12 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 					continue
 				}
 				for _, m := range snap.Members {
-					if m.Identity == identity {
+						if m.Identity == identity {
 						seen[roomName] = struct{}{}
-						targets = append(targets, target{room: roomName, identity: identity})
+						_, lr := splitRoomKey(roomName)
+						targets = append(targets, target{room: roomName, logicalRoom: lr, identity: identity})
 						break
-					}
+						}
 				}
 			}
 		}
@@ -1712,9 +1730,9 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 	for _, t := range targets {
 		var err error
 		if tp, ok := h.sfuProvider.(sfu.TimedMuteProvider); ok {
-			err = tp.MuteParticipantTimed(t.room, t.identity, "", muted, ttlSeconds)
+			err = tp.MuteParticipantTimed(t.logicalRoom, t.identity, "", muted, ttlSeconds)
 		} else {
-			err = h.sfuProvider.MuteParticipant(t.room, t.identity, "", muted)
+			err = h.sfuProvider.MuteParticipant(t.logicalRoom, t.identity, "", muted)
 		}
 		if err != nil {
 			if errors.Is(err, pkg.ErrSFUNotSupported) {
@@ -1909,18 +1927,37 @@ func (h *Hub) Rooms() []string {
 
 // Streams 返回指定 room 下登记的 stream 名集合（RoomRegistry 实现）。
 // 本地 cache 优先，再并入 membership KV 中远端成员的 stream。
+// room 支持复合键（guildUUID:roomName）或逻辑名；逻辑名回退扫描同后缀 guild 房。
 func (h *Hub) Streams(room string) []string {
 	h.mu.RLock()
 	seen := make(map[string]struct{})
 	out := make([]string, 0)
-	if streams, ok := h.roomStreams[room]; ok {
-		for s := range streams {
-			if s == "" {
-				continue
+	if !strings.Contains(room, ":") {
+		// 纯逻辑名：扫描所有同后缀的 guild 房 + 平台房
+		for rk, streams := range h.roomStreams {
+			if _, r := splitRoomKey(rk); r == room || rk == room {
+				for s := range streams {
+					if s == "" {
+						continue
+					}
+					if _, exists := seen[s]; !exists {
+						seen[s] = struct{}{}
+						out = append(out, s)
+					}
+				}
 			}
-			if _, exists := seen[s]; !exists {
-				seen[s] = struct{}{}
-				out = append(out, s)
+		}
+	} else {
+		// 复合键：精确匹配
+		if rstreams, ok := h.roomStreams[room]; ok {
+			for s := range rstreams {
+				if s == "" {
+					continue
+				}
+				if _, exists := seen[s]; !exists {
+					seen[s] = struct{}{}
+					out = append(out, s)
+				}
 			}
 		}
 	}
@@ -1945,17 +1982,37 @@ func (h *Hub) Streams(room string) []string {
 }
 
 // ClearRoom 清除指定 room 的 stream 聚合登记（RoomRegistry 实现）。
+// room 支持复合键（guildUUID:roomName）或逻辑名；逻辑名回退扫描匹配所有同后缀的 guild 房。
 func (h *Hub) ClearRoom(room string) {
 	streams := make([]string, 0)
 	h.mu.Lock()
-	if local, ok := h.roomStreams[room]; ok {
-		for s := range local {
-			streams = append(streams, s)
-			delete(h.streamRoomCache, s)
+	if !strings.Contains(room, ":") {
+		// 纯逻辑名：清除所有同后缀的 guild 房 stream 登记
+		for rk, local := range h.roomStreams {
+			if _, rn := splitRoomKey(rk); rn == room || rk == room {
+				for s := range local {
+					streams = append(streams, s)
+					delete(h.streamRoomCache, s)
+				}
+				delete(h.roomStreams, rk)
+			}
 		}
-		delete(h.roomStreams, room)
+		for rk := range h.streamByIdentity {
+			if _, r := splitRoomKey(rk); r == room || rk == room {
+				delete(h.streamByIdentity, rk)
+			}
+		}
+	} else {
+		// 复合键：精确匹配
+		if local, ok := h.roomStreams[room]; ok {
+			for s := range local {
+				streams = append(streams, s)
+				delete(h.streamRoomCache, s)
+			}
+			delete(h.roomStreams, room)
+		}
+		delete(h.streamByIdentity, room)
 	}
-	delete(h.streamByIdentity, room)
 	h.mu.Unlock()
 	for _, s := range streams {
 		if s != "" {
