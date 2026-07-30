@@ -34,6 +34,7 @@ func (h *SignalHandler) SetJobs(j livekitJobPublisher) {
 // JoinRoomRequest 加入房间请求
 type JoinRoomRequest struct {
 	Room     string `json:"room" binding:"required" example:"my-room"`
+	GuildUUID string `json:"guild_uuid,omitempty"`
 	Identity string `json:"identity,omitempty" example:"user-123"` // 兼容字段，服务端以 JWT username 覆盖
 	Password string `json:"password,omitempty"`
 }
@@ -67,7 +68,7 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 	}
 	req.Identity = identity
 
-	result, err := h.sfuSvc.GetJoinToken(req.Room, req.Identity, req.Password)
+	result, err := h.sfuSvc.GetJoinToken(req.GuildUUID, req.Room, req.Identity, req.Password)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return

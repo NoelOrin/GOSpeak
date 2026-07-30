@@ -45,22 +45,22 @@ func (h *Hub) SetStateNotifier(n stateNotifier) {
 // room views stay complete. If this instance has no local members and no remote
 // members remain, the room key is deleted.
 // Best-effort: errors are logged, never fail the socket path.
-func (h *Hub) syncRoomToStore(roomName string) {
-	if h.membershipStore == nil || roomName == "" {
+func (h *Hub) syncRoomToStore(key string) {
+	if h.membershipStore == nil || key == "" {
 		return
 	}
 
 	now := time.Now().UnixMilli()
 	local := make([]bus.MemberRecord, 0)
 	h.mu.RLock()
-	if room, ok := h.rooms[roomName]; ok {
+	if room, ok := h.rooms[key]; ok {
 		local = make([]bus.MemberRecord, 0, len(room.Members))
 		for sid, m := range room.Members {
 			if m == nil {
 				continue
 			}
 			local = append(local, bus.MemberRecord{
-				Room:        roomName,
+				Room:        key,
 				Identity:    m.Identity,
 				SocketHint:  sid,
 				InstanceID:  h.instanceID,
@@ -73,19 +73,15 @@ func (h *Hub) syncRoomToStore(roomName string) {
 	}
 	h.mu.RUnlock()
 
-	// Start from existing shared snapshot and replace only this instance's slice.
 	merged := make([]bus.MemberRecord, 0, len(local))
-	if prev, err := h.membershipStore.GetRoomMembers(context.Background(), roomName); err == nil {
+	if prev, err := h.membershipStore.GetRoomMembers(context.Background(), key); err == nil {
 		for _, rec := range prev.Members {
 			if rec.Identity == "" {
 				continue
 			}
-			// Drop stale rows owned by this instance; keep peers.
-			// Empty InstanceID is treated as legacy single-writer row and replaced by this sync.
 			if rec.InstanceID == "" || (h.instanceID != "" && rec.InstanceID == h.instanceID) {
 				continue
 			}
-			// Also drop peer rows that collide with a local identity (local wins).
 			collide := false
 			for _, l := range local {
 				if l.Identity == rec.Identity {
@@ -102,30 +98,30 @@ func (h *Hub) syncRoomToStore(roomName string) {
 	merged = append(merged, local...)
 
 	if len(merged) == 0 {
-		if err := h.membershipStore.DeleteRoomMembers(context.Background(), roomName); err != nil {
-			log.Printf("[Signal] state store delete room %s: %v", roomName, err)
+		if err := h.membershipStore.DeleteRoomMembers(context.Background(), key); err != nil {
+			log.Printf("[Signal] state store delete room %s: %v", key, err)
 		}
-		h.notifyRoomStateChanged(roomName)
+		h.notifyRoomStateChanged(key)
 		return
 	}
 
 	snap := bus.RoomMembersSnapshot{
-		Room:      roomName,
+		Room:      key,
 		UpdatedAt: now,
 		Members:   merged,
 	}
 	if err := h.membershipStore.PutRoomMembers(context.Background(), snap); err != nil {
-		log.Printf("[Signal] state store put room %s: %v", roomName, err)
+		log.Printf("[Signal] state store put room %s: %v", key, err)
 		return
 	}
-	h.notifyRoomStateChanged(roomName)
+	h.notifyRoomStateChanged(key)
 }
 
-func (h *Hub) syncStreamPut(stream, room, identity string) {
+func (h *Hub) syncStreamPut(stream, key, identity string) {
 	if h.membershipStore == nil || stream == "" {
 		return
 	}
-	if err := h.membershipStore.PutStream(context.Background(), stream, room, identity); err != nil {
+	if err := h.membershipStore.PutStream(context.Background(), stream, key, identity); err != nil {
 		log.Printf("[Signal] state store put stream %s: %v", stream, err)
 	}
 }
@@ -156,12 +152,12 @@ func (h *Hub) notifyRoomStateChanged(room string) {
 
 // GetRoomMembersMerged returns local socket members for room, then fills any
 // identities present only in KV (other instances). Local socket wins on conflict.
-func (h *Hub) GetRoomMembersMerged(roomName string) []MemberInfo {
-	local := h.GetRoomMembers(roomName)
+func (h *Hub) GetRoomMembersMerged(key string) []MemberInfo {
+	local := h.GetRoomMembers(key)
 	if h.membershipStore == nil {
 		return local
 	}
-	snap, err := h.membershipStore.GetRoomMembers(context.Background(), roomName)
+	snap, err := h.membershipStore.GetRoomMembers(context.Background(), key)
 	if err != nil {
 		return local
 	}
@@ -188,14 +184,15 @@ func (h *Hub) GetRoomMembersMerged(roomName string) []MemberInfo {
 }
 
 // roomInfoMerged builds RoomInfo for a room using local+DB metadata and merged members.
-func (h *Hub) roomInfoMerged(roomName string) RoomInfo {
+func (h *Hub) roomInfoMerged(key string) RoomInfo {
 	h.mu.RLock()
-	info := h.roomInfoLocked(roomName)
+	info := h.roomInfoLocked(key)
 	h.mu.RUnlock()
 
-	// Fill DB metadata if present
+	_, logicalName := splitRoomKey(key)
+
 	if h.roomStore != nil {
-		if dbRoom, err := h.roomStore.GetByName(roomName); err == nil && dbRoom != nil {
+		if dbRoom, err := h.roomStore.GetByName(logicalName); err == nil && dbRoom != nil {
 			info.ID = dbRoom.ID
 			info.UUID = dbRoom.UUID
 			info.Name = dbRoom.Name
@@ -210,10 +207,10 @@ func (h *Hub) roomInfoMerged(roomName string) RoomInfo {
 		}
 	}
 	if info.Name == "" {
-		info.Name = roomName
+		info.Name = logicalName
 	}
 	if h.membershipStore != nil {
-		merged := h.GetRoomMembersMerged(roomName)
+		merged := h.GetRoomMembersMerged(key)
 		info.Members = merged
 		info.Count = len(merged)
 	}
@@ -221,11 +218,11 @@ func (h *Hub) roomInfoMerged(roomName string) RoomInfo {
 }
 
 // broadcastRoomUpdatedLocal pushes room:updated to local sockets using merged view.
-func (h *Hub) broadcastRoomUpdatedLocal(roomName string) {
-	if h.fanout == nil || roomName == "" {
+func (h *Hub) broadcastRoomUpdatedLocal(key string) {
+	if h.fanout == nil || key == "" {
 		return
 	}
-	info := h.roomInfoMerged(roomName)
+	info := h.roomInfoMerged(key)
 	h.localNamespace(EventRoomUpdated, info)
 }
 

@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	writeTimeout = 5 * time.Second
-	readLimit    = 65536 // 64KB max message size
+	writeTimeout   = 5 * time.Second
+	sendQueueTimeout = 500 * time.Millisecond
+	readLimit      = 65536 // 64KB max message size
 )
 
 // Client 封装 nhooyr WebSocket 连接，提供 goroutine-safe 写能力。
@@ -95,12 +96,17 @@ func (c *Client) StartReadLoop(handler func(ClientMessenger, Message)) {
 }
 
 func (c *Client) writeLoop() {
+	defer c.cancel()
 	for {
 		select {
 		case data := <-c.writeCh:
 			ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
-			_ = wsjson.Write(ctx, c.conn, data)
+			err := wsjson.Write(ctx, c.conn, data)
 			cancel()
+			if err != nil {
+				log.Printf("[ws] write error client=%s: %v", c.id, err)
+				return
+			}
 		case <-c.ctx.Done():
 			return
 		}
@@ -108,16 +114,21 @@ func (c *Client) writeLoop() {
 }
 
 // Send 实现 ClientMessenger.Send — goroutine-safe。
-// 返回 false 表示客户端已断开，消息未发送。
+// 返回 false 表示客户端已断开或队列满，消息未发送。
 func (c *Client) Send(v interface{}) bool {
 	data, err := json.Marshal(v)
 	if err != nil {
 		log.Printf("[ws] marshal error: %v", err)
 		return false
 	}
+	t := time.NewTimer(sendQueueTimeout)
+	defer t.Stop()
 	select {
 	case c.writeCh <- data:
 		return true
+	case <-t.C:
+		log.Printf("[ws] drop message to slow client %s", c.id)
+		return false
 	case <-c.closed:
 		return false
 	}
@@ -136,5 +147,7 @@ func (c *Client) SendErrorACK(id, event string, code int, message string) {
 // Close 实现 ClientMessenger.Close。
 func (c *Client) Close() {
 	c.cancel()
-	_ = c.conn.Close(nhooyrws.StatusNormalClosure, "server closing")
+	if c.conn != nil {
+		_ = c.conn.Close(nhooyrws.StatusNormalClosure, "server closing")
+	}
 }

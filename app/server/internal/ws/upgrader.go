@@ -88,6 +88,16 @@ func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 确保 OnConnect panic 不泄漏 client 到 Fanout
+	var readLoopStarted bool
+	defer func() {
+		if !readLoopStarted {
+			if u.cfg.Fanout != nil {
+				u.cfg.Fanout.Remove(clientID)
+			}
+		}
+	}()
+
 	if u.cfg.OnConnect != nil {
 		u.cfg.OnConnect(client)
 	}
@@ -95,6 +105,7 @@ func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[ws] client connected: %s (%s) ip=%s", clientID, claims.Username, r.RemoteAddr)
 
 	// 阻塞读取循环 — ServeHTTP 在此期间阻塞
+	readLoopStarted = true
 	if u.cfg.Handler != nil {
 		client.StartReadLoop(func(c ClientMessenger, msg Message) {
 			u.cfg.Handler.Dispatch(c, msg)
