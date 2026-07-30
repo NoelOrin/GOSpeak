@@ -1,12 +1,14 @@
 package service
 
 import (
-	"GOSpeak/internal/model"
-	"GOSpeak/internal/pkg"
-	"GOSpeak/internal/repository"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
+
+	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/repository"
 )
 
 // MuteChecker 供 middleware 查询禁言状态的接口
@@ -42,7 +44,7 @@ func (s *MuteService) IsMuted(userID uint) (bool, *model.Mute, error) {
 
 	// 临时禁言：检查过期
 	if mute.ExpiresAt != nil && mute.ExpiresAt.Before(time.Now()) {
-		if delErr := s.muteRepo.DeleteByUserID(userID); delErr != nil {
+		if delErr := s.muteRepo.DeleteByUserID(userID); delErr != nil && !errors.Is(delErr, gorm.ErrRecordNotFound) {
 			return false, nil, pkg.NewAppError(pkg.INTERNAL_ERROR)
 		}
 		return false, nil, nil

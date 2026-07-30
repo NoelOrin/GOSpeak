@@ -126,10 +126,7 @@ func (s *BotService) Revoke(uuid string) error {
 	if err != nil {
 		return pkg.NewAppError(pkg.NOT_FOUND, "bot token not found")
 	}
-	if err := s.botRepo.Revoke(uuid); err != nil {
-		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	// 吊销后递增 bot 用户 TokenVersion，使已签发 JWT 立即失效（VerifyToken 会校验版本）。
+	// 先递增 TokenVersion 使已签发 JWT 立即失效，再吊销 DB 记录
 	if botToken.UserUUID != "" {
 		user, uerr := s.userRepo.GetByUUID(botToken.UserUUID)
 		if uerr == nil && user != nil {
@@ -137,6 +134,9 @@ func (s *BotService) Revoke(uuid string) error {
 				return pkg.NewAppError(pkg.INTERNAL_ERROR, ierr.Error())
 			}
 		}
+	}
+	if err := s.botRepo.Revoke(uuid); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	return nil
 }

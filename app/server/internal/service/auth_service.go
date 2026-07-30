@@ -345,7 +345,7 @@ func (s *AuthService) BlacklistToken(claims *pkg.Claims) error {
 func (s *AuthService) GetTokenVersionByUUID(userUUID string) (uint, error) {
 	user, err := s.userRepo.GetByUUID(userUUID)
 	if err != nil {
-		return 0, err
+		return 0, pkg.NewAppError(pkg.USER_NOT_FOUND, "user not found")
 	}
 	return user.TokenVersion, nil
 }

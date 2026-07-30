@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	_ "embed"
+	"encoding/base64"
 	"fmt"
 	"html/template"
 	"net/smtp"
@@ -112,6 +113,8 @@ func buildMultipartMessage(from, fromName, to, subject, plainBody, htmlBody stri
 		displayFrom = fmt.Sprintf("%s <%s>", fromName, from)
 	}
 	boundary := "---mosa_boundary_9a3b7c2d"
+	plainEnc := base64.StdEncoding.EncodeToString([]byte(plainBody))
+	htmlEnc := base64.StdEncoding.EncodeToString([]byte(htmlBody))
 	return strings.Join([]string{
 		fmt.Sprintf("From: %s", displayFrom),
 		fmt.Sprintf("To: %s", to),
@@ -123,12 +126,12 @@ func buildMultipartMessage(from, fromName, to, subject, plainBody, htmlBody stri
 		"Content-Type: text/plain; charset=UTF-8",
 		"Content-Transfer-Encoding: base64",
 		"",
-		plainBody,
+		plainEnc,
 		fmt.Sprintf("--%s", boundary),
 		"Content-Type: text/html; charset=UTF-8",
 		"Content-Transfer-Encoding: base64",
 		"",
-		htmlBody,
+		htmlEnc,
 		fmt.Sprintf("--%s--", boundary),
 	}, "\r\n")
 }

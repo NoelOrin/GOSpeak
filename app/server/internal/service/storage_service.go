@@ -130,6 +130,10 @@ func (s *StorageService) ReloadProvider() (storage.Provider, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.provider != nil {
+		return s.provider, nil
+	}
+
 	cfg, err := s.getConfigForProvider()
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.STORAGE_NOT_CONFIGURED, err.Error())

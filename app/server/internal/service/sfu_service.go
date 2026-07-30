@@ -32,15 +32,15 @@ func NewSFUService(provider sfu.Provider, policy pkg.JoinPolicy) *SFUService {
 
 // GetJoinToken 编排加入规则校验（禁言/限流/密码）+ token 签发 + stream 信息。
 // 规则失败返 *pkg.AppError，handler 经 HandleError 映射状态码。
-func (s *SFUService) GetJoinToken(room, identity, password string) (*JoinTokenResult, error) {
+func (s *SFUService) GetJoinToken(guildUUID, room, identity, password string) (*JoinTokenResult, error) {
 	if s.policy != nil {
 		if muted, _ := s.policy.IsMuted(identity); muted {
 			return nil, pkg.NewAppError(pkg.USER_MUTED, "user is muted")
 		}
-		if full, limit, count, _ := s.policy.CheckRoomLimit(room); full {
+		if full, limit, count, _ := s.policy.CheckRoomLimit(guildUUID, room); full {
 			return nil, pkg.NewAppError(pkg.FORBIDDEN, fmt.Sprintf("room is full (%d/%d)", count, limit))
 		}
-		if ok, err := s.policy.CheckRoomPassword(room, password); !ok {
+		if ok, err := s.policy.CheckRoomPassword(guildUUID, room, password); !ok {
 			if err != nil {
 				return nil, pkg.NewAppError(pkg.FORBIDDEN, "room requires password")
 			}

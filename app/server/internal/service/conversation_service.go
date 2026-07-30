@@ -127,7 +127,10 @@ func (s *ConversationService) MarkRead(conversationID, identity string) error {
 	if conversationID == "" || identity == "" {
 		return pkg.NewAppError(pkg.INVALID_PARAMS, "conversation_id and identity required")
 	}
-	return s.convRepo.ResetUnread(conversationID, identity)
+	if err := s.convRepo.ResetUnread(conversationID, identity); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return nil
 }
 
 // ConvTo returns the identity of the other participant in a conversation.

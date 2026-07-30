@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"log"
+
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
 	"sync"
 )
@@ -97,7 +99,7 @@ func (s *PermissionService) ListPermissions() ([]model.Permission, error) {
 // SyncRolePermissions 同步角色权限并刷新缓存。
 func (s *PermissionService) SyncRolePermissions(roleName string, permCodes []string) error {
 	if err := s.permRepo.SyncRolePermissions(roleName, permCodes); err != nil {
-		return err
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	// 刷新该角色的缓存
 	s.cacheMu.Lock()
