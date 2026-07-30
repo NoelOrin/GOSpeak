@@ -35,13 +35,13 @@ const (
 
 	// 管理操作（客户端 → 服务端）
 	EventMemberMicState = "member:mic-state"
-	EventRoomKick = "room:kick"
+	EventRoomKick       = "room:kick"
 
 	// 管理操作推送
 	EventRoomKicked = "room:kicked"
 
 	// 发言检测（无 SFU 原生 active speaker 的 provider：SRS / Cloudflare）
-	EventMemberSpeaking = "member:speaking"
+	EventMemberSpeaking     = "member:speaking"
 	EventRoomActiveSpeakers = "room:active-speakers"
 
 	// 禁言事件
@@ -52,11 +52,11 @@ const (
 	EventSFUProviderChanged = "sfu:provider-changed"
 
 	// 消息事件（客户端 → 服务端）
-	EventMessageSend     = "message:send"
-	EventMessageEdit     = "message:edit"
-	EventMessageDelete   = "message:delete"
-	EventMessageReact    = "message:react"
-	EventMessageUnreact  = "message:unreact"
+	EventMessageSend    = "message:send"
+	EventMessageEdit    = "message:edit"
+	EventMessageDelete  = "message:delete"
+	EventMessageReact   = "message:react"
+	EventMessageUnreact = "message:unreact"
 
 	// 消息事件（服务端推送）
 	EventMessageCreated  = "message:created"
@@ -65,4 +65,10 @@ const (
 	EventMessageReaction = "message:reaction"
 	EventMessageAck      = "message:ack"
 	EventMessageError    = "message:error"
+
+	// 私聊消息事件（客户端 → 服务端）
+	EventPrivateSend = "private:send"
+
+	// 私聊消息事件（服务端推送）
+	EventPrivateNew = "private:new"
 )
