@@ -17,6 +17,7 @@ import {
 } from "solid-js";
 import DynamicRender from "@/components/common/dynamicRender";
 import FuncButton from "@/components/funcButton";
+import GuildList from "@/components/guild/GuildList";
 import SettingModal from "@/components/modal/settting/settingModal";
 import MemberSidebar from "@/components/room/components/memberSidebar";
 import RoomDetail from "@/components/room/roomDetail";
@@ -162,7 +163,7 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 				<button
 					type="button"
 					class={itemClass(isChannel())}
-					onClick={() => navigate({ to: "/channel", search: { id: 12413 } })}
+					onClick={() => navigate({ to: "/channel" })}
 				>
 					<Headphones size={20} strokeWidth={2.1} />
 					<span>频道</span>
@@ -302,6 +303,7 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 					<Slot name="prev">
 						<div class="flex flex-col justify-between h-full" ref={prevRef}>
 							<div class="flex h-full">
+								<GuildList />
 								<Sidebar onOpenSettings={openSettings} />
 								<div class="box-border flex-1 border-color border-t border-l border-solid">
 									<DynamicRender />
