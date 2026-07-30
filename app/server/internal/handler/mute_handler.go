@@ -52,8 +52,17 @@ func (h *MuteHandler) CreateMute(c *gin.Context) {
 		return
 	}
 
-	userUUID, _ := c.Get("user_uuid")
-	muter, err := h.userSvc.GetByUUID(userUUID.(string))
+	userUUID, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.TOKEN_NOT_EXIST, "missing user identity in context")
+		return
+	}
+	userUUIDStr, ok := userUUID.(string)
+	if !ok || userUUIDStr == "" {
+		pkg.Fail(c, pkg.TOKEN_NOT_EXIST, "invalid user identity in context")
+		return
+	}
+	muter, err := h.userSvc.GetByUUID(userUUIDStr)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return

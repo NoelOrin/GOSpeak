@@ -9,16 +9,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/disk"
+
 	"GOSpeak/internal/bus"
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/redis"
 	"GOSpeak/internal/repository"
 	gpsignal "GOSpeak/internal/signal"
-
-	"github.com/gin-gonic/gin"
-	"github.com/shirou/gopsutil/v3/cpu"
-	"github.com/shirou/gopsutil/v3/disk"
 )
 
 // MonitorHandler 服务监控 SSE 处理器
@@ -46,17 +46,17 @@ func (h *MonitorHandler) HealthStream(c *gin.Context) {
 	// 从 query param 获取 token 并校验（EventSource 不支持自定义 header）
 	tokenStr := c.Query("token")
 	if tokenStr == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "token required"})
+		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return
 	}
 	claims, err := pkg.ParseToken(tokenStr)
 	if err != nil || pkg.IsTokenExpired(claims) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+		pkg.Fail(c, pkg.TOKEN_WRONG)
 		return
 	}
 	// 仅 admin 可访问监控 SSE
 	if claims.Role != "admin" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "admin only"})
+		pkg.Fail(c, pkg.FORBIDDEN)
 		return
 	}
 
