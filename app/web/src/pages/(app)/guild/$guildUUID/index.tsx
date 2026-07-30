@@ -14,6 +14,7 @@ function RouteComponent() {
 	const params = Route.useParams();
 	const navigate = useNavigate();
 	const [loading, setLoading] = createSignal(false);
+	const [error, setError] = createSignal("");
 
 	onMount(() => {
 		setCurrentGuild(params().guildUUID);
@@ -27,10 +28,13 @@ function RouteComponent() {
 
 	async function handleLeave() {
 		setLoading(true);
+		setError("");
 		try {
 			await leaveGuild(params().guildUUID);
 			removeGuild(params().guildUUID);
 			navigate({ to: "/" });
+		} catch (e: any) {
+			setError(e?.response?.data?.msg || "离开失败");
 		} finally {
 			setLoading(false);
 		}
@@ -39,10 +43,13 @@ function RouteComponent() {
 	async function handleDelete() {
 		if (!confirm("确定删除此服务器？此操作不可撤销。")) return;
 		setLoading(true);
+		setError("");
 		try {
 			await deleteGuild(params().guildUUID);
 			removeGuild(params().guildUUID);
 			navigate({ to: "/" });
+		} catch (e: any) {
+			setError(e?.response?.data?.msg || "删除失败");
 		} finally {
 			setLoading(false);
 		}
@@ -62,26 +69,31 @@ function RouteComponent() {
 				</span>
 				<span>成员上限: {guild()?.max_rooms || "无限"}</span>
 			</div>
-			<div class="flex gap-2 mt-auto">
-				<Show when={!isOwner()}>
-					<button
-						class="btn btn-error btn-sm"
-						onClick={handleLeave}
-						disabled={loading()}
-					>
-						离开服务器
-					</button>
+			<Show when={guild()}>
+				<Show when={error()}>
+					<div class="text-error text-sm mb-2">{error()}</div>
 				</Show>
-				<Show when={isOwner()}>
-					<button
-						class="btn btn-error btn-sm"
-						onClick={handleDelete}
-						disabled={loading()}
-					>
-						删除服务器
-					</button>
-				</Show>
-			</div>
+				<div class="flex gap-2 mt-auto">
+					<Show when={!isOwner()}>
+						<button
+							class="btn btn-error btn-sm"
+							onClick={handleLeave}
+							disabled={loading()}
+						>
+							{loading() ? "处理中..." : "离开服务器"}
+						</button>
+					</Show>
+					<Show when={isOwner()}>
+						<button
+							class="btn btn-error btn-sm"
+							onClick={handleDelete}
+							disabled={loading()}
+						>
+							{loading() ? "处理中..." : "删除服务器"}
+						</button>
+					</Show>
+				</div>
+			</Show>
 		</div>
 	);
 }
