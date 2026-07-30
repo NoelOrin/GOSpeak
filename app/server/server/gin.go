@@ -99,7 +99,6 @@ func StartGin(env EnvEnum) {
 	conversationRepo := repository.NewConversationRepository(repository.DB)
 	sfuConfigRepo := repository.NewSFUConfigRepository(repository.DB)
 	storageConfigRepo := repository.NewStorageConfigRepository(repository.DB)
-	messageRepo := repository.NewMessageRepository(repository.DB)
 
 	// 初始化权限系统
 	seedPermissions(permRepo)
@@ -319,15 +318,17 @@ func StartGin(env EnvEnum) {
 	oauthH := handler.NewOAuthHandler(oauthSvc)
 	roleH := handler.NewRoleHandler(roleSvc)
 	roomH := handler.NewRoomHandler(roomSvc, permSvc)
-		msgH := handler.NewMessageHandler(messageSvc, permSvc)
+	msgH := handler.NewMessageHandler(messageSvc, permSvc)
 	permH := handler.NewPermissionHandler(permSvc)
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
-	messageH := handler.NewMessageHandler(messageSvc, signalHub)
+	guildSvc := service.NewGuildService(repository.NewGuildRepository(repository.DB))
+	conversationSvc := service.NewConversationService(conversationRepo, messageRepo)
 	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc, signalHub)
 	storageH := handler.NewStorageHandler(storageSvc)
 	botH := handler.NewBotHandler(botSvc)
 	pluginH := handler.NewPluginHandler(pluginSvc)
 	guildH := handler.NewGuildHandler(guildSvc, permSvc)
+	conversationH := handler.NewConversationHandler(conversationSvc)
 
 	monitorH := handler.NewMonitorHandler(signalHub, cfg, eventBus)
 
@@ -396,7 +397,6 @@ func StartGin(env EnvEnum) {
 		logger.WithComponent("Plugin").Info("plugins stopped")
 
 		// 2) drain signal fanout then close socket connections
-		messageSvc.Shutdown()
 		logger.WithComponent("Message").Info("write queue closed")
 		closeEventBus()
 		logger.WithComponent("EventBus").Info("closed")

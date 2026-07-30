@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -161,7 +162,7 @@ func (b *BridgeClient) CloseParticipant(roomID, identity string) ([]string, erro
 		OK               bool     `json:"ok"`
 		ClosedProducerID []string `json:"closedProducerIds"`
 	}
-	err := b.do(http.MethodPost, "/rooms/"+roomID+"/participants/"+identity+"/close", bytes.NewReader([]byte("{}")), &result)
+	err := b.do(http.MethodPost, "/rooms/"+roomID+"/participants/"+url.PathEscape(identity)+"/close", bytes.NewReader([]byte("{}")), &result)
 	if err != nil {
 		if isNotFound(err) {
 			return nil, ErrParticipantNotFound
@@ -180,11 +181,11 @@ func (b *BridgeClient) ResumeProducer(roomID, producerID string) error {
 }
 
 func (b *BridgeClient) PauseParticipant(roomID, identity string) error {
-	return b.do(http.MethodPost, "/rooms/"+roomID+"/participants/"+identity+"/pause", bytes.NewReader([]byte("{}")), nil)
+	return b.do(http.MethodPost, "/rooms/"+roomID+"/participants/"+url.PathEscape(identity)+"/pause", bytes.NewReader([]byte("{}")), nil)
 }
 
 func (b *BridgeClient) ResumeParticipant(roomID, identity string) error {
-	return b.do(http.MethodPost, "/rooms/"+roomID+"/participants/"+identity+"/resume", bytes.NewReader([]byte("{}")), nil)
+	return b.do(http.MethodPost, "/rooms/"+roomID+"/participants/"+url.PathEscape(identity)+"/resume", bytes.NewReader([]byte("{}")), nil)
 }
 
 func (b *BridgeClient) do(method, path string, body io.Reader, out interface{}) error {

@@ -15,8 +15,6 @@ RUN pnpm --filter @gospeak/web build
 FROM golang:1.26-alpine AS go-builder
 WORKDIR /build
 COPY app/server/go.mod app/server/go.sum ./
-# go.mod replace 依赖本地 patch，必须在 go mod download 前拷贝
-COPY app/server/patch ./patch
 RUN go mod download
 COPY app/server/ ./
 # 将前端产物同步到 go:embed 目录，打进二进制

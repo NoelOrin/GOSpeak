@@ -44,7 +44,12 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		return
 	}
 
-	username, _ := c.Get("username")
+	usernameVal, ok := c.Get("username")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	username, _ := usernameVal.(string)
 	audioOnly := true
 	if req.AudioOnly != nil {
 		audioOnly = *req.AudioOnly
@@ -56,7 +61,7 @@ func (h *RoomHandler) Create(c *gin.Context) {
 	room, err := h.roomSvc.CreateRoom(
 		req.Name, req.Password, req.Description,
 		req.Limit, audioOnly, allowAudience,
-		username.(string), req.Type,
+		username, req.Type,
 	)
 	if err != nil {
 		pkg.HandleError(c, err)
@@ -165,11 +170,20 @@ func (h *RoomHandler) Update(c *gin.Context) {
 	}
 
 	// 资源归属校验：非 room:update 权限的用户只能编辑自己创建的房间
-	username, _ := c.Get("username")
-	role, _ := c.Get("role")
-	roleStr, _ := role.(string)
-	if !h.permSvc.HasPermission(roleStr, permcode.PermRoomUpdate) {
-		if room.CreatedBy != username.(string) {
+	usernameVal, ok := c.Get("username")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	username, _ := usernameVal.(string)
+	roleVal, ok := c.Get("role")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	roleStr, _ := roleVal.(string)
+	if h.permSvc == nil || !h.permSvc.HasPermission(roleStr, permcode.PermRoomUpdate) {
+		if room.CreatedBy != username {
 			pkg.Fail(c, pkg.FORBIDDEN, "只能编辑自己创建的房间")
 			return
 		}

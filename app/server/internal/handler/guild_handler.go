@@ -30,8 +30,13 @@ func (h *GuildHandler) Create(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	ownerUUID, _ := c.Get("user_uuid")
-	guild, err := h.guildSvc.Create(req.Name, req.Description, ownerUUID.(string), req.IsPublic)
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	guild, err := h.guildSvc.Create(req.Name, req.Description, userUUID, req.IsPublic)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -95,8 +100,13 @@ func (h *GuildHandler) ListPublic(c *gin.Context) {
 
 // MyGuilds 返回当前用户加入的 Guild UUID 列表。
 func (h *GuildHandler) MyGuilds(c *gin.Context) {
-	userUUID, _ := c.Get("user_uuid")
-	uuids, err := h.guildSvc.ListUserGuilds(userUUID.(string))
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	uuids, err := h.guildSvc.ListUserGuilds(userUUID)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -158,9 +168,14 @@ func (h *GuildHandler) Delete(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	userUUID, _ := c.Get("user_uuid")
-	permOK := h.permSvc != nil && h.permSvc.HasPermission(userUUID.(string), permcode.PermGuildDelete)
-	ownerOK := h.guildSvc.IsOwner(req.UUID, userUUID.(string))
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	permOK := h.permSvc != nil && h.permSvc.HasPermission(userUUID, permcode.PermGuildDelete)
+	ownerOK := h.guildSvc.IsOwner(req.UUID, userUUID)
 	if !permOK && !ownerOK {
 		pkg.Fail(c, pkg.FORBIDDEN, "not guild owner or missing permission")
 		return
@@ -183,8 +198,13 @@ func (h *GuildHandler) Join(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	userUUID, _ := c.Get("user_uuid")
-	guild, err := h.guildSvc.Join(req.InviteCode, userUUID.(string))
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	guild, err := h.guildSvc.Join(req.InviteCode, userUUID)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -203,8 +223,13 @@ func (h *GuildHandler) Leave(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	userUUID, _ := c.Get("user_uuid")
-	if err := h.guildSvc.Leave(req.UUID, userUUID.(string)); err != nil {
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	if err := h.guildSvc.Leave(req.UUID, userUUID); err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
@@ -223,9 +248,14 @@ func (h *GuildHandler) Kick(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	userUUID, _ := c.Get("user_uuid")
-	permOK := h.permSvc != nil && h.permSvc.HasPermission(userUUID.(string), permcode.PermGuildKick)
-	roleOK := h.guildSvc.HasGuildRole(req.GuildUUID, userUUID.(string), service.GuildRoleAdmin)
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	permOK := h.permSvc != nil && h.permSvc.HasPermission(userUUID, permcode.PermGuildKick)
+	roleOK := h.guildSvc.HasGuildRole(req.GuildUUID, userUUID, service.GuildRoleAdmin)
 	if !permOK && !roleOK {
 		pkg.Fail(c, pkg.FORBIDDEN, "insufficient guild role or permission")
 		return

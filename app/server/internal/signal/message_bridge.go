@@ -20,11 +20,6 @@ type messageSender interface {
 	Unreact(roomUUID, messageUUID, userID, emoji string) error
 }
 
-// SetMessageService injects the message service into the Hub.
-func (h *Hub) SetMessageService(svc messageSender) {
-	h.msgSvc = svc
-}
-
 // messageSendPayload is the client->server payload for message:send.
 type messageSendPayload struct {
 	Room        string   `json:"room"`
@@ -92,6 +87,15 @@ func (h *Hub) checkMessagePerm(s socketio.Conn) string {
 		}
 	}
 	return ""
+}
+
+// claimsIdentity extracts the username from a socketio.Conn context (legacy path).
+func claimsIdentity(s socketio.Conn) string {
+	claims, ok := s.Context().(*pkg.Claims)
+	if !ok || claims == nil {
+		return ""
+	}
+	return claims.Username
 }
 
 // OnMessageSend handles message:send events from clients.

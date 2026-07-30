@@ -218,25 +218,17 @@ func (h *Hub) SetStreamResolver(r StreamNameResolver) {
 func (h *Hub) SetupFanout(fanout ws.Broadcaster, handler *ws.HandlerRegistry) {
 	h.SetFanout(fanout)
 
-	server.OnConnect("/", safeOnConnect(h.OnConnect))
-	server.OnDisconnect("/", safeOnDisconnect(h.OnDisconnect))
-	server.OnError("/", safeOnError(h.OnError))
-	server.OnEvent("/", EventRoomCreate, safeOnEventData(h.OnRoomCreate))
-	server.OnEvent("/", EventRoomJoin, safeOnEventDataAck(h.OnRoomJoin))
-	server.OnEvent("/", EventRoomJoinSFU, safeOnEventDataAck(h.OnRoomJoinSFU))
-	server.OnEvent("/", EventRoomLeave, safeOnEventDataAck(h.OnRoomLeave))
-	server.OnEvent("/", EventRoomList, safeOnEventNoData(h.OnRoomList))
-	server.OnEvent("/", EventRoomKick, safeOnEventData(h.OnRoomKick))
-	server.OnEvent("/", EventMemberMicState, safeOnEventData(h.OnMemberMicState))
-	server.OnEvent("/", EventMemberSpeaking, safeOnEventData(h.OnMemberSpeaking))
-	server.OnEvent("/",  EventBotCommand, safeOnEventData(h.PublishBotCommand))
-	server.OnEvent("/",  EventBotMessage, safeOnEventData(h.PublishBotMessage))
-	// Message events
-	server.OnEvent("/", EventMessageSend, safeOnEventDataAck(h.OnMessageSend))
-	server.OnEvent("/", EventMessageEdit, safeOnEventDataAck(h.OnMessageEdit))
-	server.OnEvent("/", EventMessageDelete, safeOnEventDataAck(h.OnMessageDelete))
-	server.OnEvent("/", EventMessageReact, safeOnEventDataAck(h.OnMessageReact))
-	server.OnEvent("/", EventMessageUnreact, safeOnEventDataAck(h.OnMessageUnreact))
+	handler.Handle(EventRoomCreate, h.OnRoomCreate)
+	handler.HandleAck(EventRoomJoin, h.OnRoomJoin)
+	handler.HandleAck(EventRoomJoinSFU, h.OnRoomJoinSFU)
+	handler.HandleAck(EventRoomLeave, h.OnRoomLeave)
+	handler.Handle(EventRoomList, func(c ws.ClientMessenger, _ string) { h.OnRoomList(c) })
+	handler.Handle(EventRoomKick, h.OnRoomKick)
+	handler.Handle(EventMemberMicState, h.OnMemberMicState)
+	handler.Handle(EventMemberSpeaking, h.OnMemberSpeaking)
+	handler.Handle(EventBotCommand, h.PublishBotCommand)
+	handler.Handle(EventBotMessage, h.PublishBotMessage)
+
 	if h.sfuSignalHandler != nil {
 		h.sfuSignalHandler.RegisterWS(handler.HandleAck)
 	}
@@ -327,7 +319,7 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 			cleanups = append(cleanups, disconnectCleanup{roomName, identity, deleted})
 		}
 	}
-	delete(h.connSlots, s.ID())
+	delete(h.connSlots, c.ID())
 	h.mu.Unlock()
 
 	// publish after unlock: avoid holding hub mu across NATS/Socket.IO I/O
@@ -527,29 +519,29 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 			roomType = model.NormalizeRoomType(dbRoom.Type)
 		}
 	}
-	slots := h.connSlots[s.ID()]
+	slots := h.connSlots[c.ID()]
 	if slots == nil {
 		slots = &connRoomSlots{}
-		h.connSlots[s.ID()] = slots
+		h.connSlots[c.ID()] = slots
 	}
 	if roomType == model.RoomTypeText {
 		// Switching text rooms: leave old slot
 		if slots.TextRoom != "" && slots.TextRoom != req.Room {
-			s.Leave(slots.TextRoom)
+			h.fanout.Leave(slots.TextRoom, c.ID())
 		}
 		slots.TextRoom = req.Room
 	} else {
 		// Switching voice rooms: leave old slot
 		if slots.VoiceRoom != "" && slots.VoiceRoom != req.Room {
-			s.Leave(slots.VoiceRoom)
+			h.fanout.Leave(slots.VoiceRoom, c.ID())
 		}
 		slots.VoiceRoom = req.Room
 	}
 	h.mu.Unlock()
 
-	s.Join(req.Room)
+	h.fanout.Join(req.Room, c.ID())
 
-	log.Printf("[Signal] %s (%s) signaling ready for room: %s (type=%s)", s.ID(), identity, req.Room, roomType)
+	log.Printf("[Signal] %s (%s) signaling ready for room: %s (type=%s)", c.ID(), identity, req.Room, roomType)
 
 	return marshalAck(map[string]interface{}{
 		"room":     req.Room,
@@ -619,7 +611,7 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	// 重复身份检查：同一房间不允许同一 identity 用不同 socket 重复加入
 	if h.duplicateIdentityLocked(req.Room, identity, c.ID()) {
 		h.mu.Unlock()
-		// 拒绝加入：回退 phase1 的 s.Join，避免 socket 残留在 socket.io room
+		// 拒绝加入：回退 phase1 的 fanout.Join，避免 socket 残留在 WS room
 		h.fanout.Leave(req.Room, c.ID())
 		return marshalAck(map[string]interface{}{
 			"error":    "duplicate connection not allowed",
@@ -657,7 +649,7 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	h.mu.RUnlock()
 	if !memberExists {
 		log.Printf("[Signal] sfu join rejected: %s not in room %s", c.ID(), req.Room)
-		// 回退 phase1 的 s.Join，避免 socket 残留在 socket.io room
+		// 回退 phase1 的 fanout.Join，避免 socket 残留在 WS room
 		h.fanout.Leave(req.Room, c.ID())
 		return marshalAck(map[string]interface{}{
 			"error": "not in room",
@@ -1347,7 +1339,7 @@ func (h *Hub) SetCleanupPublisher(p cleanupPublisher) {
 }
 
 func (h *Hub) SetMessageService(svc messageSender) {
-	h.messageSvc = svc
+	h.msgSvc = svc
 }
 
 // IsRoomMember checks if identity is currently in room's member list.

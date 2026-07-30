@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type Client struct {
@@ -35,7 +36,7 @@ func NewClient(apiKey string) *Client {
 	return &Client{
 		baseURL: "https://api.daily.co/v1",
 		apiKey:  strings.TrimSpace(apiKey),
-		http:    &http.Client{},
+		http:    &http.Client{Timeout: 30 * time.Second},
 	}
 }
 

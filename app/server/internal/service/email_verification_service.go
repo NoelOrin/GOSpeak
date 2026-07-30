@@ -1,10 +1,11 @@
 package service
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"strings"
 	"time"
 
@@ -201,6 +202,10 @@ func generateNumericCode(length int) string {
 		max *= 10
 	}
 	min := max / 10
-	value := rand.Intn(max-min) + min
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max-min)))
+	if err != nil {
+		return fmt.Sprintf("%0*d", length, 0)
+	}
+	value := int(n.Int64()) + min
 	return fmt.Sprintf("%0*d", length, value)
 }

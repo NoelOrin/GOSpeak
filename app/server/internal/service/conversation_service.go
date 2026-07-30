@@ -6,11 +6,20 @@ import (
 	"GOSpeak/internal/repository"
 )
 
+const (
+	DefaultListLimit = 50
+	MaxListLimit     = 200
+)
+
+type MessageListResult struct {
+	Messages   []MessageDTO `json:"messages"`
+	NextCursor string       `json:"next_cursor,omitempty"`
+}
+
 type ConversationService struct {
 	convRepo    *repository.ConversationRepository
 	messageRepo *repository.MessageRepository
 }
-
 func NewConversationService(
 	convRepo *repository.ConversationRepository,
 	messageRepo *repository.MessageRepository,
@@ -63,6 +72,20 @@ func (s *ConversationService) List(identity string, limit int) ([]ConversationDT
 	return out, nil
 }
 
+// toMessageDTO converts a model.Message to a MessageDTO.
+func toMessageDTO(m *model.Message) MessageDTO {
+	return MessageDTO{
+		UUID:      m.UUID,
+		RoomUUID:  m.RoomUUID,
+		AuthorID:  m.AuthorID,
+		Content:   m.Content,
+		ReplyTo:   m.ReplyTo,
+		EditedAt:  m.EditedAt,
+		Deleted:   m.DeletedAt.Valid,
+		CreatedAt: m.CreatedAt,
+	}
+}
+
 // GetMessages returns paginated messages for a conversation.
 // The caller must be a participant (checked against IdentityA / IdentityB).
 func (s *ConversationService) GetMessages(conversationID, identity, before string, limit int) (*MessageListResult, error) {
@@ -84,7 +107,7 @@ func (s *ConversationService) GetMessages(conversationID, identity, before strin
 		limit = MaxListLimit
 	}
 
-	rows, err := s.messageRepo.ListByConversation(conversationID, before, limit)
+	rows, hasMore, err := s.messageRepo.ListBefore(conversationID, before, limit)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -93,8 +116,8 @@ func (s *ConversationService) GetMessages(conversationID, identity, before strin
 	for i := range rows {
 		out.Messages = append(out.Messages, toMessageDTO(&rows[i]))
 	}
-	if len(rows) == limit {
-		out.NextCursor = rows[0].ID
+	if hasMore && len(rows) > 0 {
+		out.NextCursor = rows[0].UUID
 	}
 	return out, nil
 }
