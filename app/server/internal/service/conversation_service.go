@@ -1,9 +1,21 @@
 package service
 
 import (
+	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
+	"sort"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"GOSpeak/internal/bus"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -19,12 +31,19 @@ type MessageListResult struct {
 type ConversationService struct {
 	convRepo    *repository.ConversationRepository
 	messageRepo *repository.MessageRepository
+	eventBus    bus.EventBus
 }
+
 func NewConversationService(
 	convRepo *repository.ConversationRepository,
 	messageRepo *repository.MessageRepository,
 ) *ConversationService {
 	return &ConversationService{convRepo: convRepo, messageRepo: messageRepo}
+}
+
+// SetEventBus injects the event bus used to broadcast private-message events.
+func (s *ConversationService) SetEventBus(b bus.EventBus) {
+	s.eventBus = b
 }
 
 // ConversationDTO is the client-facing view of a conversation.
@@ -139,4 +158,81 @@ func ConvTo(cp *model.ConversationParticipant, self string) string {
 		return cp.IdentityA
 	}
 	return cp.IdentityB
+}
+
+// SendDirect creates and broadcasts a private message, then persists it.
+func (s *ConversationService) SendDirect(senderIdentity, targetIdentity, content, clientNonce string) (*MessageDTO, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "content is required")
+	}
+	if utf8.RuneCountInString(content) > MaxMessageRunes {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "content too long")
+	}
+	if senderIdentity == "" || targetIdentity == "" {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "sender and target required")
+	}
+	if senderIdentity == targetIdentity {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "cannot send to self")
+	}
+
+	// Generate conversation ID: sorted identities → MD5 hex (32 chars)
+	identities := []string{senderIdentity, targetIdentity}
+	sort.Strings(identities)
+	hashBytes := md5.Sum([]byte(identities[0] + ":" + identities[1]))
+	convID := hex.EncodeToString(hashBytes[:])
+
+	now := time.Now().UTC()
+	msgUUID := uuid.New().String()
+
+	// Upsert conversation participant row
+	cp := &model.ConversationParticipant{
+		ConversationID:     convID,
+		IdentityA:          identities[0],
+		IdentityB:          identities[1],
+		LastContent:        content,
+		LastSenderIdentity: senderIdentity,
+		LastMessageAt:      &now,
+	}
+	if err := s.convRepo.Upsert(cp); err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+
+	// Increment unread for receiver
+	_ = s.convRepo.IncrementUnread(convID, senderIdentity)
+
+	dto := &MessageDTO{
+		UUID:        msgUUID,
+		AuthorID:    senderIdentity,
+		Content:     content,
+		Deleted:     false,
+		CreatedAt:   now,
+		ClientNonce: clientNonce,
+	}
+
+	// Broadcast private:new via PublishNamespace (not room-scoped).
+	// Using the string literal to avoid an import cycle (signal imports service).
+	if s.eventBus != nil {
+		payload, _ := json.Marshal(dto)
+		_ = s.eventBus.PublishNamespace(context.Background(), "private:new", payload)
+	}
+
+	// Persist message
+	convIDPtr := convID
+	targetPtr := targetIdentity
+	msg := &model.Message{
+		UUID:             msgUUID,
+		AuthorID:         senderIdentity,
+		Content:          content,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		ConversationType: "private",
+		ConversationID:   &convIDPtr,
+		TargetIdentity:   &targetPtr,
+	}
+	if err := s.messageRepo.Create(msg); err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+
+	return dto, nil
 }
