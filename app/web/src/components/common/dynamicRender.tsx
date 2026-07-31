@@ -6,6 +6,7 @@ import ConversationList from "@/components/chat/conversationList";
 import HomePage from "@/components/home/homePage";
 import ManageNav from "@/components/manage/manageNav";
 import RoomList from "@/components/room/roomList";
+import ConversationList from "@/components/chat/conversationList";
 
 // 路径前缀 -> 左侧面板组件（长前缀优先匹配）
 const PREFIX_MAP: [string, (...args: any[]) => JSX.Element][] = [

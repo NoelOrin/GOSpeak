@@ -1,19 +1,28 @@
-import ChatWindow from "./chatWindow";
-import ConversationList from "./conversationList";
-import MemberSidebar from "./memberSidebar";
+import { Show } from "solid-js";
+import ChatWindow from "@/components/chat/chatWindow";
+import MemberSidebar from "@/components/chat/memberSidebar";
+import { chatStore } from "@/stores/chatStore";
 
-export default function ChatPage() {
+const ChatPage = () => {
 	return (
-		<div class="flex flex-row w-full h-full">
-			<div class="w-56 shrink-0 border-r border-base-300 hidden sm:block">
-				<ConversationList />
-			</div>
-			<div class="flex-1 min-w-0">
+		<Show
+			when={true}
+			fallback={
+				<div class="flex justify-center items-center h-full text-sm text-base-content/40 select-none">
+					加载中...
+				</div>
+			}
+		>
+			<div class="flex flex-row w-full h-full">
 				<ChatWindow />
+				<MemberSidebar
+					onStartChat={(identity, _displayName) => {
+						chatStore.startConversation(identity);
+					}}
+				/>
 			</div>
-			<div class="w-48 shrink-0 border-l border-base-300 hidden sm:block">
-				<MemberSidebar />
-			</div>
-		</div>
+		</Show>
 	);
-}
+};
+
+export default ChatPage;

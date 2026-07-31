@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/solid-router";
 import Headphones from "lucide-solid/icons/headphones";
-import Home from "lucide-solid/icons/home";
 import MessageSquare from "lucide-solid/icons/message-square";
+import Home from "lucide-solid/icons/home";
 import Settings from "lucide-solid/icons/settings";
 import ShieldCheck from "lucide-solid/icons/shield-check";
 import { Show } from "solid-js";

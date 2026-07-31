@@ -291,6 +291,13 @@ export const socketStore = createRoot(() => {
 		);
 
 		adapter.onServerEvent(EVENTS.USER_UNMUTED, (data: UnmuteEvent) => {
+			// 私聊消息：private:new
+			adapter.onServerEvent(EVENTS.PRIVATE_NEW as string, (dto: any) => {
+				import("@/stores/chatStore").then(({ chatStore }) => {
+					chatStore.handlePrivateNew(dto);
+				});
+			});
+
 			console.log("[Socket] user:unmuted", data.user_id);
 			if (data.user_id !== userStore.user()?.id) return;
 			showToast("你的禁言已被解除，可以重新发言", { type: "success" });
