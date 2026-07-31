@@ -1,7 +1,6 @@
 export type UserInfo = {
 	id: string;
-} & LocalUserInfo &
-	keyof Token;
+} & LocalUserInfo;
 
 export type LocalUserInfo = {
 	name: string;

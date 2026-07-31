@@ -198,7 +198,10 @@ export const Form = (props: FormProps) => {
 							name={config.name}
 							validators={{
 								onChange: ({ value }: { value: any }) => {
-									if (config.required && (!value || value === "")) {
+									if (
+										config.required &&
+										(value === undefined || value === null || value === "")
+									) {
 										return `${config.label} 是必填项`;
 									}
 									if (config.validation) {

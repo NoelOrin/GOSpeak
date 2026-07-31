@@ -78,9 +78,7 @@ export default defineConfig(async ({ mode }) => {
               shell: true,
               cwd: process.cwd(),
             });
-            server.httpServer?.on("close", () => {
-              tsr.kill();
-            });
+            if (server.httpServer) server.httpServer.on("close", () => tsr.kill());
 
             tsr.on("error", (err) => {
               console.error(err);
