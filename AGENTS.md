@@ -10,6 +10,7 @@ GOSpeak 是一个自托管的**游戏语音平台**，类似自部署版 Discord
 - 🎮 语音房间管理（创建/加入/密码保护/踢人）
 - 🗣️ 实时发言检测 + 成员独立音量控制
 - 🔄 多 SFU 运行时切换（LiveKit / SRS / MediaSoup / Agora / Daily）
+- 🔄 多 SFU 运行时切换（LiveKit / SRS / MediaSoup / Agora / Daily / Cloudflare）
 - 🐘 渐进式数据库（SQLite 开箱即用 → PostgreSQL → MySQL）
 - 🔌 JWT + OAuth2 三端登录（GitHub / Google / QQ）
 
@@ -45,7 +46,7 @@ app/server/
 │   ├── handler/            # HTTP controller (Gin handlers)
 │   ├── middleware/         # JWT auth, CORS, permission-based RBAC, ban check
 │   ├── router/             # Route registration (sub-route modules)
-│   │   └── routes/         # Per-module route groups (auth, user, signal, oauth, sfu, role, permission, mute, room, storage, bot, email, srs, system)
+│   │   └── routes/         # Per-module route groups (auth, user, signal, oauth, sfu, role, permission, mute, room, storage, bot, email, srs, system, guild, conversation, message, plugin)
 │   ├── sfu/                # SFU provider abstraction layer
 │   ├── livekit/            # LiveKit SFU implementation
 │   ├── agora/              # Agora SFU implementation
@@ -53,7 +54,15 @@ app/server/
 │   ├── mediasoup/          # MediaSoup SFU implementation
 │   ├── srs/                # SRS SFU implementation (WHIP/WHEP)
 │   ├── cloudflare/         # Cloudflare Realtime SFU implementation
+│   │   └── providers/      # SFU provider implementations
+│   │       ├── livekit/    # LiveKit SFU implementation
+│   │       ├── agora/      # Agora SFU implementation
+│   │       ├── daily/      # Daily SFU implementation
+│   │       ├── mediasoup/  # MediaSoup SFU implementation
+│   │       ├── srs/        # SRS SFU implementation (WHIP/WHEP)
+│   │       └── cloudflare/ # Cloudflare Realtime SFU implementation
 │   ├── permcode/           # Permission code constants
+│   ├── bus/                # Multi-instance event bus (NATS/Redis)
 │   ├── signal/             # Socket.IO signaling hub
 │   ├── redis/              # Optional Redis client (blacklist, JWT key rotation)
 │   ├── logger/             # Unified logrus wrapper (level/format/output + gin middleware)
@@ -88,6 +97,7 @@ Each layer communicates **only with the layer directly below it**:
 - **OAuth** is a standalone package for third-party login (GitHub, Google, QQ)
 - **Redis** is an optional standalone package for token blacklist and JWT key rotation
 - **Signal** is a standalone WebSocket hub for signaling
+- **Bus** is a multi-instance event bus (NATS/Redis) for cross-instance room fanout, membership, mute rules, and auth stores
 
 ---
 
@@ -290,6 +300,18 @@ if err := c.ShouldBindJSON(&req); err != nil {
 | POST | `/api/v1/guild/members` | JWT | `guild:read` | GuildHandler.Members |
 
 | WS | `/socket.io/*` | No | — | Socket.IO signaling |
+| POST | `/api/v1/conversation/list` | JWT | — | ConversationHandler.List |
+| POST | `/api/v1/conversation/messages` | JWT | — | ConversationHandler.Messages |
+| POST | `/api/v1/conversation/mark-read` | JWT | — | ConversationHandler.MarkRead |
+| POST | `/api/v1/room/messages/list` | JWT | `message:read` | MessageHandler.List |
+| POST | `/api/v1/room/messages/send` | JWT | `message:send` | MessageHandler.Send |
+| POST | `/api/v1/room/messages/edit` | JWT | `message:send` | MessageHandler.Edit |
+| POST | `/api/v1/room/messages/delete` | JWT | `message:send` | MessageHandler.Delete |
+| POST | `/api/v1/room/messages/react` | JWT | `message:send` | MessageHandler.React |
+| POST | `/api/v1/room/messages/unreact` | JWT | `message:send` | MessageHandler.Unreact |
+| POST | `/api/v1/plugins/list` | JWT | `plugin:read` | PluginHandler.List |
+| POST | `/api/v1/plugins/get` | JWT | `plugin:read` | PluginHandler.Get |
+| POST | `/api/v1/plugins/update` | JWT | `plugin:manage` | PluginHandler.Update |
 
 ---
 
@@ -523,6 +545,38 @@ When Redis is not connected, blacklist operations are no-ops (best-effort strate
 - **Redis not connected**: falls back to static `JWT_KEY` env var (default `"default-secret"`).
 
 ---
+## Bus Module (Multi-Instance Event Bus)
+
+Multi-instance event bus and shared state at `internal/bus/`. Provides cross-instance coordination for Socket.IO fanout, membership sharing, mute rules, JWT auth, and async job queues.
+
+### Capabilities
+
+| Capability | Backend | Purpose |
+|------------|---------|---------|
+| EventBus | NATS (embedded/external) | Socket.IO cross-instance fanout (room/namespace) + internal events |
+| MembershipStore | redis -> NATS KV -> none | Room member / stream mapping sharing |
+| MuteRuleStore | redis -> NATS KV -> memory | Agora kicking-rule id and degraded mute cache |
+| AuthStore | redis (preferred) / NATS KV | JWT blacklist + signing key rotation |
+| JobQueue | NATS JetStream | SFU cleanup and async tasks |
+
+### Resolution Order
+
+- `STATE_STORE=auto`: redis -> nats -> graceful degradation
+- `MuteRule`: final fallback is in-memory (never blocks startup)
+- `Auth`: redis first; NATS KV second; static `JWT_KEY` last
+
+### Constraints
+
+- Membership writes merge by `InstanceID` -- never overwrite remote members with full room state
+- Stream leave/kick/disconnect must call `DeleteStream`
+- Client broadcasts go through `publishRoom` / `publishNamespace`, never raw `BroadcastToRoom`
+
+### Integration
+
+Initialized in `server/gin.go` after DB + Redis setup. The `WSDeliverer` bridges NATS fanout into the local Socket.IO server, so cross-instance messages reach all connected clients.
+
+---
+
 
 ## OAuth Module
 
@@ -647,6 +701,7 @@ Access control is **permission-based**, layered on top of roles.
 - **Roles** (`roles` table): seeded with `admin`, `user`, `ban`. The `ban` role is intercepted by `BanCheck()` and always gets `FORBIDDEN`.
 - **Default admin account**: first boot seeds user `admin` / `admin123` when missing (`service.DefaultAdminPassword`). Login returns `need_change_password=true` while still on the default password; change it immediately in production.
 - **Permissions** (`permissions` table): each row holds a `permcode` constant such as `user:read`, `room:create`, `sfu:manage`, `mute:manage`, `bot:manage`, `storage:delete`, `oauth:manage`, `email_config:read`, `role:manage`, `signal:kick`.
+- **Guild permcodes** (`internal/permcode/guild_permcode.go`): `guild:create`, `guild:read`, `guild:manage`, `guild:delete`, `guild:invite`, `guild:kick`, `guild:role:manage`.
 - **Role → Permission mapping** (`role_permissions` table): links a role name to permission IDs. `RequirePermission` resolves a user's effective permissions from their `role`.
 - **Bot tokens** (`bot_tokens`): carry an explicit `permissions` list in the JWT (`Claims.Permissions`). Bot-scoped permissions are whitelisted via `model.BotScopedPermissions` so bots cannot reach platform-admin surfaces.
 - **Token versioning**: `User.TokenVersion` is embedded in the JWT. Changing a password / resetting it bumps the version, so all previously issued tokens are rejected (`TOKEN_REVOKED`).
@@ -672,6 +727,12 @@ All permission constants live in `internal/permcode/permcode.go`.
 | `StorageConfig` | `storage_configs` | ID, ProviderType (`local`/`s3`), Endpoint, Bucket, Region, AccessKey & SecretKey (hidden), PublicBaseURL, PathPrefix, MaxFileSize, AllowedTypes, timestamps |
 | `SFUConfig` | `sfu_configs` | Provider (PK), LiveKit*/Agora*/MediaSoup*/SRS*/Daily*/Cloudflare* config fields, timestamps |
 | `SFUActiveProvider` | `sfu_active_provider` | ID, Provider |
+| `Guild` | `guilds` | UUID, Name, OwnerUUID, InviteCode, RoomLimit, Public, timestamps |
+| `Message` | `messages` | UUID, RoomID, SenderUUID, Content, Type, EditHistory, ReplyTo, timestamps |
+| `MessageMention` | `message_mentions` | MessageID, UserID, ReadAt |
+| `MessageReaction` | `message_reactions` | MessageID, UserID, Emoji (unique per user+message+emoji) |
+| `ConversationParticipant` | `conversation_participants` | UserID, ConversationID, LastReadAt |
+| `PluginConfig` | `plugin_configs` | Name, Enabled, Config JSON |
 
 > Auto-migration (`repository/db.go`) syncs all of the above on startup. New fields/models take effect after a restart — no manual DDL.
 
@@ -738,6 +799,7 @@ hub.BroadcastToRoom(namespace, room, event, data)
 | mediasoup | ✅ bridge `CloseParticipant` | 补全实现（历史文档误标为跳过） |
 | daily | ✅ list → 按 session id `RemoveParticipant` | 补全实现（历史文档误标为跳过） |
 | agora | ❌ 跳过（返回 `ErrSFUNotSupported`，无单用户踢人 REST API） | 未实现，仅 ban 语义 |
+| cloudflare | ❌ 跳过（返回 `ErrSFUNotSupported`，WHIP/WHEP 媒体无单用户踢人 REST） | 未实现 |
 
 `/signal/rooms` 和 `/signal/participants` 失败时返回空列表 `[]`。SFU 媒体节点状态与 WS 在线成员不可互相 fallback。
 
@@ -1004,7 +1066,7 @@ pnpm build:server
 
 ## Adding a New SFU Backend
 
-1. Create `internal/<provider>/client.go` implementing `sfu.Provider`
+1. Create `internal/sfu/providers/<provider>/client.go` implementing `sfu.Provider`
 2. Add a case in `internal/sfu/factory.go` for the new `SFU_PROVIDER` value
 3. Add provider-specific config fields to `internal/config/config.go`, `model.SFUConfig`, and the `/api/v1/sfu/config` management flow when needed
 4. Set `SFU_PROVIDER="<provider>"` in `.env.dev` or update config through `/api/v1/sfu/config`

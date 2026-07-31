@@ -23,7 +23,11 @@ router/
     ├── sfu_config/    # SFU 配置（受保护，sfu:manage）
     ├── srs/           # SRS 回调（公开）
     ├── system/        # 健康检查流（公开）
-    └── swagger/       # Swagger UI（中文）
+    ├── swagger/       # Swagger UI（中文）
+    ├── conversation/  # 会话（受保护）
+    ├── guild/         # 语音服务器管理（受保护）
+    ├── message/       # 房间消息（受保护）
+    └── plugin/        # 插件管理（受保护）
 ```
 
 ## 路由分组
@@ -44,5 +48,9 @@ router/
 | `/api/v1/sfu` | JWT + `sfu:manage` | SFU provider 配置 |
 | `/api/v1/srs` | 无 | SRS HTTP Hooks 回调 |
 | `/api/v1/system` | 无 | 健康检查流 |
+| `/api/v1/guild` | JWT + perm | Guild 语音服务器 CRUD、成员管理 |
+| `/api/v1/conversation` | JWT | 会话列表/消息历史/标记已读 |
+| `/api/v1/room/messages` | JWT + perm | 房间消息 CRUD、表情回应 |
+| `/api/v1/plugins` | JWT + perm | 插件列表/详情/更新 |
 
 > Swagger 使用 `locale: "zh-CN"` 显示中文界面

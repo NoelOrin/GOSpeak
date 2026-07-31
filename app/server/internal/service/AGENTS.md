@@ -20,11 +20,15 @@
 | sfu_config_service.go | SFU 配置持久化、provider 切换、激活 provider 解析 |
 | sfu_service.go | SFU 动态 provider 解析与分发 |
 | cloudflare_media_service.go | Cloudflare Realtime 媒体会话管理 |
+| conversation_service.go | 会话列表、消息历史、标记已读 |
+| guild_service.go | Guild CRUD、成员管理、邀请码校验 |
+| message_service.go | 消息发送/编辑/删除/表情回应 + 系统消息生成 |
+| plugin_service.go | 插件配置读取/更新 |
 
 ## 业务语义
 
 - 禁言是**用户级禁言**，不是房间级静音。用户级禁言：允许收听，但不能发布本地音轨。
-- service 层只使用“禁言/仅收听”语义，不要表述为本地播放静音。
+- service 层只使用"禁言/仅收听"语义，不要表述为本地播放静音。
 
 ## 依赖关系
 

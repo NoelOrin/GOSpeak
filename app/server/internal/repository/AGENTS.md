@@ -19,6 +19,10 @@
 | email_verification_code_repo.go | 验证码：CRUD、场景查询、尝试计数 |
 | storage_config_repo.go | 存储配置：读取/更新 |
 | sfu_config_repo.go | SFU 配置：按 provider 读写、激活 provider 读写 |
+| guild_repo.go | Guild 语音服务器：CRUD、成员管理 |
+| message_repo.go | 消息（文本/系统）：CRUD、按房间查询、编辑/删除 |
+| conversation_repo.go | 会话列表：按用户查询、标记已读 |
+| plugin_config_repo.go | 插件配置：CRUD |
 
 ## 注意事项
 
