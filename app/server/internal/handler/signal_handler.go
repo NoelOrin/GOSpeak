@@ -30,13 +30,39 @@ func (h *SignalHandler) SetJobs(j livekitJobPublisher) {
 	h.jobs = j
 }
 
+// GetWSTicket
+// @Summary      获取 WebSocket 短时 ticket
+// @Description  签发只用于 WS 握手的短时 ticket，避免 JWT 出现在 URL query 和访问日志中
+// @Tags         信令
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  pkg.Response
+// @Router       /signal/ws-ticket [get]
+func (h *SignalHandler) GetWSTicket(c *gin.Context) {
+	claimsVal, ok := c.Get("claims")
+	if !ok {
+		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
+		return
+	}
+	claims, ok := claimsVal.(*pkg.Claims)
+	if !ok || claims == nil || claims.Username == "" {
+		pkg.Fail(c, pkg.TOKEN_WRONG)
+		return
+	}
+	ticket, err := pkg.GenerateWSTicket(claims.Username, claims.DisplayName, claims.UserUUID, claims.Role, claims.TokenVersion)
+	if err != nil {
+		pkg.Fail(c, pkg.INTERNAL_ERROR)
+		return
+	}
+	pkg.Success(c, gin.H{"ticket": ticket})
+}
 
 // JoinRoomRequest 加入房间请求
 type JoinRoomRequest struct {
-	Room     string `json:"room" binding:"required" example:"my-room"`
+	Room      string `json:"room" binding:"required" example:"my-room"`
 	GuildUUID string `json:"guild_uuid,omitempty"`
-	Identity string `json:"identity,omitempty" example:"user-123"` // 兼容字段，服务端以 JWT username 覆盖
-	Password string `json:"password,omitempty"`
+	Identity  string `json:"identity,omitempty" example:"user-123"` // 兼容字段，服务端以 JWT username 覆盖
+	Password  string `json:"password,omitempty"`
 }
 
 // GetJoinToken

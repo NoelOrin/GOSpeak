@@ -50,10 +50,11 @@ type Config struct {
 	CFAppSecret         string `env:"CF_APP_SECRET" envDefault:""`
 	CFStunURL           string `env:"CF_STUN_URL" envDefault:"stun.cloudflare.com:3478"`
 
-	ServerPort string `env:"SERVER_PORT" envDefault:"8998"`
-	StaticDir  string `env:"STATIC_DIR" envDefault:""`
-	CORSOrigin string `env:"CORS_ORIGIN" envDefault:"*"`
-	GinMode    string `env:"GIN_MODE" envDefault:""`
+	ServerPort       string `env:"SERVER_PORT" envDefault:"8998"`
+	StaticDir        string `env:"STATIC_DIR" envDefault:""`
+	CORSOrigin       string `env:"CORS_ORIGIN" envDefault:"*"`
+	GinMode          string `env:"GIN_MODE" envDefault:""`
+	WSAllowedOrigins string `env:"WS_ALLOWED_ORIGINS" envDefault:""`
 
 	// 日志
 	LogLevel  string `env:"LOG_LEVEL" envDefault:""`  // trace|debug|info|warn|error；空则 dev=debug / prod=info
@@ -220,6 +221,23 @@ func (c *Config) NATSConnectTimeoutDuration() (time.Duration, error) {
 	return time.ParseDuration(strings.TrimSpace(c.NATSConnectTimeout))
 }
 
+// WSAllowedOriginsList 返回 WebSocket Origin 白名单。
+// 未配置 WS_ALLOWED_ORIGINS 时默认只允许同源握手；配置 "*" 表示允许任意来源。
+func (c *Config) WSAllowedOriginsList() []string {
+	if strings.TrimSpace(c.WSAllowedOrigins) == "" {
+		return nil
+	}
+	raw := strings.Split(c.WSAllowedOrigins, ",")
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
 func (c *Config) normalize() {
 	c.AppEnv = strings.TrimSpace(c.AppEnv)
 	c.DBType = normalizeDBType(c.DBType)
@@ -231,6 +249,7 @@ func (c *Config) normalize() {
 	if c.CORSOrigin == "" {
 		c.CORSOrigin = "*"
 	}
+	c.WSAllowedOrigins = strings.TrimSpace(c.WSAllowedOrigins)
 	if c.DBPath == "" {
 		c.DBPath = "db/app.db"
 	}

@@ -87,7 +87,12 @@ func StartGin(env EnvEnum) {
 	seedRoles(roleRepo)
 
 	userRepo := repository.NewUserRepository(repository.DB)
-	seedAdminUser(userRepo)
+	adminUUID := seedAdminUser(userRepo)
+	if adminUUID != "" {
+		if err := repository.EnsureDefaultGuild(repository.DB, adminUUID); err != nil {
+			logger.WithComponent("Seed").Warnf("同步默认语音服务器失败: %v", err)
+		}
+	}
 	roomRepo := repository.NewRoomRepository(repository.DB)
 	oauthProviderRepo := repository.NewOAuthProviderRepository(repository.DB)
 	oauthAccountRepo := repository.NewOAuthAccountRepository(repository.DB)
@@ -322,6 +327,7 @@ func StartGin(env EnvEnum) {
 	permH := handler.NewPermissionHandler(permSvc)
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
 	guildSvc := service.NewGuildService(repository.NewGuildRepository(repository.DB))
+	middleware.SetGuildChecker(guildSvc.IsMember)
 	conversationSvc := service.NewConversationService(conversationRepo, messageRepo)
 	conversationSvc.SetEventBus(eventBus)
 	signalHub.SetConversationService(conversationSvc)
@@ -330,6 +336,7 @@ func StartGin(env EnvEnum) {
 	botH := handler.NewBotHandler(botSvc)
 	pluginH := handler.NewPluginHandler(pluginSvc)
 	guildH := handler.NewGuildHandler(guildSvc, permSvc)
+	guildH.SetOnGuildDelete(signalHub.OnGuildDelete)
 	conversationH := handler.NewConversationHandler(conversationSvc)
 
 	monitorH := handler.NewMonitorHandler(signalHub, cfg, eventBus)
@@ -339,8 +346,9 @@ func StartGin(env EnvEnum) {
 
 	// WS 升级路由（JWT 鉴权由 Upgrader 内部完成）
 	wsUpgrader := ws.NewUpgrader(ws.UpgraderConfig{
-		Fanout:  wsFanout,
-		Handler: wsHandler,
+		Fanout:         wsFanout,
+		Handler:        wsHandler,
+		AllowedOrigins: wsAllowedOrigins(cfg),
 		OnConnect: func(c *ws.Client) {
 			_ = signalHub.OnConnect(c)
 		},
@@ -348,8 +356,6 @@ func StartGin(env EnvEnum) {
 			signalHub.OnDisconnect(c)
 		},
 	})
-	cors := middleware.CORS()
-	r.GET("/ws", cors, gin.WrapH(wsUpgrader))
 
 	router.SetupRoutes(r, &router.Handlers{
 		Auth:         authH,
@@ -382,9 +388,17 @@ func StartGin(env EnvEnum) {
 
 	logger.WithComponent("Swagger").Infof("API 文档地址: http://localhost:%s/swagger/index.html", port)
 
+	// /ws 必须绕过 Gin：nhooyr/websocket 的 hijack 与 gin.ResponseWriter 不兼容。
+	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path == "/ws" {
+			wsUpgrader.ServeHTTP(w, req)
+			return
+		}
+		r.ServeHTTP(w, req)
+	})
 	srv := &http.Server{
 		Addr:    ":" + port,
-		Handler: r,
+		Handler: rootHandler,
 	}
 
 	// 优雅关闭：监听系统信号，先关 WebSocket 连接再关 HTTP
@@ -448,16 +462,23 @@ func seedRoles(roleRepo *repository.RoleRepository) {
 	logger.WithComponent("Seed").Infof("已加载 %d 个角色", len(roles))
 }
 
-func seedAdminUser(userRepo *repository.UserRepository) {
+func wsAllowedOrigins(cfg *config.Config) []string {
+	if origins := cfg.WSAllowedOriginsList(); len(origins) > 0 {
+		return origins
+	}
+	return []string{cfg.CORSOrigin}
+}
+
+func seedAdminUser(userRepo *repository.UserRepository) string {
 	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(service.DefaultAdminPassword), bcrypt.DefaultCost)
 	if err != nil {
 		logger.WithComponent("Seed").Errorf("生成密码哈希失败: %v", err)
-		return
+		return ""
 	}
 
 	existing, _ := userRepo.GetByName("admin")
 	if existing != nil {
-		return
+		return existing.UUID
 	}
 
 	admin := &model.User{
@@ -468,9 +489,10 @@ func seedAdminUser(userRepo *repository.UserRepository) {
 	}
 	if err := userRepo.Create(admin); err != nil {
 		logger.WithComponent("Seed").Errorf("创建管理员用户失败: %v", err)
-		return
+		return ""
 	}
 	logger.WithComponent("Seed").Infof("已创建管理员用户: admin / %s", service.DefaultAdminPassword)
+	return admin.UUID
 }
 
 func init() {

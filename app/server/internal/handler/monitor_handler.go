@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,7 +45,11 @@ func NewMonitorHandler(signalHub *gpsignal.Hub, cfg *config.Config, eventBus bus
 // HealthStream SSE 流式推送服务健康指标
 func (h *MonitorHandler) HealthStream(c *gin.Context) {
 	// 从 query param 获取 token 并校验（EventSource 不支持自定义 header）
-	tokenStr := c.Query("token")
+	// 只接受 Authorization header 或 cookie；token 不进入 URL，避免访问日志与代理日志泄露。
+	tokenStr := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
+	if tokenStr == "" {
+		tokenStr, _ = c.Cookie("gospeak_token")
+	}
 	if tokenStr == "" {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return
@@ -94,24 +99,24 @@ func (h *MonitorHandler) HealthStream(c *gin.Context) {
 }
 
 type healthSnapshot struct {
-	Timestamp string  `json:"timestamp"`
-	Uptime    string  `json:"uptime"`
+	Timestamp string `json:"timestamp"`
+	Uptime    string `json:"uptime"`
 
 	// Go runtime
-	NumGoroutine int     `json:"num_goroutine"`
-	NumCPU       int     `json:"num_cpu"`
-	AllocMB      float64 `json:"alloc_mb"`
-	TotalAllocMB float64 `json:"total_alloc_mb"`
-	SysMB        float64 `json:"sys_mb"`
-	NumGC        uint32  `json:"num_gc"`
-	HeapObjects  uint64  `json:"heap_objects"`
-	GCPauseMs    float64 `json:"gc_pause_ms"`
+	NumGoroutine  int     `json:"num_goroutine"`
+	NumCPU        int     `json:"num_cpu"`
+	AllocMB       float64 `json:"alloc_mb"`
+	TotalAllocMB  float64 `json:"total_alloc_mb"`
+	SysMB         float64 `json:"sys_mb"`
+	NumGC         uint32  `json:"num_gc"`
+	HeapObjects   uint64  `json:"heap_objects"`
+	GCPauseMs     float64 `json:"gc_pause_ms"`
 	GCCPUFraction float64 `json:"gc_cpu_fraction"`
 
 	// 进程/系统
-	PID        int     `json:"pid"`
-	CPUPercent float64 `json:"cpu_percent"`
-	DiskUsedMB float64 `json:"disk_used_mb"`
+	PID         int     `json:"pid"`
+	CPUPercent  float64 `json:"cpu_percent"`
+	DiskUsedMB  float64 `json:"disk_used_mb"`
 	DiskTotalMB float64 `json:"disk_total_mb"`
 	DiskPercent float64 `json:"disk_percent"`
 
@@ -129,12 +134,12 @@ type healthSnapshot struct {
 	DBWaitDurationMs int64 `json:"db_wait_duration_ms"`
 
 	// Redis
-	RedisConnected      bool    `json:"redis_connected"`
-	RedisPingMs         int64   `json:"redis_ping_ms"`
-	RedisDBSize         int64   `json:"redis_db_size"`
-	RedisUsedMemoryMB   float64 `json:"redis_used_memory_mb"`
+	RedisConnected        bool    `json:"redis_connected"`
+	RedisPingMs           int64   `json:"redis_ping_ms"`
+	RedisDBSize           int64   `json:"redis_db_size"`
+	RedisUsedMemoryMB     float64 `json:"redis_used_memory_mb"`
 	RedisUsedMemoryPeakMB float64 `json:"redis_used_memory_peak_mb"`
-	RedisConnectedClients int64 `json:"redis_connected_clients"`
+	RedisConnectedClients int64   `json:"redis_connected_clients"`
 
 	// EventBus
 	EventBusMode                 string `json:"eventbus_mode"`
@@ -152,19 +157,19 @@ func (h *MonitorHandler) collect() healthSnapshot {
 
 	now := time.Now()
 	snap := healthSnapshot{
-		Timestamp:   now.Format("15:04:05"),
-		Uptime:      time.Since(h.startTime).Truncate(time.Second).String(),
-		NumGoroutine: runtime.NumGoroutine(),
-		NumCPU:       runtime.NumCPU(),
-		AllocMB:      roundMB(m.Alloc),
-		TotalAllocMB: roundMB(m.TotalAlloc),
-		SysMB:        roundMB(m.Sys),
-		NumGC:        m.NumGC,
-		HeapObjects:  m.HeapObjects,
-		GCPauseMs:    float64(m.PauseTotalNs) / 1e6,
+		Timestamp:     now.Format("15:04:05"),
+		Uptime:        time.Since(h.startTime).Truncate(time.Second).String(),
+		NumGoroutine:  runtime.NumGoroutine(),
+		NumCPU:        runtime.NumCPU(),
+		AllocMB:       roundMB(m.Alloc),
+		TotalAllocMB:  roundMB(m.TotalAlloc),
+		SysMB:         roundMB(m.Sys),
+		NumGC:         m.NumGC,
+		HeapObjects:   m.HeapObjects,
+		GCPauseMs:     float64(m.PauseTotalNs) / 1e6,
 		GCCPUFraction: m.GCCPUFraction,
-		PID:          os.Getpid(),
-		CPUPercent:   h.cpuSampler.percent(),
+		PID:           os.Getpid(),
+		CPUPercent:    h.cpuSampler.percent(),
 	}
 
 	// 磁盘：取 DB 文件所在分区使用率

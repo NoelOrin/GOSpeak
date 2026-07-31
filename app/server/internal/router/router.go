@@ -2,19 +2,19 @@ package router
 
 import (
 	"GOSpeak/internal/config"
-	conversationRoutes "GOSpeak/internal/router/routes/conversation"
-	guildRoutes "GOSpeak/internal/router/routes/guild"
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/middleware"
 	authRoutes "GOSpeak/internal/router/routes/auth"
 	botRoutes "GOSpeak/internal/router/routes/bot"
+	conversationRoutes "GOSpeak/internal/router/routes/conversation"
 	emailRoutes "GOSpeak/internal/router/routes/email"
 	emailConfigRoutes "GOSpeak/internal/router/routes/email_config"
+	guildRoutes "GOSpeak/internal/router/routes/guild"
 	messageRoutes "GOSpeak/internal/router/routes/message"
 	muteRoutes "GOSpeak/internal/router/routes/mute"
 	oauthRoutes "GOSpeak/internal/router/routes/oauth"
-	pluginRoutes "GOSpeak/internal/router/routes/plugin"
 	permissionRoutes "GOSpeak/internal/router/routes/permission"
+	pluginRoutes "GOSpeak/internal/router/routes/plugin"
 	roleRoutes "GOSpeak/internal/router/routes/role"
 	roomRoutes "GOSpeak/internal/router/routes/room"
 	sfuConfigRoutes "GOSpeak/internal/router/routes/sfu_config"
@@ -38,28 +38,28 @@ import (
 )
 
 type Handlers struct {
-	Auth        *handler.AuthHandler
-	User        *handler.UserHandler
-	Signal      *handler.SignalHandler
-	Cloudflare  *handler.CloudflareHandler
-	OAuth       *handler.OAuthHandler
-	Role        *handler.RoleHandler
-	Room        *handler.RoomHandler
-	Permission  *handler.PermissionHandler
-	Mute        *handler.MuteHandler
-	Message     *handler.MessageHandler
-	SFUConfig   *handler.SFUConfigHandler
-	Storage     *handler.StorageHandler
-	Email       *handler.EmailVerificationHandler
-	EmailConfig *handler.EmailConfigHandler
-	Monitor     *handler.MonitorHandler
-	SRSCallback *handler.SRSCallbackHandler
-	Bot         *handler.BotHandler
+	Auth         *handler.AuthHandler
+	User         *handler.UserHandler
+	Signal       *handler.SignalHandler
+	Cloudflare   *handler.CloudflareHandler
+	OAuth        *handler.OAuthHandler
+	Role         *handler.RoleHandler
+	Room         *handler.RoomHandler
+	Permission   *handler.PermissionHandler
+	Mute         *handler.MuteHandler
+	Message      *handler.MessageHandler
+	SFUConfig    *handler.SFUConfigHandler
+	Storage      *handler.StorageHandler
+	Email        *handler.EmailVerificationHandler
+	EmailConfig  *handler.EmailConfigHandler
+	Monitor      *handler.MonitorHandler
+	SRSCallback  *handler.SRSCallbackHandler
+	Bot          *handler.BotHandler
 	Plugin       *handler.PluginHandler
 	Guild        *handler.GuildHandler
 	Conversation *handler.ConversationHandler
 	// PluginHost 用于挂载插件自定义路由
-	PluginHost  interface{ MountRoutes(*gin.RouterGroup) }
+	PluginHost interface{ MountRoutes(*gin.RouterGroup) }
 }
 
 func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
@@ -69,7 +69,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 		c.JSON(200, gin.H{"message": "pong"})
 	})
 
-	r.Static("/uploads", "./uploads")
+	r.GET("/uploads/*filepath", serveUploads)
 	serveSPA(r)
 
 	swaggerRoutes.Register(r)
@@ -186,4 +186,28 @@ func serveSPA(r *gin.Engine) {
 		}
 		serveIndex(c)
 	})
+}
+
+// serveUploads 以安全响应头提供上传文件，并拒绝路径穿越。
+func serveUploads(c *gin.Context) {
+	clean := filepath.Clean("/" + strings.TrimPrefix(c.Param("filepath"), "/"))
+	full := filepath.Join("uploads", strings.TrimPrefix(clean, "/"))
+	abs, err := filepath.Abs(full)
+	if err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	base, err := filepath.Abs("uploads")
+	if err != nil || (abs != base && !strings.HasPrefix(abs, base+string(filepath.Separator))) {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.Header("X-Content-Type-Options", "nosniff")
+	switch strings.ToLower(filepath.Ext(abs)) {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp":
+		c.Header("Content-Disposition", "inline")
+	default:
+		c.Header("Content-Disposition", "attachment")
+	}
+	http.ServeFile(c.Writer, c.Request, abs)
 }

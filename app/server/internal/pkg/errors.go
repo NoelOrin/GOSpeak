@@ -24,6 +24,7 @@ const (
 	TOKEN_REVOKED    ErrCode = 1014
 	USER_BANNED      ErrCode = 1015
 	USER_MUTED       ErrCode = 1016
+	RATE_LIMITED     ErrCode = 1017
 
 	// Parameter errors 2xxx
 	INVALID_PARAMS ErrCode = 2001
@@ -76,6 +77,7 @@ var errMsg = map[ErrCode]string{
 	FORBIDDEN:          "forbidden",
 	USER_BANNED:        "user has been banned",
 	USER_MUTED:         "user has been muted",
+	RATE_LIMITED:       "too many requests",
 	INVALID_PARAMS:     "invalid parameters",
 	NOT_FOUND:          "resource not found",
 	ALREADY_EXISTS:     "resource already exists",

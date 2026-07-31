@@ -8,7 +8,6 @@ import (
 	"time"
 
 	nhooyrws "nhooyr.io/websocket"
-	"nhooyr.io/websocket/wsjson"
 
 	"GOSpeak/internal/pkg"
 )
@@ -101,7 +100,7 @@ func (c *Client) writeLoop() {
 		select {
 		case data := <-c.writeCh:
 			ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
-			err := wsjson.Write(ctx, c.conn, data)
+			err := c.conn.Write(ctx, nhooyrws.MessageText, data)
 			cancel()
 			if err != nil {
 				log.Printf("[ws] write error client=%s: %v", c.id, err)

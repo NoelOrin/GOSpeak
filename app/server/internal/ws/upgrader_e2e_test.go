@@ -15,9 +15,9 @@ import (
 // TestUpgrader_E2E_Lifecycle verifies the full ws.Client lifecycle through Upgrader:
 // upgrade → auth → fanout.Add → OnConnect → read loop → disconnect → fanout.Remove.
 func TestUpgrader_E2E_Lifecycle(t *testing.T) {
-	token, err := pkg.GenerateToken("e2e-user", "E2E User", "e2e-uuid", "user", 1)
+	token, err := pkg.GenerateWSTicket("e2e-user", "E2E User", "e2e-uuid", "user", 1)
 	if err != nil {
-		t.Fatalf("GenerateToken: %v", err)
+		t.Fatalf("GenerateWSTicket: %v", err)
 	}
 
 	connected := make(chan *Client, 1)
@@ -52,13 +52,13 @@ func TestUpgrader_E2E_Lifecycle(t *testing.T) {
 	}))
 	defer server.Close()
 
-	wsURL := "ws://" + server.Listener.Addr().String() + "/ws?token=" + token
+	wsURL := "ws://" + server.Listener.Addr().String() + "/ws"
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	conn, resp, err := nhooyrws.Dial(ctx, wsURL, &nhooyrws.DialOptions{
-		HTTPHeader: http.Header{},
+		Subprotocols: []string{"gospeak", token},
 	})
 	if err != nil {
 		t.Fatalf("Dial: %v (status=%d)", err, resp.StatusCode)

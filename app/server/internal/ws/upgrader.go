@@ -3,6 +3,7 @@ package ws
 import (
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 
 	nhooyrws "nhooyr.io/websocket"
@@ -17,6 +18,9 @@ type UpgraderConfig struct {
 	Fanout Broadcaster
 	// Handler 是事件分发注册表。
 	Handler *HandlerRegistry
+	// AllowedOrigins 是握手阶段允许的 Origin 白名单。
+	// 为空时默认只允许与请求 Host 同源；包含 "*" 表示允许任意来源。
+	AllowedOrigins []string
 	// OnConnect 在连接建立后、读取循环开始前调用（Hub 用于设置 OnClose）。
 	OnConnect func(c *Client)
 	// OnDisconnect 在连接关闭并注销 Fanout 后调用（Hub 用于清理房间状态）。
@@ -33,39 +37,80 @@ func NewUpgrader(cfg UpgraderConfig) *Upgrader {
 	return &Upgrader{cfg: cfg}
 }
 
-// extractToken 从请求中提取 JWT token：Authorization header > cookie > query。
-func extractToken(r *http.Request) string {
+// extractToken 从请求中提取 JWT token：Authorization header > cookie > subprotocol ticket。
+// 返回 token 以及它是否来自 subprotocol，subprotocol 只接受短时 WS ticket。
+func extractToken(r *http.Request) (string, bool) {
 	authHeader := r.Header.Get("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
-		return strings.TrimPrefix(authHeader, "Bearer ")
+		return strings.TrimPrefix(authHeader, "Bearer "), false
 	}
 	if tokenStr := strings.TrimSpace(authHeader); tokenStr != "" {
-		return tokenStr
+		return tokenStr, false
 	}
 	if cookie, err := r.Cookie("gospeak_token"); err == nil {
-		return cookie.Value
+		return cookie.Value, false
 	}
-	return r.URL.Query().Get("token")
+	for _, protocol := range strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ",") {
+		protocol = strings.TrimSpace(protocol)
+		if protocol != "" && protocol != "gospeak" {
+			return protocol, true
+		}
+	}
+	return "", false
+}
+
+// originAllowed 校验 WS 握手 Origin。Gin CORS 不覆盖 WS 升级，因此必须在这里独立校验。
+func (u *Upgrader) originAllowed(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		// 非浏览器客户端（bot/CLI）通常不发送 Origin，按合法客户端放行。
+		return true
+	}
+	for _, allowed := range u.cfg.AllowedOrigins {
+		if allowed == "*" || strings.EqualFold(strings.TrimRight(allowed, "/"), strings.TrimRight(origin, "/")) {
+			return true
+		}
+	}
+	if len(u.cfg.AllowedOrigins) == 0 {
+		parsed, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		switch parsed.Scheme {
+		case "http", "https", "ws", "wss":
+		default:
+			return false
+		}
+		return parsed.Host == r.Host
+	}
+	return false
 }
 
 // ServeHTTP 实现 http.Handler，一次完成升级→鉴权→注册→读取循环。
 // 应该在 Gin 路由中通过 `r.GET("/ws", gin.WrapH(upgrader))` 挂载。
 func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	tokenStr := extractToken(r)
+	if !u.originAllowed(r) {
+		log.Printf("[ws] upgrade rejected: origin=%q client=%s", r.Header.Get("Origin"), r.RemoteAddr)
+		http.Error(w, "forbidden origin", http.StatusForbidden)
+		return
+	}
+
+	tokenStr, fromSubprotocol := extractToken(r)
 	if tokenStr == "" {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
 	claims, code := middleware.VerifyToken(tokenStr)
-	if code != pkg.SUCCESS {
+	if code != pkg.SUCCESS || (fromSubprotocol && (!pkg.IsWSTicket(claims) || pkg.WSTicketExpired(claims))) {
 		log.Printf("[ws] upgrade rejected: code=%s client=%s", code.String(), r.RemoteAddr)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
 	conn, err := nhooyrws.Accept(w, r, &nhooyrws.AcceptOptions{
-		InsecureSkipVerify: true, // Origin check 由 Gin CORS 中间件处理
+		Subprotocols:       []string{"gospeak"},
+		InsecureSkipVerify: true, // Origin 已由 Upgrader.originAllowed 校验
 	})
 	if err != nil {
 		log.Printf("[ws] upgrade error: %v", err)

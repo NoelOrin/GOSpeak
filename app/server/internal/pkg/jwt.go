@@ -26,6 +26,12 @@ const AccessTokenTTL = 15 * time.Minute
 // RefreshTokenTTL refresh_token 有效期。
 const RefreshTokenTTL = 7 * 24 * time.Hour
 
+// WSTicketTTL WebSocket 短时 ticket 有效期。
+const WSTicketTTL = 45 * time.Second
+
+// WSTicketSubject 标记短时 WS ticket，避免与普通 access token 混淆。
+const WSTicketSubject = "ws-ticket"
+
 // GenerateToken 签发 access_token（15m）。tokenVersion 应来自当前用户的 TokenVersion 字段。
 func GenerateToken(username, displayName, userUUID, role string, tokenVersion uint) (string, error) {
 	claims := Claims{
@@ -84,6 +90,36 @@ func GenerateRefreshToken(username, displayName, userUUID, role string, tokenVer
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(redis.GetSigningKey())
+}
+
+// GenerateWSTicket 签发短时 WS ticket，只允许通过 Sec-WebSocket-Protocol 传递，避免 JWT 进入 URL。
+func GenerateWSTicket(username, displayName, userUUID, role string, tokenVersion uint) (string, error) {
+	claims := Claims{
+		Username:     username,
+		DisplayName:  displayName,
+		UserUUID:     userUUID,
+		Role:         role,
+		TokenVersion: tokenVersion,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(WSTicketTTL)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
+			ID:        newJTI(),
+			Subject:   WSTicketSubject,
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(redis.GetSigningKey())
+}
+
+// IsWSTicket 判断 claims 是否为短时 WS ticket。
+func IsWSTicket(claims *Claims) bool {
+	return claims != nil && claims.Subject == WSTicketSubject
+}
+
+// WSTicketExpired 独立于 JWT 过期再做一次短窗口校验，防止长签名密钥被用于伪造 ticket。
+func WSTicketExpired(claims *Claims) bool {
+	return claims == nil || claims.IssuedAt == nil || time.Since(claims.IssuedAt.Time) > WSTicketTTL
 }
 
 func IsTokenExpired(claims *Claims) bool {

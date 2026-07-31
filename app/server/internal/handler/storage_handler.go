@@ -3,6 +3,8 @@ package handler
 import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
+	"io"
+	"net/http"
 	"path/filepath"
 	"strings"
 
@@ -73,7 +75,9 @@ func (h *StorageHandler) PresignUpload(c *gin.Context) {
 	}
 
 	// 文件类型校验
-	if !isAllowedType(req.ContentType, cfg.AllowedTypes) {
+
+	contentType := normalizeContentType(req.ContentType)
+	if !isAllowedType(contentType, effectiveAllowedTypes(cfg.AllowedTypes)) || !isSafeFileExtension(filepath.Ext(req.FileName), contentType) {
 		pkg.Fail(c, pkg.STORAGE_FILE_TYPE_NOT_ALLOWED)
 		return
 	}
@@ -82,7 +86,7 @@ func (h *StorageHandler) PresignUpload(c *gin.Context) {
 	objectKey := generateObjectKey(cfg.PathPrefix, req.Category, req.FileName)
 
 	// 获取预签名 URL
-	result, err := h.storageService.PresignUpload(objectKey, req.ContentType, maxBytes)
+	result, err := h.storageService.PresignUpload(objectKey, contentType, maxBytes)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -166,12 +170,6 @@ func (h *StorageHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	contentType := file.Header.Get("Content-Type")
-	if !isAllowedType(contentType, cfg.AllowedTypes) {
-		pkg.Fail(c, pkg.STORAGE_FILE_TYPE_NOT_ALLOWED)
-		return
-	}
-
 	// 打开上传文件
 	src, err := file.Open()
 	if err != nil {
@@ -179,6 +177,19 @@ func (h *StorageHandler) Upload(c *gin.Context) {
 		return
 	}
 	defer src.Close()
+
+	// 不信任客户端 Content-Type，使用文件头 Magic Bytes 嗅探后校验。
+	sniff := make([]byte, 512)
+	n, _ := io.ReadFull(src, sniff)
+	contentType := normalizeContentType(http.DetectContentType(sniff[:n]))
+	if !isAllowedType(contentType, effectiveAllowedTypes(cfg.AllowedTypes)) || !isSafeFileExtension(filepath.Ext(objectKey), contentType) {
+		pkg.Fail(c, pkg.STORAGE_FILE_TYPE_NOT_ALLOWED)
+		return
+	}
+	if _, err = src.Seek(0, io.SeekStart); err != nil {
+		pkg.Fail(c, pkg.INTERNAL_ERROR, "failed to reset upload reader")
+		return
+	}
 
 	publicURL, err := h.storageService.UploadFromReader(objectKey, src, file.Size, contentType)
 	if err != nil {
@@ -277,15 +288,59 @@ func generateObjectKey(pathPrefix, category, fileName string) string {
 	return pathPrefix + category + "/" + id + ext
 }
 
-// isAllowedType 检查 MIME 类型是否在允许列表中
-func isAllowedType(contentType, allowedTypes string) bool {
-	if allowedTypes == "" {
-		return true
+// normalizeContentType 去掉 MIME 后的 charset 等参数。
+func normalizeContentType(contentType string) string {
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	if idx := strings.IndexByte(contentType, ';'); idx >= 0 {
+		contentType = strings.TrimSpace(contentType[:idx])
 	}
-	for _, t := range strings.Split(allowedTypes, ",") {
-		if strings.TrimSpace(t) == contentType {
+	return contentType
+}
+
+// effectiveAllowedTypes 在允许列表为空时回退到安全默认值，不再全类型放行。
+func effectiveAllowedTypes(allowedTypes string) string {
+	if strings.TrimSpace(allowedTypes) == "" {
+		return "image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain"
+	}
+	return allowedTypes
+}
+
+// isAllowedType 检查 MIME 类型是否在允许列表中，支持 image/* 等通配。
+func isAllowedType(contentType, allowedTypes string) bool {
+	contentType = normalizeContentType(contentType)
+	if contentType == "" {
+		return false
+	}
+	for _, t := range strings.Split(effectiveAllowedTypes(allowedTypes), ",") {
+		allowed := normalizeContentType(t)
+		if allowed == contentType || allowed == "*/*" {
+			return true
+		}
+		if strings.HasSuffix(allowed, "/*") && strings.HasPrefix(contentType, strings.TrimSuffix(allowed, "*")) {
 			return true
 		}
 	}
 	return false
+}
+
+// isSafeFileExtension 防止用户以 .html/.svg 等危险扩展名伪装成安全 MIME。
+func isSafeFileExtension(ext, contentType string) bool {
+	contentType = normalizeContentType(contentType)
+	extension := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(ext), "."))
+	switch contentType {
+	case "image/jpeg":
+		return extension == "jpg" || extension == "jpeg"
+	case "image/png":
+		return extension == "png"
+	case "image/gif":
+		return extension == "gif"
+	case "image/webp":
+		return extension == "webp"
+	case "application/pdf":
+		return extension == "pdf"
+	case "text/plain":
+		return extension == "txt" || extension == "md" || extension == "csv" || extension == "log"
+	default:
+		return false
+	}
 }
