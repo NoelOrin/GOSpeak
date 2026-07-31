@@ -215,7 +215,7 @@ SFU_PROVIDER="daily"
 
 | 层 | 技术 |
 |----|------|
-| 后端 | Go + Gin + GORM + go-socket.io |
+| 后端 | Go + Gin + GORM + nhooyr.io/websocket |
 | 前端 | SolidJS + TypeScript + Vite + TanStack Router + Tailwind v4 |
 | SFU | LiveKit（主）/ SRS / MediaSoup / Agora / Daily |
 | 数据库 | SQLite / PostgreSQL / MySQL |
@@ -250,7 +250,7 @@ app/
 │       ├── handler/         # HTTP 控制器
 │       ├── service/         # 业务逻辑
 │       ├── repository/      # 数据访问
-│       ├── signal/          # Socket.IO 信令 Hub（房间/成员/麦控）
+│       ├── signal/          # WebSocket 信令 Hub（房间/成员/麦控）
 │       ├── sfu/             # SFU Provider 抽象层
 │       ├── livekit/         # LiveKit 实现
 │       ├── model/           # GORM 实体

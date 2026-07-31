@@ -10,6 +10,12 @@ vi.mock("@/api/message", () => ({
 
 import { mergeMessages } from "./chatStore";
 
+vi.mock("idb-keyval", () => ({
+	get: vi.fn(async () => undefined),
+	set: vi.fn(async () => {}),
+	del: vi.fn(async () => {}),
+}));
+
 describe("mergeMessages", () => {
 	it("dedupes by uuid and sorts by created_at", () => {
 		const a = {

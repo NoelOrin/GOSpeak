@@ -15,7 +15,7 @@
 | 端口 | 服务 | 公网 | 说明 |
 |------|------|------|------|
 | 80/443 | Nginx | ✅ 必需 | 公网入口 |
-| 8998 | GOSpeak | 仅调试 | API + SPA + Socket.IO |
+| 8998 | GOSpeak | 仅调试 | API + SPA + WebSocket |
 | 1985 | SRS API | ❌ 不暴露 | 管理接口，经 Nginx 暴露 `/rtc/v1` |
 | 8000/udp+tcp | SRS 媒体 | ✅ 必需 | WebRTC 直连 |
 | 7880-7882 | LiveKit | ✅ 视情况 | 控制/媒体 |

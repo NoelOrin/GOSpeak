@@ -19,6 +19,8 @@ type UpgraderConfig struct {
 	Handler *HandlerRegistry
 	// OnConnect 在连接建立后、读取循环开始前调用（Hub 用于设置 OnClose）。
 	OnConnect func(c *Client)
+	// OnDisconnect 在连接关闭并注销 Fanout 后调用（Hub 用于清理房间状态）。
+	OnDisconnect func(c *Client)
 }
 
 // Upgrader 封装 HTTP→WS 升级、鉴权、生命周期管理。
@@ -85,6 +87,9 @@ func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	client.OnClose = func(id string) {
 		if u.cfg.Fanout != nil {
 			u.cfg.Fanout.Remove(id)
+		}
+		if u.cfg.OnDisconnect != nil {
+			u.cfg.OnDisconnect(client)
 		}
 	}
 

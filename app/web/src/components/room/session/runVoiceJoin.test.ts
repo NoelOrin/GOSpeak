@@ -7,6 +7,12 @@ vi.mock("@/api/sfu", () => ({
 
 import { runVoiceJoin, VoiceJoinAbortError } from "./runVoiceJoin";
 
+vi.mock("idb-keyval", () => ({
+	get: vi.fn(async () => undefined),
+	set: vi.fn(async () => {}),
+	del: vi.fn(async () => {}),
+}));
+
 function makeToken(overrides: Record<string, unknown> = {}) {
 	return {
 		token: "tok",
@@ -50,7 +56,13 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
 		}),
 		onClientReady: vi.fn(),
 		audioOptions: { audioCapture: { echoCancellation: true } },
-		socket: { id: "sock" },
+		socket: {
+			isConnected: () => true,
+			emitAck: vi.fn(),
+			emitFireAndForget: vi.fn(),
+			onServerEvent: vi.fn(),
+			onDisconnected: vi.fn(),
+		},
 		password: "pwd",
 		...overrides,
 	};
@@ -82,7 +94,13 @@ describe("runVoiceJoin", () => {
 		]);
 		expect(deps.loadClient).toHaveBeenCalledWith("livekit", {
 			audioCapture: { echoCancellation: true },
-			socket: { id: "sock" },
+			socket: {
+				isConnected: expect.any(Function),
+				emitAck: expect.any(Function),
+				emitFireAndForget: expect.any(Function),
+				onServerEvent: expect.any(Function),
+				onDisconnected: expect.any(Function),
+			},
 		});
 		expect(client.joinRoom).toHaveBeenCalledWith({
 			token: "tok",

@@ -6,6 +6,7 @@ import type {
 	RemoteTrackInfo,
 	SFUClient,
 	SFUClientOptions,
+	SignalSocket,
 } from "./types";
 
 const MEDIASOUP_EVENTS = {
@@ -88,7 +89,7 @@ export class MediaSoupSFUClient implements SFUClient {
 	private remoteTracks = new Map<string, MediaSoupRemoteAudioTrack>();
 	private roomId = "";
 	private identity = "";
-	private socket?: any;
+	private socket?: SignalSocket | null;
 	private onActiveSpeakersCb?: (ids: string[]) => void;
 	private onRemoteAudioTrackCb?: (info: RemoteTrackInfo) => void;
 	private onRemoteAudioTrackRemovedCb?: (identity: string) => void;
@@ -96,6 +97,7 @@ export class MediaSoupSFUClient implements SFUClient {
 	private onReconnectingCb?: () => void;
 	private onReconnectedCb?: () => void;
 	private onSocketDisconnectBound?: () => void;
+	private socketCleanups: Array<() => void> = [];
 	private hasJoined = false;
 	private isReconnecting = false;
 	private onProducerReadyBound?: (info: any) => void;
@@ -109,26 +111,23 @@ export class MediaSoupSFUClient implements SFUClient {
 	}
 
 	private sfuEmit(event: string, payload: Record<string, unknown>): Promise<any> {
-		return new Promise((resolve, reject) => {
-			if (!this.socket) {
-				reject(new Error("mediasoup socket not connected"));
-				return;
-			}
-			this.socket.emit(event, JSON.stringify(payload), (resp: string) => {
-				try {
-					const parsed = JSON.parse(resp);
-					if (parsed?.error) reject(new Error(parsed.error));
-					else resolve(parsed);
-				} catch {
-					reject(new Error("invalid mediasoup response: " + resp));
-				}
-			});
+		if (!this.socket) {
+			return Promise.reject(new Error("mediasoup socket not connected"));
+		}
+		return this.socket.emitAck(event, payload).then((resp: any) => {
+			if (resp?.error) throw new Error(resp.error);
+			return resp;
 		});
+	}
+
+	private clearSocketCleanups(): void {
+		for (const cleanup of this.socketCleanups) cleanup();
+		this.socketCleanups = [];
 	}
 
 	async joinRoom(params: JoinParams): Promise<void> {
 		const { token, serverUrl: _url, identity, room } = params;
-		if (!this.socket) throw new Error("mediasoup client requires a socket.io socket");
+		if (!this.socket) throw new Error("mediasoup client requires a signal socket");
 
 		const [tokenRoom, tokenIdentity] = token.split(":", 2);
 		this.roomId = room || tokenRoom;
@@ -163,8 +162,17 @@ export class MediaSoupSFUClient implements SFUClient {
 			this.onRemoteAudioTrackRemovedCb?.(id);
 		};
 
-		this.socket.on(MEDIASOUP_EVENTS.PRODUCER_READY, this.onProducerReadyBound);
-		this.socket.on(MEDIASOUP_EVENTS.PRODUCER_CLOSED, this.onProducerClosedBound);
+		this.clearSocketCleanups();
+		this.socketCleanups.push(
+			this.socket.onServerEvent(
+				MEDIASOUP_EVENTS.PRODUCER_READY,
+				(info: any) => this.onProducerReadyBound?.(info),
+			),
+			this.socket.onServerEvent(
+				MEDIASOUP_EVENTS.PRODUCER_CLOSED,
+				(info: any) => this.onProducerClosedBound?.(info),
+			),
+		);
 		this.hasJoined = true;
 		this.onSocketDisconnectBound = () => {
 			if (this.hasJoined) {
@@ -173,7 +181,9 @@ export class MediaSoupSFUClient implements SFUClient {
 				this.onDisconnectedCb?.();
 			}
 		};
-		this.socket.on("disconnect", this.onSocketDisconnectBound);
+		this.socketCleanups.push(
+			this.socket.onDisconnected(() => this.onSocketDisconnectBound?.()),
+		);
 
 		// transport 连接状态：disconnected→reconnecting（等 ICE 自恢复），failed/closed→disconnected，恢复→reconnected
 		// TODO: 后端未实现 restartIce 端点，目前不主动重启 ICE，依赖 WebRtcTransport 默认超时行为
@@ -232,17 +242,7 @@ export class MediaSoupSFUClient implements SFUClient {
 				// 离开时忽略清理错误,socket 可能已断
 			}
 		}
-		if (this.socket) {
-			if (this.onProducerReadyBound) {
-				this.socket.off(MEDIASOUP_EVENTS.PRODUCER_READY, this.onProducerReadyBound);
-			}
-			if (this.onProducerClosedBound) {
-				this.socket.off(MEDIASOUP_EVENTS.PRODUCER_CLOSED, this.onProducerClosedBound);
-			}
-			if (this.onSocketDisconnectBound) {
-				this.socket.off("disconnect", this.onSocketDisconnectBound);
-			}
-		}
+		this.clearSocketCleanups();
 		this.onProducerReadyBound = undefined;
 		this.onProducerClosedBound = undefined;
 		this.onSocketDisconnectBound = undefined;

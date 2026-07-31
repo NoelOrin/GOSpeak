@@ -116,7 +116,7 @@ export const SFU_ENFORCEMENT_PROFILES: Record<
 	},
 	mediasoup: {
 		provider: "mediasoup",
-		summary: "经 bridge 强制 pause/close；需专属 Socket.IO 信令适配。",
+		summary: "经 bridge 强制 pause/close；需专属 WebSocket 信令适配。",
 		details: [
 			{
 				key: "serverMute",

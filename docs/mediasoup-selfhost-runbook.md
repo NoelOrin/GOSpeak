@@ -4,7 +4,7 @@
 
 dev 环境(浏览器与 docker 同宿主)。LAN 部署见末节。
 
-信令(socket.io `sfu:*` 事件)走现有 socket.io 连接,与 LiveKit/SRS 共用同一 WS 通道,无额外代理。
+信令(WS `sfu:*` 事件)走现有 WS 连接,与 LiveKit/SRS 共用同一 WS 通道,无额外代理。
 
 ## 1. 起 mediasoup-worker
 

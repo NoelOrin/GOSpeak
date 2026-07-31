@@ -111,7 +111,7 @@ export default defineConfig(async ({ mode }) => {
           changeOrigin: true,
           ws: true,
         },
-        "/socket.io": {
+        "/ws": {
           target: "http://localhost:8998",
           changeOrigin: true,
           ws: true,
@@ -211,7 +211,6 @@ export default defineConfig(async ({ mode }) => {
               vendor: ['/solid-js/'],
               router: ['@tanstack/solid-router'],
               ui: ['cui-solid', 'clsx', 'daisyui'],
-              socket: ['socket.io-client', 'engine.io-client'],
               lucide: ['lucide-solid'],
             };
 

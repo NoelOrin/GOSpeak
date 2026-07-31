@@ -1,29 +1,40 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const emitted: Array<{ event: string; payload: unknown }> = [];
 
-vi.mock("socket.io-client", () => {
-	return {
-		io: () => {
-			const handlers = new Map<string, Function>();
-			const socket = {
-				on(event: string, cb: Function) {
-					handlers.set(event, cb);
-					if (event === "connect") queueMicrotask(() => cb());
-					return socket;
-				},
-				emit(event: string, payload?: unknown) {
-					emitted.push({ event, payload });
-				},
-				disconnect() {},
-			};
-			return socket;
-		},
-	};
-});
+class MockWebSocket {
+	static CONNECTING = 0;
+	static OPEN = 1;
+	static CLOSED = 3;
+	readyState = MockWebSocket.CONNECTING;
+	onopen: (() => void) | null = null;
+	onmessage: ((ev: { data: unknown }) => void) | null = null;
+	onerror: (() => void) | null = null;
+	onclose: ((ev: { reason?: string }) => void) | null = null;
+
+	constructor(public url: string) {
+		queueMicrotask(() => {
+			this.readyState = MockWebSocket.OPEN;
+			this.onopen?.();
+		});
+	}
+
+	send(data: string) {
+		const parsed = JSON.parse(String(data)) as {
+			event: string;
+			data?: unknown;
+		};
+		emitted.push({ event: parsed.event, payload: parsed.data });
+	}
+
+	close() {
+		this.readyState = MockWebSocket.CLOSED;
+		this.onclose?.({ reason: "closed" });
+	}
+}
 
 import { BotRunner } from "./botRunner";
 
@@ -40,6 +51,11 @@ describe("BotRunner", () => {
 	beforeEach(() => {
 		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "gospeak-bot-test-"));
 		emitted.length = 0;
+		vi.stubGlobal("WebSocket", MockWebSocket);
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
 	});
 
 	it("starts, loads plugins, and dispatches events", async () => {
@@ -127,6 +143,22 @@ describe("BotRunner", () => {
 		expect(runner.listPlugins().some((p) => p.name === "echo")).toBe(false);
 		await runner.stop();
 	});
+});
+
+beforeEach(() => {
+	vi.stubGlobal("WebSocket", MockWebSocket);
+});
+
+afterEach(() => {
+	vi.unstubAllGlobals();
+});
+
+beforeEach(() => {
+	vi.stubGlobal("WebSocket", MockWebSocket);
+});
+
+afterEach(() => {
+	vi.unstubAllGlobals();
 });
 
 it("auto-joins configured rooms on start", async () => {

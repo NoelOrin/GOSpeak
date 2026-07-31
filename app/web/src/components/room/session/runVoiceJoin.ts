@@ -2,6 +2,7 @@ import type {
 	SFUClient,
 	SFUClientOptions,
 	SFUProvider,
+	SignalSocket,
 } from "@gospeak/sfu-client/types";
 import { type JoinTokenResponse, resolveSFUProvider } from "@/api/sfu";
 import { getVoiceProviderAdapter } from "./providers";
@@ -47,7 +48,7 @@ export type VoiceJoinDeps = {
 	 */
 	onClientReady?: (client: SFUClient, provider: SFUProvider) => void;
 	audioOptions: SFUClientOptions;
-	socket?: unknown;
+	socket?: SignalSocket | null;
 	password?: string;
 	signal?: AbortSignal;
 };

@@ -37,7 +37,7 @@ func SetTokenVersionChecker(tvc tokenVersionChecker) {
 }
 
 // VerifyToken 执行完整的 token 校验链：签名解析 → 过期 → 黑名单 → 版本。
-// 供 JWTAuth / WSAuth / signal.OnConnect 共用，保证校验口径一致。
+// 供 JWTAuth / signal.OnConnect 共用，保证校验口径一致。
 func VerifyToken(tokenStr string) (*pkg.Claims, pkg.ErrCode) {
 	claims, err := pkg.ParseToken(tokenStr)
 	if err != nil {
@@ -96,29 +96,6 @@ func JWTAuth() gin.HandlerFunc {
 	}
 }
 
-// WSAuth 为 Socket.IO 路由提供 WebSocket 鉴权门控。
-// 与 JWTAuth 共用 VerifyToken，从 URL query 读取 token（浏览器 WS 握手不支持自定义头）。
-func WSAuth() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		tokenStr := c.Query("token")
-		if tokenStr == "" {
-			pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
-			c.Abort()
-			return
-		}
-
-		claims, code := VerifyToken(tokenStr)
-		if code != pkg.SUCCESS {
-			pkg.Fail(c, code)
-			c.Abort()
-			return
-		}
-
-		setClaimsContext(c, claims)
-		c.Next()
-	}
-}
-
 func RequireRole(roles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, exists := c.Get("role")
@@ -161,7 +138,7 @@ func permissionGranted(c *gin.Context, permCode string) bool {
 // PermissionGranted 统一权限判定：
 // 1) claims.Permissions 非空时，仅信任 token 显式权限（Bot / 细粒度 token）；
 // 2) 否则回退 role → checker 映射（普通用户）。
-// 供 HTTP 中间件与 Socket.IO Hub 共用，避免踢人/禁言路径口径不一致。
+// 供 HTTP 中间件与 WebSocket Hub 共用，避免踢人/禁言路径口径不一致。
 func PermissionGranted(claims *pkg.Claims, role string, permCode string, checker permissionChecker) bool {
 	if claims != nil && len(claims.Permissions) > 0 {
 		for _, p := range claims.Permissions {

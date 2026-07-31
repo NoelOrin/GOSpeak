@@ -21,6 +21,7 @@ func TestUpgrader_E2E_Lifecycle(t *testing.T) {
 	}
 
 	connected := make(chan *Client, 1)
+	disconnected := make(chan *Client, 1)
 	var mu sync.Mutex
 	var receivedData string
 	handlerCalled := make(chan struct{})
@@ -40,6 +41,9 @@ func TestUpgrader_E2E_Lifecycle(t *testing.T) {
 		Handler: handler,
 		OnConnect: func(c *Client) {
 			connected <- c
+		},
+		OnDisconnect: func(c *Client) {
+			disconnected <- c
 		},
 	})
 
@@ -97,7 +101,7 @@ func TestUpgrader_E2E_Lifecycle(t *testing.T) {
 	}
 
 	mu.Lock()
-		if receivedData != `"hello"` {
+	if receivedData != `"hello"` {
 		t.Fatalf("expected handler to receive 'hello', got %q", receivedData)
 	}
 	mu.Unlock()
@@ -111,6 +115,16 @@ func TestUpgrader_E2E_Lifecycle(t *testing.T) {
 	// After disconnect, client should be removed from fanout
 	if fanout.GetClient("e2e-uuid") != nil {
 		t.Log("note: client still registered in fanout (may be race in fast test)")
+	}
+
+	// Verify OnDisconnect lifecycle hook fired
+	select {
+	case c := <-disconnected:
+		if c.ID() != "e2e-uuid" {
+			t.Fatalf("expected disconnect client ID 'e2e-uuid', got %q", c.ID())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for OnDisconnect")
 	}
 }
 

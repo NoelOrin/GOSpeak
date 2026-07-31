@@ -1,12 +1,12 @@
 package signal
 
 import (
-	"context"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -237,6 +237,11 @@ func (h *Hub) SetupFanout(fanout ws.Broadcaster, handler *ws.HandlerRegistry) {
 	handler.Handle(EventMemberSpeaking, h.OnMemberSpeaking)
 	handler.Handle(EventBotCommand, h.PublishBotCommand)
 	handler.Handle(EventBotMessage, h.PublishBotMessage)
+	handler.HandleAck(EventMessageSend, h.OnMessageSend)
+	handler.HandleAck(EventMessageEdit, h.OnMessageEdit)
+	handler.HandleAck(EventMessageDelete, h.OnMessageDelete)
+	handler.HandleAck(EventMessageReact, h.OnMessageReact)
+	handler.HandleAck(EventMessageUnreact, h.OnMessageUnreact)
 	handler.HandleAck(EventPrivateSend, h.OnPrivateMessageSend)
 
 	if h.sfuSignalHandler != nil {
@@ -334,7 +339,7 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	delete(h.connSlots, c.ID())
 	h.mu.Unlock()
 
-	// publish after unlock: avoid holding hub mu across NATS/Socket.IO I/O
+	// publish after unlock: avoid holding hub mu across NATS/WebSocket I/O
 	for _, e := range leaveEvents {
 		_, logicalName := splitRoomKey(e.room)
 		h.publishRoom(e.room, EventMemberLeft, map[string]interface{}{
@@ -399,7 +404,7 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 
 // ─── 房间创建 ───
 
-// OnError 兜底处理 socket.io 层 error（含 OnConnect 返回的 panic error）。
+// OnError 兜底处理 WS 层 error（含 OnConnect 返回的 panic error）。
 // 仅记录日志，不做断连等副作用——连接级错误由库自行处理。
 func (h *Hub) OnError(c ws.ClientMessenger, err error) {
 	if c == nil {
@@ -1345,7 +1350,6 @@ func (h *Hub) RoomForStream(stream string) (string, bool) {
 	return room, true
 }
 
-
 func (h *Hub) SetEventBus(b eventBus) {
 	h.eventBus = b
 }
@@ -1397,7 +1401,7 @@ func (h *Hub) IsRoomMember(room, identity string) bool {
 
 func (h *Hub) publishRoom(room, event string, data interface{}) {
 	// eventBus 由启动路径初始化（embedded NATS / external NATS），生产环境始终在线。
-	// 下面的 BroadcastToRoom 直调仅在 eventBus 为 nil 时使用（仅测试机的裸 socket.io 路径）。
+	// 下面的 BroadcastToRoom 直调仅在 eventBus 为 nil 时使用（仅测试机的裸 WS 路径）。
 	if h.eventBus != nil {
 		if err := h.eventBus.PublishRoom(context.Background(), room, event, data); err != nil {
 			log.Printf("[Signal] eventbus publish room %s %s: %v", room, event, err)
@@ -1492,7 +1496,6 @@ func (h *Hub) ForceSFUProviderSwitch(provider string) {
 	log.Printf("[Signal] SFU provider switched to %s, forced all sessions offline", provider)
 }
 
-
 // OnGuildDelete 清理指定 Guild 下所有信令房间（房间键前缀匹配）。
 // - 断开所有在线成员连接
 // - 删除本地 rooms map 中的条目
@@ -1525,9 +1528,8 @@ func (h *Hub) OnGuildDelete(guildUUID string) {
 	}
 }
 
-
 // HandleRemoteEvent 处理来自其他实例的控制面事件。
-// 当前仅对 sfu:provider-changed 做本机房间清理；其余事件已由 EventBus 投递到本地 Socket.IO。
+// 当前仅对 sfu:provider-changed 做本机房间清理；其余事件已由 EventBus 投递到本地 WebSocket。
 func (h *Hub) HandleRemoteEvent(event string, payload interface{}) {
 	switch event {
 	case EventSFUProviderChanged:
@@ -1550,7 +1552,7 @@ func (h *Hub) HandleRemoteEvent(event string, payload interface{}) {
 		}
 		h.ApplyRemoteRoomState(room)
 	default:
-		// other events already delivered to local Socket.IO by EventBus
+		// other events already delivered to local WebSocket by EventBus
 	}
 }
 
@@ -1657,7 +1659,6 @@ func (h *Hub) BroadcastUnmute(userID uint) {
 	})
 }
 
-
 // enforceUserMediaMute 在支持 ServerMute 的 provider 上，对 userID 当前所在房间做媒体层 mute/unmute。
 // 返回 hard|degraded|soft。多房间必须全部成功才返回非 soft。
 func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) string {
@@ -1678,7 +1679,7 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 	type target struct {
 		room        string // composite key (guildUUID:roomName)
 		logicalRoom string
-		identity string
+		identity    string
 	}
 	seen := make(map[string]struct{})
 	targets := make([]target, 0)
@@ -1711,12 +1712,12 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 					continue
 				}
 				for _, m := range snap.Members {
-						if m.Identity == identity {
+					if m.Identity == identity {
 						seen[roomName] = struct{}{}
 						_, lr := splitRoomKey(roomName)
 						targets = append(targets, target{room: roomName, logicalRoom: lr, identity: identity})
 						break
-						}
+					}
 				}
 			}
 		}
@@ -1767,7 +1768,6 @@ func (h *Hub) identityForUserID(userID uint) string {
 	}
 	return user.Name
 }
-
 
 // ─── 内部辅助 ───
 

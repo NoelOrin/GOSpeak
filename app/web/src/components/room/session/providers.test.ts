@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { getVoiceProviderAdapter } from "./providers";
 
+vi.mock("idb-keyval", () => ({
+	get: vi.fn(async () => undefined),
+	set: vi.fn(async () => {}),
+	del: vi.fn(async () => {}),
+}));
+
 describe("getVoiceProviderAdapter", () => {
 	it("srs uses background signal + serialize joins (WHIP)", () => {
 		const srs = getVoiceProviderAdapter("srs");

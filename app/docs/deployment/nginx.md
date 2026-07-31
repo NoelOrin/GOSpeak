@@ -38,8 +38,8 @@ server {
         access_log off;
     }
 
-    # WebSocket（Socket.IO）
-    location /socket.io/ {
+    # WebSocket（WebSocket）
+    location /ws {
         proxy_pass http://gospeak_backend;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -96,7 +96,7 @@ server {
 ### WebSocket 代理
 
 ```nginx
-location /socket.io/ {
+location /ws {
     proxy_pass http://gospeak_backend;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
@@ -121,7 +121,7 @@ location /rtc/v1/ {
 ```nginx
 # 正确顺序（nginx - 精确匹配 > 前缀匹配按文件中的顺序）
 location = /ping { ... }     # 1. 精确匹配
-location /socket.io/ { ... } # 2. WebSocket
+location /ws { ... } # 2. WebSocket
 location /api/ { ... }       # 3. API
 location /rtc/v1/ { ... }    # 4. SRS 信令（关键）
 location /swagger/ { ... }   # 5. Swagger

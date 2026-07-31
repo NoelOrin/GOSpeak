@@ -53,14 +53,26 @@ export interface SFUPublishAudioOptions {
  * moderation, room administration, local playback mute, or user-level speech
  * restriction policies.
  */
+/**
+ * Minimal signal transport used by SFU clients. Backed by the native WS
+ * adapter in the web app; no WebSocket-specific API leaks into this package.
+ */
+export interface SignalSocket {
+	isConnected(): boolean;
+	emitAck(event: string, payload?: unknown): Promise<any>;
+	emitFireAndForget(event: string, payload?: unknown): void;
+	onServerEvent(event: string, cb: (...args: any[]) => void): () => void;
+	onDisconnected(cb: (reason: string) => void): () => void;
+}
+
 export interface SFUClientOptions {
 	audioCapture?: SFUAudioCaptureOptions;
 	publishAudio?: SFUPublishAudioOptions;
 	/**
-	 * Socket.IO socket instance. Required when provider is "mediasoup" for its
+	 * Native WS signal socket. Required when provider is "mediasoup" for its
 	 * custom signaling flow; ignored by LiveKit and Agora.
 	 */
-	socket?: /** raw socket */ any;
+	socket?: SignalSocket | null;
 }
 
 export interface JoinParams {

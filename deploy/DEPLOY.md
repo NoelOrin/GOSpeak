@@ -8,7 +8,7 @@
 ```text
 浏览器
   ├─ HTTP/WSS :80  ──► nginx
-  │                      ├─ /api /socket.io /  ──► gospeak:8998
+  │                      ├─ /api /ws /  ──► gospeak:8998
   │                      └─ /rtc/v1            ──► srs:1985   (SRS 模式)
   ├─ WebRTC UDP/TCP :8000 ──► srs 直连媒体
 
@@ -83,7 +83,7 @@ pnpm dev:web
 | 端口 | 服务 | 说明 |
 |------|------|------|
 | 80 | nginx | 公网入口 |
-| 8998 | gospeak | API + SPA + Socket.IO |
+| 8998 | gospeak | API + SPA + WebSocket |
 | 1985 | srs | HTTP API / WHIP 源 |
 | 8000/udp+tcp | srs | WebRTC 媒体 |
 | 7880-7882 | livekit | LiveKit 控制/媒体 |
@@ -122,7 +122,7 @@ curl -s http://localhost:1985/api/v1/versions
 
 | 路径 | 走什么 | 能否 Nginx 反代 |
 |------|--------|-----------------|
-| API / Socket.IO | `gospeak:8998` | ✅ |
+| API / WebSocket | `gospeak:8998` | ✅ |
 | WHIP / WHEP HTTP 信令 | `srs:1985` 的 `/rtc/v1/*` | ✅ 推荐同源反代 |
 | WebRTC 媒体 (DTLS/UDP|TCP) | `srs:8000` | ❌ UDP 不能靠 Nginx 代；需直连 SRS |
 

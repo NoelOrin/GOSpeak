@@ -18,7 +18,7 @@ type Envelope struct {
 	TS         int64           `json:"ts"`
 }
 
-// Deliverer 将事件投递到本机 Socket.IO。
+// Deliverer 将事件投递到本机 WebSocket。
 type Deliverer interface {
 	BroadcastToNamespace(event string, data interface{})
 	BroadcastToRoom(room, event string, data interface{})
@@ -30,7 +30,7 @@ type EventBus interface {
 	PublishNamespace(ctx context.Context, event string, payload interface{}) error
 	// PublishRoom 先本地投递到 room，再发布到 NATS。
 	PublishRoom(ctx context.Context, room, event string, payload interface{}) error
-	// PublishInternal 仅 NATS 发布（不经 Socket.IO Deliverer），用于缓存失效等内部事件。
+	// PublishInternal 仅 NATS 发布（不经 WebSocket Deliverer），用于缓存失效等内部事件。
 	PublishInternal(ctx context.Context, event string, payload interface{}) error
 	Mode() string // "embedded" | "external"
 	IsConnected() bool

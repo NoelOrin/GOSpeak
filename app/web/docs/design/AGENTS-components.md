@@ -38,7 +38,7 @@ components/
 语音聊天面板，展示成员卡片网格。自适应列数（ResizeObserver），每个成员卡片显示头像首字母、名称、音量控制。成员数据来自 `socketStore.members()`。
 
 ### room/roomList.tsx
-左侧房间列表，管理 Socket.IO 连接生命周期。选中房间触发 `socketStore.setSelectedRoom()`。
+左侧房间列表，管理 WebSocket 连接生命周期。选中房间触发 `socketStore.setSelectedRoom()`。
 
 ### userBar.tsx
 底部用户信息栏，显示当前用户头像、名称，以及音频设备控制。

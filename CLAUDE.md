@@ -12,7 +12,7 @@ GOSpeak 是基于 WebRTC 的实时音视频沟通平台。pnpm monorepo：Go 后
 |----|------|
 | 后端 | Go 1.26 (实际 1.24+) · Gin · GORM · cobra CLI |
 | 前端 | SolidJS · TypeScript · Vite · TanStack Router · Tailwind v4 |
-| 信令 | Socket.IO (googollee/go-socket.io) |
+| 信令 | WebSocket (GOSpeak/internal/ws) |
 | SFU | LiveKit(主) / SRS / MediaSoup / Daily / Agora — 抽象层动态解析 |
 | DB | SQLite(默认) / PostgreSQL / MySQL — GORM 自动迁移 |
 | 缓存 | Redis(可选，缺失优雅降级) — JWT 轮换 + Token 黑名单 |
@@ -40,7 +40,7 @@ packages/
 │   │   ├── router/routes/  # 按模块分组路由
 │   │   ├── sfu/             # SFU Provider 抽象 + 工厂 + DynamicProvider
 │   │   ├── livekit/         # LiveKit 实现
-│   │   ├── signal/          # Socket.IO 信令 Hub (14 事件)
+│   │   ├── signal/          # WebSocket 信令 Hub (14 事件)
 │   │   ├── redis/           # 可选 Redis (黑名单/JWT轮换)
 │   │   └── pkg/             # errors/response/jwt + oauth 抽象
 │   ├── docs/                # swagger.yaml/json

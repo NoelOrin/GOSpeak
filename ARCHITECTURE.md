@@ -51,7 +51,7 @@ GOSpeak/
 │   │   │   ├── router/      # 路由注册
 │   │   │   ├── sfu/         # SFU 抽象层
 │   │   │   ├── livekit/     # LiveKit SFU 实现
-│   │   │   ├── signal/      # Socket.IO 信令 Hub
+│   │   │   ├── signal/      # WebSocket 信令 Hub
 │   │   │   ├── redis/       # Redis 客户端 (可选)
 │   │   │   └── pkg/         # 共享工具 (errors, response, jwt, oauth)
 │   │   ├── test/            # API 集成测试 (Node.js)
@@ -82,7 +82,7 @@ GOSpeak/
 │  │                            Stores                                       │   │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                  │   │
 │  │  │  userStore   │  │socketStore   │  │ voiceChat    │                  │   │
-│  │  │  (Auth JWT)  │  │ (Socket.IO)  │  │   Store      │                  │   │
+│  │  │  (Auth JWT)  │  │ (WebSocket)  │  │   Store      │                  │   │
 │  │  └──────────────┘  └──────────────┘  └──────────────┘                  │   │
 │  │  ┌──────────────┐  ┌──────────────┐                                    │   │
 │  │  │ themeStore   │  │ audioDevice  │  ← IndexedDB 持久化               │   │
@@ -131,7 +131,7 @@ GOSpeak/
 Tech Stack:
 - Framework: SolidJS + TanStack Router + TanStack Query
 - State: SolidJS Store + IndexedDB (idb-keyval)
-- Real-time: Socket.IO Client + LiveKit Client SDK
+- Real-time: WebSocket Client + LiveKit Client SDK
 - HTTP: Axios
 - Build: Vite
 ```
@@ -195,7 +195,7 @@ Tech Stack:
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                  │   │
 │  │  │   Signal     │  │    SFU       │  │  LiveKit     │                  │   │
 │  │  │   Hub        │  │  Provider    │  │  Service     │                  │   │
-│  │  │ (Socket.IO)  │  │  Interface   │  │   (SDK)      │                  │   │
+│  │  │ (WebSocket)  │  │  Interface   │  │   (SDK)      │                  │   │
 │  │  └──────────────┘  └──────────────┘  └──────────────┘                  │   │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                  │   │
 │  │  │    Redis     │  │   Config     │  │   OAuth      │                  │   │
@@ -210,7 +210,7 @@ Tech Stack:
 - HTTP: Gin
 - Database: GORM (SQLite/PostgreSQL/MySQL)
 - Cache: Redis (可选 - JWT 黑名单/会话)
-- Real-time: Socket.IO (go-socket.io)
+- Real-time: WebSocket (nhooyr.io/websocket)
 - WebRTC: LiveKit Server SDK
 - Auth: JWT + OAuth2
 ```
@@ -267,7 +267,7 @@ Tech Stack:
 │       │                                    └─── Redis ──► Cache (Optional)     │
 │       │                                          (JWT Blacklist/Key Rotation)  │
 │       │                                                                         │
-│       ├─── WebSocket (Socket.IO) ─────► Go Server (Signal Hub)                 │
+│       ├─── WebSocket (WebSocket) ─────► Go Server (Signal Hub)                 │
 │       │                                    │                                    │
 │       │                                    ├─── Memory ──► Room Registry       │
 │       │                                    │                                    │
@@ -317,7 +317,7 @@ Tech Stack:
 │  ┌─────────────────────────────────────────────────────────────────────────┐   │
 │  │                        Go Server                                         │   │
 │  │  ┌──────────────────────────────────────────────────────────────────┐   │   │
-│  │  │  :8998 (HTTP API + Socket.IO + Swagger)                          │   │   │
+│  │  │  :8998 (HTTP API + WebSocket + Swagger)                          │   │   │
 │  │  └──────────────────────────────────────────────────────────────────┘   │   │
 │  └─────────────────────────────────────────────────────────────────────────┘   │
 │                                                                                 │
@@ -384,7 +384,7 @@ Tech Stack:
 └── /swagger/*any                      # Swagger UI
 ```
 
-## WebSocket 事件 (Socket.IO)
+## WebSocket 事件 (WebSocket)
 
 ```
 Client → Server:                              Server → Client:
@@ -406,7 +406,7 @@ Member Events:
                                             ├── member:left     { identity }
                                             └── member:updated  MemberInfo
 
-WS Endpoint: /socket.io/*
+WS Endpoint: /ws
 ```
 
 ## 统一响应格式
@@ -458,7 +458,7 @@ WS Endpoint: /socket.io/*
 | **前端框架** | SolidJS | 响应式 UI |
 | **路由** | TanStack Router | 客户端路由 |
 | **数据获取** | TanStack Query | 服务端状态管理 |
-| **实时通信** | Socket.IO | 信令服务器 |
+| **实时通信** | WebSocket | 信令服务器 |
 | **WebRTC** | LiveKit / SRS / Agora / Daily / MediaSoup | 音视频通信 |
 | **后端语言** | Go | 服务器逻辑 |
 | **HTTP 框架** | Gin | REST API |
@@ -485,12 +485,12 @@ GOSpeak 在进程内通过 EventBus 做信令 fanout：
 
 - `NATS_URL` 空：启动内嵌 `nats-server`（默认随机端口；`NATS_EMBEDDED_PORT` 可固定）
 - `NATS_URL` 非空：先探测外部；可用则 external，不可用则 Warn 并回退内嵌
-- Hub 广播（`member:*` / `room:*` / `user:muted` / `sfu:provider-changed` 等）先本地 Socket.IO 投递，再经 NATS 复制到其他实例
+- Hub 广播（`member:*` / `room:*` / `user:muted` / `sfu:provider-changed` 等）先本地 WebSocket 投递，再经 NATS 复制到其他实例
 - **不做**房间成员状态、stream 注册表的分布式同步；状态仍在进程内存
 
 二进制仍为单文件：链接 `nats.go` 客户端 + `nats-server` 库，不附带独立 nats-server 可执行文件。
 
-内部事件使用 `PublishInternal`（subject `{prefix}.internal`），例如权限缓存失效 `cache:permissions-invalidated`，不经 Socket.IO Deliverer。
+内部事件使用 `PublishInternal`（subject `{prefix}.internal`），例如权限缓存失效 `cache:permissions-invalidated`，不经 WebSocket Deliverer。
 
 房间人数视图：membership JetStream KV 为跨实例真相源；本机 join/leave 写 KV 后 `PublishInternal(state:room-changed)`，对端 `ApplyRemoteRoomState` 从 KV 合并并本地广播 `room:updated`/`room:list:result`。Socket 连接与踢人控制仍在本机 Hub。
 

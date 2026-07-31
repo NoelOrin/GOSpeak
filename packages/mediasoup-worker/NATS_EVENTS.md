@@ -8,4 +8,4 @@ Future enhancement (not required for core multi-instance signaling):
 - Publish producer/transport close to `{prefix}.mediasoup.event`
 - Go backend may subscribe and fanout `sfu:producer-closed` without extra HTTP polling
 
-Until implemented, leave path stays: Socket.IO leave → Hub → HTTP `CloseParticipant`.
+Until implemented, leave path stays: WebSocket leave → Hub → HTTP `CloseParticipant`.

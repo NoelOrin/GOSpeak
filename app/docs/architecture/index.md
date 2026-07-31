@@ -7,7 +7,7 @@
 │                   浏览器 (SolidJS)                    │
 ├──────────┬──────────┬───────────────────────────────┤
 │  HTTP    │ WebSocket│        WebRTC                  │
-│ (Axios)  │(Socket.IO)│     (LiveKit/SRS SDK)         │
+│ (Axios)  │(WebSocket)│     (LiveKit/SRS SDK)         │
 └────┬─────┴────┬─────┴───────────────┬───────────────┘
      │          │                     │
      ▼          ▼                     ▼
@@ -21,7 +21,7 @@
 │           │           │
 │  ┌────────▼────────┐  │
 │  │   Signal Hub     │  │
-│  │  (Socket.IO)     │  │
+│  │  (WebSocket)     │  │
 │  └─────────────────┘  │
 │           │           │
 └───────────┼───────────┘
@@ -39,7 +39,7 @@
 | **前端框架** | SolidJS | 响应式 UI |
 | **路由** | TanStack Router | 客户端路由 |
 | **数据获取** | TanStack Query | 服务端状态管理 |
-| **实时通信** | Socket.IO | 信令服务器 |
+| **实时通信** | WebSocket | 信令服务器 |
 | **音视频** | LiveKit / SRS / etc. | WebRTC SFU |
 | **后端** | Go + Gin | REST API |
 | **ORM** | GORM | 数据库操作 |
@@ -85,7 +85,7 @@ app/
 │   │   ├── router/      # 路由注册
 │   │   ├── middleware/  # JWT/CORS/权限 RBAC/封禁
 │   │   ├── sfu/         # SFU 抽象 + 工厂 + 多 Provider
-│   │   ├── signal/      # Socket.IO 信令 Hub
+│   │   ├── signal/      # WebSocket 信令 Hub
 │   │   ├── bus/         # 内存事件总线
 │   │   ├── jobs/        # 异步任务 (消息持久化等)
 │   │   ├── storage/     # 对象存储抽象
@@ -104,7 +104,7 @@ app/
 │       ├── hooks/       # 业务 Hook
 │       ├── layouts/     # 布局组件
 │       ├── pages/       # 路由页面
-│       ├── socket/      # Socket.IO 客户端
+│       ├── socket/      # WebSocket 客户端
 │       ├── types/       # TypeScript 类型
 │       └── utils/       # 工具函数
 │   └── docs/            # VitePress 文档站点

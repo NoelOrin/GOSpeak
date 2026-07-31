@@ -45,7 +45,7 @@ import { GOSpeakSocketClient } from "./socketClient";
 export interface BotConfig {
 	/** GOSpeak server base URL, e.g. http://localhost:8998 */
 	serverUrl: string;
-	/** WebSocket/Socket.IO endpoint */
+	/** WebSocket endpoint */
 	socketUrl: string;
 	/** Bot account JWT — if provided, skips login */
 	accessToken?: string;
@@ -209,6 +209,7 @@ export class BotRunner {
 			url: this.config.socketUrl,
 			token: accessToken,
 			logger: this.logger,
+			baseUrl: this.config.serverUrl,
 		});
 
 		this._caps = new CapabilityRouter(this.api, this.socket, this, {

@@ -7,7 +7,7 @@ import { preloadSfuClient } from "@/components/room/services/loadSfuClient";
 // NOTE: store -> audio 写入是已知耦合；房间 UI 直接读 speakingStore。
 // 若后续要彻底解耦，改为 onActiveSpeakers 订阅，由 useRoomAudioBridge/voiceChat 写入。
 import { setSpeakingIdentities } from "@/handler_audio/speakingStore";
-import { createSocketClient } from "@/socket/client";
+import { createWSClient } from "@/socket/wsClient";
 import { EVENTS } from "@/socket/events";
 import { createMediasoupSignal } from "@/socket/mediasoupSignal";
 import { createProviderReloadHandler } from "@/socket/providerReload";
@@ -60,7 +60,7 @@ import type {
 
 export const socketStore = createRoot(() => {
 	// 3. adapter + signals
-	const adapter = createSocketClient();
+	const adapter = createWSClient();
 
 	const [connected, setConnected] = createSignal(false);
 	const [rooms, setRooms] = createSignal<RoomInfo[]>([]);
@@ -101,7 +101,7 @@ export const socketStore = createRoot(() => {
 	adapter.onConnected(() => {
 		setConnecting(false);
 		setConnected(true);
-		console.log("[Socket] connected:", adapter.getSocket()?.id);
+		console.log("[Socket] connected");
 		listRooms();
 	});
 
@@ -414,7 +414,7 @@ export const socketStore = createRoot(() => {
 		// 仅发信令，不清 currentRoom。状态清理由 session 生命周期统一管理
 		// （teardownSession / handleManualLeave / room:kicked），避免切房 fire-and-forget 时
 		// .then 清状态与新房 joinRoom 设状态竞态。
-		// 离开者已不在 socket.io room，收不到 member:left；namespace 广播
+		// 离开者已不在 WS room，收不到 member:left；namespace 广播
 		// room:updated / room:list:result 负责刷新列表。ack 后再拉一次列表兜底。
 		return signalEmit(EVENTS.ROOM_LEAVE, { room }).then((data) => {
 			listRooms();
@@ -520,7 +520,7 @@ export const socketStore = createRoot(() => {
 	}
 
 	function getSocket() {
-		return adapter.getSocket();
+		return adapter;
 	}
 
 	function listRooms() {

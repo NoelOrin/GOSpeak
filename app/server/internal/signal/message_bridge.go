@@ -1,13 +1,12 @@
 package signal
 
 import (
-	"GOSpeak/internal/model"
-	"GOSpeak/internal/permcode"
-	"GOSpeak/internal/pkg"
-	"GOSpeak/internal/service"
 	"fmt"
 
-	socketio "github.com/googollee/go-socket.io"
+	"GOSpeak/internal/model"
+	"GOSpeak/internal/permcode"
+	"GOSpeak/internal/service"
+	"GOSpeak/internal/ws"
 )
 
 // messageSender abstracts message operations for the signal layer.
@@ -40,8 +39,8 @@ type messageMutatePayload struct {
 
 // resolveMessageRoom looks up a DB room by name, validates the conn slot,
 // and returns (roomUUID, roomType) or an ack error string.
-func (h *Hub) resolveMessageRoom(s socketio.Conn, roomName string) (roomUUID, roomType string, ackErr string) {
-	identity := claimsIdentity(s)
+func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, roomName string) (roomUUID, roomType string, ackErr string) {
+	identity := clientIdentity(c)
 	if identity == "" {
 		return "", "", `{"error":"unauthorized"}`
 	}
@@ -58,7 +57,7 @@ func (h *Hub) resolveMessageRoom(s socketio.Conn, roomName string) (roomUUID, ro
 
 	// Validate conn slot: must have joined this room
 	h.mu.RLock()
-	slots := h.connSlots[s.ID()]
+	slots := h.connSlots[c.ID()]
 	allowed := false
 	if slots != nil {
 		if roomType == model.RoomTypeText {
@@ -76,34 +75,23 @@ func (h *Hub) resolveMessageRoom(s socketio.Conn, roomName string) (roomUUID, ro
 }
 
 // checkMessagePerm returns an ack error string if the connection lacks message:send.
-func (h *Hub) checkMessagePerm(s socketio.Conn) string {
+func (h *Hub) checkMessagePerm(c ws.ClientMessenger) string {
 	if h.permChecker == nil {
 		return ""
 	}
-	ctx := s.Context()
-	if claims, ok := ctx.(*pkg.Claims); ok {
-		if !h.permChecker.HasPermission(claims.Role, permcode.PermMessageSend) {
-			return `{"error":"permission denied"}`
-		}
+	claims := c.Claims()
+	if claims != nil && !h.permChecker.HasPermission(claims.Role, permcode.PermMessageSend) {
+		return `{"error":"permission denied"}`
 	}
 	return ""
 }
 
-// claimsIdentity extracts the username from a socketio.Conn context (legacy path).
-func claimsIdentity(s socketio.Conn) string {
-	claims, ok := s.Context().(*pkg.Claims)
-	if !ok || claims == nil {
-		return ""
-	}
-	return claims.Username
-}
-
 // OnMessageSend handles message:send events from clients.
-func (h *Hub) OnMessageSend(s socketio.Conn, data string) (string, error) {
+func (h *Hub) OnMessageSend(c ws.ClientMessenger, data string) (string, error) {
 	if h.msgSvc == nil {
 		return marshalAck(map[string]interface{}{"error": "message service unavailable"})
 	}
-	if ack := h.checkMessagePerm(s); ack != "" {
+	if ack := h.checkMessagePerm(c); ack != "" {
 		return ack, nil
 	}
 
@@ -112,12 +100,12 @@ func (h *Hub) OnMessageSend(s socketio.Conn, data string) (string, error) {
 		return marshalAck(map[string]interface{}{"error": "room is required"})
 	}
 
-	identity := claimsIdentity(s)
+	identity := clientIdentity(c)
 	if identity == "" {
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, ackErr := h.resolveMessageRoom(s, req.Room)
+	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room)
 	if ackErr != "" {
 		return ackErr, nil
 	}
@@ -129,11 +117,11 @@ func (h *Hub) OnMessageSend(s socketio.Conn, data string) (string, error) {
 }
 
 // OnMessageEdit handles message:edit events from clients.
-func (h *Hub) OnMessageEdit(s socketio.Conn, data string) (string, error) {
+func (h *Hub) OnMessageEdit(c ws.ClientMessenger, data string) (string, error) {
 	if h.msgSvc == nil {
 		return marshalAck(map[string]interface{}{"error": "message service unavailable"})
 	}
-	if ack := h.checkMessagePerm(s); ack != "" {
+	if ack := h.checkMessagePerm(c); ack != "" {
 		return ack, nil
 	}
 
@@ -142,12 +130,12 @@ func (h *Hub) OnMessageEdit(s socketio.Conn, data string) (string, error) {
 		return marshalAck(map[string]interface{}{"error": "room and message_uuid are required"})
 	}
 
-	identity := claimsIdentity(s)
+	identity := clientIdentity(c)
 	if identity == "" {
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, ackErr := h.resolveMessageRoom(s, req.Room)
+	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room)
 	if ackErr != "" {
 		return ackErr, nil
 	}
@@ -159,11 +147,11 @@ func (h *Hub) OnMessageEdit(s socketio.Conn, data string) (string, error) {
 }
 
 // OnMessageDelete handles message:delete events from clients.
-func (h *Hub) OnMessageDelete(s socketio.Conn, data string) (string, error) {
+func (h *Hub) OnMessageDelete(c ws.ClientMessenger, data string) (string, error) {
 	if h.msgSvc == nil {
 		return marshalAck(map[string]interface{}{"error": "message service unavailable"})
 	}
-	if ack := h.checkMessagePerm(s); ack != "" {
+	if ack := h.checkMessagePerm(c); ack != "" {
 		return ack, nil
 	}
 
@@ -172,24 +160,20 @@ func (h *Hub) OnMessageDelete(s socketio.Conn, data string) (string, error) {
 		return marshalAck(map[string]interface{}{"error": "room and message_uuid are required"})
 	}
 
-	identity := claimsIdentity(s)
+	identity := clientIdentity(c)
 	if identity == "" {
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, ackErr := h.resolveMessageRoom(s, req.Room)
+	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room)
 	if ackErr != "" {
 		return ackErr, nil
 	}
 
 	// canDeleteOthers: check permission via permChecker
 	canDeleteOthers := false
-	if ctx := s.Context(); ctx != nil {
-		if claims, ok := ctx.(*pkg.Claims); ok {
-			if h.permChecker != nil {
-				canDeleteOthers = h.permChecker.HasPermission(claims.Role, permcode.PermMessageDeleteOthers)
-			}
-		}
+	if claims := c.Claims(); claims != nil && h.permChecker != nil {
+		canDeleteOthers = h.permChecker.HasPermission(claims.Role, permcode.PermMessageDeleteOthers)
 	}
 
 	if err := h.msgSvc.Delete(roomUUID, req.MessageUUID, identity, canDeleteOthers); err != nil {
@@ -199,11 +183,11 @@ func (h *Hub) OnMessageDelete(s socketio.Conn, data string) (string, error) {
 }
 
 // OnMessageReact handles message:react events from clients.
-func (h *Hub) OnMessageReact(s socketio.Conn, data string) (string, error) {
+func (h *Hub) OnMessageReact(c ws.ClientMessenger, data string) (string, error) {
 	if h.msgSvc == nil {
 		return marshalAck(map[string]interface{}{"error": "message service unavailable"})
 	}
-	if ack := h.checkMessagePerm(s); ack != "" {
+	if ack := h.checkMessagePerm(c); ack != "" {
 		return ack, nil
 	}
 
@@ -212,12 +196,12 @@ func (h *Hub) OnMessageReact(s socketio.Conn, data string) (string, error) {
 		return marshalAck(map[string]interface{}{"error": "room, message_uuid, and emoji are required"})
 	}
 
-	identity := claimsIdentity(s)
+	identity := clientIdentity(c)
 	if identity == "" {
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, ackErr := h.resolveMessageRoom(s, req.Room)
+	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room)
 	if ackErr != "" {
 		return ackErr, nil
 	}
@@ -229,11 +213,11 @@ func (h *Hub) OnMessageReact(s socketio.Conn, data string) (string, error) {
 }
 
 // OnMessageUnreact handles message:unreact events from clients.
-func (h *Hub) OnMessageUnreact(s socketio.Conn, data string) (string, error) {
+func (h *Hub) OnMessageUnreact(c ws.ClientMessenger, data string) (string, error) {
 	if h.msgSvc == nil {
 		return marshalAck(map[string]interface{}{"error": "message service unavailable"})
 	}
-	if ack := h.checkMessagePerm(s); ack != "" {
+	if ack := h.checkMessagePerm(c); ack != "" {
 		return ack, nil
 	}
 
@@ -242,12 +226,12 @@ func (h *Hub) OnMessageUnreact(s socketio.Conn, data string) (string, error) {
 		return marshalAck(map[string]interface{}{"error": "room, message_uuid, and emoji are required"})
 	}
 
-	identity := claimsIdentity(s)
+	identity := clientIdentity(c)
 	if identity == "" {
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, ackErr := h.resolveMessageRoom(s, req.Room)
+	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room)
 	if ackErr != "" {
 		return ackErr, nil
 	}

@@ -98,7 +98,7 @@ GOSpeak/
 │   │   │   ├── router/      # 路由注册
 │   │   │   ├── middleware/  # JWT/CORS/权限 RBAC
 │   │   │   ├── sfu/         # SFU 抽象 + 工厂 + 多 Provider
-│   │   │   ├── signal/      # Socket.IO 信令 Hub
+│   │   │   ├── signal/      # WebSocket 信令 Hub
 │   │   │   ├── jobs/        # 异步任务
 │   │   │   ├── storage/     # 对象存储抽象
 │   │   │   ├── redis/       # 可选 Redis 客户端

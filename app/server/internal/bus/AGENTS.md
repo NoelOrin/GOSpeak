@@ -6,7 +6,7 @@
 
 | 能力 | 后端 | 用途 |
 |------|------|------|
-| EventBus | NATS (embedded/external) | Socket.IO 跨实例 fanout（room/namespace）+ internal 事件 |
+| EventBus | NATS (embedded/external) | WebSocket 跨实例 fanout（room/namespace）+ internal 事件 |
 | MembershipStore | redis → nats KV → none | 房间成员 / stream 映射共享 |
 | MuteRuleStore | redis → nats KV → memory | Agora kicking-rule id 等降级 mute 缓存 |
 | AuthStore | redis（优先）/ nats KV | JWT 黑名单 + 签名密钥轮换 |

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { SRSSFUClient } from "./srs-client";
-import type { JoinParams } from "./types";
+import type { JoinParams, SignalSocket } from "./types";
 
 // RTCPeerConnection mock
 function makeMockPc() {
@@ -60,11 +60,21 @@ beforeEach(() => {
 		writable: true,
 		configurable: true,
 	});
-	(globalThis as any).AudioContext = vi.fn(() => ({
-		createMediaStreamSource: vi.fn(),
-		createAnalyser: vi.fn(() => ({ fftSize: 0, getByteFrequencyData: () => {} })),
-		close: vi.fn(),
-	}));
+	class MockAudioContext {
+		createMediaStreamSource = vi.fn(() => ({ connect: vi.fn() }));
+		createAnalyser = vi.fn(() => ({
+			fftSize: 0,
+			frequencyBinCount: 256,
+			getByteFrequencyData: () => {},
+		}));
+		close() {
+			return Promise.resolve();
+		}
+	}
+	(globalThis as any).AudioContext = MockAudioContext;
+	(globalThis as any).requestAnimationFrame = (cb: FrameRequestCallback) =>
+		setTimeout(() => cb(performance.now()), 16);
+	(globalThis as any).cancelAnimationFrame = (id: number) => clearTimeout(id);
 	vi.useRealTimers();
 });
 
@@ -267,11 +277,15 @@ describe("SRSSFUClient room isolation", () => {
 	it("filters member events by room", async () => {
 		(globalThis as any).fetch = makeFetch(true, true);
 		const handlers: Record<string, Function[]> = {};
-		const socket = {
-			on: (ev: string, cb: Function) => {
+		const socket: SignalSocket = {
+			isConnected: () => true,
+			emitAck: vi.fn(),
+			emitFireAndForget: vi.fn(),
+			onServerEvent: (ev: string, cb: Function) => {
 				(handlers[ev] ||= []).push(cb);
+				return () => {};
 			},
-			off: vi.fn(),
+			onDisconnected: vi.fn(),
 		};
 		const client = new SRSSFUClient({ socket });
 		const onTrack = vi.fn();

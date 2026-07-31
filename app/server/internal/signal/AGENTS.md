@@ -1,6 +1,6 @@
 # signal 模块
 
-WebSocket 信令层，基于 Socket.IO 实现实时通信。
+WebSocket 信令层，基于 WebSocket 实现实时通信。
 
 ## 文件说明
 
@@ -39,7 +39,7 @@ Hub.rooms            — map[string]*Room, roomName → 在线房间（有 WS �
 | agora    | ❌ 跳过（返回 `ErrSFUNotSupported`，无单用户踢人 REST API） | 未实现，仅 ban 语义 |
 | cloudflare | ❌ 跳过（返回 `ErrSFUNotSupported`，WHIP/WHEP 媒体无单用户踢人 REST） | 未实现 |
 
-Mute/ListParticipants 不由信令层触发 SFU 调用——靠前端 Socket.IO 事件协作。
+Mute/ListParticipants 不由信令层触发 SFU 调用——靠前端 WebSocket 事件协作。
 
 ## 语义约束
 
@@ -55,4 +55,4 @@ Mute/ListParticipants 不由信令层触发 SFU 调用——靠前端 Socket.IO 
 
 ## 依赖
 
-使用 `github.com/googollee/go-socket.io` 实现 WebSocket 通信。
+使用 `GOSpeak/internal/ws` 实现 WebSocket 通信。

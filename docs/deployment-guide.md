@@ -240,7 +240,7 @@ curl http://localhost:8998/api/v1/health  # (若该端点存在)
 
 ### 5.3 Nginx 反代
 
-见 `deploy/nginx.conf`。WebSocket 升级用于 Socket.IO 信令，`/api/` 代理到 Go 后端。
+见 `deploy/nginx.conf`。WebSocket 升级用于 WebSocket 信令，`/api/` 代理到 Go 后端。
 
 ### 5.4 停止
 
@@ -288,7 +288,7 @@ docker run -d ... gospeak:latest  # 同 5.2 step 4
 | 症状 | 排查 |
 |------|------|
 | 前端无音视频 | 检查 `SFU_PROVIDER` + LiveKit/SRS 服务状态 + WebRTC UDP 端口开放 |
-| 信令连不上 | 检查 Socket.IO WebSocket 升级，Nginx 配置 |
+| 信令连不上 | 检查 WebSocket WebSocket 升级，Nginx 配置 |
 | JWT 无法刷新 | 检查 Redis 连接（`REDIS_HOST`） |
 | 上传失败 | 检查 `STORAGE_TYPE` + MinIO/S3 凭证 + `STORAGE_ENCRYPT_KEY` |
 | DB 连接失败 | `DB_TYPE` 不匹配，PostgreSQL/MySQL 需 `DB_HOST` 等填全 |

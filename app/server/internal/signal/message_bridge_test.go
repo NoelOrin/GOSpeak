@@ -8,8 +8,6 @@ import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
-
-	socketio "github.com/googollee/go-socket.io"
 )
 
 // ─── mock message service ───
@@ -69,7 +67,7 @@ func newMockRoomStoreWithType(namesAndTypes ...string) *mockRoomStore {
 func TestOnRoomJoinSFU_TextRoomRejected(t *testing.T) {
 	store := newMockRoomStoreWithType("text-chat", model.RoomTypeText)
 	h := NewHub(store, nil, nil, nil)
-	conn := newAuthedMockConn("conn-1", "alice")
+	conn := newAuthedMockClient("conn-1", "alice")
 
 	data := `{"room":"text-chat","identity":"alice"}`
 	ack, err := h.OnRoomJoinSFU(conn, data)
@@ -92,11 +90,12 @@ func TestOnRoomJoin_DualSlot(t *testing.T) {
 		"text-c", model.RoomTypeText,
 		"voice-b", model.RoomTypeVoice,
 	)
-	h := NewHub(store, nil, nil, nil)
+	h := newTestHub()
+	h.roomStore = store
 	// nil muteStore bypasses check
 	// nil permChecker bypasses permission check (OnRoomJoin calls CheckRoomPermission)
 
-	conn := newAuthedMockConn("conn-1", "alice")
+	conn := newAuthedMockClient("conn-1", "alice")
 
 	// Join text room A
 	_, err := h.OnRoomJoin(conn, `{"room":"text-a","identity":"alice"}`)
@@ -141,19 +140,21 @@ func TestOnRoomJoin_DualSlot(t *testing.T) {
 	}
 
 	// Old text room should be left
-	if !conn.left["text-a"] {
+	fanout := h.fanout.(*mockBroadcaster)
+	if !fanout.didLeave("conn-1", "text-a") {
 		t.Error("expected text-a to be left")
 	}
 }
 
 func TestOnMessageSend_NotInRoom(t *testing.T) {
 	store := newMockRoomStoreWithType("text-chat", model.RoomTypeText)
-	h := NewHub(store, nil, nil, nil)
+	h := newTestHub()
+	h.roomStore = store
 	msgSvc := &mockMessageSvc{}
 	h.SetMessageService(msgSvc)
 
 	// Conn authed but never joined the room
-	conn := newAuthedMockConn("conn-1", "alice")
+	conn := newAuthedMockClient("conn-1", "alice")
 
 	// Try sending without joining
 	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","content":"hello"}`)
@@ -173,11 +174,12 @@ func TestOnMessageSend_NotInRoom(t *testing.T) {
 
 func TestOnMessageSend_Success(t *testing.T) {
 	store := newMockRoomStoreWithType("text-chat", model.RoomTypeText)
-	h := NewHub(store, nil, nil, nil)
+	h := newTestHub()
+	h.roomStore = store
 	msgSvc := &mockMessageSvc{}
 	h.SetMessageService(msgSvc)
 
-	conn := newAuthedMockConn("conn-1", "alice")
+	conn := newAuthedMockClient("conn-1", "alice")
 
 	// First join the room
 	_, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"alice"}`)
@@ -208,7 +210,7 @@ func TestOnMessageSend_Unauthed(t *testing.T) {
 	h.SetMessageService(msgSvc)
 
 	// Unauthed conn (no claims in context)
-	conn := newMockConn("conn-1")
+	conn := newMockClient("conn-1")
 
 	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","content":"hello"}`)
 	if err != nil {
@@ -224,13 +226,14 @@ func TestOnMessageSend_Unauthed(t *testing.T) {
 
 func TestOnMessageDelete_WithModPerm(t *testing.T) {
 	store := newMockRoomStoreWithType("text-chat", model.RoomTypeText)
-	h := NewHub(store, nil, nil, nil)
+	h := newTestHub()
+	h.roomStore = store
 	msgSvc := &mockMessageSvc{}
 	h.SetMessageService(msgSvc)
 
 	// Admin role conn
-	conn := newMockConn("conn-1")
-	conn.SetContext(&pkg.Claims{Username: "admin", UserUUID: "admin", Role: "admin"})
+	conn := newMockClient("conn-1")
+	conn.claims = &pkg.Claims{Username: "admin", UserUUID: "admin", Role: "admin"}
 
 	// Join first
 	_, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"admin"}`)
@@ -255,9 +258,10 @@ func TestOnMessageDelete_WithModPerm(t *testing.T) {
 
 func TestOnDisconnect_CleansConnSlots(t *testing.T) {
 	store := newMockRoomStoreWithType("text-chat", model.RoomTypeText)
-	h := NewHub(store, nil, nil, nil)
+	h := newTestHub()
+	h.roomStore = store
 
-	conn := newAuthedMockConn("conn-1", "alice")
+	conn := newAuthedMockClient("conn-1", "alice")
 
 	// Join a room
 	_, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"alice"}`)
@@ -275,7 +279,7 @@ func TestOnDisconnect_CleansConnSlots(t *testing.T) {
 
 	// Handle disconnect (nil server cast via safeOnDisconnect wrapper)
 	// Call the handler directly
-	h.OnDisconnect(conn, "client namespace disconnect")
+	h.OnDisconnect(conn)
 
 	// Verify slot cleaned
 	h.mu.RLock()
@@ -288,9 +292,10 @@ func TestOnDisconnect_CleansConnSlots(t *testing.T) {
 
 func TestResolveMessageRoom_IdentityRequired(t *testing.T) {
 	store := newMockRoomStoreWithType("text-chat", model.RoomTypeText)
-	h := NewHub(store, nil, nil, nil)
+	h := newTestHub()
+	h.roomStore = store
 
-	conn := newMockConn("conn-1") // no claims
+	conn := newMockClient("conn-1") // no claims
 
 	_, _, ackErr := h.resolveMessageRoom(conn, "text-chat")
 	if ackErr == "" {
@@ -320,9 +325,10 @@ func TestRoomJoinSFU_WithServer(t *testing.T) {
 		"text-chat", model.RoomTypeText,
 		"voice-1", model.RoomTypeVoice,
 	)
-	h := NewHub(store, nil, nil, nil)
+	h := newTestHub()
+	h.roomStore = store
 
-	conn := newAuthedMockConn("conn-1", "alice")
+	conn := newAuthedMockClient("conn-1", "alice")
 
 	// Voice room SFU should succeed (no error)
 	_, err := h.OnRoomJoin(conn, `{"room":"voice-1","identity":"alice"}`)
@@ -341,6 +347,3 @@ func TestRoomJoinSFU_WithServer(t *testing.T) {
 		t.Errorf("expected error, got %v", ackMap)
 	}
 }
-
-// verify mockConn satisfies socketio.Conn
-var _ socketio.Conn = (*mockConn)(nil)

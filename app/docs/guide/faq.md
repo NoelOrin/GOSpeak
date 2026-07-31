@@ -94,9 +94,9 @@ docker run -d \
 
 ## WebSocket 连接不上？
 
-1. 检查 Nginx 是否反代了 `/socket.io/` 路径
+1. 检查 Nginx 是否反代了 `/ws` 路径
 2. 确认后端 `SERVER_PORT` 与 Nginx upstream 一致
-3. Socket.IO WebSocket 需要 `Upgrade` 和 `Connection` 头
+3. WebSocket WebSocket 需要 `Upgrade` 和 `Connection` 头
 4. Nginx 配置参考 `deploy/nginx-docker.conf`
 
 ## 如何备份数据？

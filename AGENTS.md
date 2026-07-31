@@ -63,7 +63,7 @@ app/server/
 │   │       └── cloudflare/ # Cloudflare Realtime SFU implementation
 │   ├── permcode/           # Permission code constants
 │   ├── bus/                # Multi-instance event bus (NATS/Redis)
-│   ├── signal/             # Socket.IO signaling hub
+│   ├── signal/             # WebSocket signaling hub
 │   ├── redis/              # Optional Redis client (blacklist, JWT key rotation)
 │   ├── logger/             # Unified logrus wrapper (level/format/output + gin middleware)
 │   └── pkg/                # Shared utilities
@@ -299,7 +299,7 @@ if err := c.ShouldBindJSON(&req); err != nil {
 | POST | `/api/v1/guild/kick` | JWT | `guild:kick` | GuildHandler.Kick |
 | POST | `/api/v1/guild/members` | JWT | `guild:read` | GuildHandler.Members |
 
-| WS | `/socket.io/*` | No | — | Socket.IO signaling |
+| WS | `/ws` | No | — | WebSocket signaling |
 | POST | `/api/v1/conversation/list` | JWT | — | ConversationHandler.List |
 | POST | `/api/v1/conversation/messages` | JWT | — | ConversationHandler.Messages |
 | POST | `/api/v1/conversation/mark-read` | JWT | — | ConversationHandler.MarkRead |
@@ -547,13 +547,13 @@ When Redis is not connected, blacklist operations are no-ops (best-effort strate
 ---
 ## Bus Module (Multi-Instance Event Bus)
 
-Multi-instance event bus and shared state at `internal/bus/`. Provides cross-instance coordination for Socket.IO fanout, membership sharing, mute rules, JWT auth, and async job queues.
+Multi-instance event bus and shared state at `internal/bus/`. Provides cross-instance coordination for WebSocket fanout, membership sharing, mute rules, JWT auth, and async job queues.
 
 ### Capabilities
 
 | Capability | Backend | Purpose |
 |------------|---------|---------|
-| EventBus | NATS (embedded/external) | Socket.IO cross-instance fanout (room/namespace) + internal events |
+| EventBus | NATS (embedded/external) | WebSocket cross-instance fanout (room/namespace) + internal events |
 | MembershipStore | redis -> NATS KV -> none | Room member / stream mapping sharing |
 | MuteRuleStore | redis -> NATS KV -> memory | Agora kicking-rule id and degraded mute cache |
 | AuthStore | redis (preferred) / NATS KV | JWT blacklist + signing key rotation |
@@ -573,7 +573,7 @@ Multi-instance event bus and shared state at `internal/bus/`. Provides cross-ins
 
 ### Integration
 
-Initialized in `server/gin.go` after DB + Redis setup. The `WSDeliverer` bridges NATS fanout into the local Socket.IO server, so cross-instance messages reach all connected clients.
+Initialized in `server/gin.go` after DB + Redis setup. The `WSDeliverer` bridges NATS fanout into the local WebSocket server, so cross-instance messages reach all connected clients.
 
 ---
 
@@ -739,9 +739,9 @@ All permission constants live in `internal/permcode/permcode.go`.
 
 ---
 
-## Signal (Socket.IO) Module
+## Signal (WebSocket) Module
 
-Standalone package at `internal/signal/`. Handles real-time room signaling via Socket.IO (`googollee/go-socket.io v1.7.0`).
+Standalone package at `internal/signal/`. Handles real-time room signaling via WebSocket (`GOSpeak/internal/ws`).
 
 ### Key files
 
@@ -749,7 +749,7 @@ Standalone package at `internal/signal/`. Handles real-time room signaling via S
 |------|------|
 | `events.go` | 14 event name constants |
 | `types.go` | `RoomRequest`, `MemberInfo`, `RoomInfo` structs |
-| `hub.go` | Hub (global room registry) + Socket.IO event handlers |
+| `hub.go` | Hub (global room registry) + WebSocket event handlers |
 
 ### Event Table
 
@@ -773,11 +773,9 @@ Standalone package at `internal/signal/`. Handles real-time room signaling via S
 ### Hub API
 
 ```go
-hub := signal.NewHub(roomStore, muteStore)
-hub.SetServer(server)
-hub.SetSFU(provider)    // sets sfuProvider + sfuProviderName
-hub.SetupRoutes(server) // registers all Socket.IO events
-hub.BroadcastToRoom(namespace, room, event, data)
+hub := signal.NewHub(roomStore, muteStore, userStore, permChecker)
+hub.SetFanout(fanout) // ws.Fanout
+hub.SetupFanout(fanout, handler) // registers all WS events
 ```
 
 ### Hub 房间查询方法
@@ -845,7 +843,7 @@ app/web/src/
 │   └── container/
 │       └── ContextProvider.tsx  # Theme context provider
 ├── stores/
-│   ├── socketStore.ts         # Socket.IO global singleton store
+│   ├── socketStore.ts         # WebSocket global singleton store
 │   ├── userStore.ts           # Auth state (user, tokens) with IndexedDB persistence
 │   ├── themeStore.ts          # Theme switching (light/dark)
 │   ├── audioDeviceStore.ts    # Audio device enumeration with IndexedDB persistence
@@ -861,13 +859,13 @@ app/web/src/
 
 ### socketStore (`src/stores/socketStore.ts`)
 
-Global singleton created with `createRoot`. Manages the Socket.IO connection lifecycle and reactive state for rooms and members.
+Global singleton created with `createRoot`. Manages the WebSocket connection lifecycle and reactive state for rooms and members.
 
 **State signals:**
 
 | Signal | Type | Description |
 |--------|------|-------------|
-| `connected()` | `boolean` | Socket.IO connection status |
+| `connected()` | `boolean` | WebSocket connection status |
 | `rooms()` | `RoomInfo[]` | Live room list |
 | `currentRoom()` | `string \| null` | Room this client has joined |
 | `members()` | `MemberInfo[]` | Members in current room |
@@ -876,7 +874,7 @@ Global singleton created with `createRoot`. Manages the Socket.IO connection lif
 
 | Method | Description |
 |--------|-------------|
-| `connect(token?)` | Open Socket.IO connection |
+| `connect(token?)` | Open WebSocket connection |
 | `disconnect()` | Close connection |
 | `createRoom(name)` | Emit `room:create` |
 | `joinRoom(room, identity)` | Emit `room:join` |

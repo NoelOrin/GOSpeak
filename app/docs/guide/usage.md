@@ -64,7 +64,7 @@ GET /api/v1/oauth/login/qq
 
 ### 消息持久化
 
-消息通过异步 Job 持久化到数据库（`messages` 表），实时通过 Socket.IO `message:created` 事件广播。
+消息通过异步 Job 持久化到数据库（`messages` 表），实时通过 WebSocket `message:created` 事件广播。
 
 ## 语音控制
 
@@ -112,9 +112,9 @@ GOSpeak 支持明暗主题：
 
 ## 信号与房间状态
 
-### Socket.IO 事件
+### WebSocket 事件
 
-前端通过 Socket.IO 与后端实时通信：
+前端通过 WebSocket 与后端实时通信：
 
 | 事件 | 方向 | 说明 |
 |------|------|------|

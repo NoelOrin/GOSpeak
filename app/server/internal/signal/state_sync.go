@@ -8,7 +8,7 @@ import (
 	"GOSpeak/internal/bus"
 )
 
-// EventStateRoomChanged is an internal (non-Socket.IO) event: peers should
+// EventStateRoomChanged is an internal (non-WebSocket) event: peers should
 // recompute room:updated / room:list:result from shared membership KV.
 const EventStateRoomChanged = "state:room-changed"
 
@@ -24,7 +24,7 @@ type membershipStore interface {
 	ListRoomNames(ctx context.Context) ([]string, error)
 }
 
-// stateNotifier publishes internal state-change events (no Socket.IO deliver).
+// stateNotifier publishes internal state-change events (no WebSocket deliver).
 type stateNotifier interface {
 	PublishInternal(ctx context.Context, event string, payload interface{}) error
 }
@@ -226,7 +226,7 @@ func (h *Hub) broadcastRoomUpdatedLocal(key string) {
 	h.localNamespace(EventRoomUpdated, info)
 }
 
-// ApplyRemoteRoomState refreshes local Socket.IO clients after peer membership change.
+// ApplyRemoteRoomState refreshes local WebSocket clients after peer membership change.
 func (h *Hub) ApplyRemoteRoomState(room string) {
 	if room != "" {
 		h.broadcastRoomUpdatedLocal(room)

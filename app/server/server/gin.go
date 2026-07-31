@@ -6,18 +6,18 @@ import (
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/jobs"
 	"GOSpeak/internal/logger"
-	"GOSpeak/internal/sfu/providers/mediasoup"
 	"GOSpeak/internal/middleware"
-	"GOSpeak/internal/plugin"
-	"GOSpeak/internal/plugin/builtin"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/plugin"
+	"GOSpeak/internal/plugin/builtin"
 	"GOSpeak/internal/redis"
 	"GOSpeak/internal/repository"
 	"GOSpeak/internal/router"
 	"GOSpeak/internal/service"
 	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/sfu/factory"
+	"GOSpeak/internal/sfu/providers/mediasoup"
 	"GOSpeak/internal/signal"
 	"context"
 	"fmt"
@@ -28,8 +28,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"GOSpeak/internal/ws"
+	"github.com/gin-gonic/gin"
 	"github.com/nats-io/nats.go"
 	goredis "github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
@@ -341,32 +341,38 @@ func StartGin(env EnvEnum) {
 	wsUpgrader := ws.NewUpgrader(ws.UpgraderConfig{
 		Fanout:  wsFanout,
 		Handler: wsHandler,
+		OnConnect: func(c *ws.Client) {
+			_ = signalHub.OnConnect(c)
+		},
+		OnDisconnect: func(c *ws.Client) {
+			signalHub.OnDisconnect(c)
+		},
 	})
 	cors := middleware.CORS()
 	r.GET("/ws", cors, gin.WrapH(wsUpgrader))
 
 	router.SetupRoutes(r, &router.Handlers{
-		Auth:        authH,
-		User:        userH,
-		Signal:      signalH,
-		Cloudflare:  cfH,
-		OAuth:       oauthH,
-		Role:        roleH,
-		Room:        roomH,
-		Permission:  permH,
-		Mute:        muteH,
-		Message:  msgH,
-		SFUConfig:   sfuConfigH,
-		Storage:     storageH,
-		Email:       emailH,
-		EmailConfig: emailConfigH,
-		Monitor:     monitorH,
-		SRSCallback: srsCallbackH,
-		Bot:         botH,
-		Plugin:      pluginH,
+		Auth:         authH,
+		User:         userH,
+		Signal:       signalH,
+		Cloudflare:   cfH,
+		OAuth:        oauthH,
+		Role:         roleH,
+		Room:         roomH,
+		Permission:   permH,
+		Mute:         muteH,
+		Message:      msgH,
+		SFUConfig:    sfuConfigH,
+		Storage:      storageH,
+		Email:        emailH,
+		EmailConfig:  emailConfigH,
+		Monitor:      monitorH,
+		SRSCallback:  srsCallbackH,
+		Bot:          botH,
+		Plugin:       pluginH,
 		Guild:        guildH,
 		Conversation: conversationH,
-		PluginHost:  pluginHost,
+		PluginHost:   pluginHost,
 	})
 
 	port := cfg.ServerPort
@@ -381,7 +387,7 @@ func StartGin(env EnvEnum) {
 		Handler: r,
 	}
 
-	// 优雅关闭：监听系统信号，先关 Socket.IO 连接再关 HTTP
+	// 优雅关闭：监听系统信号，先关 WebSocket 连接再关 HTTP
 	go func() {
 		quit := make(chan os.Signal, 1)
 		ossignal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -409,7 +415,6 @@ func StartGin(env EnvEnum) {
 		logger.WithComponent("HTTP").Fatalf("listen error: %v", err)
 	}
 }
-
 
 func seedPermissions(permRepo *repository.PermissionRepository) {
 	// 种子权限定义

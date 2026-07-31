@@ -193,9 +193,9 @@ middleware.RequireOwnerOrPermission("room_owner", permcode.PermRoomUpdate)
 
 ---
 
-## 六、Socket.IO 事件权限
+## 六、WebSocket 事件权限
 
-Socket.IO 连接通过 `WSAuth` 中间件鉴权（JWT）。
+WebSocket 连接通过 `WSAuth` 中间件鉴权（JWT）。
 
 | 事件 | 权限 | 说明 |
 |------|------|------|

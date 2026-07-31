@@ -4,6 +4,7 @@ import type {
 	RemoteTrackInfo,
 	SFUClient,
 	SFUClientOptions,
+	SignalSocket,
 } from "./types";
 
 // 同 stream 全局闸门（不改 useVoiceSession）：
@@ -256,7 +257,7 @@ export class SRSSFUClient implements SFUClient {
 	private roomToken = "";
 	private whipUrl = "";
 	private baseWhepUrl = "";
-	private socket?: any;
+	private socket?: SignalSocket | null;
 	private leaving = false;
 	private leavePromise: Promise<void> | null = null;
 	// 递增代数：abort/leave 与 in-flight WHIP 竞态时，旧 publish 不得回写状态。
@@ -266,8 +267,8 @@ export class SRSSFUClient implements SFUClient {
 	// leave 在 join 早期 abort 时，用 pendingStreamKey 命中正确 stream 闸门。
 	private pendingStreamKey = "";
 	private micEnabled = true;
-	private socketMemberJoinedBound?: (...args: unknown[]) => void;
-	private socketMemberLeftBound?: (...args: unknown[]) => void;
+	private socketMemberJoinedCleanup?: () => void;
+	private socketMemberLeftCleanup?: () => void;
 
 	constructor(private readonly options: SFUClientOptions = {}) {
 		this.socket = options.socket;
@@ -350,20 +351,24 @@ export class SRSSFUClient implements SFUClient {
 		this.hasJoined = true;
 
 		if (this.socket) {
-			this.socketMemberJoinedBound = (data: any) => {
-				if (!this.isSameRoomEvent(data)) return;
-				if (data.identity && data.stream) {
-					this.subscribePeer(data.identity, data.stream);
-				}
-			};
-			this.socketMemberLeftBound = (data: any) => {
-				if (!this.isSameRoomEvent(data)) return;
-				if (data.identity) {
-					this.unsubscribePeer(data.identity);
-				}
-			};
-			this.socket.on("member:joined", this.socketMemberJoinedBound);
-			this.socket.on("member:left", this.socketMemberLeftBound);
+			this.socketMemberJoinedCleanup = this.socket.onServerEvent(
+				"member:joined",
+				(data: any) => {
+					if (!this.isSameRoomEvent(data)) return;
+					if (data.identity && data.stream) {
+						this.subscribePeer(data.identity, data.stream);
+					}
+				},
+			);
+			this.socketMemberLeftCleanup = this.socket.onServerEvent(
+				"member:left",
+				(data: any) => {
+					if (!this.isSameRoomEvent(data)) return;
+					if (data.identity) {
+						this.unsubscribePeer(data.identity);
+					}
+				},
+			);
 		}
 
 		this.onPcStateChangeBound = () => {
@@ -625,19 +630,10 @@ export class SRSSFUClient implements SFUClient {
 			"";
 
 		// Remove socket listeners BEFORE tearing media
-		if (this.socket) {
-			if (this.socketMemberJoinedBound) {
-				this.socket.off(
-					"member:joined",
-					this.socketMemberJoinedBound,
-				);
-			}
-			if (this.socketMemberLeftBound) {
-				this.socket.off("member:left", this.socketMemberLeftBound);
-			}
-		}
-		this.socketMemberJoinedBound = undefined;
-		this.socketMemberLeftBound = undefined;
+		this.socketMemberJoinedCleanup?.();
+		this.socketMemberLeftCleanup?.();
+		this.socketMemberJoinedCleanup = undefined;
+		this.socketMemberLeftCleanup = undefined;
 
 		this.room = "";
 		this.roomToken = "";

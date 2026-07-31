@@ -38,7 +38,7 @@ curl -s http://localhost:1985/api/v1/versions  # SRS 运行
 暴露端口：
 | 端口 | 服务 | 说明 |
 |------|------|------|
-| `:80` | Nginx | 公网入口（API + SPA + Socket.IO + WHIP）|
+| `:80` | Nginx | 公网入口（API + SPA + WebSocket + WHIP）|
 | `:8000/udp+tcp` | SRS | WebRTC 媒体直连 |
 
 ### 第二档 — LiveKit + Redis + App

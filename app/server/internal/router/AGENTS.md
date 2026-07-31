@@ -6,7 +6,7 @@
 
 ```
 router/
-├── router.go          # 主入口：组合各模块路由 + Socket.IO 注册
+├── router.go          # 主入口：组合各模块路由 + WebSocket 注册
 └── routes/
     ├── auth/          # 认证（公开 + 受保护）
     ├── user/          # 用户（受保护）

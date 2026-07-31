@@ -12,7 +12,7 @@ import (
 
 const EventPermissionsInvalidated = "cache:permissions-invalidated"
 
-// cacheBus publishes internal cache invalidation events (no Socket.IO).
+// cacheBus publishes internal cache invalidation events (no WebSocket).
 type cacheBus interface {
 	PublishInternal(ctx context.Context, event string, payload interface{}) error
 }

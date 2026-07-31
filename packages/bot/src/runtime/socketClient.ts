@@ -10,39 +10,68 @@ import {
 } from "../core/types";
 import { EventAdapter } from "./eventAdapter";
 
-type SocketIONamespace = any;
+interface WSMessage {
+	id?: string;
+	event: string;
+	data?: unknown;
+	error?: { code: number; message: string };
+}
+
+interface PendingAck {
+	resolve: (value: any) => void;
+	reject: (err: Error) => void;
+	timer: NodeJS.Timeout;
+}
 
 export interface SocketClientOptions {
 	url: string;
 	token?: string;
 	logger: Logger;
+	/** Used to resolve relative socket URLs (usually the server base URL). */
+	baseUrl?: string;
+}
+
+function tryParse(data: unknown): unknown {
+	if (typeof data !== "string") return data;
+	try {
+		return JSON.parse(data);
+	} catch {
+		return data;
+	}
+}
+
+function resolveWsUrl(url: string, baseUrl?: string): string {
+	let base = url.trim();
+	if (!base && baseUrl) base = baseUrl.trim();
+	if (!base) throw new Error("socket url is required");
+	if (base.startsWith("/")) {
+		const origin = baseUrl ? new URL(baseUrl).origin : "http://localhost:8998";
+		base = origin + base;
+	}
+	base = base.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
+	const trimmed = base.replace(/\/+$/, "");
+	if (/\/socket\.io$/i.test(trimmed)) {
+		return trimmed.replace(/\/socket\.io$/i, "/ws");
+	}
+	if (trimmed.endsWith("/ws")) return trimmed;
+	return `${trimmed}/ws`;
 }
 
 /**
- * Wraps a Socket.IO connection and translates GOSpeak signaling events
- * into typed BotEvent objects, aligned with the server's actual emit payloads.
- *
- * Server emit formats (from app/server/internal/signal/hub.go):
- *   room:created     → RoomInfo { id, uuid, name, members[], count, ... }
- *   room:left        → { room: string }
- *   room:updated     → RoomInfo
- *   member:joined    → { room, identity, id, stream? }
- *   member:left      → { room, identity, id }
- *   member:updated   → { room, identity, isMicMuted }
- *   user:muted       → { user_id, duration, permanent, reason, expires_at? }
- *   user:unmuted     → { user_id }
- *   room:kicked      → { room, targetIdentity }
- *   room:list:result → { rooms: RoomInfo[] }
+ * Native WebSocket client for GOSpeak signaling. Translates incoming WS
+ * messages into typed BotEvent objects, aligned with app/server/internal/signal.
  */
 export class GOSpeakSocketClient {
 	private opts: SocketClientOptions;
-	private socket: SocketIONamespace | null = null;
+	private socket: WebSocket | null = null;
 	private onEvent: ((event: BotEvent) => void) | null = null;
 	private connected = false;
 	private logger: Logger;
 	private joinedRooms: Map<string, { identity: string }> = new Map();
-	private connectResolve: ((value: void | PromiseLike<void>) => void) | null =
-		null;
+	private connectResolve: (() => void) | null = null;
+	private connectReject: ((err: Error) => void) | null = null;
+	private pendingAcks = new Map<string, PendingAck>();
+	private msgId = 0;
 	private _adapter = new EventAdapter();
 
 	constructor(opts: SocketClientOptions) {
@@ -70,29 +99,84 @@ export class GOSpeakSocketClient {
 		if (this.socket) return Promise.resolve();
 		return new Promise((resolve, reject) => {
 			this.connectResolve = resolve;
-			void import("socket.io-client")
-				.then(({ io }) => {
-					const opts: Record<string, unknown> = {};
-					if (this.opts.token) opts.query = { token: this.opts.token };
+			this.connectReject = reject;
+			try {
+				const wsUrl = resolveWsUrl(this.opts.url, this.opts.baseUrl);
+				const parsed = new URL(wsUrl);
+				if (this.opts.token) parsed.searchParams.set("token", this.opts.token);
+				this.socket = new WebSocket(parsed.toString());
+			} catch (err) {
+				this.connectResolve = null;
+				this.connectReject = null;
+				reject(err instanceof Error ? err : new Error(String(err)));
+				return;
+			}
 
-					this.socket = io(this.opts.url, opts) as SocketIONamespace;
-					this.setupListeners();
-				})
-				.catch((err) => {
-					this.logger.error("Failed to load socket.io-client:", err);
-					this.connectResolve = null;
-					reject(err);
-				});
+			this.socket.onopen = () => {
+				this.connected = true;
+				this.connectResolve?.();
+				this.connectResolve = null;
+				this.connectReject = null;
+				this.logger.info("WS connected");
+			};
+
+			this.socket.onmessage = (ev: MessageEvent) => {
+				try {
+					const msg: WSMessage = JSON.parse(String(ev.data));
+					if (!msg.event) return;
+					if (msg.id && this.pendingAcks.has(msg.id)) {
+						const pending = this.pendingAcks.get(msg.id)!;
+						this.pendingAcks.delete(msg.id);
+						clearTimeout(pending.timer);
+						if (msg.error) {
+							pending.reject(new Error(msg.error.message));
+						} else {
+							pending.resolve(tryParse(msg.data));
+						}
+						return;
+					}
+					this.dispatchEvent(msg.event, msg.data);
+				} catch {
+					// Ignore malformed frames
+				}
+			};
+
+			this.socket.onerror = () => {
+				this.logger.error("WS error");
+				this.connectReject?.(new Error("websocket error"));
+				this.connectReject = null;
+			};
+
+			this.socket.onclose = (ev: CloseEvent) => {
+				this.connected = false;
+				this.joinedRooms.clear();
+				for (const [_id, pending] of this.pendingAcks) {
+					clearTimeout(pending.timer);
+					pending.reject(new Error("disconnected"));
+				}
+				this.pendingAcks.clear();
+				this.connectResolve = null;
+				this.connectReject = null;
+				this.logger.info("WS disconnected:", ev.reason || "closed");
+			};
 		});
 	}
 
 	disconnect(): void {
 		if (this.socket) {
-			this.socket.disconnect();
+			this.socket.onclose = null;
+			this.socket.close();
 			this.socket = null;
 		}
 		this.connected = false;
 		this.joinedRooms.clear();
+		for (const [_id, pending] of this.pendingAcks) {
+			clearTimeout(pending.timer);
+			pending.reject(new Error("disconnected"));
+		}
+		this.pendingAcks.clear();
+		this.connectResolve = null;
+		this.connectReject = null;
 	}
 
 	joinRoom(room: string, identity: string): void {
@@ -104,7 +188,7 @@ export class GOSpeakSocketClient {
 			this.logger.debug(`Already in room ${room}, skipping join`);
 			return;
 		}
-		this.socket?.emit("room:join", { room, identity });
+		this.send({ event: "room:join", data: { room, identity } });
 		this.joinedRooms.set(room, { identity });
 	}
 
@@ -113,12 +197,12 @@ export class GOSpeakSocketClient {
 			this.joinedRooms.delete(room);
 			return;
 		}
-		this.socket?.emit("room:leave", { room });
+		this.send({ event: "room:leave", data: { room } });
 		this.joinedRooms.delete(room);
 	}
 
 	listRooms(): void {
-		this.socket?.emit("room:list");
+		this.send({ event: "room:list" });
 	}
 
 	joinRoomSFU(
@@ -130,24 +214,23 @@ export class GOSpeakSocketClient {
 			this.logger.debug(`Already in room ${room}, skipping SFU join`);
 			return Promise.reject(new Error(`already in room ${room}`));
 		}
+		if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+			return Promise.reject(new Error("socket not connected"));
+		}
 		return new Promise((resolve, reject) => {
-			if (!this.socket) {
-				reject(new Error("socket not connected"));
-				return;
-			}
-			this.socket.emit(
-				"room:join:sfu",
-				{ room, identity, stream },
-				(ack: unknown) => {
-					const resp = ack as Record<string, unknown>;
-					if (resp?.error) {
-						reject(new Error(String(resp.error)));
-					} else {
-						this.joinedRooms.set(room, { identity });
-						resolve(resp as { ok: boolean; members: unknown[] });
-					}
-				},
-			);
+			const id = String(++this.msgId);
+			const timer = setTimeout(() => {
+				if (this.pendingAcks.has(id)) {
+					this.pendingAcks.delete(id);
+					reject(new Error("ack timeout"));
+				}
+			}, 10000);
+			this.pendingAcks.set(id, { resolve, reject, timer });
+			this.send({
+				id,
+				event: "room:join:sfu",
+				data: { room, identity, stream },
+			});
 		});
 	}
 
@@ -156,7 +239,7 @@ export class GOSpeakSocketClient {
 			this.logger.warn("socket not connected; cannot send bot message");
 			return;
 		}
-		this.socket?.emit("bot:message", { room, content });
+		this.send({ event: "bot:message", data: { room, content } });
 	}
 
 	kickMember(room: string, targetIdentity: string): void {
@@ -164,7 +247,15 @@ export class GOSpeakSocketClient {
 			this.logger.warn("socket not connected; cannot kick member");
 			return;
 		}
-		this.socket?.emit("room:kick", { room, targetIdentity });
+		this.send({ event: "room:kick", data: { room, targetIdentity } });
+	}
+
+	private send(msg: WSMessage): void {
+		if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+			this.logger.warn("socket not connected; message dropped");
+			return;
+		}
+		this.socket.send(JSON.stringify(msg));
 	}
 
 	private emit(event: BotEvent): void {
@@ -172,7 +263,6 @@ export class GOSpeakSocketClient {
 	}
 
 	private static parseRoomRef(raw: any): RoomRef {
-		// room:created/updated deliver a full RoomInfo; member events deliver {room: string}
 		if (typeof raw === "string") return { id: raw, name: raw };
 		const name = raw?.name ?? raw?.room ?? "";
 		const id = raw?.uuid ?? raw?.id ?? raw?.room ?? name;
@@ -186,148 +276,105 @@ export class GOSpeakSocketClient {
 		return { identity: String(identity), name: String(name), role };
 	}
 
-	private setupListeners(): void {
-		if (!this.socket) return;
-
-		this.socket.on("connect", () => {
-			this.connected = true;
-			this.connectResolve?.();
-			this.connectResolve = null;
-			this.logger.info("Socket.IO connected");
-		});
-
-		this.socket.on("disconnect", (reason: string) => {
-			this.connected = false;
-			this.joinedRooms.clear();
-			this.logger.info("Socket.IO disconnected:", reason);
-		});
-
-		// room:created → RoomInfo (full struct)
-		this.socket.on("room:created", (raw: any) => {
-			if (raw?.error) {
-				this.logger.warn("room:created error:", raw.error);
-				return;
+	private dispatchEvent(event: string, raw: any): void {
+		switch (event) {
+			case "room:created":
+				if (raw?.error) {
+					this.logger.warn("room:created error:", raw.error);
+					return;
+				}
+				this.emit({
+					eventType: EventType.OnRoomCreated,
+					room: GOSpeakSocketClient.parseRoomRef(raw),
+					timestamp: Date.now(),
+				} as RoomEvent);
+				break;
+			case "room:updated":
+				this.emit({
+					eventType: EventType.OnRoomUpdated,
+					room: GOSpeakSocketClient.parseRoomRef(raw),
+					timestamp: Date.now(),
+				} as RoomEvent);
+				break;
+			case "room:left":
+				{
+					const roomName = typeof raw === "string" ? raw : raw?.room;
+					if (roomName) this.joinedRooms.delete(roomName);
+					this.emit({
+						eventType: EventType.OnRoomLeft,
+						room: GOSpeakSocketClient.parseRoomRef(raw),
+						timestamp: Date.now(),
+					} as RoomEvent);
+				}
+				break;
+			case "member:joined":
+				this.emit({
+					eventType: EventType.OnMemberJoined,
+					room: GOSpeakSocketClient.parseRoomRef(raw),
+					actor: GOSpeakSocketClient.parseMemberRef(raw),
+					timestamp: Date.now(),
+				} as RoomEvent);
+				break;
+			case "member:left":
+				this.emit({
+					eventType: EventType.OnMemberLeft,
+					room: GOSpeakSocketClient.parseRoomRef(raw),
+					actor: GOSpeakSocketClient.parseMemberRef(raw),
+					timestamp: Date.now(),
+				} as RoomEvent);
+				break;
+			case "member:updated":
+				this.emit({
+					eventType: EventType.OnMemberStateChanged,
+					room: GOSpeakSocketClient.parseRoomRef(raw),
+					member: GOSpeakSocketClient.parseMemberRef(raw),
+					muted: Boolean(raw?.isMicMuted),
+					timestamp: Date.now(),
+				} as MemberStateEvent);
+				break;
+			case "user:muted":
+				this.emit({
+					eventType: EventType.OnUserMuted,
+					userId: Number(raw?.user_id ?? 0),
+					duration: raw?.duration,
+					permanent: raw?.permanent,
+					reason: raw?.reason,
+					expiresAt: raw?.expires_at,
+					timestamp: Date.now(),
+				} as UserMuteEvent);
+				break;
+			case "user:unmuted":
+				this.emit({
+					eventType: EventType.OnUserUnmuted,
+					userId: Number(raw?.user_id ?? 0),
+					timestamp: Date.now(),
+				} as UserMuteEvent);
+				break;
+			case "room:kicked":
+				{
+					const roomName = typeof raw === "string" ? raw : raw?.room;
+					if (roomName) this.joinedRooms.delete(roomName);
+					this.emit({
+						eventType: EventType.OnMemberKicked,
+						room: GOSpeakSocketClient.parseRoomRef(raw),
+						actor: {
+							identity: String(raw?.targetIdentity ?? ""),
+							name: String(raw?.targetIdentity ?? ""),
+							role: "member",
+						},
+						timestamp: Date.now(),
+					} as RoomEvent);
+				}
+				break;
+			case "bot:command":
+			case "bot:message": {
+				const events = this._adapter.adaptBotMessage(
+					raw,
+					EventType.AdapterMessage,
+				);
+				for (const ev of events) this.emit(ev);
+				break;
 			}
-			this.emit({
-				eventType: EventType.OnRoomCreated,
-				room: GOSpeakSocketClient.parseRoomRef(raw),
-				timestamp: Date.now(),
-			} as RoomEvent);
-		});
-
-		// room:updated → RoomInfo (member count changed)
-		this.socket.on("room:updated", (raw: any) => {
-			this.emit({
-				eventType: EventType.OnRoomUpdated,
-				room: GOSpeakSocketClient.parseRoomRef(raw),
-				timestamp: Date.now(),
-			} as RoomEvent);
-		});
-
-		// room:left → { room: string }
-		this.socket.on("room:left", (raw: any) => {
-			// clear room from joinedRooms on server confirmation
-			const roomName = typeof raw === "string" ? raw : raw?.room;
-			if (roomName) this.joinedRooms.delete(roomName);
-			this.emit({
-				eventType: EventType.OnRoomLeft,
-				room: GOSpeakSocketClient.parseRoomRef(raw),
-				timestamp: Date.now(),
-			} as RoomEvent);
-		});
-
-		// member:joined → { room, identity, id, stream? }
-		this.socket.on("member:joined", (raw: any) => {
-			this.emit({
-				eventType: EventType.OnMemberJoined,
-				room: GOSpeakSocketClient.parseRoomRef(raw),
-				actor: GOSpeakSocketClient.parseMemberRef(raw),
-				timestamp: Date.now(),
-			} as RoomEvent);
-		});
-
-		// member:left → { room, identity, id }
-		this.socket.on("member:left", (raw: any) => {
-			this.emit({
-				eventType: EventType.OnMemberLeft,
-				room: GOSpeakSocketClient.parseRoomRef(raw),
-				actor: GOSpeakSocketClient.parseMemberRef(raw),
-				timestamp: Date.now(),
-			} as RoomEvent);
-		});
-
-		// member:updated → { room, identity, isMicMuted }
-		this.socket.on("member:updated", (raw: any) => {
-			this.emit({
-				eventType: EventType.OnMemberStateChanged,
-				room: GOSpeakSocketClient.parseRoomRef(raw),
-				member: GOSpeakSocketClient.parseMemberRef(raw),
-				muted: Boolean(raw?.isMicMuted),
-				timestamp: Date.now(),
-			} as MemberStateEvent);
-		});
-
-		// user:muted → { user_id, duration, permanent, reason, expires_at? }
-		this.socket.on("user:muted", (raw: any) => {
-			this.emit({
-				eventType: EventType.OnUserMuted,
-				userId: Number(raw?.user_id ?? 0),
-				duration: raw?.duration,
-				permanent: raw?.permanent,
-				reason: raw?.reason,
-				expiresAt: raw?.expires_at,
-				timestamp: Date.now(),
-			} as UserMuteEvent);
-		});
-
-		// user:unmuted → { user_id }
-		this.socket.on("user:unmuted", (raw: any) => {
-			this.emit({
-				eventType: EventType.OnUserUnmuted,
-				userId: Number(raw?.user_id ?? 0),
-				timestamp: Date.now(),
-			} as UserMuteEvent);
-		});
-
-		// room:kicked → { room, targetIdentity }
-		this.socket.on("room:kicked", (raw: any) => {
-			const roomName = typeof raw === "string" ? raw : raw?.room;
-			if (roomName) this.joinedRooms.delete(roomName);
-			this.emit({
-				eventType: EventType.OnMemberKicked,
-				room: GOSpeakSocketClient.parseRoomRef(raw),
-				actor: {
-					identity: String(raw?.targetIdentity ?? ""),
-					name: String(raw?.targetIdentity ?? ""),
-					role: "member",
-				},
-				timestamp: Date.now(),
-			} as RoomEvent);
-		});
-
-		// bot:command / bot:message — translated into BotEvents via EventAdapter
-		this.socket.on("bot:command", (raw: string) => {
-			const events = this._adapter.adaptBotMessage(
-				raw,
-				EventType.AdapterMessage,
-			);
-			for (const ev of events) {
-				this.emit(ev);
-			}
-		});
-
-		this.socket.on("bot:message", (raw: string) => {
-			const events = this._adapter.adaptBotMessage(
-				raw,
-				EventType.AdapterMessage,
-			);
-			for (const ev of events) {
-				this.emit(ev);
-			}
-		});
-
-		this.socket.on("error", (err: Error) => {
-			this.logger.error("Socket.IO error:", err);
-		});
+		}
 	}
 }

@@ -15,7 +15,7 @@ type RoomMemberInfoType = {
 	avatar: string;
 };
 
-// Socket.IO 信令相关类型
+// WebSocket 信令相关类型
 type MemberInfo = {
 	id: string;
 	identity: string;

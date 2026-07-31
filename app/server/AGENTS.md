@@ -1,6 +1,6 @@
 # server 模块
 
-GoRTC 服务端入口，基于 Gin + Socket.IO 的 WebRTC 信令服务器。媒体层通过多 provider SFU 抽象接入，支持 LiveKit、SRS、MediaSoup、Agora、Daily、Cloudflare 六种后端，运行时可切换。
+GoRTC 服务端入口，基于 Gin + WebSocket 的 WebRTC 信令服务器。媒体层通过多 provider SFU 抽象接入，支持 LiveKit、SRS、MediaSoup、Agora、Daily、Cloudflare 六种后端，运行时可切换。
 
 ## 目录结构
 
@@ -11,7 +11,7 @@ server/
 ├── cmd/
 │   └── root.go           # Cobra CLI 命令定义（server / version）
 ├── server/
-│   └── gin.go            # Gin 引擎启动、依赖组装、Socket.IO 集成
+│   └── gin.go            # Gin 引擎启动、依赖组装、WebSocket 集成
 ├── internal/
 │   ├── config/           # 配置管理（环境变量）
 │   ├── model/            # GORM 数据模型
@@ -30,7 +30,7 @@ server/
 │   │       └── cloudflare/ # Cloudflare Realtime 实现
 │   ├── bus/              # 多实例事件总线（NATS/Redis）
 │   ├── permcode/         # 权限码常量
-│   ├── signal/           # Socket.IO 信令中心
+│   ├── signal/           # WebSocket 信令中心
 │   ├── redis/            # 可选 Redis（黑名单、JWT 密钥轮换）
 │   └── pkg/              # 公共工具（错误码、JWT、响应、OAuth、permcode）
 ├── docs/                 # Swagger 文档
@@ -81,7 +81,7 @@ main.go → cmd/ → server/gin.go
                    ├── internal/service/    → 业务逻辑层
                    ├── internal/handler/    → HTTP 处理层
                    ├── internal/router/     → 路由注册（含 guild/conversation/message/plugin）
-                   ├── internal/signal/     → Socket.IO 信令
+                   ├── internal/signal/     → WebSocket 信令
                    └── internal/redis/      → 可选黑名单 / 密钥轮换
 ```
 

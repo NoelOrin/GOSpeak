@@ -48,9 +48,6 @@
 		"start": "tsx src/main.ts",
 		"start:prod": "node dist/main.js"
 	},
-	"dependencies": {
-		"socket.io-client": "^2.5.0"
-	},
 	"devDependencies": {
 		"tsx": "^4.19.2",
 		"typescript": "^5.9.3",

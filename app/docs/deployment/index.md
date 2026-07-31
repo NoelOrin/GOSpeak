@@ -32,7 +32,7 @@ GOSpeak 支持从本地开发到生产环境的**渐进式部署**方案，根�
     │
     ▼
 Nginx :80/:443（可选）
-    ├── /api /socket.io    → GOSpeak:8998
+    ├── /api /ws    → GOSpeak:8998
     ├── /rtc/v1/* (SRS 时) → SRS:1985
     └── / → 静态文件 / SPA 分发
 

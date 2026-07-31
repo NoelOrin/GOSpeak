@@ -8,7 +8,7 @@ SRS 模式使用**同源反代**架构：
 
 ```
 浏览器
-  ├─ /api /socket.io / ──► Nginx ──► GOSpeak:8998
+  ├─ /api /ws / ──► Nginx ──► GOSpeak:8998
   ├─ /rtc/v1/*          ──► Nginx ──► SRS:1985  (WHIP/WHEP HTTP 信令)
   └─ WebRTC UDP/TCP     ──► SRS:8000 (媒体直连)
 ```

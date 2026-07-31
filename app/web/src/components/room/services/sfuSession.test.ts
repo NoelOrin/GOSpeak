@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { resolveJoinSession } from "./sfuSession";
+
+vi.mock("idb-keyval", () => ({
+	get: vi.fn(async () => undefined),
+	set: vi.fn(async () => {}),
+	del: vi.fn(async () => {}),
+}));
 
 describe("resolveJoinSession", () => {
 	it("uses whipUrl for srs and ignores serverUrl host:port", () => {

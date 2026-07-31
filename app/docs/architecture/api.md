@@ -215,7 +215,7 @@ SRS 模式下还包含：`whipUrl`、`stream` 等 WHIP/WHEP 字段。
 
 ## WebSocket 事件
 
-**端点**: `ws://<host>/socket.io/`
+**端点**: `ws://<host>/ws`
 
 ### 客户端 → 服务端（信令）
 | 事件 | 数据 | 说明 |

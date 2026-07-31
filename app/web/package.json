@@ -34,7 +34,6 @@
     "idb-keyval": "^6.2.2",
     "lodash-es": "^4.17.22",
     "lucide-solid": "^0.561.0",
-    "socket.io-client": "^2.5.0",
     "solid-js": "^1.9.9",
     "solid-notifications": "^1.2.0",
     "solid-split-pane": "^0.0.5",

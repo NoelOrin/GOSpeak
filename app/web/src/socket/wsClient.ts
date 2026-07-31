@@ -1,3 +1,5 @@
+import type { SignalSocket } from "@gospeak/sfu-client/types";
+
 interface WSMessage {
 	id?: string;
 	event: string;
@@ -5,7 +7,64 @@ interface WSMessage {
 	error?: { code: number; message: string };
 }
 
-export function createWSClient() {
+function tryParse(data: unknown): unknown {
+	if (typeof data !== "string") return data;
+	try {
+		return JSON.parse(data);
+	} catch {
+		return data;
+	}
+}
+
+function normalizePayload(payload?: unknown): unknown {
+	if (typeof payload !== "string") return payload;
+	try {
+		return JSON.parse(payload);
+	} catch {
+		return payload;
+	}
+}
+
+function resolveWsUrl(url: string): string {
+	let base = url.trim();
+	if (!base) {
+		const protocol =
+			typeof window !== "undefined" && window.location.protocol === "https:"
+				? "wss:"
+				: "ws:";
+		return `${protocol}//${window.location.host}/ws`;
+	}
+	if (base.startsWith("/")) {
+		const protocol =
+			typeof window !== "undefined" && window.location.protocol === "https:"
+				? "wss:"
+				: "ws:";
+		base = `${protocol}//${window.location.host}${base}`;
+	} else {
+		base = base.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
+	}
+	const trimmed = base.replace(/\/+$/, "");
+	if (/\/socket\.io$/i.test(trimmed)) {
+		return trimmed.replace(/\/socket\.io$/i, "/ws");
+	}
+	if (trimmed.endsWith("/ws")) return trimmed;
+	return `${trimmed}/ws`;
+}
+
+function withToken(url: string, token: string): string {
+	const parsed = new URL(url);
+	if (token) parsed.searchParams.set("token", token);
+	return parsed.toString();
+}
+
+export function createWSClient(): SignalSocket & {
+	connect: (url: string, token?: string) => void;
+	disconnect: () => void;
+	offServerEvent: (event: string, cb: (...args: any[]) => void) => void;
+	offAllServerEvents: () => void;
+	onConnected: (cb: () => void) => () => void;
+	onConnectError: (cb: (err: Error) => void) => () => void;
+} {
 	let ws: WebSocket | null = null;
 	let msgIdCounter = 0;
 	const pendingAcks = new Map<
@@ -16,7 +75,7 @@ export function createWSClient() {
 			timer: ReturnType<typeof setTimeout>;
 		}
 	>();
-	const eventHandlers = new Map<string, Set<(data: unknown) => void>>();
+	const eventHandlers = new Map<string, Set<(...args: any[]) => void>>();
 	const connectedCbs: Array<() => void> = [];
 	const disconnectedCbs: Array<(reason: string) => void> = [];
 	const connectErrorCbs: Array<(err: Error) => void> = [];
@@ -35,7 +94,7 @@ export function createWSClient() {
 			ws.close();
 		}
 
-		const wsUrl = token ? `${url}?token=${encodeURIComponent(token)}` : url;
+		const wsUrl = withToken(resolveWsUrl(url), currentToken);
 		ws = new WebSocket(wsUrl);
 
 		ws.onopen = () => {
@@ -47,7 +106,7 @@ export function createWSClient() {
 				const msg: WSMessage = JSON.parse(ev.data as string);
 				if (!msg.event) return;
 
-				// Check if it's an ACK response
+				// ACK responses carry the original request id.
 				if (msg.id) {
 					const pending = pendingAcks.get(msg.id);
 					if (pending) {
@@ -56,13 +115,13 @@ export function createWSClient() {
 						if (msg.error) {
 							pending.reject(new Error(msg.error.message));
 						} else {
-							pending.resolve(msg.data);
+							pending.resolve(tryParse(msg.data));
 						}
 						return;
 					}
 				}
 
-				// Otherwise it's a server push event
+				// Otherwise it's a server push event.
 				const handlers = eventHandlers.get(msg.event);
 				if (handlers) {
 					for (const handler of handlers) handler(msg.data);
@@ -115,11 +174,11 @@ export function createWSClient() {
 
 	function emitFireAndForget(event: string, payload?: unknown) {
 		if (!ws || ws.readyState !== WebSocket.OPEN) return;
-		const msg: WSMessage = { event, data: payload };
+		const msg: WSMessage = { event, data: normalizePayload(payload) };
 		ws.send(JSON.stringify(msg));
 	}
 
-	function emitAck(event: string, payload?: unknown): Promise<unknown> {
+	function emitAck(event: string, payload?: unknown): Promise<any> {
 		return new Promise((resolve, reject) => {
 			if (!ws || ws.readyState !== WebSocket.OPEN) {
 				reject(new Error("socket not connected"));
@@ -133,14 +192,14 @@ export function createWSClient() {
 				}
 			}, 10000);
 			pendingAcks.set(id, { resolve, reject, timer });
-			const msg: WSMessage = { id, event, data: payload };
+			const msg: WSMessage = { id, event, data: normalizePayload(payload) };
 			ws.send(JSON.stringify(msg));
 		});
 	}
 
 	function onServerEvent(
 		event: string,
-		cb: (data: unknown) => void,
+		cb: (...args: any[]) => void,
 	): () => void {
 		if (!eventHandlers.has(event)) eventHandlers.set(event, new Set());
 		eventHandlers.get(event)?.add(cb);
@@ -149,12 +208,12 @@ export function createWSClient() {
 		};
 	}
 
-	function offAllServerEvents() {
-		eventHandlers.clear();
+	function offServerEvent(event: string, cb: (...args: any[]) => void) {
+		eventHandlers.get(event)?.delete(cb);
 	}
 
-	function getSocket(): WebSocket | null {
-		return ws;
+	function offAllServerEvents() {
+		eventHandlers.clear();
 	}
 
 	function isConnected(): boolean {
@@ -191,8 +250,8 @@ export function createWSClient() {
 		emitFireAndForget,
 		emitAck,
 		onServerEvent,
+		offServerEvent,
 		offAllServerEvents,
-		getSocket,
 		isConnected,
 		onConnected,
 		onDisconnected,

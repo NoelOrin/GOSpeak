@@ -63,18 +63,12 @@ export const chatStore = createRoot(() => {
 		const socket = socketStore.getSocket();
 		if (!socket) return;
 
-		socket.on(EVENTS.MESSAGE_CREATED, handleCreated);
-		socket.on(EVENTS.MESSAGE_UPDATED, handleUpdated);
-		socket.on(EVENTS.MESSAGE_DELETED, handleDeleted);
-		socket.on(EVENTS.MESSAGE_REACTION, handleReaction);
-		socket.on(EVENTS.MESSAGE_ERROR, handleError);
-
 		socketCleanups = [
-			() => socket.off(EVENTS.MESSAGE_CREATED, handleCreated),
-			() => socket.off(EVENTS.MESSAGE_UPDATED, handleUpdated),
-			() => socket.off(EVENTS.MESSAGE_DELETED, handleDeleted),
-			() => socket.off(EVENTS.MESSAGE_REACTION, handleReaction),
-			() => socket.off(EVENTS.MESSAGE_ERROR, handleError),
+			socket.onServerEvent(EVENTS.MESSAGE_CREATED, handleCreated),
+			socket.onServerEvent(EVENTS.MESSAGE_UPDATED, handleUpdated),
+			socket.onServerEvent(EVENTS.MESSAGE_DELETED, handleDeleted),
+			socket.onServerEvent(EVENTS.MESSAGE_REACTION, handleReaction),
+			socket.onServerEvent(EVENTS.MESSAGE_ERROR, handleError),
 		];
 	}
 
@@ -131,14 +125,11 @@ export const chatStore = createRoot(() => {
 		try {
 			// Emit room:join so the Hub registers this socket in connSlots
 			const socket = socketStore.getSocket();
-			if (socket?.connected) {
-				socket.emit(
-					EVENTS.ROOM_JOIN,
-					JSON.stringify({
-						room: room.name,
-						...(room.password ? { password: room.password } : {}),
-					}),
-				);
+			if (socket?.isConnected()) {
+				socket.emitFireAndForget(EVENTS.ROOM_JOIN, {
+					room: room.name,
+					...(room.password ? { password: room.password } : {}),
+				});
 			}
 			await loadInitial();
 		} finally {
@@ -219,34 +210,25 @@ export const chatStore = createRoot(() => {
 
 		// Emit via socket (server expects a JSON string payload)
 		const socket = socketStore.getSocket();
-		if (socket?.connected) {
-			socket.emit(
-				EVENTS.MESSAGE_SEND,
-				JSON.stringify({
+		if (socket?.isConnected()) {
+			const removePending = () => {
+				setMessages((prev) =>
+					prev.filter((m) => m.client_nonce !== client_nonce),
+				);
+				pendingNonces.delete(client_nonce);
+			};
+			void socket
+				.emitAck(EVENTS.MESSAGE_SEND, {
 					room: roomName,
 					content,
 					reply_to: opts?.reply_to ?? "",
 					mentions: opts?.mentions ?? [],
 					client_nonce,
-				}),
-				(ack: string) => {
-					try {
-						const resp = typeof ack === "string" ? JSON.parse(ack) : ack;
-						if (resp?.error) {
-							// Remove pending on failure
-							setMessages((prev) =>
-								prev.filter((m) => m.client_nonce !== client_nonce),
-							);
-							pendingNonces.delete(client_nonce);
-						}
-					} catch {
-						setMessages((prev) =>
-							prev.filter((m) => m.client_nonce !== client_nonce),
-						);
-						pendingNonces.delete(client_nonce);
-					}
-				},
-			);
+				})
+				.then((resp: any) => {
+					if (resp?.error) removePending();
+				})
+				.catch(removePending);
 		}
 	}
 
@@ -312,11 +294,11 @@ export const chatStore = createRoot(() => {
 		// Optimistic: mark as deleted locally
 		applyDeleted({ uuid: messageUUID } as MessageDTO);
 		const socket = socketStore.getSocket();
-		if (socket?.connected) {
-			socket.emit(
-				EVENTS.MESSAGE_DELETE,
-				JSON.stringify({ room: roomName, message_uuid: messageUUID }),
-			);
+		if (socket?.isConnected()) {
+			socket.emitFireAndForget(EVENTS.MESSAGE_DELETE, {
+				room: roomName,
+				message_uuid: messageUUID,
+			});
 		}
 	}
 
@@ -498,43 +480,27 @@ export const chatStore = createRoot(() => {
 		});
 
 		const socket = socketStore.getSocket();
-		if (socket?.connected) {
-			socket.emit(
-				EVENTS.PRIVATE_SEND,
-				JSON.stringify({
+		if (socket?.isConnected()) {
+			const removePending = () => {
+				setPmMessages((prev) => {
+					const existing = prev[convID] || [];
+					return {
+						...prev,
+						[convID]: existing.filter((m) => m.client_nonce !== clientNonce),
+					};
+				});
+				pmPendingNonces.delete(clientNonce);
+			};
+			void socket
+				.emitAck(EVENTS.PRIVATE_SEND, {
 					target_identity: targetIdentity,
 					content,
 					client_nonce: clientNonce,
-				}),
-				(ack: string) => {
-					try {
-						const resp = typeof ack === "string" ? JSON.parse(ack) : ack;
-						if (resp?.error) {
-							setPmMessages((prev) => {
-								const existing = prev[convID] || [];
-								return {
-									...prev,
-									[convID]: existing.filter(
-										(m) => m.client_nonce !== clientNonce,
-									),
-								};
-							});
-							pmPendingNonces.delete(clientNonce);
-						}
-					} catch {
-						setPmMessages((prev) => {
-							const existing = prev[convID] || [];
-							return {
-								...prev,
-								[convID]: existing.filter(
-									(m) => m.client_nonce !== clientNonce,
-								),
-							};
-						});
-						pmPendingNonces.delete(clientNonce);
-					}
-				},
-			);
+				})
+				.then((resp: any) => {
+					if (resp?.error) removePending();
+				})
+				.catch(removePending);
 		}
 	}
 

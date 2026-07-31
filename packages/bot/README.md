@@ -6,7 +6,7 @@ GOSpeak 语音房机器人运行时：插件、Socket 文本桥、旁听/Speech/
 
 ```text
 Go Server (JWT / RBAC / Room / Signal Hub)
-        │ JWT + Socket.IO (+ 业务 REST)
+        │ JWT + WebSocket (+ 业务 REST)
         ▼
 Bot Runtime Host
   Auth · PluginManager · EventBus
@@ -48,7 +48,7 @@ Bot token 白名单：`room:read`, `room:create`, `user:read`, `signal:kick`, `m
 | 变量 | 说明 |
 |------|------|
 | `GOSPEAK_SERVER_URL` | HTTP API |
-| `GOSPEAK_SOCKET_URL` | Socket.IO |
+| `GOSPEAK_SOCKET_URL` | WebSocket |
 | `GOSPEAK_TOKEN` / `GOSPEAK_BOT_USERNAME`+`PASSWORD` | 鉴权 |
 | `GOSPEAK_BOT_IDENTITY` | 身份名 |
 | `GOSPEAK_PLUGIN_DIR` | 插件目录 |

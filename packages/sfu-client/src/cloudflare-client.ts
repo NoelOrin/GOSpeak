@@ -5,6 +5,7 @@ import type {
 	RemoteTrackInfo,
 	SFUClient,
 	SFUClientOptions,
+	SignalSocket,
 } from "./types";
 
 type SessionDescription = { type: RTCSdpType | string; sdp: string };
@@ -117,10 +118,10 @@ export class CloudflareSFUClient implements SFUClient {
 	private sessionId = "";
 	private appId = "";
 	private stunUrl = "";
-	private socket?: any;
+	private socket?: SignalSocket | null;
 	private onPcStateChangeBound?: () => void;
-	private socketMemberJoinedBound?: (...args: unknown[]) => void;
-	private socketMemberLeftBound?: (...args: unknown[]) => void;
+	private socketMemberJoinedCleanup?: () => void;
+	private socketMemberLeftCleanup?: () => void;
 	private activeSpeakerTimer: ReturnType<typeof setInterval> | null = null;
 	private analyzerContext: AudioContext | null = null;
 	private analyzer?: AnalyserNode | null = null;
@@ -347,30 +348,29 @@ export class CloudflareSFUClient implements SFUClient {
 
 	private bindSocketMembers(): void {
 		if (!this.socket) return;
-		this.socketMemberJoinedBound = (data: any) => {
-			if (!this.isSameRoomEvent(data)) return;
-			if (data?.identity && data?.stream) {
-				void this.subscribePeer(data.identity, data.stream);
-			}
-		};
-		this.socketMemberLeftBound = (data: any) => {
-			if (!this.isSameRoomEvent(data)) return;
-			if (data?.identity) this.unsubscribePeer(data.identity);
-		};
-		this.socket.on("member:joined", this.socketMemberJoinedBound);
-		this.socket.on("member:left", this.socketMemberLeftBound);
+		this.socketMemberJoinedCleanup = this.socket.onServerEvent(
+			"member:joined",
+			(data: any) => {
+				if (!this.isSameRoomEvent(data)) return;
+				if (data?.identity && data?.stream) {
+					void this.subscribePeer(data.identity, data.stream);
+				}
+			},
+		);
+		this.socketMemberLeftCleanup = this.socket.onServerEvent(
+			"member:left",
+			(data: any) => {
+				if (!this.isSameRoomEvent(data)) return;
+				if (data?.identity) this.unsubscribePeer(data.identity);
+			},
+		);
 	}
 
 	private unbindSocketMembers(): void {
-		if (!this.socket) return;
-		if (this.socketMemberJoinedBound) {
-			this.socket.off?.("member:joined", this.socketMemberJoinedBound);
-		}
-		if (this.socketMemberLeftBound) {
-			this.socket.off?.("member:left", this.socketMemberLeftBound);
-		}
-		this.socketMemberJoinedBound = undefined;
-		this.socketMemberLeftBound = undefined;
+		this.socketMemberJoinedCleanup?.();
+		this.socketMemberLeftCleanup?.();
+		this.socketMemberJoinedCleanup = undefined;
+		this.socketMemberLeftCleanup = undefined;
 	}
 
 	private isSameRoomEvent(data: any): boolean {

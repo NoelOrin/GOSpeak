@@ -43,9 +43,9 @@ func NewMediasoupSignal(bridge *BridgeClient, broadcast BroadcastFn) *MediasoupS
 	return &MediasoupSignal{bridge: bridge, broadcast: broadcast}
 }
 
-// safeHandler wraps a socket.io ack handler with panic recovery.
+// safeHandler wraps a WS ack handler with panic recovery.
 // 使用 named return (ret/err)：recover 在 defer 中需给命名返回值赋值才能覆盖 panic 路径的结果。
-// panic 时 err 设为 nil：错误已写入 ret 的 JSON body，让 socket.io 走成功 ack 通道把 body 回传客户端，
+// panic 时 err 设为 nil：错误已写入 ret 的 JSON body，让 WS 走成功 ack 通道把 body 回传客户端，
 // 避免库层 error（NACK/断连）干扰应用层错误语义。debug.Stack 记录调用栈便于定位。
 func safeHandler(fn func(s ws.ClientMessenger, payload string) (string, error)) func(s ws.ClientMessenger, payload string) (ret string, err error) {
 	return func(s ws.ClientMessenger, payload string) (ret string, err error) {

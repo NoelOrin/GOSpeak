@@ -3,7 +3,7 @@ package bus
 import "GOSpeak/internal/ws"
 
 // WSDeliverer 实现 event bus 的 local deliverer，将事件投递到本地 WS Fanout。
-// 替代旧的 SIODeliverer（go-socket.io）。
+// 替代旧的 SIODeliverer（go-WS）。
 type WSDeliverer struct {
 	fanout ws.Broadcaster
 }

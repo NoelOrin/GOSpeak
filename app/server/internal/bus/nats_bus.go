@@ -234,7 +234,7 @@ func (b *NATSBus) onMessage(m *nats.Msg) {
 
 	payload := decodePayload(env.Payload)
 
-	// internal 事件不进 Socket.IO，只走 RemoteHook（缓存失效等）。
+	// internal 事件不进 WebSocket，只走 RemoteHook（缓存失效等）。
 	if env.Scope != "internal" {
 		d, ok := b.deliverer.Load().(Deliverer)
 		if ok && d != nil {
