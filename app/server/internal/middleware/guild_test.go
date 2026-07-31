@@ -74,6 +74,52 @@ func TestRequireGuildMember_Success(t *testing.T) {
 	}
 }
 
+func TestRequireGuildMember_UUIDBodyFallback(t *testing.T) {
+	r := setupGuildMiddlewareRouter(func(uuid, userUUID string) bool { return true })
+	t.Cleanup(func() { SetGuildChecker(nil) })
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{"uuid":"guild-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-UUID", "user-1")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 with uuid fallback, got %d", w.Code)
+	}
+}
+
+func TestRequireGuildMember_PreservesBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	SetGuildChecker(func(uuid, userUUID string) bool { return true })
+	t.Cleanup(func() { SetGuildChecker(nil) })
+	r.Use(func(c *gin.Context) {
+		c.Set("user_uuid", "user-1")
+		c.Next()
+	})
+	r.POST("/test", RequireGuildMember(), func(c *gin.Context) {
+		var body struct {
+			UUID string `json:"uuid"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil || body.UUID != "guild-1" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "body not readable"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{"uuid":"guild-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-UUID", "user-1")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected body preserved for handler, got %d", w.Code)
+	}
+}
+
 func TestRequireGuildMember_NoAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()

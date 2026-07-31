@@ -1,6 +1,7 @@
 package signal
 
 import (
+	"GOSpeak/internal/pkg"
 	"testing"
 )
 
@@ -65,8 +66,8 @@ func TestHub_GuildRoomCreate(t *testing.T) {
 	if room.Name != "game-room" {
 		t.Fatalf("expected room name 'game-room', got %q", room.Name)
 	}
-	if room.Password != "secret" {
-		t.Fatalf("expected password 'secret', got %q", room.Password)
+	if room.Password == "secret" || !pkg.VerifyPassword(room.Password, "secret") {
+		t.Fatalf("expected hashed password that verifies 'secret', got %q", room.Password)
 	}
 }
 
@@ -152,5 +153,55 @@ func TestHub_GuildMemberVisibility(t *testing.T) {
 	rooms := hub.getMergedRooms()
 	if len(rooms) != 3 {
 		t.Fatalf("expected 3 merged rooms, got %d", len(rooms))
+	}
+}
+
+func TestHub_GetMergedRooms_KeepsGuildScopedDBRooms(t *testing.T) {
+	store := newMockRoomStore("lobby", "lobby")
+	store.rooms[0].UUID = "room-a"
+	store.rooms[0].GuildUUID = "guild-a"
+	store.rooms[1].UUID = "room-b"
+	store.rooms[1].GuildUUID = "guild-b"
+
+	hub := NewHub(store, nil, nil, nil)
+	rooms := hub.getMergedRooms()
+	if len(rooms) != 2 {
+		t.Fatalf("expected 2 merged rooms, got %d", len(rooms))
+	}
+	found := map[string]bool{}
+	for _, r := range rooms {
+		if r.GuildUUID != "guild-a" && r.GuildUUID != "guild-b" {
+			t.Fatalf("unexpected guild_uuid %q on room %s", r.GuildUUID, r.Name)
+		}
+		if r.Name != "lobby" {
+			t.Fatalf("expected name lobby, got %q", r.Name)
+		}
+		found[r.GuildUUID] = true
+	}
+	if !found["guild-a"] || !found["guild-b"] {
+		t.Fatalf("expected both guilds in merged rooms, got %#v", found)
+	}
+}
+
+func TestHub_CheckRoomLimit_UsesGuildScopedRoom(t *testing.T) {
+	store := newMockRoomStore("lobby", "lobby")
+	store.rooms[0].GuildUUID = "guild-a"
+	store.rooms[0].Limit = 1
+	store.rooms[1].GuildUUID = "guild-b"
+	store.rooms[1].Limit = 1
+
+	hub := NewHub(store, nil, nil, nil)
+	hub.rooms["guild-b:lobby"] = &Room{
+		Name:     "lobby",
+		Members:  map[string]*MemberInfo{"s1": {ID: "s1", Identity: "user-b"}},
+		MicMuted: map[string]bool{},
+		Speaking: map[string]bool{},
+	}
+
+	if full, _, _, err := hub.CheckRoomLimit("guild-a", "lobby"); err != nil || full {
+		t.Fatalf("guild-a room should not be full, full=%v err=%v", full, err)
+	}
+	if full, _, _, err := hub.CheckRoomLimit("guild-b", "lobby"); err != nil || !full {
+		t.Fatalf("guild-b room should be full, full=%v err=%v", full, err)
 	}
 }

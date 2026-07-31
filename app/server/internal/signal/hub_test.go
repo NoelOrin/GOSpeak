@@ -34,6 +34,15 @@ func (m *mockRoomStore) GetByName(name string) (*model.Room, error) {
 	return nil, fmt.Errorf("room not found: %s", name)
 }
 
+func (m *mockRoomStore) GetByGuildAndName(guildUUID, name string) (*model.Room, error) {
+	for _, r := range m.rooms {
+		if r.Name == name && r.GuildUUID == guildUUID {
+			return &r, nil
+		}
+	}
+	return nil, fmt.Errorf("room not found: %s/%s", guildUUID, name)
+}
+
 func newMockRoomStore(names ...string) *mockRoomStore {
 	rooms := make([]model.Room, 0, len(names))
 	for _, name := range names {

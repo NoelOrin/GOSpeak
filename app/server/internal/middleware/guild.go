@@ -1,6 +1,9 @@
 package middleware
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"sync"
 
 	"GOSpeak/internal/pkg"
@@ -30,7 +33,7 @@ func getGuildChecker() func(guildUUID, userUUID string) bool {
 }
 
 // RequireGuildMember 校验当前用户是否为指定 Guild 的成员。
-// guild_uuid 从以下来源依次获取：URL 参数、Query 参数、JSON body。
+// guild_uuid 从 URL、Query 或 JSON body 获取；兼容历史接口使用的 uuid 字段。
 func RequireGuildMember() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		guildUUID := c.Param("guild_uuid")
@@ -38,11 +41,26 @@ func RequireGuildMember() gin.HandlerFunc {
 			guildUUID = c.Query("guild_uuid")
 		}
 		if guildUUID == "" {
+			guildUUID = c.Param("uuid")
+		}
+		if guildUUID == "" {
+			guildUUID = c.Query("uuid")
+		}
+		if guildUUID == "" {
 			var body struct {
 				GuildUUID string `json:"guild_uuid"`
+				UUID      string `json:"uuid"`
 			}
-			if err := c.ShouldBindJSON(&body); err == nil && body.GuildUUID != "" {
-				guildUUID = body.GuildUUID
+			raw, readErr := io.ReadAll(c.Request.Body)
+			c.Request.Body = io.NopCloser(bytes.NewReader(raw))
+			if readErr == nil && len(raw) > 0 {
+				if err := json.Unmarshal(raw, &body); err == nil {
+					if body.GuildUUID != "" {
+						guildUUID = body.GuildUUID
+					} else {
+						guildUUID = body.UUID
+					}
+				}
 			}
 		}
 		if guildUUID == "" {

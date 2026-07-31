@@ -2,6 +2,7 @@ package repository
 
 import (
 	"GOSpeak/internal/model"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -38,11 +39,16 @@ func (r *GuildRepository) List(page, pageSize int) ([]model.Guild, int64, error)
 	return guilds, total, err
 }
 
-func (r *GuildRepository) ListPublic(page, pageSize int) ([]model.Guild, int64, error) {
+func (r *GuildRepository) ListPublic(page, pageSize int, keyword string) ([]model.Guild, int64, error) {
 	var guilds []model.Guild
 	var total int64
-	r.db.Model(&model.Guild{}).Where("is_public = ?", true).Count(&total)
-	err := r.db.Where("is_public = ?", true).Order("created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&guilds).Error
+	q := r.db.Model(&model.Guild{}).Where("is_public = ?", true)
+	if keyword = strings.TrimSpace(keyword); keyword != "" {
+		like := "%" + keyword + "%"
+		q = q.Where("(name LIKE ? OR description LIKE ?)", like, like)
+	}
+	q.Count(&total)
+	err := q.Order("created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&guilds).Error
 	return guilds, total, err
 }
 
@@ -51,7 +57,15 @@ func (r *GuildRepository) Update(guild *model.Guild) error {
 }
 
 func (r *GuildRepository) Delete(uuid string) error {
-	return r.db.Where("uuid = ?", uuid).Delete(&model.Guild{}).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("guild_uuid = ?", uuid).Delete(&model.GuildMember{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("guild_uuid = ?", uuid).Delete(&model.Room{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("uuid = ?", uuid).Delete(&model.Guild{}).Error
+	})
 }
 
 // --- GuildMember ---

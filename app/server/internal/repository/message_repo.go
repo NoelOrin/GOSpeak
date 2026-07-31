@@ -2,6 +2,7 @@ package repository
 
 import (
 	"GOSpeak/internal/model"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -90,6 +91,31 @@ func (r *MessageRepository) ListReactions(messageUUIDs []string) ([]model.Messag
 		return nil, nil
 	}
 	var rows []model.MessageReaction
+	err := r.db.Where("message_uuid IN ?", messageUUIDs).Find(&rows).Error
+	return rows, err
+}
+
+// Search 在文本房间内容中做包含匹配，返回最新消息。
+func (r *MessageRepository) Search(roomUUID, query string, limit int) ([]model.Message, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+	var rows []model.Message
+	err := r.db.Where("room_uuid = ? AND content LIKE ?", roomUUID, "%"+query+"%").
+		Order("created_at DESC").Limit(limit).Find(&rows).Error
+	return rows, err
+}
+
+// ListMentions 按消息 UUID 批量读取 @提及关系。
+func (r *MessageRepository) ListMentions(messageUUIDs []string) ([]model.MessageMention, error) {
+	if len(messageUUIDs) == 0 {
+		return nil, nil
+	}
+	var rows []model.MessageMention
 	err := r.db.Where("message_uuid IN ?", messageUUIDs).Find(&rows).Error
 	return rows, err
 }

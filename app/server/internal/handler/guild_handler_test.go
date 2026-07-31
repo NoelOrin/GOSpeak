@@ -62,6 +62,7 @@ func setupGuildHandlerRouter(t *testing.T, guildSvc *service.GuildService) *gin.
 	rg.POST("/join", h.Join)
 	rg.POST("/leave", h.Leave)
 	rg.POST("/kick", h.Kick)
+	rg.POST("/update", h.Update)
 	rg.POST("/delete", h.Delete)
 	rg.POST("/members", h.Members)
 

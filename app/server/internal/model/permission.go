@@ -24,6 +24,14 @@ const (
 	PermRoomUpdate = permcode.PermRoomUpdate
 	PermRoomDelete = permcode.PermRoomDelete
 
+	PermGuildCreate     = permcode.PermGuildCreate
+	PermGuildRead       = permcode.PermGuildRead
+	PermGuildManage     = permcode.PermGuildManage
+	PermGuildDelete     = permcode.PermGuildDelete
+	PermGuildInvite     = permcode.PermGuildInvite
+	PermGuildKick       = permcode.PermGuildKick
+	PermGuildRoleManage = permcode.PermGuildRoleManage
+
 	PermUserRead   = permcode.PermUserRead
 	PermUserUpdate = permcode.PermUserUpdate
 	PermUserDelete = permcode.PermUserDelete
@@ -55,13 +63,20 @@ const (
 	PermMessageDeleteOthers = permcode.PermMessageDeleteOthers
 )
 
-
 // DefaultPermissions 种子权限列表
 var DefaultPermissions = []Permission{
 	{Code: PermRoomCreate, Name: "创建房间", Description: "创建新的语音房间"},
 	{Code: PermRoomRead, Name: "查看房间", Description: "查看房间列表和详情"},
 	{Code: PermRoomUpdate, Name: "编辑房间", Description: "修改房间名称、人数上限等"},
 	{Code: PermRoomDelete, Name: "删除房间", Description: "删除房间"},
+
+	{Code: PermGuildCreate, Name: "创建语音服务器", Description: "创建新的语音服务器"},
+	{Code: PermGuildRead, Name: "查看语音服务器", Description: "查看语音服务器详情、列表和成员"},
+	{Code: PermGuildManage, Name: "管理语音服务器", Description: "修改语音服务器设置"},
+	{Code: PermGuildDelete, Name: "删除语音服务器", Description: "删除语音服务器"},
+	{Code: PermGuildInvite, Name: "管理邀请码", Description: "生成和管理语音服务器邀请码"},
+	{Code: PermGuildKick, Name: "踢出 Server 成员", Description: "将成员移出语音服务器"},
+	{Code: PermGuildRoleManage, Name: "管理 Server 角色", Description: "管理语音服务器内角色和权限"},
 
 	{Code: PermUserRead, Name: "查看用户", Description: "查看用户列表和详情"},
 	{Code: PermUserUpdate, Name: "编辑用户", Description: "修改用户信息"},
@@ -92,7 +107,6 @@ var DefaultPermissions = []Permission{
 	{Code: PermMessageRead, Name: "查看消息", Description: "查看文字房间历史消息"},
 	{Code: PermMessageDeleteOthers, Name: "删除他人消息", Description: "删除其他用户的消息"},
 }
-
 
 // RolePermission 角色-权限关联表
 type RolePermission struct {
@@ -134,6 +148,8 @@ var DefaultRolePermissions = map[string][]string{
 		PermRoleRead, PermRoleManage,
 		PermSignalKick,
 		PermRoomCreate, PermMuteManage, PermSFUManage, PermBotManage,
+		PermGuildCreate, PermGuildRead, PermGuildManage, PermGuildDelete,
+		PermGuildInvite, PermGuildKick, PermGuildRoleManage,
 		PermEmailConfigRead, PermEmailConfigManage,
 		PermStorageRead, PermStorageManage, PermStorageDelete,
 		PermOAuthRead, PermOAuthManage,
@@ -142,6 +158,7 @@ var DefaultRolePermissions = map[string][]string{
 	},
 	"user": {
 		PermRoomCreate, PermRoomRead,
+		PermGuildCreate,
 		PermUserRead,
 		PermRoleRead,
 		PermMessageSend, PermMessageRead,

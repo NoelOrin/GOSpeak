@@ -48,14 +48,14 @@ func (s *ConversationService) SetEventBus(b bus.EventBus) {
 
 // ConversationDTO is the client-facing view of a conversation.
 type ConversationDTO struct {
-	ConversationID      string `json:"conversation_id"`
-	OtherIdentity       string `json:"other_identity"`
-	OtherDisplayName    string `json:"other_display_name"`
-	OtherAvatar         string `json:"other_avatar,omitempty"`
-	LastContent         string `json:"last_content"`
-	LastSenderIdentity  string `json:"last_sender_identity"`
-	LastMessageAt       int64  `json:"last_message_at"`
-	UnreadCount         int    `json:"unread_count"`
+	ConversationID     string `json:"conversation_id"`
+	OtherIdentity      string `json:"other_identity"`
+	OtherDisplayName   string `json:"other_display_name"`
+	OtherAvatar        string `json:"other_avatar,omitempty"`
+	LastContent        string `json:"last_content"`
+	LastSenderIdentity string `json:"last_sender_identity"`
+	LastMessageAt      int64  `json:"last_message_at"`
+	UnreadCount        int    `json:"unread_count"`
 }
 
 // List returns all conversations involving the given identity.
@@ -105,6 +105,18 @@ func toMessageDTO(m *model.Message) MessageDTO {
 	}
 }
 
+// 私聊字段从持久化模型回填，方便前端直接插入会话。
+func toPrivateMessageDTO(m *model.Message) MessageDTO {
+	dto := toMessageDTO(m)
+	if m.ConversationID != nil {
+		dto.ConversationID = *m.ConversationID
+	}
+	if m.TargetIdentity != nil {
+		dto.TargetIdentity = *m.TargetIdentity
+	}
+	return dto
+}
+
 // GetMessages returns paginated messages for a conversation.
 // The caller must be a participant (checked against IdentityA / IdentityB).
 func (s *ConversationService) GetMessages(conversationID, identity, before string, limit int) (*MessageListResult, error) {
@@ -133,7 +145,7 @@ func (s *ConversationService) GetMessages(conversationID, identity, before strin
 
 	out := &MessageListResult{Messages: make([]MessageDTO, 0, len(rows))}
 	for i := range rows {
-		out.Messages = append(out.Messages, toMessageDTO(&rows[i]))
+		out.Messages = append(out.Messages, toPrivateMessageDTO(&rows[i]))
 	}
 	if hasMore && len(rows) > 0 {
 		out.NextCursor = rows[0].UUID
@@ -202,21 +214,23 @@ func (s *ConversationService) SendDirect(senderIdentity, targetIdentity, content
 	_ = s.convRepo.IncrementUnread(convID, senderIdentity)
 
 	dto := &MessageDTO{
-		UUID:        msgUUID,
-		AuthorID:    senderIdentity,
-		Content:     content,
-		Deleted:     false,
-		CreatedAt:   now,
-		ClientNonce: clientNonce,
+		UUID:           msgUUID,
+		AuthorID:       senderIdentity,
+		Content:        content,
+		Deleted:        false,
+		CreatedAt:      now,
+		ClientNonce:    clientNonce,
+		ConversationID: convID,
+		TargetIdentity: targetIdentity,
 	}
 
-	// Broadcast private:new via PublishNamespace (not room-scoped).
-	// Using the string literal to avoid an import cycle (signal imports service).
+	// 定向投递到双方的个人房间，避免 private:new 广播给所有在线连接。
+	// Hub.OnConnect 会把每个已认证连接加入 __user:{identity}。
 	if s.eventBus != nil {
 		payload, _ := json.Marshal(dto)
-		_ = s.eventBus.PublishNamespace(context.Background(), "private:new", payload)
+		_ = s.eventBus.PublishRoom(context.Background(), "__user:"+senderIdentity, "private:new", payload)
+		_ = s.eventBus.PublishRoom(context.Background(), "__user:"+targetIdentity, "private:new", payload)
 	}
-
 	// Persist message
 	convIDPtr := convID
 	targetPtr := targetIdentity

@@ -150,12 +150,15 @@ func TestGuildWS_GuildDeleted_Cleanup(t *testing.T) {
 	hub.OnRoomCreate(conn, `{"room":"r2","guild_uuid":"guild-a"}`)
 	hub.OnRoomCreate(conn, `{"room":"r1","guild_uuid":"guild-b"}`)
 
+	hub.OnRoomJoinSFU(conn, `{"room":"r1","guild_uuid":"guild-a","identity":"user-1"}`)
+
 	hub.OnGuildDelete("guild-a")
 
 	hub.mu.RLock()
 	_, guildAR1 := hub.rooms["guild-a:r1"]
 	_, guildAR2 := hub.rooms["guild-a:r2"]
 	_, guildBR1 := hub.rooms["guild-b:r1"]
+	_, connSlot := hub.connSlots["sock-1"]
 	hub.mu.RUnlock()
 
 	if guildAR1 {
@@ -166,5 +169,8 @@ func TestGuildWS_GuildDeleted_Cleanup(t *testing.T) {
 	}
 	if !guildBR1 {
 		t.Fatal("guild-b:r1 should survive guild-a deletion")
+	}
+	if connSlot {
+		t.Fatal("guild member conn slot should be cleaned after guild deletion")
 	}
 }

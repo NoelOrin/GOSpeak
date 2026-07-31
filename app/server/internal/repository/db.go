@@ -3,6 +3,7 @@ package repository
 import (
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
 	"database/sql"
 	"fmt"
 	"os"
@@ -91,7 +92,7 @@ func InitDB(cfg *config.Config) error {
 		return err
 	}
 
-	if err := migrateDefaultGuild(DB); err != nil {
+	if err := migrateRoomPasswords(DB); err != nil {
 		return err
 	}
 
@@ -229,14 +230,14 @@ const (
 )
 
 var (
-	rdbmsConnMaxLifetime  = 30 * time.Minute
+	rdbmsConnMaxLifetime = 30 * time.Minute
 	rdbmsConnMaxIdleTime = 5 * time.Minute
 )
 
 type dbPoolConfig struct {
 	maxOpenConns    int
 	maxIdleConns    int
-	connMaxLifetime  time.Duration
+	connMaxLifetime time.Duration
 	connMaxIdleTime time.Duration
 }
 
@@ -253,7 +254,7 @@ func dbPoolFor(cfg *config.Config) dbPoolConfig {
 	return dbPoolConfig{
 		maxOpenConns:    rdbmsMaxOpenConns,
 		maxIdleConns:    rdbmsMaxIdleConns,
-		connMaxLifetime:  rdbmsConnMaxLifetime,
+		connMaxLifetime: rdbmsConnMaxLifetime,
 		connMaxIdleTime: rdbmsConnMaxIdleTime,
 	}
 }
@@ -471,20 +472,85 @@ func autoMigrate() error {
 	)
 }
 
-// migrateDefaultGuild 创建默认 Guild 并将无归属的存量房间归入其中。
-// 仅在没有任何 Guild 存在时执行，确保存量数据平滑迁移到多 Servers 架构。
-func migrateDefaultGuild(db *gorm.DB) error {
-	var count int64
-	db.Model(&model.Guild{}).Count(&count)
-	if count > 0 {
-		return nil
-	}
-	defaultGuild := &model.Guild{
-		Name: "Default Server", Description: "系统默认语音服务器", IsPublic: false,
-	}
-	if err := db.Create(defaultGuild).Error; err != nil {
+// migrateRoomPasswords 将存量明文房间密码升级为 bcrypt 哈希。
+func migrateRoomPasswords(db *gorm.DB) error {
+	var rooms []model.Room
+	if err := db.Find(&rooms).Error; err != nil {
 		return err
 	}
+	for i := range rooms {
+		if rooms[i].Password == "" || pkg.IsHashedPassword(rooms[i].Password) {
+			continue
+		}
+		hash, err := pkg.HashPassword(rooms[i].Password)
+		if err != nil {
+			return err
+		}
+		if err := db.Model(&model.Room{}).Where("uuid = ?", rooms[i].UUID).Update("password", hash).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// EnsureDefaultGuild 在管理员用户就绪后创建/修复默认 Guild。
+func EnsureDefaultGuild(db *gorm.DB, ownerUUID string) error {
+	if ownerUUID == "" {
+		return fmt.Errorf("default guild owner uuid is required")
+	}
+	return migrateDefaultGuild(db, ownerUUID)
+}
+
+// migrateDefaultGuild 创建默认 Guild、补齐 owner/成员，并将无归属的存量房间归入其中。
+func migrateDefaultGuild(db *gorm.DB, ownerUUID string) error {
+	var existing []model.Guild
+	if err := db.Where("name = ?", "Default Server").Find(&existing).Error; err != nil {
+		return err
+	}
+	var defaultGuild *model.Guild
+	if len(existing) > 0 {
+		defaultGuild = &existing[0]
+	}
+	if defaultGuild == nil {
+		var count int64
+		if err := db.Model(&model.Guild{}).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return nil
+		}
+		defaultGuild = &model.Guild{
+			Name: "Default Server", Description: "系统默认语音服务器", IsPublic: false, OwnerUUID: ownerUUID,
+		}
+		if err := db.Create(defaultGuild).Error; err != nil {
+			return err
+		}
+	} else if defaultGuild.OwnerUUID == "" {
+		if err := db.Model(&model.Guild{}).Where("uuid = ?", defaultGuild.UUID).Update("owner_uuid", ownerUUID).Error; err != nil {
+			return err
+		}
+		defaultGuild.OwnerUUID = ownerUUID
+	}
+
+	ownerUUIDForMember := defaultGuild.OwnerUUID
+	if ownerUUIDForMember == "" {
+		ownerUUIDForMember = ownerUUID
+	}
+	var member model.GuildMember
+	err := db.Where("guild_uuid = ? AND user_uuid = ?", defaultGuild.UUID, ownerUUIDForMember).First(&member).Error
+	if err == gorm.ErrRecordNotFound {
+		member = model.GuildMember{GuildUUID: defaultGuild.UUID, UserUUID: ownerUUIDForMember, RoleName: "owner"}
+		if err := db.Create(&member).Error; err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	} else if member.RoleName != "owner" {
+		if err := db.Model(&model.GuildMember{}).Where("guild_uuid = ? AND user_uuid = ?", defaultGuild.UUID, ownerUUIDForMember).Update("role_name", "owner").Error; err != nil {
+			return err
+		}
+	}
+
 	// 将现有无 guild_uuid 的房间归入默认 Guild
 	return db.Model(&model.Room{}).Where("guild_uuid = ?", "").
 		Update("guild_uuid", defaultGuild.UUID).Error

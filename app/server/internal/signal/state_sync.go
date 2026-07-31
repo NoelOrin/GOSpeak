@@ -189,13 +189,14 @@ func (h *Hub) roomInfoMerged(key string) RoomInfo {
 	info := h.roomInfoLocked(key)
 	h.mu.RUnlock()
 
-	_, logicalName := splitRoomKey(key)
+	guildUUID, logicalName := splitRoomKey(key)
 
 	if h.roomStore != nil {
-		if dbRoom, err := h.roomStore.GetByName(logicalName); err == nil && dbRoom != nil {
+		if dbRoom, err := h.roomStore.GetByGuildAndName(guildUUID, logicalName); err == nil && dbRoom != nil {
 			info.ID = dbRoom.ID
 			info.UUID = dbRoom.UUID
 			info.Name = dbRoom.Name
+			info.GuildUUID = dbRoom.GuildUUID
 			info.HasPassword = dbRoom.Password != ""
 			info.Description = dbRoom.Description
 			info.Limit = dbRoom.Limit

@@ -84,14 +84,14 @@ func (s *GuildService) List(page, pageSize int) ([]model.Guild, int64, error) {
 	return s.guildRepo.List(page, pageSize)
 }
 
-func (s *GuildService) ListPublic(page, pageSize int) ([]model.Guild, int64, error) {
+func (s *GuildService) ListPublic(page, pageSize int, keyword string) ([]model.Guild, int64, error) {
 	if page < 1 {
 		page = 1
 	}
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-	return s.guildRepo.ListPublic(page, pageSize)
+	return s.guildRepo.ListPublic(page, pageSize, keyword)
 }
 
 func (s *GuildService) Update(guild *model.Guild) error {

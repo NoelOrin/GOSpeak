@@ -31,16 +31,21 @@ func (s *RoomService) Create(room *model.Room) error {
 
 // CreateRoom creates a room from primitive parameters so the handler
 // layer does not need to import model.
-func (s *RoomService) CreateRoom(name, password, description string, limit uint, audioOnly, allowAudience bool, createdBy, roomType string) (*model.Room, error) {
+func (s *RoomService) CreateRoom(name, password, description string, limit uint, audioOnly, allowAudience bool, createdBy, roomType, guildUUID string) (*model.Room, error) {
+	hashedPassword, err := pkg.HashPassword(password)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
 	room := &model.Room{
 		Name:          name,
-		Password:      password,
+		Password:      hashedPassword,
 		Description:   description,
 		Limit:         limit,
 		AudioOnly:     audioOnly,
 		AllowAudience: allowAudience,
 		CreatedBy:     createdBy,
 		Type:          model.NormalizeRoomType(roomType),
+		GuildUUID:     guildUUID,
 	}
 	// text rooms: force audio_only true / no SFU expectations
 	if room.Type == model.RoomTypeText {
@@ -79,6 +84,18 @@ func (s *RoomService) GetByUUID(uuid string) (*model.Room, error) {
 // GetByName 按名称查询房间。
 func (s *RoomService) GetByName(name string) (*model.Room, error) {
 	room, err := s.roomRepo.GetByName(name)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrRoomNotFound
+		}
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return room, nil
+}
+
+// GetByGuildAndName 按 Server 和房间名精确查询。
+func (s *RoomService) GetByGuildAndName(guildUUID, name string) (*model.Room, error) {
+	room, err := s.roomRepo.GetByGuildAndName(guildUUID, name)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, ErrRoomNotFound

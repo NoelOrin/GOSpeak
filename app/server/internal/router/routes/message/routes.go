@@ -10,6 +10,7 @@ import (
 
 func RegisterProtected(r *gin.RouterGroup, h *handler.MessageHandler) {
 	r.POST("/messages/list", middleware.RequirePermission(permcode.PermMessageRead), h.List)
+	r.POST("/messages/search", middleware.RequirePermission(permcode.PermMessageRead), h.Search)
 	r.POST("/messages/send", middleware.RequirePermission(permcode.PermMessageSend), h.Send)
 	r.POST("/messages/edit", middleware.RequirePermission(permcode.PermMessageSend), h.Edit)
 	r.POST("/messages/delete", middleware.RequirePermission(permcode.PermMessageSend), h.Delete)

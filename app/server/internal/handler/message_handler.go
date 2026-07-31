@@ -46,6 +46,33 @@ func (h *MessageHandler) List(c *gin.Context) {
 }
 
 // Send
+// Search
+// @Summary      全文搜索文本房间消息
+// @Description  按内容关键词搜索文本房间消息
+// @Tags         消息
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body      object{room_uuid=string,query=string}  true  "搜索参数"
+// @Success      200      {object}  pkg.Response
+// @Router       /room/messages/search [post]
+func (h *MessageHandler) Search(c *gin.Context) {
+	var req struct {
+		RoomUUID string `json:"room_uuid" binding:"required"`
+		Query    string `json:"query" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	items, err := h.msgSvc.Search(req.RoomUUID, req.Query)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"items": items})
+}
+
 // @Summary      发送消息
 // @Description  在文本房间发送一条消息
 // @Tags         消息

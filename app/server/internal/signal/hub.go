@@ -113,6 +113,7 @@ func splitRoomKey(key string) (guildUUID, roomName string) {
 type roomStore interface {
 	List(page, pageSize int, roomType string) ([]model.Room, int64, error)
 	GetByName(name string) (*model.Room, error)
+	GetByGuildAndName(guildUUID, name string) (*model.Room, error)
 }
 
 // muteStore abstracts mute checking for Hub.
@@ -432,9 +433,15 @@ func (h *Hub) OnRoomCreate(c ws.ClientMessenger, data string) {
 		return
 	}
 
+	hashedPassword, hashErr := pkg.HashPassword(req.Password)
+	if hashErr != nil {
+		h.mu.Unlock()
+		c.Send(map[string]interface{}{"event": EventRoomCreated, "data": map[string]interface{}{"error": "invalid password"}})
+		return
+	}
 	h.rooms[roomKey(req.GuildUUID, req.Room)] = &Room{
 		Name:      req.Room,
-		Password:  req.Password,
+		Password:  hashedPassword,
 		Members:   make(map[string]*MemberInfo),
 		MicMuted:  make(map[string]bool),
 		Speaking:  make(map[string]bool),
@@ -534,7 +541,7 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 	h.mu.Lock()
 	roomType := model.RoomTypeVoice
 	if h.roomStore != nil {
-		if dbRoom, dbErr := h.roomStore.GetByName(req.Room); dbErr == nil && dbRoom != nil {
+		if dbRoom, dbErr := h.roomStore.GetByGuildAndName(req.GuildUUID, req.Room); dbErr == nil && dbRoom != nil {
 			roomType = model.NormalizeRoomType(dbRoom.Type)
 		}
 	}
@@ -583,7 +590,7 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 
 	// Text room guard: text rooms have no media, reject SFU join.
 	if h.roomStore != nil {
-		if dbRoom, dbErr := h.roomStore.GetByName(req.Room); dbErr == nil && dbRoom != nil {
+		if dbRoom, dbErr := h.roomStore.GetByGuildAndName(req.GuildUUID, req.Room); dbErr == nil && dbRoom != nil {
 			if model.NormalizeRoomType(dbRoom.Type) == model.RoomTypeText {
 				return marshalAck(map[string]interface{}{"error": "text room has no media"})
 			}
@@ -1055,10 +1062,12 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 		if h.roomStore != nil {
 			if rooms, _, err := h.roomStore.List(1, 200, ""); err == nil {
 				for _, r := range rooms {
-					dbRooms[r.Name] = RoomInfo{
+					key := roomKey(r.GuildUUID, r.Name)
+					dbRooms[key] = RoomInfo{
 						ID:            r.ID,
 						UUID:          r.UUID,
 						Name:          r.Name,
+						GuildUUID:     r.GuildUUID,
 						HasPassword:   r.Password != "",
 						Description:   r.Description,
 						Limit:         r.Limit,
@@ -1090,8 +1099,9 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 
 	// 合并：内存活跃数据覆盖 DB 数据，同时保留 DB 字段
 	for name, info := range memRooms {
-		_, logicalName := splitRoomKey(name)
-		if existing, ok := dbRooms[logicalName]; ok {
+		guildUUID, _ := splitRoomKey(name)
+		info.GuildUUID = guildUUID
+		if existing, ok := dbRooms[name]; ok {
 			info.ID = existing.ID
 			info.UUID = existing.UUID
 			info.Description = existing.Description
@@ -1208,7 +1218,7 @@ func (h *Hub) CheckRoomLimit(guildUUID, roomName string) (bool, uint, int, error
 	if h.roomStore == nil {
 		return false, 0, 0, nil
 	}
-	dbRoom, err := h.roomStore.GetByName(roomName)
+	dbRoom, err := h.roomStore.GetByGuildAndName(guildUUID, roomName)
 	if err != nil || dbRoom.Limit == 0 {
 		return false, 0, 0, err
 	}
@@ -1223,7 +1233,7 @@ func (h *Hub) CheckRoomPassword(guildUUID, roomName, password string) (ok bool, 
 	found := false
 
 	if h.roomStore != nil {
-		if dbRoom, dbErr := h.roomStore.GetByName(roomName); dbErr == nil && dbRoom != nil {
+		if dbRoom, dbErr := h.roomStore.GetByGuildAndName(guildUUID, roomName); dbErr == nil && dbRoom != nil {
 			expected = dbRoom.Password
 			found = true
 		}
@@ -1249,7 +1259,7 @@ func (h *Hub) CheckRoomPassword(guildUUID, roomName, password string) (ok bool, 
 	if password == "" {
 		return false, fmt.Errorf("room requires password")
 	}
-	if password == expected {
+	if pkg.VerifyPassword(expected, password) {
 		return true, nil
 	}
 	return false, nil
@@ -1507,6 +1517,8 @@ func (h *Hub) OnGuildDelete(guildUUID string) {
 	prefix := guildUUID + ":"
 
 	var sfuRooms []string
+	var roomKeys []string
+	var deletedStreams []string
 	h.mu.Lock()
 	for key, room := range h.rooms {
 		if !strings.HasPrefix(key, prefix) {
@@ -1516,15 +1528,35 @@ func (h *Hub) OnGuildDelete(guildUUID string) {
 		sfuRooms = append(sfuRooms, room.Name)
 		// 断开所有成员
 		for sid := range room.Members {
+			if m := room.Members[sid]; m != nil {
+				h.unregisterStreamLocked(key, m.Identity, m.Stream)
+				if m.Stream != "" {
+					deletedStreams = append(deletedStreams, m.Stream)
+				}
+			}
+			delete(h.connSlots, sid)
 			h.fanout.Remove(sid)
 		}
 		delete(h.rooms, key)
+		roomKeys = append(roomKeys, key)
 	}
 	h.mu.Unlock()
 
 	// 清理 SFU 侧
 	for _, room := range sfuRooms {
 		h.deleteRoomSafe(room)
+	}
+	// 清理共享状态和 stream 映射
+	for _, key := range roomKeys {
+		if h.membershipStore != nil {
+			_ = h.membershipStore.DeleteRoomMembers(context.Background(), key)
+			h.notifyRoomStateChanged(key)
+		}
+	}
+	for _, stream := range deletedStreams {
+		if stream != "" {
+			h.syncStreamDelete(stream)
+		}
 	}
 }
 
@@ -1800,10 +1832,12 @@ func (h *Hub) getMembersLocked(roomName string) []MemberInfo {
 func (h *Hub) roomInfoLocked(roomName string) RoomInfo {
 	room, exists := h.rooms[roomName]
 	if !exists {
-		return RoomInfo{Name: roomName, Members: []MemberInfo{}, Count: 0}
+		guildUUID, _ := splitRoomKey(roomName)
+		return RoomInfo{Name: roomName, GuildUUID: guildUUID, Members: []MemberInfo{}, Count: 0}
 	}
 	return RoomInfo{
 		Name:        room.Name,
+		GuildUUID:   func() string { g, _ := splitRoomKey(roomName); return g }(),
 		HasPassword: room.Password != "",
 		Members:     h.getMembersLocked(roomName),
 		Count:       len(room.Members),

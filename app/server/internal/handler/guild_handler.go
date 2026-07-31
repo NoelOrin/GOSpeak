@@ -4,17 +4,36 @@ import (
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
 type GuildHandler struct {
-	guildSvc *service.GuildService
-	permSvc  *service.PermissionService
+	guildSvc      *service.GuildService
+	permSvc       *service.PermissionService
+	onGuildDelete func(string)
 }
 
 func NewGuildHandler(guildSvc *service.GuildService, permSvc *service.PermissionService) *GuildHandler {
 	return &GuildHandler{guildSvc: guildSvc, permSvc: permSvc}
+}
+
+// SetOnGuildDelete 注入删除后的信令清理回调（生产环境为 signalHub.OnGuildDelete）。
+func (h *GuildHandler) SetOnGuildDelete(fn func(string)) {
+	h.onGuildDelete = fn
+}
+
+func (h *GuildHandler) hasPermission(c *gin.Context, code string) bool {
+	if h.permSvc == nil {
+		return false
+	}
+	roleVal, ok := c.Get("role")
+	if !ok {
+		return false
+	}
+	role, _ := roleVal.(string)
+	return h.permSvc.HasPermission(role, code)
 }
 
 type CreateGuildRequest struct {
@@ -64,8 +83,9 @@ func (h *GuildHandler) Get(c *gin.Context) {
 }
 
 type ListGuildRequest struct {
-	Page     int `json:"page"`
-	PageSize int `json:"page_size"`
+	Page     int    `json:"page"`
+	PageSize int    `json:"page_size"`
+	Keyword  string `json:"keyword"`
 }
 
 // List 列出所有语音服务器。
@@ -90,7 +110,7 @@ func (h *GuildHandler) ListPublic(c *gin.Context) {
 		req.Page = 1
 		req.PageSize = 20
 	}
-	guilds, total, err := h.guildSvc.ListPublic(req.Page, req.PageSize)
+	guilds, total, err := h.guildSvc.ListPublic(req.Page, req.PageSize, strings.TrimSpace(req.Keyword))
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -135,6 +155,16 @@ func (h *GuildHandler) Update(c *gin.Context) {
 		pkg.HandleError(c, err)
 		return
 	}
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	if !h.hasPermission(c, permcode.PermGuildManage) && !h.guildSvc.IsOwner(req.UUID, userUUID) {
+		pkg.Fail(c, pkg.FORBIDDEN, "not guild owner or missing permission")
+		return
+	}
 	if req.Name != nil {
 		guild.Name = *req.Name
 	}
@@ -174,7 +204,7 @@ func (h *GuildHandler) Delete(c *gin.Context) {
 		return
 	}
 	userUUID, _ := userUUIDVal.(string)
-	permOK := h.permSvc != nil && h.permSvc.HasPermission(userUUID, permcode.PermGuildDelete)
+	permOK := h.hasPermission(c, permcode.PermGuildDelete)
 	ownerOK := h.guildSvc.IsOwner(req.UUID, userUUID)
 	if !permOK && !ownerOK {
 		pkg.Fail(c, pkg.FORBIDDEN, "not guild owner or missing permission")
@@ -183,6 +213,9 @@ func (h *GuildHandler) Delete(c *gin.Context) {
 	if err := h.guildSvc.Delete(req.UUID); err != nil {
 		pkg.HandleError(c, err)
 		return
+	}
+	if h.onGuildDelete != nil {
+		h.onGuildDelete(req.UUID)
 	}
 	pkg.Success(c, nil)
 }
@@ -205,6 +238,21 @@ func (h *GuildHandler) Join(c *gin.Context) {
 	}
 	userUUID, _ := userUUIDVal.(string)
 	guild, err := h.guildSvc.Join(req.InviteCode, userUUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, guild)
+}
+
+// Preview 根据邀请码或邀请链接返回 Guild 信息，供加入前确认。
+func (h *GuildHandler) Preview(c *gin.Context) {
+	var req JoinGuildRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	guild, err := h.guildSvc.GetByInviteCode(strings.TrimSpace(req.InviteCode))
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -254,7 +302,7 @@ func (h *GuildHandler) Kick(c *gin.Context) {
 		return
 	}
 	userUUID, _ := userUUIDVal.(string)
-	permOK := h.permSvc != nil && h.permSvc.HasPermission(userUUID, permcode.PermGuildKick)
+	permOK := h.hasPermission(c, permcode.PermGuildKick)
 	roleOK := h.guildSvc.HasGuildRole(req.GuildUUID, userUUID, service.GuildRoleAdmin)
 	if !permOK && !roleOK {
 		pkg.Fail(c, pkg.FORBIDDEN, "insufficient guild role or permission")

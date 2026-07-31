@@ -24,16 +24,18 @@ const MaxMessageRunes = 2000
 // MessageDTO is the public data transfer object for messages.
 // Used for both broadcast payloads and API responses.
 type MessageDTO struct {
-	UUID        string     `json:"uuid"`
-	RoomUUID    string     `json:"room_uuid"`
-	AuthorID    string     `json:"author_id"`
-	Content     string     `json:"content"`
-	ReplyTo     string     `json:"reply_to,omitempty"`
-	Mentions    []string   `json:"mentions,omitempty"`
-	EditedAt    *time.Time `json:"edited_at,omitempty"`
-	Deleted     bool       `json:"deleted"`
-	CreatedAt   time.Time  `json:"created_at"`
-	ClientNonce string     `json:"client_nonce,omitempty"`
+	UUID           string     `json:"uuid"`
+	RoomUUID       string     `json:"room_uuid"`
+	AuthorID       string     `json:"author_id"`
+	Content        string     `json:"content"`
+	ReplyTo        string     `json:"reply_to,omitempty"`
+	Mentions       []string   `json:"mentions,omitempty"`
+	EditedAt       *time.Time `json:"edited_at,omitempty"`
+	Deleted        bool       `json:"deleted"`
+	CreatedAt      time.Time  `json:"created_at"`
+	ClientNonce    string     `json:"client_nonce,omitempty"`
+	ConversationID string     `json:"conversation_id,omitempty"`
+	TargetIdentity string     `json:"target_identity,omitempty"`
 }
 
 // Narrow interfaces for testability.
@@ -56,7 +58,7 @@ type roomByUUID interface {
 
 // MessageService provides text message operations with broadcast-first semantics.
 type MessageService struct {
-	msgRepo *repository.MessageRepository
+	msgRepo  *repository.MessageRepository
 	roomRepo roomByUUID
 	bus      MessageEventBus
 	queue    MessageJobQueue
@@ -127,13 +129,13 @@ func (s *MessageService) Send(roomUUID, authorID, content, replyTo, clientNonce 
 
 	// 2) enqueue persist; fall back to sync DB write on failure
 	payload, _ := json.Marshal(map[string]interface{}{
-		"uuid":        msgUUID,
-		"room_uuid":   roomUUID,
-		"author_id":   authorID,
-		"content":     content,
-		"reply_to":    replyTo,
-		"mentions":    mentions,
-		"created_at":  now,
+		"uuid":         msgUUID,
+		"room_uuid":    roomUUID,
+		"author_id":    authorID,
+		"content":      content,
+		"reply_to":     replyTo,
+		"mentions":     mentions,
+		"created_at":   now,
 		"client_nonce": clientNonce,
 	})
 	enqueued := false
@@ -450,8 +452,58 @@ func (s *MessageService) ListHistory(roomUUID, before string, limit int) (items 
 	if more && len(items) > 0 {
 		nextBefore = items[0].UUID
 	}
+	s.enrichMentions(items)
 
 	return items, more, nextBefore, nil
+}
+
+// Search 返回文本房间内匹配 content 的最新消息，用于全文搜索 UI。
+func (s *MessageService) Search(roomUUID, query string) ([]MessageDTO, error) {
+	room, err := s.roomRepo.GetByUUID(roomUUID)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.NOT_FOUND, "room not found")
+	}
+	if model.NormalizeRoomType(room.Type) != model.RoomTypeText {
+		return nil, pkg.NewAppError(pkg.FORBIDDEN, "not a text room")
+	}
+	rows, err := s.msgRepo.Search(roomUUID, query, 100)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	items := make([]MessageDTO, 0, len(rows))
+	for _, m := range rows {
+		items = append(items, MessageDTO{
+			UUID:      m.UUID,
+			RoomUUID:  m.RoomUUID,
+			AuthorID:  m.AuthorID,
+			Content:   m.Content,
+			ReplyTo:   m.ReplyTo,
+			EditedAt:  m.EditedAt,
+			Deleted:   m.DeletedAt.Valid,
+			CreatedAt: m.CreatedAt,
+		})
+	}
+	s.enrichMentions(items)
+	return items, nil
+}
+
+// enrichMentions 批量回填消息 DTO 的 mentions。
+func (s *MessageService) enrichMentions(items []MessageDTO) {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.UUID)
+	}
+	rows, err := s.msgRepo.ListMentions(ids)
+	if err != nil || len(rows) == 0 {
+		return
+	}
+	byUUID := make(map[string][]string)
+	for _, row := range rows {
+		byUUID[row.MessageUUID] = append(byUUID[row.MessageUUID], row.UserID)
+	}
+	for i := range items {
+		items[i].Mentions = byUUID[items[i].UUID]
+	}
 }
 
 // PersistFromJob is called by the jobs consumer to persist a message from a "chat.persist" job.

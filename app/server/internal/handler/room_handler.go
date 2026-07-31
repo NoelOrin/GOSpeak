@@ -25,6 +25,7 @@ type CreateRoomRequest struct {
 	AudioOnly     *bool  `json:"audio_only"`
 	AllowAudience *bool  `json:"allow_audience"`
 	Type          string `json:"type"`
+	GuildUUID     string `json:"guild_uuid"`
 }
 
 // Create
@@ -62,6 +63,7 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		req.Name, req.Password, req.Description,
 		req.Limit, audioOnly, allowAudience,
 		username, req.Type,
+		req.GuildUUID,
 	)
 	if err != nil {
 		pkg.HandleError(c, err)
@@ -138,7 +140,7 @@ func (h *RoomHandler) List(c *gin.Context) {
 }
 
 type UpdateRoomRequest struct {
-	ID            uint   `json:"id" binding:"required"`
+	ID            uint    `json:"id" binding:"required"`
 	Name          *string `json:"name"`
 	Description   *string `json:"description"`
 	Limit         *uint   `json:"limit"`

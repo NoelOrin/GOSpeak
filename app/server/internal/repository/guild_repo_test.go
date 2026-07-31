@@ -140,7 +140,7 @@ func TestGuildRepo_ListPublic(t *testing.T) {
 		t.Fatalf("Create error: %v", err)
 	}
 
-	guilds, total, err := repo.ListPublic(1, 10)
+	guilds, total, err := repo.ListPublic(1, 10, "")
 	if err != nil {
 		t.Fatalf("ListPublic error: %v", err)
 	}
@@ -361,5 +361,39 @@ func TestGuildRepo_Delete_NotFound(t *testing.T) {
 	// Deleting a non-existent UUID should not error (GORM returns nil for zero rows)
 	if err := repo.Delete("nonexistent-uuid"); err != nil {
 		t.Fatalf("Delete nonexistent error: %v", err)
+	}
+}
+
+func TestGuildRepo_Delete_CleansMembersAndRooms(t *testing.T) {
+	db := newGuildTestDB(t)
+	repo := NewGuildRepository(db)
+
+	guild := &model.Guild{Name: "Test", OwnerUUID: "owner-1"}
+	if err := repo.Create(guild); err != nil {
+		t.Fatalf("Create error: %v", err)
+	}
+	if err := repo.AddMember(&model.GuildMember{GuildUUID: guild.UUID, UserUUID: "member-1"}); err != nil {
+		t.Fatalf("AddMember error: %v", err)
+	}
+	if err := db.Create(&model.Room{Name: "room-1", GuildUUID: guild.UUID}).Error; err != nil {
+		t.Fatalf("Create room error: %v", err)
+	}
+
+	if err := repo.Delete(guild.UUID); err != nil {
+		t.Fatalf("Delete error: %v", err)
+	}
+
+	var count int64
+	db.Model(&model.Guild{}).Where("uuid = ?", guild.UUID).Count(&count)
+	if count != 0 {
+		t.Fatalf("expected guild removed, count=%d", count)
+	}
+	db.Model(&model.GuildMember{}).Where("guild_uuid = ?", guild.UUID).Count(&count)
+	if count != 0 {
+		t.Fatalf("expected members removed, count=%d", count)
+	}
+	db.Model(&model.Room{}).Where("guild_uuid = ?", guild.UUID).Count(&count)
+	if count != 0 {
+		t.Fatalf("expected rooms removed, count=%d", count)
 	}
 }

@@ -44,6 +44,22 @@ func (r *RoomRepository) GetByName(name string) (*model.Room, error) {
 	return &room, nil
 }
 
+// GetByGuildAndName 按 Server 和房间名精确查询，避免同名房间跨 Server 串用。
+func (r *RoomRepository) GetByGuildAndName(guildUUID, name string) (*model.Room, error) {
+	var room model.Room
+	q := r.db.Where("name = ?", name)
+	if guildUUID == "" {
+		q = q.Where("guild_uuid = ?", "")
+	} else {
+		q = q.Where("guild_uuid = ?", guildUUID)
+	}
+	err := q.First(&room).Error
+	if err != nil {
+		return nil, err
+	}
+	return &room, nil
+}
+
 func (r *RoomRepository) List(page, pageSize int, roomType string) ([]model.Room, int64, error) {
 	var rooms []model.Room
 	var total int64
