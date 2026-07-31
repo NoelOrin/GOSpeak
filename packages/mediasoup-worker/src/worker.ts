@@ -29,6 +29,7 @@ interface RoomState {
 class MediasoupWorker {
 	private worker: Worker | null = null;
 	private rooms: Map<string, RoomState> = new Map();
+	private routerPromises = new Map<string, Promise<Router>>();
 
 	async init(): Promise<void> {
 		this.worker = await mediasoup.createWorker({
@@ -45,30 +46,40 @@ class MediasoupWorker {
 		const existing = this.rooms.get(roomId);
 		if (existing) return existing.router;
 		if (!this.worker) throw new Error("mediasoup worker is not initialized");
+		const inflight = this.routerPromises.get(roomId);
+		if (inflight) return inflight;
 
-		const router = await this.worker.createRouter({
-			mediaCodecs: [
-				{ kind: "audio", mimeType: "audio/opus", clockRate: 48000, channels: 2 },
-				{ kind: "video", mimeType: "video/VP8", clockRate: 90000 },
-				{ kind: "video", mimeType: "video/VP9", clockRate: 90000 },
-				{
-					kind: "video",
-					mimeType: "video/H264",
-					clockRate: 90000,
-					parameters: { "packetization-mode": 1 },
-				},
-			],
-		});
-		const state: RoomState = {
-			router,
-			transports: new Map(),
-			producers: new Map(),
-			consumers: new Map(),
-			participants: new Map(),
-		};
-		this.rooms.set(roomId, state);
-		router.observer.on("close", () => this.rooms.delete(roomId));
-		return router;
+		const promise = this.worker
+			.createRouter({
+				mediaCodecs: [
+					{ kind: "audio", mimeType: "audio/opus", clockRate: 48000, channels: 2 },
+					{ kind: "video", mimeType: "video/VP8", clockRate: 90000 },
+					{ kind: "video", mimeType: "video/VP9", clockRate: 90000 },
+					{
+						kind: "video",
+						mimeType: "video/H264",
+						clockRate: 90000,
+						parameters: { "packetization-mode": 1 },
+					},
+				],
+			})
+			.then((router) => {
+				const state: RoomState = {
+					router,
+					transports: new Map(),
+					producers: new Map(),
+					consumers: new Map(),
+					participants: new Map(),
+				};
+				this.rooms.set(roomId, state);
+				router.observer.on("close", () => this.rooms.delete(roomId));
+				return router;
+			})
+			.finally(() => {
+				this.routerPromises.delete(roomId);
+			});
+		this.routerPromises.set(roomId, promise);
+		return promise;
 	}
 
 	getRouter(roomId: string): Router | undefined {

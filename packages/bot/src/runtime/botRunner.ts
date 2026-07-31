@@ -12,6 +12,7 @@ import {
 	createBotEvent,
 	EventType,
 	type LifecycleEvent,
+	type PermissionLevel,
 	type SpeechEvent,
 } from "../core/types";
 import {
@@ -82,6 +83,15 @@ export interface BotStatus {
 	loggedIn: boolean;
 	listenRooms: string[];
 }
+
+// Permission rank hierarchy — matches PermissionFilter in filters/permissionFilter.ts
+const PERMISSION_RANK: Record<PermissionLevel, number> = {
+	guest: 0,
+	member: 1,
+	moderator: 2,
+	admin: 3,
+	owner: 4,
+};
 
 export class BotRunner {
 	private config: BotConfig;
@@ -507,7 +517,12 @@ export class BotRunner {
 			kv: createPluginPrivateKV(this._kvRoot, pluginName),
 			sharedKv: createSharedKV(this._kvRoot),
 			bus: this._pluginBus.forPlugin(pluginName),
-			hasPermission: (_level, _member) => true,
+			hasPermission: (level, member) => {
+				if (!member) return false;
+				return (
+					(PERMISSION_RANK[member.role] ?? -1) >= (PERMISSION_RANK[level] ?? -1)
+				);
+			},
 		};
 	}
 

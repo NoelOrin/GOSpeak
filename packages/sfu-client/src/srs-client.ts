@@ -1090,6 +1090,10 @@ export class SRSSFUClient implements SFUClient {
 			cancelAnimationFrame(this.activeSpeakerRaf);
 			this.activeSpeakerRaf = null;
 		}
+		if (this.analyzerContext) {
+			this.analyzerContext.close().catch(() => {});
+			this.analyzerContext = null;
+		}
 		this.analyzerContext = new AudioContext();
 		const source = this.analyzerContext.createMediaStreamSource(
 			this.localStream,
