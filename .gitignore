@@ -108,3 +108,4 @@ app/server/internal/webui/dist/*
 !app/server/internal/webui/dist/EMBED_PLACEHOLDER
 !app/server/internal/webui/dist/.gitkeep
 .worktrees/
+.agents/skills/room-voice-e2e/scripts/artifacts

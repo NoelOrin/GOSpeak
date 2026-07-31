@@ -111,34 +111,27 @@ export async function createRoom(page, { name, password = "", limit = "12", join
     }
   }
 
-  await page.getByRole("button", { name: "创建房间" }).click();
+	await page.getByRole("button", { name: "创建房间" }).click();
 
-  // toast or room list entry
-  await page
-    .getByText(new RegExp(`已创建房间:\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`))
-    .or(page.getByText(name, { exact: true }))
-    .first()
-    .waitFor({ state: "visible", timeout: 15000 });
+	// 创建完成以 toast/列表文本出现为准；按钮可见性由进房步骤处理。
+	await page
+		.getByText(new RegExp(`已创建房间:\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`))
+		.first()
+		.waitFor({ state: "attached", timeout: 15000 });
 
-  if (!page.url().includes("/channel")) {
-    await page.goto("/channel", { waitUntil: "domcontentloaded" });
-  }
-  await page.getByText(name, { exact: true }).first().waitFor({
-    state: "visible",
-    timeout: 15000,
-  });
-  return name;
+	if (!page.url().includes("/channel")) {
+		await page.goto("/channel", { waitUntil: "domcontentloaded" });
+	}
+	await page.waitForTimeout(1200);
+	return name;
 }
 
 export async function selectRoomByName(page, roomName) {
-  // Room list item title is a span with room name; double-click the row container.
-  const roomRow = page
-    .locator("div")
-    .filter({ has: page.locator("span", { hasText: roomName }) })
-    .filter({ hasText: roomName })
-    .first();
-  await roomRow.waitFor({ state: "visible", timeout: 15000 });
-  await roomRow.dblclick();
+	// Room list item title is a span with room name; double-click the row container.
+	// Room list rows are buttons; use a visible button to avoid matching hidden duplicate text.
+	const roomRow = page.locator("button").filter({ hasText: roomName, visible: true }).first();
+	await roomRow.waitFor({ state: "visible", timeout: 15000 });
+	await roomRow.dblclick();
 }
 
 export async function waitForJoined(page, roomName, timeoutMs = 25000) {

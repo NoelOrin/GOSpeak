@@ -183,7 +183,7 @@ export const MEDIA_PROBE_SOURCE = String.raw`
         reason: "timeout",
       };
     },
-    async collectRtcStats,
+    collectRtcStats,
   };
 
   return window.__gospeakMediaProbe;
