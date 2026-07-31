@@ -38,7 +38,6 @@ const UserCard = (props: UserCardProps) => {
 			await userStore.fetchProfile();
 			showToast("昵称已更新", { type: "success" });
 		} catch (err: any) {
-			showToast(err?.message || "更新失败", { type: "error" });
 		} finally {
 			setSaving(false);
 			setEditing(false);

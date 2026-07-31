@@ -85,10 +85,7 @@ function EmailPage() {
 			setSmtpPassword("");
 			setEmailCodeSecret("");
 			await refetch();
-		} catch (error) {
-			showToast(error instanceof Error ? error.message : "保存失败", {
-				type: "error",
-			});
+		} catch {
 		} finally {
 			setSaving(false);
 		}

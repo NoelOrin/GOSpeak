@@ -72,13 +72,17 @@ const createInstance = (baseURL?: string) => {
 		},
 	);
 
-	// 响应拦截
+	// 响应拦截 — 统一处理接口错误 toast，组件不再重复处理
 	axiosInstance.interceptors.response.use(
 		(res: AxiosResponse<Result>) => {
+			// 业务失败码也统一 toast（当前后端走 HTTP 4xx/5xx，此分支保底）
+			if (res.data && res.data.code !== 0) {
+				showToast(res.data.msg, { type: "error" });
+			}
 			return res;
 		},
 		async (error: AxiosError<Result>) => {
-			// 请求被主动取消（如切换房间中断旧请求），静默忽略，不弹 toast
+			// 请求被主动取消，静默忽略
 			if (error.code === "ERR_CANCELED" || error.name === "CanceledError") {
 				return Promise.reject(error);
 			}
@@ -113,7 +117,6 @@ const createInstance = (baseURL?: string) => {
 				error.response?.data?.code &&
 				TOKEN_ERROR_CODES.has(error.response.data.code)
 			) {
-				// 等待 IndexedDB 恢复 refresh token，避免冷启动竞态直接踢登录
 				if (auth.waitAuthHydrated) {
 					await auth.waitAuthHydrated();
 				}
@@ -150,7 +153,6 @@ const createInstance = (baseURL?: string) => {
 						}
 						return axiosInstance(originalRequest);
 					} catch (refreshError) {
-						// refresh 失败，清空等待队列再跳登录
 						onTokenRefreshFailed(refreshError);
 						await auth.clearAuth();
 						window.location.href = "/login";
@@ -160,13 +162,12 @@ const createInstance = (baseURL?: string) => {
 					}
 				}
 
-				// 没有 refresh token，直接跳转登录
 				await auth.clearAuth();
 				window.location.href = "/login";
 				return Promise.reject(error);
 			}
 
-			// 服务器错误或网络错误，通过 toast 提示
+			// 其余 HTTP/网络错误，统一 toast
 			const status = error.response?.status;
 			if (!error.response) {
 				showToast("网络连接失败，请检查网络", { type: "error" });
@@ -174,6 +175,8 @@ const createInstance = (baseURL?: string) => {
 				showToast(error.response.data?.msg || "服务器错误，请稍后重试", {
 					type: "error",
 				});
+			} else if (status && status >= 400) {
+				showToast(error.response.data?.msg || "请求失败", { type: "error" });
 			}
 
 			return Promise.reject(error);

@@ -51,8 +51,7 @@ function BanPage() {
 			showToast("用户已被封禁", { type: "success" });
 			setTargetUserId("");
 			refetch();
-		} catch (e: any) {
-			showToast(e?.message || "封禁失败", { type: "error" });
+		} catch {
 		} finally {
 			setBanning(false);
 		}
@@ -64,8 +63,7 @@ function BanPage() {
 			await updateUserRole(uid, USER_ROLE);
 			showToast("封禁已解除", { type: "success" });
 			refetch();
-		} catch (e: any) {
-			showToast(e?.message || "解除失败", { type: "error" });
+		} catch {
 		} finally {
 			setUnbanningId(null);
 		}

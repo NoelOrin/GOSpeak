@@ -29,10 +29,7 @@ const FileUpload: Component<FileUploadProps> = (props) => {
 		try {
 			const result = await upload(file);
 			props.onUploadComplete?.(result);
-		} catch (e) {
-			const msg = e instanceof Error ? e.message : "上传失败";
-			showToast(msg, { type: "error" });
-		}
+		} catch (e) {}
 	};
 
 	const onFileSelected: JSX.EventHandler<HTMLInputElement, Event> = (e) => {

@@ -101,7 +101,6 @@ const ProfileForm = (props: ProfileFormProps) => {
 			setAvatar(result.public_url);
 			showToast("头像上传成功", { type: "success" });
 		} catch (err: any) {
-			showToast(err?.message || "头像上传失败", { type: "error" });
 			setPreview(null);
 		} finally {
 			target.value = "";
@@ -128,7 +127,6 @@ const ProfileForm = (props: ProfileFormProps) => {
 			setMode("view");
 			props.onSaved?.();
 		} catch (err: any) {
-			showToast(err?.message || "保存失败", { type: "error" });
 		} finally {
 			setSaving(false);
 		}

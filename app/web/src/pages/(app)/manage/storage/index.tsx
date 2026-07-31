@@ -60,9 +60,7 @@ function StoragePage() {
 			setAllowedTypes(cfg.allowed_types);
 			setAccessKeySet(!!cfg.access_key_set);
 			setSecretKeySet(!!cfg.secret_key_set);
-		} catch (e) {
-			const msg = e instanceof Error ? e.message : "加载配置失败";
-			showToast(msg, { type: "error" });
+		} catch {
 		} finally {
 			setLoading(false);
 		}
@@ -90,9 +88,7 @@ function StoragePage() {
 			showToast("存储配置已保存", { type: "success" });
 			setAccessKey("");
 			setSecretKey("");
-		} catch (e) {
-			const msg = e instanceof Error ? e.message : "保存失败";
-			showToast(msg, { type: "error" });
+		} catch {
 		} finally {
 			setSaving(false);
 		}
@@ -127,9 +123,7 @@ function StoragePage() {
 			}
 
 			showToast("连接测试成功", { type: "success" });
-		} catch (e) {
-			const msg = e instanceof Error ? e.message : "连接测试失败";
-			showToast(msg, { type: "error" });
+		} catch {
 		} finally {
 			setTesting(false);
 		}

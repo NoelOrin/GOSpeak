@@ -92,11 +92,7 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 				if (payload.joinAfterCreate) {
 					navigate({ to: "/channel" });
 				}
-			} catch (error) {
-				showToast(error instanceof Error ? error.message : "创建房间失败", {
-					type: "error",
-				});
-			}
+			} catch (error) {}
 		},
 	}));
 

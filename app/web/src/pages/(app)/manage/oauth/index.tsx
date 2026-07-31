@@ -158,10 +158,6 @@ function OAuthPage() {
 				};
 				if (clientSecret()) input.client_secret = clientSecret().trim();
 				const res = await updateProvider(input);
-				if (res.code !== 0) {
-					showToast(res.msg || "更新失败", { type: "error" });
-					return;
-				}
 				showToast("已更新", { type: "success" });
 			} else {
 				const input: any = {
@@ -182,16 +178,11 @@ function OAuthPage() {
 					enabled: enabled(),
 				};
 				const res = await createProvider(input);
-				if (res.code !== 0) {
-					showToast(res.msg || "创建失败", { type: "error" });
-					return;
-				}
 				showToast("已创建", { type: "success" });
 			}
 			closeForm();
 			refetch();
 		} catch (e: any) {
-			showToast(e?.message || "操作失败", { type: "error" });
 		} finally {
 			setSaving(false);
 		}
@@ -203,14 +194,9 @@ function OAuthPage() {
 		setDeletingId(p.id);
 		try {
 			const res = await deleteProvider(p.id);
-			if (res.code !== 0) {
-				showToast(res.msg || "删除失败", { type: "error" });
-				return;
-			}
 			showToast("已删除", { type: "success" });
 			refetch();
 		} catch (e: any) {
-			showToast(e?.message || "删除失败", { type: "error" });
 		} finally {
 			setDeletingId(null);
 		}

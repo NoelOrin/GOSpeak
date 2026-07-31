@@ -84,11 +84,6 @@ function LoginPage() {
 					await userStore.clearAuth();
 					if (e?.response?.data?.code === 1015) {
 						setBanned(true);
-					} else {
-						showToast(
-							e?.response?.data?.msg || e?.message || "OAuth 登录失败",
-							{ type: "error" },
-						);
 					}
 				} finally {
 					setOauthLoading(false);
@@ -140,11 +135,6 @@ function LoginPage() {
 			} catch (e: any) {
 				if (e?.response?.data?.code === 1015) {
 					setBanned(true);
-				} else {
-					showToast(
-						e?.response?.data?.msg || e?.message || "登录失败，请重试",
-						{ type: "error" },
-					);
 				}
 			}
 		},

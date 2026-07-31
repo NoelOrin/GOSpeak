@@ -228,8 +228,7 @@ function BotPluginsPage() {
 			hydrate(updated);
 			await refetch();
 			closeSettings();
-		} catch (e: any) {
-			showToast(e?.message || "保存失败", { type: "error" });
+		} catch {
 		} finally {
 			setSaving(false);
 		}

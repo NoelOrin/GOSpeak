@@ -221,10 +221,7 @@ function SFUPage() {
 				`${PROVIDER_LABELS[saved.provider]} 配置已保存并激活，所有客户端将强制刷新`,
 				{ type: "success" },
 			);
-		} catch (error) {
-			showToast(error instanceof Error ? error.message : "保存失败", {
-				type: "error",
-			});
+		} catch {
 		} finally {
 			setSaving(false);
 		}
@@ -245,10 +242,7 @@ function SFUPage() {
 			showToast(`已切换到 ${PROVIDER_LABELS[provider]}，所有客户端将强制刷新`, {
 				type: "success",
 			});
-		} catch (error) {
-			showToast(error instanceof Error ? error.message : "切换失败", {
-				type: "error",
-			});
+		} catch {
 		} finally {
 			setSaving(false);
 		}

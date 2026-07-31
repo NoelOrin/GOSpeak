@@ -103,10 +103,6 @@ function ApiKeyPage() {
 				permissions: selectedPermissions(),
 				expires_in: expiry() || undefined,
 			});
-			if (res.code !== 0) {
-				showToast(res.msg || "创建失败", { type: "error" });
-				return;
-			}
 			showToast("BOT 密钥已创建，请妥善保存明文 Key", { type: "success" });
 			setNewPlainKey(res.data?.token || "");
 			setName("");
@@ -114,7 +110,6 @@ function ApiKeyPage() {
 			setExpiry("720h");
 			refetch();
 		} catch (e: any) {
-			showToast(e?.message || "创建失败", { type: "error" });
 		} finally {
 			setCreating(false);
 		}
@@ -147,15 +142,10 @@ function ApiKeyPage() {
 		setRevokingUuid(key.uuid);
 		try {
 			const res = await revokeBotKey(key.uuid);
-			if (res.code !== 0) {
-				showToast(res.msg || "吊销失败", { type: "error" });
-				return;
-			}
 			showToast("密钥已吊销", { type: "success" });
 			closeRevokeModal();
 			refetch();
 		} catch (e: any) {
-			showToast(e?.message || "吊销失败", { type: "error" });
 		} finally {
 			setRevokingUuid(null);
 		}

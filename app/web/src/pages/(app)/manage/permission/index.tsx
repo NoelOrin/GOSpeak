@@ -77,6 +77,7 @@ function PermissionPage() {
 		setRolePermLoading(true);
 		getRolePermissions(role)
 			.then((data) => {
+				if (selectedRole() !== role) return;
 				setRolePermCache((prev) => {
 					const next = new Map(prev);
 					next.set(role, data);
@@ -85,9 +86,11 @@ function PermissionPage() {
 				setSelectedCodes(new Set(data.permissions));
 			})
 			.catch(() => {
+				if (selectedRole() !== role) return;
 				setSelectedCodes(new Set<string>());
 			})
 			.finally(() => {
+				if (selectedRole() !== role) return;
 				setRolePermLoading(false);
 			});
 	});
@@ -176,9 +179,6 @@ function PermissionPage() {
 			setSelectedRole(newName);
 			showToast("角色已重命名", { type: "success" });
 		} catch (error) {
-			showToast(error instanceof Error ? error.message : "重命名失败", {
-				type: "error",
-			});
 		} finally {
 			setRenaming(false);
 			cancelRename();
@@ -202,9 +202,6 @@ function PermissionPage() {
 			setSelectedCodes(new Set<string>());
 			showToast("角色已创建", { type: "success" });
 		} catch (error) {
-			showToast(error instanceof Error ? error.message : "创建失败", {
-				type: "error",
-			});
 		} finally {
 			setCreating(false);
 		}
@@ -224,9 +221,6 @@ function PermissionPage() {
 			await refetchRoles();
 			showToast("角色已删除", { type: "success" });
 		} catch (error) {
-			showToast(error instanceof Error ? error.message : "删除失败", {
-				type: "error",
-			});
 		} finally {
 			setDeleting(false);
 		}
@@ -245,9 +239,6 @@ function PermissionPage() {
 			});
 			showToast("权限已保存", { type: "success" });
 		} catch (error) {
-			showToast(error instanceof Error ? error.message : "保存失败", {
-				type: "error",
-			});
 		} finally {
 			setSaving(false);
 		}

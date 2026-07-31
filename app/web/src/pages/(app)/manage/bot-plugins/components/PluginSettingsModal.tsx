@@ -99,7 +99,6 @@ export default function PluginSettingsModal(props: PluginSettingsModalProps) {
 				}
 			}
 		} catch (e: any) {
-			showToast(e?.message || "获取模型列表失败", { type: "error" });
 		} finally {
 			setLoadingModels((prev) => ({ ...prev, [idx]: false }));
 		}

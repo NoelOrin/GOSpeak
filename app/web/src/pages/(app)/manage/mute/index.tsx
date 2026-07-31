@@ -77,10 +77,7 @@ function MutePage() {
 			setPermanent(false);
 			setReason("");
 			refetchMutes();
-		} catch (error) {
-			showToast(error instanceof Error ? error.message : "禁言失败", {
-				type: "error",
-			});
+		} catch {
 		} finally {
 			setSubmitting(false);
 		}
@@ -92,10 +89,7 @@ function MutePage() {
 			await cancelMute(uid);
 			showToast("禁言已取消", { type: "success" });
 			refetchMutes();
-		} catch (error) {
-			showToast(error instanceof Error ? error.message : "取消失败", {
-				type: "error",
-			});
+		} catch {
 		} finally {
 			setCancellingId(null);
 		}
