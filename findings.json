@@ -1,0 +1,72 @@
+[
+  {
+    "file": "app/web/src/pages/(app)/manage/permission/index.tsx",
+    "line": 67,
+    "severity": "🔴bug",
+    "problem": "Race condition in getRolePermissions: createEffect fires async fetch without cancellation. Rapid role switching (A→B) causes the slower fetch's .then() to overwrite selectedCodes with stale permissions for the wrong role.",
+    "fix": "Add a guard in the .then() and .catch() callbacks: `if (selectedRole() !== role) return;` before setting selectedCodes."
+  },
+  {
+    "file": "app/web/src/pages/(app)/manage/apikey/index.tsx",
+    "line": 247,
+    "severity": "🟡risk",
+    "problem": "Create-key button uses `classList={{ \"btn-disabled\": creating() }}` instead of the HTML `disabled` attribute. DaisyUI btn-disabled does not suppress click events, so a double-click submits two concurrent API calls and creates duplicate keys.",
+    "fix": "Add `disabled={creating()}` attribute. Alternatively, add `if (creating()) return;` at the top of handleCreate."
+  },
+  {
+    "file": "app/web/src/pages/(app)/manage/storage/index.tsx",
+    "line": 117,
+    "severity": "🟡risk",
+    "problem": "handleTestConnection calls `updateStorageConfig(input)` first (persists the form to the server), then runs the connectivity test. Users who click \"Test Connection\" to verify settings before saving will inadvertently save changes they may not have finalized.",
+    "fix": "Separate the test from the save. Test using a dedicated validation-only endpoint, or at minimum prompt the user that the config will be saved before testing."
+  },
+  {
+    "file": "app/web/src/pages/(app)/manage/storage/index.tsx",
+    "line": 245,
+    "severity": "🟡risk",
+    "problem": "Save and Test-Connection buttons use `classList={{ \"btn-disabled\": saving() || testing() }}` instead of the `disabled` attribute. DaisyUI btn-disabled does not suppress click events, enabling double-click race that submits the API call twice.",
+    "fix": "Replace `classList={{ \"btn-disabled\": ... }}` with `disabled={saving() || testing()}` on both buttons."
+  },
+  {
+    "file": "app/web/src/pages/(app)/manage/email/index.tsx",
+    "line": 227,
+    "severity": "🟡risk",
+    "problem": "Save button uses `classList={{ \"btn-disabled\": saving() }}` instead of the `disabled` attribute. Double-click submits two concurrent save API calls.",
+    "fix": "Add `disabled={saving()}` attribute to the button."
+  },
+  {
+    "file": "app/web/src/pages/(app)/manage/oauth/index.tsx",
+    "line": 277,
+    "severity": "🟡risk",
+    "problem": "Save button uses `classList={{ \"btn-disabled\": saving() }}` instead of `disabled` attribute. When creating a new provider, a double-click sends two concurrent createProvider calls, potentially creating duplicate OAuth provider records.",
+    "fix": "Add `disabled={saving()}` attribute. Also add `if (saving()) return;` guard at the top of handleSave."
+  },
+  {
+    "file": "app/web/src/pages/(app)/manage/sfu/index.tsx",
+    "line": 460,
+    "severity": "🟡risk",
+    "problem": "Save/activate button uses `classList={{ \"btn-disabled\": saving() }}` instead of `disabled` attribute. Double-click submits two concurrent updateSFUConfig calls (idempotent, but wastes requests and causes UI flicker).",
+    "fix": "Replace `classList={{ \"btn-disabled\": saving() }}` with `disabled={saving()}`."
+  },
+  {
+    "file": "app/web/src/pages/(app)/manage/ban/index.tsx",
+    "line": 33,
+    "severity": "🟡risk",
+    "problem": "Hardcoded `listUsers(1, 200)` caps the user list at 200. The ban dropdown only shows these 200 users, silently hiding the rest. Identical issue in mute/index.tsx:38 and users/index.tsx:35.",
+    "fix": "Pass a larger pageSize or add server-side search/filter to avoid returning the entire user list. Alternatively, document the 200-user cap in the UI."
+  },
+  {
+    "file": "app/web/src/pages/(app)/manage/monitor/index.tsx",
+    "line": 88,
+    "severity": "🟡risk",
+    "problem": "JWT access token is passed in the SSE EventSource URL query parameter (`?token=...`). This leaks the token to server access logs, the Referer header, and browser history. Window.EventSource does not support custom headers, so this is a common trade-off, but it still exposes the bearer credential.",
+    "fix": "Use a short-lived SSE-specific token or a session cookie instead of the full JWT. Alternatively, proxy SSE through a service-worker that can attach the Authorization header."
+  },
+  {
+    "file": "app/web/src/pages/(app)/manage/sfu/components/ProviderConfigForm.tsx",
+    "line": 195,
+    "severity": "🔵nit",
+    "problem": "`disabled={saving() || true}` always evaluates to true for mediasoup fields. Intentional (MediaSoup is in DISABLED_PROVIDERS) but the `|| true` looks like a debugging leftover.",
+    "fix": "Use `disabled={true}` or remove the `saving()` check, since the result is always the same."
+  }
+]
