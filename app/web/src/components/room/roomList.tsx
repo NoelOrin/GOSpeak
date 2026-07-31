@@ -21,7 +21,8 @@ interface RoomItemPropsType {
 
 const RoomItem = (props: RoomItemPropsType) => {
 	const isSelected = () =>
-		socketStore.selectedRoomInfo()?.name === props.room.name;
+		socketStore.selectedRoomInfo()?.name === props.room.name &&
+		socketStore.selectedRoomInfo()?.guild_uuid === props.room.guild_uuid;
 	const [showPasswordModal, setShowPasswordModal] = createSignal(false);
 
 	const handleJoin = () => {
@@ -148,17 +149,45 @@ const RoomItem = (props: RoomItemPropsType) => {
 const RoomItemSkeleton = () => {
 	return (
 		<div class="flex flex-col w-full">
-			<button class="justify-between items-center px-1.5 border-0 btn btn-ghost btn-sm">
+			<div
+				aria-hidden="true"
+				class="justify-between items-center px-1.5 border-0 btn btn-ghost btn-sm"
+			>
 				<div class="flex items-center space-x-1 w-full">
 					<div class="flex-1 h-4 skeleton"></div>
 				</div>
 				<div class="flex items-center text-[12px]">
 					<div class="w-8 h-4 skeleton"></div>
 				</div>
-			</button>
+			</div>
 		</div>
 	);
 };
+
+const RoomListFallback = () => (
+	<div class="flex flex-col gap-3 px-2 py-4" aria-live="polite">
+		<Show
+			when={socketStore.connecting()}
+			fallback={
+				<div class="flex flex-col items-center gap-2 py-2 text-xs text-base-content/70">
+					<span>连接失败，请检查服务器状态</span>
+					<button
+						type="button"
+						class="btn btn-sm btn-ghost"
+						onClick={() => socketStore.connect()}
+					>
+						重新连接
+					</button>
+				</div>
+			}
+		>
+			<RoomItemSkeleton />
+			<div class="text-center text-xs text-base-content/70">
+				正在连接服务器...
+			</div>
+		</Show>
+	</div>
+);
 
 const RoomListHeader = (props: { onOpenCreate: () => void }) => {
 	return (
@@ -171,12 +200,13 @@ const RoomListHeader = (props: { onOpenCreate: () => void }) => {
 						class="btn btn-xs btn-ghost btn-square"
 						onClick={props.onOpenCreate}
 						title="新建房间"
+						aria-label="新建房间"
 					>
 						<CirclePlus size={14} />
 					</button>
 				</Show>
 				<button
-					class="btn btn-xs btn-ghost"
+					class="btn btn-xs btn-ghost min-w-11"
 					onClick={() => socketStore.listRooms()}
 				>
 					刷新
@@ -220,7 +250,7 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 					<div class="box-border absolute inset-0 flex flex-col space-y-1 overflow-y-auto">
 						<Show
 							when={socketStore.connected()}
-							fallback={<RoomItemSkeleton />}
+							fallback={<RoomListFallback />}
 						>
 							<Show
 								when={socketStore.rooms().length > 0}

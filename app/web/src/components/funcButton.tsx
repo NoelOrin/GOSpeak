@@ -1,8 +1,11 @@
+import { createSignal } from "solid-js";
 import SearchModal from "@/components/modal/searchModal";
 import SvgIcon from "./svgIcon";
 
 const FuncButton = () => {
 	let searchModalRef!: HTMLDialogElement;
+	let fabMainRef!: HTMLButtonElement;
+	const [fabOpen, setFabOpen] = createSignal(false);
 
 	const openModal = () => {
 		searchModalRef.showModal();
@@ -12,13 +15,31 @@ const FuncButton = () => {
 		searchModalRef.close();
 	};
 
+	const closeFab = (event: { currentTarget: HTMLButtonElement }) => {
+		event.currentTarget.blur();
+		setFabOpen(false);
+	};
+
 	return (
 		<>
-			<div class="absolute fab">
-				{/* a focusable div with tabIndex is necessary to work on all browsers. role="button" is necessary for accessibility */}
-				<div
+			<div
+				class="absolute fab"
+				onFocusIn={() => setFabOpen(true)}
+				onFocusOut={(event) => {
+					if (
+						!event.currentTarget.contains(event.relatedTarget as Node | null)
+					) {
+						setFabOpen(false);
+					}
+				}}
+			>
+				<button
+					type="button"
+					ref={fabMainRef}
 					tabIndex={0}
-					role="button"
+					aria-label="打开操作菜单"
+					aria-haspopup="menu"
+					aria-expanded={fabOpen()}
 					class="dark:text-white btn btn-lg btn-circle btn-accent"
 				>
 					<svg
@@ -43,18 +64,23 @@ const FuncButton = () => {
 							stroke-linejoin="miter"
 						/>
 					</svg>
-				</div>
+				</button>
 
-				{/* close button should not be focusable so it can close the FAB when clicked. It's just a visual placeholder */}
-				<div class="fab-close">
+				<button
+					type="button"
+					class="fab-close"
+					aria-label="关闭操作菜单"
+					onClick={closeFab}
+				>
 					<span class="dark:text-white btn btn-circle btn-lg btn-error">✕</span>
-				</div>
+				</button>
 
-				{/* buttons that show up when FAB is open */}
 				<div>
 					连接服务器
 					<button
+						type="button"
 						class="dark:text-white btn btn-lg btn-circle btn-accent"
+						aria-label="连接服务器"
 						onClick={openModal}
 					>
 						<SvgIcon name="connect" />

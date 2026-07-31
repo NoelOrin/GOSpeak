@@ -43,7 +43,7 @@ const UserBar = ({ ...props }: UserBarPropsType) => {
 				{/* 用户信息按钮 + 弹出卡片 */}
 				<div class="relative">
 					<button
-						class="flex items-center space-x-2 cursor-pointer"
+						class="flex items-center space-x-2 cursor-pointer h-11 min-h-11"
 						type="button"
 						onClick={() => setShowCard(!showCard())}
 					>

@@ -513,7 +513,7 @@ function BotPluginsPage() {
 							{(n) => (
 								<button
 									type="button"
-									class="btn btn-ghost btn-xs min-w-8"
+									class="btn btn-ghost btn-xs min-w-11"
 									classList={{ "btn-active": page() === n }}
 									onClick={() => setPage(n)}
 								>

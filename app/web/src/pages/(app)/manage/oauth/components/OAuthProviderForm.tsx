@@ -268,6 +268,7 @@ export default function OAuthProviderForm(props: OAuthProviderFormProps) {
 					<input
 						type="checkbox"
 						class="toggle toggle-sm toggle-primary"
+						aria-label="启用"
 						checked={enabled()}
 						onChange={(e) => setEnabled(e.currentTarget.checked)}
 					/>

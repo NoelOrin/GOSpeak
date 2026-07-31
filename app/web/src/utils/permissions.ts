@@ -7,6 +7,13 @@ const rolePermissions: Record<string, string[]> = {
 		"room:read",
 		"room:update",
 		"room:delete",
+		"guild:create",
+		"guild:read",
+		"guild:manage",
+		"guild:delete",
+		"guild:invite",
+		"guild:kick",
+		"guild:role:manage",
 		"user:read",
 		"user:update",
 		"user:delete",
@@ -24,7 +31,7 @@ const rolePermissions: Record<string, string[]> = {
 		"oauth:read",
 		"oauth:manage",
 	],
-	user: ["room:create", "room:read", "user:read", "role:read"],
+	user: ["room:create", "room:read", "guild:create", "user:read", "role:read"],
 	ban: [],
 };
 

@@ -3,6 +3,7 @@ import type { SFUProvider } from "@gospeak/sfu-client/types";
 import { createMemo, createRoot, createSignal } from "solid-js";
 import { showToast } from "solid-notifications";
 import type { PrivateMessageDTO } from "@/api/conversation";
+import { getWSTicket } from "@/api/ws";
 import { preloadSfuClient } from "@/components/room/services/loadSfuClient";
 // NOTE: store -> audio 写入是已知耦合；房间 UI 直接读 speakingStore。
 // 若后续要彻底解耦，改为 onActiveSpeakers 订阅，由 useRoomAudioBridge/voiceChat 写入。
@@ -129,7 +130,7 @@ export const socketStore = createRoot(() => {
 		}
 		// 源头禁止多标签页连接：BroadcastChannel 探测，同一浏览器仅允许一个活动标签页持有 socket
 		setConnecting(true);
-		void tabLock.claim().then((ok) => {
+		void tabLock.claim().then(async (ok) => {
 			if (!ok) {
 				setConnecting(false);
 				showToast("已在其他标签页连接，请关闭其他标签页后重试", {
@@ -141,11 +142,20 @@ export const socketStore = createRoot(() => {
 				setConnecting(false);
 				return;
 			}
-			const socketUrl = import.meta.env.VITE_SOCKET_URL || "";
-			adapter.connect(socketUrl, token);
-			if (serverEventsBound) return;
-			serverEventsBound = true;
-			bindServerEvents();
+			try {
+				const socketUrl = import.meta.env.VITE_SOCKET_URL || "";
+				const ticket = await getWSTicket();
+				adapter.connect(socketUrl, ticket);
+				if (serverEventsBound) return;
+				serverEventsBound = true;
+				bindServerEvents();
+			} catch (err) {
+				setConnecting(false);
+				showToast(
+					`获取连接凭证失败: ${err instanceof Error ? err.message : String(err)}`,
+					{ type: "error" },
+				);
+			}
 		});
 	}
 
@@ -291,13 +301,6 @@ export const socketStore = createRoot(() => {
 		);
 
 		adapter.onServerEvent(EVENTS.USER_UNMUTED, (data: UnmuteEvent) => {
-			// 私聊消息：private:new
-			adapter.onServerEvent(EVENTS.PRIVATE_NEW as string, (dto: any) => {
-				import("@/stores/chatStore").then(({ chatStore }) => {
-					chatStore.handlePrivateNew(dto);
-				});
-			});
-
 			console.log("[Socket] user:unmuted", data.user_id);
 			if (data.user_id !== userStore.user()?.id) return;
 			showToast("你的禁言已被解除，可以重新发言", { type: "success" });
@@ -581,6 +584,7 @@ export const socketStore = createRoot(() => {
 	// 10. return public API
 	return {
 		connected,
+		connecting,
 		rooms,
 		currentRoom,
 		members,

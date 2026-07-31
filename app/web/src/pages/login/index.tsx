@@ -25,6 +25,12 @@ export const Route = createFileRoute("/login/")({
 	component: LoginPage,
 });
 
+function resolveLoginRedirect(): string {
+	const redirectTo = sessionStorage.getItem("gospeak_redirect");
+	sessionStorage.removeItem("gospeak_redirect");
+	return redirectTo?.startsWith("/") ? redirectTo : "/";
+}
+
 function LoginPage() {
 	const navigate = useNavigate();
 	const [banned, setBanned] = createSignal(false);
@@ -79,7 +85,7 @@ function LoginPage() {
 					);
 					const profile = await getProfile();
 					await userStore.login(profile, accessToken, refreshToken);
-					navigate({ to: "/" });
+					navigate({ to: resolveLoginRedirect() });
 				} catch (e: any) {
 					await userStore.clearAuth();
 					if (e?.response?.data?.code === 1015) {
@@ -131,7 +137,7 @@ function LoginPage() {
 					return;
 				}
 				await userStore.login(data.user, data.access_token, data.refresh_token);
-				navigate({ to: "/" });
+				navigate({ to: resolveLoginRedirect() });
 			} catch (e: any) {
 				if (e?.response?.data?.code === 1015) {
 					setBanned(true);
@@ -175,7 +181,7 @@ function LoginPage() {
 					<div class="text-center mt-1">
 						<button
 							type="button"
-							class="link link-primary text-sm"
+							class="link link-primary text-sm inline-flex items-center justify-center px-2 min-h-11"
 							onClick={openForgotModal}
 						>
 							忘记密码?
@@ -278,7 +284,7 @@ function LoginPage() {
 						result.refresh_token,
 					);
 					closeChangeModal();
-					navigate({ to: "/" });
+					navigate({ to: resolveLoginRedirect() });
 				}}
 			/>
 		</div>

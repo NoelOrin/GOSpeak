@@ -59,6 +59,14 @@ html {
 	);
 }
 
+/* 统一提升低透明度辅助文本对比度，避免 Tailwind alpha 低于 WCAG AA */
+.text-base-content\/40,
+.text-base-content\/45,
+.text-base-content\/50,
+.text-base-content\/55 {
+	color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+}
+
 .list-item {
 	@apply border-0 btn btn-sm btn-ghost;
 }
@@ -89,6 +97,36 @@ html {
 
 	.cm-split-handler-v {
 		display: none !important;
+	}
+
+	/* 移动端最小触控目标：统一覆盖管理表格、导航、时长选择等小按钮 */
+	.btn-xs,
+	.btn-sm {
+		min-height: 2.75rem;
+		height: 2.75rem;
+	}
+	.btn-xs.btn-square,
+	.btn-sm.btn-square {
+		width: 2.75rem;
+		min-width: 2.75rem;
+	}
+	.select-xs,
+	.select-sm,
+	.input-sm,
+	.textarea-sm {
+		min-height: 2.75rem;
+	}
+	.toggle-sm {
+		min-height: 2.75rem;
+		min-width: 3.25rem;
+	}
+	.input:not(.input-xs):not(.input-sm),
+	.btn:not(.btn-xs):not(.btn-sm) {
+		min-height: 2.75rem;
+	}
+	.sn-dismiss-button {
+		min-width: 2.75rem;
+		min-height: 2.75rem;
 	}
 }
 

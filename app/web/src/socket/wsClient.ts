@@ -51,12 +51,6 @@ function resolveWsUrl(url: string): string {
 	return `${trimmed}/ws`;
 }
 
-function withToken(url: string, token: string): string {
-	const parsed = new URL(url);
-	if (token) parsed.searchParams.set("token", token);
-	return parsed.toString();
-}
-
 export function createWSClient(): SignalSocket & {
 	connect: (url: string, token?: string) => void;
 	disconnect: () => void;
@@ -83,25 +77,33 @@ export function createWSClient(): SignalSocket & {
 	let currentUrl = "";
 	let currentToken = "";
 	let shouldReconnect = true;
+	let reconnectAttempts = 0;
 
 	function connect(url: string, token?: string) {
 		currentUrl = url;
 		currentToken = token || "";
 		shouldReconnect = true;
+		if (reconnectTimer) {
+			clearTimeout(reconnectTimer);
+			reconnectTimer = null;
+		}
 		if (ws?.readyState === WebSocket.OPEN) return;
 		if (ws) {
 			ws.onclose = null;
 			ws.close();
+			ws = null;
 		}
 
-		const wsUrl = withToken(resolveWsUrl(url), currentToken);
-		ws = new WebSocket(wsUrl);
+		const protocols = currentToken ? ["gospeak", currentToken] : ["gospeak"];
+		const wsHandle = new WebSocket(resolveWsUrl(url), protocols);
+		ws = wsHandle;
 
-		ws.onopen = () => {
+		wsHandle.onopen = () => {
+			reconnectAttempts = 0;
 			for (const cb of connectedCbs) cb();
 		};
 
-		ws.onmessage = (ev: MessageEvent) => {
+		wsHandle.onmessage = (ev: MessageEvent) => {
 			try {
 				const msg: WSMessage = JSON.parse(ev.data as string);
 				if (!msg.event) return;
@@ -126,12 +128,13 @@ export function createWSClient(): SignalSocket & {
 				if (handlers) {
 					for (const handler of handlers) handler(msg.data);
 				}
-			} catch {
-				// Ignore malformed messages
+			} catch (err) {
+				console.warn("[Socket] ignoring malformed frame:", err);
 			}
 		};
 
-		ws.onclose = (ev: CloseEvent) => {
+		wsHandle.onclose = (ev: CloseEvent) => {
+			if (ws === wsHandle) ws = null;
 			for (const cb of disconnectedCbs) cb(ev.reason || "closed");
 			// Clear pending ACKs
 			for (const [_id, pending] of pendingAcks) {
@@ -140,15 +143,18 @@ export function createWSClient(): SignalSocket & {
 			}
 			pendingAcks.clear();
 
-			// Auto-reconnect with backoff
+			// Auto-reconnect with exponential backoff + jitter.
 			if (shouldReconnect && currentUrl) {
+				const delay = Math.min(3000 * 2 ** reconnectAttempts, 30000);
+				const jitter = Math.floor(Math.random() * 1000);
+				reconnectAttempts += 1;
 				reconnectTimer = setTimeout(() => {
 					connect(currentUrl, currentToken);
-				}, 3000);
+				}, delay + jitter);
 			}
 		};
 
-		ws.onerror = () => {
+		wsHandle.onerror = () => {
 			for (const cb of connectErrorCbs) cb(new Error("websocket error"));
 		};
 	}

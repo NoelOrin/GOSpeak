@@ -1,10 +1,11 @@
 import { type Component, createSignal } from "solid-js";
-import { createGuild } from "@/api/guild";
+import { type Guild, createGuild } from "@/api/guild";
 import guildStore from "@/stores/guildStore";
 
 const CreateGuildModal: Component<{
 	ref: HTMLDialogElement | ((el: HTMLDialogElement) => void);
 	onClose: () => void;
+	onCreated?: (guild: Guild) => void;
 }> = (props) => {
 	const [name, setName] = createSignal("");
 	const [description, setDescription] = createSignal("");
@@ -28,6 +29,7 @@ const CreateGuildModal: Component<{
 			guildStore.addGuild(guild);
 			guildStore.setCurrentGuild(guild.uuid);
 			props.onClose();
+			props.onCreated?.(guild);
 		} catch (e: any) {
 			setError(e?.response?.data?.msg || "创建失败");
 		} finally {

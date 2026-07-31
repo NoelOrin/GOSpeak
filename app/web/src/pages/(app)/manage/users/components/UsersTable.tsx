@@ -152,7 +152,7 @@ export default function UsersTable(props: UsersTableProps) {
 																fallback={
 																	<button
 																		type="button"
-																		class="btn btn-ghost btn-xs text-base-content/55"
+																		class="btn btn-ghost btn-xs h-11 min-h-11 w-11 min-w-11 text-base-content/70"
 																		title="禁言"
 																		onClick={() => props.onStartMute(user.id)}
 																	>
@@ -162,7 +162,7 @@ export default function UsersTable(props: UsersTableProps) {
 															>
 																<button
 																	type="button"
-																	class="btn btn-ghost btn-xs text-base-content/55"
+																	class="btn btn-ghost btn-xs h-11 min-h-11 w-11 min-w-11 text-base-content/70"
 																	title="解除禁言"
 																	disabled={props.cancellingId === user.id}
 																	onClick={() => props.onCancelMute(user.id)}
@@ -174,7 +174,7 @@ export default function UsersTable(props: UsersTableProps) {
 														<Show when={props.canDeleteUser && !isSelf()}>
 															<button
 																type="button"
-																class="btn btn-ghost btn-xs text-base-content/55"
+																class="btn btn-ghost btn-xs h-11 min-h-11 w-11 min-w-11 text-base-content/70"
 																title="删除用户"
 																onClick={() => props.onDelete(user.id)}
 															>

@@ -8,6 +8,12 @@ export const Route = createFileRoute("/(app)")({
 		// access 过期时先尝试 refresh_token 无感续期，再决定是否跳登录
 		const ok = await userStore.ensureSession();
 		if (!ok) {
+			if (typeof window !== "undefined") {
+				sessionStorage.setItem(
+					"gospeak_redirect",
+					window.location.pathname + window.location.search,
+				);
+			}
 			throw redirect({ to: "/login" });
 		}
 	},

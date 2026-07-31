@@ -17,6 +17,17 @@ export async function listMessages(
 	return (res as any).data.data as MessageListResult;
 }
 
+export async function searchMessages(
+	room_uuid: string,
+	query: string,
+): Promise<MessageDTO[]> {
+	const res = (await apiClient.post({
+		url: "/api/v1/room/messages/search",
+		data: { room_uuid, query },
+	})) as AxiosResponse<Result<{ items: MessageDTO[] }>>;
+	return (res as any).data.data?.items ?? [];
+}
+
 export async function sendMessage(body: {
 	room_uuid: string;
 	content: string;

@@ -142,6 +142,7 @@ function EmailPage() {
 					<input
 						type="checkbox"
 						class="toggle toggle-sm shrink-0"
+						aria-label="启用邮箱验证"
 						checked={enabled()}
 						onChange={(e) => setEnabled(e.currentTarget.checked)}
 					/>

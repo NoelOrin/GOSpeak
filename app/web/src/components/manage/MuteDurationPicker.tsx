@@ -162,7 +162,7 @@ export default function MuteDurationPicker(props: MuteDurationPickerProps) {
 						return (
 							<button
 								type="button"
-								class="btn btn-sm h-8 min-h-8 rounded-full border px-3 shadow-none"
+								class="btn btn-sm h-11 min-h-11 rounded-full border px-3 shadow-none"
 								classList={{
 									"border-base-content/20 bg-base-200 text-base-content":
 										active(),
@@ -181,7 +181,7 @@ export default function MuteDurationPicker(props: MuteDurationPickerProps) {
 				</For>
 				<button
 					type="button"
-					class="btn btn-sm h-8 min-h-8 rounded-full border px-3 shadow-none"
+					class="btn btn-sm h-11 min-h-11 rounded-full border px-3 shadow-none"
 					classList={{
 						"border-base-content/20 bg-base-200 text-base-content":
 							activePresetId() === "custom",

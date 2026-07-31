@@ -1,16 +1,13 @@
 import { useNavigate } from "@tanstack/solid-router";
+import Compass from "lucide-solid/icons/compass";
 import Headphones from "lucide-solid/icons/headphones";
 import MessageSquare from "lucide-solid/icons/message-square";
 import Home from "lucide-solid/icons/home";
 import Settings from "lucide-solid/icons/settings";
 import ShieldCheck from "lucide-solid/icons/shield-check";
-import Plus from "lucide-solid/icons/plus";
-import UserPlus from "lucide-solid/icons/user-plus";
-import { createResource, createSignal, For, Show } from "solid-js";
+import { createResource, For, Show } from "solid-js";
 import { type Guild, getGuild } from "@/api/guild";
-import CreateGuildModal from "@/components/guild/CreateGuildModal";
 import GuildIcon from "@/components/guild/GuildIcon";
-import JoinGuildModal from "@/components/guild/JoinGuildModal";
 import OptionSquare from "@/components/common/optionSquare";
 import guildStore from "@/stores/guildStore";
 import { hasManageAccess } from "@/utils/permissions";
@@ -27,8 +24,6 @@ const iconProps = {
 const Sidebar = (props: SidebarProps) => {
 	const navigate = useNavigate();
 	const { state, loadMyGuilds, setCurrentGuild } = guildStore;
-	const [createRef, setCreateRef] = createSignal<HTMLDialogElement>();
-	const [joinRef, setJoinRef] = createSignal<HTMLDialogElement>();
 
 	loadMyGuilds();
 
@@ -50,7 +45,7 @@ const Sidebar = (props: SidebarProps) => {
 	};
 
 	return (
-		<div class="flex flex-col h-full w-16 select-none overflow-y-auto">
+		<div class="flex flex-col h-full w-16 select-none">
 			<div class="flex flex-col items-center gap-2 pb-3">
 				<OptionSquare label="首页" onClick={() => navigate({ to: "/" })}>
 					<Home {...iconProps} />
@@ -64,6 +59,12 @@ const Sidebar = (props: SidebarProps) => {
 				<OptionSquare label="聊天" onClick={() => navigate({ to: "/chat" })}>
 					<MessageSquare {...iconProps} />
 				</OptionSquare>
+				<OptionSquare
+					label="发现服务器"
+					onClick={() => navigate({ to: "/discover" })}
+				>
+					<Compass {...iconProps} />
+				</OptionSquare>
 				<OptionSquare label="设置" onClick={() => props.onOpenSettings?.()}>
 					<Settings {...iconProps} />
 				</OptionSquare>
@@ -76,31 +77,21 @@ const Sidebar = (props: SidebarProps) => {
 					</OptionSquare>
 				</Show>
 				<div class="divider my-1 shrink-0" />
-				<OptionSquare
-					label="创建服务器"
-					onClick={() => createRef()?.showModal()}
-				>
-					<Plus {...iconProps} />
-				</OptionSquare>
-				<OptionSquare label="加入服务器" onClick={() => joinRef()?.showModal()}>
-					<UserPlus {...iconProps} />
-				</OptionSquare>
-				<For each={guilds() || []}>
-					{(guild) => (
-						<GuildIcon
-							name={guild.name}
-							iconUrl={guild.icon_url}
-							active={state.currentGuildUUID === guild.uuid}
-							onClick={() => handleSelect(guild.uuid)}
-						/>
-					)}
-				</For>
 			</div>
-			<CreateGuildModal
-				ref={setCreateRef}
-				onClose={() => createRef()?.close()}
-			/>
-			<JoinGuildModal ref={setJoinRef} onClose={() => joinRef()?.close()} />
+			<div class="flex-1 min-h-0 overflow-y-auto pb-3">
+				<div class="flex flex-col items-center gap-2">
+					<For each={guilds() || []}>
+						{(guild) => (
+							<GuildIcon
+								name={guild.name}
+								iconUrl={guild.icon_url}
+								active={state.currentGuildUUID === guild.uuid}
+								onClick={() => handleSelect(guild.uuid)}
+							/>
+						)}
+					</For>
+				</div>
+			</div>
 		</div>
 	);
 };

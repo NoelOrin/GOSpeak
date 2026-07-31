@@ -80,32 +80,51 @@ function MonitorPage() {
 	const [status, setStatus] = createSignal<string>("连接中...");
 	const [data, setData] = createSignal<HealthSnapshot | null>(null);
 	const [error, setError] = createSignal<string | null>(null);
-	let eventSource: EventSource | null = null;
+	let abortController: AbortController | null = null;
 
 	onMount(() => {
 		const token = userStore.accessToken();
-		eventSource = new EventSource(
-			`/api/v1/system/stream?token=${encodeURIComponent(token)}`,
-		);
-		eventSource.onopen = () => setStatus("已连接");
-		eventSource.onmessage = (e) => {
+		abortController = new AbortController();
+		void (async () => {
 			try {
-				setData(JSON.parse(e.data));
-				setError(null);
+				const res = await fetch("/api/v1/system/stream", {
+					headers: { Authorization: `Bearer ${token}` },
+					signal: abortController?.signal,
+				});
+				if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+				setStatus("已连接");
+				const reader = res.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = "";
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					buffer += decoder.decode(value, { stream: true });
+					const events = buffer.split("\n\n");
+					buffer = events.pop() || "";
+					for (const raw of events) {
+						const line = raw.split("\n").find((l) => l.startsWith("data: "));
+						if (!line) continue;
+						try {
+							setData(JSON.parse(line.slice(6)));
+							setError(null);
+						} catch {
+							// malformed message, skip
+						}
+					}
+				}
+				setStatus("连接已关闭");
 			} catch {
-				// malformed message, skip
+				setStatus("连接中断");
+				setError("SSE 连接失败");
 			}
-		};
-		eventSource.onerror = () => {
-			setStatus("连接中断");
-			setError("SSE 连接失败，正在重连...");
-		};
+		})();
 	});
 
 	onCleanup(() => {
-		eventSource?.close();
+		abortController?.abort();
+		abortController = null;
 	});
-
 	const snap = () => data();
 
 	return (

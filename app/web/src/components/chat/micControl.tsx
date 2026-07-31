@@ -23,29 +23,25 @@ const MicControl = ({
 }: MicControlProps) => {
 	return (
 		<div class="dropdown-top dropdown dropdown-hover">
-			<div
-				tabIndex={0}
-				role="button"
-				class="flex justify-center items-center rounded-3xl dark:text-white pointer-events-auto"
-				classList={{ "opacity-40 cursor-not-allowed": disabled?.() }}
+			<label
+				class="swap swap-flip size-11 cursor-pointer"
+				classList={{
+					"pointer-events-none opacity-40 cursor-not-allowed": disabled?.(),
+				}}
 			>
-				<label
-					class="swap swap-flip"
-					classList={{ "pointer-events-none": disabled?.() }}
-				>
-					<input
-						type="checkbox"
-						name={props.name || "input"}
-						checked={isMute()}
-						disabled={disabled?.()}
-						onInput={(e) => onCheck(e.target.checked)}
-					/>
+				<input
+					type="checkbox"
+					name={props.name || "input"}
+					aria-label={isMute() ? "取消麦克风静音" : "麦克风静音"}
+					checked={isMute()}
+					disabled={disabled?.()}
+					onInput={(e) => onCheck(e.target.checked)}
+				/>
 
-					{/* daisyUI v5: checked→swap-on 显示。isMute=true(静音)→checked→swap-on=mic-off */}
-					<SvgIcon name="microphone-on" class="swap-off" />
-					<SvgIcon name="microphone-off" class="swap-on" />
-				</label>
-			</div>
+				{/* daisyUI v5: checked→swap-on 显示。isMute=true(静音)→checked→swap-on=mic-off */}
+				<SvgIcon name="microphone-on" class="swap-off" />
+				<SvgIcon name="microphone-off" class="swap-on" />
+			</label>
 
 			<Show when={disabled?.() && disabledTip}>
 				<div class="z-1 px-2 pb-3 -translate-x-[30%] dropdown-content menu">
@@ -66,6 +62,7 @@ const MicControl = ({
 					>
 						<input
 							type="range"
+							aria-label="麦克风音量"
 							min="0"
 							max="100"
 							value={volume()}

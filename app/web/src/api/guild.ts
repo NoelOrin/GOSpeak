@@ -66,10 +66,18 @@ export async function listGuilds(
 export async function listPublicGuilds(
 	page = 1,
 	pageSize = 20,
+	keyword?: string,
 ): Promise<{ guilds: Guild[]; total: number }> {
+	const data: { page: number; page_size: number; keyword?: string } = {
+		page,
+		page_size: pageSize,
+	};
+	if (keyword?.trim()) {
+		data.keyword = keyword.trim();
+	}
 	const res = await apiClient.post({
 		url: "/api/v1/guild/list-public",
-		data: { page, page_size: pageSize },
+		data,
 	});
 	return unwrap<{ guilds: Guild[]; total: number }>(
 		res as AxiosResponse<Result<{ guilds: Guild[]; total: number }>>,
@@ -84,6 +92,14 @@ export async function myGuilds(): Promise<string[]> {
 	const data = (res as AxiosResponse<Result<{ guild_uuids: string[] }>>).data
 		.data;
 	return data?.guild_uuids ?? [];
+}
+
+export async function previewGuildInvite(inviteCode: string): Promise<Guild> {
+	const res = await apiClient.post({
+		url: "/api/v1/guild/preview",
+		data: { invite_code: inviteCode },
+	});
+	return unwrap<Guild>(res as AxiosResponse<Result<Guild>>);
 }
 
 export async function joinGuild(inviteCode: string): Promise<Guild> {

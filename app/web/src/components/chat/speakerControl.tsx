@@ -17,26 +17,21 @@ const SpeakerControl = ({
 }: SpeakerControlProps) => {
 	return (
 		<div class="dropdown-top dropdown dropdown-hover">
-			<div
-				tabIndex={0}
-				role="button"
-				class="flex justify-center items-center rounded-3xl dark:text-white pointer-events-auto"
-			>
-				<label class="swap swap-flip">
-					{/* this hidden checkbox controls the state */}
-					<input
-						type="checkbox"
-						name={props.name || "output"}
-						checked={isMute()}
-						onInput={(e) => onCheck(e.target.checked)}
-					/>
-					{/* daisyUI v5: checked→swap-on 显示。isMute=true(静音)→checked→swap-on=volume-off */}
-					<SvgIcon name="volume-on" class="swap-off" />
+			<label class="swap swap-flip size-11 cursor-pointer">
+				{/* this hidden checkbox controls the state */}
+				<input
+					type="checkbox"
+					name={props.name || "output"}
+					aria-label={isMute() ? "取消扬声器静音" : "扬声器静音"}
+					checked={isMute()}
+					onInput={(e) => onCheck(e.target.checked)}
+				/>
+				{/* daisyUI v5: checked→swap-on 显示。isMute=true(静音)→checked→swap-on=volume-off */}
+				<SvgIcon name="volume-on" class="swap-off" />
 
-					{/* volume off icon */}
-					<SvgIcon name="volume-off" class="swap-on" />
-				</label>
-			</div>
+				{/* volume off icon */}
+				<SvgIcon name="volume-off" class="swap-on" />
+			</label>
 
 			<div
 				tabIndex="-1"
@@ -48,6 +43,7 @@ const SpeakerControl = ({
 				>
 					<input
 						type="range"
+						aria-label="扬声器音量"
 						min="0"
 						max="100"
 						value={volume()}

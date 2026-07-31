@@ -164,7 +164,7 @@ const ManageNav = () => {
 							<Link
 								to={tab.to}
 								preload="intent"
-								class="btn btn-ghost btn-sm md:btn-md justify-start gap-1.5 md:gap-2 no-underline shrink-0"
+								class="btn btn-ghost btn-sm md:btn-md h-11 min-h-11 justify-start gap-1.5 md:gap-2 no-underline shrink-0"
 								classList={{
 									"btn-active": isActive(tab.path),
 								}}

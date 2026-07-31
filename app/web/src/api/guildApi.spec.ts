@@ -25,6 +25,7 @@ import {
 	listGuilds,
 	listPublicGuilds,
 	myGuilds,
+	previewGuildInvite,
 	updateGuild,
 } from "@/api/guild";
 
@@ -85,6 +86,16 @@ describe("guildApi", () => {
 		});
 	});
 
+	it("listPublicGuilds sends keyword when provided", async () => {
+		const data = { guilds: [], total: 0 };
+		(apiClient.post as any).mockResolvedValue(mockResult(data));
+		await listPublicGuilds(2, 10, "Alpha");
+		expect(apiClient.post).toHaveBeenCalledWith({
+			url: "/api/v1/guild/list-public",
+			data: { page: 2, page_size: 10, keyword: "Alpha" },
+		});
+	});
+
 	it("myGuilds returns UUIDs from response", async () => {
 		(apiClient.post as any).mockResolvedValue(
 			mockResult({ guild_uuids: ["g-1", "g-2"] }),
@@ -95,6 +106,17 @@ describe("guildApi", () => {
 			url: "/api/v1/guild/my-guilds",
 			data: {},
 		});
+	});
+
+	it("previewGuildInvite calls with invite_code", async () => {
+		const guild = { uuid: "g-1", name: "Preview" } as any;
+		(apiClient.post as any).mockResolvedValue(mockResult(guild));
+		const result = await previewGuildInvite("CODE123");
+		expect(apiClient.post).toHaveBeenCalledWith({
+			url: "/api/v1/guild/preview",
+			data: { invite_code: "CODE123" },
+		});
+		expect(result.name).toBe("Preview");
 	});
 
 	it("joinGuild calls with invite_code", async () => {

@@ -5,6 +5,7 @@ import { showToast } from "solid-notifications";
 import { createRoom as createRoomApi } from "@/api/room";
 import { Form, type FormFieldConfig } from "@/components/form";
 import { socketStore } from "@/stores/socketStore";
+import guildStore from "@/stores/guildStore";
 
 export interface CreateRoomConfig {
 	name: string;
@@ -14,6 +15,8 @@ export interface CreateRoomConfig {
 	audioOnly: boolean;
 	allowAudience: boolean;
 	description: string;
+	type: "text" | "voice";
+	guildUUID?: string;
 }
 
 interface CreateRoomModalProps {
@@ -47,6 +50,7 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 			audioOnly: true,
 			allowAudience: true,
 			description: "",
+			type: "voice",
 		},
 		onSubmit: async ({ value }) => {
 			try {
@@ -58,6 +62,8 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 					audioOnly: value.audioOnly,
 					allowAudience: value.allowAudience,
 					description: value.description.trim(),
+					type: value.type === "text" ? "text" : "voice",
+					guildUUID: guildStore.state.currentGuildUUID ?? undefined,
 				};
 
 				const room = await createRoomApi({
@@ -67,6 +73,8 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 					limit: payload.limit,
 					audio_only: payload.audioOnly,
 					allow_audience: payload.allowAudience,
+					type: payload.type,
+					guild_uuid: payload.guildUUID,
 				});
 				await props.onCreated?.(payload);
 
@@ -75,6 +83,7 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 					id: room.id,
 					uuid: room.uuid,
 					name: room.name,
+					guild_uuid: room.guild_uuid,
 					hasPassword: !!payload.password,
 					description: room.description,
 					limit: room.limit,
@@ -92,11 +101,20 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 				if (payload.joinAfterCreate) {
 					navigate({ to: "/channel" });
 				}
-			} catch (error) {}
+			} catch {}
 		},
 	}));
 
 	const fields: FormFieldConfig[] = [
+		{
+			name: "type",
+			label: "房间类型",
+			type: "select",
+			options: [
+				{ value: "voice", label: "语音房" },
+				{ value: "text", label: "文字房" },
+			],
+		},
 		{
 			name: "name",
 			label: "房间名称",
@@ -151,7 +169,13 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 		return {
 			name: values.name.trim() || "未命名房间",
 			limit: values.limit || 0,
-			mode: values.audioOnly ? "语音" : "音视频",
+			kind: values.type === "text" ? "文字房" : "语音房",
+			mode:
+				values.type === "text"
+					? "文字聊天"
+					: values.audioOnly
+						? "语音"
+						: "音视频",
 			audience: values.allowAudience ? "允许旁听" : "仅成员加入",
 		};
 	});
@@ -198,6 +222,10 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 							<div>
 								<div class="text-base-content/50">媒体模式</div>
 								<div class="mt-1 font-medium">{summary().mode}</div>
+							</div>
+							<div>
+								<div class="text-base-content/50">房间类型</div>
+								<div class="mt-1 font-medium">{summary().kind}</div>
 							</div>
 							<div>
 								<div class="text-base-content/50">加入策略</div>

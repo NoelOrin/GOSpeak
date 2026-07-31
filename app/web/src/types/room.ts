@@ -26,6 +26,7 @@ type RoomInfo = {
 	id: number;
 	uuid: string;
 	name: string;
+	guild_uuid?: string;
 	hasPassword: boolean;
 	description?: string;
 	limit: number;

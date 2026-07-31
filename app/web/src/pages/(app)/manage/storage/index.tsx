@@ -144,7 +144,7 @@ function StoragePage() {
 			<Show when={!loading()}>
 				<ManageSection title="存储后端" description="选择对象存储或本地磁盘">
 					<div class="flex flex-wrap gap-3">
-						<label class="flex cursor-pointer items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2">
+						<label class="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2">
 							<input
 								type="radio"
 								name="storage_provider"
@@ -154,7 +154,7 @@ function StoragePage() {
 							/>
 							<span class="text-sm">S3 兼容存储</span>
 						</label>
-						<label class="flex cursor-pointer items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2">
+						<label class="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2">
 							<input
 								type="radio"
 								name="storage_provider"
@@ -176,6 +176,7 @@ function StoragePage() {
 									type="text"
 									class="input input-bordered input-sm w-full"
 									placeholder="https://s3.example.com"
+									aria-label="Endpoint"
 									value={endpoint()}
 									onInput={(e) => setEndpoint(e.target.value)}
 								/>
@@ -186,6 +187,7 @@ function StoragePage() {
 									type="text"
 									class="input input-bordered input-sm w-full"
 									placeholder="my-bucket"
+									aria-label="Bucket"
 									value={bucket()}
 									onInput={(e) => setBucket(e.target.value)}
 								/>
@@ -196,6 +198,7 @@ function StoragePage() {
 									type="text"
 									class="input input-bordered input-sm w-full"
 									placeholder="us-east-1"
+									aria-label="Region"
 									value={region()}
 									onInput={(e) => setRegion(e.target.value)}
 								/>
@@ -209,6 +212,7 @@ function StoragePage() {
 									placeholder={
 										accessKeySet() ? "已配置，留空保留" : "Access Key"
 									}
+									aria-label="Access Key"
 									value={accessKey()}
 									onInput={(e) => setAccessKey(e.target.value)}
 								/>
@@ -221,6 +225,7 @@ function StoragePage() {
 									placeholder={
 										secretKeySet() ? "已配置，留空保留" : "Secret Key"
 									}
+									aria-label="Secret Key"
 									value={secretKey()}
 									onInput={(e) => setSecretKey(e.target.value)}
 								/>
@@ -259,6 +264,7 @@ function StoragePage() {
 							type="text"
 							class="input input-bordered input-sm w-full"
 							placeholder="https://cdn.example.com（留空则自动拼接）"
+							aria-label="公开访问基础 URL"
 							value={publicBaseURL()}
 							onInput={(e) => setPublicBaseURL(e.target.value)}
 						/>
@@ -273,6 +279,7 @@ function StoragePage() {
 								type="text"
 								class="input input-bordered input-sm w-full"
 								placeholder="uploads/"
+								aria-label="路径前缀"
 								value={pathPrefix()}
 								onInput={(e) => setPathPrefix(e.target.value)}
 							/>
@@ -285,6 +292,7 @@ function StoragePage() {
 								type="number"
 								class="input input-bordered input-sm w-full"
 								min="1"
+								aria-label="最大文件大小 (MB)"
 								max="100"
 								value={maxFileSize()}
 								onInput={(e) => setMaxFileSize(Number(e.target.value))}
@@ -296,6 +304,7 @@ function StoragePage() {
 						<textarea
 							class="textarea textarea-bordered textarea-sm w-full"
 							rows="2"
+							aria-label="允许的文件类型"
 							placeholder="image/jpeg,image/png,image/gif,image/webp"
 							value={allowedTypes()}
 							onInput={(e) => setAllowedTypes(e.target.value)}

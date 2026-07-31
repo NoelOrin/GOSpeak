@@ -344,6 +344,37 @@ export const chatStore = createRoot(() => {
 			return { ...prev, [convID]: [...existing, dto] };
 		});
 
+		setConversations((prev) => {
+			const me = userStore.user()?.name ?? "";
+			const other = me === dto.author_id ? dto.target_identity : dto.author_id;
+			const existing = prev.find((c) => c.conversation_id === convID);
+			const base = existing || {
+				conversation_id: convID,
+				other_identity: other || "",
+				other_display_name: other || "",
+				other_avatar: "",
+				last_content: "",
+				last_sender_identity: "",
+				last_message_at: 0,
+				unread_count: 0,
+			};
+			const next = {
+				...base,
+				other_identity: other || base.other_identity,
+				other_display_name: other || base.other_display_name,
+				last_content: dto.content,
+				last_sender_identity: dto.author_id,
+				last_message_at: new Date(dto.created_at).getTime(),
+				unread_count:
+					activeConversationID() === convID || me === dto.author_id
+						? 0
+						: (existing?.unread_count || 0) + 1,
+			};
+			return existing
+				? prev.map((c) => (c.conversation_id === convID ? next : c))
+				: [next, ...prev];
+		});
+
 		void loadConversations();
 
 		if (activeConversationID() === convID) {

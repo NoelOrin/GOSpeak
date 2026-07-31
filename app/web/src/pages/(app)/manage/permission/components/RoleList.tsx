@@ -65,7 +65,7 @@ export default function RoleList(props: {
 									/>
 									<button
 										type="button"
-										class="btn btn-ghost btn-xs"
+										class="btn btn-ghost btn-xs h-11 min-h-11 w-11 min-w-11"
 										disabled={props.renaming}
 										onClick={props.onConfirmRename}
 									>
@@ -73,7 +73,7 @@ export default function RoleList(props: {
 									</button>
 									<button
 										type="button"
-										class="btn btn-ghost btn-xs"
+										class="btn btn-ghost btn-xs h-11 min-h-11 w-11 min-w-11"
 										disabled={props.renaming}
 										onClick={props.onCancelRename}
 									>
@@ -85,7 +85,7 @@ export default function RoleList(props: {
 								<div class="absolute right-1 top-1/2 -translate-y-1/2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
 									<button
 										type="button"
-										class="btn btn-ghost btn-xs"
+										class="btn btn-ghost btn-xs h-11 min-h-11 w-11 min-w-11"
 										disabled={props.renaming}
 										onClick={(e) => {
 											e.stopPropagation();
@@ -98,7 +98,7 @@ export default function RoleList(props: {
 									<Show when={!isDefaultRole(role.name)}>
 										<button
 											type="button"
-											class="btn btn-ghost btn-xs text-base-content/60"
+											class="btn btn-ghost btn-xs h-11 min-h-11 w-11 min-w-11 text-base-content/70"
 											disabled={props.deleting}
 											onClick={(e) => {
 												e.stopPropagation();

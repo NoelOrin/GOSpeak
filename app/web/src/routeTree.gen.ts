@@ -17,6 +17,7 @@ import { Route as appIndexRouteRouteImport } from './pages/(app)/index/route'
 import { Route as appIndexIndexRouteImport } from './pages/(app)/index/index'
 import { Route as appManageIndexRouteImport } from './pages/(app)/manage/index'
 import { Route as appLinkIndexRouteImport } from './pages/(app)/link/index'
+import { Route as appDiscoverIndexRouteImport } from './pages/(app)/discover/index'
 import { Route as appChatIndexRouteImport } from './pages/(app)/chat/index'
 import { Route as appChannelIndexRouteImport } from './pages/(app)/channel/index'
 import { Route as appManageUsersIndexRouteImport } from './pages/(app)/manage/users/index'
@@ -31,6 +32,7 @@ import { Route as appManageBotPluginsIndexRouteImport } from './pages/(app)/mana
 import { Route as appManageBanIndexRouteImport } from './pages/(app)/manage/ban/index'
 import { Route as appManageApikeyIndexRouteImport } from './pages/(app)/manage/apikey/index'
 import { Route as appGuildGuildUUIDIndexRouteImport } from './pages/(app)/guild/$guildUUID/index'
+import { Route as appInviteGCodeIndexRouteImport } from './pages/(app)/invite/g/$code/index'
 
 const appRouteRoute = appRouteRouteImport.update({
   id: '/(app)',
@@ -69,6 +71,11 @@ const appManageIndexRoute = appManageIndexRouteImport.update({
 const appLinkIndexRoute = appLinkIndexRouteImport.update({
   id: '/link/',
   path: '/link/',
+  getParentRoute: () => appRouteRoute,
+} as any)
+const appDiscoverIndexRoute = appDiscoverIndexRouteImport.update({
+  id: '/discover/',
+  path: '/discover/',
   getParentRoute: () => appRouteRoute,
 } as any)
 const appChatIndexRoute = appChatIndexRouteImport.update({
@@ -143,6 +150,11 @@ const appGuildGuildUUIDIndexRoute = appGuildGuildUUIDIndexRouteImport.update({
   path: '/guild/$guildUUID/',
   getParentRoute: () => appRouteRoute,
 } as any)
+const appInviteGCodeIndexRoute = appInviteGCodeIndexRouteImport.update({
+  id: '/invite/g/$code/',
+  path: '/invite/g/$code/',
+  getParentRoute: () => appRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof appIndexRouteRoute
@@ -151,6 +163,7 @@ export interface FileRoutesByFullPath {
   '/login/': typeof LoginIndexRoute
   '/channel/': typeof appChannelIndexRoute
   '/chat/': typeof appChatIndexRoute
+  '/discover/': typeof appDiscoverIndexRoute
   '/index/': typeof appIndexIndexRoute
   '/link/': typeof appLinkIndexRoute
   '/manage/': typeof appManageIndexRoute
@@ -166,6 +179,7 @@ export interface FileRoutesByFullPath {
   '/manage/sfu/': typeof appManageSfuIndexRoute
   '/manage/storage/': typeof appManageStorageIndexRoute
   '/manage/users/': typeof appManageUsersIndexRoute
+  '/invite/g/$code/': typeof appInviteGCodeIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof appIndexRouteRoute
@@ -173,6 +187,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginIndexRoute
   '/channel': typeof appChannelIndexRoute
   '/chat': typeof appChatIndexRoute
+  '/discover': typeof appDiscoverIndexRoute
   '/index': typeof appIndexIndexRoute
   '/link': typeof appLinkIndexRoute
   '/manage': typeof appManageIndexRoute
@@ -188,6 +203,7 @@ export interface FileRoutesByTo {
   '/manage/sfu': typeof appManageSfuIndexRoute
   '/manage/storage': typeof appManageStorageIndexRoute
   '/manage/users': typeof appManageUsersIndexRoute
+  '/invite/g/$code': typeof appInviteGCodeIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -198,6 +214,7 @@ export interface FileRoutesById {
   '/login/': typeof LoginIndexRoute
   '/(app)/channel/': typeof appChannelIndexRoute
   '/(app)/chat/': typeof appChatIndexRoute
+  '/(app)/discover/': typeof appDiscoverIndexRoute
   '/(app)/index/': typeof appIndexIndexRoute
   '/(app)/link/': typeof appLinkIndexRoute
   '/(app)/manage/': typeof appManageIndexRoute
@@ -213,6 +230,7 @@ export interface FileRoutesById {
   '/(app)/manage/sfu/': typeof appManageSfuIndexRoute
   '/(app)/manage/storage/': typeof appManageStorageIndexRoute
   '/(app)/manage/users/': typeof appManageUsersIndexRoute
+  '/(app)/invite/g/$code/': typeof appInviteGCodeIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -223,6 +241,7 @@ export interface FileRouteTypes {
     | '/login/'
     | '/channel/'
     | '/chat/'
+    | '/discover/'
     | '/index/'
     | '/link/'
     | '/manage/'
@@ -238,6 +257,7 @@ export interface FileRouteTypes {
     | '/manage/sfu/'
     | '/manage/storage/'
     | '/manage/users/'
+    | '/invite/g/$code/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -245,6 +265,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/channel'
     | '/chat'
+    | '/discover'
     | '/index'
     | '/link'
     | '/manage'
@@ -260,6 +281,7 @@ export interface FileRouteTypes {
     | '/manage/sfu'
     | '/manage/storage'
     | '/manage/users'
+    | '/invite/g/$code'
   id:
     | '__root__'
     | '/(app)'
@@ -269,6 +291,7 @@ export interface FileRouteTypes {
     | '/login/'
     | '/(app)/channel/'
     | '/(app)/chat/'
+    | '/(app)/discover/'
     | '/(app)/index/'
     | '/(app)/link/'
     | '/(app)/manage/'
@@ -284,6 +307,7 @@ export interface FileRouteTypes {
     | '/(app)/manage/sfu/'
     | '/(app)/manage/storage/'
     | '/(app)/manage/users/'
+    | '/(app)/invite/g/$code/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -347,6 +371,13 @@ declare module '@tanstack/solid-router' {
       path: '/link'
       fullPath: '/link/'
       preLoaderRoute: typeof appLinkIndexRouteImport
+      parentRoute: typeof appRouteRoute
+    }
+    '/(app)/discover/': {
+      id: '/(app)/discover/'
+      path: '/discover'
+      fullPath: '/discover/'
+      preLoaderRoute: typeof appDiscoverIndexRouteImport
       parentRoute: typeof appRouteRoute
     }
     '/(app)/chat/': {
@@ -447,6 +478,13 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof appGuildGuildUUIDIndexRouteImport
       parentRoute: typeof appRouteRoute
     }
+    '/(app)/invite/g/$code/': {
+      id: '/(app)/invite/g/$code/'
+      path: '/invite/g/$code'
+      fullPath: '/invite/g/$code/'
+      preLoaderRoute: typeof appInviteGCodeIndexRouteImport
+      parentRoute: typeof appRouteRoute
+    }
   }
 }
 
@@ -490,9 +528,11 @@ interface appRouteRouteChildren {
   appProfileRouteRoute: typeof appProfileRouteRoute
   appChannelIndexRoute: typeof appChannelIndexRoute
   appChatIndexRoute: typeof appChatIndexRoute
+  appDiscoverIndexRoute: typeof appDiscoverIndexRoute
   appIndexIndexRoute: typeof appIndexIndexRoute
   appLinkIndexRoute: typeof appLinkIndexRoute
   appGuildGuildUUIDIndexRoute: typeof appGuildGuildUUIDIndexRoute
+  appInviteGCodeIndexRoute: typeof appInviteGCodeIndexRoute
 }
 
 const appRouteRouteChildren: appRouteRouteChildren = {
@@ -501,9 +541,11 @@ const appRouteRouteChildren: appRouteRouteChildren = {
   appProfileRouteRoute: appProfileRouteRoute,
   appChannelIndexRoute: appChannelIndexRoute,
   appChatIndexRoute: appChatIndexRoute,
+  appDiscoverIndexRoute: appDiscoverIndexRoute,
   appIndexIndexRoute: appIndexIndexRoute,
   appLinkIndexRoute: appLinkIndexRoute,
   appGuildGuildUUIDIndexRoute: appGuildGuildUUIDIndexRoute,
+  appInviteGCodeIndexRoute: appInviteGCodeIndexRoute,
 }
 
 const appRouteRouteWithChildren = appRouteRoute._addFileChildren(

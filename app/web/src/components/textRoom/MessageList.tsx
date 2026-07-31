@@ -1,24 +1,43 @@
 import { createVirtualizer } from "@tanstack/solid-virtual";
-import { createEffect, For, Show } from "solid-js";
+import { createEffect, createMemo, For, Show } from "solid-js";
 import { chatStore } from "@/stores/chatStore";
+import type { MessageDTO } from "@/types/message";
 import MessageItem from "./MessageItem";
 
-export default function MessageList() {
+interface MessageListProps {
+	messages?: MessageDTO[];
+	searchActive?: boolean;
+	threadParent?: string | null;
+	onReply?: (uuid: string) => void;
+	onOpenThread?: (uuid: string) => void;
+}
+
+export default function MessageList(props: MessageListProps) {
 	let scrollRef!: HTMLDivElement;
 	let prevScrollHeight = 0;
 
+	const visibleMessages = createMemo<MessageDTO[]>(() => {
+		if (props.searchActive && props.messages) return props.messages;
+		if (props.threadParent) {
+			const root = props.threadParent;
+			return chatStore
+				.messages()
+				.filter((m) => m.uuid === root || m.reply_to === root);
+		}
+		return chatStore.messages();
+	});
+
 	const virtualizer = createVirtualizer({
 		get count() {
-			return chatStore.messages().length;
+			return visibleMessages().length;
 		},
 		getScrollElement: () => scrollRef,
 		estimateSize: () => 72,
 		overscan: 12,
 	});
 
-	// Auto-scroll to bottom on new messages when user is at bottom
 	createEffect(() => {
-		const msgs = chatStore.messages();
+		const msgs = visibleMessages();
 		const len = msgs.length;
 		if (len > 0 && chatStore.isAtBottom()) {
 			requestAnimationFrame(() => {
@@ -34,8 +53,13 @@ export default function MessageList() {
 		const scrollBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
 		chatStore.setIsAtBottom(scrollBottom < 50);
 
-		// Load more when near top
-		if (el.scrollTop < 50 && chatStore.hasMore() && !chatStore.loading()) {
+		if (
+			el.scrollTop < 50 &&
+			chatStore.hasMore() &&
+			!chatStore.loading() &&
+			!props.searchActive &&
+			!props.threadParent
+		) {
 			prevScrollHeight = el.scrollHeight;
 			chatStore.loadMore().then(() => {
 				if (prevScrollHeight > 0) {
@@ -52,37 +76,50 @@ export default function MessageList() {
 
 	return (
 		<div ref={scrollRef} onScroll={handleScroll} class="flex-1 overflow-y-auto">
-			<div
-				style={{
-					height: `${virtualizer.getTotalSize()}px`,
-					position: "relative",
-				}}
+			<Show
+				when={visibleMessages().length > 0}
+				fallback={
+					<div class="flex items-center justify-center h-full text-sm text-base-content/40 select-none">
+						{props.searchActive ? "没有匹配消息" : "暂无消息"}
+					</div>
+				}
 			>
-				<For each={items()}>
-					{(item) => (
-						<Show when={chatStore.messages()[item.index]}>
-							<div
-								style={{
-									position: "absolute",
-									top: 0,
-									left: 0,
-									width: "100%",
-									transform: `translateY(${item.start}px)`,
-								}}
-							>
+				<div
+					style={{
+						height: `${virtualizer.getTotalSize()}px`,
+						position: "relative",
+					}}
+				>
+					<For each={items()}>
+						{(item) => (
+							<Show when={visibleMessages()[item.index]}>
 								<div
-									ref={(el) => {
-										if (el) virtualizer.measureElement(el);
+									style={{
+										position: "absolute",
+										top: 0,
+										left: 0,
+										width: "100%",
+										transform: `translateY(${item.start}px)`,
 									}}
-									data-index={item.index}
 								>
-									<MessageItem msg={chatStore.messages()[item.index]} />
+									<div
+										ref={(el) => {
+											if (el) virtualizer.measureElement(el);
+										}}
+										data-index={item.index}
+									>
+										<MessageItem
+											msg={visibleMessages()[item.index]}
+											onReply={props.onReply}
+											onOpenThread={props.onOpenThread}
+										/>
+									</div>
 								</div>
-							</div>
-						</Show>
-					)}
-				</For>
-			</div>
+							</Show>
+						)}
+					</For>
+				</div>
+			</Show>
 		</div>
 	);
 }
