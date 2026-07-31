@@ -466,6 +466,8 @@ func autoMigrate() error {
 		&model.Message{},
 		&model.MessageReaction{},
 		&model.MessageMention{},
+		&model.Guild{},
+		&model.GuildMember{},
 	)
 }
 

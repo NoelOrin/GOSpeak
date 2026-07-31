@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -36,6 +37,7 @@ type JobQueue struct {
 	js     nats.JetStreamContext
 	prefix string
 	own    bool
+	mu     sync.Mutex
 	subs   []*nats.Subscription
 }
 
@@ -192,16 +194,20 @@ func (q *JobQueue) Consume(durable string, handler JobHandler) (*nats.Subscripti
 	if err != nil {
 		return nil, err
 	}
+	q.mu.Lock()
 	q.subs = append(q.subs, sub)
+	q.mu.Unlock()
 	return sub, nil
 }
 
 // Close unsubscribes consumers and optionally closes owned connection.
 func (q *JobQueue) Close() error {
+	q.mu.Lock()
 	for _, s := range q.subs {
 		_ = s.Unsubscribe()
 	}
 	q.subs = nil
+	q.mu.Unlock()
 	if q.own && q.nc != nil {
 		q.nc.Close()
 	}

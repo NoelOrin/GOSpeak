@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 type Role struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
@@ -22,9 +25,12 @@ var DefaultRoles = []Role{
 
 // roleCache 进程级角色缓存，启动时从 roles 表加载。
 var roleCache = map[string]struct{}{}
+var roleCacheMu sync.RWMutex
 
 // LoadRoleCache 从数据库加载所有角色到内存缓存。
 func LoadRoleCache(roles []Role) {
+	roleCacheMu.Lock()
+	defer roleCacheMu.Unlock()
 	for k := range roleCache {
 		delete(roleCache, k)
 	}
@@ -35,12 +41,16 @@ func LoadRoleCache(roles []Role) {
 
 // IsValidRole 检查角色名是否存在于 roles 表。
 func IsValidRole(name string) bool {
+	roleCacheMu.RLock()
+	defer roleCacheMu.RUnlock()
 	_, ok := roleCache[name]
 	return ok
 }
 
 // HasBanRole 检查角色是否为 ban。
 func HasBanRole(name string) bool {
+	roleCacheMu.RLock()
+	defer roleCacheMu.RUnlock()
 	_, ok := roleCache[name]
 	return ok && name == "ban"
 }
