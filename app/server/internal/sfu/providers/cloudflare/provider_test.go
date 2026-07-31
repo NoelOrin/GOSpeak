@@ -61,8 +61,8 @@ func TestService_GenerateToken(t *testing.T) {
 	if data["appId"] != "test-app" {
 		t.Fatalf("expected appId test-app, got %v", data["appId"])
 	}
-	if got, ok := svc.getSession("room1", "user1"); !ok || got != "session-abc" {
-		t.Fatalf("expected session stored, got %q ok=%v", got, ok)
+	if got, ok := svc.getSession("room1", "user1"); !ok || got.sessionID != "session-abc" {
+		t.Fatalf("expected session stored, got %q ok=%v", got.sessionID, ok)
 	}
 }
 
@@ -77,9 +77,9 @@ func TestService_ListRooms(t *testing.T) {
 	svc := &Service{
 		appID:    "test-app",
 		stunURL:  "stun.cloudflare.com:3478",
-		sessions: map[string]map[string]string{
-			"room1": {"user1": "sess-1"},
-			"room2": {"user2": "sess-2"},
+		sessions: map[string]map[string]sessionMeta{
+			"room1": {"user1": {sessionID: "sess-1"}},
+			"room2": {"user2": {sessionID: "sess-2"}},
 		},
 	}
 
@@ -95,10 +95,10 @@ func TestService_ListRooms(t *testing.T) {
 func TestService_ListParticipants(t *testing.T) {
 	svc := &Service{
 		appID: "test-app",
-		sessions: map[string]map[string]string{
+		sessions: map[string]map[string]sessionMeta{
 			"room1": {
-				"alice": "sess-a",
-				"bob":   "sess-b",
+				"alice": {sessionID: "sess-a"},
+				"bob":   {sessionID: "sess-b"},
 			},
 		},
 	}
@@ -146,8 +146,8 @@ func TestService_RemoveParticipant(t *testing.T) {
 			baseURL:    server.URL,
 			httpClient: http.DefaultClient,
 		},
-		sessions: map[string]map[string]string{
-			"room1": {"user1": "sess-user1"},
+		sessions: map[string]map[string]sessionMeta{
+			"room1": {"user1": {sessionID: "sess-user1"}},
 		},
 	}
 
@@ -179,10 +179,10 @@ func TestService_DeleteRoom(t *testing.T) {
 			baseURL:    server.URL,
 			httpClient: http.DefaultClient,
 		},
-		sessions: map[string]map[string]string{
+		sessions: map[string]map[string]sessionMeta{
 			"room1": {
-				"alice": "sess-1",
-				"bob":   "sess-2",
+				"alice": {sessionID: "sess-1"},
+				"bob":   {sessionID: "sess-2"},
 			},
 		},
 	}
