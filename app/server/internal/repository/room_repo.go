@@ -20,19 +20,28 @@ func (r *RoomRepository) Create(room *model.Room) error {
 func (r *RoomRepository) GetByID(id uint) (*model.Room, error) {
 	var room model.Room
 	err := r.db.First(&room, id).Error
-	return &room, err
+	if err != nil {
+		return nil, err
+	}
+	return &room, nil
 }
 
 func (r *RoomRepository) GetByUUID(uuid string) (*model.Room, error) {
 	var room model.Room
 	err := r.db.Where("uuid = ?", uuid).First(&room).Error
-	return &room, err
+	if err != nil {
+		return nil, err
+	}
+	return &room, nil
 }
 
 func (r *RoomRepository) GetByName(name string) (*model.Room, error) {
 	var room model.Room
 	err := r.db.Where("name = ?", name).First(&room).Error
-	return &room, err
+	if err != nil {
+		return nil, err
+	}
+	return &room, nil
 }
 
 func (r *RoomRepository) List(page, pageSize int, roomType string) ([]model.Room, int64, error) {
