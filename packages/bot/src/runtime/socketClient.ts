@@ -57,6 +57,42 @@ function resolveWsUrl(url: string, baseUrl?: string): string {
 	return `${trimmed}/ws`;
 }
 
+function resolveHttpBase(url?: string, baseUrl?: string): string {
+	const base = baseUrl || url || "http://localhost:8998";
+	try {
+		return new URL(base).origin;
+	} catch {
+		return "http://localhost:8998";
+	}
+}
+
+async function fetchWSTicket(
+	base: string,
+	token: string,
+	logger: Logger,
+): Promise<string> {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), 5000);
+	try {
+		const res = await fetch(
+			`${base.replace(/\/+$/, "")}/api/v1/signal/ws-ticket`,
+			{
+				headers: { Authorization: `Bearer ${token}` },
+				signal: controller.signal,
+			},
+		);
+		if (!res.ok) throw new Error(`ws ticket request failed: ${res.status}`);
+		const body = (await res.json()) as { data?: { ticket?: string } };
+		if (!body.data?.ticket) throw new Error("ws ticket is missing");
+		return body.data.ticket;
+	} catch (err) {
+		logger.error("Failed to obtain WS ticket:", err);
+		throw err;
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
 /**
  * Native WebSocket client for GOSpeak signaling. Translates incoming WS
  * messages into typed BotEvent objects, aligned with app/server/internal/signal.
@@ -97,69 +133,88 @@ export class GOSpeakSocketClient {
 
 	connect(): Promise<void> {
 		if (this.socket) return Promise.resolve();
-		return new Promise((resolve, reject) => {
-			this.connectResolve = resolve;
-			this.connectReject = reject;
-			try {
-				const wsUrl = resolveWsUrl(this.opts.url, this.opts.baseUrl);
-				const parsed = new URL(wsUrl);
-				if (this.opts.token) parsed.searchParams.set("token", this.opts.token);
-				this.socket = new WebSocket(parsed.toString());
-			} catch (err) {
-				this.connectResolve = null;
-				this.connectReject = null;
-				reject(err instanceof Error ? err : new Error(String(err)));
-				return;
+		return (async () => {
+			let ticket: string | undefined;
+			if (this.opts.token) {
+				ticket = await fetchWSTicket(
+					resolveHttpBase(this.opts.baseUrl, this.opts.url),
+					this.opts.token,
+					this.logger,
+				);
 			}
-
-			this.socket.onopen = () => {
-				this.connected = true;
-				this.connectResolve?.();
-				this.connectResolve = null;
-				this.connectReject = null;
-				this.logger.info("WS connected");
-			};
-
-			this.socket.onmessage = (ev: MessageEvent) => {
+			return new Promise<void>((resolve, reject) => {
+				this.connectResolve = resolve;
+				this.connectReject = reject;
+				let wsHandle: WebSocket;
 				try {
-					const msg: WSMessage = JSON.parse(String(ev.data));
-					if (!msg.event) return;
-					if (msg.id && this.pendingAcks.has(msg.id)) {
-						const pending = this.pendingAcks.get(msg.id)!;
-						this.pendingAcks.delete(msg.id);
-						clearTimeout(pending.timer);
-						if (msg.error) {
-							pending.reject(new Error(msg.error.message));
-						} else {
-							pending.resolve(tryParse(msg.data));
+					const wsUrl = resolveWsUrl(this.opts.url, this.opts.baseUrl);
+					const protocols = ticket ? ["gospeak", ticket] : ["gospeak"];
+					wsHandle = new WebSocket(wsUrl, protocols);
+					this.socket = wsHandle;
+				} catch (err) {
+					this.connectResolve = null;
+					this.connectReject = null;
+					reject(err instanceof Error ? err : new Error(String(err)));
+					return;
+				}
+
+				wsHandle.onopen = () => {
+					this.connected = true;
+					this.connectResolve?.();
+					this.connectResolve = null;
+					this.connectReject = null;
+					this.logger.info("WS connected");
+				};
+
+				wsHandle.onmessage = (ev: MessageEvent) => {
+					try {
+						const msg: WSMessage = JSON.parse(String(ev.data));
+						if (!msg.event) return;
+						if (msg.id && this.pendingAcks.has(msg.id)) {
+							const pending = this.pendingAcks.get(msg.id)!;
+							this.pendingAcks.delete(msg.id);
+							clearTimeout(pending.timer);
+							if (msg.error) {
+								pending.reject(new Error(msg.error.message));
+							} else {
+								pending.resolve(tryParse(msg.data));
+							}
+							return;
 						}
-						return;
+						this.dispatchEvent(msg.event, msg.data);
+					} catch (err) {
+						this.logger.warn("Ignoring malformed WS frame:", err);
 					}
-					this.dispatchEvent(msg.event, msg.data);
-				} catch {
-					// Ignore malformed frames
-				}
-			};
+				};
 
-			this.socket.onerror = () => {
-				this.logger.error("WS error");
-				this.connectReject?.(new Error("websocket error"));
-				this.connectReject = null;
-			};
+				wsHandle.onerror = () => {
+					this.logger.error("WS error");
+					this.connectReject?.(new Error("websocket error"));
+					this.connectReject = null;
+				};
 
-			this.socket.onclose = (ev: CloseEvent) => {
-				this.connected = false;
-				this.joinedRooms.clear();
-				for (const [_id, pending] of this.pendingAcks) {
-					clearTimeout(pending.timer);
-					pending.reject(new Error("disconnected"));
-				}
-				this.pendingAcks.clear();
-				this.connectResolve = null;
-				this.connectReject = null;
-				this.logger.info("WS disconnected:", ev.reason || "closed");
-			};
-		});
+				wsHandle.onclose = (ev: CloseEvent) => {
+					if (this.socket === wsHandle) this.socket = null;
+					this.connected = false;
+					this.joinedRooms.clear();
+					for (const [_id, pending] of this.pendingAcks) {
+						clearTimeout(pending.timer);
+						pending.reject(new Error("disconnected"));
+					}
+					this.pendingAcks.clear();
+					const pendingReject = this.connectReject;
+					this.connectResolve = null;
+					this.connectReject = null;
+					if (pendingReject)
+						pendingReject(
+							new Error(
+								`websocket closed before open: ${ev.reason || "closed"}`,
+							),
+						);
+					this.logger.info("WS disconnected:", ev.reason || "closed");
+				};
+			});
+		})();
 	}
 
 	disconnect(): void {

@@ -13,8 +13,20 @@ export type {
 	SFUProviderName,
 } from "./listenTypes";
 export { PcmStreamHub, pcm16ToBuffer } from "./pcmStream";
+export {
+	concatPcm16,
+	float32ToPcm16,
+	pcm16ToWav,
+	pcmRms,
+	resampleMonoPcm16,
+} from "./audio";
 export type { SFUPublishAdapter } from "./publish";
-export { LiveKitPublishAdapter, MockPublishAdapter } from "./publish";
+export {
+	LiveKitPublishAdapter,
+	MockPublishAdapter,
+	SFUPublishRouter,
+	UnsupportedPublishAdapter,
+} from "./publish";
 export { SFUListenRouter } from "./sfuListenRouter";
 export type {
 	AudioFrameEvent,

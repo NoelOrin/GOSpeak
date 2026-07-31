@@ -17,19 +17,19 @@ import {
 } from "../core/types";
 import {
 	ListenRoomRegistry,
-	LiveKitPublishAdapter,
 	MediaListenService,
 	type PcmStream,
 	PcmStreamHub,
 	parseRoomList,
-	type SFUPublishAdapter,
+	SFUPublishRouter,
 } from "../media";
 import {
 	createSpeechBusBridge,
 	PassthroughSpeechPipeline,
 	type SpeechPipeline,
+	OpenAICompatibleSpeechPipeline,
 } from "../speech";
-import { SineTTSProvider, type TTSProvider } from "../tts";
+import { EdgeTTSProvider, SineTTSProvider, type TTSProvider } from "../tts";
 import { GOSpeakApiClient } from "./apiClient";
 import { AuthClient, type AuthCredentials } from "./authClient";
 import { CapabilityRouter } from "./capabilityRouter";
@@ -69,6 +69,28 @@ export interface BotConfig {
 	enableListen?: boolean;
 	/** Enable TTS speak / publishPcm (Phase 4) */
 	enableSpeak?: boolean;
+	/** TTS settings (defaults to Edge neural voices) */
+	tts?: {
+		provider?: "edge" | "sine";
+		voice?: string;
+		lang?: string;
+		rate?: string;
+		pitch?: string;
+		volume?: string;
+		timeout?: number;
+	};
+	/** Speech recognition settings (defaults to none instead of mock output) */
+	asr?: {
+		provider?: "openai-compatible" | "passthrough" | "none";
+		apiUrl?: string;
+		apiKey?: string;
+		model?: string;
+		language?: string;
+		minSilenceMs?: number;
+		maxChunkMs?: number;
+		minChunkMs?: number;
+		vadThreshold?: number;
+	};
 	/** Debounce for plugin file changes (ms) */
 	pluginWatchDebounceMs?: number;
 	/** Per-plugin configuration map, keyed by plugin name */
@@ -115,7 +137,7 @@ export class BotRunner {
 	private _speechPipeline: SpeechPipeline | null = null;
 	private _unsubPcm: (() => void) | null = null;
 	private _unsubSpeech: (() => void) | null = null;
-	private _publishAdapter: SFUPublishAdapter | null = null;
+	private _publishRouter: SFUPublishRouter | null = null;
 	private _tts: TTSProvider | null = null;
 	private _speakQueues = new Map<string, Promise<void>>();
 	private _speakingRooms = new Set<string>();
@@ -293,9 +315,9 @@ export class BotRunner {
 			await this._listenService.stop();
 			this._listenService = null;
 		}
-		if (this._publishAdapter) {
-			await this._publishAdapter.dispose();
-			this._publishAdapter = null;
+		if (this._publishRouter) {
+			await this._publishRouter.disposeAll();
+			this._publishRouter = null;
 		}
 		this._pcmHub.clear();
 		this.socket?.disconnect();
@@ -339,11 +361,9 @@ export class BotRunner {
 	async speak(roomId: string, text: string): Promise<void> {
 		if (!this.config.enableSpeak && !this._tts) {
 			// lazy init if not configured but called
-			this._tts = new SineTTSProvider();
-			this._publishAdapter =
-				this._publishAdapter ?? new LiveKitPublishAdapter(this.logger);
+			this._tts = this.createTTS();
 		}
-		if (!this._tts || !this._publishAdapter) {
+		if (!this._tts) {
 			throw new Error("speak not enabled");
 		}
 		const prev = this._speakQueues.get(roomId) ?? Promise.resolve();
@@ -352,10 +372,10 @@ export class BotRunner {
 			.then(async () => {
 				this._speakingRooms.add(roomId);
 				try {
-					const publisher = this._publishAdapter;
 					const tts = this._tts;
-					if (!publisher || !tts) throw new Error("speak not enabled");
+					if (!tts) throw new Error("speak not enabled");
 					const token = await this.api.getSFUToken(roomId);
+					const publisher = this.getPublishAdapter(token.provider);
 					await publisher.join({
 						room: roomId,
 						identity: this.config.identity,
@@ -377,21 +397,19 @@ export class BotRunner {
 		pcm16: Int16Array,
 		sampleRate = 16000,
 	): Promise<void> {
-		if (!this._publishAdapter) {
-			this._publishAdapter = new LiveKitPublishAdapter(this.logger);
-		}
 		const token = await this.api.getSFUToken(roomId);
-		await this._publishAdapter.join({
+		const publisher = this.getPublishAdapter(token.provider);
+		await publisher.join({
 			room: roomId,
 			identity: this.config.identity,
 			token: token.token,
 			serverUrl: token.serverUrl,
 		});
-		await this._publishAdapter.publishPcm(roomId, pcm16, sampleRate);
+		await publisher.publishPcm(roomId, pcm16, sampleRate);
 	}
 
 	async stopSpeaking(roomId: string): Promise<void> {
-		await this._publishAdapter?.unpublish(roomId);
+		await this._publishRouter?.get().unpublish(roomId);
 		this._speakingRooms.delete(roomId);
 	}
 
@@ -433,6 +451,24 @@ export class BotRunner {
 		return this.pluginManager?.list() ?? listPlugins();
 	}
 
+	private getPublishAdapter(provider?: string) {
+		this._publishRouter ??= new SFUPublishRouter({ logger: this.logger });
+		return this._publishRouter.get(provider);
+	}
+
+	private createTTS(): TTSProvider {
+		const settings = this.config.tts ?? {};
+		if (settings.provider === "sine") return new SineTTSProvider();
+		return new EdgeTTSProvider({
+			voice: settings.voice,
+			lang: settings.lang,
+			rate: settings.rate,
+			pitch: settings.pitch,
+			volume: settings.volume,
+			timeout: settings.timeout,
+		});
+	}
+
 	private async startMediaPipeline(): Promise<void> {
 		const enableListen =
 			this.config.enableListen ??
@@ -447,21 +483,44 @@ export class BotRunner {
 				this.logger.error("Speech event dispatch error:", err);
 			});
 		});
-
-		this._speechPipeline = new PassthroughSpeechPipeline({
-			framesPerFinal: 5,
-		});
-		this._unsubSpeech = this._speechPipeline.onResult(bridge);
-		this._unsubPcm = this._pcmHub.subscribe((frame) => {
-			// pause speech while speaking in same room to reduce self-feedback
-			if (this._speakingRooms.has(frame.room)) return;
-			this._speechPipeline?.write(frame);
-		});
-		this.logger.info("[speech] using passthrough mock pipeline");
+		const asrProvider =
+			this.config.asr?.provider ??
+			(this.config.asr?.apiUrl ? "openai-compatible" : "none");
+		if (asrProvider === "openai-compatible" && this.config.asr?.apiUrl) {
+			this._speechPipeline = new OpenAICompatibleSpeechPipeline({
+				apiUrl: this.config.asr.apiUrl,
+				apiKey: this.config.asr.apiKey,
+				model: this.config.asr.model,
+				language: this.config.asr.language,
+				minSilenceMs: this.config.asr.minSilenceMs,
+				maxChunkMs: this.config.asr.maxChunkMs,
+				minChunkMs: this.config.asr.minChunkMs,
+				vadThreshold: this.config.asr.vadThreshold,
+				logger: this.logger,
+			});
+			this.logger.info("[speech] using openai-compatible pipeline");
+		} else if (asrProvider === "passthrough") {
+			this._speechPipeline = new PassthroughSpeechPipeline({
+				framesPerFinal: 5,
+			});
+			this.logger.warn("[speech] using explicit passthrough mock pipeline");
+		} else {
+			this.logger.info(
+				"[speech] no ASR provider configured; listen will not emit fake transcripts",
+			);
+		}
+		if (this._speechPipeline) {
+			this._unsubSpeech = this._speechPipeline.onResult(bridge);
+			this._unsubPcm = this._pcmHub.subscribe((frame) => {
+				// pause speech while speaking in same room to reduce self-feedback
+				if (this._speakingRooms.has(frame.room)) return;
+				this._speechPipeline?.write(frame);
+			});
+		}
 
 		if (this.config.enableSpeak) {
-			this._tts = new SineTTSProvider();
-			this._publishAdapter = new LiveKitPublishAdapter(this.logger);
+			this._tts = this.createTTS();
+			this._publishRouter = new SFUPublishRouter({ logger: this.logger });
 		}
 
 		this._listenService = new MediaListenService({

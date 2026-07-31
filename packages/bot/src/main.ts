@@ -11,6 +11,24 @@ const AUTO_JOIN_ROOMS = process.env.GOSPEAK_AUTO_JOIN_ROOMS ?? "";
 const LISTEN_ROOMS = process.env.GOSPEAK_LISTEN_ROOMS ?? "";
 const PLUGIN_DIR = process.env.GOSPEAK_PLUGIN_DIR ?? "./plugins";
 const ENABLE_SPEAK = process.env.GOSPEAK_ENABLE_SPEAK === "1";
+const TTS_PROVIDER = process.env.GOSPEAK_TTS_PROVIDER ?? "edge";
+const TTS_VOICE = process.env.GOSPEAK_TTS_VOICE ?? "";
+const TTS_LANG = process.env.GOSPEAK_TTS_LANG ?? "";
+const TTS_RATE = process.env.GOSPEAK_TTS_RATE ?? "";
+const TTS_PITCH = process.env.GOSPEAK_TTS_PITCH ?? "";
+const TTS_VOLUME = process.env.GOSPEAK_TTS_VOLUME ?? "";
+const ASR_URL = process.env.GOSPEAK_ASR_URL ?? "";
+const ASR_PROVIDER =
+	process.env.GOSPEAK_ASR_PROVIDER ?? (ASR_URL ? "openai-compatible" : "none");
+const ASR_API_KEY = process.env.GOSPEAK_ASR_API_KEY ?? "";
+const ASR_MODEL = process.env.GOSPEAK_ASR_MODEL ?? "";
+const ASR_LANGUAGE = process.env.GOSPEAK_ASR_LANGUAGE ?? "";
+
+function parseNumber(v: string | undefined): number | undefined {
+	if (!v) return undefined;
+	const n = Number(v);
+	return Number.isFinite(n) ? n : undefined;
+}
 
 function parseList(v: string): string[] | undefined {
 	const items = v
@@ -47,6 +65,30 @@ async function main(): Promise<void> {
 			Boolean(parseList(LISTEN_ROOMS)) ||
 			process.env.GOSPEAK_ENABLE_LISTEN === "1",
 		enableSpeak: ENABLE_SPEAK,
+		tts: {
+			provider: TTS_PROVIDER === "sine" ? "sine" : "edge",
+			voice: TTS_VOICE || undefined,
+			lang: TTS_LANG || undefined,
+			rate: TTS_RATE || undefined,
+			pitch: TTS_PITCH || undefined,
+			volume: TTS_VOLUME || undefined,
+		},
+		asr: {
+			provider:
+				ASR_PROVIDER === "passthrough"
+					? "passthrough"
+					: ASR_URL
+						? "openai-compatible"
+						: "none",
+			apiUrl: ASR_URL || undefined,
+			apiKey: ASR_API_KEY || undefined,
+			model: ASR_MODEL || undefined,
+			language: ASR_LANGUAGE || undefined,
+			minSilenceMs: parseNumber(process.env.GOSPEAK_ASR_MIN_SILENCE_MS),
+			maxChunkMs: parseNumber(process.env.GOSPEAK_ASR_MAX_CHUNK_MS),
+			minChunkMs: parseNumber(process.env.GOSPEAK_ASR_MIN_CHUNK_MS),
+			vadThreshold: parseNumber(process.env.GOSPEAK_ASR_VAD_THRESHOLD),
+		},
 	});
 
 	process.on("SIGINT", async () => {

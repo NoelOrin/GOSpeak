@@ -45,6 +45,17 @@ const mockLogger = {
 	error: vi.fn(),
 };
 
+function stubTicketFetch() {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => ({
+			ok: true,
+			status: 200,
+			json: async () => ({ data: { ticket: "test-ticket" } }),
+		})),
+	);
+}
+
 describe("BotRunner", () => {
 	let tmpDir: string;
 
@@ -52,6 +63,7 @@ describe("BotRunner", () => {
 		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "gospeak-bot-test-"));
 		emitted.length = 0;
 		vi.stubGlobal("WebSocket", MockWebSocket);
+		stubTicketFetch();
 	});
 
 	afterEach(() => {
@@ -147,6 +159,7 @@ describe("BotRunner", () => {
 
 beforeEach(() => {
 	vi.stubGlobal("WebSocket", MockWebSocket);
+	stubTicketFetch();
 });
 
 afterEach(() => {
@@ -155,6 +168,7 @@ afterEach(() => {
 
 beforeEach(() => {
 	vi.stubGlobal("WebSocket", MockWebSocket);
+	stubTicketFetch();
 });
 
 afterEach(() => {
