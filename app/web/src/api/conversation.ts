@@ -13,22 +13,23 @@ export interface ConversationDTO {
 	unread_count: number;
 }
 
-export interface MessageDTO {
-	id: string;
-	room: string;
+/** 私聊消息 DTO — 与后端 service.MessageDTO 对齐 */
+export interface PrivateMessageDTO {
+	uuid: string;
+	author_id: string;
 	content: string;
-	replyTo: string;
-	senderIdentity: string;
-	senderDisplay: string;
-	senderRole: string;
-	timestamp: number;
-	conversationId: string;
-	targetIdentity: string;
+	reply_to?: string;
+	edited_at?: string | null;
+	deleted: boolean;
+	created_at: string;
+	conversation_id?: string;
+	target_identity?: string;
+	client_nonce?: string;
 }
 
-export interface MessageListResult {
-	messages: MessageDTO[];
-	nextCursor?: string;
+export interface PrivateMessageListResult {
+	messages: PrivateMessageDTO[];
+	next_cursor?: string;
 }
 
 export async function listConversations(
@@ -45,7 +46,7 @@ export async function getConversationMessages(
 	conversationID: string,
 	before?: string,
 	limit?: number,
-): Promise<MessageListResult> {
+): Promise<PrivateMessageListResult> {
 	const res = (await apiClient.post({
 		url: "/api/v1/conversation/messages",
 		data: {
@@ -53,7 +54,7 @@ export async function getConversationMessages(
 			before: before || "",
 			limit: limit || 50,
 		},
-	})) as AxiosResponse<Result<MessageListResult>>;
+	})) as AxiosResponse<Result<PrivateMessageListResult>>;
 	return res.data.data ?? { messages: [] };
 }
 
@@ -64,4 +65,17 @@ export async function markConversationRead(
 		url: "/api/v1/conversation/mark-read",
 		data: { conversation_id: conversationID },
 	});
+}
+
+export async function sendDirectMessage(body: {
+	target_identity: string;
+	content: string;
+	client_nonce?: string;
+}): Promise<PrivateMessageDTO> {
+	const res = (await apiClient.post({
+		url: "/api/v1/conversation/send",
+		data: body,
+	})) as AxiosResponse<Result<PrivateMessageDTO>>;
+	if (!res.data.data) throw new Error("send failed");
+	return res.data.data;
 }

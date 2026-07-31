@@ -41,4 +41,8 @@ export const EVENTS = {
 	MESSAGE_REACTION: "message:reaction",
 	MESSAGE_ACK: "message:ack",
 	MESSAGE_ERROR: "message:error",
+	// 私聊消息事件（客户端 → 服务端）
+	PRIVATE_SEND: "private:send",
+	// 私聊消息事件（服务端推送）
+	PRIVATE_NEW: "private:new",
 } as const;
