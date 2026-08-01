@@ -1,7 +1,16 @@
+import { Portal } from "solid-js/web";
 import clsx from "clsx";
 import CirclePlus from "lucide-solid/icons/circle-plus";
 import { useNavigate } from "@tanstack/solid-router";
-import { createMemo, createSignal, For, onMount, Show } from "solid-js";
+import {
+	createEffect,
+	createMemo,
+	createSignal,
+	For,
+	onCleanup,
+	onMount,
+	Show,
+} from "solid-js";
 import CreateRoomModal from "@/components/modal/createRoomModal";
 import { chatStore } from "@/stores/chatStore";
 import domainStore from "@/stores/domainStore";
@@ -26,6 +35,43 @@ const RoomItem = (props: RoomItemPropsType) => {
 		socketStore.selectedRoomInfo()?.name === props.room.name &&
 		socketStore.selectedRoomInfo()?.domain_uuid === props.room.domain_uuid;
 	const [showPasswordModal, setShowPasswordModal] = createSignal(false);
+	const [truncated, setTruncated] = createSignal(false);
+	const [tip, setTip] = createSignal<{
+		text: string;
+		left: number;
+		top: number;
+	} | null>(null);
+	let nameRef: HTMLSpanElement | undefined;
+
+	createEffect(() => {
+		props.room.name;
+		const el = nameRef;
+		if (!el) return;
+		const check = () => setTruncated(el.scrollWidth > el.clientWidth + 1);
+		check();
+		const ro = new ResizeObserver(check);
+		ro.observe(el);
+		onCleanup(() => ro.disconnect());
+	});
+
+	const tipText = () =>
+		`${props.room.type === "text" ? "# " : ""}${props.room.name}${props.room.hasPassword ? " · 需要密码" : ""}`;
+
+	const showTip = (e: MouseEvent) => {
+		if (!truncated()) return;
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		setTip({ text: tipText(), left: rect.left, top: rect.bottom + 6 });
+	};
+
+	const hideTip = () => setTip(null);
+
+	// 滚动容器滚动时 tooltip 位置错位，捕获阶段监听滚动即时清除
+	createEffect(() => {
+		if (!tip()) return;
+		const onScroll = () => hideTip();
+		window.addEventListener("scroll", onScroll, true);
+		onCleanup(() => window.removeEventListener("scroll", onScroll, true));
+	});
 
 	const handleJoin = () => {
 		if (props.room.hasPassword) {
@@ -38,113 +84,129 @@ const RoomItem = (props: RoomItemPropsType) => {
 	};
 
 	return (
-		<div class="flex flex-col w-full overflow-hidden">
-			<div
-				class={clsx(
-					"tooltip tooltip-right w-full min-w-0",
-					isSelected() && !props.isActive ? "tooltip-open" : "",
-				)}
-				data-tip={`${props.room.type === "text" ? "# " : ""}${props.room.name}${props.room.hasPassword ? " · 需要密码" : ""}`}
-			>
-				<button
-					class={clsx(
-						"justify-between items-center px-1.5 border-0 btn btn-ghost btn-sm w-full",
-						props.isActive ? "btn-active" : "",
-						isSelected() && !props.isActive ? "bg-base-200" : "",
-					)}
-					onClick={() => {
-						if (window.matchMedia("(max-width: 767px)").matches) {
+		<>
+			<div class="flex flex-col w-full overflow-hidden">
+				<div class="w-full min-w-0">
+					<button
+						class={clsx(
+							"justify-between items-center px-1.5 border-0 btn btn-ghost btn-sm w-full",
+							props.isActive ? "btn-active" : "",
+							isSelected() && !props.isActive ? "bg-base-200" : "",
+						)}
+						onMouseEnter={showTip}
+						onMouseLeave={hideTip}
+						onClick={() => {
+							if (window.matchMedia("(max-width: 767px)").matches) {
+								handleJoin();
+							}
+						}}
+						onDblClick={() => {
 							handleJoin();
-						}
-					}}
-					onDblClick={() => {
-						handleJoin();
-					}}
-				>
-					<div class="flex min-w-0 flex-1 items-center space-x-1">
-						<span>
-							<svg
-								width="16"
-								height="16"
-								viewBox="0 0 48 48"
-								fill="none"
-								xmlns="http://www.w3.org/2000/svg"
-							>
-								<rect
-									x="17"
-									y="4"
-									width="14"
-									height="27"
-									rx="7"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="3"
-									stroke-linejoin="round"
-								/>
-								<path
-									d="M9 23C9 31.2843 15.7157 38 24 38C32.2843 38 39 31.2843 39 23"
-									stroke="currentColor"
-									stroke-width="3"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-								/>
-								<path
-									d="M24 38V44"
-									stroke="currentColor"
-									stroke-width="3"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-								/>
-							</svg>
-						</span>
-						<span class="min-w-0 flex-1 truncate whitespace-nowrap text-left text-[14px] leading-0">
-							{props.room.type === "text" ? "# " : ""}
-							{props.room.name}
-						</span>
-						<Show when={props.room.hasPassword}>
-							<span class="shrink-0 text-base-content/50">
+						}}
+					>
+						<div class="flex min-w-0 flex-1 items-center space-x-1">
+							<span>
 								<svg
-									width="14"
-									height="14"
-									viewBox="0 0 24 24"
+									width="16"
+									height="16"
+									viewBox="0 0 48 48"
 									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
+									xmlns="http://www.w3.org/2000/svg"
 								>
-									<rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-									<path d="M7 11V7a5 5 0 0 1 10 0v4" />
+									<rect
+										x="17"
+										y="4"
+										width="14"
+										height="27"
+										rx="7"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="3"
+										stroke-linejoin="round"
+									/>
+									<path
+										d="M9 23C9 31.2843 15.7157 38 24 38C32.2843 38 39 31.2843 39 23"
+										stroke="currentColor"
+										stroke-width="3"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>
+									<path
+										d="M24 38V44"
+										stroke="currentColor"
+										stroke-width="3"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>
 								</svg>
 							</span>
-						</Show>
-					</div>
-
-					<div class="shrink-0 text-[12px]">
-						<div>
-							{props.room.count}/{props.room.limit}
+							<span
+								ref={nameRef}
+								class="min-w-0 flex-1 truncate whitespace-nowrap text-left text-[14px] leading-none"
+							>
+								{props.room.type === "text" ? "# " : ""}
+								{props.room.name}
+							</span>
+							<Show when={props.room.hasPassword}>
+								<span class="shrink-0 text-base-content/50">
+									<svg
+										width="14"
+										height="14"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									>
+										<rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+										<path d="M7 11V7a5 5 0 0 1 10 0v4" />
+									</svg>
+								</span>
+							</Show>
 						</div>
-					</div>
-				</button>
-			</div>
 
-			<div class="flex flex-col w-full">
-				<For each={props.room.members}>
-					{(member) => (
-						<MemberItemButton
-							member={member}
-							onSelectMember={props.onSelectMember}
-						/>
-					)}
-				</For>
+						<div class="shrink-0 text-[12px]">
+							<div>
+								{props.room.count}/{props.room.limit}
+							</div>
+						</div>
+					</button>
+				</div>
+
+				<div class="flex flex-col w-full">
+					<For each={props.room.members}>
+						{(member) => (
+							<MemberItemButton
+								member={member}
+								onSelectMember={props.onSelectMember}
+							/>
+						)}
+					</For>
+				</div>
+				<Show when={showPasswordModal()}>
+					<PasswordModal
+						room={props.room}
+						onClose={() => setShowPasswordModal(false)}
+					/>
+				</Show>
 			</div>
-			<Show when={showPasswordModal()}>
-				<PasswordModal
-					room={props.room}
-					onClose={() => setShowPasswordModal(false)}
-				/>
-			</Show>
-		</div>
+			<Portal>
+				<Show when={tip()}>
+					{(t) => (
+						<div
+							class="pointer-events-none fixed z-[9999] top-[var(--tip-top)] left-[var(--tip-left)] whitespace-nowrap rounded-md bg-base-content px-2 py-1 text-xs font-medium text-base-100 shadow-lg"
+							style={{
+								"--tip-left": `${t().left}px`,
+								"--tip-top": `${t().top}px`,
+							}}
+						>
+							{t().text}
+						</div>
+					)}
+				</Show>
+			</Portal>
+		</>
 	);
 };
 

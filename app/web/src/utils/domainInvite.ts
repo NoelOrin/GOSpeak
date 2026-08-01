@@ -1,7 +1,7 @@
 const INVITE_CODE_PATTERN = /^[A-Z2-9]{8}$/i;
-const INVITE_LINK_PATTERN = /\/invite\/g\/([A-Z2-9]{8})/i;
+const INVITE_LINK_PATTERN = /\/invite\/d\/([A-Z2-9]{8})/i;
 
-export function extractGuildInviteCode(input: string): string | null {
+export function extractDomainInviteCode(input: string): string | null {
 	const text = input.trim();
 	if (!text) return null;
 
@@ -28,6 +28,6 @@ export function extractGuildInviteCode(input: string): string | null {
 	return null;
 }
 
-export function guildInviteUrl(code: string): string {
-	return `${window.location.origin}/invite/g/${encodeURIComponent(code)}`;
+export function domainInviteUrl(code: string): string {
+	return `${window.location.origin}/invite/d/${encodeURIComponent(code)}`;
 }

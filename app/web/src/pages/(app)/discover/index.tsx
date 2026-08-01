@@ -8,21 +8,21 @@ import {
 	Show,
 } from "solid-js";
 import {
-	type Guild,
-	joinGuild,
-	listPublicGuilds,
-	previewGuildInvite,
-} from "@/api/guild";
-import CreateGuildModal from "@/components/guild/CreateGuildModal";
-import GuildIcon from "@/components/guild/GuildIcon";
-import GuildInvitePreview from "@/components/guild/GuildInvitePreview";
-import guildStore from "@/stores/guildStore";
-import { extractGuildInviteCode } from "@/utils/guildInvite";
+	type Domain,
+	joinDomain,
+	listPublicDomains,
+	previewDomainInvite,
+} from "@/api/domain";
+import CreateDomainModal from "@/components/domain/CreateDomainModal";
+import DomainIcon from "@/components/domain/DomainIcon";
+import DomainInvitePreview from "@/components/domain/DomainInvitePreview";
+import domainStore from "@/stores/domainStore";
+import { extractDomainInviteCode } from "@/utils/domainInvite";
 
 export const Route = createFileRoute("/(app)/discover/")({
 	component: RouteComponent,
 	staticData: {
-		title: "发现服务器",
+		title: "发现域",
 		icon: "compass",
 	},
 });
@@ -38,39 +38,39 @@ function RouteComponent() {
 
 	const [previewOpen, setPreviewOpen] = createSignal(false);
 	const [previewLoading, setPreviewLoading] = createSignal(false);
-	const [previewGuild, setPreviewGuild] = createSignal<Guild | null>(null);
+	const [previewDomain, setPreviewDomain] = createSignal<Domain | null>(null);
 	const [previewCode, setPreviewCode] = createSignal("");
 	const [previewError, setPreviewError] = createSignal("");
 	const [joining, setJoining] = createSignal(false);
 
 	const [createRef, setCreateRef] = createSignal<HTMLDialogElement>();
 
-	const [publicGuilds, { refetch }] = createResource(
+	const [publicDomains, { refetch }] = createResource(
 		() => ({ keyword: keyword(), page: page(), pageSize: PAGE_SIZE }),
 		({ keyword, page, pageSize }) =>
-			listPublicGuilds(page, pageSize, keyword || undefined),
+			listPublicDomains(page, pageSize, keyword || undefined),
 	);
 
 	const totalPages = createMemo(() =>
-		Math.max(1, Math.ceil((publicGuilds()?.total ?? 0) / PAGE_SIZE)),
+		Math.max(1, Math.ceil((publicDomains()?.total ?? 0) / PAGE_SIZE)),
 	);
 
 	const isJoined = (uuid: string) =>
-		guildStore.state.myGuildUUIDs.includes(uuid);
+		domainStore.state.myDomainUUIDs.includes(uuid);
 
 	const previewJoined = () => {
-		const guild = previewGuild();
-		return !!guild && isJoined(guild.uuid);
+		const domain = previewDomain();
+		return !!domain && isJoined(domain.uuid);
 	};
 
 	async function openPreview(code: string) {
 		setPreviewOpen(true);
 		setPreviewLoading(true);
 		setPreviewError("");
-		setPreviewGuild(null);
+		setPreviewDomain(null);
 		setPreviewCode(code);
 		try {
-			setPreviewGuild(await previewGuildInvite(code));
+			setPreviewDomain(await previewDomainInvite(code));
 		} catch (e: any) {
 			setPreviewError(e?.response?.data?.msg || "邀请码无效");
 		} finally {
@@ -80,7 +80,7 @@ function RouteComponent() {
 
 	function handleInviteSubmit(e: Event) {
 		e.preventDefault();
-		const code = extractGuildInviteCode(inviteInput());
+		const code = extractDomainInviteCode(inviteInput());
 		if (!code) {
 			setPreviewOpen(true);
 			setPreviewError("未识别到邀请码或邀请链接");
@@ -96,28 +96,28 @@ function RouteComponent() {
 	}
 
 	async function joinPreview() {
-		const guild = previewGuild();
+		const domain = previewDomain();
 		const code = previewCode();
-		if (!guild || !code) return;
+		if (!domain || !code) return;
 		if (joining()) return;
-		if (isJoined(guild.uuid)) {
+		if (isJoined(domain.uuid)) {
 			setPreviewOpen(false);
 			navigate({
-				to: "/guild/$guildUUID",
-				params: { guildUUID: guild.uuid },
+				to: "/domain/$domainUUID",
+				params: { domainUUID: domain.uuid },
 			});
 			return;
 		}
 		setJoining(true);
 		setPreviewError("");
 		try {
-			const joined = await joinGuild(code);
-			guildStore.addGuild(joined);
-			guildStore.setCurrentGuild(joined.uuid);
+			const joined = await joinDomain(code);
+			domainStore.addDomain(joined);
+			domainStore.setCurrentDomain(joined.uuid);
 			setPreviewOpen(false);
 			navigate({
-				to: "/guild/$guildUUID",
-				params: { guildUUID: joined.uuid },
+				to: "/domain/$domainUUID",
+				params: { domainUUID: joined.uuid },
 			});
 		} catch (e: any) {
 			setPreviewError(e?.response?.data?.msg || "加入失败");
@@ -127,12 +127,12 @@ function RouteComponent() {
 	}
 
 	onMount(() => {
-		guildStore.loadMyGuilds();
+		domainStore.loadMyDomains();
 		void (async () => {
 			try {
 				if (!navigator.clipboard?.readText) return;
 				const text = await navigator.clipboard.readText();
-				const code = extractGuildInviteCode(text);
+				const code = extractDomainInviteCode(text);
 				if (!code) return;
 				setInviteInput(code);
 				await openPreview(code);
@@ -146,13 +146,13 @@ function RouteComponent() {
 		<div class="flex-1 min-w-0 h-full overflow-y-auto p-4 sm:p-6">
 			<div class="max-w-5xl mx-auto">
 				<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-					<h1 class="text-2xl font-bold">发现服务器</h1>
+					<h1 class="text-2xl font-bold">发现域</h1>
 					<button
 						type="button"
 						class="btn btn-primary"
 						onClick={() => createRef()?.showModal()}
 					>
-						新建服务器
+						新建域
 					</button>
 				</div>
 
@@ -162,7 +162,7 @@ function RouteComponent() {
 						class="input input-bordered flex-1 min-w-0"
 						value={searchInput()}
 						onInput={(e) => setSearchInput(e.currentTarget.value)}
-						placeholder="搜索服务器名称或描述"
+						placeholder="搜索域名称或描述"
 					/>
 					<button type="submit" class="btn btn-outline">
 						搜索
@@ -182,15 +182,15 @@ function RouteComponent() {
 					</button>
 				</form>
 
-				<Show when={publicGuilds.loading && !publicGuilds()}>
+				<Show when={publicDomains.loading && !publicDomains()}>
 					<div class="flex justify-center py-10">
 						<span class="loading loading-spinner loading-md" />
 					</div>
 				</Show>
 
-				<Show when={!publicGuilds.loading && publicGuilds.error}>
+				<Show when={!publicDomains.loading && publicDomains.error}>
 					<div role="alert" class="alert alert-error flex-wrap justify-between">
-						<span>服务器列表加载失败</span>
+						<span>域列表加载失败</span>
 						<button
 							type="button"
 							class="btn btn-sm"
@@ -201,54 +201,56 @@ function RouteComponent() {
 					</div>
 				</Show>
 
-				<Show when={publicGuilds.loading && publicGuilds()}>
+				<Show when={publicDomains.loading && publicDomains()}>
 					<div class="flex justify-center py-3">
 						<span class="loading loading-spinner loading-sm" />
 					</div>
 				</Show>
 
 				<Show
-					when={!publicGuilds.loading && !publicGuilds.error && publicGuilds()}
+					when={
+						!publicDomains.loading && !publicDomains.error && publicDomains()
+					}
 				>
 					<Show
-						when={(publicGuilds()?.guilds?.length ?? 0) > 0}
+						when={(publicDomains()?.domains?.length ?? 0) > 0}
 						fallback={
 							<div class="py-10 text-center text-base-content/50">
-								暂无公开服务器
+								暂无公开域
 							</div>
 						}
 					>
 						<div class="grid gap-3 md:grid-cols-2">
-							<For each={publicGuilds()?.guilds ?? []}>
-								{(guild) => (
+							<For each={publicDomains()?.domains ?? []}>
+								{(domain) => (
 									<div class="card bg-base-100 border border-base-300 p-4">
 										<div class="flex items-start gap-3">
-											<GuildIcon
-												name={guild.name}
-												iconUrl={guild.icon_url}
+											<DomainIcon
+												name={domain.name}
+												iconUrl={domain.icon_url}
 												class="shrink-0"
 											/>
 											<div class="min-w-0 flex-1">
 												<div class="flex items-center justify-between gap-2">
 													<span class="font-semibold truncate">
-														{guild.name}
+														{domain.name}
 													</span>
 													<span class="badge badge-ghost badge-sm shrink-0">
 														公开
 													</span>
 												</div>
 												<p class="mt-1 text-sm text-base-content/60 line-clamp-2">
-													{guild.description || "暂无描述"}
+													{domain.description || "暂无描述"}
 												</p>
 												<div class="mt-3">
 													<Show
-														when={isJoined(guild.uuid)}
+														when={isJoined(domain.uuid)}
 														fallback={
 															<button
 																type="button"
 																class="btn btn-primary btn-sm"
 																onClick={() =>
-																	void openPreview(guild.invite_code)
+																	void openPreview(domain.invite_code)
 																}
 															>
 																查看并加入
@@ -260,8 +262,8 @@ function RouteComponent() {
 															class="btn btn-outline btn-sm"
 															onClick={() =>
 																navigate({
-																	to: "/guild/$guildUUID",
-																	params: { guildUUID: guild.uuid },
+																	to: "/domain/$domainUUID",
+																	params: { domainUUID: domain.uuid },
 																})
 															}
 														>
@@ -306,9 +308,9 @@ function RouteComponent() {
 						onClose={() => setPreviewOpen(false)}
 					>
 						<div class="modal-box">
-							<h3 class="font-bold text-lg mb-4">加入服务器</h3>
-							<GuildInvitePreview
-								guild={previewGuild()}
+							<h3 class="font-bold text-lg mb-4">加入域</h3>
+							<DomainInvitePreview
+								domain={previewDomain()}
 								joined={previewJoined()}
 								loading={previewLoading()}
 								error={previewError()}
@@ -323,13 +325,13 @@ function RouteComponent() {
 					</dialog>
 				</Show>
 
-				<CreateGuildModal
+				<CreateDomainModal
 					ref={setCreateRef}
 					onClose={() => createRef()?.close()}
-					onCreated={(guild) =>
+					onCreated={(domain) =>
 						navigate({
-							to: "/guild/$guildUUID",
-							params: { guildUUID: guild.uuid },
+							to: "/domain/$domainUUID",
+							params: { domainUUID: domain.uuid },
 						})
 					}
 				/>

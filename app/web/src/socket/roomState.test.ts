@@ -27,12 +27,12 @@ const member = (
 const room = (
 	name: string,
 	members: MemberInfo[] = [],
-	guild_uuid?: string,
+	domain_uuid?: string,
 ): RoomInfo => ({
 	id: 1,
 	uuid: "u1",
 	name,
-	guild_uuid,
+	domain_uuid,
 	hasPassword: false,
 	description: "desc",
 	limit: 10,
@@ -70,18 +70,18 @@ describe("roomState reducers", () => {
 		expect(next[0].uuid).toBe("u1");
 	});
 
-	it("mergeRoomUpdated keeps same room names isolated by guild", () => {
-		const prev = [room("lobby", [member("a")], "guild-a")];
+	it("mergeRoomUpdated keeps same room names isolated by domain", () => {
+		const prev = [room("lobby", [member("a")], "domain-a")];
 		const next = mergeRoomUpdated(prev, {
-			...room("lobby", [member("b")], "guild-b"),
+			...room("lobby", [member("b")], "domain-b"),
 			id: 2,
 			uuid: "u2",
 		});
 
 		expect(next).toHaveLength(2);
-		expect(next[0].guild_uuid).toBe("guild-a");
+		expect(next[0].domain_uuid).toBe("domain-a");
 		expect(next[0].members.map((m) => m.identity)).toEqual(["a"]);
-		expect(next[1].guild_uuid).toBe("guild-b");
+		expect(next[1].domain_uuid).toBe("domain-b");
 		expect(next[1].members.map((m) => m.identity)).toEqual(["b"]);
 	});
 
@@ -119,11 +119,11 @@ describe("roomState reducers", () => {
 		expect(next[0].count).toBe(2);
 	});
 
-	it("applyMemberJoinedShell only updates the matching guild room", () => {
-		const prev = [room("lobby", [], "guild-a"), room("lobby", [], "guild-b")];
+	it("applyMemberJoinedShell only updates the matching domain room", () => {
+		const prev = [room("lobby", [], "domain-a"), room("lobby", [], "domain-b")];
 		const next = applyMemberJoinedShell(prev, {
 			room: "lobby",
-			guild_uuid: "guild-b",
+			domain_uuid: "domain-b",
 			identity: "b",
 			id: "id-b",
 		});
@@ -157,14 +157,14 @@ describe("roomState reducers", () => {
 		expect(next[0].count).toBe(1);
 	});
 
-	it("applyMemberLeft only removes from the matching guild room", () => {
+	it("applyMemberLeft only removes from the matching domain room", () => {
 		const prev = [
-			room("lobby", [member("a", { id: "id-a" })], "guild-a"),
-			room("lobby", [member("a", { id: "id-a" })], "guild-b"),
+			room("lobby", [member("a", { id: "id-a" })], "domain-a"),
+			room("lobby", [member("a", { id: "id-a" })], "domain-b"),
 		];
 		const next = applyMemberLeft(prev, {
 			room: "lobby",
-			guild_uuid: "guild-b",
+			domain_uuid: "domain-b",
 			identity: "a",
 			id: "id-a",
 		});
@@ -197,14 +197,14 @@ describe("roomState reducers", () => {
 		);
 	});
 
-	it("applyMemberUpdated only updates the matching guild room", () => {
+	it("applyMemberUpdated only updates the matching domain room", () => {
 		const prev = [
-			room("lobby", [member("a")], "guild-a"),
-			room("lobby", [member("a")], "guild-b"),
+			room("lobby", [member("a")], "domain-a"),
+			room("lobby", [member("a")], "domain-b"),
 		];
 		const next = applyMemberUpdated(prev, {
 			room: "lobby",
-			guild_uuid: "guild-a",
+			domain_uuid: "domain-a",
 			identity: "a",
 			isMicMuted: true,
 		});
@@ -226,14 +226,14 @@ describe("roomState reducers", () => {
 		expect(created[0].members).toHaveLength(1);
 	});
 
-	it("upsertRoomMembersFromAck keeps guild rooms isolated by guild_uuid", () => {
-		const prev = [room("lobby", [member("old")], "guild-a")];
-		const next = upsertRoomMembersFromAck(prev, "lobby", "guild-b", [
+	it("upsertRoomMembersFromAck keeps domain rooms isolated by domain_uuid", () => {
+		const prev = [room("lobby", [member("old")], "domain-a")];
+		const next = upsertRoomMembersFromAck(prev, "lobby", "domain-b", [
 			member("new"),
 		]);
 		expect(next).toHaveLength(2);
 		expect(next[0].members.map((m) => m.identity)).toEqual(["old"]);
-		expect(next[1].guild_uuid).toBe("guild-b");
+		expect(next[1].domain_uuid).toBe("domain-b");
 		expect(next[1].members.map((m) => m.identity)).toEqual(["new"]);
 	});
 
@@ -244,9 +244,9 @@ describe("roomState reducers", () => {
 		expect(addCreatedRoom(prev, room("lobby"))).toBe(prev);
 	});
 
-	it("addCreatedRoom treats same room name in different guilds as distinct", () => {
-		const prev = [room("lobby", [], "guild-a")];
-		const next = addCreatedRoom(prev, room("lobby", [], "guild-b"));
+	it("addCreatedRoom treats same room name in different domains as distinct", () => {
+		const prev = [room("lobby", [], "domain-a")];
+		const next = addCreatedRoom(prev, room("lobby", [], "domain-b"));
 		expect(next).toHaveLength(2);
 	});
 });

@@ -10,7 +10,7 @@ export interface CreateRoomReq {
 	audio_only: boolean;
 	allow_audience: boolean;
 	type?: "text" | "voice";
-	guild_uuid?: string;
+	domain_uuid?: string;
 }
 
 export interface RoomRecord {
@@ -26,7 +26,7 @@ export interface RoomRecord {
 	created_by?: string;
 	createdAt?: string;
 	updatedAt?: string;
-	guild_uuid?: string;
+	domain_uuid?: string;
 }
 
 export async function createRoom(req: CreateRoomReq): Promise<RoomRecord> {

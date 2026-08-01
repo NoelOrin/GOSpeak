@@ -3,6 +3,7 @@ import { firstAccessibleManagePath } from "@/components/manage/manageNav";
 import { hasManageAccess } from "@/utils/permissions";
 
 const MANAGE_PATHS = [
+	"domains",
 	"permission",
 	"sfu",
 	"users",

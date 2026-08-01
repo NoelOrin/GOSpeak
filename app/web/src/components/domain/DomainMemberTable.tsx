@@ -2,10 +2,10 @@ import type { Component } from "solid-js";
 import { For, Show } from "solid-js";
 import RefreshCw from "lucide-solid/icons/refresh-cw";
 import UserX from "lucide-solid/icons/user-x";
-import type { GuildMember } from "@/api/guild";
+import type { DomainMember } from "@/api/domain";
 
-export interface GuildMemberTableProps {
-	members: GuildMember[];
+export interface DomainMemberTableProps {
+	members: DomainMember[];
 	ownerUUID?: string;
 	currentUserUUID?: string;
 	canKick?: boolean;
@@ -44,12 +44,12 @@ export function roleLabel(role: string) {
 	}
 }
 
-export function memberDisplayName(member: GuildMember) {
+export function memberDisplayName(member: DomainMember) {
 	return member.nickname || member.user_uuid;
 }
 
 export function canKickMember(
-	member: Pick<GuildMember, "user_uuid">,
+	member: Pick<DomainMember, "user_uuid">,
 	ownerUUID: string | undefined,
 	currentUserUUID: string | undefined,
 	canKick: boolean,
@@ -63,7 +63,7 @@ export function canKickMember(
 }
 
 export function getKickAction(
-	member: Pick<GuildMember, "user_uuid">,
+	member: Pick<DomainMember, "user_uuid">,
 	ownerUUID: string | undefined,
 	currentUserUUID: string | undefined,
 	canKick: boolean,
@@ -83,7 +83,7 @@ export function getKickAction(
 }
 
 export function getMemberTableStatus(
-	members: GuildMember[],
+	members: DomainMember[],
 	loading: boolean,
 	error: string | null,
 ): MemberTableStatus {
@@ -98,13 +98,13 @@ export function isMemberTableBusy(loading: boolean, refreshing: boolean) {
 }
 
 export async function executeKickMember(
-	guildUUID: string,
+	domainUUID: string,
 	userUUID: string,
-	kick: (guildUUID: string, userUUID: string) => Promise<void>,
-	refreshMembers: (guildUUID: string) => Promise<unknown>,
+	kick: (domainUUID: string, userUUID: string) => Promise<void>,
+	refreshMembers: (domainUUID: string) => Promise<unknown>,
 ) {
-	await kick(guildUUID, userUUID);
-	await refreshMembers(guildUUID);
+	await kick(domainUUID, userUUID);
+	await refreshMembers(domainUUID);
 }
 
 function formatDate(value?: string) {
@@ -114,7 +114,7 @@ function formatDate(value?: string) {
 	return date.toLocaleString();
 }
 
-const GuildMemberTable: Component<GuildMemberTableProps> = (props) => {
+const DomainMemberTable: Component<DomainMemberTableProps> = (props) => {
 	const members = () => props.members ?? [];
 	const loading = () => props.loading ?? false;
 	const refreshing = () => props.refreshing ?? false;
@@ -273,4 +273,4 @@ const GuildMemberTable: Component<GuildMemberTableProps> = (props) => {
 	);
 };
 
-export default GuildMemberTable;
+export default DomainMemberTable;

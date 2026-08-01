@@ -1,11 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/solid-router";
 import { createMemo, createResource, createSignal, Show } from "solid-js";
-import { joinGuild, previewGuildInvite } from "@/api/guild";
-import GuildInvitePreview from "@/components/guild/GuildInvitePreview";
-import guildStore from "@/stores/guildStore";
-import { extractGuildInviteCode } from "@/utils/guildInvite";
+import { joinDomain, previewDomainInvite } from "@/api/domain";
+import DomainInvitePreview from "@/components/domain/DomainInvitePreview";
+import domainStore from "@/stores/domainStore";
+import { extractDomainInviteCode } from "@/utils/domainInvite";
 
-export const Route = createFileRoute("/(app)/invite/g/$code/")({
+export const Route = createFileRoute("/(app)/invite/d/$code/")({
 	component: RouteComponent,
 	staticData: {
 		title: "邀请加入",
@@ -16,39 +16,39 @@ export const Route = createFileRoute("/(app)/invite/g/$code/")({
 function RouteComponent() {
 	const params = Route.useParams();
 	const navigate = useNavigate();
-	const inviteCode = createMemo(() => extractGuildInviteCode(params().code));
-	const [guild] = createResource(inviteCode, (code) => {
+	const inviteCode = createMemo(() => extractDomainInviteCode(params().code));
+	const [domain] = createResource(inviteCode, (code) => {
 		if (!code) throw new Error("invalid invite code");
-		return previewGuildInvite(code);
+		return previewDomainInvite(code);
 	});
 	const [joining, setJoining] = createSignal(false);
 	const [error, setError] = createSignal("");
 
 	const joined = createMemo(() => {
-		const current = guild();
-		return !!current && guildStore.state.myGuildUUIDs.includes(current.uuid);
+		const current = domain();
+		return !!current && domainStore.state.myDomainUUIDs.includes(current.uuid);
 	});
 
 	async function handleJoin() {
-		const current = guild();
+		const current = domain();
 		if (!current) return;
 		if (joining()) return;
 		if (joined()) {
 			navigate({
-				to: "/guild/$guildUUID",
-				params: { guildUUID: current.uuid },
+				to: "/domain/$domainUUID",
+				params: { domainUUID: current.uuid },
 			});
 			return;
 		}
 		setJoining(true);
 		setError("");
 		try {
-			const joinedGuild = await joinGuild(current.invite_code);
-			guildStore.addGuild(joinedGuild);
-			guildStore.setCurrentGuild(joinedGuild.uuid);
+			const joinedDomain = await joinDomain(current.invite_code);
+			domainStore.addDomain(joinedDomain);
+			domainStore.setCurrentDomain(joinedDomain.uuid);
 			navigate({
-				to: "/guild/$guildUUID",
-				params: { guildUUID: joinedGuild.uuid },
+				to: "/domain/$domainUUID",
+				params: { domainUUID: joinedDomain.uuid },
 			});
 		} catch (e: any) {
 			setError(e?.response?.data?.msg || "加入失败");
@@ -65,15 +65,15 @@ function RouteComponent() {
 						when={inviteCode()}
 						fallback={
 							<div class="alert alert-error">
-								<span>邀请链接无效或服务器不存在</span>
+								<span>邀请链接无效或域不存在</span>
 							</div>
 						}
 					>
-						<GuildInvitePreview
-							guild={guild()}
+						<DomainInvitePreview
+							domain={domain()}
 							joined={joined()}
-							loading={guild.loading}
-							error={guild.error ? "邀请链接无效或服务器不存在" : error()}
+							loading={domain.loading}
+							error={domain.error ? "邀请链接无效或域不存在" : error()}
 							joining={joining()}
 							onConfirm={handleJoin}
 						/>

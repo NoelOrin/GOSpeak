@@ -1,11 +1,11 @@
 import { type Component, createSignal } from "solid-js";
-import { type Guild, createGuild } from "@/api/guild";
-import guildStore from "@/stores/guildStore";
+import { type Domain, createDomain } from "@/api/domain";
+import domainStore from "@/stores/domainStore";
 
-const CreateGuildModal: Component<{
+const CreateDomainModal: Component<{
 	ref: HTMLDialogElement | ((el: HTMLDialogElement) => void);
 	onClose: () => void;
-	onCreated?: (guild: Guild) => void;
+	onCreated?: (domain: Domain) => void;
 }> = (props) => {
 	const [name, setName] = createSignal("");
 	const [description, setDescription] = createSignal("");
@@ -15,21 +15,21 @@ const CreateGuildModal: Component<{
 
 	const handleCreate = async () => {
 		if (!name().trim()) {
-			setError("请输入服务器名称");
+			setError("请输入域名称");
 			return;
 		}
 		setLoading(true);
 		setError("");
 		try {
-			const guild = await createGuild({
+			const domain = await createDomain({
 				name: name().trim(),
 				description: description().trim() || undefined,
 				is_public: isPublic(),
 			});
-			guildStore.addGuild(guild);
-			guildStore.setCurrentGuild(guild.uuid);
+			domainStore.addDomain(domain);
+			domainStore.setCurrentDomain(domain.uuid);
 			props.onClose();
-			props.onCreated?.(guild);
+			props.onCreated?.(domain);
 		} catch (e: any) {
 			setError(e?.response?.data?.msg || "创建失败");
 		} finally {
@@ -40,26 +40,26 @@ const CreateGuildModal: Component<{
 	return (
 		<dialog ref={props.ref} class="modal" onClose={props.onClose}>
 			<div class="modal-box">
-				<h3 class="font-bold text-lg mb-4">创建语音服务器</h3>
+				<h3 class="font-bold text-lg mb-4">创建域</h3>
 				<div class="form-control mb-3">
-					<label class="label" for="guild-create-name">
-						<span class="label-text">服务器名称</span>
+					<label class="label" for="domain-create-name">
+						<span class="label-text">域名称</span>
 					</label>
 					<input
-						id="guild-create-name"
+						id="domain-create-name"
 						type="text"
 						class="input input-bordered"
 						value={name()}
 						onInput={(e) => setName(e.currentTarget.value)}
-						placeholder="输入服务器名称"
+						placeholder="输入域名称"
 					/>
 				</div>
 				<div class="form-control mb-3">
-					<label class="label" for="guild-create-desc">
+					<label class="label" for="domain-create-desc">
 						<span class="label-text">描述（可选）</span>
 					</label>
 					<textarea
-						id="guild-create-desc"
+						id="domain-create-desc"
 						class="textarea textarea-bordered"
 						value={description()}
 						onInput={(e) => setDescription(e.currentTarget.value)}
@@ -75,7 +75,7 @@ const CreateGuildModal: Component<{
 							checked={isPublic()}
 							onChange={(e) => setIsPublic(e.currentTarget.checked)}
 						/>
-						<span class="label-text">公开服务器</span>
+						<span class="label-text">公开域</span>
 					</label>
 				</div>
 				{error() && (
@@ -100,4 +100,4 @@ const CreateGuildModal: Component<{
 	);
 };
 
-export default CreateGuildModal;
+export default CreateDomainModal;

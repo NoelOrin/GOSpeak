@@ -5,7 +5,7 @@ import { showToast } from "solid-notifications";
 import { createRoom as createRoomApi } from "@/api/room";
 import { Form, type FormFieldConfig } from "@/components/form";
 import { socketStore } from "@/stores/socketStore";
-import guildStore from "@/stores/guildStore";
+import domainStore from "@/stores/domainStore";
 
 export interface CreateRoomConfig {
 	name: string;
@@ -16,7 +16,7 @@ export interface CreateRoomConfig {
 	allowAudience: boolean;
 	description: string;
 	type: "text" | "voice";
-	guildUUID?: string;
+	domainUUID?: string;
 }
 
 interface CreateRoomModalProps {
@@ -63,7 +63,7 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 					allowAudience: value.allowAudience,
 					description: value.description.trim(),
 					type: value.type === "text" ? "text" : "voice",
-					guildUUID: guildStore.state.currentGuildUUID ?? undefined,
+					domainUUID: domainStore.state.currentDomainUUID ?? undefined,
 				};
 
 				const room = await createRoomApi({
@@ -74,7 +74,7 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 					audio_only: payload.audioOnly,
 					allow_audience: payload.allowAudience,
 					type: payload.type,
-					guild_uuid: payload.guildUUID,
+					domain_uuid: payload.domainUUID,
 				});
 				await props.onCreated?.(payload);
 
@@ -83,7 +83,7 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 					id: room.id,
 					uuid: room.uuid,
 					name: room.name,
-					guild_uuid: room.guild_uuid,
+					domain_uuid: room.domain_uuid,
 					hasPassword: !!payload.password,
 					description: room.description,
 					limit: room.limit,
@@ -99,7 +99,10 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 				props.onClose();
 
 				if (payload.joinAfterCreate) {
-					navigate({ to: "/channel" });
+					const domainUUID = payload.domainUUID;
+					if (domainUUID)
+						navigate({ to: "/domain/$domainUUID", params: { domainUUID } });
+					else navigate({ to: "/discover" });
 				}
 			} catch {}
 		},
@@ -150,7 +153,7 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 		},
 		{
 			name: "joinAfterCreate",
-			label: "创建后进入频道页",
+			label: "创建后进入域页",
 			type: "switch",
 		},
 		{

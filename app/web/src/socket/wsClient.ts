@@ -51,7 +51,12 @@ function resolveWsUrl(url: string): string {
 	return `${trimmed}/ws`;
 }
 
-export function createWSClient(): SignalSocket & {
+export interface WSClientOptions {
+	/** 自动重连前重新获取短时 ws ticket，避免复用过期凭证。 */
+	refreshTicket?: () => Promise<string>;
+}
+
+export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 	connect: (url: string, token?: string) => void;
 	disconnect: () => void;
 	offServerEvent: (event: string, cb: (...args: any[]) => void) => void;
@@ -78,6 +83,7 @@ export function createWSClient(): SignalSocket & {
 	let currentToken = "";
 	let shouldReconnect = true;
 	let reconnectAttempts = 0;
+	const refreshTicket = options.refreshTicket;
 
 	function connect(url: string, token?: string) {
 		currentUrl = url;
@@ -149,7 +155,7 @@ export function createWSClient(): SignalSocket & {
 				const jitter = Math.floor(Math.random() * 1000);
 				reconnectAttempts += 1;
 				reconnectTimer = setTimeout(() => {
-					connect(currentUrl, currentToken);
+					void reconnectWithFreshToken();
 				}, delay + jitter);
 			}
 		};
@@ -157,6 +163,22 @@ export function createWSClient(): SignalSocket & {
 		wsHandle.onerror = () => {
 			for (const cb of connectErrorCbs) cb(new Error("websocket error"));
 		};
+	}
+
+	async function reconnectWithFreshToken() {
+		if (!shouldReconnect || !currentUrl) return;
+		try {
+			const nextToken = refreshTicket ? await refreshTicket() : currentToken;
+			connect(currentUrl, nextToken);
+		} catch (err) {
+			shouldReconnect = false;
+			currentUrl = "";
+			for (const cb of connectErrorCbs) {
+				cb(
+					err instanceof Error ? err : new Error("failed to refresh ws ticket"),
+				);
+			}
+		}
 	}
 
 	function disconnect() {

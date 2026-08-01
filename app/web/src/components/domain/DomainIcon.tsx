@@ -1,7 +1,7 @@
 import type { Component } from "solid-js";
 import OptionSquare from "@/components/common/optionSquare";
 
-interface GuildIconProps {
+interface DomainIconProps {
 	name: string;
 	iconUrl?: string;
 	active?: boolean;
@@ -9,7 +9,7 @@ interface GuildIconProps {
 	class?: string;
 }
 
-const GuildIcon: Component<GuildIconProps> = (props) => {
+const DomainIcon: Component<DomainIconProps> = (props) => {
 	const initials = () => props.name.slice(0, 2).toUpperCase();
 	return (
 		<OptionSquare
@@ -30,4 +30,4 @@ const GuildIcon: Component<GuildIconProps> = (props) => {
 	);
 };
 
-export default GuildIcon;
+export default DomainIcon;

@@ -2,19 +2,19 @@ import type { MemberInfo, RoomInfo } from "./types";
 
 interface RoomIdentity {
 	name: string;
-	guild_uuid?: string;
+	domain_uuid?: string;
 }
 
 function sameRoom(a: RoomIdentity, b: RoomIdentity): boolean {
-	return a.name === b.name && (a.guild_uuid || "") === (b.guild_uuid || "");
+	return a.name === b.name && (a.domain_uuid || "") === (b.domain_uuid || "");
 }
 
 function matchesRoom(
 	r: RoomIdentity,
 	roomName: string,
-	guild_uuid?: string,
+	domain_uuid?: string,
 ): boolean {
-	return sameRoom(r, { name: roomName, guild_uuid });
+	return sameRoom(r, { name: roomName, domain_uuid });
 }
 
 export function mergeRoomUpdated(prev: RoomInfo[], room: RoomInfo): RoomInfo[] {
@@ -27,7 +27,7 @@ export function mergeRoomUpdated(prev: RoomInfo[], room: RoomInfo): RoomInfo[] {
 				id: room.id ?? 0,
 				uuid: room.uuid ?? "",
 				name: room.name,
-				guild_uuid: room.guild_uuid,
+				domain_uuid: room.domain_uuid,
 				hasPassword: room.hasPassword,
 				description: room.description,
 				limit: room.limit ?? 0,
@@ -45,7 +45,7 @@ export function mergeRoomUpdated(prev: RoomInfo[], room: RoomInfo): RoomInfo[] {
 			? {
 					...r,
 					name: room.name,
-					guild_uuid: room.guild_uuid ?? r.guild_uuid,
+					domain_uuid: room.domain_uuid ?? r.domain_uuid,
 					hasPassword: room.hasPassword,
 					members: room.members ?? [],
 					count: room.count ?? room.members?.length ?? 0,
@@ -62,11 +62,11 @@ export function applyMemberJoinedShell(
 		identity: string;
 		id: string;
 		stream?: string;
-		guild_uuid?: string;
+		domain_uuid?: string;
 	},
 ): RoomInfo[] {
 	return prev.map((r) => {
-		if (!matchesRoom(r, data.room, data.guild_uuid)) return r;
+		if (!matchesRoom(r, data.room, data.domain_uuid)) return r;
 		return {
 			...r,
 			count: r.count + 1,
@@ -92,10 +92,10 @@ export function applyMemberJoinedShell(
 
 export function applyMemberLeft(
 	prev: RoomInfo[],
-	data: { room: string; identity: string; id: string; guild_uuid?: string },
+	data: { room: string; identity: string; id: string; domain_uuid?: string },
 ): RoomInfo[] {
 	return prev.map((r) => {
-		if (!matchesRoom(r, data.room, data.guild_uuid)) return r;
+		if (!matchesRoom(r, data.room, data.domain_uuid)) return r;
 		return {
 			...r,
 			count: Math.max(0, r.count - 1),
@@ -110,11 +110,11 @@ export function applyMemberUpdated(
 		room: string;
 		identity: string;
 		isMicMuted: boolean;
-		guild_uuid?: string;
+		domain_uuid?: string;
 	},
 ): RoomInfo[] {
 	return prev.map((r) => {
-		if (!matchesRoom(r, data.room, data.guild_uuid)) return r;
+		if (!matchesRoom(r, data.room, data.domain_uuid)) return r;
 		return {
 			...r,
 			members: r.members.map((m) =>
@@ -129,10 +129,10 @@ export function applyMemberUpdated(
 export function upsertRoomMembersFromAck(
 	prev: RoomInfo[],
 	roomName: string,
-	guildUUID: string | undefined,
+	domainUUID: string | undefined,
 	ackMembers: MemberInfo[],
 ): RoomInfo[] {
-	const identity: RoomIdentity = { name: roomName, guild_uuid: guildUUID };
+	const identity: RoomIdentity = { name: roomName, domain_uuid: domainUUID };
 	const exists = prev.some((r) => sameRoom(r, identity));
 	if (!exists) {
 		return [
@@ -141,7 +141,7 @@ export function upsertRoomMembersFromAck(
 				id: 0,
 				uuid: "",
 				name: roomName,
-				guild_uuid: guildUUID,
+				domain_uuid: domainUUID,
 				hasPassword: false,
 				limit: 0,
 				members: ackMembers,

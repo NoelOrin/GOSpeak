@@ -14,6 +14,7 @@ import { createMemo, For } from "solid-js";
 import { hasPermission } from "@/utils/permissions";
 
 type ManagePath =
+	| "domains"
 	| "permission"
 	| "sfu"
 	| "users"
@@ -29,6 +30,7 @@ type ManagePath =
 type ManageTab = {
 	path: ManagePath;
 	to:
+		| "/manage/domains"
 		| "/manage/permission"
 		| "/manage/sfu"
 		| "/manage/users"
@@ -47,6 +49,13 @@ type ManageTab = {
 };
 
 const MANAGE_TABS: ManageTab[] = [
+	{
+		path: "domains",
+		to: "/manage/domains",
+		label: "域",
+		icon: ServerCog,
+		permissions: ["domain:read"],
+	},
 	// 用户与权限
 	{
 		path: "users",

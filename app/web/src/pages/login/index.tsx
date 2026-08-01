@@ -16,6 +16,12 @@ import ForgotPasswordModal from "./components/ForgotPasswordModal";
 
 export const Route = createFileRoute("/login/")({
 	beforeLoad: async () => {
+		if (
+			typeof window !== "undefined" &&
+			new URLSearchParams(window.location.hash.slice(1)).get("oauth") === "1"
+		) {
+			return;
+		}
 		// 已有会话或 access 过期但仍可无感刷新时，直接进首页
 		const ok = await userStore.ensureSession();
 		if (ok) {
@@ -45,6 +51,7 @@ function LoginPage() {
 
 	onMount(() => {
 		const params = new URLSearchParams(window.location.search);
+		const oauthParams = new URLSearchParams(window.location.hash.slice(1));
 		if (params.get("banned") === "1") {
 			setBanned(true);
 			window.history.replaceState({}, "", "/login");
@@ -59,9 +66,9 @@ function LoginPage() {
 		}
 
 		// OAuth 回调：后端把 token 带回登录页，完成会话落地后进首页。
-		if (params.get("oauth") === "1") {
-			const accessToken = params.get("access_token") || "";
-			const refreshToken = params.get("refresh_token") || "";
+		if (oauthParams.get("oauth") === "1") {
+			const accessToken = oauthParams.get("access_token") || "";
+			const refreshToken = oauthParams.get("refresh_token") || "";
 			window.history.replaceState({}, "", "/login");
 			if (!accessToken || !refreshToken) {
 				showToast("OAuth 登录失败：缺少 token", { type: "error" });

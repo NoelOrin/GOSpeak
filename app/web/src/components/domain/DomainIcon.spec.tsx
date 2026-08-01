@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-// GuildIcon 的纯逻辑测试（不依赖 DOM 渲染）
+// DomainIcon 的纯逻辑测试（不依赖 DOM 渲染）
 
 function getInitials(name: string): string {
 	return name.slice(0, 2).toUpperCase();
 }
 
-describe("GuildIcon logic", () => {
+describe("DomainIcon logic", () => {
 	it("extracts first two characters as initials", () => {
-		expect(getInitials("Test Guild")).toBe("TE");
+		expect(getInitials("Test Domain")).toBe("TE");
 	});
 
 	it("handles short names", () => {
@@ -24,40 +24,40 @@ describe("GuildIcon logic", () => {
 	});
 });
 
-// GuildList props 校验
-describe("GuildList data shape", () => {
-	it("valid guild list item shape", () => {
-		const guild = {
+// DomainList props 校验
+describe("DomainList data shape", () => {
+	it("valid domain list item shape", () => {
+		const domain = {
 			uuid: "g-1",
-			name: "Test Guild",
+			name: "Test Domain",
 			icon_url: "",
 			is_public: true,
 			owner_uuid: "u-1",
 		};
-		expect(guild.uuid).toBeDefined();
-		expect(guild.name).toBeDefined();
-		expect(typeof guild.is_public).toBe("boolean");
+		expect(domain.uuid).toBeDefined();
+		expect(domain.name).toBeDefined();
+		expect(typeof domain.is_public).toBe("boolean");
 	});
 
-	it("handles guild list with icon_url", () => {
-		const guild = {
+	it("handles domain list with icon_url", () => {
+		const domain = {
 			uuid: "g-2",
-			name: "Icon Guild",
+			name: "Icon Domain",
 			icon_url: "https://example.com/icon.png",
 		};
-		expect(guild.icon_url).toContain("https://");
+		expect(domain.icon_url).toContain("https://");
 	});
 });
 
-// CreateGuildModal 表单验证逻辑
-describe("CreateGuildModal validation", () => {
+// CreateDomainModal 表单验证逻辑
+describe("CreateDomainModal validation", () => {
 	it("rejects empty name", () => {
 		const name = "";
 		expect(name.trim().length > 0).toBe(false);
 	});
 
 	it("accepts valid name", () => {
-		const name = "My Guild";
+		const name = "My Domain";
 		expect(name.trim().length > 0).toBe(true);
 	});
 
@@ -67,7 +67,7 @@ describe("CreateGuildModal validation", () => {
 	});
 
 	it("accepts name within limit", () => {
-		const shortName = "My Guild";
+		const shortName = "My Domain";
 		expect(shortName.length <= 100).toBe(true);
 	});
 });

@@ -3,15 +3,15 @@ import Settings from "lucide-solid/icons/settings";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import ConfirmModal from "@/components/common/ConfirmModal";
-import InviteShareModal from "@/components/guild/InviteShareModal";
-import guildStore from "@/stores/guildStore";
+import InviteShareModal from "@/components/domain/InviteShareModal";
+import domainStore from "@/stores/domainStore";
 import userStore from "@/stores/userStore";
-import { extractGuildInviteCode, guildInviteUrl } from "@/utils/guildInvite";
+import { extractDomainInviteCode, domainInviteUrl } from "@/utils/domainInvite";
 import { hasPermission } from "@/utils/permissions";
 
-export const Route = createFileRoute("/(app)/guild/$guildUUID/")({
+export const Route = createFileRoute("/(app)/domain/$domainUUID/")({
 	component: RouteComponent,
-	staticData: { title: "语音服务器", icon: "icon-channel" },
+	staticData: { title: "语音域", icon: "icon-channel" },
 });
 
 function apiErrorMessage(error: unknown): string {
@@ -28,8 +28,13 @@ function apiErrorMessage(error: unknown): string {
 function RouteComponent() {
 	const params = Route.useParams();
 	const navigate = useNavigate();
-	const { state, setCurrentGuild, loadMembers, leaveAndClear, deleteAndClear } =
-		guildStore;
+	const {
+		state,
+		setCurrentDomain,
+		loadMembers,
+		leaveAndClear,
+		deleteAndClear,
+	} = domainStore;
 	const [loading, setLoading] = createSignal(false);
 	const [error, setError] = createSignal("");
 	const [confirmAction, setConfirmAction] = createSignal<
@@ -39,34 +44,34 @@ function RouteComponent() {
 	let confirmDialogRef!: HTMLDialogElement;
 
 	createEffect(() => {
-		const uuid = params().guildUUID;
-		setCurrentGuild(uuid);
+		const uuid = params().domainUUID;
+		setCurrentDomain(uuid);
 		void loadMembers(uuid).catch(() => {});
 	});
 
 	const currentUser = () => userStore.user();
-	const guild = createMemo(() => state.guildCache[params().guildUUID]);
+	const domain = createMemo(() => state.domainCache[params().domainUUID]);
 	const isOwner = createMemo(
-		() => !!currentUser() && guild()?.owner_uuid === currentUser()?.uuid,
+		() => !!currentUser() && domain()?.owner_uuid === currentUser()?.uuid,
 	);
 	const isJoined = createMemo(() =>
-		state.myGuildUUIDs.includes(params().guildUUID),
+		state.myDomainUUIDs.includes(params().domainUUID),
 	);
 	const currentRole = createMemo(
 		() =>
-			state.memberCache[params().guildUUID]?.find(
+			state.memberCache[params().domainUUID]?.find(
 				(member) => member.user_uuid === currentUser()?.uuid,
 			)?.role_name,
 	);
 	const canManage = createMemo(
 		() =>
-			isOwner() || currentRole() === "admin" || hasPermission("guild:manage"),
+			isOwner() || currentRole() === "admin" || hasPermission("domain:manage"),
 	);
 	const inviteCode = createMemo(() => {
-		const code = guild()?.invite_code || "";
-		return extractGuildInviteCode(code) || "";
+		const code = domain()?.invite_code || "";
+		return extractDomainInviteCode(code) || "";
 	});
-	const inviteUrl = createMemo(() => guildInviteUrl(inviteCode()));
+	const inviteUrl = createMemo(() => domainInviteUrl(inviteCode()));
 
 	async function copyInviteCode() {
 		const code = inviteCode();
@@ -106,7 +111,7 @@ function RouteComponent() {
 		setLoading(true);
 		setError("");
 		try {
-			await leaveAndClear(params().guildUUID);
+			await leaveAndClear(params().domainUUID);
 			setConfirmAction(null);
 			navigate({ to: "/" });
 		} catch (e) {
@@ -123,7 +128,7 @@ function RouteComponent() {
 		setLoading(true);
 		setError("");
 		try {
-			await deleteAndClear(params().guildUUID);
+			await deleteAndClear(params().domainUUID);
 			setConfirmAction(null);
 			navigate({ to: "/" });
 		} catch (e) {
@@ -137,8 +142,10 @@ function RouteComponent() {
 
 	return (
 		<div class="flex-1 flex flex-col p-4">
-			<div class="text-2xl font-bold mb-2">{guild()?.name || "Loading..."}</div>
-			<p class="text-base-content/60 mb-4">{guild()?.description || ""}</p>
+			<div class="text-2xl font-bold mb-2">
+				{domain()?.name || "Loading..."}
+			</div>
+			<p class="text-base-content/60 mb-4">{domain()?.description || ""}</p>
 			<div class="divider" />
 			<div class="flex flex-wrap items-center gap-4 text-sm text-base-content/40 mb-4">
 				<Show when={inviteCode()}>
@@ -160,7 +167,7 @@ function RouteComponent() {
 						分享邀请
 					</button>
 				</Show>
-				<span>成员上限: {guild()?.max_rooms || "无限"}</span>
+				<span>成员上限: {domain()?.max_rooms || "无限"}</span>
 			</div>
 			<div class="flex gap-2">
 				<Show when={canManage()}>
@@ -169,8 +176,8 @@ function RouteComponent() {
 						class="btn btn-sm btn-outline"
 						onClick={() =>
 							navigate({
-								to: "/guild/$guildUUID/manage",
-								params: { guildUUID: params().guildUUID },
+								to: "/manage/domains/$domainUUID",
+								params: { domainUUID: params().domainUUID },
 							})
 						}
 					>
@@ -179,7 +186,7 @@ function RouteComponent() {
 					</button>
 				</Show>
 			</div>
-			<Show when={guild()}>
+			<Show when={domain()}>
 				<Show when={error()}>
 					<div class="text-error text-sm mb-2">{error()}</div>
 				</Show>
@@ -190,7 +197,7 @@ function RouteComponent() {
 							onClick={requestLeave}
 							disabled={loading()}
 						>
-							{loading() ? "处理中..." : "离开服务器"}
+							{loading() ? "处理中..." : "离开域"}
 						</button>
 					</Show>
 					<Show when={isOwner()}>
@@ -199,7 +206,7 @@ function RouteComponent() {
 							onClick={requestDelete}
 							disabled={loading()}
 						>
-							{loading() ? "处理中..." : "删除服务器"}
+							{loading() ? "处理中..." : "删除域"}
 						</button>
 					</Show>
 				</div>
@@ -214,12 +221,12 @@ function RouteComponent() {
 
 			<ConfirmModal
 				open={confirmAction() !== null}
-				title={confirmAction() === "delete" ? "删除服务器" : "离开服务器"}
+				title={confirmAction() === "delete" ? "删除域" : "离开域"}
 				message={
 					<span>
 						{confirmAction() === "delete"
-							? "确定删除此服务器？此操作不可撤销。"
-							: "确定离开此服务器？"}
+							? "确定删除此域？此操作不可撤销。"
+							: "确定离开此域？"}
 						<Show when={error()}>
 							<span class="mt-2 block text-error">{error()}</span>
 						</Show>

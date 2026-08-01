@@ -1,41 +1,41 @@
 import type { Component } from "solid-js";
 import { Show } from "solid-js";
-import type { Guild } from "@/api/guild";
-import GuildIcon from "./GuildIcon";
+import type { Domain } from "@/api/domain";
+import DomainIcon from "./DomainIcon";
 
-export type GuildInvitePreviewStatus =
+export type DomainInvitePreviewStatus =
 	| "loading"
 	| "error"
 	| "ready"
 	| "ready-with-error";
 
-export interface GuildInviteAction {
+export interface DomainInviteAction {
 	label: string;
 	disabled: boolean;
 	onClick: () => void;
 }
 
-export function getGuildInvitePreviewStatus(
+export function getDomainInvitePreviewStatus(
 	loading: boolean,
 	error: string | null | undefined,
-	guild: Guild | null | undefined,
-): GuildInvitePreviewStatus {
-	if (!guild && loading) return "loading";
-	if (!guild && error) return "error";
-	if (!guild) return "loading";
+	domain: Domain | null | undefined,
+): DomainInvitePreviewStatus {
+	if (!domain && loading) return "loading";
+	if (!domain && error) return "error";
+	if (!domain) return "loading";
 	return error ? "ready-with-error" : "ready";
 }
 
-export function getGuildInviteAction(
-	guild: Guild | null | undefined,
+export function getDomainInviteAction(
+	domain: Domain | null | undefined,
 	joined: boolean,
 	joining: boolean,
 	onConfirm: () => void,
-): GuildInviteAction | null {
-	if (!guild) return null;
+): DomainInviteAction | null {
+	if (!domain) return null;
 	if (joined) {
 		return {
-			label: "进入服务器",
+			label: "进入域",
 			disabled: false,
 			onClick: onConfirm,
 		};
@@ -47,8 +47,8 @@ export function getGuildInviteAction(
 	};
 }
 
-export interface GuildInvitePreviewProps {
-	guild?: Guild | null;
+export interface DomainInvitePreviewProps {
+	domain?: Domain | null;
 	joined?: boolean;
 	loading?: boolean;
 	error?: string | null;
@@ -57,16 +57,16 @@ export interface GuildInvitePreviewProps {
 	onCancel?: () => void;
 }
 
-const GuildInvitePreview: Component<GuildInvitePreviewProps> = (props) => {
+const DomainInvitePreview: Component<DomainInvitePreviewProps> = (props) => {
 	const status = () =>
-		getGuildInvitePreviewStatus(
+		getDomainInvitePreviewStatus(
 			!!props.loading,
 			props.error || null,
-			props.guild,
+			props.domain,
 		);
 	const action = () =>
-		getGuildInviteAction(
-			props.guild,
+		getDomainInviteAction(
+			props.domain,
 			!!props.joined,
 			!!props.joining,
 			props.onConfirm,
@@ -86,18 +86,18 @@ const GuildInvitePreview: Component<GuildInvitePreviewProps> = (props) => {
 				</div>
 			</Show>
 
-			<Show when={props.guild}>
-				{(guild) => (
+			<Show when={props.domain}>
+				{(domain) => (
 					<div class="flex items-start gap-3 mb-5">
-						<GuildIcon
-							name={guild().name}
-							iconUrl={guild().icon_url}
+						<DomainIcon
+							name={domain().name}
+							iconUrl={domain().icon_url}
 							class="shrink-0"
 						/>
 						<div class="min-w-0 flex-1">
-							<div class="font-semibold">{guild().name}</div>
+							<div class="font-semibold">{domain().name}</div>
 							<p class="text-sm text-base-content/60 mt-1">
-								{guild().description || "暂无描述"}
+								{domain().description || "暂无描述"}
 							</p>
 						</div>
 					</div>
@@ -129,4 +129,4 @@ const GuildInvitePreview: Component<GuildInvitePreviewProps> = (props) => {
 	);
 };
 
-export default GuildInvitePreview;
+export default DomainInvitePreview;

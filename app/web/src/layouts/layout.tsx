@@ -28,6 +28,7 @@ import Header from "@/layouts/common/header";
 import Main from "@/layouts/common/main";
 import Sidebar from "@/layouts/common/sidebar";
 import { chatStore } from "@/stores/chatStore";
+import domainStore from "@/stores/domainStore";
 import { socketStore } from "@/stores/socketStore";
 import { hasManageAccess } from "@/utils/permissions";
 
@@ -39,7 +40,7 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 	const isMobile = useIsMobile();
 	useTitle();
 
-	const isChannel = () => location().pathname.startsWith("/channel");
+	const isDomain = () => location().pathname.startsWith("/domain");
 	const isManage = () => location().pathname.startsWith("/manage");
 	const isHome = () =>
 		location().pathname === "/" || location().pathname.startsWith("/index");
@@ -59,7 +60,7 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 		localStorage.getItem("vertSplit") || "50%",
 	);
 
-	// 移动端：列表 vs 舞台；频道内 tab
+	// 移动端：列表 vs 舞台；域内 tab
 	const [mobileStage, setMobileStage] = createSignal(false);
 	const [stageTab, setStageTab] = createSignal<MobileStageTab>("voice");
 
@@ -71,7 +72,7 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 
 	// 进房自动切舞台；退房回列表
 	createEffect(() => {
-		if (!isMobile() || !isChannel()) {
+		if (!isMobile() || !isDomain()) {
 			setMobileStage(false);
 			return;
 		}
@@ -161,11 +162,19 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 				</button>
 				<button
 					type="button"
-					class={itemClass(isChannel())}
-					onClick={() => navigate({ to: "/channel" })}
+					class={itemClass(isDomain())}
+					onClick={() => {
+						const uuid = domainStore.state.currentDomainUUID;
+						if (uuid)
+							navigate({
+								to: "/domain/$domainUUID",
+								params: { domainUUID: uuid },
+							});
+						else navigate({ to: "/discover" });
+					}}
 				>
 					<Headphones size={20} strokeWidth={2.1} />
-					<span>频道</span>
+					<span>域</span>
 				</button>
 				<button type="button" class={itemClass(false)} onClick={openSettings}>
 					<Settings size={20} strokeWidth={2.1} />
@@ -212,8 +221,8 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 
 	const MobileLayout = () => (
 		<div class="flex flex-col flex-1 h-full min-h-0 overflow-hidden">
-			{/* 频道舞台：选中房间后全屏 */}
-			<Show when={isChannel() && mobileStage()}>
+			{/* 域舞台：选中房间后全屏 */}
+			<Show when={isDomain() && mobileStage()}>
 				<div class="flex flex-col flex-1 min-h-0 overflow-hidden bg-base-200">
 					<div class="flex items-center gap-1 h-11 px-1 border-b border-base-300 bg-base-100 shrink-0">
 						<button
@@ -257,11 +266,11 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 			</Show>
 
 			{/* 列表 / 内容层 */}
-			<Show when={!(isChannel() && mobileStage())}>
+			<Show when={!(isDomain() && mobileStage())}>
 				<div class="flex flex-col flex-1 min-h-0 overflow-hidden">
 					<div class="flex-1 min-h-0 overflow-hidden border-t border-base-300">
-						{/* 频道：房间列表 */}
-						<Show when={isChannel()}>
+						{/* 域：房间列表 */}
+						<Show when={isDomain()}>
 							<div class="flex flex-col h-full bg-base-100">
 								<div class="flex-1 min-h-0 overflow-hidden">
 									<DynamicRender />
@@ -278,7 +287,7 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 							</div>
 						</Show>
 						{/* 首页 / 其他：主内容 */}
-						<Show when={!isChannel() && !isManage()}>
+						<Show when={!isDomain() && !isManage()}>
 							<div class="h-full overflow-y-auto bg-base-200">{children}</div>
 						</Show>
 					</div>
@@ -289,7 +298,7 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 				</div>
 			</Show>
 
-			<Show when={!(isChannel() && mobileStage())}>
+			<Show when={!(isDomain() && mobileStage())}>
 				<MobileBottomNav />
 			</Show>
 		</div>
@@ -315,13 +324,13 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 						<Main>
 							<div
 								class="flex-1 border-color border-t w-full h-full bg-base-200"
-								style={{ display: isChannel() ? "none" : undefined }}
+								style={{ display: isDomain() ? "none" : undefined }}
 							>
 								{children}
 							</div>
 							<div
 								class="flex-1 border-color border-t w-full h-full bg-base-200"
-								style={{ display: isChannel() ? undefined : "none" }}
+								style={{ display: isDomain() ? undefined : "none" }}
 							>
 								<div class="flex flex-col h-full">
 									<div
@@ -355,7 +364,7 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 			<Show when={!isMobile()}>
 				<Header />
 			</Show>
-			<Show when={isMobile() && !(isChannel() && mobileStage())}>
+			<Show when={isMobile() && !(isDomain() && mobileStage())}>
 				<Header />
 			</Show>
 

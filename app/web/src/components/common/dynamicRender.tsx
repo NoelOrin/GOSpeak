@@ -10,8 +10,7 @@ import RoomList from "@/components/room/roomList";
 // 路径前缀 -> 左侧面板组件（长前缀优先匹配）
 const PREFIX_MAP: [string, (...args: any[]) => JSX.Element][] = [
 	["/manage", ManageNav],
-	["/guild", RoomList],
-	["/channel", RoomList],
+	["/domain", RoomList],
 	["/chat", ConversationList],
 	["/", HomePage],
 ];

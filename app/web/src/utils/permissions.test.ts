@@ -7,35 +7,35 @@ vi.mock("idb-keyval", () => ({
 }));
 import { rolePermissions } from "./permissions";
 
-const guildPermissions = [
-	"guild:create",
-	"guild:read",
-	"guild:manage",
-	"guild:delete",
-	"guild:invite",
-	"guild:kick",
-	"guild:role:manage",
+const domainPermissions = [
+	"domain:create",
+	"domain:read",
+	"domain:manage",
+	"domain:delete",
+	"domain:invite",
+	"domain:kick",
+	"domain:role:manage",
 ];
 
 describe("rolePermissions", () => {
-	it("admin has all guild permissions", () => {
-		for (const code of guildPermissions) {
+	it("admin has all domain permissions", () => {
+		for (const code of domainPermissions) {
 			expect(rolePermissions.admin).toContain(code);
 		}
 	});
 
-	it("keeps guild management permissions in the admin fallback", () => {
+	it("keeps domain management permissions in the admin fallback", () => {
 		expect(rolePermissions.admin).toEqual(
 			expect.arrayContaining([
-				"guild:manage",
-				"guild:delete",
-				"guild:invite",
-				"guild:kick",
+				"domain:manage",
+				"domain:delete",
+				"domain:invite",
+				"domain:kick",
 			]),
 		);
 	});
 
-	it("user has create guild permission", () => {
-		expect(rolePermissions.user).toContain("guild:create");
+	it("user has create domain permission", () => {
+		expect(rolePermissions.user).toContain("domain:create");
 	});
 });

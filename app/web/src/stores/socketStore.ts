@@ -23,7 +23,7 @@ import {
 import { createTabLock } from "@/socket/tabLock";
 import { chatStore } from "@/stores/chatStore";
 import userStore from "@/stores/userStore";
-import guildStore from "@/stores/guildStore";
+import domainStore from "@/stores/domainStore";
 
 export { EVENTS } from "@/socket/events";
 
@@ -62,13 +62,13 @@ import type {
 
 export const socketStore = createRoot(() => {
 	// 3. adapter + signals
-	const adapter = createWSClient();
+	const adapter = createWSClient({ refreshTicket: getWSTicket });
 
 	const [connected, setConnected] = createSignal(false);
 	const [rooms, setRooms] = createSignal<RoomInfo[]>([]);
 	const [currentRoom, setCurrentRoom] = createSignal<string | null>(null);
-	const currentGuildUUID = createMemo<string | null>(
-		() => guildStore.state.currentGuildUUID ?? null,
+	const currentDomainUUID = createMemo<string | null>(
+		() => domainStore.state.currentDomainUUID ?? null,
 	);
 	// members 派生自 rooms[] 中当前房，消除 members/rooms 双源时序竞态
 	const members = createMemo<MemberInfo[]>(
@@ -76,13 +76,13 @@ export const socketStore = createRoot(() => {
 			rooms().find(
 				(r) =>
 					r.name === currentRoom() &&
-					(r.guild_uuid || "") === (currentGuildUUID() || ""),
+					(r.domain_uuid || "") === (currentDomainUUID() || ""),
 			)?.members ?? [],
 	);
 
 	createEffect(() => {
 		if (connected()) {
-			void currentGuildUUID();
+			void currentDomainUUID();
 			listRooms();
 		}
 	});
@@ -203,7 +203,7 @@ export const socketStore = createRoot(() => {
 				identity: string;
 				id: string;
 				stream?: string;
-				guild_uuid?: string;
+				domain_uuid?: string;
 			}) => {
 				console.log("[Socket] member:joined", data.identity);
 				// 即时追加 shell 成员，富化字段由后续 room:updated 覆盖。
@@ -211,14 +211,14 @@ export const socketStore = createRoot(() => {
 				emitActivity({
 					type: "member_joined",
 					room: data.room,
-					guild_uuid: data.guild_uuid,
+					domain_uuid: data.domain_uuid,
 					identity: data.identity,
 					timestamp: Date.now(),
 				});
 				emitPresence({
 					type: "member_joined",
 					room: data.room,
-					guild_uuid: data.guild_uuid,
+					domain_uuid: data.domain_uuid,
 					identity: data.identity,
 					timestamp: Date.now(),
 				});
@@ -231,21 +231,21 @@ export const socketStore = createRoot(() => {
 				room: string;
 				identity: string;
 				id: string;
-				guild_uuid?: string;
+				domain_uuid?: string;
 			}) => {
 				console.log("[Socket] member:left", data.identity);
 				setRooms((prev) => applyMemberLeft(prev, data));
 				emitActivity({
 					type: "member_left",
 					room: data.room,
-					guild_uuid: data.guild_uuid,
+					domain_uuid: data.domain_uuid,
 					identity: data.identity,
 					timestamp: Date.now(),
 				});
 				emitPresence({
 					type: "member_left",
 					room: data.room,
-					guild_uuid: data.guild_uuid,
+					domain_uuid: data.domain_uuid,
 					identity: data.identity,
 					timestamp: Date.now(),
 				});
@@ -258,7 +258,7 @@ export const socketStore = createRoot(() => {
 				room: string;
 				identity: string;
 				isMicMuted: boolean;
-				guild_uuid?: string;
+				domain_uuid?: string;
 			}) => {
 				// members 由 rooms[] 派生，仅更新 rooms[] 即可
 				setRooms((prev) => applyMemberUpdated(prev, data));
@@ -279,7 +279,7 @@ export const socketStore = createRoot(() => {
 				room: string;
 				targetIdentity: string;
 				enforcement?: string;
-				guild_uuid?: string;
+				domain_uuid?: string;
 			}) => {
 				console.log(
 					"[Socket] room:kicked",
@@ -344,13 +344,13 @@ export const socketStore = createRoot(() => {
 			(event: {
 				room?: string;
 				identities?: string[];
-				guild_uuid?: string;
+				domain_uuid?: string;
 			}) => {
 				const room = event?.room;
 				if (
 					room &&
 					(room !== currentRoom() ||
-						(event.guild_uuid || "") !== (currentGuildUUID() || ""))
+						(event.domain_uuid || "") !== (currentDomainUUID() || ""))
 				)
 					return;
 				setSpeakingIdentities(event?.identities ?? []);
@@ -404,7 +404,7 @@ export const socketStore = createRoot(() => {
 		adapter.emitFireAndForget(EVENTS.ROOM_CREATE, {
 			room: name,
 			password,
-			guild_uuid: currentGuildUUID() ?? undefined,
+			domain_uuid: currentDomainUUID() ?? undefined,
 		});
 	}
 
@@ -418,6 +418,10 @@ export const socketStore = createRoot(() => {
 	const mediasoupSignal = createMediasoupSignal({
 		emitAck: (event, payload) => signalEmit(event, payload),
 		onServerEvent: (event, cb) => adapter.onServerEvent(event, cb),
+	});
+
+	createEffect(() => {
+		if (!userStore.accessToken()) disconnect();
 	});
 
 	function clearCurrentRoom() {
@@ -452,7 +456,7 @@ export const socketStore = createRoot(() => {
 					room,
 					identity,
 					password,
-					guild_uuid: currentGuildUUID() ?? undefined,
+					domain_uuid: currentDomainUUID() ?? undefined,
 				}),
 			)
 			.then((data) => {
@@ -472,7 +476,7 @@ export const socketStore = createRoot(() => {
 		// room:updated / room:list:result 负责刷新列表。ack 后再拉一次列表兜底。
 		return signalEmit(EVENTS.ROOM_LEAVE, {
 			room,
-			guild_uuid: currentGuildUUID() ?? undefined,
+			domain_uuid: currentDomainUUID() ?? undefined,
 		}).then((data) => {
 			listRooms();
 			return data;
@@ -486,7 +490,7 @@ export const socketStore = createRoot(() => {
 					room,
 					identity,
 					stream,
-					guild_uuid: currentGuildUUID() ?? undefined,
+					domain_uuid: currentDomainUUID() ?? undefined,
 				}),
 			)
 			.then((data) => {
@@ -497,7 +501,7 @@ export const socketStore = createRoot(() => {
 						upsertRoomMembersFromAck(
 							prev,
 							data.room,
-							currentGuildUUID() ?? undefined,
+							currentDomainUUID() ?? undefined,
 							ackMembers,
 						),
 					);
@@ -594,7 +598,7 @@ export const socketStore = createRoot(() => {
 
 	function listRooms() {
 		adapter.emitFireAndForget(EVENTS.ROOM_LIST, {
-			guild_uuid: currentGuildUUID() ?? undefined,
+			domain_uuid: currentDomainUUID() ?? undefined,
 		});
 	}
 
@@ -602,7 +606,7 @@ export const socketStore = createRoot(() => {
 		adapter.emitFireAndForget(EVENTS.ROOM_KICK, {
 			room,
 			targetIdentity,
-			guild_uuid: currentGuildUUID() ?? undefined,
+			domain_uuid: currentDomainUUID() ?? undefined,
 		});
 	}
 
@@ -612,7 +616,7 @@ export const socketStore = createRoot(() => {
 			room,
 			identity,
 			isMicMuted,
-			guild_uuid: currentGuildUUID() ?? undefined,
+			domain_uuid: currentDomainUUID() ?? undefined,
 		});
 	}
 
@@ -621,7 +625,7 @@ export const socketStore = createRoot(() => {
 			room,
 			identity,
 			speaking,
-			guild_uuid: currentGuildUUID() ?? undefined,
+			domain_uuid: currentDomainUUID() ?? undefined,
 		});
 	}
 
@@ -658,7 +662,7 @@ export const socketStore = createRoot(() => {
 		connecting,
 		rooms,
 		currentRoom,
-		currentGuildUUID,
+		currentDomainUUID,
 		members,
 		selectedRoomInfo,
 		activeSFUProvider,

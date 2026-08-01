@@ -1,34 +1,34 @@
 import { describe, expect, it, vi } from "vitest";
-import type { GuildMember } from "@/api/guild";
+import type { DomainMember } from "@/api/domain";
 import {
 	canKickMember,
 	executeKickMember,
 	getKickAction,
 	getMemberTableStatus,
 	isMemberTableBusy,
-} from "./GuildMemberTable";
-import { validateGuildForm } from "../../pages/(app)/guild/$guildUUID/manage";
+} from "./DomainMemberTable";
+import { validateDomainForm } from "../../pages/(app)/manage/domains/$domainUUID/index";
 
-const owner: GuildMember = {
+const owner: DomainMember = {
 	id: 1,
-	guild_uuid: "g-1",
+	domain_uuid: "g-1",
 	user_uuid: "u-owner",
 	nickname: "owner",
 	role_name: "owner",
 	joined_at: "2026-01-01",
 };
 
-const member: GuildMember = {
+const member: DomainMember = {
 	id: 2,
-	guild_uuid: "g-1",
+	domain_uuid: "g-1",
 	user_uuid: "u-member",
 	nickname: "member",
 	role_name: "member",
 	joined_at: "2026-01-02",
 };
 
-describe("GuildMemberTable kick logic", () => {
-	it("does not allow kicking the guild owner", () => {
+describe("DomainMemberTable kick logic", () => {
+	it("does not allow kicking the domain owner", () => {
 		expect(canKickMember(owner, "u-owner", "u-member", true)).toBe(false);
 		expect(
 			getKickAction(owner, "u-owner", "u-member", true, vi.fn()),
@@ -68,7 +68,7 @@ describe("GuildMemberTable kick logic", () => {
 	});
 });
 
-describe("GuildMemberTable status logic", () => {
+describe("DomainMemberTable status logic", () => {
 	it("shows loading while no members have loaded", () => {
 		expect(getMemberTableStatus([], true, null)).toBe("loading");
 	});
@@ -94,8 +94,8 @@ describe("GuildMemberTable status logic", () => {
 	});
 });
 
-describe("GuildMemberTable kick flow", () => {
-	it("calls kickGuildMember and refreshes members with the same guild UUID", async () => {
+describe("DomainMemberTable kick flow", () => {
+	it("calls kickDomainMember and refreshes members with the same domain UUID", async () => {
 		const kick = vi.fn().mockResolvedValue(undefined);
 		const refresh = vi.fn().mockResolvedValue([]);
 
@@ -116,32 +116,32 @@ describe("GuildMemberTable kick flow", () => {
 	});
 });
 
-describe("Guild manage form validation", () => {
-	it("rejects an empty guild name", () => {
-		expect(validateGuildForm("   ", 20)).toEqual({
-			name: "服务器名称不能为空",
+describe("Domain manage form validation", () => {
+	it("rejects an empty domain name", () => {
+		expect(validateDomainForm("   ", 20)).toEqual({
+			name: "域名称不能为空",
 		});
 	});
 
 	it("rejects max_rooms below one", () => {
-		expect(validateGuildForm("Guild", 0)).toEqual({
+		expect(validateDomainForm("Domain", 0)).toEqual({
 			maxRooms: "房间上限必须是大于等于 1 的整数",
 		});
 	});
 
 	it("rejects non-integer max_rooms", () => {
-		expect(validateGuildForm("Guild", 1.5)).toEqual({
+		expect(validateDomainForm("Domain", 1.5)).toEqual({
 			maxRooms: "房间上限必须是大于等于 1 的整数",
 		});
 	});
 
 	it("rejects empty max_rooms", () => {
-		expect(validateGuildForm("Guild", "")).toEqual({
+		expect(validateDomainForm("Domain", "")).toEqual({
 			maxRooms: "房间上限必须是大于等于 1 的整数",
 		});
 	});
 
 	it("accepts a valid name and integer room limit", () => {
-		expect(validateGuildForm("  My Guild  ", 20)).toEqual({});
+		expect(validateDomainForm("  My Domain  ", 20)).toEqual({});
 	});
 });

@@ -34,7 +34,10 @@ const QuickActions = (props: QuickActionsProps) => {
 		}
 		const target = [...rooms].sort((a, b) => b.count - a.count)[0];
 		socketStore.selectRoom(target);
-		navigate({ to: "/channel" });
+		const domainUUID = target.domain_uuid;
+		if (domainUUID)
+			navigate({ to: "/domain/$domainUUID", params: { domainUUID } });
+		else navigate({ to: "/discover" });
 	};
 
 	return (
@@ -82,10 +85,18 @@ const QuickActions = (props: QuickActionsProps) => {
 					<button
 						type="button"
 						class={`btn justify-between rounded-lg border-0 bg-base-200 px-4 text-left normal-case hover:bg-base-300 ${props.compact ? "h-18" : "h-24"}`}
-						onClick={() => navigate({ to: "/channel" })}
+						onClick={() => {
+							const uuid = socketStore.currentDomainUUID();
+							if (uuid)
+								navigate({
+									to: "/domain/$domainUUID",
+									params: { domainUUID: uuid },
+								});
+							else navigate({ to: "/discover" });
+						}}
 					>
 						<div>
-							<div class="font-medium">前往频道列表</div>
+							<div class="font-medium">前往域</div>
 							<div class="mt-1 text-xs text-base-content/60">
 								查看全部房间与在线成员
 							</div>
