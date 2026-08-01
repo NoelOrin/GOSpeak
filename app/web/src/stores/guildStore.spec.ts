@@ -1,67 +1,338 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Guild, GuildMember } from "@/api/guild";
+import { createGuildStore } from "./guildStore";
 
-// Mock the api functions used by guildStore
-vi.mock("@/api/guild", () => ({
-	myGuilds: vi.fn(),
-	getGuild: vi.fn(),
-	guildMembers: vi.fn(),
+const { myGuildsMock, getGuildMock, guildMembersMock } = vi.hoisted(() => ({
+	myGuildsMock: vi.fn(),
+	getGuildMock: vi.fn(),
+	guildMembersMock: vi.fn(),
 }));
 
-import { getGuild, guildMembers, myGuilds } from "@/api/guild";
+vi.mock("@/api/guild", () => ({
+	myGuilds: myGuildsMock,
+	getGuild: getGuildMock,
+	guildMembers: guildMembersMock,
+}));
 
-// Store 需要重新导入
-// 由于 store 是 createRoot 的，直接模拟有点复杂
-// 我们测试核心逻辑函数
+function makeGuild(overrides: Partial<Guild> = {}): Guild {
+	return {
+		id: 1,
+		uuid: "g-1",
+		name: "Test Guild",
+		icon_url: "",
+		description: "",
+		owner_uuid: "u-1",
+		invite_code: "",
+		max_rooms: 20,
+		is_public: false,
+		created_at: "2026-01-01T00:00:00Z",
+		...overrides,
+	};
+}
 
-describe("guildStore logic", () => {
+function makeMembers(): GuildMember[] {
+	return [
+		{
+			id: 1,
+			guild_uuid: "g-1",
+			user_uuid: "u-1",
+			nickname: "Owner",
+			role_name: "owner",
+			joined_at: "2026-01-01T00:00:00Z",
+		},
+		{
+			id: 2,
+			guild_uuid: "g-1",
+			user_uuid: "u-2",
+			nickname: "Member",
+			role_name: "member",
+			joined_at: "2026-01-02T00:00:00Z",
+		},
+	];
+}
+
+function deferred<T>() {
+	let resolve!: (value: T | PromiseLike<T>) => void;
+	let reject!: (reason?: unknown) => void;
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res;
+		reject = rej;
+	});
+	return { promise, resolve, reject };
+}
+
+describe("guildStore", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
 
-	it("loadMyGuilds fetches and returns UUIDs", async () => {
-		(myGuilds as any).mockResolvedValue(["g-1", "g-2"]);
-		const uuids = await myGuilds();
-		expect(uuids).toHaveLength(2);
-		expect(uuids[0]).toBe("g-1");
+	it("adds a guild so UUID, cache, and current guild are immediately readable", () => {
+		const store = createGuildStore();
+		const guild = makeGuild();
+
+		store.addGuild(guild);
+		store.setCurrentGuild(guild.uuid);
+
+		expect(store.state.myGuildUUIDs).toContain(guild.uuid);
+		expect(store.state.guildCache[guild.uuid]).toEqual(guild);
+		expect(store.state.currentGuildUUID).toBe(guild.uuid);
 	});
 
-	it("ensureGuildLoaded fetches guild if not cached", async () => {
-		const guild = { uuid: "g-1", name: "Test Guild" };
-		(getGuild as any).mockResolvedValue(guild);
-		const result = await getGuild("g-1");
-		expect(result.name).toBe("Test Guild");
+	it("removes a guild from ids and caches after leave or delete", async () => {
+		const store = createGuildStore();
+		const guild = makeGuild({ uuid: "g-1" });
+
+		store.addGuild(guild);
+		store.setCurrentGuild("g-1");
+		store.removeGuild("g-1");
+
+		expect(store.state.myGuildUUIDs).not.toContain("g-1");
+		expect(store.state.guildCache["g-1"]).toBeUndefined();
+		expect(store.state.memberCache["g-1"]).toBeUndefined();
+		expect(store.state.currentGuildUUID).toBeNull();
 	});
 
-	it("setCurrentGuild triggers ensureGuildLoaded", async () => {
-		(getGuild as any).mockResolvedValue({ uuid: "g-1", name: "Loaded" });
+	it("keeps a failed member refresh retryable", async () => {
+		guildMembersMock.mockRejectedValueOnce(new Error("network"));
+		const store = createGuildStore();
 
-		// 模拟 store 行为
-		const uuid = "g-1";
-		const guild = await getGuild(uuid);
-
-		expect(guild.uuid).toBe("g-1");
-		expect(getGuild).toHaveBeenCalledWith("g-1");
+		await expect(store.loadMembers("g-1")).rejects.toThrow("network");
+		expect(store.state.memberLoading["g-1"]).toBe(false);
+		expect(store.state.memberErrors["g-1"]).toBe("network");
 	});
 
-	it("loadMembers fetches and returns members", async () => {
-		const members = [
-			{ id: 1, user_uuid: "u-1", role_name: "admin" },
-			{ id: 2, user_uuid: "u-2", role_name: "member" },
+	it("caches members after a successful refresh", async () => {
+		const members = makeMembers();
+		guildMembersMock.mockResolvedValue(members);
+		const store = createGuildStore();
+
+		await store.loadMembers("g-1");
+
+		expect(store.state.memberCache["g-1"]).toEqual(members);
+		expect(store.state.memberLoading["g-1"]).toBe(false);
+		expect(store.state.memberErrors["g-1"]).toBeNull();
+	});
+
+	it("keeps the previous member cache and allows a retry after failure", async () => {
+		const members = makeMembers();
+		guildMembersMock.mockResolvedValueOnce(members);
+		const store = createGuildStore();
+
+		await store.loadMembers("g-1");
+		guildMembersMock.mockRejectedValueOnce(new Error("network"));
+		await expect(store.loadMembers("g-1")).rejects.toThrow("network");
+
+		expect(store.state.memberCache["g-1"]).toEqual(members);
+		expect(store.state.memberErrors["g-1"]).toBe("network");
+
+		const refreshed = [
+			...members,
+			{
+				id: 3,
+				guild_uuid: "g-1",
+				user_uuid: "u-3",
+				nickname: "Newcomer",
+				role_name: "member",
+				joined_at: "2026-01-03T00:00:00Z",
+			},
 		];
-		(guildMembers as any).mockResolvedValue(members);
-		const result = await guildMembers("g-1");
-		expect(result).toHaveLength(2);
-		expect(result[0].user_uuid).toBe("u-1");
+		guildMembersMock.mockResolvedValueOnce(refreshed);
+		await store.loadMembers("g-1");
+
+		expect(store.state.memberCache["g-1"]).toEqual(refreshed);
+		expect(store.state.memberErrors["g-1"]).toBeNull();
 	});
 
-	it("handles empty guild list gracefully", async () => {
-		(myGuilds as any).mockResolvedValue([]);
-		const uuids = await myGuilds();
-		expect(uuids).toEqual([]);
+	it("loads a guild into the cache when missing", async () => {
+		const guild = makeGuild();
+		getGuildMock.mockResolvedValue(guild);
+		const store = createGuildStore();
+
+		await store.ensureGuildLoaded("g-1");
+
+		expect(store.state.guildCache["g-1"]).toEqual(guild);
+		expect(store.state.guildLoading["g-1"]).toBe(false);
+		expect(store.state.guildErrors["g-1"]).toBeNull();
 	});
 
-	it("handles API error in loadMyGuilds", async () => {
-		(myGuilds as any).mockRejectedValue(new Error("API error"));
-		await expect(myGuilds()).rejects.toThrow("API error");
+	it("reports a guild load failure without blocking retry", async () => {
+		getGuildMock.mockRejectedValueOnce(new Error("network"));
+		const store = createGuildStore();
+
+		await expect(store.ensureGuildLoaded("g-1")).rejects.toThrow("network");
+		expect(store.state.guildLoading["g-1"]).toBe(false);
+		expect(store.state.guildErrors["g-1"]).toBe("network");
+	});
+
+	it("loads my guild UUIDs and resets global loading", async () => {
+		myGuildsMock.mockResolvedValue(["g-1", "g-2"]);
+		const store = createGuildStore();
+
+		const promise = store.loadMyGuilds();
+		expect(store.state.loading).toBe(true);
+		await promise;
+
+		expect(store.state.myGuildUUIDs).toEqual(["g-1", "g-2"]);
+		expect(store.state.loading).toBe(false);
+	});
+
+	it("keeps loading true until the newest overlapping loadMyGuilds resolves", async () => {
+		const first = deferred<string[]>();
+		const second = deferred<string[]>();
+		myGuildsMock
+			.mockReturnValueOnce(first.promise)
+			.mockReturnValueOnce(second.promise);
+		const store = createGuildStore();
+
+		const firstPromise = store.loadMyGuilds();
+		const secondPromise = store.loadMyGuilds();
+		expect(store.state.loading).toBe(true);
+
+		first.resolve(["g-1"]);
+		await firstPromise;
+		expect(store.state.loading).toBe(true);
+
+		second.resolve(["g-1", "g-2"]);
+		await secondPromise;
+		expect(store.state.myGuildUUIDs).toEqual(["g-1", "g-2"]);
+		expect(store.state.loading).toBe(false);
+	});
+
+	it("resets global loading when loadMyGuilds fails", async () => {
+		myGuildsMock.mockRejectedValue(new Error("network"));
+		const store = createGuildStore();
+
+		await expect(store.loadMyGuilds()).rejects.toThrow("network");
+		expect(store.state.loading).toBe(false);
+	});
+
+	it("updates an existing guild cache in place", () => {
+		const store = createGuildStore();
+		const guild = makeGuild();
+		store.addGuild(guild);
+
+		const updated = makeGuild({ name: "Updated Guild" });
+		store.updateCachedGuild(updated);
+
+		expect(store.state.guildCache["g-1"]).toEqual(updated);
+	});
+
+	it("does not repopulate guild cache when a load resolves after removal", async () => {
+		const { promise, resolve } = deferred<Guild>();
+		getGuildMock.mockReturnValueOnce(promise);
+		const store = createGuildStore();
+
+		const loading = store.ensureGuildLoaded("g-1");
+		store.removeGuild("g-1");
+		resolve(makeGuild({ name: "Stale Guild" }));
+		await loading;
+
+		expect(store.state.guildCache["g-1"]).toBeUndefined();
+		expect(store.state.guildLoading["g-1"]).toBeUndefined();
+		expect(store.state.guildErrors["g-1"]).toBeUndefined();
+	});
+
+	it("does not let a stale guild load overwrite a fresh re-add", async () => {
+		const { promise, resolve } = deferred<Guild>();
+		getGuildMock.mockReturnValueOnce(promise);
+		const store = createGuildStore();
+
+		const loading = store.ensureGuildLoaded("g-1");
+		store.removeGuild("g-1");
+		const fresh = makeGuild({ name: "Fresh Guild" });
+		store.addGuild(fresh);
+		resolve(makeGuild({ name: "Stale Guild" }));
+		await loading;
+
+		expect(store.state.guildCache["g-1"]).toEqual(fresh);
+		expect(store.state.myGuildUUIDs).toEqual(["g-1"]);
+	});
+
+	it("does not repopulate member cache when a load resolves after removal", async () => {
+		const { promise, resolve } = deferred<GuildMember[]>();
+		guildMembersMock.mockReturnValueOnce(promise);
+		const store = createGuildStore();
+
+		const loading = store.loadMembers("g-1");
+		store.removeGuild("g-1");
+		resolve(makeMembers());
+		await loading;
+
+		expect(store.state.memberCache["g-1"]).toBeUndefined();
+		expect(store.state.memberLoading["g-1"]).toBeUndefined();
+		expect(store.state.memberErrors["g-1"]).toBeUndefined();
+	});
+	it("does not start a removed guild member load after removal", async () => {
+		guildMembersMock.mockResolvedValue(makeMembers());
+		const store = createGuildStore();
+
+		store.removeGuild("g-1");
+		await store.loadMembers("g-1");
+
+		expect(guildMembersMock).not.toHaveBeenCalled();
+		expect(store.state.memberCache["g-1"]).toBeUndefined();
+		expect(store.state.memberLoading["g-1"]).toBeUndefined();
+		expect(store.state.memberErrors["g-1"]).toBeUndefined();
+	});
+
+	it("does not let a stale my guilds response re-add a removed guild", async () => {
+		const { promise, resolve } = deferred<string[]>();
+		myGuildsMock.mockReturnValueOnce(promise);
+		const store = createGuildStore();
+
+		const loading = store.loadMyGuilds();
+		store.removeGuild("g-1");
+		resolve(["g-1"]);
+		await loading;
+
+		expect(store.state.myGuildUUIDs).not.toContain("g-1");
+		expect(store.state.loading).toBe(false);
+	});
+
+	it("does not let a stale my guilds response drop a freshly added guild", async () => {
+		const { promise, resolve } = deferred<string[]>();
+		myGuildsMock.mockReturnValueOnce(promise);
+		const store = createGuildStore();
+
+		const loading = store.loadMyGuilds();
+		store.addGuild(makeGuild({ uuid: "g-2" }));
+		resolve([]);
+		await loading;
+
+		expect(store.state.myGuildUUIDs).toEqual(["g-2"]);
+		expect(store.state.loading).toBe(false);
+	});
+
+	it("does not restore cache when updateCachedGuild runs after removal", () => {
+		const store = createGuildStore();
+		store.addGuild(makeGuild());
+		store.removeGuild("g-1");
+
+		store.updateCachedGuild(makeGuild({ name: "Updated Guild" }));
+
+		expect(store.state.guildCache["g-1"]).toBeUndefined();
+		expect(store.state.myGuildUUIDs).not.toContain("g-1");
+	});
+	it("updates a cached guild before my guilds have loaded", () => {
+		const store = createGuildStore();
+		store.setState("guildCache", "g-1", makeGuild());
+
+		const updated = makeGuild({ name: "Updated Guild" });
+		store.updateCachedGuild(updated);
+
+		expect(store.state.guildCache["g-1"]).toEqual(updated);
+	});
+
+	it("loads the selected guild when it is not already cached", async () => {
+		const guild = makeGuild();
+		getGuildMock.mockResolvedValue(guild);
+		const store = createGuildStore();
+
+		store.setCurrentGuild("g-1");
+
+		expect(store.state.currentGuildUUID).toBe("g-1");
+		await vi.waitFor(() => {
+			expect(store.state.guildCache["g-1"]).toEqual(guild);
+		});
 	});
 });

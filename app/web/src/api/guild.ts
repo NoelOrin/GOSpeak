@@ -24,6 +24,24 @@ export interface GuildMember {
 	joined_at: string;
 }
 
+export interface GuildPage {
+	guilds: Guild[];
+	total: number;
+}
+
+export interface GuildApiError {
+	code?: number;
+	msg?: string;
+}
+
+export type GuildMutation =
+	| "create"
+	| "update"
+	| "delete"
+	| "join"
+	| "leave"
+	| "kick";
+
 function unwrap<T>(res: AxiosResponse<Result<T>>): T {
 	const data = res.data.data;
 	if (data == null) throw new Error("guild data is missing");
@@ -50,24 +68,19 @@ export async function getGuild(uuid: string): Promise<Guild> {
 	return unwrap<Guild>(res as AxiosResponse<Result<Guild>>);
 }
 
-export async function listGuilds(
-	page = 1,
-	pageSize = 20,
-): Promise<{ guilds: Guild[]; total: number }> {
+export async function listGuilds(page = 1, pageSize = 20): Promise<GuildPage> {
 	const res = await apiClient.post({
 		url: "/api/v1/guild/list",
 		data: { page, page_size: pageSize },
 	});
-	return unwrap<{ guilds: Guild[]; total: number }>(
-		res as AxiosResponse<Result<{ guilds: Guild[]; total: number }>>,
-	);
+	return unwrap<GuildPage>(res as AxiosResponse<Result<GuildPage>>);
 }
 
 export async function listPublicGuilds(
 	page = 1,
 	pageSize = 20,
 	keyword?: string,
-): Promise<{ guilds: Guild[]; total: number }> {
+): Promise<GuildPage> {
 	const data: { page: number; page_size: number; keyword?: string } = {
 		page,
 		page_size: pageSize,
@@ -79,9 +92,7 @@ export async function listPublicGuilds(
 		url: "/api/v1/guild/list-public",
 		data,
 	});
-	return unwrap<{ guilds: Guild[]; total: number }>(
-		res as AxiosResponse<Result<{ guilds: Guild[]; total: number }>>,
-	);
+	return unwrap<GuildPage>(res as AxiosResponse<Result<GuildPage>>);
 }
 
 export async function myGuilds(): Promise<string[]> {

@@ -96,6 +96,19 @@ describe("guildApi", () => {
 		});
 	});
 
+	it("listPublicGuilds trims keyword and preserves pagination", async () => {
+		(apiClient.post as any).mockResolvedValue(
+			mockResult({ guilds: [], total: 0 }),
+		);
+
+		await listPublicGuilds(2, 12, "  alpha  ");
+
+		expect(apiClient.post).toHaveBeenCalledWith({
+			url: "/api/v1/guild/list-public",
+			data: { page: 2, page_size: 12, keyword: "alpha" },
+		});
+	});
+
 	it("myGuilds returns UUIDs from response", async () => {
 		(apiClient.post as any).mockResolvedValue(
 			mockResult({ guild_uuids: ["g-1", "g-2"] }),
@@ -108,13 +121,13 @@ describe("guildApi", () => {
 		});
 	});
 
-	it("previewGuildInvite calls with invite_code", async () => {
+	it("previewGuildInvite sends the normalized invite code", async () => {
 		const guild = { uuid: "g-1", name: "Preview" } as any;
 		(apiClient.post as any).mockResolvedValue(mockResult(guild));
-		const result = await previewGuildInvite("CODE123");
+		const result = await previewGuildInvite("ABCDEFGH");
 		expect(apiClient.post).toHaveBeenCalledWith({
 			url: "/api/v1/guild/preview",
-			data: { invite_code: "CODE123" },
+			data: { invite_code: "ABCDEFGH" },
 		});
 		expect(result.name).toBe("Preview");
 	});
