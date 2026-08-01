@@ -328,6 +328,7 @@ func StartGin(env EnvEnum) {
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
 	guildSvc := service.NewGuildService(repository.NewGuildRepository(repository.DB))
 	middleware.SetGuildChecker(guildSvc.IsMember)
+	signalHub.SetGuildChecker(guildSvc.IsMember)
 	conversationSvc := service.NewConversationService(conversationRepo, messageRepo)
 	conversationSvc.SetEventBus(eventBus)
 	signalHub.SetConversationService(conversationSvc)

@@ -501,7 +501,8 @@ func EnsureDefaultGuild(db *gorm.DB, ownerUUID string) error {
 	return migrateDefaultGuild(db, ownerUUID)
 }
 
-// migrateDefaultGuild 创建默认 Guild、补齐 owner/成员，并将无归属的存量房间归入其中。
+// migrateDefaultGuild 创建默认 Guild、补齐 owner/成员；仅在首次创建默认 Guild 时，
+// 将无归属的存量房间归入其中。
 func migrateDefaultGuild(db *gorm.DB, ownerUUID string) error {
 	var existing []model.Guild
 	if err := db.Where("name = ?", "Default Server").Find(&existing).Error; err != nil {
@@ -523,6 +524,11 @@ func migrateDefaultGuild(db *gorm.DB, ownerUUID string) error {
 			Name: "Default Server", Description: "系统默认语音服务器", IsPublic: false, OwnerUUID: ownerUUID,
 		}
 		if err := db.Create(defaultGuild).Error; err != nil {
+			return err
+		}
+		// 仅在默认 Guild 首次创建时迁移平台房，避免重启后改变 guild_uuid="" 的语义。
+		if err := db.Model(&model.Room{}).Where("guild_uuid = ?", "").
+			Update("guild_uuid", defaultGuild.UUID).Error; err != nil {
 			return err
 		}
 	} else if defaultGuild.OwnerUUID == "" {
@@ -551,7 +557,5 @@ func migrateDefaultGuild(db *gorm.DB, ownerUUID string) error {
 		}
 	}
 
-	// 将现有无 guild_uuid 的房间归入默认 Guild
-	return db.Model(&model.Room{}).Where("guild_uuid = ?", "").
-		Update("guild_uuid", defaultGuild.UUID).Error
+	return nil
 }

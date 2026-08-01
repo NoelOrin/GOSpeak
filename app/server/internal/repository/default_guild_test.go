@@ -70,6 +70,14 @@ func TestMigrateDefaultGuild_RepairsMissingOwner(t *testing.T) {
 	if member.RoleName != "owner" {
 		t.Fatalf("expected owner role, got %q", member.RoleName)
 	}
+
+	var room model.Room
+	if err := db.Where("name = ?", "legacy").First(&room).Error; err != nil {
+		t.Fatalf("legacy room not found: %v", err)
+	}
+	if room.GuildUUID != "" {
+		t.Fatalf("existing default guild must not migrate platform rooms, got %q", room.GuildUUID)
+	}
 }
 
 func TestMigrateDefaultGuild_RepairsMissingOwnerMember(t *testing.T) {
@@ -89,5 +97,27 @@ func TestMigrateDefaultGuild_RepairsMissingOwnerMember(t *testing.T) {
 	}
 	if member.RoleName != "owner" {
 		t.Fatalf("expected owner role, got %q", member.RoleName)
+	}
+}
+
+func TestMigrateDefaultGuild_ExistingDefaultDoesNotMigratePlatformRooms(t *testing.T) {
+	db := newGuildTestDB(t)
+	if err := EnsureDefaultGuild(db, "admin-uuid"); err != nil {
+		t.Fatalf("EnsureDefaultGuild: %v", err)
+	}
+	if err := db.Create(&model.Room{Name: "platform", GuildUUID: ""}).Error; err != nil {
+		t.Fatalf("seed platform room: %v", err)
+	}
+
+	if err := EnsureDefaultGuild(db, "admin-uuid"); err != nil {
+		t.Fatalf("second EnsureDefaultGuild: %v", err)
+	}
+
+	var room model.Room
+	if err := db.Where("name = ?", "platform").First(&room).Error; err != nil {
+		t.Fatalf("platform room not found: %v", err)
+	}
+	if room.GuildUUID != "" {
+		t.Fatalf("expected platform room to remain unassigned, got %q", room.GuildUUID)
 	}
 }

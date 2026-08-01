@@ -32,8 +32,81 @@ func getGuildChecker() func(guildUUID, userUUID string) bool {
 	return guildChecker
 }
 
+// IsGuildMember 返回当前注入的 Guild 成员校验结果。未提供 guild_uuid 时放行；未接线 checker 时拒绝。
+func IsGuildMember(guildUUID, userUUID string) bool {
+	if guildUUID == "" {
+		return true
+	}
+	checker := getGuildChecker()
+	if checker == nil {
+		return false
+	}
+	return checker(guildUUID, userUUID)
+}
+
 // RequireGuildMember 校验当前用户是否为指定 Guild 的成员。
 // guild_uuid 从 URL、Query 或 JSON body 获取；兼容历史接口使用的 uuid 字段。
+// RequireGuildMemberIfProvided 当请求携带 guild_uuid 时校验成员身份；未携带时放行，兼容平台级房间。
+func RequireGuildMemberIfProvided() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		guildUUID := c.Param("guild_uuid")
+		if guildUUID == "" {
+			guildUUID = c.Query("guild_uuid")
+		}
+		if guildUUID == "" {
+			guildUUID = c.Param("uuid")
+		}
+		if guildUUID == "" {
+			guildUUID = c.Query("uuid")
+		}
+		if guildUUID == "" {
+			var body struct {
+				GuildUUID string `json:"guild_uuid"`
+				UUID      string `json:"uuid"`
+			}
+			raw, readErr := io.ReadAll(c.Request.Body)
+			c.Request.Body = io.NopCloser(bytes.NewReader(raw))
+			if readErr == nil && len(raw) > 0 {
+				if err := json.Unmarshal(raw, &body); err == nil {
+					if body.GuildUUID != "" {
+						guildUUID = body.GuildUUID
+					} else {
+						guildUUID = body.UUID
+					}
+				}
+			}
+		}
+		if guildUUID == "" {
+			c.Next()
+			return
+		}
+		c.Set("guild_uuid", guildUUID)
+		checker := getGuildChecker()
+		if checker == nil {
+			pkg.Fail(c, pkg.INTERNAL_ERROR, "guild checker not configured")
+			c.Abort()
+			return
+		}
+		userUUIDVal, exists := c.Get("user_uuid")
+		if !exists {
+			pkg.Fail(c, pkg.TOKEN_NOT_EXIST, "user not authenticated")
+			c.Abort()
+			return
+		}
+		userUUID, ok := userUUIDVal.(string)
+		if !ok {
+			pkg.Fail(c, pkg.INTERNAL_ERROR, "invalid user_uuid type")
+			c.Abort()
+			return
+		}
+		if !checker(guildUUID, userUUID) {
+			pkg.Fail(c, pkg.FORBIDDEN, "not a member of this guild")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
 func RequireGuildMember() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		guildUUID := c.Param("guild_uuid")

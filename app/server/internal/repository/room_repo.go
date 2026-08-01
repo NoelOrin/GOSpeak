@@ -60,18 +60,30 @@ func (r *RoomRepository) GetByGuildAndName(guildUUID, name string) (*model.Room,
 	return &room, nil
 }
 
-func (r *RoomRepository) List(page, pageSize int, roomType string) ([]model.Room, int64, error) {
+func (r *RoomRepository) List(page, pageSize int, roomType, guildUUID string) ([]model.Room, int64, error) {
+	return r.list(page, pageSize, roomType, guildUUID, false)
+}
+
+func (r *RoomRepository) ListPlatform(page, pageSize int, roomType string) ([]model.Room, int64, error) {
+	return r.list(page, pageSize, roomType, "", true)
+}
+
+func (r *RoomRepository) list(page, pageSize int, roomType, guildUUID string, platformOnly bool) ([]model.Room, int64, error) {
 	var rooms []model.Room
 	var total int64
 	q := r.db.Model(&model.Room{})
 	if roomType == model.RoomTypeText || roomType == model.RoomTypeVoice {
 		q = q.Where("type = ?", roomType)
 	}
+	if platformOnly {
+		q = q.Where("guild_uuid = ?", "")
+	} else if guildUUID != "" {
+		q = q.Where("guild_uuid = ?", guildUUID)
+	}
 	q.Count(&total)
 	err := q.Order("created_at ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rooms).Error
 	return rooms, total, err
 }
-
 func (r *RoomRepository) Update(room *model.Room) error {
 	return r.db.Save(room).Error
 }
