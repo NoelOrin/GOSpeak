@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"GOSpeak/internal/middleware"
+	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
@@ -15,6 +17,20 @@ type RoomHandler struct {
 
 func NewRoomHandler(roomSvc *service.RoomService, permSvc *service.PermissionService) *RoomHandler {
 	return &RoomHandler{roomSvc: roomSvc, permSvc: permSvc}
+}
+
+func currentUserUUID(c *gin.Context) string {
+	if v, ok := c.Get("user_uuid"); ok {
+		if s, ok := v.(string); ok && s != "" {
+			return s
+		}
+	}
+	if v, ok := c.Get("username"); ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
 }
 
 type CreateRoomRequest struct {
@@ -51,6 +67,10 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		return
 	}
 	username, _ := usernameVal.(string)
+	if req.GuildUUID != "" && !middleware.IsGuildMember(req.GuildUUID, currentUserUUID(c)) {
+		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this guild")
+		return
+	}
 	audioOnly := true
 	if req.AudioOnly != nil {
 		audioOnly = *req.AudioOnly
@@ -98,6 +118,11 @@ func (h *RoomHandler) Get(c *gin.Context) {
 		return
 	}
 
+	if room.GuildUUID != "" && !middleware.IsGuildMember(room.GuildUUID, currentUserUUID(c)) {
+		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this guild")
+		return
+	}
+
 	pkg.Success(c, room)
 }
 
@@ -113,9 +138,10 @@ func (h *RoomHandler) Get(c *gin.Context) {
 // @Router       /room/list [post]
 func (h *RoomHandler) List(c *gin.Context) {
 	var req struct {
-		Page     int    `json:"page"`
-		PageSize int    `json:"page_size"`
-		Type     string `json:"type"`
+		Page      int    `json:"page"`
+		PageSize  int    `json:"page_size"`
+		Type      string `json:"type"`
+		GuildUUID string `json:"guild_uuid"`
 	}
 	_ = c.ShouldBindJSON(&req)
 	if req.Page <= 0 {
@@ -125,7 +151,19 @@ func (h *RoomHandler) List(c *gin.Context) {
 		req.PageSize = 20
 	}
 
-	rooms, total, err := h.roomSvc.List(req.Page, req.PageSize, req.Type)
+	if req.GuildUUID != "" && !middleware.IsGuildMember(req.GuildUUID, currentUserUUID(c)) {
+		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this guild")
+		return
+	}
+
+	var rooms []model.Room
+	var total int64
+	var err error
+	if req.GuildUUID != "" {
+		rooms, total, err = h.roomSvc.List(req.Page, req.PageSize, req.Type, req.GuildUUID)
+	} else {
+		rooms, total, err = h.roomSvc.ListPlatform(req.Page, req.PageSize, req.Type)
+	}
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -168,6 +206,11 @@ func (h *RoomHandler) Update(c *gin.Context) {
 	room, err := h.roomSvc.GetByID(req.ID)
 	if err != nil {
 		pkg.HandleError(c, err)
+		return
+	}
+
+	if room.GuildUUID != "" && !middleware.IsGuildMember(room.GuildUUID, currentUserUUID(c)) {
+		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this guild")
 		return
 	}
 
@@ -231,6 +274,17 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+
+	room, err := h.roomSvc.GetByID(req.ID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+
+	if room.GuildUUID != "" && !middleware.IsGuildMember(room.GuildUUID, currentUserUUID(c)) {
+		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this guild")
 		return
 	}
 

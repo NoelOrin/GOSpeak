@@ -106,7 +106,7 @@ func (s *RoomService) GetByGuildAndName(guildUUID, name string) (*model.Room, er
 }
 
 // List 分页查询房间列表，默认每页 20 条。
-func (s *RoomService) List(page, pageSize int, roomType string) ([]model.Room, int64, error) {
+func (s *RoomService) List(page, pageSize int, roomType, guildUUID string) ([]model.Room, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -116,7 +116,25 @@ func (s *RoomService) List(page, pageSize int, roomType string) ([]model.Room, i
 	if roomType != "" && roomType != model.RoomTypeText && roomType != model.RoomTypeVoice {
 		return nil, 0, pkg.NewAppError(pkg.INVALID_PARAMS, "type must be text, voice, or empty")
 	}
-	rooms, total, err := s.roomRepo.List(page, pageSize, roomType)
+	rooms, total, err := s.roomRepo.List(page, pageSize, roomType, guildUUID)
+	if err != nil {
+		return nil, 0, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return rooms, total, nil
+}
+
+// ListPlatform 分页查询平台级房间（无 GuildUUID）。
+func (s *RoomService) ListPlatform(page, pageSize int, roomType string) ([]model.Room, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	if roomType != "" && roomType != model.RoomTypeText && roomType != model.RoomTypeVoice {
+		return nil, 0, pkg.NewAppError(pkg.INVALID_PARAMS, "type must be text, voice, or empty")
+	}
+	rooms, total, err := s.roomRepo.ListPlatform(page, pageSize, roomType)
 	if err != nil {
 		return nil, 0, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
