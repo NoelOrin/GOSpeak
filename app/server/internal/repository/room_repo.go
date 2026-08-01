@@ -44,14 +44,14 @@ func (r *RoomRepository) GetByName(name string) (*model.Room, error) {
 	return &room, nil
 }
 
-// GetByGuildAndName 按 Server 和房间名精确查询，避免同名房间跨 Server 串用。
-func (r *RoomRepository) GetByGuildAndName(guildUUID, name string) (*model.Room, error) {
+// GetByDomainAndName 按域和房间名精确查询，避免同名房间跨域串用。
+func (r *RoomRepository) GetByDomainAndName(domainUUID, name string) (*model.Room, error) {
 	var room model.Room
 	q := r.db.Where("name = ?", name)
-	if guildUUID == "" {
-		q = q.Where("guild_uuid = ?", "")
+	if domainUUID == "" {
+		q = q.Where("domain_uuid = ?", "")
 	} else {
-		q = q.Where("guild_uuid = ?", guildUUID)
+		q = q.Where("domain_uuid = ?", domainUUID)
 	}
 	err := q.First(&room).Error
 	if err != nil {
@@ -60,15 +60,15 @@ func (r *RoomRepository) GetByGuildAndName(guildUUID, name string) (*model.Room,
 	return &room, nil
 }
 
-func (r *RoomRepository) List(page, pageSize int, roomType, guildUUID string) ([]model.Room, int64, error) {
-	return r.list(page, pageSize, roomType, guildUUID, false)
+func (r *RoomRepository) List(page, pageSize int, roomType, domainUUID string) ([]model.Room, int64, error) {
+	return r.list(page, pageSize, roomType, domainUUID, false)
 }
 
 func (r *RoomRepository) ListPlatform(page, pageSize int, roomType string) ([]model.Room, int64, error) {
 	return r.list(page, pageSize, roomType, "", true)
 }
 
-func (r *RoomRepository) list(page, pageSize int, roomType, guildUUID string, platformOnly bool) ([]model.Room, int64, error) {
+func (r *RoomRepository) list(page, pageSize int, roomType, domainUUID string, platformOnly bool) ([]model.Room, int64, error) {
 	var rooms []model.Room
 	var total int64
 	q := r.db.Model(&model.Room{})
@@ -76,9 +76,9 @@ func (r *RoomRepository) list(page, pageSize int, roomType, guildUUID string, pl
 		q = q.Where("type = ?", roomType)
 	}
 	if platformOnly {
-		q = q.Where("guild_uuid = ?", "")
-	} else if guildUUID != "" {
-		q = q.Where("guild_uuid = ?", guildUUID)
+		q = q.Where("domain_uuid = ?", "")
+	} else if domainUUID != "" {
+		q = q.Where("domain_uuid = ?", domainUUID)
 	}
 	q.Count(&total)
 	err := q.Order("created_at ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rooms).Error

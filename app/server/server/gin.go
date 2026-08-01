@@ -89,8 +89,8 @@ func StartGin(env EnvEnum) {
 	userRepo := repository.NewUserRepository(repository.DB)
 	adminUUID := seedAdminUser(userRepo)
 	if adminUUID != "" {
-		if err := repository.EnsureDefaultGuild(repository.DB, adminUUID); err != nil {
-			logger.WithComponent("Seed").Warnf("同步默认语音服务器失败: %v", err)
+		if err := repository.EnsureDefaultDomain(repository.DB, adminUUID); err != nil {
+			logger.WithComponent("Seed").Warnf("同步默认语音域失败: %v", err)
 		}
 	}
 	roomRepo := repository.NewRoomRepository(repository.DB)
@@ -326,9 +326,9 @@ func StartGin(env EnvEnum) {
 	msgH := handler.NewMessageHandler(messageSvc, permSvc)
 	permH := handler.NewPermissionHandler(permSvc)
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
-	guildSvc := service.NewGuildService(repository.NewGuildRepository(repository.DB))
-	middleware.SetGuildChecker(guildSvc.IsMember)
-	signalHub.SetGuildChecker(guildSvc.IsMember)
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(repository.DB))
+	middleware.SetDomainChecker(domainSvc.IsMember)
+	signalHub.SetDomainChecker(domainSvc.IsMember)
 	conversationSvc := service.NewConversationService(conversationRepo, messageRepo)
 	conversationSvc.SetEventBus(eventBus)
 	signalHub.SetConversationService(conversationSvc)
@@ -336,8 +336,8 @@ func StartGin(env EnvEnum) {
 	storageH := handler.NewStorageHandler(storageSvc)
 	botH := handler.NewBotHandler(botSvc)
 	pluginH := handler.NewPluginHandler(pluginSvc)
-	guildH := handler.NewGuildHandler(guildSvc, permSvc)
-	guildH.SetOnGuildDelete(signalHub.OnGuildDelete)
+	domainH := handler.NewDomainHandler(domainSvc, permSvc)
+	domainH.SetOnDomainDelete(signalHub.OnDomainDelete)
 	conversationH := handler.NewConversationHandler(conversationSvc)
 
 	monitorH := handler.NewMonitorHandler(signalHub, cfg, eventBus)
@@ -377,7 +377,7 @@ func StartGin(env EnvEnum) {
 		SRSCallback:  srsCallbackH,
 		Bot:          botH,
 		Plugin:       pluginH,
-		Guild:        guildH,
+		Domain:        domainH,
 		Conversation: conversationH,
 		PluginHost:   pluginHost,
 	})

@@ -9,17 +9,17 @@ import (
 	"GOSpeak/internal/pkg"
 )
 
-func TestHub_OnRoomList_FiltersGuildUUID(t *testing.T) {
+func TestHub_OnRoomList_FiltersDomainUUID(t *testing.T) {
 	store := newMockRoomStore("lobby", "lobby", "general")
-	store.rooms[0].GuildUUID = "guild-a"
-	store.rooms[1].GuildUUID = "guild-b"
+	store.rooms[0].DomainUUID = "domain-a"
+	store.rooms[1].DomainUUID = "domain-b"
 
 	hub := NewHub(store, nil, nil, nil)
 	hub.fanout = newMockBroadcaster()
-	hub.SetGuildChecker(func(guildUUID, userUUID string) bool { return true })
+	hub.SetDomainChecker(func(domainUUID, userUUID string) bool { return true })
 
 	conn := newAuthedMockClient("socket-1", "user-1")
-	hub.OnRoomList(conn, `{"guild_uuid":"guild-a"}`)
+	hub.OnRoomList(conn, `{"domain_uuid":"domain-a"}`)
 
 	emitData, ok := conn.lastEvent(EventRoomListResult).(map[string]interface{})
 	if !ok {
@@ -29,21 +29,21 @@ func TestHub_OnRoomList_FiltersGuildUUID(t *testing.T) {
 		t.Fatalf("expected 1 filtered room, got %v", emitData["count"])
 	}
 	rooms, ok := emitData["rooms"].([]RoomInfo)
-	if !ok || len(rooms) != 1 || rooms[0].GuildUUID != "guild-a" {
-		t.Fatalf("expected only guild-a room, got %#v", emitData["rooms"])
+	if !ok || len(rooms) != 1 || rooms[0].DomainUUID != "domain-a" {
+		t.Fatalf("expected only domain-a room, got %#v", emitData["rooms"])
 	}
 }
 
 func TestHub_GetMergedRooms_FiltersMemoryAndKV(t *testing.T) {
 	store := newMemStateStore()
-	store.rooms["guild-b:remote"] = bus.RoomMembersSnapshot{
-		Room:    "guild-b:remote",
+	store.rooms["domain-b:remote"] = bus.RoomMembersSnapshot{
+		Room:    "domain-b:remote",
 		Members: []bus.MemberRecord{{Identity: "bob", InstanceID: "other"}},
 	}
 
 	hub := NewHub(nil, nil, nil, nil)
 	hub.SetMembershipStore(store, "inst-a")
-	hub.rooms["guild-a:lobby"] = &Room{
+	hub.rooms["domain-a:lobby"] = &Room{
 		Name:       "lobby",
 		Members:    map[string]*MemberInfo{},
 		ByIdentity: map[string]*MemberInfo{},
@@ -51,7 +51,7 @@ func TestHub_GetMergedRooms_FiltersMemoryAndKV(t *testing.T) {
 		Speaking:   map[string]bool{},
 		CreatedAt:  time.Now(),
 	}
-	hub.rooms["guild-b:lobby"] = &Room{
+	hub.rooms["domain-b:lobby"] = &Room{
 		Name:       "lobby",
 		Members:    map[string]*MemberInfo{},
 		ByIdentity: map[string]*MemberInfo{},
@@ -68,13 +68,13 @@ func TestHub_GetMergedRooms_FiltersMemoryAndKV(t *testing.T) {
 		CreatedAt:  time.Now(),
 	}
 
-	guildBRooms := hub.getMergedRooms("guild-b")
-	if len(guildBRooms) != 2 {
-		t.Fatalf("expected 2 guild-b rooms, got %d: %+v", len(guildBRooms), guildBRooms)
+	domainBRooms := hub.getMergedRooms("domain-b")
+	if len(domainBRooms) != 2 {
+		t.Fatalf("expected 2 domain-b rooms, got %d: %+v", len(domainBRooms), domainBRooms)
 	}
-	for _, r := range guildBRooms {
-		if r.GuildUUID != "guild-b" {
-			t.Fatalf("expected guild-b only, got %+v", r)
+	for _, r := range domainBRooms {
+		if r.DomainUUID != "domain-b" {
+			t.Fatalf("expected domain-b only, got %+v", r)
 		}
 	}
 
@@ -84,28 +84,28 @@ func TestHub_GetMergedRooms_FiltersMemoryAndKV(t *testing.T) {
 	}
 }
 
-func TestHub_GuildEventPayloadsIncludeGuildUUID(t *testing.T) {
+func TestHub_DomainEventPayloadsIncludeDomainUUID(t *testing.T) {
 	hub := newTestHub()
 	conn := newAuthedMockClient("conn-1", "alice")
 
-	hub.OnRoomCreate(conn, `{"room":"lobby","guild_uuid":"guild-a"}`)
-	hub.OnRoomJoinSFU(conn, `{"room":"lobby","guild_uuid":"guild-a","identity":"alice"}`)
+	hub.OnRoomCreate(conn, `{"room":"lobby","domain_uuid":"domain-a"}`)
+	hub.OnRoomJoinSFU(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"alice"}`)
 	fanout := hub.fanout.(*mockBroadcaster)
 
-	assertGuildPayload(t, fanout.roomCasts["guild-a:lobby"][EventMemberJoined][0], "guild-a")
+	assertDomainPayload(t, fanout.roomCasts["domain-a:lobby"][EventMemberJoined][0], "domain-a")
 
-	hub.OnMemberMicState(conn, `{"room":"lobby","guild_uuid":"guild-a","identity":"alice","isMicMuted":true}`)
-	assertGuildPayload(t, fanout.roomCasts["guild-a:lobby"][EventMemberUpdated][0], "guild-a")
+	hub.OnMemberMicState(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"alice","isMicMuted":true}`)
+	assertDomainPayload(t, fanout.roomCasts["domain-a:lobby"][EventMemberUpdated][0], "domain-a")
 
-	hub.OnMemberSpeaking(conn, `{"room":"lobby","guild_uuid":"guild-a","identity":"alice","speaking":true}`)
-	assertGuildPayload(t, fanout.roomCasts["guild-a:lobby"][EventRoomActiveSpeakers][0], "guild-a")
+	hub.OnMemberSpeaking(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"alice","speaking":true}`)
+	assertDomainPayload(t, fanout.roomCasts["domain-a:lobby"][EventRoomActiveSpeakers][0], "domain-a")
 
-	hub.OnRoomLeave(conn, `{"room":"lobby","guild_uuid":"guild-a"}`)
+	hub.OnRoomLeave(conn, `{"room":"lobby","domain_uuid":"domain-a"}`)
 	left, ok := conn.lastEvent(EventRoomLeft).(map[string]interface{})
-	if !ok || left["guild_uuid"] != "guild-a" {
-		t.Fatalf("expected room:left to carry guild_uuid, got %#v", left)
+	if !ok || left["domain_uuid"] != "domain-a" {
+		t.Fatalf("expected room:left to carry domain_uuid, got %#v", left)
 	}
-	assertGuildPayload(t, fanout.roomCasts["guild-a:lobby"][EventMemberLeft][0], "guild-a")
+	assertDomainPayload(t, fanout.roomCasts["domain-a:lobby"][EventMemberLeft][0], "domain-a")
 
 	users := &mockUserStore{users: map[string]*model.User{
 		"bot_helper": {Name: "bot_helper", Role: "user"},
@@ -116,7 +116,7 @@ func TestHub_GuildEventPayloadsIncludeGuildUUID(t *testing.T) {
 	}}
 	kickHub := NewHub(nil, nil, users, perms)
 	kickHub.fanout = newMockBroadcaster()
-	seedKickRoom(kickHub, "guild-a:lobby", map[string]string{
+	seedKickRoom(kickHub, "domain-a:lobby", map[string]string{
 		"bot-socket": "bot_helper",
 		"alice-sock": "alice",
 	})
@@ -125,29 +125,29 @@ func TestHub_GuildEventPayloadsIncludeGuildUUID(t *testing.T) {
 		Role:        "user",
 		Permissions: []string{"signal:kick"},
 	}}
-	kickHub.OnRoomKick(bot, `{"room":"lobby","guild_uuid":"guild-a","targetIdentity":"alice"}`)
+	kickHub.OnRoomKick(bot, `{"room":"lobby","domain_uuid":"domain-a","targetIdentity":"alice"}`)
 	kickFanout := kickHub.fanout.(*mockBroadcaster)
-	assertGuildPayload(t, kickFanout.roomCasts["guild-a:lobby"][EventRoomKicked][0], "guild-a")
-	assertGuildPayload(t, kickFanout.roomCasts["guild-a:lobby"][EventMemberLeft][0], "guild-a")
+	assertDomainPayload(t, kickFanout.roomCasts["domain-a:lobby"][EventRoomKicked][0], "domain-a")
+	assertDomainPayload(t, kickFanout.roomCasts["domain-a:lobby"][EventMemberLeft][0], "domain-a")
 }
 
-func assertGuildPayload(t *testing.T, payload interface{}, want string) {
+func assertDomainPayload(t *testing.T, payload interface{}, want string) {
 	t.Helper()
 	m, ok := payload.(map[string]interface{})
 	if !ok {
 		t.Fatalf("expected map payload, got %T: %#v", payload, payload)
 	}
-	if got, _ := m["guild_uuid"].(string); got != want {
-		t.Fatalf("expected guild_uuid %q, got %q in %#v", want, got, m)
+	if got, _ := m["domain_uuid"].(string); got != want {
+		t.Fatalf("expected domain_uuid %q, got %q in %#v", want, got, m)
 	}
 }
 
 func TestHub_OnRoomList_RejectsNonMember(t *testing.T) {
 	hub := newTestHub()
-	hub.SetGuildChecker(func(guildUUID, userUUID string) bool { return false })
+	hub.SetDomainChecker(func(domainUUID, userUUID string) bool { return false })
 
 	conn := newAuthedMockClient("socket-1", "user-1")
-	hub.OnRoomList(conn, `{"guild_uuid":"guild-a"}`)
+	hub.OnRoomList(conn, `{"domain_uuid":"domain-a"}`)
 
 	data, ok := conn.lastEvent(EventRoomListResult).(map[string]interface{})
 	if !ok {
@@ -161,9 +161,9 @@ func TestHub_OnRoomList_RejectsNonMember(t *testing.T) {
 	}
 }
 
-func TestHub_OnRoomList_EmptyGuildUUIDReturnsPlatformOnly(t *testing.T) {
-	store := newMockRoomStore("guild-lobby", "general")
-	store.rooms[0].GuildUUID = "guild-a"
+func TestHub_OnRoomList_EmptyDomainUUIDReturnsPlatformOnly(t *testing.T) {
+	store := newMockRoomStore("domain-lobby", "general")
+	store.rooms[0].DomainUUID = "domain-a"
 
 	hub := NewHub(store, nil, nil, nil)
 	hub.fanout = newMockBroadcaster()
@@ -175,7 +175,7 @@ func TestHub_OnRoomList_EmptyGuildUUIDReturnsPlatformOnly(t *testing.T) {
 		t.Fatal("expected room:list:result event")
 	}
 	rooms, ok := data["rooms"].([]RoomInfo)
-	if !ok || len(rooms) != 1 || rooms[0].GuildUUID != "" || rooms[0].Name != "general" {
+	if !ok || len(rooms) != 1 || rooms[0].DomainUUID != "" || rooms[0].Name != "general" {
 		t.Fatalf("expected only platform room, got %#v", data["rooms"])
 	}
 
@@ -187,10 +187,10 @@ func TestHub_OnRoomList_EmptyGuildUUIDReturnsPlatformOnly(t *testing.T) {
 
 func TestHub_OnRoomCreate_RejectsNonMember(t *testing.T) {
 	hub := newTestHub()
-	hub.SetGuildChecker(func(guildUUID, userUUID string) bool { return false })
+	hub.SetDomainChecker(func(domainUUID, userUUID string) bool { return false })
 
 	conn := newAuthedMockClient("socket-1", "user-1")
-	hub.OnRoomCreate(conn, `{"room":"lobby","guild_uuid":"guild-a"}`)
+	hub.OnRoomCreate(conn, `{"room":"lobby","domain_uuid":"domain-a"}`)
 
 	data, ok := conn.lastEvent(EventRoomCreated).(map[string]interface{})
 	if !ok {
@@ -200,19 +200,19 @@ func TestHub_OnRoomCreate_RejectsNonMember(t *testing.T) {
 		t.Fatalf("expected non-member create error, got %#v", data)
 	}
 	hub.mu.RLock()
-	_, exists := hub.rooms["guild-a:lobby"]
+	_, exists := hub.rooms["domain-a:lobby"]
 	hub.mu.RUnlock()
 	if exists {
-		t.Fatal("non-member must not create guild room")
+		t.Fatal("non-member must not create domain room")
 	}
 }
 
 func TestHub_OnRoomJoin_RejectsNonMember(t *testing.T) {
 	hub := newTestHub()
-	hub.SetGuildChecker(func(guildUUID, userUUID string) bool { return false })
+	hub.SetDomainChecker(func(domainUUID, userUUID string) bool { return false })
 
 	conn := newAuthedMockClient("socket-1", "user-1")
-	ack, err := hub.OnRoomJoin(conn, `{"room":"lobby","guild_uuid":"guild-a","identity":"user-1"}`)
+	ack, err := hub.OnRoomJoin(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"user-1"}`)
 	if err != nil {
 		t.Fatalf("OnRoomJoin returned error: %v", err)
 	}
@@ -224,10 +224,10 @@ func TestHub_OnRoomJoin_RejectsNonMember(t *testing.T) {
 
 func TestHub_OnRoomJoinSFU_RejectsNonMember(t *testing.T) {
 	hub := newTestHub()
-	hub.SetGuildChecker(func(guildUUID, userUUID string) bool { return false })
+	hub.SetDomainChecker(func(domainUUID, userUUID string) bool { return false })
 
 	conn := newAuthedMockClient("socket-1", "user-1")
-	ack, err := hub.OnRoomJoinSFU(conn, `{"room":"lobby","guild_uuid":"guild-a","identity":"user-1"}`)
+	ack, err := hub.OnRoomJoinSFU(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"user-1"}`)
 	if err != nil {
 		t.Fatalf("OnRoomJoinSFU returned error: %v", err)
 	}
@@ -237,59 +237,59 @@ func TestHub_OnRoomJoinSFU_RejectsNonMember(t *testing.T) {
 	}
 }
 
-func TestHub_BroadcastRoomUpdatedLocal_UsesGuildRoomScope(t *testing.T) {
+func TestHub_BroadcastRoomUpdatedLocal_UsesDomainRoomScope(t *testing.T) {
 	hub := newTestHub()
 	fanout := hub.fanout.(*mockBroadcaster)
 
-	hub.broadcastRoomUpdatedLocal("guild-a:lobby")
+	hub.broadcastRoomUpdatedLocal("domain-a:lobby")
 
-	if len(fanout.roomCasts["__guild:guild-a"][EventRoomUpdated]) == 0 {
-		t.Fatal("expected room:updated in guild scope")
+	if len(fanout.roomCasts["__domain:domain-a"][EventRoomUpdated]) == 0 {
+		t.Fatal("expected room:updated in domain scope")
 	}
 	if len(fanout.broadcasts[EventRoomUpdated]) != 0 {
 		t.Fatal("room:updated must not use global namespace broadcast")
 	}
 }
 
-func TestHub_BroadcastRoomList_UsesGuildRoomScope(t *testing.T) {
+func TestHub_BroadcastRoomList_UsesDomainRoomScope(t *testing.T) {
 	hub := newTestHub()
 	fanout := hub.fanout.(*mockBroadcaster)
 
-	hub.broadcastRoomList("guild-a")
+	hub.broadcastRoomList("domain-a")
 
-	if len(fanout.roomCasts["__guild:guild-a"][EventRoomListResult]) == 0 {
-		t.Fatal("expected room:list:result in guild scope")
+	if len(fanout.roomCasts["__domain:domain-a"][EventRoomListResult]) == 0 {
+		t.Fatal("expected room:list:result in domain scope")
 	}
 	if len(fanout.broadcasts[EventRoomListResult]) != 0 {
 		t.Fatal("room:list:result must not use global namespace broadcast")
 	}
 }
 
-func TestHub_SetClientGuild_SwitchesScope(t *testing.T) {
+func TestHub_SetClientDomain_SwitchesScope(t *testing.T) {
 	hub := newTestHub()
 	conn := newAuthedMockClient("socket-1", "user-1")
 
-	hub.OnRoomList(conn, `{"guild_uuid":"guild-a"}`)
-	hub.OnRoomList(conn, `{"guild_uuid":"guild-b"}`)
+	hub.OnRoomList(conn, `{"domain_uuid":"domain-a"}`)
+	hub.OnRoomList(conn, `{"domain_uuid":"domain-b"}`)
 
 	fanout := hub.fanout.(*mockBroadcaster)
-	if !fanout.didLeave(conn.ID(), "__guild:guild-a") {
-		t.Fatal("expected client to leave previous guild scope")
+	if !fanout.didLeave(conn.ID(), "__domain:domain-a") {
+		t.Fatal("expected client to leave previous domain scope")
 	}
-	if !fanout.didJoin(conn.ID(), "__guild:guild-b") {
-		t.Fatal("expected client to join new guild scope")
+	if !fanout.didJoin(conn.ID(), "__domain:domain-b") {
+		t.Fatal("expected client to join new domain scope")
 	}
 }
 
-func TestHub_OnDisconnect_LeavesGuildScope(t *testing.T) {
+func TestHub_OnDisconnect_LeavesDomainScope(t *testing.T) {
 	hub := newTestHub()
 	conn := newAuthedMockClient("socket-1", "user-1")
 
-	hub.OnRoomList(conn, `{"guild_uuid":"guild-a"}`)
+	hub.OnRoomList(conn, `{"domain_uuid":"domain-a"}`)
 	hub.OnDisconnect(conn)
 
 	fanout := hub.fanout.(*mockBroadcaster)
-	if !fanout.didLeave(conn.ID(), "__guild:guild-a") {
-		t.Fatal("expected disconnect to leave guild scope")
+	if !fanout.didLeave(conn.ID(), "__domain:domain-a") {
+		t.Fatal("expected disconnect to leave domain scope")
 	}
 }

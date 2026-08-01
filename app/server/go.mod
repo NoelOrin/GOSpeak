@@ -19,6 +19,7 @@ require (
 	github.com/livekit/server-sdk-go/v2 v2.16.4
 	github.com/nats-io/nats-server/v2 v2.14.3
 	github.com/nats-io/nats.go v1.51.0
+	github.com/nrednav/cuid2 v1.1.0
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/shirou/gopsutil/v3 v3.24.5

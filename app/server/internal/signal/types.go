@@ -2,8 +2,8 @@ package signal
 
 type RoomRequest struct {
 	Room string `json:"room"`
-	// GuildUUID 命名空间隔离：同一房间名在不同 Guild 下视为不同房间。
-	GuildUUID string `json:"guild_uuid,omitempty"`
+	// DomainUUID 命名空间隔离：同一房间名在不同 Domain 下视为不同房间。
+	DomainUUID string `json:"domain_uuid,omitempty"`
 	Password  string `json:"password,omitempty"`
 	Identity  string `json:"identity,omitempty"`
 	Stream    string `json:"stream,omitempty"`
@@ -25,7 +25,7 @@ type RoomInfo struct {
 	ID            uint         `json:"id"`
 	UUID          string       `json:"uuid"`
 	Name          string       `json:"name"`
-	GuildUUID     string       `json:"guild_uuid,omitempty"`
+	DomainUUID     string       `json:"domain_uuid,omitempty"`
 	HasPassword   bool         `json:"hasPassword"`
 	Description   string       `json:"description"`
 	Limit         uint         `json:"limit"`

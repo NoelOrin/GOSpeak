@@ -1,21 +1,23 @@
 package repository
 
 import (
-	"GOSpeak/internal/config"
-	"GOSpeak/internal/model"
-	"GOSpeak/internal/pkg"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"gorm.io/gorm"
-
 	"github.com/glebarez/sqlite"
+	"github.com/nrednav/cuid2"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+
+	"GOSpeak/internal/config"
+	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
 )
 
 type DatabaseEnum string
@@ -87,8 +89,18 @@ func InitDB(cfg *config.Config) error {
 	if err := migrateEmailVerificationCodesSchema(DB); err != nil {
 		return err
 	}
+	if err := migrateGuildToDomainSchema(DB); err != nil {
+		return err
+	}
+	if err := migrateGuildPermissions(DB); err != nil {
+		return err
+	}
 
 	if err := autoMigrate(); err != nil {
+		return err
+	}
+
+	if err := migrateDomainCUID2(DB); err != nil {
 		return err
 	}
 
@@ -446,6 +458,184 @@ func migrateEmailVerificationCodesSchema(db *gorm.DB) error {
 	return nil
 }
 
+// renameLegacyTable 把旧表重命名为新表。两者并存时视为旧模型 AutoMigrate 重建的残留：
+// 新表有数据则直接丢弃旧表，新表为空则先删空表再重命名，保留旧表数据。
+func renameLegacyTable(db *gorm.DB, oldName, newName string) error {
+	if !db.Migrator().HasTable(oldName) {
+		return nil
+	}
+	if db.Migrator().HasTable(newName) {
+		var count int64
+		if err := db.Table(newName).Count(&count).Error; err != nil {
+			return fmt.Errorf("count %s: %w", newName, err)
+		}
+		if count > 0 {
+			if err := db.Migrator().DropTable(oldName); err != nil {
+				return fmt.Errorf("drop stale %s: %w", oldName, err)
+			}
+			return nil
+		}
+		if err := db.Migrator().DropTable(newName); err != nil {
+			return fmt.Errorf("drop empty %s: %w", newName, err)
+		}
+	}
+	if err := db.Exec("ALTER TABLE " + oldName + " RENAME TO " + newName).Error; err != nil {
+		return fmt.Errorf("rename %s to %s: %w", oldName, newName, err)
+	}
+	return nil
+}
+
+func migrateGuildToDomainSchema(db *gorm.DB) error {
+	if err := renameLegacyTable(db, "guilds", "domains"); err != nil {
+		return err
+	}
+	if err := renameLegacyTable(db, "guild_members", "domain_members"); err != nil {
+		return err
+	}
+	if err := renameDomainColumn(db, "domain_members", &model.DomainMember{}, "guild_uuid", "domain_uuid"); err != nil {
+		return err
+	}
+	if err := renameDomainColumn(db, "room", &model.Room{}, "guild_uuid", "domain_uuid"); err != nil {
+		return err
+	}
+	return repairOrphanRoomDomains(db)
+}
+
+// renameDomainColumn 把旧列改名为新列。glebarez/sqlite 的 DropColumn 需要 struct
+// value 才能解析 schema，传字符串表名会 nil panic。
+func renameDomainColumn(db *gorm.DB, table string, value interface{}, oldName, newName string) error {
+	if !db.Migrator().HasColumn(value, oldName) {
+		return nil
+	}
+	if db.Migrator().HasColumn(value, newName) {
+		// 新旧列并存：把旧列值复制进新列后删旧列
+		if err := db.Exec("UPDATE " + table + " SET " + newName + " = " + oldName +
+			" WHERE " + newName + " IS NULL OR " + newName + " = ''").Error; err != nil {
+			return fmt.Errorf("copy %s.%s to %s: %w", table, oldName, newName, err)
+		}
+		if err := db.Migrator().DropColumn(value, oldName); err != nil {
+			return fmt.Errorf("drop %s.%s: %w", table, oldName, err)
+		}
+		return nil
+	}
+	var err error
+	switch db.Dialector.Name() {
+	case "mysql":
+		err = db.Exec("ALTER TABLE " + table + " CHANGE COLUMN " + oldName + " " + newName + " varchar(32)").Error
+	default:
+		err = db.Exec("ALTER TABLE " + table + " RENAME COLUMN " + oldName + " TO " + newName).Error
+	}
+	if err != nil {
+		return fmt.Errorf("rename %s.%s to %s: %w", table, oldName, newName, err)
+	}
+	return nil
+}
+
+// repairOrphanRoomDomains 修复指向失效 guild/domain uuid 的房间：唯一 domain 时归入
+// 其中，否则清空为平台级房间。
+func repairOrphanRoomDomains(db *gorm.DB) error {
+	if !db.Migrator().HasTable("room") || !db.Migrator().HasTable("domains") {
+		return nil
+	}
+	var domains []model.Domain
+	if err := db.Order("id").Find(&domains).Error; err != nil {
+		return err
+	}
+	if len(domains) == 0 {
+		return nil
+	}
+	valid := make([]interface{}, 0, len(domains))
+	for _, d := range domains {
+		valid = append(valid, d.UUID)
+	}
+	var orphanIDs []uint
+	if err := db.Table("room").
+		Where("domain_uuid <> '' AND domain_uuid NOT IN (?)", valid).
+		Pluck("id", &orphanIDs).Error; err != nil {
+		return err
+	}
+	if len(orphanIDs) == 0 {
+		return nil
+	}
+	if len(domains) == 1 {
+		return db.Table("room").Where("id IN (?)", orphanIDs).Update("domain_uuid", domains[0].UUID).Error
+	}
+	return db.Table("room").Where("id IN (?)", orphanIDs).Update("domain_uuid", "").Error
+}
+
+func migrateGuildPermissions(db *gorm.DB) error {
+	if !db.Migrator().HasTable("permissions") {
+		return nil
+	}
+	// 两代 seed 可能并存：guild:xxx 与 domain:xxx 同时存在时直接替换会撞
+	// permissions.code 的 UNIQUE 约束。这里把角色引用重挂到 domain 权限后删除旧行。
+	var guildPerms []struct {
+		ID   uint
+		Code string
+	}
+	if err := db.Table("permissions").Where("code LIKE 'guild:%'").Find(&guildPerms).Error; err != nil {
+		return fmt.Errorf("load guild permissions: %w", err)
+	}
+	for _, gp := range guildPerms {
+		domainCode := strings.Replace(gp.Code, "guild:", "domain:", 1)
+		var domainPerm struct{ ID uint }
+		err := db.Table("permissions").Where("code = ?", domainCode).First(&domainPerm).Error
+		switch {
+		case err == nil:
+			if err := db.Table("role_permissions").Where("permission_id = ?", gp.ID).
+				Update("permission_id", domainPerm.ID).Error; err != nil {
+				return fmt.Errorf("migrate role_permissions for %s: %w", gp.Code, err)
+			}
+			if err := db.Exec("DELETE FROM permissions WHERE id = ?", gp.ID).Error; err != nil {
+				return fmt.Errorf("delete stale permission %s: %w", gp.Code, err)
+			}
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			if err := db.Table("permissions").Where("id = ?", gp.ID).
+				Update("code", domainCode).Error; err != nil {
+				return fmt.Errorf("rename permission %s: %w", gp.Code, err)
+			}
+		default:
+			return fmt.Errorf("lookup %s: %w", domainCode, err)
+		}
+	}
+	if err := db.Exec("UPDATE permissions SET name = REPLACE(name, '语音服务器', '域'), description = REPLACE(description, '语音服务器', '域') WHERE code LIKE 'domain:%'").Error; err != nil {
+		return fmt.Errorf("migrate permission labels: %w", err)
+	}
+	if db.Migrator().HasTable("bot_tokens") {
+		if err := db.Exec("UPDATE bot_tokens SET permissions = REPLACE(permissions, 'guild:', 'domain:') WHERE permissions LIKE '%guild:%'").Error; err != nil {
+			return fmt.Errorf("migrate bot permissions: %w", err)
+		}
+	}
+	return nil
+}
+
+func migrateDomainCUID2(db *gorm.DB) error {
+	type domainRow struct {
+		ID   uint
+		UUID string
+	}
+	var rows []domainRow
+	if err := db.Table("domains").Select("id, uuid").Find(&rows).Error; err != nil {
+		return fmt.Errorf("load domains for cuid migration: %w", err)
+	}
+	for _, row := range rows {
+		if !strings.Contains(row.UUID, "-") {
+			continue
+		}
+		next := cuid2.Generate()
+		if err := db.Table("domains").Where("id = ?", row.ID).Update("uuid", next).Error; err != nil {
+			return fmt.Errorf("migrate domain id %d: %w", row.ID, err)
+		}
+		if err := db.Table("domain_members").Where("domain_uuid = ?", row.UUID).Update("domain_uuid", next).Error; err != nil {
+			return fmt.Errorf("migrate domain_members for %s: %w", row.UUID, err)
+		}
+		if err := db.Table("room").Where("domain_uuid = ?", row.UUID).Update("domain_uuid", next).Error; err != nil {
+			return fmt.Errorf("migrate rooms for %s: %w", row.UUID, err)
+		}
+	}
+	return nil
+}
+
 func autoMigrate() error {
 	return DB.AutoMigrate(
 		&model.Role{},
@@ -467,8 +657,8 @@ func autoMigrate() error {
 		&model.Message{},
 		&model.MessageReaction{},
 		&model.MessageMention{},
-		&model.Guild{},
-		&model.GuildMember{},
+		&model.Domain{},
+		&model.DomainMember{},
 	)
 }
 
@@ -493,66 +683,66 @@ func migrateRoomPasswords(db *gorm.DB) error {
 	return nil
 }
 
-// EnsureDefaultGuild 在管理员用户就绪后创建/修复默认 Guild。
-func EnsureDefaultGuild(db *gorm.DB, ownerUUID string) error {
+// EnsureDefaultDomain 在管理员用户就绪后创建/修复默认 Domain。
+func EnsureDefaultDomain(db *gorm.DB, ownerUUID string) error {
 	if ownerUUID == "" {
-		return fmt.Errorf("default guild owner uuid is required")
+		return fmt.Errorf("default domain owner uuid is required")
 	}
-	return migrateDefaultGuild(db, ownerUUID)
+	return migrateDefaultDomain(db, ownerUUID)
 }
 
-// migrateDefaultGuild 创建默认 Guild、补齐 owner/成员；仅在首次创建默认 Guild 时，
+// migrateDefaultDomain 创建默认 Domain、补齐 owner/成员；仅在首次创建默认 Domain 时，
 // 将无归属的存量房间归入其中。
-func migrateDefaultGuild(db *gorm.DB, ownerUUID string) error {
-	var existing []model.Guild
-	if err := db.Where("name = ?", "Default Server").Find(&existing).Error; err != nil {
+func migrateDefaultDomain(db *gorm.DB, ownerUUID string) error {
+	var existing []model.Domain
+	if err := db.Where("name = ?", "默认域").Find(&existing).Error; err != nil {
 		return err
 	}
-	var defaultGuild *model.Guild
+	var defaultDomain *model.Domain
 	if len(existing) > 0 {
-		defaultGuild = &existing[0]
+		defaultDomain = &existing[0]
 	}
-	if defaultGuild == nil {
+	if defaultDomain == nil {
 		var count int64
-		if err := db.Model(&model.Guild{}).Count(&count).Error; err != nil {
+		if err := db.Model(&model.Domain{}).Count(&count).Error; err != nil {
 			return err
 		}
 		if count > 0 {
 			return nil
 		}
-		defaultGuild = &model.Guild{
-			Name: "Default Server", Description: "系统默认语音服务器", IsPublic: false, OwnerUUID: ownerUUID,
+		defaultDomain = &model.Domain{
+			Name: "默认域", Description: "系统默认语音域", IsPublic: false, OwnerUUID: ownerUUID,
 		}
-		if err := db.Create(defaultGuild).Error; err != nil {
+		if err := db.Create(defaultDomain).Error; err != nil {
 			return err
 		}
-		// 仅在默认 Guild 首次创建时迁移平台房，避免重启后改变 guild_uuid="" 的语义。
-		if err := db.Model(&model.Room{}).Where("guild_uuid = ?", "").
-			Update("guild_uuid", defaultGuild.UUID).Error; err != nil {
+		// 仅在默认 Domain 首次创建时迁移平台房，避免重启后改变 domain_uuid="" 的语义。
+		if err := db.Model(&model.Room{}).Where("domain_uuid = ?", "").
+			Update("domain_uuid", defaultDomain.UUID).Error; err != nil {
 			return err
 		}
-	} else if defaultGuild.OwnerUUID == "" {
-		if err := db.Model(&model.Guild{}).Where("uuid = ?", defaultGuild.UUID).Update("owner_uuid", ownerUUID).Error; err != nil {
+	} else if defaultDomain.OwnerUUID == "" {
+		if err := db.Model(&model.Domain{}).Where("uuid = ?", defaultDomain.UUID).Update("owner_uuid", ownerUUID).Error; err != nil {
 			return err
 		}
-		defaultGuild.OwnerUUID = ownerUUID
+		defaultDomain.OwnerUUID = ownerUUID
 	}
 
-	ownerUUIDForMember := defaultGuild.OwnerUUID
+	ownerUUIDForMember := defaultDomain.OwnerUUID
 	if ownerUUIDForMember == "" {
 		ownerUUIDForMember = ownerUUID
 	}
-	var member model.GuildMember
-	err := db.Where("guild_uuid = ? AND user_uuid = ?", defaultGuild.UUID, ownerUUIDForMember).First(&member).Error
+	var member model.DomainMember
+	err := db.Where("domain_uuid = ? AND user_uuid = ?", defaultDomain.UUID, ownerUUIDForMember).First(&member).Error
 	if err == gorm.ErrRecordNotFound {
-		member = model.GuildMember{GuildUUID: defaultGuild.UUID, UserUUID: ownerUUIDForMember, RoleName: "owner"}
+		member = model.DomainMember{DomainUUID: defaultDomain.UUID, UserUUID: ownerUUIDForMember, RoleName: "owner"}
 		if err := db.Create(&member).Error; err != nil {
 			return err
 		}
 	} else if err != nil {
 		return err
 	} else if member.RoleName != "owner" {
-		if err := db.Model(&model.GuildMember{}).Where("guild_uuid = ? AND user_uuid = ?", defaultGuild.UUID, ownerUUIDForMember).Update("role_name", "owner").Error; err != nil {
+		if err := db.Model(&model.DomainMember{}).Where("domain_uuid = ? AND user_uuid = ?", defaultDomain.UUID, ownerUUIDForMember).Update("role_name", "owner").Error; err != nil {
 			return err
 		}
 	}

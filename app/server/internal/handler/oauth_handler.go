@@ -100,7 +100,7 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 	q.Set("oauth", "1")
 	q.Set("access_token", resp.Token)
 	q.Set("refresh_token", resp.RefreshToken)
-	c.Redirect(http.StatusFound, "/login?"+q.Encode())
+	c.Redirect(http.StatusFound, "/login#"+q.Encode())
 }
 
 func redirectOAuthError(c *gin.Context, msg string) {

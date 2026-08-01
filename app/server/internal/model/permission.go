@@ -24,13 +24,13 @@ const (
 	PermRoomUpdate = permcode.PermRoomUpdate
 	PermRoomDelete = permcode.PermRoomDelete
 
-	PermGuildCreate     = permcode.PermGuildCreate
-	PermGuildRead       = permcode.PermGuildRead
-	PermGuildManage     = permcode.PermGuildManage
-	PermGuildDelete     = permcode.PermGuildDelete
-	PermGuildInvite     = permcode.PermGuildInvite
-	PermGuildKick       = permcode.PermGuildKick
-	PermGuildRoleManage = permcode.PermGuildRoleManage
+	PermDomainCreate     = permcode.PermDomainCreate
+	PermDomainRead       = permcode.PermDomainRead
+	PermDomainManage     = permcode.PermDomainManage
+	PermDomainDelete     = permcode.PermDomainDelete
+	PermDomainInvite     = permcode.PermDomainInvite
+	PermDomainKick       = permcode.PermDomainKick
+	PermDomainRoleManage = permcode.PermDomainRoleManage
 
 	PermUserRead   = permcode.PermUserRead
 	PermUserUpdate = permcode.PermUserUpdate
@@ -70,13 +70,13 @@ var DefaultPermissions = []Permission{
 	{Code: PermRoomUpdate, Name: "编辑房间", Description: "修改房间名称、人数上限等"},
 	{Code: PermRoomDelete, Name: "删除房间", Description: "删除房间"},
 
-	{Code: PermGuildCreate, Name: "创建语音服务器", Description: "创建新的语音服务器"},
-	{Code: PermGuildRead, Name: "查看语音服务器", Description: "查看语音服务器详情、列表和成员"},
-	{Code: PermGuildManage, Name: "管理语音服务器", Description: "修改语音服务器设置"},
-	{Code: PermGuildDelete, Name: "删除语音服务器", Description: "删除语音服务器"},
-	{Code: PermGuildInvite, Name: "管理邀请码", Description: "生成和管理语音服务器邀请码"},
-	{Code: PermGuildKick, Name: "踢出 Server 成员", Description: "将成员移出语音服务器"},
-	{Code: PermGuildRoleManage, Name: "管理 Server 角色", Description: "管理语音服务器内角色和权限"},
+	{Code: PermDomainCreate, Name: "创建域", Description: "创建新的语音域"},
+	{Code: PermDomainRead, Name: "查看域", Description: "查看语音域详情、列表和成员"},
+	{Code: PermDomainManage, Name: "管理域", Description: "修改语音域设置"},
+	{Code: PermDomainDelete, Name: "删除域", Description: "删除语音域"},
+	{Code: PermDomainInvite, Name: "管理邀请码", Description: "生成和管理语音域邀请码"},
+	{Code: PermDomainKick, Name: "踢出域成员", Description: "将成员移出语音域"},
+	{Code: PermDomainRoleManage, Name: "管理域角色", Description: "管理语音域内角色和权限"},
 
 	{Code: PermUserRead, Name: "查看用户", Description: "查看用户列表和详情"},
 	{Code: PermUserUpdate, Name: "编辑用户", Description: "修改用户信息"},
@@ -148,8 +148,8 @@ var DefaultRolePermissions = map[string][]string{
 		PermRoleRead, PermRoleManage,
 		PermSignalKick,
 		PermRoomCreate, PermMuteManage, PermSFUManage, PermBotManage,
-		PermGuildCreate, PermGuildRead, PermGuildManage, PermGuildDelete,
-		PermGuildInvite, PermGuildKick, PermGuildRoleManage,
+		PermDomainCreate, PermDomainRead, PermDomainManage, PermDomainDelete,
+		PermDomainInvite, PermDomainKick, PermDomainRoleManage,
 		PermEmailConfigRead, PermEmailConfigManage,
 		PermStorageRead, PermStorageManage, PermStorageDelete,
 		PermOAuthRead, PermOAuthManage,
@@ -158,7 +158,7 @@ var DefaultRolePermissions = map[string][]string{
 	},
 	"user": {
 		PermRoomCreate, PermRoomRead,
-		PermGuildCreate,
+		PermDomainCreate,
 		PermUserRead,
 		PermRoleRead,
 		PermMessageSend, PermMessageRead,

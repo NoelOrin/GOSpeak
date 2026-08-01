@@ -7,20 +7,20 @@ import (
 )
 
 type Room struct {
-	ID            uint      `gorm:"primaryKey" json:"id"`
-	UUID          string    `gorm:"type:uuid;uniqueIndex" json:"uuid"`
-	Name          string    `gorm:"index" json:"name"`
-	Password      string    `json:"-"`
-	Description   string    `gorm:"size:255" json:"description"`
-	Limit         uint      `json:"limit"`
-	AudioOnly     bool      `gorm:"not null;default:true" json:"audio_only"`
-	AllowAudience bool      `gorm:"not null;default:true" json:"allow_audience"`
-	Type          string    `gorm:"size:16;not null;default:voice;index" json:"type"`
-	CreatedBy     string    `gorm:"index;size:64" json:"created_by"`
-	// GuildUUID 归属的语音服务器 UUID。空值表示平台级房间（向后兼容存量数据）。
-	GuildUUID     string    `gorm:"type:uuid;index" json:"guild_uuid"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID            uint   `gorm:"primaryKey" json:"id"`
+	UUID          string `gorm:"type:uuid;uniqueIndex" json:"uuid"`
+	Name          string `gorm:"index" json:"name"`
+	Password      string `json:"-"`
+	Description   string `gorm:"size:255" json:"description"`
+	Limit         uint   `json:"limit"`
+	AudioOnly     bool   `gorm:"not null;default:true" json:"audio_only"`
+	AllowAudience bool   `gorm:"not null;default:true" json:"allow_audience"`
+	Type          string `gorm:"size:16;not null;default:voice;index" json:"type"`
+	CreatedBy     string `gorm:"index;size:64" json:"created_by"`
+	// DomainUUID 归属的语音域 CUID2。空值表示平台级房间（仅迁移期兼容）。
+	DomainUUID string    `gorm:"size:32;index" json:"domain_uuid"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 func (r *Room) BeforeCreate(_ *gorm.DB) error {

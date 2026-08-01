@@ -31,7 +31,7 @@ func (s *RoomService) Create(room *model.Room) error {
 
 // CreateRoom creates a room from primitive parameters so the handler
 // layer does not need to import model.
-func (s *RoomService) CreateRoom(name, password, description string, limit uint, audioOnly, allowAudience bool, createdBy, roomType, guildUUID string) (*model.Room, error) {
+func (s *RoomService) CreateRoom(name, password, description string, limit uint, audioOnly, allowAudience bool, createdBy, roomType, domainUUID string) (*model.Room, error) {
 	hashedPassword, err := pkg.HashPassword(password)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -45,7 +45,7 @@ func (s *RoomService) CreateRoom(name, password, description string, limit uint,
 		AllowAudience: allowAudience,
 		CreatedBy:     createdBy,
 		Type:          model.NormalizeRoomType(roomType),
-		GuildUUID:     guildUUID,
+		DomainUUID:     domainUUID,
 	}
 	// text rooms: force audio_only true / no SFU expectations
 	if room.Type == model.RoomTypeText {
@@ -93,9 +93,9 @@ func (s *RoomService) GetByName(name string) (*model.Room, error) {
 	return room, nil
 }
 
-// GetByGuildAndName 按 Server 和房间名精确查询。
-func (s *RoomService) GetByGuildAndName(guildUUID, name string) (*model.Room, error) {
-	room, err := s.roomRepo.GetByGuildAndName(guildUUID, name)
+// GetByDomainAndName 按域和房间名精确查询。
+func (s *RoomService) GetByDomainAndName(domainUUID, name string) (*model.Room, error) {
+	room, err := s.roomRepo.GetByDomainAndName(domainUUID, name)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, ErrRoomNotFound
@@ -106,7 +106,7 @@ func (s *RoomService) GetByGuildAndName(guildUUID, name string) (*model.Room, er
 }
 
 // List 分页查询房间列表，默认每页 20 条。
-func (s *RoomService) List(page, pageSize int, roomType, guildUUID string) ([]model.Room, int64, error) {
+func (s *RoomService) List(page, pageSize int, roomType, domainUUID string) ([]model.Room, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -116,14 +116,14 @@ func (s *RoomService) List(page, pageSize int, roomType, guildUUID string) ([]mo
 	if roomType != "" && roomType != model.RoomTypeText && roomType != model.RoomTypeVoice {
 		return nil, 0, pkg.NewAppError(pkg.INVALID_PARAMS, "type must be text, voice, or empty")
 	}
-	rooms, total, err := s.roomRepo.List(page, pageSize, roomType, guildUUID)
+	rooms, total, err := s.roomRepo.List(page, pageSize, roomType, domainUUID)
 	if err != nil {
 		return nil, 0, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	return rooms, total, nil
 }
 
-// ListPlatform 分页查询平台级房间（无 GuildUUID）。
+// ListPlatform 分页查询平台级房间（无 DomainUUID）。
 func (s *RoomService) ListPlatform(page, pageSize int, roomType string) ([]model.Room, int64, error) {
 	if page < 1 {
 		page = 1

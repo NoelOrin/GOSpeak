@@ -21,11 +21,11 @@ func openRoomTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestRoomRepository_List_FiltersGuildUUID(t *testing.T) {
+func TestRoomRepository_List_FiltersDomainUUID(t *testing.T) {
 	db := openRoomTestDB(t)
 	rooms := []model.Room{
-		{Name: "lobby", GuildUUID: "guild-a"},
-		{Name: "lobby", GuildUUID: "guild-b"},
+		{Name: "lobby", DomainUUID: "domain-a"},
+		{Name: "lobby", DomainUUID: "domain-b"},
 		{Name: "general"},
 	}
 	if err := db.Create(&rooms).Error; err != nil {
@@ -33,14 +33,14 @@ func TestRoomRepository_List_FiltersGuildUUID(t *testing.T) {
 	}
 
 	repo := NewRoomRepository(db)
-	got, total, err := repo.List(1, 100, "", "guild-a")
+	got, total, err := repo.List(1, 100, "", "domain-a")
 	if err != nil {
-		t.Fatalf("List guild-a: %v", err)
+		t.Fatalf("List domain-a: %v", err)
 	}
 	if total != 1 || len(got) != 1 {
-		t.Fatalf("expected 1 guild-a room, got total=%d rooms=%d", total, len(got))
+		t.Fatalf("expected 1 domain-a room, got total=%d rooms=%d", total, len(got))
 	}
-	if got[0].GuildUUID != "guild-a" || got[0].Name != "lobby" {
+	if got[0].DomainUUID != "domain-a" || got[0].Name != "lobby" {
 		t.Fatalf("unexpected room: %+v", got[0])
 	}
 
@@ -56,7 +56,7 @@ func TestRoomRepository_List_FiltersGuildUUID(t *testing.T) {
 func TestRoomRepository_ListPlatform_OnlyPlatformRooms(t *testing.T) {
 	db := openRoomTestDB(t)
 	rooms := []model.Room{
-		{Name: "guild-lobby", GuildUUID: "guild-a"},
+		{Name: "domain-lobby", DomainUUID: "domain-a"},
 		{Name: "general"},
 	}
 	if err := db.Create(&rooms).Error; err != nil {
@@ -68,7 +68,7 @@ func TestRoomRepository_ListPlatform_OnlyPlatformRooms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListPlatform: %v", err)
 	}
-	if total != 1 || len(got) != 1 || got[0].GuildUUID != "" || got[0].Name != "general" {
+	if total != 1 || len(got) != 1 || got[0].DomainUUID != "" || got[0].Name != "general" {
 		t.Fatalf("expected only platform room, got total=%d rooms=%+v", total, got)
 	}
 }

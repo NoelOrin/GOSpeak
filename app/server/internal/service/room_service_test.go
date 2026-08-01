@@ -46,9 +46,9 @@ func (m *testRoomRepo) GetByName(name string) (*model.Room, error) {
 	}
 	return nil, gorm.ErrRecordNotFound
 }
-func (m *testRoomRepo) List(page, pageSize int, roomType, guildUUID string) ([]model.Room, int64, error) {
+func (m *testRoomRepo) List(page, pageSize int, roomType, domainUUID string) ([]model.Room, int64, error) {
 	if m.listFn != nil {
-		return m.listFn(page, pageSize, roomType, guildUUID)
+		return m.listFn(page, pageSize, roomType, domainUUID)
 	}
 	return []model.Room{}, 0, nil
 }
@@ -219,7 +219,7 @@ func TestRoomService_ContractDocumentation(t *testing.T) {
 	t.Log("  - Not found: returns nil, AppError(NOT_FOUND)")
 	t.Log("  - DB error: returns nil, AppError(INTERNAL_ERROR)")
 	t.Log("")
-	t.Log("List(page, pageSize, roomType, guildUUID) ([]Room, int64, error):")
+	t.Log("List(page, pageSize, roomType, domainUUID) ([]Room, int64, error):")
 	t.Log("  - Page defaults to 1 if < 1")
 	t.Log("  - PageSize defaults to 20 if < 1 or > 100")
 	t.Log("  - Returns rooms slice, total count, nil on success")

@@ -17,7 +17,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestRoomHandler_List_FiltersGuildUUID(t *testing.T) {
+func TestRoomHandler_List_FiltersDomainUUID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -27,15 +27,15 @@ func TestRoomHandler_List_FiltersGuildUUID(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 	rooms := []model.Room{
-		{Name: "lobby", GuildUUID: "guild-a"},
-		{Name: "lobby", GuildUUID: "guild-b"},
+		{Name: "lobby", DomainUUID: "domain-a"},
+		{Name: "lobby", DomainUUID: "domain-b"},
 	}
 	if err := db.Create(&rooms).Error; err != nil {
 		t.Fatalf("seed rooms: %v", err)
 	}
 
-	middleware.SetGuildChecker(func(guildUUID, userUUID string) bool { return true })
-	t.Cleanup(func() { middleware.SetGuildChecker(nil) })
+	middleware.SetDomainChecker(func(domainUUID, userUUID string) bool { return true })
+	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
 
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
@@ -46,7 +46,7 @@ func TestRoomHandler_List_FiltersGuildUUID(t *testing.T) {
 	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil)
 	r.POST("/api/v1/room/list", h.List)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/list", strings.NewReader(`{"guild_uuid":"guild-a"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/list", strings.NewReader(`{"domain_uuid":"domain-a"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -67,12 +67,12 @@ func TestRoomHandler_List_FiltersGuildUUID(t *testing.T) {
 		t.Fatalf("expected 1 filtered room, got %#v", data["rooms"])
 	}
 	roomData, ok := roomsData[0].(map[string]interface{})
-	if !ok || roomData["guild_uuid"] != "guild-a" {
+	if !ok || roomData["domain_uuid"] != "domain-a" {
 		t.Fatalf("unexpected room payload: %#v", roomsData[0])
 	}
 }
 
-func TestRoomHandler_Create_PersistsGuildUUID(t *testing.T) {
+func TestRoomHandler_Create_PersistsDomainUUID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -82,8 +82,8 @@ func TestRoomHandler_Create_PersistsGuildUUID(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	middleware.SetGuildChecker(func(guildUUID, userUUID string) bool { return true })
-	t.Cleanup(func() { middleware.SetGuildChecker(nil) })
+	middleware.SetDomainChecker(func(domainUUID, userUUID string) bool { return true })
+	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
 
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
@@ -94,7 +94,7 @@ func TestRoomHandler_Create_PersistsGuildUUID(t *testing.T) {
 	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil)
 	r.POST("/api/v1/room/create", h.Create)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/create", strings.NewReader(`{"name":"lobby","guild_uuid":"guild-a"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/create", strings.NewReader(`{"name":"lobby","domain_uuid":"domain-a"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -110,12 +110,12 @@ func TestRoomHandler_Create_PersistsGuildUUID(t *testing.T) {
 	if !ok {
 		t.Fatal("expected room data")
 	}
-	if data["guild_uuid"] != "guild-a" {
-		t.Fatalf("expected guild_uuid guild-a, got %v", data["guild_uuid"])
+	if data["domain_uuid"] != "domain-a" {
+		t.Fatalf("expected domain_uuid domain-a, got %v", data["domain_uuid"])
 	}
 }
 
-func TestRoomHandler_List_NoGuildUUID_OnlyPlatformRooms(t *testing.T) {
+func TestRoomHandler_List_NoDomainUUID_OnlyPlatformRooms(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -125,7 +125,7 @@ func TestRoomHandler_List_NoGuildUUID_OnlyPlatformRooms(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 	rooms := []model.Room{
-		{Name: "lobby", GuildUUID: "guild-a"},
+		{Name: "lobby", DomainUUID: "domain-a"},
 		{Name: "general"},
 	}
 	if err := db.Create(&rooms).Error; err != nil {
@@ -157,12 +157,12 @@ func TestRoomHandler_List_NoGuildUUID_OnlyPlatformRooms(t *testing.T) {
 		t.Fatalf("expected only platform room, got %#v", data["rooms"])
 	}
 	roomData, ok := roomsData[0].(map[string]interface{})
-	if !ok || roomData["guild_uuid"] != "" {
+	if !ok || roomData["domain_uuid"] != "" {
 		t.Fatalf("unexpected room payload: %#v", roomsData[0])
 	}
 }
 
-func TestRoomHandler_Create_RejectsNonGuildMember(t *testing.T) {
+func TestRoomHandler_Create_RejectsNonDomainMember(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -171,8 +171,8 @@ func TestRoomHandler_Create_RejectsNonGuildMember(t *testing.T) {
 	if err := db.AutoMigrate(&model.Room{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	middleware.SetGuildChecker(func(guildUUID, userUUID string) bool { return false })
-	t.Cleanup(func() { middleware.SetGuildChecker(nil) })
+	middleware.SetDomainChecker(func(domainUUID, userUUID string) bool { return false })
+	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
 
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
@@ -183,7 +183,7 @@ func TestRoomHandler_Create_RejectsNonGuildMember(t *testing.T) {
 	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil)
 	r.POST("/api/v1/room/create", h.Create)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/create", strings.NewReader(`{"name":"lobby","guild_uuid":"guild-a"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/create", strings.NewReader(`{"name":"lobby","domain_uuid":"domain-a"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -197,7 +197,7 @@ func TestRoomHandler_Create_RejectsNonGuildMember(t *testing.T) {
 	}
 }
 
-func TestRoomHandler_List_RejectsNonGuildMember(t *testing.T) {
+func TestRoomHandler_List_RejectsNonDomainMember(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -206,8 +206,8 @@ func TestRoomHandler_List_RejectsNonGuildMember(t *testing.T) {
 	if err := db.AutoMigrate(&model.Room{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	middleware.SetGuildChecker(func(guildUUID, userUUID string) bool { return false })
-	t.Cleanup(func() { middleware.SetGuildChecker(nil) })
+	middleware.SetDomainChecker(func(domainUUID, userUUID string) bool { return false })
+	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
 
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
@@ -218,7 +218,7 @@ func TestRoomHandler_List_RejectsNonGuildMember(t *testing.T) {
 	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil)
 	r.POST("/api/v1/room/list", h.List)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/list", strings.NewReader(`{"guild_uuid":"guild-a"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/list", strings.NewReader(`{"domain_uuid":"domain-a"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -232,7 +232,7 @@ func TestRoomHandler_List_RejectsNonGuildMember(t *testing.T) {
 	}
 }
 
-func TestRoomHandler_CRUD_RejectsNonGuildMember(t *testing.T) {
+func TestRoomHandler_CRUD_RejectsNonDomainMember(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -241,12 +241,12 @@ func TestRoomHandler_CRUD_RejectsNonGuildMember(t *testing.T) {
 	if err := db.AutoMigrate(&model.Room{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	room := model.Room{Name: "lobby", GuildUUID: "guild-a", CreatedBy: "other"}
+	room := model.Room{Name: "lobby", DomainUUID: "domain-a", CreatedBy: "other"}
 	if err := db.Create(&room).Error; err != nil {
 		t.Fatalf("seed room: %v", err)
 	}
-	middleware.SetGuildChecker(func(guildUUID, userUUID string) bool { return false })
-	t.Cleanup(func() { middleware.SetGuildChecker(nil) })
+	middleware.SetDomainChecker(func(domainUUID, userUUID string) bool { return false })
+	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
 
 	r := gin.New()
 	r.Use(func(c *gin.Context) {

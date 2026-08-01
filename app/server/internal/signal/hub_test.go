@@ -21,7 +21,7 @@ type mockRoomStore struct {
 	rooms []model.Room
 }
 
-func (m *mockRoomStore) List(page, pageSize int, roomType, guildUUID string) ([]model.Room, int64, error) {
+func (m *mockRoomStore) List(page, pageSize int, roomType, domainUUID string) ([]model.Room, int64, error) {
 	if roomType != "" {
 		filtered := make([]model.Room, 0, len(m.rooms))
 		for _, r := range m.rooms {
@@ -31,10 +31,10 @@ func (m *mockRoomStore) List(page, pageSize int, roomType, guildUUID string) ([]
 		}
 		m = &mockRoomStore{rooms: filtered}
 	}
-	if guildUUID != "" {
+	if domainUUID != "" {
 		filtered := make([]model.Room, 0, len(m.rooms))
 		for _, r := range m.rooms {
-			if r.GuildUUID == guildUUID {
+			if r.DomainUUID == domainUUID {
 				filtered = append(filtered, r)
 			}
 		}
@@ -52,13 +52,13 @@ func (m *mockRoomStore) GetByName(name string) (*model.Room, error) {
 	return nil, fmt.Errorf("room not found: %s", name)
 }
 
-func (m *mockRoomStore) GetByGuildAndName(guildUUID, name string) (*model.Room, error) {
+func (m *mockRoomStore) GetByDomainAndName(domainUUID, name string) (*model.Room, error) {
 	for _, r := range m.rooms {
-		if r.Name == name && r.GuildUUID == guildUUID {
+		if r.Name == name && r.DomainUUID == domainUUID {
 			return &r, nil
 		}
 	}
-	return nil, fmt.Errorf("room not found: %s/%s", guildUUID, name)
+	return nil, fmt.Errorf("room not found: %s/%s", domainUUID, name)
 }
 
 func newMockRoomStore(names ...string) *mockRoomStore {
@@ -253,7 +253,7 @@ func newTestHub() *Hub {
 	hub := NewHub(nil, nil, nil, nil)
 	hub.fanout = newMockBroadcaster()
 	hub.SetStreamResolver(fakeStreamResolver{})
-	hub.SetGuildChecker(func(guildUUID, userUUID string) bool { return true })
+	hub.SetDomainChecker(func(domainUUID, userUUID string) bool { return true })
 	return hub
 }
 

@@ -46,43 +46,43 @@ func CreateTestUser(db *gorm.DB, name string, opts ...UserOption) *model.User {
 	return user
 }
 
-// GuildOption 是 CreateTestGuild 的功能选项。
-type GuildOption func(g *model.Guild)
+// DomainOption 是 CreateTestDomain 的功能选项。
+type DomainOption func(g *model.Domain)
 
-// WithGuildInviteCode 设置邀请码。
-func WithGuildInviteCode(code string) GuildOption {
-	return func(g *model.Guild) { g.InviteCode = code }
+// WithDomainInviteCode 设置邀请码。
+func WithDomainInviteCode(code string) DomainOption {
+	return func(g *model.Domain) { g.InviteCode = code }
 }
 
-// WithGuildMaxRooms 设置房间上限。
-func WithGuildMaxRooms(limit int) GuildOption {
-	return func(g *model.Guild) { g.MaxRooms = uint(limit) }
+// WithDomainMaxRooms 设置房间上限。
+func WithDomainMaxRooms(limit int) DomainOption {
+	return func(g *model.Domain) { g.MaxRooms = uint(limit) }
 }
 
-// CreateTestGuild 在测试数据库中创建一个 Guild。
-func CreateTestGuild(db *gorm.DB, name, ownerUUID string, opts ...GuildOption) *model.Guild {
-	guild := &model.Guild{
+// CreateTestDomain 在测试数据库中创建一个 Domain。
+func CreateTestDomain(db *gorm.DB, name, ownerUUID string, opts ...DomainOption) *model.Domain {
+	domain := &model.Domain{
 		Name:      name,
 		OwnerUUID: ownerUUID,
 	}
 	for _, o := range opts {
-		o(guild)
+		o(domain)
 	}
-	if err := db.Create(guild).Error; err != nil {
-		panic("CreateTestGuild: " + err.Error())
+	if err := db.Create(domain).Error; err != nil {
+		panic("CreateTestDomain: " + err.Error())
 	}
-	return guild
+	return domain
 }
 
-// AddTestGuildMember 添加 Guild 成员。
-func AddTestGuildMember(db *gorm.DB, guildUUID, userUUID, role string) *model.GuildMember {
-	member := &model.GuildMember{
-		GuildUUID: guildUUID,
+// AddTestDomainMember 添加 Domain 成员。
+func AddTestDomainMember(db *gorm.DB, domainUUID, userUUID, role string) *model.DomainMember {
+	member := &model.DomainMember{
+		DomainUUID: domainUUID,
 		UserUUID:  userUUID,
 		RoleName:  role,
 	}
 	if err := db.Create(member).Error; err != nil {
-		panic("AddTestGuildMember: " + err.Error())
+		panic("AddTestDomainMember: " + err.Error())
 	}
 	return member
 }

@@ -3,7 +3,7 @@ package ws
 import "sync"
 
 // Fanout 实现 Broadcaster 接口。
-// 房间名使用复合键（由 signal.roomKey 生成）以支持 Guild 命名空间隔离。
+// 房间名使用复合键（由 signal.roomKey 生成）以支持 Domain 命名空间隔离。
 // 线程安全，读写分离（广播时只加 RLock）。
 type Fanout struct {
 	mu      sync.RWMutex

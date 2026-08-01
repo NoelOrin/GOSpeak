@@ -175,6 +175,9 @@ func (s *AuthService) RefreshFromToken(refreshToken string) (string, error) {
 	if pkg.IsTokenExpired(claims) {
 		return "", pkg.NewAppError(pkg.TOKEN_EXPIRED, "refresh token expired")
 	}
+	if !pkg.IsRefreshToken(claims) {
+		return "", pkg.NewAppError(pkg.TOKEN_WRONG, "invalid refresh token")
+	}
 	if redis.IsBlacklisted(claims.ID) {
 		return "", pkg.NewAppError(pkg.TOKEN_REVOKED)
 	}
@@ -363,6 +366,7 @@ func generateTokenPair(username, displayName, userUUID, role string, tokenVersio
 	}
 	return token, refreshToken, nil
 }
+
 // GenerateTokenPair 从 model.User 生成 token 对，供 OAuth 等模块复用。
 func GenerateTokenPair(user *model.User) (string, string, error) {
 	return generateTokenPair(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion)

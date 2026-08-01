@@ -82,18 +82,18 @@ func TestHub_Fanout_ACL_Isolation(t *testing.T) {
 	connA := newAuthedMockClient("sock-a", "user-a")
 	connB := newAuthedMockClient("sock-b", "user-b")
 
-	hub.OnRoomCreate(connA, `{"room":"lobby","guild_uuid":"guild-a"}`)
-	hub.OnRoomJoinSFU(connA, `{"room":"lobby","guild_uuid":"guild-a","identity":"user-a"}`)
+	hub.OnRoomCreate(connA, `{"room":"lobby","domain_uuid":"domain-a"}`)
+	hub.OnRoomJoinSFU(connA, `{"room":"lobby","domain_uuid":"domain-a","identity":"user-a"}`)
 
-	hub.OnRoomCreate(connB, `{"room":"lobby","guild_uuid":"guild-b"}`)
+	hub.OnRoomCreate(connB, `{"room":"lobby","domain_uuid":"domain-b"}`)
 
 	hub.mu.RLock()
-	_, existsA := hub.rooms["guild-a:lobby"]
-	_, existsB := hub.rooms["guild-b:lobby"]
+	_, existsA := hub.rooms["domain-a:lobby"]
+	_, existsB := hub.rooms["domain-b:lobby"]
 	hub.mu.RUnlock()
 
 	if !existsA || !existsB {
-		t.Fatal("expected both guild rooms to exist with different keys")
+		t.Fatal("expected both domain rooms to exist with different keys")
 	}
 }
 
@@ -102,8 +102,8 @@ func TestHub_Rooms_DisplayNames(t *testing.T) {
 
 	conn := newAuthedMockClient("sock-1", "user-1")
 
-	hub.OnRoomCreate(conn, `{"room":"lobby","guild_uuid":"guild-a"}`)
-	hub.OnRoomJoinSFU(conn, `{"room":"lobby","guild_uuid":"guild-a","identity":"user-1"}`)
+	hub.OnRoomCreate(conn, `{"room":"lobby","domain_uuid":"domain-a"}`)
+	hub.OnRoomJoinSFU(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"user-1"}`)
 
 	rooms := hub.Rooms()
 	if len(rooms) == 0 {

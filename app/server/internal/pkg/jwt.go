@@ -10,6 +10,13 @@ import (
 )
 
 // Claims JWT 载荷。TokenVersion 绑定用户态的 token 版本号，改密/重置后递增使旧 token 失效。
+const (
+	AccessTokenType  = "access"
+	RefreshTokenType = "refresh"
+	WSTicketType     = "ws-ticket"
+	BotTokenType     = "bot"
+)
+
 type Claims struct {
 	Username     string   `json:"username"`
 	DisplayName  string   `json:"display_name"`
@@ -17,6 +24,7 @@ type Claims struct {
 	Role         string   `json:"role"`
 	TokenVersion uint     `json:"token_version"`
 	Permissions  []string `json:"permissions,omitempty"`
+	TokenType    string   `json:"token_type,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -40,6 +48,7 @@ func GenerateToken(username, displayName, userUUID, role string, tokenVersion ui
 		UserUUID:     userUUID,
 		Role:         role,
 		TokenVersion: tokenVersion,
+		TokenType:    AccessTokenType,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(AccessTokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -81,6 +90,7 @@ func GenerateRefreshToken(username, displayName, userUUID, role string, tokenVer
 		UserUUID:     userUUID,
 		Role:         role,
 		TokenVersion: tokenVersion,
+		TokenType:    RefreshTokenType,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(RefreshTokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -100,6 +110,7 @@ func GenerateWSTicket(username, displayName, userUUID, role string, tokenVersion
 		UserUUID:     userUUID,
 		Role:         role,
 		TokenVersion: tokenVersion,
+		TokenType:    WSTicketType,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(WSTicketTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -114,7 +125,12 @@ func GenerateWSTicket(username, displayName, userUUID, role string, tokenVersion
 
 // IsWSTicket 判断 claims 是否为短时 WS ticket。
 func IsWSTicket(claims *Claims) bool {
-	return claims != nil && claims.Subject == WSTicketSubject
+	return claims != nil && (claims.Subject == WSTicketSubject || claims.TokenType == WSTicketType)
+}
+
+// IsRefreshToken 判断 claims 是否为 refresh token。
+func IsRefreshToken(claims *Claims) bool {
+	return claims != nil && claims.TokenType == RefreshTokenType
 }
 
 // WSTicketExpired 独立于 JWT 过期再做一次短窗口校验，防止长签名密钥被用于伪造 ticket。
@@ -140,6 +156,7 @@ func GenerateBotToken(username, displayName, userUUID, role string, tokenVersion
 		Role:         role,
 		TokenVersion: tokenVersion,
 		Permissions:  permissions,
+		TokenType:    BotTokenType,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),

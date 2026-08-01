@@ -7,8 +7,8 @@ type JoinPolicy interface {
 	// IsMuted 返回 identity 是否被禁言。
 	IsMuted(identity string) (bool, error)
 	// CheckRoomLimit 返回房间是否已满，附带 limit 与当前 count。
-	CheckRoomLimit(guildUUID, roomName string) (full bool, limit uint, count int, err error)
+	CheckRoomLimit(domainUUID, roomName string) (full bool, limit uint, count int, err error)
 	// CheckRoomPassword 校验房间密码：ok=false 且 err!=nil 表示需密码（未提供），
 	// ok=false 且 err==nil 表示密码错误，ok=true 表示通过（无密码或密码正确）。
-	CheckRoomPassword(guildUUID, roomName, password string) (ok bool, err error)
+	CheckRoomPassword(domainUUID, roomName, password string) (ok bool, err error)
 }

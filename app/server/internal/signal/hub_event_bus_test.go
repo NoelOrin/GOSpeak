@@ -92,18 +92,18 @@ func TestHub_HandleRemoteEvent_ClearsLocalRooms(t *testing.T) {
 	}
 }
 
-func TestHub_ClearLocalRoomsForSFUSwitch_BroadcastsKnownGuilds(t *testing.T) {
+func TestHub_ClearLocalRoomsForSFUSwitch_BroadcastsKnownDomains(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
 	hub.fanout = newMockBroadcaster()
 	hub.mu.Lock()
-	hub.clientGuilds["socket-1"] = "guild-a"
+	hub.clientDomains["socket-1"] = "domain-a"
 	hub.mu.Unlock()
 
 	hub.clearLocalRoomsForSFUSwitch()
 
 	fanout := hub.fanout.(*mockBroadcaster)
-	if len(fanout.roomCasts["__guild:guild-a"][EventRoomListResult]) != 1 {
-		t.Fatal("expected SFU switch to broadcast room list to guild scope")
+	if len(fanout.roomCasts["__domain:domain-a"][EventRoomListResult]) != 1 {
+		t.Fatal("expected SFU switch to broadcast room list to domain scope")
 	}
 	if len(fanout.roomCasts["__platform"][EventRoomListResult]) != 0 {
 		t.Fatal("SFU switch must not only broadcast platform scope")

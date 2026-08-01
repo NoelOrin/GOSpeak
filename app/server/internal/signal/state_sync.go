@@ -189,14 +189,14 @@ func (h *Hub) roomInfoMerged(key string) RoomInfo {
 	info := h.roomInfoLocked(key)
 	h.mu.RUnlock()
 
-	guildUUID, logicalName := splitRoomKey(key)
+	domainUUID, logicalName := splitRoomKey(key)
 
 	if h.roomStore != nil {
-		if dbRoom, err := h.roomStore.GetByGuildAndName(guildUUID, logicalName); err == nil && dbRoom != nil {
+		if dbRoom, err := h.roomStore.GetByDomainAndName(domainUUID, logicalName); err == nil && dbRoom != nil {
 			info.ID = dbRoom.ID
 			info.UUID = dbRoom.UUID
 			info.Name = dbRoom.Name
-			info.GuildUUID = dbRoom.GuildUUID
+			info.DomainUUID = dbRoom.DomainUUID
 			info.HasPassword = dbRoom.Password != ""
 			info.Description = dbRoom.Description
 			info.Limit = dbRoom.Limit
@@ -224,8 +224,8 @@ func (h *Hub) broadcastRoomUpdatedLocal(key string) {
 		return
 	}
 	info := h.roomInfoMerged(key)
-	guildUUID, _ := splitRoomKey(key)
-	h.fanout.BroadcastToRoom(guildRoomKey(guildUUID), EventRoomUpdated, info)
+	domainUUID, _ := splitRoomKey(key)
+	h.fanout.BroadcastToRoom(domainRoomKey(domainUUID), EventRoomUpdated, info)
 }
 
 // ApplyRemoteRoomState refreshes local WebSocket clients after peer membership change.
@@ -235,9 +235,9 @@ func (h *Hub) ApplyRemoteRoomState(room string) {
 	}
 	// Always refresh list so room counts/new remote-only rooms appear.
 	if room != "" {
-		guildUUID, _ := splitRoomKey(room)
-		h.broadcastRoomList(guildUUID)
+		domainUUID, _ := splitRoomKey(room)
+		h.broadcastRoomList(domainUUID)
 		return
 	}
-	h.broadcastRoomListKnownGuilds()
+	h.broadcastRoomListKnownDomains()
 }
