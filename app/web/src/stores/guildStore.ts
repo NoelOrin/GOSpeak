@@ -5,6 +5,8 @@ import {
 	type GuildMember,
 	getGuild,
 	guildMembers,
+	deleteGuild,
+	leaveGuild,
 	myGuilds,
 } from "@/api/guild";
 
@@ -157,6 +159,16 @@ export function createGuildStore() {
 		}
 	};
 
+	const leaveAndClear = async (uuid: string) => {
+		await leaveGuild(uuid);
+		removeGuild(uuid);
+	};
+
+	const deleteAndClear = async (uuid: string) => {
+		await deleteGuild(uuid);
+		removeGuild(uuid);
+	};
+
 	return {
 		state,
 		setState,
@@ -167,6 +179,8 @@ export function createGuildStore() {
 		updateCachedGuild,
 		addGuild,
 		removeGuild,
+		leaveAndClear,
+		deleteAndClear,
 	};
 }
 

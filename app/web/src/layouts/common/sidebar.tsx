@@ -25,7 +25,7 @@ const Sidebar = (props: SidebarProps) => {
 	const navigate = useNavigate();
 	const { state, loadMyGuilds, setCurrentGuild } = guildStore;
 
-	loadMyGuilds();
+	void loadMyGuilds().catch(() => {});
 
 	const [guilds] = createResource<Guild[], string[]>(
 		() => state.myGuildUUIDs,
@@ -39,9 +39,14 @@ const Sidebar = (props: SidebarProps) => {
 		},
 	);
 
-	const handleSelect = (uuid: string) => {
+	const handleSelect = async (uuid: string) => {
+		const previousUUID = state.currentGuildUUID;
 		setCurrentGuild(uuid);
-		navigate({ to: "/guild/$guildUUID", params: { guildUUID: uuid } });
+		try {
+			await navigate({ to: "/guild/$guildUUID", params: { guildUUID: uuid } });
+		} catch {
+			setCurrentGuild(previousUUID);
+		}
 	};
 
 	return (
@@ -86,7 +91,7 @@ const Sidebar = (props: SidebarProps) => {
 								name={guild.name}
 								iconUrl={guild.icon_url}
 								active={state.currentGuildUUID === guild.uuid}
-								onClick={() => handleSelect(guild.uuid)}
+								onClick={() => void handleSelect(guild.uuid)}
 							/>
 						)}
 					</For>

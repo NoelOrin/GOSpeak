@@ -1,4 +1,5 @@
 import type { Component } from "solid-js";
+import OptionSquare from "@/components/common/optionSquare";
 
 interface GuildIconProps {
 	name: string;
@@ -11,15 +12,10 @@ interface GuildIconProps {
 const GuildIcon: Component<GuildIconProps> = (props) => {
 	const initials = () => props.name.slice(0, 2).toUpperCase();
 	return (
-		<button
+		<OptionSquare
+			label={props.name}
 			onClick={props.onClick}
-			class={props.class || ""}
-			classList={{
-				"w-12 h-12 rounded-2xl flex items-center justify-center text-white font-bold text-lg transition-all cursor-pointer hover:rounded-xl": true,
-				"bg-blue-500": !props.active,
-				"bg-blue-600 rounded-xl": !!props.active,
-			}}
-			title={props.name}
+			class={props.class}
 		>
 			{props.iconUrl ? (
 				<img
@@ -28,9 +24,9 @@ const GuildIcon: Component<GuildIconProps> = (props) => {
 					class="w-12 h-12 rounded-2xl object-cover"
 				/>
 			) : (
-				<span>{initials()}</span>
+				<span class="text-lg font-bold">{initials()}</span>
 			)}
-		</button>
+		</OptionSquare>
 	);
 };
 

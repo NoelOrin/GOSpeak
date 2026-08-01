@@ -7,18 +7,31 @@ const InviteShareModal: Component<{
 	onClose: () => void;
 }> = (props) => {
 	const [qrDataUrl, setQrDataUrl] = createSignal("");
+	const [qrError, setQrError] = createSignal("");
 	const [copied, setCopied] = createSignal(false);
+	const [copyError, setCopyError] = createSignal("");
 
 	onMount(() => {
 		void QRCode.toDataURL(props.inviteUrl, { width: 240, margin: 2 })
-			.then(setQrDataUrl)
-			.catch(() => setQrDataUrl(""));
+			.then((dataUrl) => {
+				setQrDataUrl(dataUrl);
+				setQrError("");
+			})
+			.catch(() => {
+				setQrDataUrl("");
+				setQrError("二维码生成失败，请使用复制链接分享");
+			});
 	});
 
 	const copyLink = async () => {
-		await navigator.clipboard.writeText(props.inviteUrl);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 2000);
+		setCopyError("");
+		try {
+			await navigator.clipboard.writeText(props.inviteUrl);
+			setCopied(true);
+			setTimeout(() => setCopied(false), 2000);
+		} catch {
+			setCopyError("复制失败，请手动复制上方链接");
+		}
 	};
 
 	return (
@@ -33,9 +46,15 @@ const InviteShareModal: Component<{
 							class="w-60 h-60 object-contain bg-white p-2 rounded-lg"
 						/>
 					</Show>
+					<Show when={qrError()}>
+						<p class="w-full text-center text-xs text-error">{qrError()}</p>
+					</Show>
 					<div class="w-full text-sm break-all text-base-content/70 bg-base-200 rounded-lg px-3 py-2">
 						{props.inviteUrl}
 					</div>
+					<Show when={copyError()}>
+						<p class="w-full text-center text-xs text-error">{copyError()}</p>
+					</Show>
 					<button
 						type="button"
 						class="btn btn-primary btn-sm w-full"

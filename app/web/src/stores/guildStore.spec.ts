@@ -2,16 +2,26 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Guild, GuildMember } from "@/api/guild";
 import { createGuildStore } from "./guildStore";
 
-const { myGuildsMock, getGuildMock, guildMembersMock } = vi.hoisted(() => ({
+const {
+	myGuildsMock,
+	getGuildMock,
+	guildMembersMock,
+	leaveGuildMock,
+	deleteGuildMock,
+} = vi.hoisted(() => ({
 	myGuildsMock: vi.fn(),
 	getGuildMock: vi.fn(),
 	guildMembersMock: vi.fn(),
+	leaveGuildMock: vi.fn(),
+	deleteGuildMock: vi.fn(),
 }));
 
 vi.mock("@/api/guild", () => ({
 	myGuilds: myGuildsMock,
 	getGuild: getGuildMock,
 	guildMembers: guildMembersMock,
+	leaveGuild: leaveGuildMock,
+	deleteGuild: deleteGuildMock,
 }));
 
 function makeGuild(overrides: Partial<Guild> = {}): Guild {
@@ -90,6 +100,74 @@ describe("guildStore", () => {
 		expect(store.state.guildCache["g-1"]).toBeUndefined();
 		expect(store.state.memberCache["g-1"]).toBeUndefined();
 		expect(store.state.currentGuildUUID).toBeNull();
+	});
+
+	it("clears guild caches after a successful leave API call", async () => {
+		const store = createGuildStore();
+		const guild = makeGuild();
+		store.addGuild(guild);
+		store.setState("memberCache", guild.uuid, makeMembers());
+		store.setCurrentGuild(guild.uuid);
+		leaveGuildMock.mockResolvedValue(undefined);
+
+		await store.leaveAndClear(guild.uuid);
+
+		expect(leaveGuildMock).toHaveBeenCalledWith(guild.uuid);
+		expect(store.state.myGuildUUIDs).not.toContain(guild.uuid);
+		expect(store.state.guildCache[guild.uuid]).toBeUndefined();
+		expect(store.state.memberCache[guild.uuid]).toBeUndefined();
+		expect(store.state.currentGuildUUID).toBeNull();
+	});
+
+	it("keeps caches and current guild when leave API fails", async () => {
+		const store = createGuildStore();
+		const guild = makeGuild();
+		const members = makeMembers();
+		store.addGuild(guild);
+		store.setState("memberCache", guild.uuid, members);
+		store.setCurrentGuild(guild.uuid);
+		leaveGuildMock.mockRejectedValueOnce(new Error("network"));
+
+		await expect(store.leaveAndClear(guild.uuid)).rejects.toThrow("network");
+
+		expect(store.state.myGuildUUIDs).toContain(guild.uuid);
+		expect(store.state.guildCache[guild.uuid]).toEqual(guild);
+		expect(store.state.memberCache[guild.uuid]).toEqual(members);
+		expect(store.state.currentGuildUUID).toBe(guild.uuid);
+	});
+
+	it("clears guild caches after a successful delete API call", async () => {
+		const store = createGuildStore();
+		const guild = makeGuild();
+		store.addGuild(guild);
+		store.setState("memberCache", guild.uuid, makeMembers());
+		store.setCurrentGuild(guild.uuid);
+		deleteGuildMock.mockResolvedValue(undefined);
+
+		await store.deleteAndClear(guild.uuid);
+
+		expect(deleteGuildMock).toHaveBeenCalledWith(guild.uuid);
+		expect(store.state.myGuildUUIDs).not.toContain(guild.uuid);
+		expect(store.state.guildCache[guild.uuid]).toBeUndefined();
+		expect(store.state.memberCache[guild.uuid]).toBeUndefined();
+		expect(store.state.currentGuildUUID).toBeNull();
+	});
+
+	it("keeps caches and current guild when delete API fails", async () => {
+		const store = createGuildStore();
+		const guild = makeGuild();
+		const members = makeMembers();
+		store.addGuild(guild);
+		store.setState("memberCache", guild.uuid, members);
+		store.setCurrentGuild(guild.uuid);
+		deleteGuildMock.mockRejectedValueOnce(new Error("network"));
+
+		await expect(store.deleteAndClear(guild.uuid)).rejects.toThrow("network");
+
+		expect(store.state.myGuildUUIDs).toContain(guild.uuid);
+		expect(store.state.guildCache[guild.uuid]).toEqual(guild);
+		expect(store.state.memberCache[guild.uuid]).toEqual(members);
+		expect(store.state.currentGuildUUID).toBe(guild.uuid);
 	});
 
 	it("keeps a failed member refresh retryable", async () => {

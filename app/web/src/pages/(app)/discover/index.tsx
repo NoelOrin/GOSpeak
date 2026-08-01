@@ -15,6 +15,7 @@ import {
 } from "@/api/guild";
 import CreateGuildModal from "@/components/guild/CreateGuildModal";
 import GuildIcon from "@/components/guild/GuildIcon";
+import GuildInvitePreview from "@/components/guild/GuildInvitePreview";
 import guildStore from "@/stores/guildStore";
 import { extractGuildInviteCode } from "@/utils/guildInvite";
 
@@ -44,7 +45,7 @@ function RouteComponent() {
 
 	const [createRef, setCreateRef] = createSignal<HTMLDialogElement>();
 
-	const [publicGuilds] = createResource(
+	const [publicGuilds, { refetch }] = createResource(
 		() => ({ keyword: keyword(), page: page(), pageSize: PAGE_SIZE }),
 		({ keyword, page, pageSize }) =>
 			listPublicGuilds(page, pageSize, keyword || undefined),
@@ -98,6 +99,7 @@ function RouteComponent() {
 		const guild = previewGuild();
 		const code = previewCode();
 		if (!guild || !code) return;
+		if (joining()) return;
 		if (isJoined(guild.uuid)) {
 			setPreviewOpen(false);
 			navigate({
@@ -187,7 +189,22 @@ function RouteComponent() {
 				</Show>
 
 				<Show when={!publicGuilds.loading && publicGuilds.error}>
-					<div class="alert alert-error">服务器列表加载失败</div>
+					<div role="alert" class="alert alert-error flex-wrap justify-between">
+						<span>服务器列表加载失败</span>
+						<button
+							type="button"
+							class="btn btn-sm"
+							onClick={() => void refetch()}
+						>
+							重试
+						</button>
+					</div>
+				</Show>
+
+				<Show when={publicGuilds.loading && publicGuilds()}>
+					<div class="flex justify-center py-3">
+						<span class="loading loading-spinner loading-sm" />
+					</div>
 				</Show>
 
 				<Show
@@ -290,65 +307,15 @@ function RouteComponent() {
 					>
 						<div class="modal-box">
 							<h3 class="font-bold text-lg mb-4">加入服务器</h3>
-							<Show
-								when={!previewLoading()}
-								fallback={
-									<div class="flex justify-center py-6">
-										<span class="loading loading-spinner loading-md" />
-									</div>
-								}
-							>
-								<Show when={previewError()}>
-									<div class="alert alert-error mb-4">
-										<span>{previewError()}</span>
-									</div>
-								</Show>
-								<Show when={previewGuild()}>
-									{(guild) => (
-										<div class="flex items-start gap-3 mb-5">
-											<GuildIcon
-												name={guild().name}
-												iconUrl={guild().icon_url}
-												class="shrink-0"
-											/>
-											<div class="min-w-0">
-												<div class="font-semibold">{guild().name}</div>
-												<p class="text-sm text-base-content/60 mt-1">
-													{guild().description || "暂无描述"}
-												</p>
-											</div>
-										</div>
-									)}
-								</Show>
-								<div class="modal-action">
-									<button
-										type="button"
-										class="btn"
-										onClick={() => setPreviewOpen(false)}
-									>
-										取消
-									</button>
-									<Show when={!!previewGuild() && !previewJoined()}>
-										<button
-											type="button"
-											class="btn btn-primary"
-											disabled={joining() || !previewGuild()}
-											onClick={joinPreview}
-										>
-											{joining() ? "加入中..." : "确认加入"}
-										</button>
-									</Show>
-									<Show when={!!previewGuild() && previewJoined()}>
-										<button
-											type="button"
-											class="btn btn-primary"
-											onClick={joinPreview}
-										>
-											进入服务器
-										</button>
-									</Show>
-								</div>
-							</Show>
+							<GuildInvitePreview
+								guild={previewGuild()}
+								joined={previewJoined()}
+								loading={previewLoading()}
+								error={previewError()}
+								joining={joining()}
+								onConfirm={joinPreview}
+								onCancel={() => setPreviewOpen(false)}
+							/>
 						</div>
 						<form method="dialog" class="modal-backdrop">
 							<button onClick={() => setPreviewOpen(false)} />
