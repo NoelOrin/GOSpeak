@@ -7,24 +7,29 @@ GOSpeak 是一个自托管的**游戏语音平台**，类似自部署版 Discord
 **为什么自建？** 游戏语音数据不经第三方、自定义语音路由策略、无用户数限制、完全控制部署架构。
 
 关键能力：
-- 🎮 语音房间管理（创建/加入/密码保护/踢人）
-- 🗣️ 实时发言检测 + 成员独立音量控制
-- 🔄 多 SFU 运行时切换（LiveKit / SRS / MediaSoup / Agora / Daily）
-- 🔄 多 SFU 运行时切换（LiveKit / SRS / MediaSoup / Agora / Daily / Cloudflare）
-- 🐘 渐进式数据库（SQLite 开箱即用 → PostgreSQL → MySQL）
-- 🔌 JWT + OAuth2 三端登录（GitHub / Google / QQ）
+- 语音房间管理（创建/加入/密码保护/踢人）
+- 实时发言检测 + 成员独立音量控制
+- 多 SFU 运行时切换（LiveKit / SRS / MediaSoup / Agora / Daily / Cloudflare）
+- 渐进式数据库（SQLite 开箱即用 → PostgreSQL → MySQL）
+- JWT + OAuth2 三端登录（GitHub / Google / QQ）
+- Guild（语音服务器）多租户隔离
+- 文字频道消息（房间消息 + 私聊）
+- 插件系统（内置 Bot + 外部插件）
+- 多实例部署（NATS 事件总线 + Redis 状态共享）
 
 ```
 GOSpeak/
 ├── app/
 │   ├── server/          # Go 后端 (Gin + GORM + multi-provider SFU abstraction)
 │   ├── web/             # SolidJS 前端 (TypeScript + Vite + TanStack Router)
-│   ├── sfu-client/      # 前端多 SFU 客户端抽象
-│   └── mediasoup-worker/# MediaSoup Node 服务
-├── package.json         # Root scripts
-├── pnpm-workspace.yaml  # Workspace config
-├── AGENTS.md            # ← This file
-└── agent_test_logs/     # Test log output directory
+│   └── sfu-client/      # 前端多 SFU 客户端抽象包
+├── packages/
+│   └── sfu-client/      # 共享 SFU 客户端类型与工厂
+├── test/                # API 集成测试 (Node.js)
+├── docs/                # Swagger 生成文档
+├── agent_test_logs/     # Agent 测试日志输出目录
+├── pnpm-workspace.yaml  # Workspace 配置
+└── AGENTS.md            # ← This file
 ```
 
 ---
@@ -39,40 +44,64 @@ app/server/
 ├── server/
 │   └── gin.go              # DI container, initializes all layers
 ├── internal/
-│   ├── config/             # Config reading from env (DB, Redis, SFU, JWT)
+│   ├── config/             # Config reading from env (DB, Redis, SFU, JWT, NATS, Storage)
 │   ├── model/              # Data models (GORM entities)
 │   ├── repository/         # DAO layer, direct DB access
 │   ├── service/            # Business logic layer
 │   ├── handler/            # HTTP controller (Gin handlers)
 │   ├── middleware/         # JWT auth, CORS, permission-based RBAC, ban check
 │   ├── router/             # Route registration (sub-route modules)
-│   │   └── routes/         # Per-module route groups (auth, user, signal, oauth, sfu, role, permission, mute, room, storage, bot, email, srs, system, guild, conversation, message, plugin)
+│   │   └── routes/         # Per-module route groups
 │   ├── sfu/                # SFU provider abstraction layer
-│   ├── livekit/            # LiveKit SFU implementation
-│   ├── agora/              # Agora SFU implementation
-│   ├── daily/              # Daily SFU implementation
-│   ├── mediasoup/          # MediaSoup SFU implementation
-│   ├── srs/                # SRS SFU implementation (WHIP/WHEP)
-│   ├── cloudflare/         # Cloudflare Realtime SFU implementation
-│   │   └── providers/      # SFU provider implementations
-│   │       ├── livekit/    # LiveKit SFU implementation
-│   │       ├── agora/      # Agora SFU implementation
-│   │       ├── daily/      # Daily SFU implementation
-│   │       ├── mediasoup/  # MediaSoup SFU implementation
-│   │       ├── srs/        # SRS SFU implementation (WHIP/WHEP)
-│   │       └── cloudflare/ # Cloudflare Realtime SFU implementation
-│   ├── permcode/           # Permission code constants
-│   ├── bus/                # Multi-instance event bus (NATS/Redis)
+│   │   ├── provider.go     # Provider interface + StreamProvider/ClientInfoProvider
+│   │   ├── types.go        # Capabilities, EnforcementLevel, RoomSummary, ParticipantSummary
+│   │   ├── capabilities.go # CapabilitiesFor() per provider
+│   │   ├── mute_rule_store.go  # SFU 端禁言规则存储
+│   │   └── providers/      # Per-provider implementations
+│   │       ├── livekit/    # LiveKit gRPC SDK
+│   │       ├── srs/        # SRS REST + WHIP/WHEP
+│   │       ├── mediasoup/  # MediaSoup HTTP bridge
+│   │       ├── agora/      # Agora REST
+│   │       ├── daily/      # Daily REST
+│   │       └── cloudflare/ # Cloudflare Realtime (WHIP/WHEP)
 │   ├── signal/             # WebSocket signaling hub
+│   │   ├── events.go       # 30+ event name constants
+│   │   ├── types.go        # RoomRequest, MemberInfo, RoomInfo
+│   │   ├── hub.go          # Hub (room registry + all event handlers)
+│   │   ├── state_sync.go   # Guild 命名空间 + 跨实例状态同步
+│   │   ├── bot_bridge.go   # Bot 消息桥接
+│   │   └── message_bridge.go # 消息事件桥接
+│   ├── ws/                 # WebSocket 基础设施（nhooyr.io/websocket）
+│   │   ├── client.go       # Client (read loop, goroutine-safe write)
+│   │   ├── fanout.go       # Fanout Broadcaster (room-based fan-out)
+│   │   ├── upgrader.go     # HTTP→WS upgrade + JWT 鉴权 + origin 校验
+│   │   └── handler.go      # HandlerRegistry (event dispatch + panic recover)
+│   ├── bus/                # Multi-instance event bus (NATS embedded/external)
+│   │   ├── bus.go          # EventBus interface + Envelope
+│   │   ├── embedded.go     # Embedded NATS server
+│   │   ├── nats_bus.go     # External NATS
+│   │   ├── ws_deliverer.go # NATS → local WS bridge
+│   │   ├── membership_store.go  # Room member 跨实例共享
+│   │   ├── mute_rule_store.go   # Agora kicking-rule + 降级 mute cache
+│   │   ├── auth_store.go   # JWT blacklist + signing key rotation
+│   │   └── factory.go      # Init() resolves embedded/external
 │   ├── redis/              # Optional Redis client (blacklist, JWT key rotation)
 │   ├── logger/             # Unified logrus wrapper (level/format/output + gin middleware)
+│   ├── plugin/             # Plugin system (registry, host, builtin)
+│   │   ├── types.go        # Plugin/Host/Meta/Configurable interfaces
+│   │   ├── registry.go     # Plugin lifecycle management
+│   │   ├── host.go         # Host implementation (DB, config, HTTP registration)
+│   │   └── builtin/        # Built-in plugins (botbase)
+│   ├── permcode/           # Permission code constants
+│   │   ├── permcode.go     # Platform permissions
+│   │   └── guild_permcode.go  # Guild permissions
+│   ├── storage/            # Object storage abstraction (local/S3)
+│   ├── jobs/               # Background jobs (placeholder)
 │   └── pkg/                # Shared utilities
-│       ├── errors.go       # Business error codes + AppError
-│       ├── response.go     # Unified JSON response
+│       ├── errors.go       # Business error codes + AppError + ErrSFUNotSupported
+│       ├── response.go     # Unified JSON response + HandleError
 │       ├── jwt.go          # JWT token generation/parsing
-│       └── oauth/          # Generic OAuth2 provider abstraction (seeded github/google/qq + custom)
-├── test/                   # API integration tests (Node.js)
-├── docs/                   # Swagger generated docs
+│       └── oauth/          # Generic OAuth2 provider abstraction
 ├── db/                     # SQLite database storage
 ├── .env.dev / .env.prod    # Environment config
 └── go.mod
@@ -93,11 +122,9 @@ Each layer communicates **only with the layer directly below it**:
 - **Handler** receives HTTP request, validates input, calls Service
 - **Service** implements business logic, calls Repository and SFU-related modules
 - **Repository** is pure data access, returns GORM errors
-- **SFU providers** are standalone packages wrapping provider-specific APIs (LiveKit, Agora, MediaSoup)
-- **OAuth** is a standalone package for third-party login (GitHub, Google, QQ)
-- **Redis** is an optional standalone package for token blacklist and JWT key rotation
-- **Signal** is a standalone WebSocket hub for signaling
-- **Bus** is a multi-instance event bus (NATS/Redis) for cross-instance room fanout, membership, mute rules, and auth stores
+- **SFU providers** are standalone packages wrapping provider-specific APIs
+- **Signal** is a standalone WebSocket hub with its own event system
+- **Bus** is a multi-instance event bus (NATS) for cross-instance room fanout, membership, mute rules, and auth stores
 
 ---
 
@@ -131,7 +158,7 @@ pkg.Success(c, data)
 return nil, pkg.NewAppError(pkg.USER_NOT_FOUND, "user not found")
 
 // Error with HandleError (handler layer)
-pkg.HandleError(c, err)    // auto-detects *AppError
+pkg.HandleError(c, err)    // auto-detects *AppError, hides internal detail for 5xxx/6xxx
 
 // Error with explicit code
 pkg.Fail(c, pkg.INVALID_PARAMS, "custom message")  // msg is optional
@@ -139,27 +166,48 @@ pkg.Fail(c, pkg.INVALID_PARAMS, "custom message")  // msg is optional
 
 ### Business Status Codes
 
-| Code | Constant | Meaning |
-|------|----------|---------|
-| 0 | `SUCCESS` | success |
-| 1001 | `TOKEN_NOT_EXIST` | token does not exist |
-| 1002 | `TOKEN_WRONG` | token is wrong |
-| 1003 | `TOKEN_EXPIRED` | token has expired |
-| 1010 | `INVALID_PASSWORD` | invalid password |
-| 1011 | `USER_NOT_FOUND` | user not found |
-| 1012 | `USERNAME_EXISTS` | username already exists |
-| 1013 | `FORBIDDEN` | forbidden |
-| 1014 | `TOKEN_REVOKED` | token has been revoked |
-| 2001 | `INVALID_PARAMS` | invalid parameters |
-| 3001 | `NOT_FOUND` | resource not found |
-| 3002 | `ALREADY_EXISTS` | resource already exists |
-| 5001 | `INTERNAL_ERROR` | internal server error |
-| 6001 | `SFU_NOT_CONFIGURED` | sfu not configured |
-| 6002 | `SFU_ERROR` | sfu error |
-| 7001 | `OAUTH_PROVIDER_NOT_FOUND` | oauth provider not found |
-| 7002 | `OAUTH_PROVIDER_DISABLED` | oauth provider is disabled |
-| 7003 | `OAUTH_TOKEN_EXCHANGE_FAILED` | oauth token exchange failed |
-| 7004 | `OAUTH_GET_USER_FAILED` | oauth get user info failed |
+| Code | Constant | Meaning | HTTP |
+|------|----------|---------|------|
+| 0 | `SUCCESS` | success | 200 |
+| 1001 | `TOKEN_NOT_EXIST` | token does not exist | 401 |
+| 1002 | `TOKEN_WRONG` | token is wrong | 401 |
+| 1003 | `TOKEN_EXPIRED` | token has expired | 401 |
+| 1010 | `INVALID_PASSWORD` | invalid password | 400 |
+| 1011 | `USER_NOT_FOUND` | user not found | 400 |
+| 1012 | `USERNAME_EXISTS` | username already exists | 400 |
+| 1013 | `FORBIDDEN` | forbidden | 403 |
+| 1014 | `TOKEN_REVOKED` | token has been revoked | 401 |
+| 1015 | `USER_BANNED` | user has been banned | 403 |
+| 1016 | `USER_MUTED` | user has been muted | 403 |
+| 1017 | `RATE_LIMITED` | too many requests | 429 |
+| 2001 | `INVALID_PARAMS` | invalid parameters | 400 |
+| 3001 | `NOT_FOUND` | resource not found | 404 |
+| 3002 | `ALREADY_EXISTS` | resource already exists | 409 |
+| 5001 | `INTERNAL_ERROR` | internal server error | 500 |
+| 6001 | `SFU_NOT_CONFIGURED` | sfu not configured | 503 |
+| 6002 | `SFU_ERROR` | sfu error | 502 |
+| 7001 | `OAUTH_PROVIDER_NOT_FOUND` | oauth provider not found | 404 |
+| 7002 | `OAUTH_PROVIDER_DISABLED` | oauth provider is disabled | 503 |
+| 7003 | `OAUTH_TOKEN_EXCHANGE_FAILED` | oauth token exchange failed | 502 |
+| 7004 | `OAUTH_GET_USER_FAILED` | oauth get user info failed | 502 |
+| 8001 | `EMAIL_ALREADY_EXISTS` | email already exists | 400 |
+| 8002 | `EMAIL_CODE_INVALID` | invalid verification code | 400 |
+| 8003 | `EMAIL_CODE_EXPIRED` | verification code expired | 400 |
+| 8004 | `EMAIL_CODE_ALREADY_USED` | verification code already used | 400 |
+| 8005 | `EMAIL_SEND_TOO_FREQUENT` | send too frequent | 400 |
+| 8006 | `EMAIL_SEND_FAILED` | email send failed | 502 |
+| 8007 | `EMAIL_NOT_VERIFIED` | email not verified | 400 |
+| 8008 | `EMAIL_CODE_MAX_ATTEMPTS` | too many attempts | 400 |
+| 8009 | `EMAIL_NOT_CONFIGURED` | email not configured | 503 |
+| 8010 | `PASSWORD_RESET_DISABLED` | password reset disabled | 403 |
+| 8101 | `STORAGE_NOT_CONFIGURED` | storage not configured | 503 |
+| 8102 | `STORAGE_ERROR` | storage error | 502 |
+| 8103 | `STORAGE_FILE_TOO_LARGE` | file too large | 400 |
+| 8104 | `STORAGE_FILE_TYPE_NOT_ALLOWED` | file type not allowed | 400 |
+
+### HandleError 细节策略
+
+`HandleError` 会判断业务码，**隐藏内部实现细节**（不透传 err.Error()）对于：INTERNAL_ERROR、SFU_ERROR、STORAGE_ERROR、OAUTH_*、EMAIL_SEND_FAILED，客户端只收到默认文案。
 
 ---
 
@@ -207,10 +255,12 @@ if err := c.ShouldBindJSON(&req); err != nil {
 ## API Route Conventions
 
 - **All routes** are prefixed with `/api/v1/`
-- Grouped by module: `auth`, `user`, `signal`, `oauth`, `role`, `permission`, `mute`, `room`, `storage`, `bot`, `email`, `sfu`, `srs`, `system`
+- Grouped by module: `auth`, `user`, `signal`, `oauth`, `role`, `permission`, `mute`, `room`, `storage`, `bot`, `email`, `sfu`, `srs`, `system`, `guild`, `conversation`, `message`, `plugin`
 - The `protected` group applies `middleware.JWTAuth()` + `middleware.BanCheck()` to every route
-- Permission-gated routes additionally use `middleware.RequirePermission(permcode.X)` (permission-based RBAC; see Middleware section)
+- Permission-gated routes additionally use `middleware.RequirePermission(permcode.X)` (permission-based RBAC)
 - Public routes (login, register, oauth, signal exchange, srs callback, system stream) are outside the protected group
+- Bot tokens use `Claims.Permissions` directly; users resolve permissions via `role → role_permissions`
+- `RequireOwnerOrPermission(ownerContextKey, permCode)` allows resource owner or permission holder
 
 ### Current Route Table
 
@@ -264,6 +314,12 @@ if err := c.ShouldBindJSON(&req); err != nil {
 | POST | `/api/v1/room/get` | JWT | `room:read` | RoomHandler.Get |
 | POST | `/api/v1/room/update` | JWT | `room:update` | RoomHandler.Update |
 | POST | `/api/v1/room/delete` | JWT | `room:delete` | RoomHandler.Delete |
+| POST | `/api/v1/room/messages/list` | JWT | `message:read` | MessageHandler.List |
+| POST | `/api/v1/room/messages/send` | JWT | `message:send` | MessageHandler.Send |
+| POST | `/api/v1/room/messages/edit` | JWT | `message:send` | MessageHandler.Edit |
+| POST | `/api/v1/room/messages/delete` | JWT | `message:send` | MessageHandler.Delete |
+| POST | `/api/v1/room/messages/react` | JWT | `message:send` | MessageHandler.React |
+| POST | `/api/v1/room/messages/unreact` | JWT | `message:send` | MessageHandler.Unreact |
 | POST | `/api/v1/storage/presign` | JWT | — | StorageHandler.PresignUpload |
 | POST | `/api/v1/storage/confirm` | JWT | — | StorageHandler.ConfirmUpload |
 | POST | `/api/v1/storage/upload` | JWT | — | StorageHandler.Upload |
@@ -284,34 +340,27 @@ if err := c.ShouldBindJSON(&req); err != nil {
 | POST | `/api/v1/sfu/providers` | JWT | `sfu:manage` | SFUConfigHandler.ListProviders |
 | POST | `/api/v1/srs/callback` | No | — | SRSCallbackHandler.HandleCallback |
 | GET | `/api/v1/system/stream` | No | — | MonitorHandler.HealthStream |
-| GET | `/ping` | No | — | Health check |
-| GET | `/swagger/*any` | No | — | Swagger UI |
-| GET | `/uploads/*` | No | — | Static avatar/uploads |
-| POST | `/api/v1/guild/create` | JWT | `guild:create` | GuildHandler.Create |
-| POST | `/api/v1/guild/get` | JWT | `guild:read` | GuildHandler.Get |
+| GET | `/api/v1/guild/create` | JWT | `guild:create` | GuildHandler.Create |
+| GET | `/api/v1/guild/get` | JWT | `guild:read` | GuildHandler.Get |
 | POST | `/api/v1/guild/list` | JWT | `guild:read` | GuildHandler.List |
 | POST | `/api/v1/guild/list-public` | JWT | — | GuildHandler.ListPublic |
 | POST | `/api/v1/guild/my-guilds` | JWT | — | GuildHandler.MyGuilds |
 | POST | `/api/v1/guild/update` | JWT | `guild:manage` | GuildHandler.Update |
-| POST | `/api/v1/guild/delete` | JWT | `guild:delete` | GuildHandler.Delete |
+| DELETE | `/api/v1/guild/delete` | JWT | `guild:delete` | GuildHandler.Delete |
 | POST | `/api/v1/guild/join` | JWT | — | GuildHandler.Join |
 | POST | `/api/v1/guild/leave` | JWT | — | GuildHandler.Leave |
 | POST | `/api/v1/guild/kick` | JWT | `guild:kick` | GuildHandler.Kick |
 | POST | `/api/v1/guild/members` | JWT | `guild:read` | GuildHandler.Members |
-
-| WS | `/ws` | No | — | WebSocket signaling |
-| POST | `/api/v1/conversation/list` | JWT | — | ConversationHandler.List |
+| GET | `/api/v1/conversation/list` | JWT | — | ConversationHandler.List |
 | POST | `/api/v1/conversation/messages` | JWT | — | ConversationHandler.Messages |
 | POST | `/api/v1/conversation/mark-read` | JWT | — | ConversationHandler.MarkRead |
-| POST | `/api/v1/room/messages/list` | JWT | `message:read` | MessageHandler.List |
-| POST | `/api/v1/room/messages/send` | JWT | `message:send` | MessageHandler.Send |
-| POST | `/api/v1/room/messages/edit` | JWT | `message:send` | MessageHandler.Edit |
-| POST | `/api/v1/room/messages/delete` | JWT | `message:send` | MessageHandler.Delete |
-| POST | `/api/v1/room/messages/react` | JWT | `message:send` | MessageHandler.React |
-| POST | `/api/v1/room/messages/unreact` | JWT | `message:send` | MessageHandler.Unreact |
 | POST | `/api/v1/plugins/list` | JWT | `plugin:read` | PluginHandler.List |
 | POST | `/api/v1/plugins/get` | JWT | `plugin:read` | PluginHandler.Get |
 | POST | `/api/v1/plugins/update` | JWT | `plugin:manage` | PluginHandler.Update |
+| WS | `/ws` | No | — | WebSocket signaling (subprotocol: gospeak + token) |
+| GET | `/ping` | No | — | Health check |
+| GET | `/swagger/*any` | No | — | Swagger UI |
+| GET | `/uploads/*filepath` | No | — | Static avatar/uploads (safe path traversal) |
 
 ---
 
@@ -325,7 +374,7 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 |----------|---------|-------------|
 | `DB_TYPE` | `SQLite` | `SQLite` / `PostgresSQL` / `MYSQL` |
 | `DB_HOST` | `localhost` | DB host (PostgreSQL/MySQL) |
-| `DB_PORT` | `5432` | DB port |
+| `DB_PORT` | — | DB port |
 | `DB_USER` | — | DB user |
 | `DB_PASSWORD` | — | DB password |
 | `DB_PATH` | `db/app.db` | SQLite file path |
@@ -357,6 +406,20 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | `CF_APP_ID` / `CF_APP_SECRET` / `CF_STUN_URL` | — / — / `stun.cloudflare.com:3478` | Cloudflare Realtime credentials |
 
 > Base SFU config is loaded from env; persistent per-provider config is managed through `/api/v1/sfu/*` and resolved at runtime by `sfu.NewDynamicProvider(...)`.
+
+### NATS / Bus (Multi-Instance)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NATS_URL` | — | Leave empty to use embedded NATS |
+| `NATS_SUBJECT_PREFIX` | `gospeak` | NATS subject prefix |
+| `NATS_NAME` | — | Instance name (auto = hostname-pid) |
+| `NATS_CONNECT_TIMEOUT` | `2s` | Connection timeout |
+| `NATS_EMBEDDED_PORT` | — | Embedded NATS port (random if empty) |
+| `NATS_USER` / `NATS_PASSWORD` / `NATS_TOKEN` | — | Auth credentials |
+| `NATS_CREDS_FILE` | — | NATS JWT creds file |
+| `NATS_TLS` | `false` | Enable TLS |
+| `STATE_STORE` | `auto` | `auto` → redis → nats → graceful degradation |
 
 ### Redis (optional)
 
@@ -390,6 +453,7 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY` | — | S3 credentials |
 | `STORAGE_PUBLIC_BASE_URL` | — | Public base URL (CDN / custom domain) |
 | `STORAGE_PATH_PREFIX` | `uploads/` | Upload path prefix |
+| `STORAGE_ENCRYPT_KEY` | — | Encryption key for secrets at rest |
 
 ### Server
 
@@ -398,6 +462,8 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | `SERVER_PORT` | `8998` | HTTP listen port |
 | `STATIC_DIR` | — | Frontend static dir (SPA hosting in prod) |
 | `GIN_MODE` | `debug` | Gin mode (`release` in prod) |
+| `CORS_ORIGIN` | `*` | CORS allowed origin |
+| `WS_ALLOWED_ORIGINS` | — | WebSocket origin whitelist (empty = same-origin) |
 
 ### Logging
 
@@ -409,9 +475,6 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | `LOG_FILE` | `logs/app.log` | path when output is `file`/`both` |
 | `LOG_CALLER` | `false` | print caller file:line |
 
-
-- Auto-migration is enabled — all models are synced on startup in `repository/db.go`.
-
 ---
 
 ## SFU Abstraction Layer
@@ -422,102 +485,85 @@ Standalone package at `internal/sfu/`. Provides a provider interface so multiple
 
 ```go
 type Provider interface {
+    ProviderName() string
+    Capabilities() Capabilities
     GenerateToken(room, identity string) (string, error)
-    GenerateAdminToken() (string, error)
-    ListRooms() (interface{}, error)
-    ListParticipants(room string) (interface{}, error)
+    GenerateAdminToken() (string, error)  // ErrSFUNotSupported if not supported
+    ListRooms() ([]RoomSummary, error)
+    ListParticipants(room string) ([]ParticipantSummary, error)
     MuteParticipant(room, identity, trackSid string, muted bool) error
     RemoveParticipant(room, identity string) error
     DeleteRoom(room string) error
     GetHost() string
 }
-```
 
-### Factory (`internal/sfu/factory.go`)
+// StreamProvider — SRS WHIP/WHEP uses stream-based addressing
+type StreamProvider interface {
+    Provider
+    StreamName(room, identity string) string
+    StreamInfo(room, identity string) (stream, token string, err error)
+}
 
-`sfu.NewProvider(cfg)` reads `cfg.SFUProvider` and returns the matching implementation. Registered providers are `"livekit"`, `"agora"`, `"mediasoup"`, `"srs"`, `"daily"`, and `"cloudflare"`.
-
-`sfu.NewDynamicProvider(resolve)` is the runtime entry used by server wiring. It resolves config via `SFUConfigService.ResolveConfig()` and delegates each call to the current provider.
-
-### SFU 与信令分工
-
-| 操作 | 信令层 | SFU 层 | 说明 |
-|------|--------|--------|------|
-| `RemoveParticipant` | ✅ 删 Members + 广播 | ✅ LiveKit/SRS/MediaSoup/Daily 均调（按 `ErrSFUNotSupported` 优雅降级） | 仅 Agora 跳过（返回 `ErrSFUNotSupported`） |
-| `ListRooms` + `ListParticipants` | 失败时返回 `[]` | ✅ 有则返回 | SFU 媒体状态 ≠ 信令层在线状态，不 fallback |
-| `Mute*` | `BroadcastMute` 广播 | ❌ 不调 | 前端收到事件后自行停推流，仅 LiveKit 有服务端强制能力 |
-
-详见 `internal/signal/AGENTS.md`。
-
-> **SFU 历史密钥安全取舍 (#6)**: 历史密钥集合保留 7 天 (histTTL)，对齐 refresh_token 最大有效期。
-> 任一历史密钥泄漏都可在有效期内伪造合法 token。若要缩短 window，减小 `histTTL` 常量即可。
-
-
-详见 `internal/signal/AGENTS.md`。
-
-> **SFU 历史密钥安全取舍 (#6)**: 历史密钥集合保留 7 天 (histTTL)，对齐 refresh_token 最大有效期。
-> 任一历史密钥泄漏都可在有效期内伪造合法 token。若要缩短 window，减小 `histTTL` 常量即可。
-
-
-### Usage in handlers / services
-
-All SFU calls go through `sfu.Provider`. Current service paths already consume the abstraction in `SignalHandler` and `signal.Hub`. To add a new SFU backend, implement `sfu.Provider` and register it in `factory.go`.
-
-### Current provider maturity
-
-| Provider | Maturity | Notes |
-|----------|----------|-------|
-| LiveKit | Highest | Full room/token/participant/mute/remove/delete support |
-| SRS | High | Token/Room/Delete/RemoveParticipant via REST; WHIP/WHEP media. Mute + ListParticipants not supported |
-| Agora | Medium | Token and basic room APIs work; mute/kick/admin flows incomplete |
-| Daily | Medium | Token/rooms/participants via REST. Mute/kick not supported |
-| MediaSoup | Medium | Uses provider-specific signaling path; generic provider methods return not supported |
-| Cloudflare | Medium | Realtime SFU via WHIP/WHEP; room/token via REST, media over WebRTC |
-
----
-
-## LiveKit Module
-
-Standalone package at `internal/sfu/providers/livekit/`. Implements `sfu.Provider` using `github.com/livekit/server-sdk-go/v2`.
-
-Constructor: `livekit.NewService(cfg *config.Config) *Service`
-
-| Method | Description |
-|--------|-------------|
-| `GenerateToken(room, identity)` | Room join token (JWT) |
-| `GenerateAdminToken()` | Admin token for server-side room management |
-| `ListRooms()` | List all active rooms via `lksdk.RoomServiceClient` |
-| `ListParticipants(room)` | List participants in a room |
-| `MuteParticipant(room, identity, trackSid, muted)` | Mute/unmute a track |
-| `RemoveParticipant(room, identity)` | Kick a participant |
-| `DeleteRoom(room)` | Delete a room |
-| `GetHost()` | Return configured LiveKit host URL |
-
-Token response shape returned by `POST /signal/token`:
-
-```json
-{
-  "token": "eyJ...",
-  "serverUrl": "wss://...",
-  "room": "room-name",
-  "identity": "user-identity"
+// ClientInfoProvider — exposes provider-specific connection metadata to frontend
+type ClientInfoProvider interface {
+    Provider
+    ClientInfo() map[string]interface{}
 }
 ```
+
+### Capabilities & Enforcement Levels (`internal/sfu/types.go`)
+
+Each provider declares its media-layer enforcement capability matrix:
+
+```go
+type Capabilities struct {
+    ServerMute  bool   // true when MuteLevel is hard or degraded
+    ServerKick  bool   // true when KickLevel is hard or degraded
+    DeleteRoom  bool
+    AdminToken  bool
+    ListRooms   bool
+    ListMembers bool
+    MuteLevel   string  // hard | degraded | soft | none
+    KickLevel   string
+    DeleteLevel string
+    ListLevel   string
+    AdminLevel  string
+}
+```
+
+**Enforcement levels:**
+
+| Level | Meaning |
+|-------|---------|
+| `hard` | Native SFU media force (e.g. LiveKit server mute) |
+| `degraded` | Substitute media force (e.g. SRS KickByStreams, Agora kicking-rule) |
+| `soft` | Signal/policy + client cooperation only |
+| `none` | Capability absent |
+
+`sfu.AllProviderCapabilities()` returns the full matrix for all providers. `CapabilitiesFor(name)` returns a single provider's matrix.
+
+### Provider Capability Summary
+
+| Provider | ServerMute | ServerKick | MuteLevel | KickLevel | AdminToken |
+|----------|-----------|-----------|-----------|-----------|-----------|
+| LiveKit | ✅ | ✅ | hard | hard | ✅ |
+| MediaSoup | ✅ | ✅ | hard | hard | ❌ |
+| SRS | ✅ | ✅ | degraded | hard | ✅ |
+| Daily | ❌ | ✅ | soft | hard | ❌ |
+| Cloudflare | ❌ | ✅ | soft | hard | ❌ |
+| Agora | ✅ | ✅ | degraded | degraded | ❌ |
+
+### Factory (`internal/sfu/factory/factory.go`)
+
+`factory.NewProvider(cfg)` reads `cfg.SFUProvider` and returns the matching implementation. Registered providers: `livekit`, `agora`, `mediasoup`, `srs`, `daily`, `cloudflare`.
+
+`sfu.NewDynamicProvider(resolve)` is the runtime entry used by server wiring. It resolves config via `SFUConfigService.ResolveConfig()` and delegates each call to the current provider.
 
 ---
 
 ## Redis Module (Optional)
 
 Standalone package at `internal/redis/`. Provides optional Redis support — gracefully degrades when `REDIS_HOST` is not set.
-
-### Configuration
-
-```
-REDIS_HOST=""             # Leave empty to skip Redis connection
-REDIS_PORT="6379"
-REDIS_PASSWORD=""
-REDIS_DB="0"
-```
 
 ### Key files
 
@@ -526,25 +572,22 @@ REDIS_DB="0"
 | `redis.go` | Client init, `InitRedis()`, `IsConnected()` |
 | `blacklist.go` | JWT token blacklist (logout invalidation) |
 | `jwt_key.go` | JWT signing key rotation via Redis TTL |
+| `auth_backend.go` | AuthStore adapter for Redis |
 
 ### Token Blacklist
 
-Logout adds the token's JTI to Redis with TTL = remaining token lifetime. Middleware checks blacklist before granting access.
-
-```go
-redis.BlacklistToken(jti, remaining)  // add to blacklist
-redis.IsBlacklisted(jti)              // check if blacklisted
-```
+Logout adds the token's JTI to Redis with TTL = remaining token lifetime. Middleware checks blacklist before granting access via `redis.IsBlacklisted(jti)`.
 
 When Redis is not connected, blacklist operations are no-ops (best-effort strategy).
 
 ### JWT Key Rotation
 
 `redis.GetOrRotateSigningKey()` returns the current signing key:
-- **Redis connected**: key stored in Redis with configurable TTL (`JWT_KEY_TTL`, default 24h). TTL expiry triggers automatic rotation — all old tokens become invalid.
+- **Redis connected**: key stored in Redis with configurable TTL (`JWT_KEY_TTL`, default 24h). TTL expiry triggers automatic rotation.
 - **Redis not connected**: falls back to static `JWT_KEY` env var (default `"default-secret"`).
 
 ---
+
 ## Bus Module (Multi-Instance Event Bus)
 
 Multi-instance event bus and shared state at `internal/bus/`. Provides cross-instance coordination for WebSocket fanout, membership sharing, mute rules, JWT auth, and async job queues.
@@ -554,33 +597,159 @@ Multi-instance event bus and shared state at `internal/bus/`. Provides cross-ins
 | Capability | Backend | Purpose |
 |------------|---------|---------|
 | EventBus | NATS (embedded/external) | WebSocket cross-instance fanout (room/namespace) + internal events |
-| MembershipStore | redis -> NATS KV -> none | Room member / stream mapping sharing |
-| MuteRuleStore | redis -> NATS KV -> memory | Agora kicking-rule id and degraded mute cache |
+| MembershipStore | redis → NATS KV → none | Room member / stream mapping sharing |
+| MuteRuleStore | redis → NATS KV → memory | Agora kicking-rule id and degraded mute cache |
 | AuthStore | redis (preferred) / NATS KV | JWT blacklist + signing key rotation |
 | JobQueue | NATS JetStream | SFU cleanup and async tasks |
 
+### Init API
+
+```go
+bus, cleanup, err := bus.Init(bus.InitConfig{
+    URL:            natsURL,       // empty = embedded NATS
+    Prefix:         "gospeak",
+    Name:           instanceID,
+    ConnectTimeout: 2 * time.Second,
+    EmbeddedPort:   0,             // 0 = random port
+    Deliverer:      wsDeliverer,
+    RemoteHook:     onRemoteEvent,
+})
+defer cleanup()
+```
+
 ### Resolution Order
 
-- `STATE_STORE=auto`: redis -> nats -> graceful degradation
+- `STATE_STORE=auto`: redis → nats → graceful degradation
 - `MuteRule`: final fallback is in-memory (never blocks startup)
 - `Auth`: redis first; NATS KV second; static `JWT_KEY` last
 
-### Constraints
+### WSDeliverer
 
-- Membership writes merge by `InstanceID` -- never overwrite remote members with full room state
-- Stream leave/kick/disconnect must call `DeleteStream`
-- Client broadcasts go through `publishRoom` / `publishNamespace`, never raw `BroadcastToRoom`
-
-### Integration
-
-Initialized in `server/gin.go` after DB + Redis setup. The `WSDeliverer` bridges NATS fanout into the local WebSocket server, so cross-instance messages reach all connected clients.
+`internal/bus/ws_deliverer.go` bridges NATS fanout into the local WebSocket server, so cross-instance messages reach all connected clients.
 
 ---
 
+## WebSocket Module (`internal/ws/`)
+
+Pure WebSocket infrastructure layer using `nhooyr.io/websocket`.
+
+### Key files
+
+| File | Role |
+|------|------|
+| `client.go` | Client struct: read loop, goroutine-safe write queue (64 chan), close |
+| `fanout.go` | Fanout Broadcaster: room-based broadcast, namespace broadcast, per-room iteration |
+| `upgrader.go` | HTTP→WS upgrade: origin check, JWT extract (header/cookie/subprotocol), client creation |
+| `handler.go` | HandlerRegistry: event dispatch + panic recover + ACK/ErrorACK |
+
+### WS Client Lifecycle
+
+```
+HTTP GET /ws
+  → Upgrader.originAllowed()  (checks Origin header)
+  → extractToken()            (Bearer / cookie / subprotocol)
+  → VerifyToken()             (middleware.VerifyToken shared logic)
+  → NewClient(conn, id, claims)
+  → Fanout.Add(client)
+  → client.StartReadLoop(HandlerRegistry.Dispatch)
+    → on close: Fanout.Remove → Hub.OnDisconnect (room cleanup)
+```
+
+### Token extraction priority
+
+1. `Authorization: Bearer <token>` header
+2. Raw `Authorization` header value
+3. `gospeak_token` cookie
+4. `Sec-WebSocket-Protocol` subprotocol (only accepted as token, not as protocol name)
+
+### Fanout Broadcaster
+
+Room names use compound keys `signal.roomKey(guildUUID, roomName)` for Guild namespace isolation.
+
+```go
+// Fanout implements ws.Broadcaster
+fanout.Add(client)                    // register client
+fanout.Remove(clientID)               // deregister, returns affected rooms
+fanout.Join(room, clientID)           // client joins room
+fanout.Leave(room, clientID)          // client leaves room
+fanout.BroadcastToRoom(room, event, data)
+fanout.BroadcastToNamespace(event, data)
+fanout.ForEach(room, fn)              // iterate room members
+fanout.RoomExists(room) bool
+fanout.GetClient(clientID) ClientMessenger
+```
+
+---
+
+## Signal (WebSocket) Module (`internal/signal/`)
+
+WebSocket signaling hub built on `internal/ws/`.
+
+### Key files
+
+| File | Role |
+|------|------|
+| `events.go` | 38 event name constants |
+| `types.go` | `RoomRequest`, `MemberInfo`, `RoomInfo` structs |
+| `hub.go` | Hub (global room registry + all event handlers + Guild state sync) |
+| `state_sync.go` | Guild namespace isolation + cross-instance state synchronization |
+| `bot_bridge.go` | Bot command/message bridge |
+| `message_bridge.go` | Message events bridge |
+| `private_bridge.go` | Private message bridge |
+
+### Hub struct
+
+```go
+type Hub struct {
+    sfuProvider      sfu.Provider
+    sfuSignalHandler SFUSignalHandler  // optional: provider-specific media negotiation events
+    participantCleanup ParticipantCleanupHandler
+    // ...
+}
+```
+
+### Hub 房间查询方法
+
+| 方法 | 返回 |
+|------|------|
+| `GetSFURooms()` | 仅内存活跃房间（有 WS 连接的），供 `room:list` 广播 |
+| `GetRooms()` | DB 持久化房间 + 内存活跃房间合并 |
+| `GetRoomMembers(room)` | 指定房间的在线成员 |
+
+### OnRoomKick SFU dispatch
+
+信令层始终先处理（删 Members + 广播），随后由 `Hub.removeParticipantSafe` 调用 `sfuProvider.RemoveParticipant(room, identity)`。Hub 不硬编码 provider 名，仅在返回 `pkg.ErrSFUNotSupported` 时静默跳过：
+
+| provider | SFU RemoveParticipant | 状态 |
+|----------|----------------------|------|
+| livekit | ✅ LiveKit gRPC | 完整实现 |
+| srs | ✅ SRS REST `DELETE /clients/{id}` | 完整实现 |
+| mediasoup | ✅ bridge `CloseParticipant` | 完整实现 |
+| daily | ✅ list → 按 session id `RemoveParticipant` | 完整实现 |
+| agora | ❌ `ErrSFUNotSupported` | 未实现（无单用户 REST API）|
+| cloudflare | ❌ `ErrSFUNotSupported` | 未实现（WHIP/WHEP 无单用户踢人 REST）|
+
+### Mute/ListParticipants 分工
+
+| 操作 | 信令层 | SFU 层 | 说明 |
+|------|--------|--------|------|
+| `RemoveParticipant` | ✅ 删 Members + 广播 | ✅ 按 provider 能力 | |
+| `ListRooms` + `ListParticipants` | 失败时返回 `[]` | ✅ 有则返回 | SFU 媒体状态 ≠ 信令层在线状态，不 fallback |
+| `MuteParticipant` | `BroadcastMute` 广播 | ❌ 不调 | 前端收到事件后自行停推流 |
+
+### 发言检测
+
+无 SFU 原生 active speaker 的 provider（SRS / Cloudflare）：
+- 前端 `onLocalSpeakingChange` 上报「自身」本地麦克风音量状态，经 `member:speaking` 发往信令层
+- `Hub.OnMemberSpeaking` 按房间聚合 `Room.Speaking`，广播 `room:active-speakers`（identities 列表）
+- LiveKit / Daily / Agora / MediaSoup 仍由各自 SFU 原生事件驱动，不经此链路
+- 成员离开 / 断连 / 被踢时清发言态；原本在发言则广播最新列表以重置高亮
+
+---
 
 ## OAuth Module
 
-Provides generic OAuth2 third-party login. Providers are configured in the `oauth_providers` table and managed through the admin API; `github`, `google`, and `qq` are seeded presets, and arbitrary OpenID/OAuth2 providers are supported via custom endpoint URLs plus JSON field mappings. Two layers:
+Provides generic OAuth2 third-party login. Providers are configured in the `oauth_providers` table and managed through the admin API; `github`, `google`, and `qq` are seeded presets, and arbitrary OpenID/OAuth2 providers are supported via custom endpoint URLs plus JSON field mappings.
 
 ### Provider Abstraction (`internal/pkg/oauth/`)
 
@@ -596,27 +765,12 @@ type Provider interface {
 
 Built-in providers: `GitHubProvider`, `GoogleProvider`, `QQProvider`. Factory: `oauth.NewProvider(name, cfg)`.
 
-`oauth.GetDefaultConfig(name)` returns preset endpoint configs for each platform (ClientID/Secret/RedirectURL must be injected). Built-in presets seed `github` / `google` / `qq`; additional providers are persisted in `oauth_providers` and resolved at runtime by the OAuth service.
-
 ### Data Layer
 
 | Model | Table | Description |
 |-------|-------|-------------|
 | `OAuthProvider` | `oauth_providers` | Platform config (name, client_id, secret, endpoints, enabled) |
 | `OAuthAccount` | `oauth_accounts` | User ↔ platform binding (user_id, provider, provider_uid) |
-
-Repositories: `OAuthProviderRepo`, `OAuthAccountRepo` — standard CRUD.
-
-### Handler & Routes
-
-| Method | Path | Auth | Handler |
-|--------|------|------|---------|
-| GET | `/api/v1/oauth/login/:provider` | No | OAuthHandler.Login (redirect) |
-| GET | `/api/v1/oauth/callback/:provider` | No | OAuthHandler.Callback |
-| GET | `/api/v1/oauth/admin/providers` | Yes (admin) | OAuthHandler.ListProviders |
-| POST | `/api/v1/oauth/admin/providers` | Yes (admin) | OAuthHandler.CreateProvider |
-| PUT | `/api/v1/oauth/admin/providers` | Yes (admin) | OAuthHandler.UpdateProvider |
-| DELETE | `/api/v1/oauth/admin/providers/:id` | Yes (admin) | OAuthHandler.DeleteProvider |
 
 ---
 
@@ -649,46 +803,33 @@ Signal Hub 中使用 `roomKey(guildUUID, roomName)` 复合键隔离不同 Guild 
 
 ### 中间件
 
-- `RequireGuildMember()` — 校验当前用户是指定 Guild 的成员。从 URL/Query/Body 中获取 `guild_uuid`。
-
-### 权限码
-
-| Code | 说明 |
-|------|------|
-| `guild:create` | 创建语音服务器 |
-| `guild:read` | 查看语音服务器列表 |
-| `guild:manage` | 修改语音服务器设置 |
-| `guild:delete` | 删除语音服务器 |
-| `guild:invite` | 生成和管理邀请码 |
-| `guild:kick` | 将成员移出语音服务器 |
-| `guild:role:manage` | 管理语音服务器内角色和权限 |
+- `RequireGuildMember()` — 校验当前用户是指定 Guild 的成员。
 
 ### 迁移策略
 
 启动时若不存在任何 Guild，自动创建 "Default Server" 并将存量 `guild_uuid` 为空的房间归入其中。
-无需手动迁移脚本。
 
 ---
 
-## Middleware
-
-All middleware is in `internal/middleware/auth.go`.
+## Middleware (`internal/middleware/auth.go`)
 
 | Function | Description |
 |----------|-------------|
-| `JWTAuth()` | Validates Bearer token: header → signature → expiry → token version → blacklist (JTI); injects `username`, `display_name`, `user_uuid`, `role`, `permissions`, `claims`, `auth_type` into context |
-| `RequireRole(roles ...string)` | Legacy role check against the `role` claim; returns `FORBIDDEN` (1013) on mismatch |
-| `RequirePermission(permCode)` | Permission-based gate. Bot tokens use `Claims.Permissions`; users map `role` → permissions via `role_permissions`. Returns `FORBIDDEN` (1013) on missing permission |
-| `RequireOwnerOrPermission(ownerContextKey, permCode)` | Allows the request if the caller owns the resource (owner field equals `username`) or holds the permission |
-| `BanCheck()` | Blocks any user whose `role` is `ban`; returns `FORBIDDEN` (1013) |
-| `CORS()` | Sets `Access-Control-Allow-Origin: *`, handles OPTIONS preflight |
+| `VerifyToken(tokenStr)` | Shared token verification: signature → expiry → blacklist → version. Returns `*Claims, ErrCode`. Used by both HTTP and WS paths. |
+| `JWTAuth()` | Validates Bearer token, injects context |
+| `RequireRole(roles ...string)` | Legacy role check against the `role` claim |
+| `RequirePermission(permCode)` | Permission-based gate. Bot tokens use `Claims.Permissions`; users map `role` → permissions |
+| `RequireOwnerOrPermission(ownerContextKey, permCode)` | Allows if caller owns the resource or holds the permission |
+| `PermissionGranted(claims, role, permCode, checker)` | Unified permission check for HTTP and WS paths |
+| `BanCheck()` | Blocks any user whose `role` is `ban`; returns `FORBIDDEN` (1015) |
+| `CORS()` | Sets CORS headers, handles OPTIONS preflight |
 
 ### JWTAuth check order
 
 1. Header exists → `TOKEN_NOT_EXIST` (1001)
 2. Signature valid → `TOKEN_WRONG` (1002)
 3. Not expired → `TOKEN_EXPIRED` (1003)
-4. `TokenVersion` matches current user → `TOKEN_REVOKED` (1014) on mismatch (password change / reset invalidates old tokens)
+4. `TokenVersion` matches current user → `TOKEN_REVOKED` (1014)
 5. JTI not blacklisted → `TOKEN_REVOKED` (1014)
 6. Inject `username`, `display_name`, `user_uuid`, `role`, `permissions`, `claims`, `auth_type` into context
 
@@ -698,108 +839,139 @@ All middleware is in `internal/middleware/auth.go`.
 
 Access control is **permission-based**, layered on top of roles.
 
-- **Roles** (`roles` table): seeded with `admin`, `user`, `ban`. The `ban` role is intercepted by `BanCheck()` and always gets `FORBIDDEN`.
-- **Default admin account**: first boot seeds user `admin` / `admin123` when missing (`service.DefaultAdminPassword`). Login returns `need_change_password=true` while still on the default password; change it immediately in production.
-- **Permissions** (`permissions` table): each row holds a `permcode` constant such as `user:read`, `room:create`, `sfu:manage`, `mute:manage`, `bot:manage`, `storage:delete`, `oauth:manage`, `email_config:read`, `role:manage`, `signal:kick`.
-- **Guild permcodes** (`internal/permcode/guild_permcode.go`): `guild:create`, `guild:read`, `guild:manage`, `guild:delete`, `guild:invite`, `guild:kick`, `guild:role:manage`.
-- **Role → Permission mapping** (`role_permissions` table): links a role name to permission IDs. `RequirePermission` resolves a user's effective permissions from their `role`.
-- **Bot tokens** (`bot_tokens`): carry an explicit `permissions` list in the JWT (`Claims.Permissions`). Bot-scoped permissions are whitelisted via `model.BotScopedPermissions` so bots cannot reach platform-admin surfaces.
-- **Token versioning**: `User.TokenVersion` is embedded in the JWT. Changing a password / resetting it bumps the version, so all previously issued tokens are rejected (`TOKEN_REVOKED`).
+### Permission Codes
 
-All permission constants live in `internal/permcode/permcode.go`.
+| Code | Description |
+|------|-------------|
+| `room:create` | 创建房间 |
+| `room:read` | 查看房间列表和详情 |
+| `room:update` | 修改房间 |
+| `room:delete` | 删除房间 |
+| `guild:create` | 创建语音服务器 |
+| `guild:read` | 查看语音服务器 |
+| `guild:manage` | 修改语音服务器设置 |
+| `guild:delete` | 删除语音服务器 |
+| `guild:invite` | 管理邀请码 |
+| `guild:kick` | 将成员移出语音服务器 |
+| `guild:role:manage` | 管理语音服务器内角色 |
+| `user:read` | 查看用户 |
+| `user:update` | 编辑用户 |
+| `user:delete` | 删除用户 |
+| `role:read` | 查看角色 |
+| `role:manage` | 管理角色 |
+| `signal:kick` | 将用户从语音房间中踢出 |
+| `mute:manage` | 对用户进行全局禁言 |
+| `sfu:manage` | 查看和修改 SFU 配置 |
+| `bot:manage` | 创建、查看、吊销 BOT 专用 API Key |
+| `email_config:read` | 查看 SMTP 配置 |
+| `email_config:manage` | 修改 SMTP 配置 |
+| `storage:read` | 查看存储配置 |
+| `storage:manage` | 修改存储配置 |
+| `storage:delete` | 删除存储对象 |
+| `oauth:read` | 查看 OAuth 配置 |
+| `oauth:manage` | 管理 OAuth 配置 |
+| `plugin:read` | 查看插件列表与配置 |
+| `plugin:manage` | 启用/停用插件 |
+| `message:send` | 发送消息 |
+| `message:read` | 查看历史消息 |
+| `message:delete_others` | 删除他人消息 |
+
+### Bot Scoped Permissions
+
+Bot tokens carry an explicit `permissions` list in the JWT (`Claims.Permissions`). Only the following are whitelisted for bots:
+
+```go
+var BotScopedPermissions = []string{
+    "room:read", "user:read", "signal:kick",
+    "room:create", "mute:manage",
+    "message:send", "message:read",
+}
+```
+
+### Default Role Permissions
+
+| Role | Permissions |
+|------|------------|
+| `admin` | All platform permissions |
+| `user` | `room:create`, `room:read`, `guild:create`, `user:read`, `role:read`, `message:send`, `message:read` |
+| `ban` | (none — intercepted by `BanCheck()`) |
+
+### Default admin account
+
+First boot seeds user `admin` / `admin123` when missing. Login returns `need_change_password=true` while still on the default password.
+
+### Token versioning
+
+`User.TokenVersion` is embedded in the JWT. Changing a password / resetting it bumps the version, so all previously issued tokens are rejected (`TOKEN_REVOKED`).
+
+---
 
 ## Models
 
 | Model | Table | Key Fields |
 |-------|-------|------------|
 | `User` | `users` | ID, UUID (auto-gen), Name, DisplayName, Avatar, Email, EmailVerified, IsBot, Password (`json:"-"`), Role, TokenVersion, timestamps |
-| `Room` | `room` | ID, UUID (auto-gen), Name, Password, Description, Limit, AudioOnly, AllowAudience, CreatedBy, timestamps |
-| `UserGroup` | `user_groups` | ID, UserID, GroupName, timestamps |
+| `Room` | `room` | ID, UUID (auto-gen), Name, Password, Description, Limit, AudioOnly, AllowAudience, CreatedBy, GuildUUID, timestamps |
 | `Role` | `roles` | ID, Name (seeds: `admin` / `user` / `ban`), timestamps |
 | `Permission` | `permissions` | ID, Code (unique `permcode`), Name, Description, timestamps |
 | `RolePermission` | `role_permissions` | ID, RoleName, PermissionID |
 | `Mute` | `mutes` | ID, UUID, UserID, MuterID, Duration, Permanent, ExpiresAt, Reason, timestamps |
-| `OAuthProvider` | `oauth_providers` | ID, Name, DisplayName, IconURL, ClientID, ClientSecret, AuthURL, TokenURL, UserInfoURL, RedirectURL, Scopes, field mappings, Enabled, timestamps |
+| `OAuthProvider` | `oauth_providers` | ID, Name, DisplayName, ClientID, ClientSecret, AuthURL, TokenURL, UserInfoURL, RedirectURL, Scopes, field mappings, Enabled, timestamps |
 | `OAuthAccount` | `oauth_accounts` | ID, UserID, Provider, ProviderUID; AccessToken & RefreshToken stored but hidden (`json:"-"`), timestamps |
 | `BotToken` | `bot_tokens` | ID, UUID, Name, UserUUID, Permissions `[]string`, Revoked, ExpiresAt, timestamps |
 | `EmailConfig` | `email_configs` | ID, Enabled, SMTP host/port/user/pass/from/name, EmailCodeTTL, EmailSendCooldown, EmailCodeSecret (hidden, `json:"-"`), timestamps |
 | `EmailVerificationCode` | `email_verification_codes` | ID, Email, Scene, CodeHash (hidden), UserID, IPAddress, ExpiresAt, UsedAt, AttemptCount, timestamps |
 | `StorageConfig` | `storage_configs` | ID, ProviderType (`local`/`s3`), Endpoint, Bucket, Region, AccessKey & SecretKey (hidden), PublicBaseURL, PathPrefix, MaxFileSize, AllowedTypes, timestamps |
-| `SFUConfig` | `sfu_configs` | Provider (PK), LiveKit*/Agora*/MediaSoup*/SRS*/Daily*/Cloudflare* config fields, timestamps |
+| `SFUConfig` | `sfu_configs` | Provider (PK), per-provider config fields, timestamps |
 | `SFUActiveProvider` | `sfu_active_provider` | ID, Provider |
 | `Guild` | `guilds` | UUID, Name, OwnerUUID, InviteCode, RoomLimit, Public, timestamps |
+| `GuildMember` | `guild_members` | GuildUUID, UserUUID, RoleName, timestamps |
 | `Message` | `messages` | UUID, RoomID, SenderUUID, Content, Type, EditHistory, ReplyTo, timestamps |
 | `MessageMention` | `message_mentions` | MessageID, UserID, ReadAt |
 | `MessageReaction` | `message_reactions` | MessageID, UserID, Emoji (unique per user+message+emoji) |
 | `ConversationParticipant` | `conversation_participants` | UserID, ConversationID, LastReadAt |
 | `PluginConfig` | `plugin_configs` | Name, Enabled, Config JSON |
 
-> Auto-migration (`repository/db.go`) syncs all of the above on startup. New fields/models take effect after a restart — no manual DDL.
-
+> Auto-migration (`repository/db.go`) syncs all of the above on startup.
 
 ---
 
-## Signal (WebSocket) Module
+## Plugin System (`internal/plugin/`)
 
-Standalone package at `internal/signal/`. Handles real-time room signaling via WebSocket (`GOSpeak/internal/ws`).
+Provides a plugin architecture for extending backend functionality.
 
-### Key files
-
-| File | Role |
-|------|------|
-| `events.go` | 14 event name constants |
-| `types.go` | `RoomRequest`, `MemberInfo`, `RoomInfo` structs |
-| `hub.go` | Hub (global room registry) + WebSocket event handlers |
-
-### Event Table
-
-| Direction | Event | Payload | Description |
-|-----------|-------|---------|-------------|
-| Lifecycle | `connection` | — | Client connected |
-| Lifecycle | `disconnect` | — | Client disconnected |
-| Client → Server | `room:create` | `{room}` | Create a new room |
-| Client → Server | `room:join` | `{room, identity}` | Join a room |
-| Client → Server | `room:leave` | `{room}` | Leave a room |
-| Client → Server | `room:list` | — | Request room list |
-| Server → Client | `room:created` | `RoomInfo` | A room was created |
-| Server → Client | `room:joined` | `{room, members[]}` | Self joined a room |
-| Server → Client | `room:left` | `{room, identity}` | Self left a room |
-| Server → Client | `room:updated` | `RoomInfo` | Room member count changed |
-| Server → Client | `member:joined` | `MemberInfo` | Another member joined |
-| Server → Client | `member:left` | `{identity}` | A member left |
-| Server → Client | `member:updated` | `MemberInfo` | Member state updated |
-| Server → Client | `room:list:result` | `{rooms[]}` | Response to `room:list` |
-
-### Hub API
+### Core interfaces
 
 ```go
-hub := signal.NewHub(roomStore, muteStore, userStore, permChecker)
-hub.SetFanout(fanout) // ws.Fanout
-hub.SetupFanout(fanout, handler) // registers all WS events
+type Plugin interface {
+    Meta() Meta
+    Init(host Host) error   // inject dependencies, no service start
+    Start(ctx context.Context) error
+    Stop(ctx context.Context) error
+}
+
+type Host interface {
+    Logger(component string) *logrus.Entry
+    DB() *gorm.DB
+    AppConfig() *config.Config
+    RegisterHTTP(fn func(r *gin.RouterGroup))      // /api/v1/plugins/:name/*
+    StartSideServer(name, addr string, handler http.Handler) (SideServer, error)
+    LoadConfig/SaveConfig(pluginName string) (enabled bool, cfg map[string]any, err error)
+}
+
+type Configurable interface {
+    ValidateConfig(raw map[string]any) (map[string]any, error)
+    OnConfigUpdated(cfg map[string]any) error  // optional hot-reload
+}
 ```
 
-### Hub 房间查询方法
+### Built-in plugins
 
-| 方法 | 返回 |
-|------|------|
-| `GetSFURooms()` | 仅内存活跃房间（有 WS 连接），供 `room:list` 广播 |
-| `GetRooms()` | DB 持久化房间 + 内存活跃房间合并 |
-| `GetRoomMembers(room)` | 指定房间的在线成员 |
+- `builtin/botbase`: Base framework for text/voice interaction bots. Provides embed generation, command dispatch, and message sending helpers.
 
-### OnRoomKick SFU dispatch
+### Registration
 
-信令层始终先处理（删 Members + 广播），随后由 `Hub.removeParticipantSafe` 直接调用 `sfuProvider.RemoveParticipant(room, identity)`。Hub **不再硬编码 provider 名**，仅在 provider 返回 `pkg.ErrSFUNotSupported` 时静默跳过，因此「踢人是否真正到达 SFU」由各 provider 自身是否实现 `RemoveParticipant` 决定：
-
-| provider | `sfuProvider.RemoveParticipant` 调用 | 实现状态 |
-|----------|------------------------------------|----------|
-| livekit | ✅ | 原始完整实现 |
-| srs | ✅（`KickParticipant` → `RemoveParticipant` 统一命名） | 原始完整实现 |
-| mediasoup | ✅ bridge `CloseParticipant` | 补全实现（历史文档误标为跳过） |
-| daily | ✅ list → 按 session id `RemoveParticipant` | 补全实现（历史文档误标为跳过） |
-| agora | ❌ 跳过（返回 `ErrSFUNotSupported`，无单用户踢人 REST API） | 未实现，仅 ban 语义 |
-| cloudflare | ❌ 跳过（返回 `ErrSFUNotSupported`，WHIP/WHEP 媒体无单用户踢人 REST） | 未实现 |
-
-`/signal/rooms` 和 `/signal/participants` 失败时返回空列表 `[]`。SFU 媒体节点状态与 WS 在线成员不可互相 fallback。
+Plugins are registered via `plugin.Registry.Register(pluginName, pluginFactory)`. The server initializes all registered plugins in `server/gin.go` after DB setup. Plugins can mount HTTP routes under `/api/v1/plugins/:name/*` via `Host.RegisterHTTP()`.
 
 ---
 
@@ -807,184 +979,150 @@ hub.SetupFanout(fanout, handler) // registers all WS events
 
 ```
 app/web/src/
-├── api/                # apiClient (axios wrapper) + auth API
-├── assets/             # Static assets (SVG icons, global CSS)
-│   ├── styles/         # Global stylesheets
-│   └── svg.tsx         # SVG icon sprite definitions
-├── components/
-│   ├── chat/           # Chat input/output components
-│   ├── common/         # Shared UI components (avatar, modal, divider, etc.)
-│   ├── form/           # Form components (Form, PasswordChangeForm)
-│   ├── home/           # Home page component
-│   ├── modal/          # Modals (searchModal, settings)
-│   │   └── settting/   # Settings modal (note: 3 t's typo in dir name)
-│   │       └── tab_item/  # Settings tabs (audio, general, room)
-│   ├── room/           # Room-related views
-│   ├── funcButton.tsx  # FAB action button with search modal
-│   ├── svgIcon.tsx     # SVG icon component (uses svg sprite)
-│   └── userBar.tsx     # User status bar with audio controls
-├── hooks/
-│   ├── livekit/        # LiveKit hooks (createRoom, roomAction, useToken, useSubcribeTrack)
-│   │   ├── index.ts    # Barrel export
-│   │   ├── createRoom.ts  # Room creation hook
-│   │   ├── roomAction.ts  # Join/leave room actions
-│   │   ├── useToken.ts    # Token fetching via TanStack Query
-│   │   └── useSubcribeTrack.ts  # Track subscription (empty)
+├── api/                # apiClient (axios wrapper) + typed API modules
+│   ├── apiClient.ts    # Axios instance with auth interceptor
+│   ├── apiClientAuth.ts
+│   ├── auth.ts         # Login/register/refresh/logout
+│   ├── user.ts         # Profile/info/update
+│   ├── room.ts         # Room CRUD
+│   ├── sfu.ts          # SFU config + token fetch
+│   ├── ws.ts           # WS ticket
+│   ├── guild.ts        # Guild CRUD + join/leave/kick
+│   ├── message.ts      # Message send/edit/delete/react
+│   ├── conversation.ts # Conversation list/messages/mark-read
+│   ├── mute.ts         # Mute create/cancel/status/list
+│   ├── oauth.ts        # OAuth login
+│   ├── permission.ts   # Role/permission APIs
+│   ├── plugin.ts       # Plugin list/update
+│   ├── storage.ts      # Storage presign/confirm
+│   ├── email.ts        # Email send/verify
+│   └── apikey.ts       # Bot token management
+├── socket/             # WebSocket client
+│   ├── wsClient.ts     # WebSocket connection manager (reconnect, ACK, fire-and-forget)
+│   ├── events.ts       # Event name constants (30+)
+│   ├── types.ts        # RoomInfo, MemberInfo, MuteEvent, etc.
+│   ├── roomState.ts    # Room list/members state merge helpers
+│   ├── mediasoupSignal.ts  # MediaSoup-specific signal bridge
+│   ├── providerReload.ts   # SFU hot-swap handler (disconnect + reload)
+│   ├── tabLock.ts      # Single-tab socket owner (BroadcastChannel)
+│   └── *.test.ts       # Unit tests
+├── stores/             # SolidJS reactive stores (IndexedDB persistence)
+│   ├── socketStore.ts  # WebSocket connection + room/member state + SFU events
+│   ├── userStore.ts    # Auth state (persisted to IndexedDB)
+│   ├── themeStore.ts   # Light/dark theme (localStorage)
+│   ├── audioDeviceStore.ts  # Audio device enumeration (IndexedDB)
+│   ├── voiceChatStore.ts    # Mute/volume state (IndexedDB)
+│   ├── chatStore.ts    # Chat/conversation state (IndexedDB)
+│   └── guildStore.ts   # Guild state (IndexedDB)
+├── hooks/              # Reusable SolidJS hooks
 │   ├── media.ts        # Audio device enumeration utility
-│   └── useTitle.ts     # Document title hook (empty)
+│   ├── useBreakpoint.ts
+│   ├── useTitle.ts
+│   └── useUpload.ts
+├── components/
+│   ├── common/         # Shared UI (Avatar, Modal, Divider, Toast, etc.)
+│   ├── form/           # Form / PasswordChangeForm
+│   ├── room/
+│   │   ├── roomList.tsx   # Room list page
+│   │   ├── roomDetail.tsx # Room detail page
+│   │   ├── hooks/         # useVoiceSession, useRoomAudioBridge, useRoomSounds
+│   │   ├── services/      # loadSfuClient, sfuSession
+│   │   └── session/       # providers.ts, runVoiceJoin.ts, voiceSessionTypes.ts
+│   ├── guild/             # CreateGuildModal, GuildIcon, InviteShareModal
+│   ├── chat/              # chatPage, chatWindow, conversationList, memberSidebar
+│   ├── dashboard/         # Dashboard components
+│   ├── manage/            # Admin management views
+│   ├── modal/             # modals (search, settings with tabs)
+│   ├── oauth/             # OAuth login views
+│   ├── profile/           # Profile views
+│   ├── storage/           # Storage management
+│   ├── textRoom/          # Text room components
+│   ├── home/              # Home page
+│   ├── funcButton.tsx     # FAB action button
+│   ├── svgIcon.tsx        # SVG icon component (sprite)
+│   └── userBar.tsx        # User status bar with audio controls
 ├── layouts/
-│   ├── layout.tsx      # Root layout
-│   ├── ErrorComponent.tsx  # Error boundary
-│   ├── common/         # Layout primitives
-│   │   ├── header.tsx  # Header with theme toggle + route title
-│   │   ├── footer.tsx  # Footer bar
-│   │   ├── main.tsx    # Main content area wrapper
-│   │   └── sidebar.tsx # Sidebar navigation (home, channel, settings)
-│   └── container/
-│       └── ContextProvider.tsx  # Theme context provider
-├── stores/
-│   ├── socketStore.ts         # WebSocket global singleton store
-│   ├── userStore.ts           # Auth state (user, tokens) with IndexedDB persistence
-│   ├── themeStore.ts          # Theme switching (light/dark)
-│   ├── audioDeviceStore.ts    # Audio device enumeration with IndexedDB persistence
-│   └── voiceChatStore.ts      # Voice chat state (mute, volume) with IndexedDB persistence
-├── types/
-│   ├── room.ts                # RoomInfo, MemberInfo, RoomItemType, RoomMemberInfoType
-│   └── userInfo.ts            # UserInfo, LocalUserInfo, Token types
-├── utils/                     # Utility directory (currently empty)
-├── main.tsx                   # App entry point
-├── styles.css                 # Root CSS
-└── routeTree.gen.ts           # TanStack Router generated route tree
+│   ├── layout.tsx         # Root layout
+│   ├── ErrorComponent.tsx # Error boundary
+│   ├── common/            # header, footer, main, sidebar
+│   └── container/         # ContextProvider (theme)
+├── handler_audio/         # Audio handling
+│   └── speakingStore.ts   # Speaking identities state
+├── types/                 # Shared TypeScript types
+│   ├── room.ts            # RoomInfo, MemberInfo, RoomItemType
+│   └── userInfo.ts        # UserInfo, Token types
+├── utils/                 # Utility functions
+├── main.tsx               # App entry point
+├── styles.css             # Root CSS
+└── routeTree.gen.ts       # TanStack Router generated route tree
 ```
 
 ### socketStore (`src/stores/socketStore.ts`)
 
-Global singleton created with `createRoot`. Manages the WebSocket connection lifecycle and reactive state for rooms and members.
+Global singleton (createRoot). Manages WebSocket connection, room/member state, and SFU event subscriptions.
 
 **State signals:**
 
 | Signal | Type | Description |
 |--------|------|-------------|
 | `connected()` | `boolean` | WebSocket connection status |
+| `connecting()` | `boolean` | Connection in progress |
 | `rooms()` | `RoomInfo[]` | Live room list |
 | `currentRoom()` | `string \| null` | Room this client has joined |
-| `members()` | `MemberInfo[]` | Members in current room |
+| `members()` | `MemberInfo[]` | Derived from rooms()[currentRoom].members |
+| `selectedRoomInfo()` | `RoomInfo \| null` | Selected room info |
+| `activeSFUProvider()` | `SFUProvider \| undefined` | Current SFU provider |
+| `speechRestricted()` | `boolean` | User is muted by server |
+| `speechRestrictionInfo()` | `MuteInfo \| null` | Mute reason/expiry |
 
-**Methods:**
+**Room APIs:**
 
 | Method | Description |
 |--------|-------------|
-| `connect(token?)` | Open WebSocket connection |
+| `connect()` | Open WS connection (single-tab enforced via BroadcastChannel tabLock) |
 | `disconnect()` | Close connection |
-| `createRoom(name)` | Emit `room:create` |
-| `joinRoom(room, identity)` | Emit `room:join` |
-| `leaveRoom(room)` | Emit `room:leave` |
+| `createRoom(name, password?)` | Emit `room:create` |
+| `joinRoom(room, identity, password?)` | Emit `room:join` (await ack) |
+| `joinRoomSFU(room, identity, stream?)` | Emit `room:join:sfu` (await ack) |
+| `leaveRoom(room)` | Emit `room:leave` (await ack) |
 | `listRooms()` | Emit `room:list` |
+| `kickMember(room, targetIdentity)` | Emit `room:kick` |
 
-### userStore (`src/stores/userStore.ts`)
-
-Manages authentication state with IndexedDB persistence (survives page reload).
-
-| Signal | Type | Description |
-|--------|------|-------------|
-| `user()` | `UserInfo \| null` | Current user (id, uuid, name, role) |
-| `accessToken()` | `string` | JWT access token |
-| `refreshToken()` | `string` | JWT refresh token |
-| `isLoggedIn()` | `boolean` | Derived: true if accessToken exists |
+**Event subscriptions:**
 
 | Method | Description |
 |--------|-------------|
-| `login(user, accessToken, refreshToken)` | Persist auth data to IndexedDB + signals |
-| `logout()` | Call server logout API, clear IndexedDB + signals |
-| `updateAccessToken(token)` | Update access token (for auto-refresh) |
+| `onActivity(cb)` | Activity events (room_joined, member_joined, etc.) |
+| `onPresence(cb)` | Presence events (member_joined, member_left) |
+| `onRoomKicked(cb)` | Room kick events |
+| `onProducerReady(cb)` | MediaSoup producer ready |
+| `onProducerClosed(cb)` | MediaSoup producer closed |
 
-### themeStore (`src/stores/themeStore.ts`)
+### WS Client (`src/socket/wsClient.ts`)
 
-Light/dark theme switching. Persists to localStorage. Themes: `acid` (light), `synthwave` (dark).
+- Token passed via subprotocol: `["gospeak", token]`
+- Auto-reconnect with exponential backoff + jitter
+- Two emit modes: `emitFireAndForget` (no ack) and `emitAck` (returns Promise, 10s timeout)
+- Server push events: `onServerEvent(event, cb)` returns unsubscribe function
 
-### audioDeviceStore (`src/stores/audioDeviceStore.ts`)
+### Voice Session Architecture
 
-Audio input/output device enumeration with IndexedDB persistence. Auto-fetches devices on init.
+The voice session is coordinated through `providers.ts` / `runVoiceJoin.ts` / `voiceSessionTypes.ts`:
 
-### voiceChatStore (`src/stores/voiceChatStore.ts`)
-
-Manages voice/video chat state with IndexedDB persistence. Uses debounced writes.
-
-**State:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `isInputMute` | `boolean` | Audio input muted |
-| `isOutMute` | `boolean` | Audio output muted |
-| `isVideoMute` | `boolean` | Video output muted |
-| `inputVolume` | `number` | Audio input volume (0-100) |
-| `outputVolume` | `number` | Audio output volume (0-100) |
-| `videoVolume` | `number` | Video output volume (0-100) |
-| `otherMemberState` | `OtherMemberStateType[]` | Per-member voice state |
-
-**Actions:** `setIsInputMute`, `setIsOutMute`, `setIsVideoMute`, `setInputVolume`, `setOutputVolume`, `setVideoVolume`
-
-### LiveKit Hooks (`src/hooks/livekit/`)
-
-| Hook | Description |
-|------|-------------|
-| `createRoom` | Create LiveKit Room instance |
-| `_joinRoom(room, url, token)` | Connect to room + enable microphone |
-| `_leaveRoom(room)` | Disconnect from room |
-| `useToken()` | Fetch join token via TanStack Query (`POST /api/v1/signal/token`) |
-| `useSubcribeTrack` | Track subscription (placeholder, empty) |
-
-### Room join data flow
-
-```
-User enters room page
-    ├─ socketStore.connect()
-    ├─ POST /api/v1/signal/token  →  { token, serverUrl, room, identity }
-    ├─ socketStore.joinRoom(room, identity)
-    │      ← room:joined { members: [...] }
-    ├─ createRoom({ token, url })   // LiveKit instance
-    └─ _joinRoom(roomIns, url, token)  // LiveKit connect + enable mic
-
-
+- `VoiceProviderAdapter` declares per-provider join strategy:
+  - `interactiveAfterMedia`: UI interactive after media join (SRS WHIP)
+  - `signalJoinMode`: `await` (LiveKit) vs `background` (SRS)
+  - `serializeJoins`: whether same stream must be sequential
+- `useVoiceSession.ts` is the **unified orchestrator** — do not branch per SFU in this file
+- `loadSfuClient.ts` preloads the SFU client module
+- `sfuSession.ts` manages the SFU client lifecycle
 
 ### WHIP/WHEP VoiceChat 加载时机
 
-对 SRS 等 **WHIP/WHEP** 类 SFU：
-
-- VoiceChat **可交互展示** 的确认点 = **本端 WHIP publish 成功**（`client.joinRoom` / media join 完成）
-- **不要** 等 `room:join` / `room:join:sfu` 信令全完成才允许加载 VoiceChat
-- 信令仍继续跑（成员列表、WHEP 订阅），但 UI 不得因信令慢而卡住 loading
-- LiveKit 等非 WHIP provider：仍以各自 media join 完成点为准；adapter 用 `interactiveAfterMedia` 声明
-- 实现落点：`providers.ts` / `runVoiceJoin.ts` / `voiceSessionTypes.ts` / `packages/sfu-client/*`
-- `runVoiceJoin` media 成功后必须先 `onClientReady(client)` 再 `onPhase("media_ready")`，否则 UI interactive 但 `session.client` 仍 null
-- `useVoiceSession` 只接通用 `onClientReady`（挂 client），**禁止** 为某个 SFU 写分支
-
-### useVoiceSession 锁定规则
-
-`app/web/src/components/room/hooks/useVoiceSession.ts` 是统一进房编排器，**禁止为适配 SFU 而修改**。
-
-- 允许改：provider adapter / `runVoiceJoin` / `packages/sfu-client/*` / `api/sfu.ts`
-- 禁止改：`useVoiceSession.ts` 的 join 生命周期、phase、abort/teardown，仅为某个 SFU 分支特殊处理
-- LiveKit 回归：先确认上述 adapter/client 层，不要动 `useVoiceSession`
-
-### Multi-SFU frontend note
-
-The backend now returns provider-aware token payloads and supports runtime provider switching. The frontend still contains historical LiveKit-oriented structure, but new work should treat LiveKit as one implementation behind a shared SFU client layer rather than the only runtime.
-```
-
-### OAuth login flow
-
-```
-User clicks "Login with GitHub"
-    ├─ Browser → GET /api/v1/oauth/login/github
-    │      ← 302 redirect to GitHub auth page
-    ├─ User authorizes on GitHub
-    │      ← redirect to /api/v1/oauth/callback/github?code=xxx
-    ├─ Server: ExchangeToken(code) → access_token
-    ├─ Server: GetUserInfo(access_token) → UserInfo
-    ├─ Server: find or create User + OAuthAccount
-    └─ Response: { access_token, refresh_token, user }
-```
+对 SRS 等 WHIP/WHEP 类 SFU：
+- VoiceChat 可交互展示的确认点 = **本端 WHIP publish 成功**（`client.joinRoom` / media join 完成）
+- 不要等 `room:join` / `room:join:sfu` 信令全完成才允许加载 VoiceChat
+- LiveKit 等非 WHIP provider：以各自 media join 完成点为准；adapter 用 `interactiveAfterMedia` 声明
 
 ---
 
@@ -1008,23 +1146,22 @@ Tests send real HTTP requests and validate responses. Add new test files under `
 ## Common Commands
 
 ```bash
-# Start server (dev mode, SQLite)
-cd app/server
-pnpm dev
+# Dev
+cd app/server && pnpm dev
+cd app/web && pnpm dev
 
-# Start server (prod mode)
-pnpm prod
+# Build
+pnpm build:server
+pnpm build:web
 
-# Build binary
-pnpm build
-
-# Run tests (server must be running)
-pnpm test
+# Test
+pnpm test:server
+pnpm test:web
 
 # From monorepo root
 pnpm dev:server
-pnpm test:server
-pnpm build:server
+pnpm dev:web
+pnpm build
 ```
 
 ---
@@ -1039,14 +1176,17 @@ pnpm build:server
 6. **Handler methods**: Accept `*gin.Context`, return nothing
 7. **Service methods**: Return `(result, error)` — error is always `*AppError`
 8. **Repository methods**: Return `(result, error)` — error may be `gorm.ErrRecordNotFound`
+9. **Bot tokens**: Only grant `BotScopedPermissions` — never expose platform-admin surfaces
+
+---
 
 ## Mute vs Restrict Speech
 
-- **`静音`** in the current frontend means **local playback mute of a remote audio track**. It is client-local, does not require server state, and should not be modeled as an SFU provider capability.
 - **`禁言`** means **user-level speech restriction**. The restricted user may still listen, but must not publish a local audio track.
-- There is **no room-level mute** concept in the intended product semantics.
-- Existing legacy event names such as `room:mute` / `member:muted` should be treated as deprecated semantics and should not be reintroduced into new frontend work.
+- **`静音`** (client-local playback mute) is out of scope for server state modeling.
+- There is **no room-level mute** concept.
 - User-level restriction is represented by `user:muted` / `user:unmuted`, backend mute records, and join/publish checks.
+- The enforcement level (`hard` / `degraded` / `soft`) determines how forcefully the media layer is stopped.
 
 ---
 
@@ -1062,20 +1202,26 @@ pnpm build:server
 8. Add tests in `test/`
 9. Regenerate Swagger docs
 
+---
+
 ## Adding a New SFU Backend
 
-1. Create `internal/sfu/providers/<provider>/client.go` implementing `sfu.Provider`
-2. Add a case in `internal/sfu/factory.go` for the new `SFU_PROVIDER` value
-3. Add provider-specific config fields to `internal/config/config.go`, `model.SFUConfig`, and the `/api/v1/sfu/config` management flow when needed
-4. Set `SFU_PROVIDER="<provider>"` in `.env.dev` or update config through `/api/v1/sfu/config`
-5. If the provider requires custom signaling semantics, wire it in `server/gin.go` via `signalHub.SetSFUSignalHandler(...)`
-6. Keep handler/router usage on `sfu.Provider`; avoid leaking provider-specific branching into generic HTTP handlers
+1. Create `internal/sfu/providers/<provider>/` implementing `sfu.Provider`
+2. Add `CapabilitiesFor("<provider>")` case in `internal/sfu/capabilities.go`
+3. Add a case in `internal/sfu/factory/factory.go` for the new `SFU_PROVIDER` value
+4. Add provider-specific config fields to `internal/config/config.go` and `model.SFUConfig`
+5. Implement `ProviderName()`, `Capabilities()`, and all interface methods
+   - Unsupported operations MUST return `pkg.NewErrSFUNotSupported()`
+   - Missing configuration should return `SFU_NOT_CONFIGURED`
+6. If the provider requires custom signaling semantics, implement `SFUSignalHandler` and wire via `signalHub.SetSFUSignalHandler(...)`
+7. Add `VoiceProviderAdapter` in the frontend `providers.ts` for UI integration
+8. Set `SFU_PROVIDER="<provider>"` in `.env.dev` or update via `/api/v1/sfu/config`
 
 ---
 
 ## Test Logging
 
-当 agent 被命令进行测试时，必须将测试总结的结果以 Markdown 格式保存到 `agent_test_logs` 文件夹。详见 `agent_test_logs/AGENTS.md`。
+当 agent 被命令进行测试时，必须将测试总结的结果以 Markdown 格式保存到 `agent_test_logs` 文件夹。
 
 ### 命名规范
 
@@ -1084,7 +1230,6 @@ pnpm build:server
 示例：
 - `api-auth-test-2026-05-26.md` - 认证 API 测试
 - `role-permission-test-2026-05-26.md` - 角色权限测试
-- `user-crud-test-2026-05-26-14-30.md` - 用户 CRUD 测试（精确到分钟）
 - `signal-websocket-test-2026-05-26.md` - WebSocket 信令测试
 
 ### 测试状态标识

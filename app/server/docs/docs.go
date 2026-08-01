@@ -30,7 +30,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "已登录用户修改密码（需验证旧密码）",
+                "description": "已登录用户修改密码（需验证旧密码），改密后旧 token 失效",
                 "consumes": [
                     "application/json"
                 ],
@@ -77,7 +77,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "管理员首次登录时修改默认密码（无需旧密码），可选同时修改用户名",
+                "description": "管理员首次登录时修改默认密码（无需旧密码），可选同时修改用户名，改密后换发新 token",
                 "consumes": [
                     "application/json"
                 ],
@@ -303,6 +303,126 @@ const docTemplate = `{
                                     "type": "string"
                                 },
                                 "new_password": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/bot/create": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "创建 Bot 用户并签发 JWT。expires_in 为空时生成永久 token（100年）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Bot"
+                ],
+                "summary": "创建 Bot",
+                "parameters": [
+                    {
+                        "description": "Bot 配置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.CreateBotRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/pkg.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/service.CreateBotResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/bot/list": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "列出所有 Bot Token 管理记录",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Bot"
+                ],
+                "summary": "列出 Bot",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/bot/revoke": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "吊销指定 Bot Token（标记 revoked=true）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Bot"
+                ],
+                "summary": "吊销 Bot",
+                "parameters": [
+                    {
+                        "description": "Bot UUID",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "uuid": {
                                     "type": "string"
                                 }
                             }
@@ -581,6 +701,111 @@ const docTemplate = `{
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/handler.SyncRolePermissionsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/plugins/get": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Plugin"
+                ],
+                "summary": "插件详情",
+                "parameters": [
+                    {
+                        "description": "插件名",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/plugins/list": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Plugin"
+                ],
+                "summary": "插件列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/plugins/update": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Plugin"
+                ],
+                "summary": "更新插件配置",
+                "parameters": [
+                    {
+                        "description": "配置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.UpdatePluginConfigInput"
                         }
                     }
                 ],
@@ -928,6 +1153,359 @@ const docTemplate = `{
                 }
             }
         },
+        "/room/messages/delete": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除一条消息（软删除）；管理员可删除他人消息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "消息"
+                ],
+                "summary": "删除消息",
+                "parameters": [
+                    {
+                        "description": "删除参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message_uuid": {
+                                    "type": "string"
+                                },
+                                "room_uuid": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/room/messages/edit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "编辑自己发送的消息内容",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "消息"
+                ],
+                "summary": "编辑消息",
+                "parameters": [
+                    {
+                        "description": "编辑内容",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "content": {
+                                    "type": "string"
+                                },
+                                "message_uuid": {
+                                    "type": "string"
+                                },
+                                "room_uuid": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/room/messages/list": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "分页获取房间消息历史，最新在前",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "消息"
+                ],
+                "summary": "消息历史",
+                "parameters": [
+                    {
+                        "description": "查询参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "before": {
+                                    "type": "string"
+                                },
+                                "limit": {
+                                    "type": "integer"
+                                },
+                                "room_uuid": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/room/messages/react": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "给消息添加一个 emoji 反应",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "消息"
+                ],
+                "summary": "消息反应",
+                "parameters": [
+                    {
+                        "description": "反应参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "emoji": {
+                                    "type": "string"
+                                },
+                                "message_uuid": {
+                                    "type": "string"
+                                },
+                                "room_uuid": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/room/messages/search": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按内容关键词搜索文本房间消息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "消息"
+                ],
+                "summary": "全文搜索文本房间消息",
+                "parameters": [
+                    {
+                        "description": "搜索参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "query": {
+                                    "type": "string"
+                                },
+                                "room_uuid": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/room/messages/send": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "在文本房间发送一条消息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "消息"
+                ],
+                "summary": "发送消息",
+                "parameters": [
+                    {
+                        "description": "消息内容",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "client_nonce": {
+                                    "type": "string"
+                                },
+                                "content": {
+                                    "type": "string"
+                                },
+                                "mentions": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                },
+                                "reply_to": {
+                                    "type": "string"
+                                },
+                                "room_uuid": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/room/messages/unreact": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "移除消息上的一个 emoji 反应",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "消息"
+                ],
+                "summary": "取消消息反应",
+                "parameters": [
+                    {
+                        "description": "取消反应参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "emoji": {
+                                    "type": "string"
+                                },
+                                "message_uuid": {
+                                    "type": "string"
+                                },
+                                "room_uuid": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/room/update": {
             "post": {
                 "security": [
@@ -969,7 +1547,7 @@ const docTemplate = `{
         },
         "/signal/participants": {
             "get": {
-                "description": "获取指定 LiveKit 房间中的所有参与者",
+                "description": "获取指定房间中的所有参与者",
                 "produces": [
                     "application/json"
                 ],
@@ -998,7 +1576,7 @@ const docTemplate = `{
         },
         "/signal/rooms": {
             "get": {
-                "description": "从 LiveKit 获取所有活跃房间",
+                "description": "从 SFU 获取所有活跃房间",
                 "produces": [
                     "application/json"
                 ],
@@ -1052,7 +1630,7 @@ const docTemplate = `{
         },
         "/signal/token": {
             "post": {
-                "description": "生成用于加入房间的 LiveKit 访问 token",
+                "description": "生成用于加入房间的访问 token（禁言/限流/密码校验在 service 层）",
                 "consumes": [
                     "application/json"
                 ],
@@ -1062,7 +1640,7 @@ const docTemplate = `{
                 "tags": [
                     "信令"
                 ],
-                "summary": "获取 LiveKit 加入 token",
+                "summary": "获取加入 token",
                 "parameters": [
                     {
                         "description": "房间和身份标识",
@@ -1097,6 +1675,31 @@ const docTemplate = `{
                     "信令"
                 ],
                 "summary": "接收 LiveKit Webhook 事件",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/signal/ws-ticket": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "签发只用于 WS 握手的短时 ticket，避免 JWT 出现在 URL query 和访问日志中",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "信令"
+                ],
+                "summary": "获取 WebSocket 短时 ticket",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1425,6 +2028,50 @@ const docTemplate = `{
                 }
             }
         },
+        "/user/info": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "通过用户名 (identity) 获取用户信息，用于房间成员资料查询",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户"
+                ],
+                "summary": "根据用户名获取用户",
+                "parameters": [
+                    {
+                        "description": "用户名",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "identity": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/user/list": {
             "post": {
                 "security": [
@@ -1637,6 +2284,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "guild_uuid": {
+                    "type": "string"
+                },
                 "limit": {
                     "type": "integer"
                 },
@@ -1645,17 +2295,23 @@ const docTemplate = `{
                 },
                 "password": {
                     "type": "string"
+                },
+                "type": {
+                    "type": "string"
                 }
             }
         },
         "handler.JoinRoomRequest": {
             "type": "object",
             "required": [
-                "identity",
                 "room"
             ],
             "properties": {
+                "guild_uuid": {
+                    "type": "string"
+                },
                 "identity": {
+                    "description": "兼容字段，服务端以 JWT username 覆盖",
                     "type": "string",
                     "example": "user-123"
                 },
@@ -1767,6 +2423,47 @@ const docTemplate = `{
                 }
             }
         },
+        "model.User": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "email_verified": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_bot": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "token_version": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
         "pkg.ErrCode": {
             "type": "integer",
             "enum": [
@@ -1781,6 +2478,7 @@ const docTemplate = `{
                 1014,
                 1015,
                 1016,
+                1017,
                 2001,
                 3001,
                 3002,
@@ -1818,6 +2516,7 @@ const docTemplate = `{
                 "TOKEN_REVOKED",
                 "USER_BANNED",
                 "USER_MUTED",
+                "RATE_LIMITED",
                 "INVALID_PARAMS",
                 "NOT_FOUND",
                 "ALREADY_EXISTS",
@@ -1856,6 +2555,53 @@ const docTemplate = `{
                 }
             }
         },
+        "service.CreateBotRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "permissions"
+            ],
+            "properties": {
+                "expires_in": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "permissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "service.CreateBotResult": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "permanent": {
+                    "type": "boolean"
+                },
+                "permissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "token": {
+                    "type": "string"
+                },
+                "token_uuid": {
+                    "type": "string"
+                },
+                "user": {
+                    "$ref": "#/definitions/model.User"
+                }
+            }
+        },
         "service.LoginRequest": {
             "type": "object",
             "required": [
@@ -1889,6 +2635,28 @@ const docTemplate = `{
                 },
                 "username": {
                     "type": "string"
+                }
+            }
+        },
+        "service.UpdatePluginConfigInput": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "restart": {
+                    "description": "Restart 配置变更后是否重启插件（默认 true）",
+                    "type": "boolean"
                 }
             }
         },

@@ -8,18 +8,25 @@ definitions:
         type: boolean
       description:
         type: string
+      guild_uuid:
+        type: string
       limit:
         type: integer
       name:
         type: string
       password:
         type: string
+      type:
+        type: string
     required:
     - name
     type: object
   handler.JoinRoomRequest:
     properties:
+      guild_uuid:
+        type: string
       identity:
+        description: 兼容字段，服务端以 JWT username 覆盖
         example: user-123
         type: string
       password:
@@ -28,7 +35,6 @@ definitions:
         example: my-room
         type: string
     required:
-    - identity
     - room
     type: object
   handler.SignalRequest:
@@ -98,6 +104,33 @@ definitions:
     - file_name
     - file_size
     type: object
+  model.User:
+    properties:
+      avatar:
+        type: string
+      created_at:
+        type: string
+      display_name:
+        type: string
+      email:
+        type: string
+      email_verified:
+        type: boolean
+      id:
+        type: integer
+      is_bot:
+        type: boolean
+      name:
+        type: string
+      role:
+        type: string
+      token_version:
+        type: integer
+      updated_at:
+        type: string
+      uuid:
+        type: string
+    type: object
   pkg.ErrCode:
     enum:
     - 0
@@ -111,6 +144,7 @@ definitions:
     - 1014
     - 1015
     - 1016
+    - 1017
     - 2001
     - 3001
     - 3002
@@ -148,6 +182,7 @@ definitions:
     - TOKEN_REVOKED
     - USER_BANNED
     - USER_MUTED
+    - RATE_LIMITED
     - INVALID_PARAMS
     - NOT_FOUND
     - ALREADY_EXISTS
@@ -180,6 +215,37 @@ definitions:
       msg:
         type: string
     type: object
+  service.CreateBotRequest:
+    properties:
+      expires_in:
+        type: string
+      name:
+        type: string
+      permissions:
+        items:
+          type: string
+        type: array
+    required:
+    - name
+    - permissions
+    type: object
+  service.CreateBotResult:
+    properties:
+      expires_at:
+        type: string
+      permanent:
+        type: boolean
+      permissions:
+        items:
+          type: string
+        type: array
+      token:
+        type: string
+      token_uuid:
+        type: string
+      user:
+        $ref: '#/definitions/model.User'
+    type: object
   service.LoginRequest:
     properties:
       password:
@@ -203,6 +269,21 @@ definitions:
     required:
     - password
     - username
+    type: object
+  service.UpdatePluginConfigInput:
+    properties:
+      config:
+        additionalProperties: {}
+        type: object
+      enabled:
+        type: boolean
+      name:
+        type: string
+      restart:
+        description: Restart 配置变更后是否重启插件（默认 true）
+        type: boolean
+    required:
+    - name
     type: object
   service.UpdateStorageConfigRequest:
     properties:
@@ -244,7 +325,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 已登录用户修改密码（需验证旧密码）
+      description: 已登录用户修改密码（需验证旧密码），改密后旧 token 失效
       parameters:
       - description: 密码信息
         in: body
@@ -273,7 +354,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 管理员首次登录时修改默认密码（无需旧密码），可选同时修改用户名
+      description: 管理员首次登录时修改默认密码（无需旧密码），可选同时修改用户名，改密后换发新 token
       parameters:
       - description: 新密码，name可选
         in: body
@@ -426,6 +507,77 @@ paths:
       summary: 重置密码
       tags:
       - 认证
+  /bot/create:
+    post:
+      consumes:
+      - application/json
+      description: 创建 Bot 用户并签发 JWT。expires_in 为空时生成永久 token（100年）
+      parameters:
+      - description: Bot 配置
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateBotRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/pkg.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.CreateBotResult'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 创建 Bot
+      tags:
+      - Bot
+  /bot/list:
+    post:
+      description: 列出所有 Bot Token 管理记录
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 列出 Bot
+      tags:
+      - Bot
+  /bot/revoke:
+    post:
+      consumes:
+      - application/json
+      description: 吊销指定 Bot Token（标记 revoked=true）
+      parameters:
+      - description: Bot UUID
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            uuid:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 吊销 Bot
+      tags:
+      - Bot
   /mute/cancel:
     post:
       consumes:
@@ -595,6 +747,69 @@ paths:
       summary: 同步角色权限
       tags:
       - 权限
+  /plugins/get:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 插件名
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            name:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 插件详情
+      tags:
+      - Plugin
+  /plugins/list:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 插件列表
+      tags:
+      - Plugin
+  /plugins/update:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 配置
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdatePluginConfigInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新插件配置
+      tags:
+      - Plugin
   /role/create:
     post:
       consumes:
@@ -800,6 +1015,225 @@ paths:
       summary: 房间列表
       tags:
       - 房间
+  /room/messages/delete:
+    post:
+      consumes:
+      - application/json
+      description: 删除一条消息（软删除）；管理员可删除他人消息
+      parameters:
+      - description: 删除参数
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            message_uuid:
+              type: string
+            room_uuid:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除消息
+      tags:
+      - 消息
+  /room/messages/edit:
+    post:
+      consumes:
+      - application/json
+      description: 编辑自己发送的消息内容
+      parameters:
+      - description: 编辑内容
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            content:
+              type: string
+            message_uuid:
+              type: string
+            room_uuid:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 编辑消息
+      tags:
+      - 消息
+  /room/messages/list:
+    post:
+      consumes:
+      - application/json
+      description: 分页获取房间消息历史，最新在前
+      parameters:
+      - description: 查询参数
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            before:
+              type: string
+            limit:
+              type: integer
+            room_uuid:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 消息历史
+      tags:
+      - 消息
+  /room/messages/react:
+    post:
+      consumes:
+      - application/json
+      description: 给消息添加一个 emoji 反应
+      parameters:
+      - description: 反应参数
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            emoji:
+              type: string
+            message_uuid:
+              type: string
+            room_uuid:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 消息反应
+      tags:
+      - 消息
+  /room/messages/search:
+    post:
+      consumes:
+      - application/json
+      description: 按内容关键词搜索文本房间消息
+      parameters:
+      - description: 搜索参数
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            query:
+              type: string
+            room_uuid:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 全文搜索文本房间消息
+      tags:
+      - 消息
+  /room/messages/send:
+    post:
+      consumes:
+      - application/json
+      description: 在文本房间发送一条消息
+      parameters:
+      - description: 消息内容
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            client_nonce:
+              type: string
+            content:
+              type: string
+            mentions:
+              items:
+                type: string
+              type: array
+            reply_to:
+              type: string
+            room_uuid:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 发送消息
+      tags:
+      - 消息
+  /room/messages/unreact:
+    post:
+      consumes:
+      - application/json
+      description: 移除消息上的一个 emoji 反应
+      parameters:
+      - description: 取消反应参数
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            emoji:
+              type: string
+            message_uuid:
+              type: string
+            room_uuid:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 取消消息反应
+      tags:
+      - 消息
   /room/update:
     post:
       consumes:
@@ -826,7 +1260,7 @@ paths:
       - 房间
   /signal/participants:
     get:
-      description: 获取指定 LiveKit 房间中的所有参与者
+      description: 获取指定房间中的所有参与者
       parameters:
       - description: 房间名称
         in: query
@@ -845,7 +1279,7 @@ paths:
       - 信令
   /signal/rooms:
     get:
-      description: 从 LiveKit 获取所有活跃房间
+      description: 从 SFU 获取所有活跃房间
       produces:
       - application/json
       responses:
@@ -882,7 +1316,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 生成用于加入房间的 LiveKit 访问 token
+      description: 生成用于加入房间的访问 token（禁言/限流/密码校验在 service 层）
       parameters:
       - description: 房间和身份标识
         in: body
@@ -897,7 +1331,7 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/pkg.Response'
-      summary: 获取 LiveKit 加入 token
+      summary: 获取加入 token
       tags:
       - 信令
   /signal/webhook:
@@ -913,6 +1347,21 @@ paths:
           schema:
             $ref: '#/definitions/pkg.Response'
       summary: 接收 LiveKit Webhook 事件
+      tags:
+      - 信令
+  /signal/ws-ticket:
+    get:
+      description: 签发只用于 WS 握手的短时 ticket，避免 JWT 出现在 URL query 和访问日志中
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取 WebSocket 短时 ticket
       tags:
       - 信令
   /storage/config:
@@ -1109,6 +1558,33 @@ paths:
       security:
       - BearerAuth: []
       summary: 根据 ID 获取用户
+      tags:
+      - 用户
+  /user/info:
+    post:
+      consumes:
+      - application/json
+      description: 通过用户名 (identity) 获取用户信息，用于房间成员资料查询
+      parameters:
+      - description: 用户名
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            identity:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 根据用户名获取用户
       tags:
       - 用户
   /user/list:

@@ -109,3 +109,5 @@ app/server/internal/webui/dist/*
 !app/server/internal/webui/dist/.gitkeep
 .worktrees/
 .agents/skills/room-voice-e2e/scripts/artifacts
+app/server/docs/swagger.json
+app/server/docs/swagger.yaml
