@@ -21,7 +21,7 @@
 | sfu_service.go | SFU 动态 provider 解析与分发 |
 | cloudflare_media_service.go | Cloudflare Realtime 媒体会话管理 |
 | conversation_service.go | 会话列表、消息历史、标记已读 |
-| guild_service.go | Guild CRUD、成员管理、邀请码校验 |
+| domain_service.go | Domain CRUD、成员管理、邀请码校验 |
 | message_service.go | 消息发送/编辑/删除/表情回应 + 系统消息生成 |
 | plugin_service.go | 插件配置读取/更新 |
 

@@ -11,8 +11,8 @@ pages/
 ├── __root.tsx          # 根路由（全局 Provider）
 ├── (app)/              # 需要登录的路由组
 │   ├── route.tsx       # 布局路由（登录守卫 + Layout）
-│   ├── channel/
-│   │   └── index.tsx   # 频道页（RoomDetail 容器）
+│   ├── domain/$domainUUID/
+│   │   └── index.tsx   # 域工作区页（RoomDetail 容器）
 │   ├── index/
 │   │   └── index.tsx   # 首页
 │   └── link/
@@ -23,7 +23,7 @@ pages/
 
 ## Route Groups
 
-- `(app)/` — 路由组前缀，不生成 URL 段。`/(app)/channel/` 实际访问 `/channel`
+- `(app)/` — 路由组前缀，不生成 URL 段。`/(app)/domain/$domainUUID/` 实际访问 `/domain/:domainUUID`
 - `route.tsx` 在路由组中定义 layout 和 `beforeLoad` 守卫
 
 ## Conventions

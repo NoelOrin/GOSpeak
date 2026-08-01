@@ -8,7 +8,7 @@ definitions:
         type: boolean
       description:
         type: string
-      guild_uuid:
+      domain_uuid:
         type: string
       limit:
         type: integer
@@ -23,7 +23,7 @@ definitions:
     type: object
   handler.JoinRoomRequest:
     properties:
-      guild_uuid:
+      domain_uuid:
         type: string
       identity:
         description: 兼容字段，服务端以 JWT username 覆盖

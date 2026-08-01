@@ -15,7 +15,7 @@
 | 包 | 说明 |
 |----|------|
 | oauth/ | 通用 OAuth2 协议实现；`GitHubProvider` / `GoogleProvider` / `QQProvider` 预设端点，并支持通过 `oauth_providers` 配置的自定义 provider |
-| permcode/ | 权限码常量（`user:read` 等），供 middleware 与路由使用。权限码分布在 `permcode.go`（通用权限）与 `guild_permcode.go`（Guild 专属权限）|
+| permcode/ | 权限码常量（`user:read` 等），供 middleware 与路由使用。权限码分布在 `permcode.go`（通用权限）与 `domain_permcode.go`（Domain 专属权限）|
 
 ## JWT Claims
 

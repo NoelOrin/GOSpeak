@@ -22,7 +22,7 @@ HTTP 请求处理层，负责接收请求、参数校验、调用 service 层并
 | srs_callback_handler.go | SRS HTTP Hooks 回调 |
 | cloudflare_handler.go | Cloudflare Realtime 会话 tracks 管理 |
 | monitor_handler.go | 健康检查流 |
-| guild_handler.go | Guild 创建/查询/列表/加入/离开/踢出/成员 |
+| domain_handler.go | Domain 创建/查询/列表/加入/离开/踢出/成员 |
 | conversation_handler.go | 会话列表/消息历史/标记已读 |
 | message_handler.go | 消息发送/编辑/删除/表情回应 |
 | plugin_handler.go | 插件列表/详情/更新 |

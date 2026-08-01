@@ -80,7 +80,7 @@ main.go → cmd/ → server/gin.go
                    ├── internal/bus/        → 多实例事件总线（NATS/Redis/fanout）
                    ├── internal/service/    → 业务逻辑层
                    ├── internal/handler/    → HTTP 处理层
-                   ├── internal/router/     → 路由注册（含 guild/conversation/message/plugin）
+                   ├── internal/router/     → 路由注册（含 domain/conversation/message/plugin）
                    ├── internal/signal/     → WebSocket 信令
                    └── internal/redis/      → 可选黑名单 / 密钥轮换
 ```

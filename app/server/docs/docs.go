@@ -2284,7 +2284,7 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
-                "guild_uuid": {
+                "domain_uuid": {
                     "type": "string"
                 },
                 "limit": {
@@ -2307,7 +2307,7 @@ const docTemplate = `{
                 "room"
             ],
             "properties": {
-                "guild_uuid": {
+                "domain_uuid": {
                     "type": "string"
                 },
                 "identity": {

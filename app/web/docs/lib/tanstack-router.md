@@ -15,7 +15,7 @@ src/pages/
 ├── __root.tsx              # 根路由
 ├── (app)/                  # 路由组（不生成 URL 段）
 │   ├── route.tsx           # 布局路由（Outlet）
-│   ├── channel/index.tsx   # → /channel
+│   ├── domain/$domainUUID/index.tsx   # → /domain/$domainUUID
 │   └── index/index.tsx     # → /
 └── login/index.tsx         # → /login
 ```
@@ -38,10 +38,10 @@ src/pages/
 ```tsx
 import { createFileRoute } from '@tanstack/solid-router'
 
-export const Route = createFileRoute('/(app)/channel/')({
+export const Route = createFileRoute('/(app)/domain/$domainUUID/')({
   component: RouteComponent,
   // 可选配置
-  staticData: { title: '频道', icon: 'icon-channel' },
+  staticData: { title: '语音域', icon: 'icon-channel' },
   beforeLoad: async () => { /* 路由守卫 */ },
   loader: async () => { /* 数据预加载 */ },
   errorComponent: ErrorComponent,
@@ -80,11 +80,11 @@ import { useNavigate } from '@tanstack/solid-router'
 function Component() {
   const navigate = useNavigate()
   
-  // 跳转
-  navigate({ to: '/channel' })
+  // 跳转（动态路由必须带 params）
+  navigate({ to: '/domain/$domainUUID', params: { domainUUID: 'abc' } })
   
   // 带搜索参数
-  navigate({ to: '/channel', search: { id: '123' } })
+  navigate({ to: '/domain/$domainUUID', params: { domainUUID: 'abc' }, search: { id: '123' } })
   
   // 替换历史记录
   navigate({ to: '/login', replace: true })
@@ -99,7 +99,7 @@ function Component() {
 import { useSearch } from '@tanstack/solid-router'
 
 // 配合类型安全的 search params
-export const Route = createFileRoute('/(app)/channel/')({
+export const Route = createFileRoute('/(app)/domain/$domainUUID/')({
   validateSearch: (search) => ({
     id: z.string().optional().parse(search.id),
   }),
@@ -107,7 +107,7 @@ export const Route = createFileRoute('/(app)/channel/')({
 })
 
 function RouteComponent() {
-  const search = useSearch({ from: '/(app)/channel/' })
+  const search = useSearch({ from: '/(app)/domain/$domainUUID/' })
   // search.id → string | undefined
 }
 ```
@@ -134,7 +134,7 @@ import { useLocation } from '@tanstack/solid-router'
 
 function Component() {
   const location = useLocation()
-  // location.pathname → '/channel'
+  // location.pathname → '/domain/$domainUUID'
   // location.search → { id: '123' }
 }
 ```
@@ -196,9 +196,9 @@ export const Route = createFileRoute('/(app)')({
 给路由附加静态数据，侧边栏等组件可读取。
 
 ```tsx
-export const Route = createFileRoute('/(app)/channel/')({
+export const Route = createFileRoute('/(app)/domain/$domainUUID/')({
   staticData: {
-    title: '频道',
+    title: '语音域',
     icon: 'icon-channel',
   },
 })
@@ -209,7 +209,7 @@ export const Route = createFileRoute('/(app)/channel/')({
 路由匹配后、组件渲染前加载数据。
 
 ```tsx
-export const Route = createFileRoute('/(app)/channel/')({
+export const Route = createFileRoute('/(app)/domain/$domainUUID/')({
   loader: async ({ context }) => {
     // 数据会在组件渲染前完成
     const rooms = await fetchRooms()
@@ -312,10 +312,10 @@ function RouteComponent() {
 ```
 
 ```tsx
-// pages/(app)/channel/index.tsx — 页面路由
-export const Route = createFileRoute('/(app)/channel/')({
+// pages/(app)/domain/$domainUUID/index.tsx — 页面路由
+export const Route = createFileRoute('/(app)/domain/$domainUUID/')({
   component: RouteComponent,
-  staticData: { title: '频道', icon: 'icon-channel' },
+  staticData: { title: '语音域', icon: 'icon-channel' },
 })
 
 function RouteComponent() {
