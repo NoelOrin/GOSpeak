@@ -21,7 +21,25 @@ type mockRoomStore struct {
 	rooms []model.Room
 }
 
-func (m *mockRoomStore) List(page, pageSize int, roomType string) ([]model.Room, int64, error) {
+func (m *mockRoomStore) List(page, pageSize int, roomType, guildUUID string) ([]model.Room, int64, error) {
+	if roomType != "" {
+		filtered := make([]model.Room, 0, len(m.rooms))
+		for _, r := range m.rooms {
+			if r.Type == roomType {
+				filtered = append(filtered, r)
+			}
+		}
+		m = &mockRoomStore{rooms: filtered}
+	}
+	if guildUUID != "" {
+		filtered := make([]model.Room, 0, len(m.rooms))
+		for _, r := range m.rooms {
+			if r.GuildUUID == guildUUID {
+				filtered = append(filtered, r)
+			}
+		}
+		return filtered, int64(len(filtered)), nil
+	}
 	return m.rooms, int64(len(m.rooms)), nil
 }
 
@@ -202,7 +220,6 @@ func (m *mockBroadcaster) GetClient(clientID string) ws.ClientMessenger {
 	return m.clients[clientID]
 }
 
-
 // assertJoined checks if client joined room via the mock broadcaster.
 func assertJoined(t *testing.T, hub *Hub, clientID, room string) {
 	t.Helper()
@@ -230,15 +247,16 @@ func assertLeft(t *testing.T, hub *Hub, clientID, room string) {
 	}
 }
 
-
 // newTestHub returns a Hub pre-configured with mock broadcaster and stream resolver.
 // Use in tests that don't need custom setup.
 func newTestHub() *Hub {
 	hub := NewHub(nil, nil, nil, nil)
 	hub.fanout = newMockBroadcaster()
 	hub.SetStreamResolver(fakeStreamResolver{})
+	hub.SetGuildChecker(func(guildUUID, userUUID string) bool { return true })
 	return hub
 }
+
 type fakeStreamResolver struct{}
 
 func (fakeStreamResolver) StreamName(room, identity string) string {
@@ -274,7 +292,7 @@ func TestHub_OnRoomCreate_Success(t *testing.T) {
 		t.Fatal("expected room to be created in hub")
 	}
 
-	if len(server.broadcasts[EventRoomUpdated]) == 0 {
+	if len(server.roomCasts["__platform"][EventRoomUpdated]) == 0 {
 		t.Fatal("expected room:updated broadcast")
 	}
 }
@@ -571,7 +589,7 @@ func TestHub_OnRoomList_Empty(t *testing.T) {
 
 	conn := newAuthedMockClient("socket-1", "user-1")
 
-	hub.OnRoomList(conn)
+	hub.OnRoomList(conn, "")
 
 	emitData, ok := conn.lastEvent(EventRoomListResult).(map[string]interface{})
 	if !ok {
@@ -606,7 +624,7 @@ func TestHub_OnRoomList_Multiple(t *testing.T) {
 	}
 
 	conn := newAuthedMockClient("socket-1", "user-1")
-	hub.OnRoomList(conn)
+	hub.OnRoomList(conn, "")
 
 	emitData, ok := conn.lastEvent(EventRoomListResult).(map[string]interface{})
 	if !ok {
@@ -833,7 +851,7 @@ func TestHub_OnRoomList_WithDB(t *testing.T) {
 	hub.fanout = server
 
 	conn := newAuthedMockClient("socket-1", "user-1")
-	hub.OnRoomList(conn)
+	hub.OnRoomList(conn, "")
 
 	emitData, ok := conn.lastEvent(EventRoomListResult).(map[string]interface{})
 	if !ok {

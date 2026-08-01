@@ -89,7 +89,7 @@ func TestRoomLifecycle_CreateJoinLeave(t *testing.T) {
 
 	// Step 4: List rooms
 	lister := newAuthedMockClient("socket-lister", "lister")
-	hub.OnRoomList(lister)
+	hub.OnRoomList(lister, "")
 
 	dataList, ok := lister.lastEvent(EventRoomListResult).(map[string]interface{})
 	if !ok {
@@ -129,7 +129,7 @@ func TestRoomLifecycle_CreateJoinLeave(t *testing.T) {
 
 	// Step 7: Verify no rooms remain
 	finalList := newAuthedMockClient("socket-final", "final")
-	hub.OnRoomList(finalList)
+	hub.OnRoomList(finalList, "")
 
 	dataFinal, _ := finalList.lastEvent(EventRoomListResult).(map[string]interface{})
 	if finalCount, _ := dataFinal["count"].(int); finalCount != 0 {

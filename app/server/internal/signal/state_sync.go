@@ -224,7 +224,8 @@ func (h *Hub) broadcastRoomUpdatedLocal(key string) {
 		return
 	}
 	info := h.roomInfoMerged(key)
-	h.localNamespace(EventRoomUpdated, info)
+	guildUUID, _ := splitRoomKey(key)
+	h.fanout.BroadcastToRoom(guildRoomKey(guildUUID), EventRoomUpdated, info)
 }
 
 // ApplyRemoteRoomState refreshes local WebSocket clients after peer membership change.
@@ -233,5 +234,10 @@ func (h *Hub) ApplyRemoteRoomState(room string) {
 		h.broadcastRoomUpdatedLocal(room)
 	}
 	// Always refresh list so room counts/new remote-only rooms appear.
-	h.broadcastRoomList()
+	if room != "" {
+		guildUUID, _ := splitRoomKey(room)
+		h.broadcastRoomList(guildUUID)
+		return
+	}
+	h.broadcastRoomListKnownGuilds()
 }

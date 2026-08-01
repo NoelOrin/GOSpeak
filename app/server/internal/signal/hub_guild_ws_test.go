@@ -87,7 +87,7 @@ func TestGuildWS_RoomList_AllGuilds(t *testing.T) {
 	hub.OnRoomCreate(conn, `{"room":"beta","guild_uuid":"guild-a"}`)
 	hub.OnRoomCreate(conn, `{"room":"alpha","guild_uuid":"guild-b"}`)
 
-	rooms := hub.getMergedRooms()
+	rooms := hub.getMergedRooms("")
 	if len(rooms) != 3 {
 		t.Fatalf("expected 3 rooms total, got %d", len(rooms))
 	}

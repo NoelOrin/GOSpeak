@@ -128,8 +128,8 @@ func TestHub_GetRoomMembers_MergesKV(t *testing.T) {
 	// local only alice
 	hub.mu.Lock()
 	hub.rooms["r1"] = &Room{
-		Name:    "r1",
-		Members: map[string]*MemberInfo{"s1": {ID: "s1", Identity: "alice"}},
+		Name:     "r1",
+		Members:  map[string]*MemberInfo{"s1": {ID: "s1", Identity: "alice"}},
 		MicMuted: map[string]bool{},
 		Speaking: map[string]bool{},
 	}
@@ -159,7 +159,6 @@ func TestHub_SyncRoomToStore_DeletesEmpty(t *testing.T) {
 	}
 }
 
-
 type captureNotifier struct {
 	mu     sync.Mutex
 	events []string
@@ -186,8 +185,8 @@ func TestHub_SyncRoomToStore_NotifiesPeers(t *testing.T) {
 	hub.SetStateNotifier(note)
 	hub.mu.Lock()
 	hub.rooms["r1"] = &Room{
-		Name: "r1",
-		Members: map[string]*MemberInfo{"s1": {ID: "s1", Identity: "alice"}},
+		Name:     "r1",
+		Members:  map[string]*MemberInfo{"s1": {ID: "s1", Identity: "alice"}},
 		MicMuted: map[string]bool{},
 		Speaking: map[string]bool{},
 	}
@@ -206,12 +205,12 @@ func TestHub_SyncRoomToStore_NotifiesPeers(t *testing.T) {
 func TestHub_GetMergedRooms_IncludesKVOnlyRoom(t *testing.T) {
 	store := newMemStateStore()
 	store.rooms["remote-only"] = bus.RoomMembersSnapshot{
-		Room: "remote-only",
+		Room:    "remote-only",
 		Members: []bus.MemberRecord{{Identity: "bob", InstanceID: "other"}},
 	}
 	hub := NewHub(nil, nil, nil, nil)
 	hub.SetMembershipStore(store, "inst-a")
-	rooms := hub.getMergedRooms()
+	rooms := hub.getMergedRooms("")
 	found := false
 	for _, r := range rooms {
 		if r.Name == "remote-only" && r.Count == 1 {
@@ -226,7 +225,7 @@ func TestHub_GetMergedRooms_IncludesKVOnlyRoom(t *testing.T) {
 func TestHub_ApplyRemoteRoomState_BroadcastsLocal(t *testing.T) {
 	store := newMemStateStore()
 	store.rooms["r1"] = bus.RoomMembersSnapshot{
-		Room: "r1",
+		Room:    "r1",
 		Members: []bus.MemberRecord{{Identity: "bob", InstanceID: "other"}},
 	}
 	hub := NewHub(nil, nil, nil, nil)
@@ -234,14 +233,13 @@ func TestHub_ApplyRemoteRoomState_BroadcastsLocal(t *testing.T) {
 	server := newMockBroadcaster()
 	hub.fanout = server
 	hub.ApplyRemoteRoomState("r1")
-	if len(server.broadcasts[EventRoomUpdated]) == 0 {
+	if len(server.roomCasts["__platform"][EventRoomUpdated]) == 0 {
 		t.Fatal("expected room:updated local broadcast")
 	}
-	if len(server.broadcasts[EventRoomListResult]) == 0 {
+	if len(server.roomCasts["__platform"][EventRoomListResult]) == 0 {
 		t.Fatal("expected room:list:result local broadcast")
 	}
 }
-
 
 func TestHub_SyncRoomToStore_PreservesRemoteMembers(t *testing.T) {
 	store := newMemStateStore()

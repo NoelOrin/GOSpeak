@@ -58,8 +58,8 @@ func TestHub_BroadcastRoomList_LocalOnly(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
 	bus := &captureBus{}
 	hub.SetEventBus(bus)
-	// server nil -> localNamespace no-ops, but must NOT hit event bus
-	hub.broadcastRoomList()
+	// server nil -> broadcastRoomList no-ops, but must NOT hit event bus
+	hub.broadcastRoomList("")
 	bus.mu.Lock()
 	defer bus.mu.Unlock()
 	if len(bus.ns) != 0 {
@@ -89,5 +89,23 @@ func TestHub_HandleRemoteEvent_ClearsLocalRooms(t *testing.T) {
 	defer hub.mu.RUnlock()
 	if len(hub.rooms) != 0 {
 		t.Fatalf("rooms should be cleared, got %d", len(hub.rooms))
+	}
+}
+
+func TestHub_ClearLocalRoomsForSFUSwitch_BroadcastsKnownGuilds(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.fanout = newMockBroadcaster()
+	hub.mu.Lock()
+	hub.clientGuilds["socket-1"] = "guild-a"
+	hub.mu.Unlock()
+
+	hub.clearLocalRoomsForSFUSwitch()
+
+	fanout := hub.fanout.(*mockBroadcaster)
+	if len(fanout.roomCasts["__guild:guild-a"][EventRoomListResult]) != 1 {
+		t.Fatal("expected SFU switch to broadcast room list to guild scope")
+	}
+	if len(fanout.roomCasts["__platform"][EventRoomListResult]) != 0 {
+		t.Fatal("SFU switch must not only broadcast platform scope")
 	}
 }

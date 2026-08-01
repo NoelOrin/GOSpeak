@@ -150,7 +150,7 @@ func TestHub_GuildMemberVisibility(t *testing.T) {
 	hub.OnRoomCreate(conn, `{"room":"lobby","guild_uuid":"guild-b"}`)
 	hub.OnRoomCreate(conn, `{"room":"general","guild_uuid":"guild-a"}`)
 
-	rooms := hub.getMergedRooms()
+	rooms := hub.getMergedRooms("")
 	if len(rooms) != 3 {
 		t.Fatalf("expected 3 merged rooms, got %d", len(rooms))
 	}
@@ -164,7 +164,7 @@ func TestHub_GetMergedRooms_KeepsGuildScopedDBRooms(t *testing.T) {
 	store.rooms[1].GuildUUID = "guild-b"
 
 	hub := NewHub(store, nil, nil, nil)
-	rooms := hub.getMergedRooms()
+	rooms := hub.getMergedRooms("")
 	if len(rooms) != 2 {
 		t.Fatalf("expected 2 merged rooms, got %d", len(rooms))
 	}

@@ -109,9 +109,29 @@ func splitRoomKey(key string) (guildUUID, roomName string) {
 	return "", key
 }
 
+func roomKeyMatchesGuild(key, guildUUID string) bool {
+	if guildUUID == "" {
+		return true
+	}
+	g, _ := splitRoomKey(key)
+	return g == guildUUID
+}
+
+func guildRoomKey(guildUUID string) string {
+	if guildUUID == "" {
+		return "__platform"
+	}
+	return "__guild:" + guildUUID
+}
+
+func roomKeyIsPlatform(key string) bool {
+	g, _ := splitRoomKey(key)
+	return g == ""
+}
+
 // roomStore abstracts DB room listing for Hub.
 type roomStore interface {
-	List(page, pageSize int, roomType string) ([]model.Room, int64, error)
+	List(page, pageSize int, roomType, guildUUID string) ([]model.Room, int64, error)
 	GetByName(name string) (*model.Room, error)
 	GetByGuildAndName(guildUUID, name string) (*model.Room, error)
 }
@@ -186,6 +206,8 @@ type Hub struct {
 	connSlots          map[string]*connRoomSlots // socketID -> slots
 	msgSvc             messageSender
 	convSvc            conversationSender
+	guildChecker       func(guildUUID, userUUID string) bool
+	clientGuilds       map[string]string // socketID -> current guild scope (empty = platform)
 }
 
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
@@ -200,6 +222,7 @@ func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permCh
 		streamRoomCache:  make(map[string]string),
 		streamByIdentity: make(map[string]map[string]string),
 		connSlots:        make(map[string]*connRoomSlots),
+		clientGuilds:     make(map[string]string),
 	}
 }
 
@@ -222,6 +245,10 @@ func (h *Hub) SetStreamResolver(r StreamNameResolver) {
 	h.streamResolver = r
 }
 
+func (h *Hub) SetGuildChecker(checker func(guildUUID, userUUID string) bool) {
+	h.guildChecker = checker
+}
+
 // ─── 事件注册 ───
 
 // SetupFanout registers all signal event handlers with the WS HandlerRegistry.
@@ -232,7 +259,7 @@ func (h *Hub) SetupFanout(fanout ws.Broadcaster, handler *ws.HandlerRegistry) {
 	handler.HandleAck(EventRoomJoin, h.OnRoomJoin)
 	handler.HandleAck(EventRoomJoinSFU, h.OnRoomJoinSFU)
 	handler.HandleAck(EventRoomLeave, h.OnRoomLeave)
-	handler.Handle(EventRoomList, func(c ws.ClientMessenger, _ string) { h.OnRoomList(c) })
+	handler.Handle(EventRoomList, h.OnRoomList)
 	handler.Handle(EventRoomKick, h.OnRoomKick)
 	handler.Handle(EventMemberMicState, h.OnMemberMicState)
 	handler.Handle(EventMemberSpeaking, h.OnMemberSpeaking)
@@ -268,6 +295,41 @@ func resolveIdentity(c ws.ClientMessenger, requested string) (string, error) {
 		return "", fmt.Errorf("identity mismatch")
 	}
 	return identity, nil
+}
+
+func (h *Hub) guildMemberAllowed(c ws.ClientMessenger, guildUUID string) bool {
+	if guildUUID == "" {
+		return true
+	}
+	if h.guildChecker == nil {
+		return false
+	}
+	if c == nil || c.Claims() == nil {
+		return false
+	}
+	userUUID := c.Claims().UserUUID
+	if userUUID == "" {
+		userUUID = c.Claims().Username
+	}
+	return h.guildChecker(guildUUID, userUUID)
+}
+
+func (h *Hub) setClientGuild(c ws.ClientMessenger, guildUUID string) {
+	if c == nil {
+		return
+	}
+	h.mu.Lock()
+	prev := h.clientGuilds[c.ID()]
+	h.clientGuilds[c.ID()] = guildUUID
+	h.mu.Unlock()
+
+	if h.fanout == nil {
+		return
+	}
+	if prev != guildUUID {
+		h.fanout.Leave(guildRoomKey(prev), c.ID())
+	}
+	h.fanout.Join(guildRoomKey(guildUUID), c.ID())
 }
 
 // ─── 连接/断开 ───
@@ -311,6 +373,8 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 		}
 	}
 	h.mu.Lock()
+	guildScope := h.clientGuilds[c.ID()]
+	delete(h.clientGuilds, c.ID())
 	for roomName, room := range h.rooms {
 		if member, ok := room.Members[c.ID()]; ok {
 			identity := member.Identity
@@ -340,13 +404,18 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	delete(h.connSlots, c.ID())
 	h.mu.Unlock()
 
+	if h.fanout != nil {
+		h.fanout.Leave(guildRoomKey(guildScope), c.ID())
+	}
+
 	// publish after unlock: avoid holding hub mu across NATS/WebSocket I/O
 	for _, e := range leaveEvents {
-		_, logicalName := splitRoomKey(e.room)
+		guildUUID, logicalName := splitRoomKey(e.room)
 		h.publishRoom(e.room, EventMemberLeft, map[string]interface{}{
-			"room":     logicalName,
-			"identity": e.identity,
-			"id":       e.id,
+			"room":       logicalName,
+			"guild_uuid": guildUUID,
+			"identity":   e.identity,
+			"id":         e.id,
 		})
 	}
 
@@ -394,7 +463,8 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 		h.mu.RUnlock()
 		if !exists {
 			// 房间已空被删除，广播房间列表更新（含 DB 持久化房间）
-			h.broadcastRoomList()
+			guildUUID, _ := splitRoomKey(name)
+			h.broadcastRoomList(guildUUID)
 			continue
 		}
 		h.broadcastRoomUpdatedLocal(name)
@@ -423,6 +493,14 @@ func (h *Hub) OnRoomCreate(c ws.ClientMessenger, data string) {
 		}})
 		return
 	}
+
+	if !h.guildMemberAllowed(c, req.GuildUUID) {
+		c.Send(map[string]interface{}{"event": EventRoomCreated, "data": map[string]interface{}{
+			"error": "not a member of this guild",
+		}})
+		return
+	}
+	h.setClientGuild(c, req.GuildUUID)
 
 	h.mu.Lock()
 	if _, exists := h.rooms[roomKey(req.GuildUUID, req.Room)]; exists {
@@ -468,6 +546,13 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 			"error": "room name is required",
 		})
 	}
+
+	if !h.guildMemberAllowed(c, req.GuildUUID) {
+		return marshalAck(map[string]interface{}{
+			"error": "not a member of this guild",
+		})
+	}
+	h.setClientGuild(c, req.GuildUUID)
 
 	identity, err := resolveIdentity(c, req.Identity)
 	if err != nil {
@@ -582,6 +667,13 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 		return marshalAck(map[string]interface{}{"error": "room name is required"})
 	}
 
+	if !h.guildMemberAllowed(c, req.GuildUUID) {
+		return marshalAck(map[string]interface{}{
+			"error": "not a member of this guild",
+		})
+	}
+	h.setClientGuild(c, req.GuildUUID)
+
 	identity, err := resolveIdentity(c, req.Identity)
 	if err != nil {
 		return marshalAck(map[string]interface{}{"error": err.Error()})
@@ -683,10 +775,11 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	}
 
 	h.publishRoom(roomKey(req.GuildUUID, req.Room), EventMemberJoined, map[string]interface{}{
-		"room":     req.Room,
-		"identity": identity,
-		"id":       c.ID(),
-		"stream":   req.Stream,
+		"room":       req.Room,
+		"guild_uuid": req.GuildUUID,
+		"identity":   identity,
+		"id":         c.ID(),
+		"stream":     req.Stream,
 	})
 
 	h.broadcastRoomUpdatedLocal(roomKey(req.GuildUUID, req.Room))
@@ -764,18 +857,20 @@ func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 	log.Printf("[Signal] %s (%s) left room: %s", c.ID(), identity, req.Room)
 
 	c.Send(map[string]interface{}{"event": EventRoomLeft, "data": map[string]interface{}{
-		"room": req.Room,
+		"room":       req.Room,
+		"guild_uuid": req.GuildUUID,
 	}})
 
 	h.publishRoom(roomKey(req.GuildUUID, req.Room), EventMemberLeft, map[string]interface{}{
-		"room":     req.Room,
-		"identity": identity,
-		"id":       c.ID(),
+		"room":       req.Room,
+		"guild_uuid": req.GuildUUID,
+		"identity":   identity,
+		"id":         c.ID(),
 	})
 
 	// 房间已空被删除则广播房间列表，否则广播单房间更新（与 OnDisconnect 一致）
 	if roomDeleted {
-		h.broadcastRoomList()
+		h.broadcastRoomList(req.GuildUUID)
 	} else {
 		// NOTE: roomInfoLocked 在 !exists 时返回零值 RoomInfo（并发删房场景安全）
 		h.broadcastRoomUpdatedLocal(roomKey(req.GuildUUID, req.Room))
@@ -789,8 +884,27 @@ func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 
 // ─── 房间列表 ───
 
-func (h *Hub) OnRoomList(c ws.ClientMessenger) {
-	rooms := h.getMergedRooms()
+func (h *Hub) OnRoomList(c ws.ClientMessenger, data string) {
+	var req struct {
+		GuildUUID string `json:"guild_uuid"`
+	}
+	_ = parseJSON(data, &req)
+
+	if !h.guildMemberAllowed(c, req.GuildUUID) {
+		c.Send(map[string]interface{}{"event": EventRoomListResult, "data": map[string]interface{}{
+			"rooms": []RoomInfo{},
+			"count": 0,
+		}})
+		return
+	}
+	h.setClientGuild(c, req.GuildUUID)
+
+	var rooms []RoomInfo
+	if req.GuildUUID == "" {
+		rooms = h.getMergedPlatformRooms()
+	} else {
+		rooms = h.getMergedRooms(req.GuildUUID)
+	}
 	c.Send(map[string]interface{}{"event": EventRoomListResult, "data": map[string]interface{}{
 		"rooms": rooms,
 		"count": len(rooms),
@@ -912,12 +1026,14 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 	// 通知被踢者；payload 带 targetIdentity，前端按 identity 过滤避免误伤同房他人
 	h.publishRoom(roomKey(req.GuildUUID, req.Room), EventRoomKicked, map[string]interface{}{
 		"room":           req.Room,
+		"guild_uuid":     req.GuildUUID,
 		"targetIdentity": req.TargetIdentity,
 		"enforcement":    enforcement,
 	})
 	if targetConn != nil {
 		targetConn.Send(map[string]interface{}{"event": EventRoomKicked, "data": map[string]interface{}{
 			"room":           req.Room,
+			"guild_uuid":     req.GuildUUID,
 			"targetIdentity": req.TargetIdentity,
 			"enforcement":    enforcement,
 		}})
@@ -926,6 +1042,7 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 	// 通知全员成员离开
 	h.publishRoom(roomKey(req.GuildUUID, req.Room), EventMemberLeft, map[string]interface{}{
 		"room":        req.Room,
+		"guild_uuid":  req.GuildUUID,
 		"identity":    req.TargetIdentity,
 		"id":          targetSocketID,
 		"enforcement": enforcement,
@@ -940,7 +1057,7 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 	// 空房删除 SFU room 并广播列表，否则广播单房间更新
 	if roomDeleted {
 		h.deleteRoomSafe(req.Room)
-		h.broadcastRoomList()
+		h.broadcastRoomList(req.GuildUUID)
 	} else {
 		h.broadcastRoomUpdatedLocal(roomKey(req.GuildUUID, req.Room))
 		if targetWasSpeaking {
@@ -979,6 +1096,7 @@ func (h *Hub) OnMemberMicState(c ws.ClientMessenger, data string) {
 
 	h.BroadcastToRoom(roomKey(req.GuildUUID, req.Room), EventMemberUpdated, map[string]interface{}{
 		"room":       req.Room,
+		"guild_uuid": req.GuildUUID,
 		"identity":   req.Identity,
 		"isMicMuted": req.IsMicMuted,
 	})
@@ -1045,12 +1163,21 @@ func (h *Hub) broadcastActiveSpeakers(guildUUID, roomName string) {
 	h.mu.RUnlock()
 	h.publishRoom(rk, EventRoomActiveSpeakers, map[string]interface{}{
 		"room":       roomName,
+		"guild_uuid": guildUUID,
 		"identities": identities,
 	})
 }
 
 // getMergedRooms 合并 DB 持久化房间 + 内存活跃房间（并行查询）。
-func (h *Hub) getMergedRooms() []RoomInfo {
+func (h *Hub) getMergedRooms(guildUUID string) []RoomInfo {
+	return h.getMergedRoomsScoped(guildUUID, false)
+}
+
+func (h *Hub) getMergedPlatformRooms() []RoomInfo {
+	return h.getMergedRoomsScoped("", true)
+}
+
+func (h *Hub) getMergedRoomsScoped(guildUUID string, platformOnly bool) []RoomInfo {
 	var dbRooms map[string]RoomInfo
 	var memRooms map[string]RoomInfo
 
@@ -1060,8 +1187,11 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 	eg.Go(func() error {
 		dbRooms = make(map[string]RoomInfo)
 		if h.roomStore != nil {
-			if rooms, _, err := h.roomStore.List(1, 200, ""); err == nil {
+			if rooms, _, err := h.roomStore.List(1, 200, "", guildUUID); err == nil {
 				for _, r := range rooms {
+					if platformOnly && r.GuildUUID != "" {
+						continue
+					}
 					key := roomKey(r.GuildUUID, r.Name)
 					dbRooms[key] = RoomInfo{
 						ID:            r.ID,
@@ -1089,6 +1219,12 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 		memRooms = make(map[string]RoomInfo)
 		h.mu.RLock()
 		for name := range h.rooms {
+			if !roomKeyMatchesGuild(name, guildUUID) {
+				continue
+			}
+			if platformOnly && !roomKeyIsPlatform(name) {
+				continue
+			}
 			memRooms[name] = h.roomInfoLocked(name)
 		}
 		h.mu.RUnlock()
@@ -1099,8 +1235,8 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 
 	// 合并：内存活跃数据覆盖 DB 数据，同时保留 DB 字段
 	for name, info := range memRooms {
-		guildUUID, _ := splitRoomKey(name)
-		info.GuildUUID = guildUUID
+		roomGuildUUID, _ := splitRoomKey(name)
+		info.GuildUUID = roomGuildUUID
 		if existing, ok := dbRooms[name]; ok {
 			info.ID = existing.ID
 			info.UUID = existing.UUID
@@ -1126,6 +1262,12 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 				if name == "" {
 					continue
 				}
+				if !roomKeyMatchesGuild(name, guildUUID) {
+					continue
+				}
+				if platformOnly && !roomKeyIsPlatform(name) {
+					continue
+				}
 				if _, ok := dbRooms[name]; ok {
 					// already present; still refresh members/count from merge
 					info := dbRooms[name]
@@ -1142,6 +1284,12 @@ func (h *Hub) getMergedRooms() []RoomInfo {
 
 	result := make([]RoomInfo, 0, len(dbRooms))
 	for _, r := range dbRooms {
+		if guildUUID != "" && r.GuildUUID != guildUUID {
+			continue
+		}
+		if platformOnly && r.GuildUUID != "" {
+			continue
+		}
 		result = append(result, r)
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -1197,20 +1345,38 @@ func (h *Hub) GetSFURooms() []RoomInfo {
 
 // GetRooms returns DB-persisted rooms + in-memory active rooms merged.
 func (h *Hub) GetRooms() []RoomInfo {
-	return h.getMergedRooms()
+	return h.getMergedRooms("")
 }
 
 // broadcastRoomList 向全员推送最新房间列表。
 // 事件名必须是 room:list:result（与 OnRoomList 一致）；room:list 是客户端请求事件，前端不监听。
-func (h *Hub) broadcastRoomList() {
+func (h *Hub) broadcastRoomList(guildUUID string) {
 	if h.fanout == nil {
 		return
 	}
-	rooms := h.GetRooms()
-	h.localNamespace(EventRoomListResult, map[string]interface{}{
+	var rooms []RoomInfo
+	if guildUUID == "" {
+		rooms = h.getMergedPlatformRooms()
+	} else {
+		rooms = h.getMergedRooms(guildUUID)
+	}
+	h.fanout.BroadcastToRoom(guildRoomKey(guildUUID), EventRoomListResult, map[string]interface{}{
 		"rooms": rooms,
 		"count": len(rooms),
 	})
+}
+
+func (h *Hub) broadcastRoomListKnownGuilds() {
+	h.mu.RLock()
+	seen := make(map[string]struct{}, len(h.clientGuilds))
+	for _, guildUUID := range h.clientGuilds {
+		seen[guildUUID] = struct{}{}
+	}
+	h.mu.RUnlock()
+
+	for guildUUID := range seen {
+		h.broadcastRoomList(guildUUID)
+	}
 }
 
 // CheckRoomLimit 检查房间是否已满，返回 (已满, 限制人数, 当前人数, 错误)
@@ -1435,14 +1601,6 @@ func (h *Hub) publishNamespace(event string, data interface{}) {
 	}
 }
 
-// localNamespace 仅本机广播，不经 EventBus。
-// 用于携带本机内存状态快照的事件（room:list:result / room:updated），避免跨实例投递错误成员数。
-func (h *Hub) localNamespace(event string, data interface{}) {
-	if h.fanout != nil {
-		h.fanout.BroadcastToNamespace(event, data)
-	}
-}
-
 func (h *Hub) BroadcastToRoom(room string, event string, data interface{}) {
 	h.publishRoom(room, event, data)
 }
@@ -1649,7 +1807,7 @@ func (h *Hub) clearLocalRoomsForSFUSwitch() {
 		_, logicalRoom := splitRoomKey(roomName)
 		h.deleteRoomSafe(logicalRoom)
 	}
-	h.broadcastRoomList()
+	h.broadcastRoomListKnownGuilds()
 }
 
 // BroadcastMute 广播禁言事件到所有客户端。
