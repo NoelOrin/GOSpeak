@@ -1,8 +1,10 @@
 import clsx from "clsx";
 import CirclePlus from "lucide-solid/icons/circle-plus";
+import { useNavigate } from "@tanstack/solid-router";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import CreateRoomModal from "@/components/modal/createRoomModal";
 import { chatStore } from "@/stores/chatStore";
+import domainStore from "@/stores/domainStore";
 import { type RoomInfo, socketStore } from "@/stores/socketStore";
 import { hasPermission } from "@/utils/permissions";
 import Divider from "../common/divider";
@@ -22,7 +24,7 @@ interface RoomItemPropsType {
 const RoomItem = (props: RoomItemPropsType) => {
 	const isSelected = () =>
 		socketStore.selectedRoomInfo()?.name === props.room.name &&
-		socketStore.selectedRoomInfo()?.guild_uuid === props.room.guild_uuid;
+		socketStore.selectedRoomInfo()?.domain_uuid === props.room.domain_uuid;
 	const [showPasswordModal, setShowPasswordModal] = createSignal(false);
 
 	const handleJoin = () => {
@@ -39,10 +41,10 @@ const RoomItem = (props: RoomItemPropsType) => {
 		<div class="flex flex-col w-full overflow-hidden">
 			<div
 				class={clsx(
-					"tooltip tooltip-right w-full",
+					"tooltip tooltip-right w-full min-w-0",
 					isSelected() && !props.isActive ? "tooltip-open" : "",
 				)}
-				data-tip={props.room.hasPassword ? "🔒 输入密码加入" : "进入房间"}
+				data-tip={`${props.room.type === "text" ? "# " : ""}${props.room.name}${props.room.hasPassword ? " · 需要密码" : ""}`}
 			>
 				<button
 					class={clsx(
@@ -59,7 +61,7 @@ const RoomItem = (props: RoomItemPropsType) => {
 						handleJoin();
 					}}
 				>
-					<div class="flex items-center space-x-1">
+					<div class="flex min-w-0 flex-1 items-center space-x-1">
 						<span>
 							<svg
 								width="16"
@@ -95,12 +97,12 @@ const RoomItem = (props: RoomItemPropsType) => {
 								/>
 							</svg>
 						</span>
-						<span class="text-[14px] leading-0">
+						<span class="min-w-0 flex-1 truncate whitespace-nowrap text-left text-[14px] leading-0">
 							{props.room.type === "text" ? "# " : ""}
 							{props.room.name}
 						</span>
 						<Show when={props.room.hasPassword}>
-							<span class="text-base-content/50">
+							<span class="shrink-0 text-base-content/50">
 								<svg
 									width="14"
 									height="14"
@@ -118,7 +120,7 @@ const RoomItem = (props: RoomItemPropsType) => {
 						</Show>
 					</div>
 
-					<div class="flex text-[12px]">
+					<div class="shrink-0 text-[12px]">
 						<div>
 							{props.room.count}/{props.room.limit}
 						</div>
@@ -190,10 +192,28 @@ const RoomListFallback = () => (
 );
 
 const RoomListHeader = (props: { onOpenCreate: () => void }) => {
+	const navigate = useNavigate();
+	const currentDomain = createMemo(
+		() => domainStore.state.domainCache[socketStore.currentDomainUUID() ?? ""],
+	);
 	return (
 		<div class="flex justify-between mt-2">
-			<h3 class="font-bold">服务器</h3>
+			<h3 class="font-bold">{currentDomain()?.name || "语音域"}</h3>
 			<div class="flex items-center gap-1">
+				<Show when={currentDomain()}>
+					<button
+						type="button"
+						class="btn btn-xs btn-ghost"
+						onClick={() =>
+							navigate({
+								to: "/manage/domains/$domainUUID",
+								params: { domainUUID: currentDomain()?.uuid },
+							})
+						}
+					>
+						管理
+					</button>
+				</Show>
 				<Show when={hasPermission("room:create")}>
 					<button
 						type="button"
@@ -246,7 +266,7 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 			.rooms()
 			.filter(
 				(room) =>
-					(room.guild_uuid || "") === (socketStore.currentGuildUUID() || ""),
+					(room.domain_uuid || "") === (socketStore.currentDomainUUID() || ""),
 			),
 	);
 
@@ -275,8 +295,8 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 											room={room}
 											isActive={
 												socketStore.currentRoom() === room.name &&
-												(room.guild_uuid || "") ===
-													(socketStore.currentGuildUUID() || "")
+												(room.domain_uuid || "") ===
+													(socketStore.currentDomainUUID() || "")
 											}
 											selectedMember={selectedMember}
 											onSelectMember={(identity, x, y) =>
