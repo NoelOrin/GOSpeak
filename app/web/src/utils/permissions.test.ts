@@ -24,6 +24,17 @@ describe("rolePermissions", () => {
 		}
 	});
 
+	it("keeps guild management permissions in the admin fallback", () => {
+		expect(rolePermissions.admin).toEqual(
+			expect.arrayContaining([
+				"guild:manage",
+				"guild:delete",
+				"guild:invite",
+				"guild:kick",
+			]),
+		);
+	});
+
 	it("user has create guild permission", () => {
 		expect(rolePermissions.user).toContain("guild:create");
 	});

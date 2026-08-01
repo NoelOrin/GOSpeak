@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/solid-router";
+import Settings from "lucide-solid/icons/settings";
 import { createSignal, onMount, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import { deleteGuild, leaveGuild } from "@/api/guild";
@@ -6,6 +7,7 @@ import InviteShareModal from "@/components/guild/InviteShareModal";
 import guildStore from "@/stores/guildStore";
 import userStore from "@/stores/userStore";
 import { guildInviteUrl } from "@/utils/guildInvite";
+import { hasPermission } from "@/utils/permissions";
 
 export const Route = createFileRoute("/(app)/guild/$guildUUID/")({
 	component: RouteComponent,
@@ -29,6 +31,14 @@ function RouteComponent() {
 		const u = userStore.user();
 		return !!u && guild()?.owner_uuid === u.uuid;
 	};
+	const currentRole = () => {
+		const u = userStore.user();
+		return state.memberCache[params().guildUUID]?.find(
+			(member) => member.user_uuid === u?.uuid,
+		)?.role_name;
+	};
+	const canManage = () =>
+		isOwner() || currentRole() === "admin" || hasPermission("guild:manage");
 	const inviteUrl = () => guildInviteUrl(guild()?.invite_code || "");
 
 	async function copyInviteCode() {
@@ -39,6 +49,7 @@ function RouteComponent() {
 	}
 
 	async function handleLeave() {
+		if (!confirm("确定离开此服务器？")) return;
 		setLoading(true);
 		setError("");
 		try {
@@ -96,6 +107,23 @@ function RouteComponent() {
 					</button>
 				</Show>
 				<span>成员上限: {guild()?.max_rooms || "无限"}</span>
+			</div>
+			<div class="flex gap-2">
+				<Show when={canManage()}>
+					<button
+						type="button"
+						class="btn btn-sm btn-outline"
+						onClick={() =>
+							navigate({
+								to: "/guild/$guildUUID/manage",
+								params: { guildUUID: params().guildUUID },
+							})
+						}
+					>
+						<Settings size={15} />
+						管理
+					</button>
+				</Show>
 			</div>
 			<Show when={guild()}>
 				<Show when={error()}>

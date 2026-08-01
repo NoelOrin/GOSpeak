@@ -24,10 +24,15 @@ const member = (
 	...extra,
 });
 
-const room = (name: string, members: MemberInfo[] = []): RoomInfo => ({
+const room = (
+	name: string,
+	members: MemberInfo[] = [],
+	guild_uuid?: string,
+): RoomInfo => ({
 	id: 1,
 	uuid: "u1",
 	name,
+	guild_uuid,
 	hasPassword: false,
 	description: "desc",
 	limit: 10,
@@ -65,6 +70,21 @@ describe("roomState reducers", () => {
 		expect(next[0].uuid).toBe("u1");
 	});
 
+	it("mergeRoomUpdated keeps same room names isolated by guild", () => {
+		const prev = [room("lobby", [member("a")], "guild-a")];
+		const next = mergeRoomUpdated(prev, {
+			...room("lobby", [member("b")], "guild-b"),
+			id: 2,
+			uuid: "u2",
+		});
+
+		expect(next).toHaveLength(2);
+		expect(next[0].guild_uuid).toBe("guild-a");
+		expect(next[0].members.map((m) => m.identity)).toEqual(["a"]);
+		expect(next[1].guild_uuid).toBe("guild-b");
+		expect(next[1].members.map((m) => m.identity)).toEqual(["b"]);
+	});
+
 	it("mergeRoomUpdated inserts missing room shell", () => {
 		const next = mergeRoomUpdated([], {
 			name: "new-room",
@@ -99,6 +119,19 @@ describe("roomState reducers", () => {
 		expect(next[0].count).toBe(2);
 	});
 
+	it("applyMemberJoinedShell only updates the matching guild room", () => {
+		const prev = [room("lobby", [], "guild-a"), room("lobby", [], "guild-b")];
+		const next = applyMemberJoinedShell(prev, {
+			room: "lobby",
+			guild_uuid: "guild-b",
+			identity: "b",
+			id: "id-b",
+		});
+		expect(next[0].count).toBe(0);
+		expect(next[1].count).toBe(1);
+		expect(next[1].members[0].identity).toBe("b");
+	});
+
 	it("applyMemberJoinedShell is idempotent for same id but still bumps count like current store", () => {
 		const prev = [room("lobby", [member("a", { id: "id-a" })])];
 		const once = applyMemberJoinedShell(prev, {
@@ -122,6 +155,21 @@ describe("roomState reducers", () => {
 		});
 		expect(next[0].members.map((m) => m.identity)).toEqual(["b"]);
 		expect(next[0].count).toBe(1);
+	});
+
+	it("applyMemberLeft only removes from the matching guild room", () => {
+		const prev = [
+			room("lobby", [member("a", { id: "id-a" })], "guild-a"),
+			room("lobby", [member("a", { id: "id-a" })], "guild-b"),
+		];
+		const next = applyMemberLeft(prev, {
+			room: "lobby",
+			guild_uuid: "guild-b",
+			identity: "a",
+			id: "id-a",
+		});
+		expect(next[0].members).toHaveLength(1);
+		expect(next[1].members).toHaveLength(0);
 	});
 
 	it("applyMemberLeft never drives count below zero", () => {
@@ -149,18 +197,44 @@ describe("roomState reducers", () => {
 		);
 	});
 
+	it("applyMemberUpdated only updates the matching guild room", () => {
+		const prev = [
+			room("lobby", [member("a")], "guild-a"),
+			room("lobby", [member("a")], "guild-b"),
+		];
+		const next = applyMemberUpdated(prev, {
+			room: "lobby",
+			guild_uuid: "guild-a",
+			identity: "a",
+			isMicMuted: true,
+		});
+		expect(next[0].members[0].isMicMuted).toBe(true);
+		expect(next[1].members[0].isMicMuted).toBe(false);
+	});
+
 	it("upsertRoomMembersFromAck replaces members for room and inserts if missing", () => {
 		const prev = [room("lobby", [member("old")])];
-		const next = upsertRoomMembersFromAck(prev, "lobby", [
+		const next = upsertRoomMembersFromAck(prev, "lobby", "", [
 			member("new1"),
 			member("new2"),
 		]);
 		expect(next[0].members.map((m) => m.identity)).toEqual(["new1", "new2"]);
 		expect(next[0].count).toBe(2);
 
-		const created = upsertRoomMembersFromAck([], "r2", [member("x")]);
+		const created = upsertRoomMembersFromAck([], "r2", "", [member("x")]);
 		expect(created[0].name).toBe("r2");
 		expect(created[0].members).toHaveLength(1);
+	});
+
+	it("upsertRoomMembersFromAck keeps guild rooms isolated by guild_uuid", () => {
+		const prev = [room("lobby", [member("old")], "guild-a")];
+		const next = upsertRoomMembersFromAck(prev, "lobby", "guild-b", [
+			member("new"),
+		]);
+		expect(next).toHaveLength(2);
+		expect(next[0].members.map((m) => m.identity)).toEqual(["old"]);
+		expect(next[1].guild_uuid).toBe("guild-b");
+		expect(next[1].members.map((m) => m.identity)).toEqual(["new"]);
 	});
 
 	it("addCreatedRoom appends unique rooms only", () => {
@@ -168,5 +242,11 @@ describe("roomState reducers", () => {
 		const created = room("new");
 		expect(addCreatedRoom(prev, created)).toHaveLength(2);
 		expect(addCreatedRoom(prev, room("lobby"))).toBe(prev);
+	});
+
+	it("addCreatedRoom treats same room name in different guilds as distinct", () => {
+		const prev = [room("lobby", [], "guild-a")];
+		const next = addCreatedRoom(prev, room("lobby", [], "guild-b"));
+		expect(next).toHaveLength(2);
 	});
 });

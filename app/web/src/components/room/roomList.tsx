@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import CirclePlus from "lucide-solid/icons/circle-plus";
-import { createSignal, For, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import CreateRoomModal from "@/components/modal/createRoomModal";
 import { chatStore } from "@/stores/chatStore";
 import { type RoomInfo, socketStore } from "@/stores/socketStore";
@@ -241,6 +241,15 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 		createRoomModalRef?.close?.();
 	};
 
+	const visibleRooms = createMemo(() =>
+		socketStore
+			.rooms()
+			.filter(
+				(room) =>
+					(room.guild_uuid || "") === (socketStore.currentGuildUUID() || ""),
+			),
+	);
+
 	return (
 		<>
 			<div class="box-border flex flex-col px-2 h-full select-none" ref={ref}>
@@ -253,18 +262,22 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 							fallback={<RoomListFallback />}
 						>
 							<Show
-								when={socketStore.rooms().length > 0}
+								when={visibleRooms().length > 0}
 								fallback={
 									<div class="flex justify-center items-center h-20 text-xs text-base-content/40">
 										暂无房间
 									</div>
 								}
 							>
-								<For each={socketStore.rooms()}>
+								<For each={visibleRooms()}>
 									{(room) => (
 										<RoomItem
 											room={room}
-											isActive={socketStore.currentRoom() === room.name}
+											isActive={
+												socketStore.currentRoom() === room.name &&
+												(room.guild_uuid || "") ===
+													(socketStore.currentGuildUUID() || "")
+											}
 											selectedMember={selectedMember}
 											onSelectMember={(identity, x, y) =>
 												setSelectedMember({ identity, x, y })

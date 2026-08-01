@@ -42,6 +42,7 @@ export interface UnmuteEvent {
 export interface ActivityEvent {
 	type: "member_joined" | "member_left" | "room_joined" | "room_left";
 	room: string;
+	guild_uuid?: string;
 	identity?: string;
 	timestamp: number;
 }
@@ -49,6 +50,7 @@ export interface ActivityEvent {
 export interface RoomPresenceEvent {
 	type: "member_joined" | "member_left";
 	room: string;
+	guild_uuid?: string;
 	identity: string;
 	timestamp: number;
 }

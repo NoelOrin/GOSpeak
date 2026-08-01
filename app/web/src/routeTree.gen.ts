@@ -32,6 +32,7 @@ import { Route as appManageBotPluginsIndexRouteImport } from './pages/(app)/mana
 import { Route as appManageBanIndexRouteImport } from './pages/(app)/manage/ban/index'
 import { Route as appManageApikeyIndexRouteImport } from './pages/(app)/manage/apikey/index'
 import { Route as appGuildGuildUUIDIndexRouteImport } from './pages/(app)/guild/$guildUUID/index'
+import { Route as appGuildGuildUUIDManageRouteImport } from './pages/(app)/guild/$guildUUID/manage'
 import { Route as appInviteGCodeIndexRouteImport } from './pages/(app)/invite/g/$code/index'
 
 const appRouteRoute = appRouteRouteImport.update({
@@ -150,6 +151,11 @@ const appGuildGuildUUIDIndexRoute = appGuildGuildUUIDIndexRouteImport.update({
   path: '/guild/$guildUUID/',
   getParentRoute: () => appRouteRoute,
 } as any)
+const appGuildGuildUUIDManageRoute = appGuildGuildUUIDManageRouteImport.update({
+  id: '/guild/$guildUUID/manage',
+  path: '/guild/$guildUUID/manage',
+  getParentRoute: () => appRouteRoute,
+} as any)
 const appInviteGCodeIndexRoute = appInviteGCodeIndexRouteImport.update({
   id: '/invite/g/$code/',
   path: '/invite/g/$code/',
@@ -167,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/index/': typeof appIndexIndexRoute
   '/link/': typeof appLinkIndexRoute
   '/manage/': typeof appManageIndexRoute
+  '/guild/$guildUUID/manage': typeof appGuildGuildUUIDManageRoute
   '/guild/$guildUUID/': typeof appGuildGuildUUIDIndexRoute
   '/manage/apikey/': typeof appManageApikeyIndexRoute
   '/manage/ban/': typeof appManageBanIndexRoute
@@ -191,6 +198,7 @@ export interface FileRoutesByTo {
   '/index': typeof appIndexIndexRoute
   '/link': typeof appLinkIndexRoute
   '/manage': typeof appManageIndexRoute
+  '/guild/$guildUUID/manage': typeof appGuildGuildUUIDManageRoute
   '/guild/$guildUUID': typeof appGuildGuildUUIDIndexRoute
   '/manage/apikey': typeof appManageApikeyIndexRoute
   '/manage/ban': typeof appManageBanIndexRoute
@@ -218,6 +226,7 @@ export interface FileRoutesById {
   '/(app)/index/': typeof appIndexIndexRoute
   '/(app)/link/': typeof appLinkIndexRoute
   '/(app)/manage/': typeof appManageIndexRoute
+  '/(app)/guild/$guildUUID/manage': typeof appGuildGuildUUIDManageRoute
   '/(app)/guild/$guildUUID/': typeof appGuildGuildUUIDIndexRoute
   '/(app)/manage/apikey/': typeof appManageApikeyIndexRoute
   '/(app)/manage/ban/': typeof appManageBanIndexRoute
@@ -245,6 +254,7 @@ export interface FileRouteTypes {
     | '/index/'
     | '/link/'
     | '/manage/'
+    | '/guild/$guildUUID/manage'
     | '/guild/$guildUUID/'
     | '/manage/apikey/'
     | '/manage/ban/'
@@ -269,6 +279,7 @@ export interface FileRouteTypes {
     | '/index'
     | '/link'
     | '/manage'
+    | '/guild/$guildUUID/manage'
     | '/guild/$guildUUID'
     | '/manage/apikey'
     | '/manage/ban'
@@ -295,6 +306,7 @@ export interface FileRouteTypes {
     | '/(app)/index/'
     | '/(app)/link/'
     | '/(app)/manage/'
+    | '/(app)/guild/$guildUUID/manage'
     | '/(app)/guild/$guildUUID/'
     | '/(app)/manage/apikey/'
     | '/(app)/manage/ban/'
@@ -478,6 +490,13 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof appGuildGuildUUIDIndexRouteImport
       parentRoute: typeof appRouteRoute
     }
+    '/(app)/guild/$guildUUID/manage': {
+      id: '/(app)/guild/$guildUUID/manage'
+      path: '/guild/$guildUUID/manage'
+      fullPath: '/guild/$guildUUID/manage'
+      preLoaderRoute: typeof appGuildGuildUUIDManageRouteImport
+      parentRoute: typeof appRouteRoute
+    }
     '/(app)/invite/g/$code/': {
       id: '/(app)/invite/g/$code/'
       path: '/invite/g/$code'
@@ -531,6 +550,7 @@ interface appRouteRouteChildren {
   appDiscoverIndexRoute: typeof appDiscoverIndexRoute
   appIndexIndexRoute: typeof appIndexIndexRoute
   appLinkIndexRoute: typeof appLinkIndexRoute
+  appGuildGuildUUIDManageRoute: typeof appGuildGuildUUIDManageRoute
   appGuildGuildUUIDIndexRoute: typeof appGuildGuildUUIDIndexRoute
   appInviteGCodeIndexRoute: typeof appInviteGCodeIndexRoute
 }
@@ -544,6 +564,7 @@ const appRouteRouteChildren: appRouteRouteChildren = {
   appDiscoverIndexRoute: appDiscoverIndexRoute,
   appIndexIndexRoute: appIndexIndexRoute,
   appLinkIndexRoute: appLinkIndexRoute,
+  appGuildGuildUUIDManageRoute: appGuildGuildUUIDManageRoute,
   appGuildGuildUUIDIndexRoute: appGuildGuildUUIDIndexRoute,
   appInviteGCodeIndexRoute: appInviteGCodeIndexRoute,
 }
