@@ -20,10 +20,17 @@ type SignalHandler struct {
 	sfuSvc *service.SFUService
 
 	jobs livekitJobPublisher
+
+	clusterResolver func(domainUUID string) (string, error)
 }
 
 func NewSignalHandler(sfuSvc *service.SFUService) *SignalHandler {
 	return &SignalHandler{sfuSvc: sfuSvc}
+}
+
+// SetClusterResolver 注入 Domain/Server → workerUrl 的解析器，用于多副本信令路由。
+func (h *SignalHandler) SetClusterResolver(fn func(domainUUID string) (string, error)) {
+	h.clusterResolver = fn
 }
 
 func (h *SignalHandler) SetJobs(j livekitJobPublisher) {
@@ -59,10 +66,10 @@ func (h *SignalHandler) GetWSTicket(c *gin.Context) {
 
 // JoinRoomRequest 加入房间请求
 type JoinRoomRequest struct {
-	Room      string `json:"room" binding:"required" example:"my-room"`
+	Room       string `json:"room" binding:"required" example:"my-room"`
 	DomainUUID string `json:"domain_uuid,omitempty"`
-	Identity  string `json:"identity,omitempty" example:"user-123"` // 兼容字段，服务端以 JWT username 覆盖
-	Password  string `json:"password,omitempty"`
+	Identity   string `json:"identity,omitempty" example:"user-123"` // 兼容字段，服务端以 JWT username 覆盖
+	Password   string `json:"password,omitempty"`
 }
 
 // GetJoinToken
@@ -105,6 +112,11 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 		"serverUrl": result.ServerURL,
 		"room":      req.Room,
 		"identity":  req.Identity,
+	}
+	if req.DomainUUID != "" && h.clusterResolver != nil {
+		if workerURL, resolveErr := h.clusterResolver(req.DomainUUID); resolveErr == nil && workerURL != "" {
+			data["workerUrl"] = workerURL
+		}
 	}
 	if result.Provider != "" {
 		data["provider"] = result.Provider

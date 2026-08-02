@@ -69,9 +69,14 @@ func (m *mockSFU) GetHost() string {
 // ─── Helpers ───
 
 func setupRouter(sfu *mockSFU) *gin.Engine {
+	return setupRouterWithClusterResolver(sfu, nil)
+}
+
+func setupRouterWithClusterResolver(sfu *mockSFU, resolver func(domainUUID string) (string, error)) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	h := NewSignalHandler(service.NewSFUService(sfu, nil))
+	h.SetClusterResolver(resolver)
 	// 模拟 JWTAuth 注入 username
 	r.Use(func(c *gin.Context) {
 		if c.GetHeader("X-Test-User") != "" {
@@ -107,6 +112,7 @@ func parseResp(t *testing.T, body string) response {
 // ─── GetJoinToken Tests ───
 
 func TestGetJoinToken_Success(t *testing.T) {
+
 	sfu := &mockSFU{}
 	r := setupRouter(sfu)
 
