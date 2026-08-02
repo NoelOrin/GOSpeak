@@ -895,12 +895,12 @@ func TestMessageService_PersistFromJob_Success(t *testing.T) {
 
 	now := time.Now().UTC()
 	payload, err := json.Marshal(map[string]interface{}{
-		"uuid":      uuid.New().String(),
-		"room_uuid": uuid.New().String(),
-		"author_id": "alice",
-		"content":   "Persisted from job",
-		"reply_to":  "",
-		"mentions":  []string{},
+		"uuid":       uuid.New().String(),
+		"room_uuid":  uuid.New().String(),
+		"author_id":  "alice",
+		"content":    "Persisted from job",
+		"reply_to":   "",
+		"mentions":   []string{},
 		"created_at": now,
 	})
 	assertNoError(t, err)
@@ -914,12 +914,12 @@ func TestMessageService_PersistFromJob_WithMentions(t *testing.T) {
 
 	now := time.Now().UTC()
 	payload, err := json.Marshal(map[string]interface{}{
-		"uuid":      uuid.New().String(),
-		"room_uuid": uuid.New().String(),
-		"author_id": "alice",
-		"content":   "Persisted with mentions",
-		"reply_to":  "",
-		"mentions":  []string{"bob", "charlie"},
+		"uuid":       uuid.New().String(),
+		"room_uuid":  uuid.New().String(),
+		"author_id":  "alice",
+		"content":    "Persisted with mentions",
+		"reply_to":   "",
+		"mentions":   []string{"bob", "charlie"},
 		"created_at": now,
 	})
 	assertNoError(t, err)
@@ -1032,4 +1032,33 @@ func TestMessageService_MutateFromJob_InvalidPayload(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
+}
+
+// ─── Search Tests ───
+
+func TestMessageService_Search(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	if _, err := svc.Send(textUUID, "alice", "alpha needle one", "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Send(textUUID, "bob", "plain message", "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Send(textUUID, "carol", "beta needle two", "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := svc.Search(textUUID, "needle")
+	assertNoError(t, err)
+	if len(items) != 2 {
+		t.Fatalf("expected 2 search results, got %d", len(items))
+	}
+}
+
+func TestMessageService_Search_RejectsVoiceRoom(t *testing.T) {
+	svc, _, _, roomRepo, _ := setupMessageServiceTest(t)
+	voiceUUID := mustFindVoiceUUID(roomRepo)
+	_, err := svc.Search(voiceUUID, "needle")
+	assertErrorCode(t, err, pkg.FORBIDDEN)
 }
