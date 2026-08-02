@@ -10,7 +10,6 @@ export interface Domain {
 	description: string;
 	owner_uuid: string;
 	invite_code: string;
-	max_rooms: number;
 	is_public: boolean;
 	created_at: string;
 }
@@ -137,7 +136,6 @@ export async function updateDomain(data: {
 	description?: string;
 	icon_url?: string;
 	is_public?: boolean;
-	max_rooms?: number;
 }): Promise<Domain> {
 	const res = await apiClient.post({
 		url: "/api/v1/domain/update",

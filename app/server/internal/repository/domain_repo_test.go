@@ -306,34 +306,6 @@ func TestDomainRepo_CountMembers(t *testing.T) {
 	}
 }
 
-func TestDomainRepo_CountRooms(t *testing.T) {
-	db := newDomainTestDB(t)
-	repo := NewDomainRepository(db)
-
-	domain := &model.Domain{Name: "Test", OwnerUUID: "owner-1"}
-	if err := repo.Create(domain); err != nil {
-		t.Fatalf("Create error: %v", err)
-	}
-
-	for i := 0; i < 3; i++ {
-		room := &model.Room{
-			Name:      "room-" + string(rune('A'+i)),
-			DomainUUID: domain.UUID,
-		}
-		if err := db.Create(room).Error; err != nil {
-			t.Fatalf("Create room error: %v", err)
-		}
-	}
-
-	count, err := repo.CountRooms(domain.UUID)
-	if err != nil {
-		t.Fatalf("CountRooms error: %v", err)
-	}
-	if count != 3 {
-		t.Fatalf("expected 3 rooms, got %d", count)
-	}
-}
-
 func TestDomainRepo_Delete(t *testing.T) {
 	db := newDomainTestDB(t)
 	repo := NewDomainRepository(db)

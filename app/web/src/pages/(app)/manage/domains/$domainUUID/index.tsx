@@ -42,19 +42,12 @@ export const Route = createFileRoute("/(app)/manage/domains/$domainUUID/")({
 
 export interface DomainFormErrors {
 	name?: string;
-	maxRooms?: string;
 }
 
-export function validateDomainForm(
-	name: string,
-	maxRooms: number | "",
-): DomainFormErrors {
+export function validateDomainForm(name: string): DomainFormErrors {
 	const errors: DomainFormErrors = {};
 	if (!name.trim()) {
 		errors.name = "域名称不能为空";
-	}
-	if (maxRooms === "" || !Number.isInteger(maxRooms) || maxRooms < 1) {
-		errors.maxRooms = "房间上限必须是大于等于 1 的整数";
 	}
 	return errors;
 }
@@ -129,16 +122,12 @@ function RouteComponent() {
 	const [name, setName] = createSignal("");
 	const [description, setDescription] = createSignal("");
 	const [isPublic, setIsPublic] = createSignal(false);
-	const [maxRooms, setMaxRooms] = createSignal<number | "">("");
 	const [nameError, setNameError] = createSignal("");
-	const [maxRoomsError, setMaxRoomsError] = createSignal("");
 	const [formError, setFormError] = createSignal("");
 	const [saving, setSaving] = createSignal(false);
 	const [kickTarget, setKickTarget] = createSignal<DomainMember | null>(null);
 	const [kicking, setKicking] = createSignal(false);
 	const [kickError, setKickError] = createSignal("");
-	const maxRoomsValue = () =>
-		maxRooms() === "" || Number.isNaN(maxRooms()) ? "" : String(maxRooms());
 	let formUUID = "";
 	let kickDialogRef!: HTMLDialogElement;
 
@@ -226,9 +215,7 @@ function RouteComponent() {
 		setName(current.name);
 		setDescription(current.description ?? "");
 		setIsPublic(current.is_public);
-		setMaxRooms(current.max_rooms || 20);
 		setNameError("");
-		setMaxRoomsError("");
 		setFormError("");
 	});
 
@@ -253,10 +240,9 @@ function RouteComponent() {
 			return;
 		}
 
-		const errors = validateDomainForm(name(), maxRooms());
+		const errors = validateDomainForm(name());
 		setNameError(errors.name ?? "");
-		setMaxRoomsError(errors.maxRooms ?? "");
-		if (errors.name || errors.maxRooms) {
+		if (errors.name) {
 			setFormError("请修正表单错误");
 			return;
 		}
@@ -269,13 +255,11 @@ function RouteComponent() {
 				name: name().trim(),
 				description: description().trim(),
 				is_public: isPublic(),
-				max_rooms: maxRooms() as number,
 			});
 			updateCachedDomain(updated);
 			setName(updated.name);
 			setDescription(updated.description ?? "");
 			setIsPublic(updated.is_public);
-			setMaxRooms(updated.max_rooms || 20);
 			showToast("设置已保存", { type: "success" });
 		} catch (error) {
 			const message = apiErrorMessage(error);
@@ -344,7 +328,7 @@ function RouteComponent() {
 					<div class="grid min-w-0 gap-5 lg:grid-cols-[minmax(360px,400px)_minmax(0,1fr)]">
 						<ManageSection
 							title="域设置"
-							description="调整域名称、房间容量与公开状态"
+							description="调整域名称、描述与公开状态"
 							class="min-w-0"
 						>
 							<Show
@@ -360,10 +344,6 @@ function RouteComponent() {
 											<div>
 												<dt class="text-xs text-base-content/50">描述</dt>
 												<dd>{domain()?.description || "-"}</dd>
-											</div>
-											<div>
-												<dt class="text-xs text-base-content/50">房间上限</dt>
-												<dd>{domain()?.max_rooms || 20}</dd>
 											</div>
 											<div>
 												<dt class="text-xs text-base-content/50">公开状态</dt>
@@ -421,44 +401,6 @@ function RouteComponent() {
 											value={description()}
 											onInput={(e) => setDescription(e.currentTarget.value)}
 										/>
-									</label>
-									<label class="form-control">
-										<span class="label">
-											<span class="label-text text-xs font-medium text-base-content/70">
-												房间上限
-											</span>
-										</span>
-										<input
-											id="domain-max-rooms"
-											class="input input-bordered input-sm"
-											type="number"
-											min={1}
-											step={1}
-											value={maxRoomsValue()}
-											aria-invalid={!!maxRoomsError()}
-											aria-describedby={
-												maxRoomsError() ? "domain-max-rooms-error" : undefined
-											}
-											onInput={(e) => {
-												const raw = e.currentTarget.value;
-												setMaxRooms(raw === "" ? "" : Number(raw));
-												if (
-													raw !== "" &&
-													Number.isInteger(Number(raw)) &&
-													Number(raw) >= 1
-												) {
-													setMaxRoomsError("");
-												}
-											}}
-										/>
-										<Show when={maxRoomsError()}>
-											<span
-												id="domain-max-rooms-error"
-												class="mt-1 text-xs text-error"
-											>
-												{maxRoomsError()}
-											</span>
-										</Show>
 									</label>
 									<label class="flex items-center justify-between rounded-lg border border-base-300 px-3 py-2.5 cursor-pointer">
 										<span class="flex items-center gap-2 text-sm">

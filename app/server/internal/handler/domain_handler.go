@@ -10,9 +10,9 @@ import (
 )
 
 type DomainHandler struct {
-	domainSvc      *service.DomainService
-	permSvc       *service.PermissionService
-	onDomainDelete func(string)
+	domainSvc       *service.DomainService
+	permSvc         *service.PermissionService
+	onDomainDelete  func(string)
 	onDomainCreated func(string)
 }
 
@@ -29,7 +29,6 @@ func (h *DomainHandler) SetOnDomainCreated(fn func(string)) {
 func (h *DomainHandler) SetOnDomainDelete(fn func(string)) {
 	h.onDomainDelete = fn
 }
-
 
 func (h *DomainHandler) hasPermission(c *gin.Context, code string) bool {
 	if h.permSvc == nil {
@@ -150,7 +149,6 @@ type UpdateDomainRequest struct {
 	Description *string `json:"description"`
 	IconURL     *string `json:"icon_url"`
 	IsPublic    *bool   `json:"is_public"`
-	MaxRooms    *uint   `json:"max_rooms"`
 }
 
 // Update 更新语音域信息。
@@ -186,9 +184,6 @@ func (h *DomainHandler) Update(c *gin.Context) {
 	}
 	if req.IsPublic != nil {
 		domain.IsPublic = *req.IsPublic
-	}
-	if req.MaxRooms != nil {
-		domain.MaxRooms = *req.MaxRooms
 	}
 	if err := h.domainSvc.Update(domain); err != nil {
 		pkg.HandleError(c, err)
@@ -296,7 +291,7 @@ func (h *DomainHandler) Leave(c *gin.Context) {
 
 type KickDomainMemberRequest struct {
 	DomainUUID string `json:"domain_uuid" binding:"required"`
-	UserUUID  string `json:"user_uuid" binding:"required"`
+	UserUUID   string `json:"user_uuid" binding:"required"`
 }
 
 // Kick 踢出成员。仅 Owner/Admin 或持有 domain:kick 权限的用户可调用。

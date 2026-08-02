@@ -12,7 +12,6 @@ import (
 var ErrDomainNotFound = pkg.NewAppError(pkg.NOT_FOUND, "domain not found")
 var ErrDomainMemberNotFound = pkg.NewAppError(pkg.NOT_FOUND, "domain member not found")
 var ErrAlreadyMember = pkg.NewAppError(pkg.ALREADY_EXISTS, "already a member of this domain")
-var ErrDomainRoomLimit = pkg.NewAppError(pkg.FORBIDDEN, "domain room limit reached")
 
 const (
 	DomainRoleOwner  = "owner"
@@ -168,27 +167,6 @@ func (s *DomainService) ListMembers(domainUUID string) ([]model.DomainMember, er
 
 func (s *DomainService) ListUserDomains(userUUID string) ([]string, error) {
 	return s.domainRepo.ListUserDomains(userUUID)
-}
-
-func (s *DomainService) CheckRoomLimit(domainUUID string) error {
-	domain, err := s.domainRepo.GetByUUID(domainUUID)
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return ErrDomainNotFound
-		}
-		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	if domain.MaxRooms == 0 {
-		return nil
-	}
-	count, err := s.domainRepo.CountRooms(domainUUID)
-	if err != nil {
-		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	if count >= int64(domain.MaxRooms) {
-		return ErrDomainRoomLimit
-	}
-	return nil
 }
 
 func (s *DomainService) IsMember(domainUUID, userUUID string) bool {

@@ -105,9 +105,3 @@ func (r *DomainRepository) CountMembers(domainUUID string) (int64, error) {
 	err := r.db.Model(&model.DomainMember{}).Where("domain_uuid = ?", domainUUID).Count(&count).Error
 	return count, err
 }
-
-func (r *DomainRepository) CountRooms(domainUUID string) (int64, error) {
-	var count int64
-	err := r.db.Model(&model.Room{}).Where("domain_uuid = ?", domainUUID).Count(&count).Error
-	return count, err
-}

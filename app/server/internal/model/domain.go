@@ -16,7 +16,6 @@ type Domain struct {
 	Description string    `gorm:"size:500" json:"description"`
 	OwnerUUID   string    `gorm:"type:uuid;index;not null" json:"owner_uuid"`
 	InviteCode  string    `gorm:"size:32;uniqueIndex" json:"invite_code"`
-	MaxRooms    uint      `gorm:"default:0" json:"max_rooms"`
 	IsPublic    bool      `gorm:"default:false" json:"is_public"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`

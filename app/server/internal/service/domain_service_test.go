@@ -267,39 +267,6 @@ func TestDomainService_HasDomainRole(t *testing.T) {
 	}
 }
 
-func TestDomainService_CheckRoomLimit_NoLimit(t *testing.T) {
-	svc, db := setupDomainServiceTestDB(t)
-	g := seedDomainOwner(t, db, "Test", "owner-1")
-
-	if err := svc.CheckRoomLimit(g.UUID); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestDomainService_CheckRoomLimit_Reached(t *testing.T) {
-	svc, db := setupDomainServiceTestDB(t)
-	repo := repository.NewDomainRepository(db)
-
-	g := seedDomainOwner(t, db, "Test", "owner-1")
-	g.MaxRooms = 1
-	if err := repo.Update(g); err != nil {
-		t.Fatalf("update domain: %v", err)
-	}
-
-	r := &model.Room{Name: "room-1", DomainUUID: g.UUID}
-	if err := db.Create(r).Error; err != nil {
-		t.Fatalf("create room: %v", err)
-	}
-
-	err := svc.CheckRoomLimit(g.UUID)
-	if err == nil {
-		t.Fatal("expected error for room limit reached")
-	}
-	if err != ErrDomainRoomLimit {
-		t.Fatalf("expected ErrDomainRoomLimit, got %v", err)
-	}
-}
-
 func checkAppErrCode(t *testing.T, err error, code pkg.ErrCode) {
 	t.Helper()
 	if err == nil {
