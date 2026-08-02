@@ -37,19 +37,8 @@ func NewUpgrader(cfg UpgraderConfig) *Upgrader {
 	return &Upgrader{cfg: cfg}
 }
 
-// extractToken 从请求中提取 JWT token：Authorization header > cookie > subprotocol ticket。
-// 返回 token 以及它是否来自 subprotocol，subprotocol 只接受短时 WS ticket。
+// extractToken 从 Sec-WebSocket-Protocol 提取短时 WS ticket。
 func extractToken(r *http.Request) (string, bool) {
-	authHeader := r.Header.Get("Authorization")
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		return strings.TrimPrefix(authHeader, "Bearer "), false
-	}
-	if tokenStr := strings.TrimSpace(authHeader); tokenStr != "" {
-		return tokenStr, false
-	}
-	if cookie, err := r.Cookie("gospeak_token"); err == nil {
-		return cookie.Value, false
-	}
 	for _, protocol := range strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ",") {
 		protocol = strings.TrimSpace(protocol)
 		if protocol != "" && protocol != "gospeak" {
@@ -96,13 +85,13 @@ func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tokenStr, fromSubprotocol := extractToken(r)
-	if tokenStr == "" {
+	if tokenStr == "" || !fromSubprotocol {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
-	claims, code := middleware.VerifyToken(tokenStr)
-	if code != pkg.SUCCESS || (fromSubprotocol && (!pkg.IsWSTicket(claims) || pkg.WSTicketExpired(claims))) {
+	claims, code := middleware.VerifyWSTicket(tokenStr)
+	if code != pkg.SUCCESS {
 		log.Printf("[ws] upgrade rejected: code=%s client=%s", code.String(), r.RemoteAddr)
 		w.WriteHeader(http.StatusUnauthorized)
 		return

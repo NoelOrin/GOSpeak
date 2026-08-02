@@ -6,8 +6,8 @@ import (
 	"GOSpeak/internal/middleware"
 	authRoutes "GOSpeak/internal/router/routes/auth"
 	botRoutes "GOSpeak/internal/router/routes/bot"
-	conversationRoutes "GOSpeak/internal/router/routes/conversation"
 	clusterRoutes "GOSpeak/internal/router/routes/cluster"
+	conversationRoutes "GOSpeak/internal/router/routes/conversation"
 	domainRoutes "GOSpeak/internal/router/routes/domain"
 	emailRoutes "GOSpeak/internal/router/routes/email"
 	emailConfigRoutes "GOSpeak/internal/router/routes/email_config"
@@ -79,25 +79,27 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	swaggerRoutes.Register(r)
 
 	api := r.Group("/api/v1")
-	authRoutes.Register(api.Group("/auth"), h.Auth)
-	emailRoutes.Register(api.Group("/email"), h.Email)
+	role := ""
+	if cfg := config.Current(); cfg != nil {
+		role = cfg.ClusterRole
+	}
+	isWorker := role == "worker"
+	if !isWorker {
+		authRoutes.Register(api.Group("/auth"), h.Auth)
+		emailRoutes.Register(api.Group("/email"), h.Email)
+		oauthRoutes.Register(api.Group("/oauth"), h.OAuth)
+	}
 	signalRoutes.Register(api.Group("/signal"), h.Signal)
-	oauthRoutes.Register(api.Group("/oauth"), h.OAuth)
 	srsRoutes.Register(api.Group("/srs"), h.SRSCallback)
 	systemRoutes.Register(api.Group("/system"), h.Monitor)
 
-	if cfg := config.Current(); cfg != nil && cfg.ClusterRole == "worker" {
-		signalRoutes.Register(api.Group("/signal"), h.Signal)
-		srsRoutes.Register(api.Group("/srs"), h.SRSCallback)
-		systemRoutes.Register(api.Group("/system"), h.Monitor)
-
+	if isWorker {
 		workerProtected := api.Group("")
 		workerProtected.Use(middleware.JWTAuth())
 		workerProtected.Use(middleware.BanCheck())
 		signalRoutes.RegisterProtected(workerProtected.Group("/signal"), h.Signal, h.Cloudflare)
 		return r
 	}
-
 
 	protected := api.Group("")
 	protected.Use(middleware.JWTAuth())

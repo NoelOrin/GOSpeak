@@ -2,18 +2,19 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
 func TestNormalizeDBTypeAliases(t *testing.T) {
 	cases := map[string]string{
-		"":             "SQLite",
-		"sqlite":       "SQLite",
-		"PostgresSQL":  "PostgreSQL",
-		"postgresql":   "PostgreSQL",
-		"postgres":     "PostgreSQL",
-		"MYSQL":        "MySQL",
-		"mysql":        "MySQL",
+		"":            "SQLite",
+		"sqlite":      "SQLite",
+		"PostgresSQL": "PostgreSQL",
+		"postgresql":  "PostgreSQL",
+		"postgres":    "PostgreSQL",
+		"MYSQL":       "MySQL",
+		"mysql":       "MySQL",
 	}
 	for in, want := range cases {
 		if got := normalizeDBType(in); got != want {
@@ -61,6 +62,27 @@ func TestLoadRejectsInvalidSFU(t *testing.T) {
 	t.Setenv("SFU_PROVIDER", "unknown")
 	if _, err := Load(); err == nil {
 		t.Fatal("expected invalid SFU_PROVIDER error")
+	}
+}
+
+func TestLoadRejectsProductionWithoutStorageEncryptKey(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("APP_ENV", "production")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected production STORAGE_ENCRYPT_KEY error")
+	}
+}
+
+func TestLoadAcceptsProductionWithStorageEncryptKey(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("STORAGE_ENCRYPT_KEY", strings.Repeat("ab", 32))
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.IsProduction() || cfg.StorageEncryptKey == "" {
+		t.Fatal("expected production config with storage encrypt key")
 	}
 }
 

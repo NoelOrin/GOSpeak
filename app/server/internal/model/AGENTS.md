@@ -19,7 +19,7 @@
 | email_verification_code.go | 邮箱验证码（场景、哈希、冷却、尝试次数）|
 | storage_config.go | 对象存储配置（local/s3）|
 | sfu_config.go | 每个 SFU provider 一行配置 + 当前激活 provider |
-| domain.go | Domain 语音服务器：UUID、名称、Owner、邀请码、房间上限、公开/私有 |
+| domain.go | Domain 语音服务器：UUID、名称、Owner、邀请码、公开/私有 |
 | message.go | 房间消息：文本/系统消息、编辑历史、回复关联 |
 | message_mention.go | 消息 @提及：按用户聚合未读 |
 | message_reaction.go | 消息表情回应：用户-消息-表情 唯一约束 |

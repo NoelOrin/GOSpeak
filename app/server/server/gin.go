@@ -105,6 +105,8 @@ func StartGin(env EnvEnum) {
 	conversationRepo := repository.NewConversationRepository(repository.DB)
 	sfuConfigRepo := repository.NewSFUConfigRepository(repository.DB)
 	storageConfigRepo := repository.NewStorageConfigRepository(repository.DB)
+	domainRepo := repository.NewDomainRepository(repository.DB)
+	domainSvc := service.NewDomainService(domainRepo)
 
 	// 初始化权限系统
 	seedPermissions(permRepo)
@@ -124,7 +126,8 @@ func StartGin(env EnvEnum) {
 	userGroupSvc := service.NewUserGroupService(userGroupRepo)
 	oauthSvc := service.NewOAuthService(oauthProviderRepo, oauthAccountRepo, userRepo)
 	roomSvc := service.NewRoomService(roomRepo)
-	messageSvc := service.NewMessageService(messageRepo, roomRepo)
+	messageSvc := service.NewMessageService(messageRepo, roomRepo, domainSvc)
+	messageSvc.SetUserRepo(userRepo)
 	muteSvc := service.NewMuteService(muteRepo, userRepo)
 	sfuConfigSvc := service.NewSFUConfigService(sfuConfigRepo, cfg)
 	if err := sfuConfigSvc.SyncFromEnv(); err != nil {
@@ -325,8 +328,16 @@ func StartGin(env EnvEnum) {
 	userGroupH := handler.NewUserGroupHandler(userGroupSvc, userSvc)
 	oauthH := handler.NewOAuthHandler(oauthSvc)
 	roleH := handler.NewRoleHandler(roleSvc)
-	domainSvc := service.NewDomainService(repository.NewDomainRepository(repository.DB))
 	clusterSvc := service.NewClusterService(repository.NewClusterNodeRepository(repository.DB), repository.NewServerAssignmentRepository(repository.DB))
+	clusterSvc.SetNotifier(eventBus)
+	clusterSvc.SetServerRepo(repository.NewDomainRepository(repository.DB))
+	signalH.SetClusterResolver(func(domainUUID string) (string, error) {
+		_, node, err := clusterSvc.ResolveServer(domainUUID)
+		if err != nil {
+			return "", err
+		}
+		return node.AdvertiseURL, nil
+	})
 	middleware.SetDomainChecker(domainSvc.IsMember)
 	signalHub.SetDomainChecker(domainSvc.IsMember)
 	roomH := handler.NewRoomHandler(roomSvc, permSvc, domainSvc)
@@ -360,7 +371,29 @@ func StartGin(env EnvEnum) {
 	}
 
 	domainH := handler.NewDomainHandler(domainSvc, permSvc)
-	domainH.SetOnDomainDelete(signalHub.OnDomainDelete)
+	domainH.SetOnDomainCreated(func(serverUUID string) {
+		if err := clusterSvc.EnsureServer(serverUUID, 1, localNodeUUID); err != nil {
+			logger.WithComponent("Cluster").Warnf("schedule server %s failed: %v", serverUUID, err)
+		}
+	})
+	domainH.SetOnDomainDelete(func(serverUUID string) {
+		if err := clusterSvc.DeleteServer(serverUUID); err != nil {
+			logger.WithComponent("Cluster").Warnf("delete server %s assignments failed: %v", serverUUID, err)
+		}
+		signalHub.OnDomainDelete(serverUUID)
+	})
+	if cfg.IsAgent() {
+		domains, _, listErr := domainSvc.List(1, 1000)
+		if listErr != nil {
+			logger.WithComponent("Cluster").Warnf("list domains for scheduling failed: %v", listErr)
+		} else {
+			for _, domain := range domains {
+				if err := clusterSvc.EnsureServer(domain.UUID, 1, localNodeUUID); err != nil {
+					logger.WithComponent("Cluster").Warnf("ensure server %s failed: %v", domain.UUID, err)
+				}
+			}
+		}
+	}
 	conversationH := handler.NewConversationHandler(conversationSvc)
 
 	monitorH := handler.NewMonitorHandler(signalHub, cfg, eventBus)
@@ -369,17 +402,20 @@ func StartGin(env EnvEnum) {
 	go redis.KeyRotationLoop()
 
 	// WS 升级路由（JWT 鉴权由 Upgrader 内部完成）
-	wsUpgrader := ws.NewUpgrader(ws.UpgraderConfig{
-		Fanout:         wsFanout,
-		Handler:        wsHandler,
-		AllowedOrigins: wsAllowedOrigins(cfg),
-		OnConnect: func(c *ws.Client) {
-			_ = signalHub.OnConnect(c)
-		},
-		OnDisconnect: func(c *ws.Client) {
-			signalHub.OnDisconnect(c)
-		},
-	})
+	var wsUpgrader *ws.Upgrader
+	if cfg.IsWorker() {
+		wsUpgrader = ws.NewUpgrader(ws.UpgraderConfig{
+			Fanout:         wsFanout,
+			Handler:        wsHandler,
+			AllowedOrigins: wsAllowedOrigins(cfg),
+			OnConnect: func(c *ws.Client) {
+				_ = signalHub.OnConnect(c)
+			},
+			OnDisconnect: func(c *ws.Client) {
+				signalHub.OnDisconnect(c)
+			},
+		})
+	}
 
 	router.SetupRoutes(r, &router.Handlers{
 		Auth:         authH,
@@ -403,6 +439,7 @@ func StartGin(env EnvEnum) {
 		Plugin:       pluginH,
 		Domain:       domainH,
 		Conversation: conversationH,
+		Cluster:      clusterHandler,
 		PluginHost:   pluginHost,
 	})
 
@@ -415,7 +452,7 @@ func StartGin(env EnvEnum) {
 
 	// /ws 必须绕过 Gin：nhooyr/websocket 的 hijack 与 gin.ResponseWriter 不兼容。
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if req.URL.Path == "/ws" {
+		if wsUpgrader != nil && req.URL.Path == "/ws" {
 			wsUpgrader.ServeHTTP(w, req)
 			return
 		}
@@ -442,6 +479,11 @@ func StartGin(env EnvEnum) {
 
 		pluginReg.StopAll(context.Background())
 		logger.WithComponent("Plugin").Info("plugins stopped")
+
+		if clusterStop != nil {
+			clusterStop()
+			logger.WithComponent("Cluster").Info("cluster runtime stopped")
+		}
 
 		// 2) drain signal fanout then close socket connections
 		logger.WithComponent("Message").Info("write queue closed")

@@ -464,9 +464,9 @@ func (c *Config) Validate() error {
 		errs = append(errs, "EMAIL_CODE_SECRET is required when EMAIL_ENABLED=true")
 	}
 
-	// 生产环境 + S3 存储时强制要求加密密钥；local 存储可延后到首次加密时由 storage 层处理。
-	if c.IsProduction() && c.StorageType == "s3" && c.StorageEncryptKey == "" {
-		errs = append(errs, "STORAGE_ENCRYPT_KEY is required in production when STORAGE_TYPE=s3")
+	// 生产环境强制要求加密密钥；OAuth 与对象存储等敏感字段写入前需要它。
+	if c.IsProduction() && c.StorageEncryptKey == "" {
+		errs = append(errs, "STORAGE_ENCRYPT_KEY is required in production")
 	}
 
 	if c.StorageEncryptKey != "" && len(c.StorageEncryptKey) != 64 {

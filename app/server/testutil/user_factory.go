@@ -54,11 +54,6 @@ func WithDomainInviteCode(code string) DomainOption {
 	return func(g *model.Domain) { g.InviteCode = code }
 }
 
-// WithDomainMaxRooms 设置房间上限。
-func WithDomainMaxRooms(limit int) DomainOption {
-	return func(g *model.Domain) { g.MaxRooms = uint(limit) }
-}
-
 // CreateTestDomain 在测试数据库中创建一个 Domain。
 func CreateTestDomain(db *gorm.DB, name, ownerUUID string, opts ...DomainOption) *model.Domain {
 	domain := &model.Domain{

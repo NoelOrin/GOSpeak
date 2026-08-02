@@ -32,8 +32,8 @@ const (
 	PermStorageManage = "storage:manage"
 	PermStorageDelete = "storage:delete"
 
-	PermOAuthRead    = "oauth:read"
-	PermOAuthManage  = "oauth:manage"
+	PermOAuthRead   = "oauth:read"
+	PermOAuthManage = "oauth:manage"
 
 	PermPluginRead   = "plugin:read"
 	PermPluginManage = "plugin:manage"
