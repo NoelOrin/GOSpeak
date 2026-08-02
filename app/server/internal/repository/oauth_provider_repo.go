@@ -20,6 +20,9 @@ func (r *OAuthProviderRepository) GetByName(name string) (*model.OAuthProvider, 
 	if err != nil {
 		return nil, err
 	}
+	if err := decryptOAuthProviderSecrets(&provider); err != nil {
+		return nil, err
+	}
 	return &provider, nil
 }
 
@@ -29,20 +32,37 @@ func (r *OAuthProviderRepository) GetByID(id uint) (*model.OAuthProvider, error)
 	if err != nil {
 		return nil, err
 	}
+	if err := decryptOAuthProviderSecrets(&provider); err != nil {
+		return nil, err
+	}
 	return &provider, nil
 }
 
 func (r *OAuthProviderRepository) List() ([]model.OAuthProvider, error) {
 	var providers []model.OAuthProvider
 	err := r.db.Find(&providers).Error
+	if err != nil {
+		return nil, err
+	}
+	for i := range providers {
+		if err := decryptOAuthProviderSecrets(&providers[i]); err != nil {
+			return nil, err
+		}
+	}
 	return providers, err
 }
 
 func (r *OAuthProviderRepository) Create(provider *model.OAuthProvider) error {
+	if err := encryptOAuthProviderSecrets(provider); err != nil {
+		return err
+	}
 	return r.db.Create(provider).Error
 }
 
 func (r *OAuthProviderRepository) Update(provider *model.OAuthProvider) error {
+	if err := encryptOAuthProviderSecrets(provider); err != nil {
+		return err
+	}
 	return r.db.Save(provider).Error
 }
 

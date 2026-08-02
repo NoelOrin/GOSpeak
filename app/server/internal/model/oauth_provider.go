@@ -8,7 +8,7 @@ type OAuthProvider struct {
 	DisplayName  string `gorm:"size:64" json:"display_name"`
 	IconURL      string `gorm:"size:512" json:"icon_url"`
 	ClientID     string `gorm:"size:255" json:"client_id"`
-	ClientSecret string `gorm:"size:255" json:"-"`
+	ClientSecret string `gorm:"size:1024" json:"-"`
 	AuthURL      string `gorm:"size:512" json:"auth_url"`
 	TokenURL     string `gorm:"size:512" json:"token_url"`
 	UserInfoURL  string `gorm:"size:512" json:"userinfo_url"`

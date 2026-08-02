@@ -7,8 +7,8 @@ type OAuthAccount struct {
 	UserID       uint      `gorm:"index" json:"user_id"`
 	Provider     string    `gorm:"index;size:32" json:"provider"`
 	ProviderUID  string    `gorm:"index;size:255" json:"provider_uid"`
-	AccessToken  string    `gorm:"size:512" json:"-"`
-	RefreshToken string    `gorm:"size:512" json:"-"`
+	AccessToken  string    `gorm:"size:1024" json:"-"`
+	RefreshToken string    `gorm:"size:1024" json:"-"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
