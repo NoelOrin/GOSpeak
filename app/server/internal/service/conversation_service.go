@@ -158,6 +158,13 @@ func (s *ConversationService) MarkRead(conversationID, identity string) error {
 	if conversationID == "" || identity == "" {
 		return pkg.NewAppError(pkg.INVALID_PARAMS, "conversation_id and identity required")
 	}
+	cp, err := s.convRepo.GetByID(conversationID)
+	if err != nil {
+		return pkg.NewAppError(pkg.NOT_FOUND, "conversation not found")
+	}
+	if cp.IdentityA != identity && cp.IdentityB != identity {
+		return pkg.NewAppError(pkg.FORBIDDEN, "not a conversation participant")
+	}
 	if err := s.convRepo.ResetUnread(conversationID, identity); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}

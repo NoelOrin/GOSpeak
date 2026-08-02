@@ -27,6 +27,8 @@ type MessageDTO struct {
 	UUID           string     `json:"uuid"`
 	RoomUUID       string     `json:"room_uuid"`
 	AuthorID       string     `json:"author_id"`
+	AuthorName     string     `json:"author_name"`
+	AuthorAvatar   string     `json:"author_avatar"`
 	Content        string     `json:"content"`
 	ReplyTo        string     `json:"reply_to,omitempty"`
 	Mentions       []string   `json:"mentions,omitempty"`
@@ -39,6 +41,18 @@ type MessageDTO struct {
 }
 
 // Narrow interfaces for testability.
+
+// MessageActor separates the display/author identity from the stable user UUID.
+// Domain membership must be checked with UserUUID; AuthorID stays the username.
+type MessageActor struct {
+	Identity string
+	UserUUID string
+}
+
+// DomainMemberChecker verifies a user belongs to a room's owning domain.
+type DomainMemberChecker interface {
+	IsMember(domainUUID, userUUID string) bool
+}
 
 // MessageEventBus broadcasts events to online clients in a room.
 type MessageEventBus interface {
@@ -57,23 +71,70 @@ type roomByUUID interface {
 }
 
 // MessageService provides text message operations with broadcast-first semantics.
-type MessageService struct {
-	msgRepo  *repository.MessageRepository
-	roomRepo roomByUUID
-	bus      MessageEventBus
-	queue    MessageJobQueue
+// userByName looks up a user by name.
+// Satisfied by *repository.UserRepository.
+type userByName interface {
+	GetByName(name string) (*model.User, error)
 }
 
+// MessageService provides text message operations with broadcast-first semantics.
+type MessageService struct {
+	msgRepo       *repository.MessageRepository
+	roomRepo      roomByUUID
+	domainChecker DomainMemberChecker
+	userRepo      userByName
+	bus           MessageEventBus
+	queue         MessageJobQueue
+}
 // NewMessageService creates a MessageService.
 // Room repo is required; bus and queue are optional (set via setters).
-func NewMessageService(msgRepo *repository.MessageRepository, roomRepo roomByUUID) *MessageService {
+func NewMessageService(msgRepo *repository.MessageRepository, roomRepo roomByUUID, domainChecker DomainMemberChecker) *MessageService {
 	return &MessageService{
-		msgRepo:  msgRepo,
-		roomRepo: roomRepo,
+		msgRepo:       msgRepo,
+		roomRepo:      roomRepo,
+		domainChecker: domainChecker,
 	}
 }
 
 // SetEventBus sets the event bus for broadcasting to online clients.
+// SetUserRepo sets the user repository for fetching author info.
+func (s *MessageService) SetUserRepo(repo userByName) {
+	s.userRepo = repo
+}
+
+// enrichAuthorInfo fills AuthorName and AuthorAvatar for a batch of MessageDTOs.
+func (s *MessageService) enrichAuthorInfo(items []MessageDTO) {
+	if s.userRepo == nil {
+		return
+	}
+	// Collect unique author IDs
+	authorIDs := make(map[string]struct{})
+	for _, item := range items {
+		if item.AuthorID != "" {
+			authorIDs[item.AuthorID] = struct{}{}
+		}
+	}
+	if len(authorIDs) == 0 {
+		return
+	}
+	// Fetch users
+	users := make(map[string]*model.User)
+	for id := range authorIDs {
+		if user, err := s.userRepo.GetByName(id); err == nil && user != nil {
+			users[id] = user
+		}
+	}
+	// Enrich DTOs
+	for i := range items {
+		if user, ok := users[items[i].AuthorID]; ok {
+			items[i].AuthorName = user.DisplayName
+			if items[i].AuthorName == "" {
+				items[i].AuthorName = user.Name
+			}
+			items[i].AuthorAvatar = user.Avatar
+		}
+	}
+}
 func (s *MessageService) SetEventBus(b MessageEventBus) {
 	s.bus = b
 }
@@ -83,9 +144,22 @@ func (s *MessageService) SetJobQueue(q MessageJobQueue) {
 	s.queue = q
 }
 
+func (s *MessageService) requireDomainMembership(room *model.Room, actor MessageActor) error {
+	if room.DomainUUID == "" {
+		return nil
+	}
+	if actor.UserUUID == "" {
+		return pkg.NewAppError(pkg.TOKEN_WRONG, "user_uuid is required")
+	}
+	if s.domainChecker == nil || !s.domainChecker.IsMember(room.DomainUUID, actor.UserUUID) {
+		return pkg.NewAppError(pkg.FORBIDDEN, "not a member of this domain")
+	}
+	return nil
+}
+
 // Send creates and broadcasts a new text message, then enqueues async persist.
 // Returns the MessageDTO on success.
-func (s *MessageService) Send(roomUUID, authorID, content, replyTo, clientNonce string, mentions []string) (*MessageDTO, error) {
+func (s *MessageService) Send(roomUUID string, actor MessageActor, content, replyTo, clientNonce string, mentions []string) (*MessageDTO, error) {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "content is required")
@@ -101,6 +175,9 @@ func (s *MessageService) Send(roomUUID, authorID, content, replyTo, clientNonce 
 	if model.NormalizeRoomType(room.Type) != model.RoomTypeText {
 		return nil, pkg.NewAppError(pkg.FORBIDDEN, "not a text room")
 	}
+	if err := s.requireDomainMembership(room, actor); err != nil {
+		return nil, err
+	}
 	if replyTo != "" {
 		parent, err := s.msgRepo.GetByUUID(replyTo)
 		if err != nil || parent.RoomUUID != roomUUID {
@@ -113,7 +190,7 @@ func (s *MessageService) Send(roomUUID, authorID, content, replyTo, clientNonce 
 	dto := &MessageDTO{
 		UUID:        msgUUID,
 		RoomUUID:    roomUUID,
-		AuthorID:    authorID,
+		AuthorID:    actor.Identity,
 		Content:     content,
 		ReplyTo:     replyTo,
 		Mentions:    mentions,
@@ -131,7 +208,7 @@ func (s *MessageService) Send(roomUUID, authorID, content, replyTo, clientNonce 
 	payload, _ := json.Marshal(map[string]interface{}{
 		"uuid":         msgUUID,
 		"room_uuid":    roomUUID,
-		"author_id":    authorID,
+		"author_id":    actor.Identity,
 		"content":      content,
 		"reply_to":     replyTo,
 		"mentions":     mentions,
@@ -150,7 +227,7 @@ func (s *MessageService) Send(roomUUID, authorID, content, replyTo, clientNonce 
 	}
 	if !enqueued {
 		m := &model.Message{
-			UUID: msgUUID, RoomUUID: roomUUID, AuthorID: authorID,
+			UUID: msgUUID, RoomUUID: roomUUID, AuthorID: actor.Identity,
 			Content: content, ReplyTo: replyTo,
 			CreatedAt: now, UpdatedAt: now,
 		}
@@ -170,7 +247,7 @@ func (s *MessageService) Send(roomUUID, authorID, content, replyTo, clientNonce 
 
 // Edit updates a message's content, broadcasts the change, then enqueues async mutate.
 // Only the original author may edit.
-func (s *MessageService) Edit(roomUUID, messageUUID, authorID, content string) (*MessageDTO, error) {
+func (s *MessageService) Edit(roomUUID, messageUUID string, actor MessageActor, content string) (*MessageDTO, error) {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "content is required")
@@ -186,9 +263,6 @@ func (s *MessageService) Edit(roomUUID, messageUUID, authorID, content string) (
 	if msg.RoomUUID != roomUUID {
 		return nil, pkg.NewAppError(pkg.NOT_FOUND, "message not found")
 	}
-	if msg.AuthorID != authorID {
-		return nil, pkg.NewAppError(pkg.FORBIDDEN, "not your message")
-	}
 
 	room, err := s.roomRepo.GetByUUID(roomUUID)
 	if err != nil {
@@ -197,12 +271,18 @@ func (s *MessageService) Edit(roomUUID, messageUUID, authorID, content string) (
 	if model.NormalizeRoomType(room.Type) != model.RoomTypeText {
 		return nil, pkg.NewAppError(pkg.FORBIDDEN, "not a text room")
 	}
+	if err := s.requireDomainMembership(room, actor); err != nil {
+		return nil, err
+	}
+	if msg.AuthorID != actor.Identity {
+		return nil, pkg.NewAppError(pkg.FORBIDDEN, "not your message")
+	}
 
 	now := time.Now().UTC()
 	dto := &MessageDTO{
 		UUID:      messageUUID,
 		RoomUUID:  roomUUID,
-		AuthorID:  authorID,
+		AuthorID:  actor.Identity,
 		Content:   content,
 		ReplyTo:   msg.ReplyTo,
 		EditedAt:  &now,
@@ -242,7 +322,7 @@ func (s *MessageService) Edit(roomUUID, messageUUID, authorID, content string) (
 
 // Delete soft-deletes a message, broadcasts the deletion, then enqueues async mutate.
 // canDeleteOthers allows moderators to delete other users' messages.
-func (s *MessageService) Delete(roomUUID, messageUUID, actorID string, canDeleteOthers bool) error {
+func (s *MessageService) Delete(roomUUID, messageUUID string, actor MessageActor, canDeleteOthers bool) error {
 	msg, err := s.msgRepo.GetByUUID(messageUUID)
 	if err != nil {
 		return pkg.NewAppError(pkg.NOT_FOUND, "message not found")
@@ -250,13 +330,16 @@ func (s *MessageService) Delete(roomUUID, messageUUID, actorID string, canDelete
 	if msg.RoomUUID != roomUUID {
 		return pkg.NewAppError(pkg.NOT_FOUND, "message not found")
 	}
-	if msg.AuthorID != actorID && !canDeleteOthers {
-		return pkg.NewAppError(pkg.FORBIDDEN, "not your message")
-	}
 
 	room, err := s.roomRepo.GetByUUID(roomUUID)
 	if err != nil {
 		return pkg.NewAppError(pkg.NOT_FOUND, "room not found")
+	}
+	if err := s.requireDomainMembership(room, actor); err != nil {
+		return err
+	}
+	if msg.AuthorID != actor.Identity && !canDeleteOthers {
+		return pkg.NewAppError(pkg.FORBIDDEN, "not your message")
 	}
 
 	// 1) broadcast first
@@ -298,7 +381,7 @@ func (s *MessageService) Delete(roomUUID, messageUUID, actorID string, canDelete
 }
 
 // React adds a reaction emoji to a message, broadcasts, then enqueues async mutate.
-func (s *MessageService) React(roomUUID, messageUUID, userID, emoji string) error {
+func (s *MessageService) React(roomUUID, messageUUID string, actor MessageActor, emoji string) error {
 	if emoji == "" {
 		return pkg.NewAppError(pkg.INVALID_PARAMS, "emoji is required")
 	}
@@ -314,13 +397,16 @@ func (s *MessageService) React(roomUUID, messageUUID, userID, emoji string) erro
 	if err != nil {
 		return pkg.NewAppError(pkg.NOT_FOUND, "room not found")
 	}
+	if err := s.requireDomainMembership(room, actor); err != nil {
+		return err
+	}
 
 	// 1) broadcast first
 	if s.bus != nil {
 		_ = s.bus.PublishRoom(context.Background(), room.Name, "message:reaction", map[string]interface{}{
 			"action":       "added",
 			"message_uuid": messageUUID,
-			"user_id":      userID,
+			"user_id":      actor.Identity,
 			"emoji":        emoji,
 		})
 	}
@@ -330,14 +416,14 @@ func (s *MessageService) React(roomUUID, messageUUID, userID, emoji string) erro
 	payload, _ := json.Marshal(map[string]interface{}{
 		"action":       "react",
 		"message_uuid": messageUUID,
-		"user_id":      userID,
+		"user_id":      actor.Identity,
 		"emoji":        emoji,
 		"timestamp":    now,
 	})
 	enqueued := false
 	if s.queue != nil {
 		if err := s.queue.Publish(context.Background(), bus.JobEnvelope{
-			ID:      messageUUID + "-react-" + userID + "-" + emoji,
+			ID:      messageUUID + "-react-" + actor.Identity + "-" + emoji,
 			Type:    "chat.mutate",
 			Payload: payload,
 		}); err == nil {
@@ -347,7 +433,7 @@ func (s *MessageService) React(roomUUID, messageUUID, userID, emoji string) erro
 	if !enqueued {
 		if err := s.msgRepo.AddReaction(&model.MessageReaction{
 			MessageUUID: messageUUID,
-			UserID:      userID,
+			UserID:      actor.Identity,
 			Emoji:       emoji,
 		}); err != nil {
 			return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -357,7 +443,7 @@ func (s *MessageService) React(roomUUID, messageUUID, userID, emoji string) erro
 }
 
 // Unreact removes a reaction emoji from a message, broadcasts, then enqueues async mutate.
-func (s *MessageService) Unreact(roomUUID, messageUUID, userID, emoji string) error {
+func (s *MessageService) Unreact(roomUUID, messageUUID string, actor MessageActor, emoji string) error {
 	if emoji == "" {
 		return pkg.NewAppError(pkg.INVALID_PARAMS, "emoji is required")
 	}
@@ -373,13 +459,16 @@ func (s *MessageService) Unreact(roomUUID, messageUUID, userID, emoji string) er
 	if err != nil {
 		return pkg.NewAppError(pkg.NOT_FOUND, "room not found")
 	}
+	if err := s.requireDomainMembership(room, actor); err != nil {
+		return err
+	}
 
 	// 1) broadcast first
 	if s.bus != nil {
 		_ = s.bus.PublishRoom(context.Background(), room.Name, "message:reaction", map[string]interface{}{
 			"action":       "removed",
 			"message_uuid": messageUUID,
-			"user_id":      userID,
+			"user_id":      actor.Identity,
 			"emoji":        emoji,
 		})
 	}
@@ -389,14 +478,14 @@ func (s *MessageService) Unreact(roomUUID, messageUUID, userID, emoji string) er
 	payload, _ := json.Marshal(map[string]interface{}{
 		"action":       "unreact",
 		"message_uuid": messageUUID,
-		"user_id":      userID,
+		"user_id":      actor.Identity,
 		"emoji":        emoji,
 		"timestamp":    now,
 	})
 	enqueued := false
 	if s.queue != nil {
 		if err := s.queue.Publish(context.Background(), bus.JobEnvelope{
-			ID:      messageUUID + "-unreact-" + userID + "-" + emoji,
+			ID:      messageUUID + "-unreact-" + actor.Identity + "-" + emoji,
 			Type:    "chat.mutate",
 			Payload: payload,
 		}); err == nil {
@@ -404,7 +493,7 @@ func (s *MessageService) Unreact(roomUUID, messageUUID, userID, emoji string) er
 		}
 	}
 	if !enqueued {
-		if err := s.msgRepo.RemoveReaction(messageUUID, userID, emoji); err != nil {
+		if err := s.msgRepo.RemoveReaction(messageUUID, actor.Identity, emoji); err != nil {
 			return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 		}
 	}
@@ -414,7 +503,7 @@ func (s *MessageService) Unreact(roomUUID, messageUUID, userID, emoji string) er
 // ListHistory returns paginated message history for a room, newest first.
 // limit is clamped to [50, 200]; default 100.
 // Returns items (ASC, oldest-first), hasMore, nextBefore cursor, error.
-func (s *MessageService) ListHistory(roomUUID, before string, limit int) (items []MessageDTO, hasMore bool, nextBefore string, err error) {
+func (s *MessageService) ListHistory(roomUUID string, actor MessageActor, before string, limit int) (items []MessageDTO, hasMore bool, nextBefore string, err error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -423,6 +512,17 @@ func (s *MessageService) ListHistory(roomUUID, before string, limit int) (items 
 	}
 	if limit > 200 {
 		limit = 200
+	}
+
+	room, roomErr := s.roomRepo.GetByUUID(roomUUID)
+	if roomErr != nil {
+		return nil, false, "", pkg.NewAppError(pkg.NOT_FOUND, "room not found")
+	}
+	if model.NormalizeRoomType(room.Type) != model.RoomTypeText {
+		return nil, false, "", pkg.NewAppError(pkg.FORBIDDEN, "not a text room")
+	}
+	if err := s.requireDomainMembership(room, actor); err != nil {
+		return nil, false, "", err
 	}
 
 	rows, more, repoErr := s.msgRepo.ListBefore(roomUUID, before, limit)
@@ -453,18 +553,22 @@ func (s *MessageService) ListHistory(roomUUID, before string, limit int) (items 
 		nextBefore = items[0].UUID
 	}
 	s.enrichMentions(items)
+	s.enrichAuthorInfo(items)
 
 	return items, more, nextBefore, nil
 }
 
 // Search 返回文本房间内匹配 content 的最新消息，用于全文搜索 UI。
-func (s *MessageService) Search(roomUUID, query string) ([]MessageDTO, error) {
+func (s *MessageService) Search(roomUUID string, actor MessageActor, query string) ([]MessageDTO, error) {
 	room, err := s.roomRepo.GetByUUID(roomUUID)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.NOT_FOUND, "room not found")
 	}
 	if model.NormalizeRoomType(room.Type) != model.RoomTypeText {
 		return nil, pkg.NewAppError(pkg.FORBIDDEN, "not a text room")
+	}
+	if err := s.requireDomainMembership(room, actor); err != nil {
+		return nil, err
 	}
 	rows, err := s.msgRepo.Search(roomUUID, query, 100)
 	if err != nil {
@@ -484,6 +588,7 @@ func (s *MessageService) Search(roomUUID, query string) ([]MessageDTO, error) {
 		})
 	}
 	s.enrichMentions(items)
+	s.enrichAuthorInfo(items)
 	return items, nil
 }
 

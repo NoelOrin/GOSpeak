@@ -64,6 +64,27 @@ func (q *fakeQueue) reset() {
 }
 
 // memRoomRepo is an in-memory room store implementing roomByUUID.
+
+type allowAllDomainMembers struct{}
+
+func (allowAllDomainMembers) IsMember(_, _ string) bool { return true }
+
+type fakeDomainChecker struct {
+	members map[string]bool
+}
+
+func (f fakeDomainChecker) IsMember(_, user string) bool {
+	return f.members[user]
+}
+
+func testActor(identity string) MessageActor {
+	return MessageActor{Identity: identity, UserUUID: identity}
+}
+
+func testActorWithUUID(identity, userUUID string) MessageActor {
+	return MessageActor{Identity: identity, UserUUID: userUUID}
+}
+
 type memRoomRepo struct {
 	mu    sync.Mutex
 	rooms map[string]*model.Room
@@ -121,7 +142,7 @@ func setupMessageServiceTest(t *testing.T) (*MessageService, *fakeBus, *fakeQueu
 	bus := &fakeBus{}
 	queue := &fakeQueue{}
 
-	svc := NewMessageService(msgRepo, roomRepo)
+	svc := NewMessageService(msgRepo, roomRepo, allowAllDomainMembers{})
 	// Do NOT set bus/queue by default — tests that need them wire them explicitly.
 	// Default mode is sync-persist so chained operations (Send→Edit, Send→Delete)
 	// find messages in DB.
@@ -146,6 +167,28 @@ func mustFindVoiceUUID(r *memRoomRepo) string {
 		}
 	}
 	return ""
+}
+
+func setupRestrictedMessageServiceTest(t *testing.T, members map[string]bool) (*MessageService, *gorm.DB, *memRoomRepo, string) {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open in-memory db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Message{}, &model.MessageReaction{}, &model.MessageMention{}); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+	msgRepo := repository.NewMessageRepository(db)
+	roomRepo := newMemRoomRepo()
+	svc := NewMessageService(msgRepo, roomRepo, fakeDomainChecker{members: members})
+	var textUUID string
+	for uuid, r := range roomRepo.rooms {
+		if r.Type == model.RoomTypeText {
+			textUUID = uuid
+			break
+		}
+	}
+	return svc, db, roomRepo, textUUID
 }
 
 // ─── Helpers ───
@@ -173,6 +216,62 @@ func assertErrorCode(t *testing.T, err error, code pkg.ErrCode) {
 
 // ─── Send Tests ───
 
+func TestMessageService_RejectsNonDomainMemberForAllEndpoints(t *testing.T) {
+	svc, db, roomRepo, textUUID := setupRestrictedMessageServiceTest(t, map[string]bool{"uuid-alice": true})
+	room := roomRepo.rooms[textUUID]
+	room.DomainUUID = "domain-a"
+
+	if _, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "member message", "", "", nil); err != nil {
+		t.Fatalf("member send should succeed: %v", err)
+	}
+
+	now := time.Now().UTC()
+	msg := &model.Message{
+		UUID:      uuid.New().String(),
+		RoomUUID:  textUUID,
+		AuthorID:  "eve",
+		Content:   "owned by non-member",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := db.Create(msg).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	_, sendErr := svc.Send(textUUID, testActorWithUUID("eve", "uuid-eve"), "hello", "", "", nil)
+	assertErrorCode(t, sendErr, pkg.FORBIDDEN)
+	_, editErr := svc.Edit(textUUID, msg.UUID, testActorWithUUID("eve", "uuid-eve"), "changed")
+	assertErrorCode(t, editErr, pkg.FORBIDDEN)
+	deleteErr := svc.Delete(textUUID, msg.UUID, testActorWithUUID("eve", "uuid-eve"), true)
+	assertErrorCode(t, deleteErr, pkg.FORBIDDEN)
+	reactErr := svc.React(textUUID, msg.UUID, testActorWithUUID("eve", "uuid-eve"), "+1")
+	assertErrorCode(t, reactErr, pkg.FORBIDDEN)
+	unreactErr := svc.Unreact(textUUID, msg.UUID, testActorWithUUID("eve", "uuid-eve"), "+1")
+	assertErrorCode(t, unreactErr, pkg.FORBIDDEN)
+	_, _, _, listErr := svc.ListHistory(textUUID, testActorWithUUID("eve", "uuid-eve"), "", 50)
+	assertErrorCode(t, listErr, pkg.FORBIDDEN)
+	_, searchErr := svc.Search(textUUID, testActorWithUUID("eve", "uuid-eve"), "owned")
+	assertErrorCode(t, searchErr, pkg.FORBIDDEN)
+
+	if _, _, _, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 50); err != nil {
+		t.Fatalf("member history should succeed: %v", err)
+	}
+}
+
+func TestMessageService_UsesUserUUIDForDomainMembership(t *testing.T) {
+	svc, _, roomRepo, textUUID := setupRestrictedMessageServiceTest(t, map[string]bool{"uuid-alice": true})
+	room := roomRepo.rooms[textUUID]
+	room.DomainUUID = "domain-a"
+
+	if _, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "ok", "", "", nil); err != nil {
+		t.Fatalf("member with matching user_uuid should succeed: %v", err)
+	}
+	_, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-eve"), "forbidden", "", "", nil)
+	assertErrorCode(t, err, pkg.FORBIDDEN)
+	_, err = svc.Send(textUUID, MessageActor{Identity: "alice"}, "missing uuid", "", "", nil)
+	assertErrorCode(t, err, pkg.TOKEN_WRONG)
+}
+
 func TestMessageService_Send_Success(t *testing.T) {
 	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
 	t.Cleanup(func() { bus.reset(); queue.reset() })
@@ -180,7 +279,7 @@ func TestMessageService_Send_Success(t *testing.T) {
 	svc.SetEventBus(bus)
 	svc.SetJobQueue(queue)
 
-	dto, err := svc.Send(textUUID, "alice", "Hello, world!", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Hello, world!", "", "", nil)
 	assertNoError(t, err)
 
 	if dto == nil {
@@ -242,7 +341,7 @@ func TestMessageService_Send_WithMentions(t *testing.T) {
 	svc.SetJobQueue(queue)
 
 	mentions := []string{"bob", "charlie"}
-	dto, err := svc.Send(textUUID, "alice", "Hey @bob and @charlie!", "", "", mentions)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Hey @bob and @charlie!", "", "", mentions)
 	assertNoError(t, err)
 
 	if len(dto.Mentions) != 2 {
@@ -267,7 +366,7 @@ func TestMessageService_Send_WithClientNonce(t *testing.T) {
 	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
 	t.Cleanup(func() { bus.reset(); queue.reset() })
 
-	dto, err := svc.Send(textUUID, "alice", "Hello", "", "nonce-123", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Hello", "", "nonce-123", nil)
 	assertNoError(t, err)
 
 	if dto.ClientNonce != "nonce-123" {
@@ -280,7 +379,7 @@ func TestMessageService_Send_WithReplyTo(t *testing.T) {
 	t.Cleanup(func() { bus.reset(); queue.reset() })
 
 	// First send a message to use as parent
-	parent, err := svc.Send(textUUID, "bob", "Parent message", "", "", nil)
+	parent, err := svc.Send(textUUID, testActorWithUUID("bob", "uuid-bob"), "Parent message", "", "", nil)
 	assertNoError(t, err)
 
 	// Reset fakes to isolate the reply send
@@ -288,7 +387,7 @@ func TestMessageService_Send_WithReplyTo(t *testing.T) {
 	queue.reset()
 
 	// Send a reply
-	dto, err := svc.Send(textUUID, "alice", "Reply message", parent.UUID, "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Reply message", parent.UUID, "", nil)
 	assertNoError(t, err)
 
 	if dto.ReplyTo != parent.UUID {
@@ -300,14 +399,14 @@ func TestMessageService_Send_InvalidReplyTo(t *testing.T) {
 	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
 	t.Cleanup(func() { bus.reset(); queue.reset() })
 
-	_, err := svc.Send(textUUID, "alice", "Reply message", "nonexistent-uuid", "", nil)
+	_, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Reply message", "nonexistent-uuid", "", nil)
 	assertErrorCode(t, err, pkg.INVALID_PARAMS)
 }
 
 func TestMessageService_Send_EmptyContent(t *testing.T) {
 	svc, _, _, _, textUUID := setupMessageServiceTest(t)
 
-	_, err := svc.Send(textUUID, "alice", "   ", "", "", nil)
+	_, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "   ", "", "", nil)
 	assertErrorCode(t, err, pkg.INVALID_PARAMS)
 }
 
@@ -315,7 +414,7 @@ func TestMessageService_Send_TooLongContent(t *testing.T) {
 	svc, _, _, _, textUUID := setupMessageServiceTest(t)
 
 	long := strings.Repeat("a", MaxMessageRunes+1)
-	_, err := svc.Send(textUUID, "alice", long, "", "", nil)
+	_, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), long, "", "", nil)
 	assertErrorCode(t, err, pkg.INVALID_PARAMS)
 }
 
@@ -327,7 +426,7 @@ func TestMessageService_Send_MaxRunesBoundary(t *testing.T) {
 	if utf8.RuneCountInString(content) != MaxMessageRunes {
 		t.Fatalf("expected %d runes, got %d", MaxMessageRunes, utf8.RuneCountInString(content))
 	}
-	dto, err := svc.Send(textUUID, "alice", content, "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), content, "", "", nil)
 	assertNoError(t, err)
 	if dto == nil {
 		t.Fatal("expected non-nil DTO")
@@ -335,7 +434,7 @@ func TestMessageService_Send_MaxRunesBoundary(t *testing.T) {
 
 	// 2001 runes — should fail
 	contentTooLong := content + "a"
-	_, err = svc.Send(textUUID, "alice", contentTooLong, "", "", nil)
+	_, err = svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), contentTooLong, "", "", nil)
 	assertErrorCode(t, err, pkg.INVALID_PARAMS)
 }
 
@@ -346,14 +445,14 @@ func TestMessageService_Send_VoiceRoom(t *testing.T) {
 		t.Fatal("voice room not found")
 	}
 
-	_, err := svc.Send(voiceUUID, "alice", "Hello", "", "", nil)
+	_, err := svc.Send(voiceUUID, testActorWithUUID("alice", "uuid-alice"), "Hello", "", "", nil)
 	assertErrorCode(t, err, pkg.FORBIDDEN)
 }
 
 func TestMessageService_Send_RoomNotFound(t *testing.T) {
 	svc, _, _, _, _ := setupMessageServiceTest(t)
 
-	_, err := svc.Send("nonexistent-uuid", "alice", "Hello", "", "", nil)
+	_, err := svc.Send("nonexistent-uuid", testActorWithUUID("alice", "uuid-alice"), "Hello", "", "", nil)
 	assertErrorCode(t, err, pkg.NOT_FOUND)
 }
 
@@ -366,7 +465,7 @@ func TestMessageService_Send_QueueFallback(t *testing.T) {
 	// Make the queue return an error so sync fallback kicks in
 	queue.err = errors.New("nats unavailable")
 
-	dto, err := svc.Send(textUUID, "alice", "Fallback test", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Fallback test", "", "", nil)
 	assertNoError(t, err)
 
 	// Broadcast still happened
@@ -388,7 +487,7 @@ func TestMessageService_Send_NoBusNoQueue(t *testing.T) {
 	svc.SetEventBus(nil)
 	svc.SetJobQueue(nil)
 
-	dto, err := svc.Send(textUUID, "alice", "Bare mode", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Bare mode", "", "", nil)
 	assertNoError(t, err)
 
 	// Should have been persisted synchronously
@@ -405,7 +504,7 @@ func TestMessageService_Edit_Success(t *testing.T) {
 	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
 	t.Cleanup(func() { bus.reset(); queue.reset() })
 
-	dto, err := svc.Send(textUUID, "alice", "Original", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Original", "", "", nil)
 	assertNoError(t, err)
 
 	bus.reset()
@@ -413,7 +512,7 @@ func TestMessageService_Edit_Success(t *testing.T) {
 	svc.SetEventBus(bus)
 	svc.SetJobQueue(queue)
 
-	edited, err := svc.Edit(textUUID, dto.UUID, "alice", "Edited content")
+	edited, err := svc.Edit(textUUID, dto.UUID, testActorWithUUID("alice", "uuid-alice"), "Edited content")
 	assertNoError(t, err)
 	if edited.Content != "Edited content" {
 		t.Errorf("expected 'Edited content', got %s", edited.Content)
@@ -437,10 +536,10 @@ func TestMessageService_Edit_EmptyContent(t *testing.T) {
 	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
 	t.Cleanup(func() { bus.reset(); queue.reset() })
 
-	dto, err := svc.Send(textUUID, "alice", "Original", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Original", "", "", nil)
 	assertNoError(t, err)
 
-	_, err = svc.Edit(textUUID, dto.UUID, "alice", "  ")
+	_, err = svc.Edit(textUUID, dto.UUID, testActorWithUUID("alice", "uuid-alice"), "  ")
 	assertErrorCode(t, err, pkg.INVALID_PARAMS)
 }
 
@@ -448,17 +547,17 @@ func TestMessageService_Edit_NotAuthor(t *testing.T) {
 	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
 	t.Cleanup(func() { bus.reset(); queue.reset() })
 
-	dto, err := svc.Send(textUUID, "alice", "Original", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Original", "", "", nil)
 	assertNoError(t, err)
 
-	_, err = svc.Edit(textUUID, dto.UUID, "bob", "Hacked content")
+	_, err = svc.Edit(textUUID, dto.UUID, testActorWithUUID("bob", "uuid-bob"), "Hacked content")
 	assertErrorCode(t, err, pkg.FORBIDDEN)
 }
 
 func TestMessageService_Edit_NotFound(t *testing.T) {
 	svc, _, _, _, _ := setupMessageServiceTest(t)
 
-	_, err := svc.Edit("room-uuid", "nonexistent-uuid", "alice", "Content")
+	_, err := svc.Edit("room-uuid", "nonexistent-uuid", testActorWithUUID("alice", "uuid-alice"), "Content")
 	assertErrorCode(t, err, pkg.NOT_FOUND)
 }
 
@@ -466,13 +565,13 @@ func TestMessageService_Edit_QueueFallback(t *testing.T) {
 	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
 	t.Cleanup(func() { bus.reset(); queue.reset() })
 
-	dto, err := svc.Send(textUUID, "alice", "Original", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Original", "", "", nil)
 	assertNoError(t, err)
 
 	bus.reset()
 	queue.err = errors.New("nats unavailable")
 
-	_, err = svc.Edit(textUUID, dto.UUID, "alice", "Sync edited")
+	_, err = svc.Edit(textUUID, dto.UUID, testActorWithUUID("alice", "uuid-alice"), "Sync edited")
 	assertNoError(t, err)
 
 	// Should be updated in DB
@@ -489,7 +588,7 @@ func TestMessageService_Delete_Success(t *testing.T) {
 	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
 	t.Cleanup(func() { bus.reset(); queue.reset() })
 
-	dto, err := svc.Send(textUUID, "alice", "To be deleted", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "To be deleted", "", "", nil)
 	assertNoError(t, err)
 
 	bus.reset()
@@ -497,7 +596,7 @@ func TestMessageService_Delete_Success(t *testing.T) {
 	svc.SetEventBus(bus)
 	svc.SetJobQueue(queue)
 
-	err = svc.Delete(textUUID, dto.UUID, "alice", false)
+	err = svc.Delete(textUUID, dto.UUID, testActorWithUUID("alice", "uuid-alice"), false)
 	assertNoError(t, err)
 
 	// Bus got message:deleted
@@ -514,21 +613,21 @@ func TestMessageService_Delete_Success(t *testing.T) {
 func TestMessageService_Delete_OthersWithoutPermission(t *testing.T) {
 	svc, _, _, _, textUUID := setupMessageServiceTest(t)
 
-	dto, err := svc.Send(textUUID, "alice", "My message", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "My message", "", "", nil)
 	assertNoError(t, err)
 
-	err = svc.Delete(textUUID, dto.UUID, "bob", false)
+	err = svc.Delete(textUUID, dto.UUID, testActorWithUUID("bob", "uuid-bob"), false)
 	assertErrorCode(t, err, pkg.FORBIDDEN)
 }
 
 func TestMessageService_Delete_WithPermission(t *testing.T) {
 	svc, _, queue, _, textUUID := setupMessageServiceTest(t)
 
-	dto, err := svc.Send(textUUID, "alice", "My message", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "My message", "", "", nil)
 	assertNoError(t, err)
 
 	svc.SetJobQueue(queue)
-	err = svc.Delete(textUUID, dto.UUID, "moderator", true)
+	err = svc.Delete(textUUID, dto.UUID, testActorWithUUID("moderator", "uuid-moderator"), true)
 	assertNoError(t, err)
 
 	// Queue should have a job
@@ -540,7 +639,7 @@ func TestMessageService_Delete_WithPermission(t *testing.T) {
 func TestMessageService_Delete_NotFound(t *testing.T) {
 	svc, _, _, _, _ := setupMessageServiceTest(t)
 
-	err := svc.Delete("room-uuid", "nonexistent-uuid", "alice", false)
+	err := svc.Delete("room-uuid", "nonexistent-uuid", testActorWithUUID("alice", "uuid-alice"), false)
 	assertErrorCode(t, err, pkg.NOT_FOUND)
 }
 
@@ -548,14 +647,14 @@ func TestMessageService_Delete_QueueFallback(t *testing.T) {
 	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
 	t.Cleanup(func() { bus.reset(); queue.reset() })
 
-	dto, err := svc.Send(textUUID, "alice", "To be deleted sync", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "To be deleted sync", "", "", nil)
 	assertNoError(t, err)
 
 	svc.SetEventBus(bus)
 	svc.SetJobQueue(queue)
 	queue.err = errors.New("nats unavailable")
 
-	err = svc.Delete(textUUID, dto.UUID, "alice", false)
+	err = svc.Delete(textUUID, dto.UUID, testActorWithUUID("alice", "uuid-alice"), false)
 	assertNoError(t, err)
 
 	// Broadcast still happened
@@ -577,13 +676,13 @@ func TestMessageService_React_Success(t *testing.T) {
 	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
 	t.Cleanup(func() { bus.reset(); queue.reset() })
 
-	dto, err := svc.Send(textUUID, "alice", "Reactable", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Reactable", "", "", nil)
 	assertNoError(t, err)
 
 	svc.SetEventBus(bus)
 	svc.SetJobQueue(queue)
 
-	err = svc.React(textUUID, dto.UUID, "bob", "+1")
+	err = svc.React(textUUID, dto.UUID, testActorWithUUID("bob", "uuid-bob"), "+1")
 	assertNoError(t, err)
 
 	// Bus got message:reaction
@@ -600,31 +699,31 @@ func TestMessageService_React_Success(t *testing.T) {
 func TestMessageService_React_EmptyEmoji(t *testing.T) {
 	svc, _, _, _, textUUID := setupMessageServiceTest(t)
 
-	dto, err := svc.Send(textUUID, "alice", "Reactable", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Reactable", "", "", nil)
 	assertNoError(t, err)
 
-	err = svc.React(textUUID, dto.UUID, "bob", "")
+	err = svc.React(textUUID, dto.UUID, testActorWithUUID("bob", "uuid-bob"), "")
 	assertErrorCode(t, err, pkg.INVALID_PARAMS)
 }
 
 func TestMessageService_React_NotFound(t *testing.T) {
 	svc, _, _, _, _ := setupMessageServiceTest(t)
 
-	err := svc.React("room-uuid", "nonexistent-uuid", "bob", "+1")
+	err := svc.React("room-uuid", "nonexistent-uuid", testActorWithUUID("bob", "uuid-bob"), "+1")
 	assertErrorCode(t, err, pkg.NOT_FOUND)
 }
 
 func TestMessageService_React_QueueFallback(t *testing.T) {
 	svc, _, queue, _, textUUID := setupMessageServiceTest(t)
 
-	dto, err := svc.Send(textUUID, "alice", "Reactable", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Reactable", "", "", nil)
 	assertNoError(t, err)
 
 	queue.err = errors.New("nats unavailable")
 	// Reset queue state from Send
 	queue.reset()
 
-	err = svc.React(textUUID, dto.UUID, "bob", "+1")
+	err = svc.React(textUUID, dto.UUID, testActorWithUUID("bob", "uuid-bob"), "+1")
 	assertNoError(t, err)
 
 	// Reaction should be persisted in DB
@@ -647,17 +746,17 @@ func TestMessageService_Unreact_Success(t *testing.T) {
 	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
 	t.Cleanup(func() { bus.reset(); queue.reset() })
 
-	dto, err := svc.Send(textUUID, "alice", "Reactable", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Reactable", "", "", nil)
 	assertNoError(t, err)
 
 	// Add reaction first (sync, no bus/queue needed)
-	err = svc.React(textUUID, dto.UUID, "bob", "+1")
+	err = svc.React(textUUID, dto.UUID, testActorWithUUID("bob", "uuid-bob"), "+1")
 	assertNoError(t, err)
 
 	svc.SetEventBus(bus)
 	svc.SetJobQueue(queue)
 
-	err = svc.Unreact(textUUID, dto.UUID, "bob", "+1")
+	err = svc.Unreact(textUUID, dto.UUID, testActorWithUUID("bob", "uuid-bob"), "+1")
 	assertNoError(t, err)
 
 	// Bus got message:reaction
@@ -674,21 +773,21 @@ func TestMessageService_Unreact_Success(t *testing.T) {
 func TestMessageService_Unreact_EmptyEmoji(t *testing.T) {
 	svc, _, _, _, textUUID := setupMessageServiceTest(t)
 
-	dto, err := svc.Send(textUUID, "alice", "Reactable", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Reactable", "", "", nil)
 	assertNoError(t, err)
 
-	err = svc.Unreact(textUUID, dto.UUID, "bob", "")
+	err = svc.Unreact(textUUID, dto.UUID, testActorWithUUID("bob", "uuid-bob"), "")
 	assertErrorCode(t, err, pkg.INVALID_PARAMS)
 }
 
 func TestMessageService_Unreact_QueueFallback(t *testing.T) {
 	svc, _, queue, _, textUUID := setupMessageServiceTest(t)
 
-	dto, err := svc.Send(textUUID, "alice", "Reactable", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Reactable", "", "", nil)
 	assertNoError(t, err)
 
 	// Add reaction first
-	err = svc.React(textUUID, dto.UUID, "bob", "+1")
+	err = svc.React(textUUID, dto.UUID, testActorWithUUID("bob", "uuid-bob"), "+1")
 	assertNoError(t, err)
 
 	queue.err = errors.New("nats unavailable")
@@ -697,7 +796,7 @@ func TestMessageService_Unreact_QueueFallback(t *testing.T) {
 	// Cancel the last reset's clearing by re-setting error
 	queue.err = errors.New("nats unavailable")
 
-	err = svc.Unreact(textUUID, dto.UUID, "bob", "+1")
+	err = svc.Unreact(textUUID, dto.UUID, testActorWithUUID("bob", "uuid-bob"), "+1")
 	assertNoError(t, err)
 
 	// Reaction should be removed from DB
@@ -713,7 +812,7 @@ func TestMessageService_Unreact_QueueFallback(t *testing.T) {
 func TestMessageService_ListHistory_Empty(t *testing.T) {
 	svc, _, _, _, textUUID := setupMessageServiceTest(t)
 
-	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, "", 50)
+	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 50)
 	assertNoError(t, err)
 
 	if len(items) != 0 {
@@ -731,14 +830,14 @@ func TestMessageService_ListHistory_ReturnsMessages(t *testing.T) {
 	svc, _, _, _, textUUID := setupMessageServiceTest(t)
 
 	// Send 3 messages
-	msg1, err := svc.Send(textUUID, "alice", "First", "", "", nil)
+	msg1, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "First", "", "", nil)
 	assertNoError(t, err)
-	_, err = svc.Send(textUUID, "bob", "Second", "", "", nil)
+	_, err = svc.Send(textUUID, testActorWithUUID("bob", "uuid-bob"), "Second", "", "", nil)
 	assertNoError(t, err)
-	msg3, err := svc.Send(textUUID, "alice", "Third", "", "", nil)
+	msg3, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Third", "", "", nil)
 	assertNoError(t, err)
 
-	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, "", 100)
+	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 100)
 	assertNoError(t, err)
 
 	// Items should be in ASC order (oldest first)
@@ -765,12 +864,12 @@ func TestMessageService_ListHistory_ClampLimit(t *testing.T) {
 
 	// Send messages to test clamping
 	for i := 0; i < 60; i++ {
-		_, err := svc.Send(textUUID, "alice", "msg", "", "", nil)
+		_, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "msg", "", "", nil)
 		assertNoError(t, err)
 	}
 
 	// limit = 0 defaults to 100
-	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, "", 0)
+	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 0)
 	assertNoError(t, err)
 	if len(items) != 60 {
 		t.Errorf("expected 60 items with default limit, got %d", len(items))
@@ -783,7 +882,7 @@ func TestMessageService_ListHistory_ClampLimit(t *testing.T) {
 	}
 
 	// limit < 50 should clamp to 50
-	items, hasMore, nextBefore, err = svc.ListHistory(textUUID, "", 10)
+	items, hasMore, nextBefore, err = svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 10)
 	assertNoError(t, err)
 	if len(items) != 50 {
 		t.Errorf("expected 50 items (clamped from 10), got %d", len(items))
@@ -801,12 +900,12 @@ func TestMessageService_ListHistory_LimitCap(t *testing.T) {
 
 	// Send 250 messages
 	for i := 0; i < 250; i++ {
-		_, err := svc.Send(textUUID, "alice", "msg", "", "", nil)
+		_, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "msg", "", "", nil)
 		assertNoError(t, err)
 	}
 
 	// limit > 200 should clamp to 200
-	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, "", 1000)
+	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 1000)
 	assertNoError(t, err)
 	if len(items) != 200 {
 		t.Errorf("expected 200 items (capped from 1000), got %d", len(items))
@@ -825,13 +924,13 @@ func TestMessageService_ListHistory_Pagination(t *testing.T) {
 	// Send 120 messages (enough for 3 pages of 50)
 	var uuids []string
 	for i := 0; i < 120; i++ {
-		dto, err := svc.Send(textUUID, "alice", "msg", "", "", nil)
+		dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "msg", "", "", nil)
 		assertNoError(t, err)
 		uuids = append(uuids, dto.UUID)
 	}
 
 	// First page: get 50 messages (limit clamped to 50 minimum)
-	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, "", 50)
+	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 50)
 	assertNoError(t, err)
 	if len(items) != 50 {
 		t.Fatalf("expected 50 items on page 1, got %d", len(items))
@@ -844,7 +943,7 @@ func TestMessageService_ListHistory_Pagination(t *testing.T) {
 	}
 
 	// Second page: pass nextBefore
-	items2, hasMore2, nextBefore2, err := svc.ListHistory(textUUID, nextBefore, 50)
+	items2, hasMore2, nextBefore2, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), nextBefore, 50)
 	assertNoError(t, err)
 	if len(items2) != 50 {
 		t.Fatalf("expected 50 items on page 2, got %d", len(items2))
@@ -854,7 +953,7 @@ func TestMessageService_ListHistory_Pagination(t *testing.T) {
 	}
 
 	// Third page: should get remaining 20
-	items3, hasMore3, nextBefore3, err := svc.ListHistory(textUUID, nextBefore2, 50)
+	items3, hasMore3, nextBefore3, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), nextBefore2, 50)
 	assertNoError(t, err)
 	if len(items3) != 20 {
 		t.Fatalf("expected 20 items on page 3, got %d", len(items3))
@@ -943,7 +1042,7 @@ func TestMessageService_MutateFromJob_Edit(t *testing.T) {
 	svc, _, _, _, textUUID := setupMessageServiceTest(t)
 
 	// Create a message first
-	dto, err := svc.Send(textUUID, "alice", "Original", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Original", "", "", nil)
 	assertNoError(t, err)
 
 	now := time.Now().UTC()
@@ -968,7 +1067,7 @@ func TestMessageService_MutateFromJob_Edit(t *testing.T) {
 func TestMessageService_MutateFromJob_Delete(t *testing.T) {
 	svc, _, _, _, textUUID := setupMessageServiceTest(t)
 
-	dto, err := svc.Send(textUUID, "alice", "To be deleted", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "To be deleted", "", "", nil)
 	assertNoError(t, err)
 
 	payload, err := json.Marshal(map[string]interface{}{
@@ -990,7 +1089,7 @@ func TestMessageService_MutateFromJob_Delete(t *testing.T) {
 func TestMessageService_MutateFromJob_React(t *testing.T) {
 	svc, _, _, _, textUUID := setupMessageServiceTest(t)
 
-	dto, err := svc.Send(textUUID, "alice", "Reactable", "", "", nil)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Reactable", "", "", nil)
 	assertNoError(t, err)
 
 	payload, err := json.Marshal(map[string]interface{}{
@@ -1039,17 +1138,17 @@ func TestMessageService_MutateFromJob_InvalidPayload(t *testing.T) {
 func TestMessageService_Search(t *testing.T) {
 	svc, _, _, _, textUUID := setupMessageServiceTest(t)
 
-	if _, err := svc.Send(textUUID, "alice", "alpha needle one", "", "", nil); err != nil {
+	if _, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "alpha needle one", "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Send(textUUID, "bob", "plain message", "", "", nil); err != nil {
+	if _, err := svc.Send(textUUID, testActorWithUUID("bob", "uuid-bob"), "plain message", "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Send(textUUID, "carol", "beta needle two", "", "", nil); err != nil {
+	if _, err := svc.Send(textUUID, testActorWithUUID("carol", "uuid-carol"), "beta needle two", "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 
-	items, err := svc.Search(textUUID, "needle")
+	items, err := svc.Search(textUUID, testActorWithUUID("alice", "uuid-alice"), "needle")
 	assertNoError(t, err)
 	if len(items) != 2 {
 		t.Fatalf("expected 2 search results, got %d", len(items))
@@ -1059,6 +1158,6 @@ func TestMessageService_Search(t *testing.T) {
 func TestMessageService_Search_RejectsVoiceRoom(t *testing.T) {
 	svc, _, _, roomRepo, _ := setupMessageServiceTest(t)
 	voiceUUID := mustFindVoiceUUID(roomRepo)
-	_, err := svc.Search(voiceUUID, "needle")
+	_, err := svc.Search(voiceUUID, testActorWithUUID("alice", "uuid-alice"), "needle")
 	assertErrorCode(t, err, pkg.FORBIDDEN)
 }
