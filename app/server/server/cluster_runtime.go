@@ -27,7 +27,7 @@ func startLocalClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterSer
 	timeout := cfg.ClusterHeartbeatTimeoutDuration()
 
 	report := collectClusterReport(cfg, node.UUID, hub)
-	if _, err := clusterSvc.Heartbeat(ctx, node.UUID, report); err != nil {
+	if _, err := clusterSvc.Heartbeat(node.UUID, report); err != nil {
 		logger.WithComponent("Cluster").Warnf("local node initial heartbeat failed: %v", err)
 	}
 
@@ -42,7 +42,7 @@ func startLocalClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterSer
 			case <-ticker.C:
 			}
 			report := collectClusterReport(cfg, node.UUID, hub)
-			if _, err := clusterSvc.Heartbeat(ctx, node.UUID, report); err != nil {
+			if _, err := clusterSvc.Heartbeat(node.UUID, report); err != nil {
 				logger.WithComponent("Cluster").Warnf("local node heartbeat failed: %v", err)
 			}
 		}
@@ -69,6 +69,7 @@ func startLocalClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterSer
 		cancel()
 		<-done
 	}
+	_ = clusterSvc.DeregisterNode(node.UUID)
 	return node.UUID, stop, nil
 }
 
@@ -110,7 +111,7 @@ func startWorkerClusterRuntime(cfg *config.Config, hub *signal.Hub) (func(), err
 		UUID:         nodeID,
 		Name:         nodeID,
 		Host:         hostnameOrDefault(),
-		AdvertiseURL: cfg.ClusterAdvertiseURL,
+		AdvertiseURL: workerAdvertiseURL(cfg),
 		Role:         model.ClusterRoleWorker,
 		SFUProvider:  cfg.SFUProvider,
 		MaxServers:   cfg.ClusterMaxServers,
@@ -179,13 +180,13 @@ func collectClusterReport(cfg *config.Config, nodeID string, hub *signal.Hub) cl
 	}
 	healthy := true
 	return cluster.HeartbeatReport{
-		NodeID:         nodeID,
-		Status:         status,
-		AdvertiseURL:   cfg.ClusterAdvertiseURL,
-		Rooms:          rooms,
-		Connections:    connections,
-		LoadPercent:    load,
-		SFUHealthy:     &healthy,
+		NodeID:       nodeID,
+		Status:       status,
+		AdvertiseURL: cfg.ClusterAdvertiseURL,
+		Rooms:        rooms,
+		Connections:  connections,
+		LoadPercent:  load,
+		SFUHealthy:   &healthy,
 	}
 }
 
@@ -204,4 +205,15 @@ func sanitizeWorkerID(s string) string {
 		return "worker"
 	}
 	return s
+}
+
+func workerAdvertiseURL(cfg *config.Config) string {
+	if strings.TrimSpace(cfg.ClusterAdvertiseURL) != "" {
+		return cfg.ClusterAdvertiseURL
+	}
+	port := strings.TrimSpace(cfg.ServerPort)
+	if port == "" {
+		port = "8998"
+	}
+	return "http://" + hostnameOrDefault() + ":" + port
 }

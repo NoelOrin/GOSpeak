@@ -64,8 +64,8 @@ func ChooseNodes(nodes []model.ClusterNode, current []model.ServerAssignment, co
 	}
 
 	sort.SliceStable(candidates, func(i, j int) bool {
-		pi := preferredSet[candidates[i].UUID]
-		pj := preferredSet[candidates[j].UUID]
+		_, pi := preferredSet[candidates[i].UUID]
+		_, pj := preferredSet[candidates[j].UUID]
 		if pi != pj {
 			return pi
 		}

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"context"
+
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/model"
@@ -17,14 +19,16 @@ import (
 )
 
 var (
-	ErrClusterNodeNotFound    = pkg.NewAppError(pkg.NOT_FOUND, "cluster node not found")
+	ErrClusterNodeNotFound     = pkg.NewAppError(pkg.NOT_FOUND, "cluster node not found")
 	ErrClusterServerUnassigned = pkg.NewAppError(pkg.NOT_FOUND, "no healthy worker assigned to server")
 )
 
 // ClusterService 是 Agent 控制面的节点与 Server 分配服务。
 type ClusterService struct {
-	nodeRepo  *repository.ClusterNodeRepository
+	nodeRepo   *repository.ClusterNodeRepository
 	assignRepo *repository.ServerAssignmentRepository
+	notifier   ClusterNotifier
+	serverRepo *repository.DomainRepository
 }
 
 func NewClusterService(
@@ -32,6 +36,21 @@ func NewClusterService(
 	assignRepo *repository.ServerAssignmentRepository,
 ) *ClusterService {
 	return &ClusterService{nodeRepo: nodeRepo, assignRepo: assignRepo}
+}
+
+// ClusterNotifier 发布跨实例控制面事件。
+type ClusterNotifier interface {
+	PublishInternal(ctx context.Context, event string, payload interface{}) error
+}
+
+// SetNotifier 注入 NATS/EventBus internal 发布器。
+func (s *ClusterService) SetNotifier(n ClusterNotifier) {
+	s.notifier = n
+}
+
+// SetServerRepo 注入 Domain 仓库，用于节点上线后补调度未分配的 Server。
+func (s *ClusterService) SetServerRepo(repo *repository.DomainRepository) {
+	s.serverRepo = repo
 }
 
 // EnsureLocalNode 在 all/agent 模式下注册当前进程对应的本地节点。
@@ -52,7 +71,7 @@ func (s *ClusterService) EnsureLocalNode(cfg *config.Config, instanceID string) 
 		UUID:         nodeID,
 		Name:         instanceID,
 		Host:         host,
-		AdvertiseURL: cfg.ClusterAdvertiseURL,
+		AdvertiseURL: localAdvertiseURL(cfg, host),
 		Role:         cfg.ClusterRole,
 		Status:       model.ClusterNodePending,
 		SFUProvider:  cfg.SFUProvider,
@@ -66,7 +85,7 @@ func (s *ClusterService) EnsureLocalNode(cfg *config.Config, instanceID string) 
 	existing, err := s.nodeRepo.GetByUUID(nodeID)
 	if err == nil {
 		existing.Host = host
-		existing.AdvertiseURL = cfg.ClusterAdvertiseURL
+		existing.AdvertiseURL = localAdvertiseURL(cfg, host)
 		existing.Role = cfg.ClusterRole
 		existing.SFUProvider = cfg.SFUProvider
 		existing.MaxServers = cfg.ClusterMaxServers
@@ -79,6 +98,9 @@ func (s *ClusterService) EnsureLocalNode(cfg *config.Config, instanceID string) 
 		if err := s.nodeRepo.Update(existing); err != nil {
 			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 		}
+		s.publishClusterEvent(cluster.EventNodeRegistered, map[string]interface{}{
+			"node_id": existing.UUID, "status": existing.Status, "advertise_url": existing.AdvertiseURL,
+		})
 		return existing, nil
 	}
 	if err != gorm.ErrRecordNotFound {
@@ -135,6 +157,9 @@ func (s *ClusterService) RegisterNode(req model.ClusterNode) (*model.ClusterNode
 	if err := s.nodeRepo.Create(&req); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
+	s.publishClusterEvent(cluster.EventNodeRegistered, map[string]interface{}{
+		"node_id": req.UUID, "status": req.Status, "advertise_url": req.AdvertiseURL,
+	})
 	return &req, nil
 }
 
@@ -181,6 +206,10 @@ func (s *ClusterService) Heartbeat(nodeID string, report cluster.HeartbeatReport
 	if err := s.nodeRepo.Update(node); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
+	s.publishClusterEvent(cluster.EventNodeHeartbeat, map[string]interface{}{
+		"node_id": node.UUID, "status": node.Status, "rooms": node.Rooms, "connections": node.Connections,
+	})
+	s.reconcilePendingServers(node.UUID)
 	return node, nil
 }
 
@@ -198,6 +227,47 @@ func (s *ClusterService) DeregisterNode(nodeID string) error {
 	if err := s.nodeRepo.Update(node); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
+	s.publishClusterEvent(cluster.EventNodeDeregistered, map[string]interface{}{
+		"node_id": node.UUID, "status": node.Status,
+	})
+	return nil
+}
+
+// DrainNode 标记节点 draining，停止新的 Server 分配。
+func (s *ClusterService) DrainNode(nodeID string) error {
+	node, err := s.nodeRepo.GetByUUID(nodeID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return ErrClusterNodeNotFound
+		}
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	node.Status = model.ClusterNodeDraining
+	if err := s.nodeRepo.Update(node); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	s.publishClusterEvent(cluster.EventNodeDraining, map[string]interface{}{
+		"node_id": node.UUID, "status": node.Status,
+	})
+	return nil
+}
+
+// UndrainNode 恢复节点为 ready，允许继续调度。
+func (s *ClusterService) UndrainNode(nodeID string) error {
+	node, err := s.nodeRepo.GetByUUID(nodeID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return ErrClusterNodeNotFound
+		}
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	node.Status = model.ClusterNodeReady
+	if err := s.nodeRepo.Update(node); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	s.publishClusterEvent(cluster.EventNodeUndrained, map[string]interface{}{
+		"node_id": node.UUID, "status": node.Status,
+	})
 	return nil
 }
 
@@ -246,11 +316,25 @@ func (s *ClusterService) ScaleServer(serverUUID string, replicas int, preferredN
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	if len(current) > replicas {
-		byUUID := make(map[string]model.ClusterNode, len(nodes))
-		for _, node := range nodes {
-			byUUID[node.UUID] = node
+	byUUID := make(map[string]model.ClusterNode, len(nodes))
+	for _, node := range nodes {
+		byUUID[node.UUID] = node
+	}
+
+	activeCurrent := make([]model.ServerAssignment, 0, len(current))
+	for _, assignment := range current {
+		node, ok := byUUID[assignment.NodeUUID]
+		if !ok || !cluster.CanSchedule(node) {
+			if err := s.assignRepo.Remove(serverUUID, assignment.NodeUUID); err != nil {
+				return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+			}
+			continue
 		}
+		activeCurrent = append(activeCurrent, assignment)
+	}
+	current = activeCurrent
+
+	if len(current) > replicas {
 		sort.SliceStable(current, func(i, j int) bool {
 			ni, oki := byUUID[current[i].NodeUUID]
 			nj, okj := byUUID[current[j].NodeUUID]
@@ -285,6 +369,9 @@ func (s *ClusterService) ScaleServer(serverUUID string, replicas int, preferredN
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	s.syncNodeServerCounts()
+	s.publishClusterEvent(cluster.EventServerScaled, map[string]interface{}{
+		"server_uuid": serverUUID, "replicas": len(assignments), "assignments": assignments,
+	})
 	return assignments, nil
 }
 
@@ -299,6 +386,9 @@ func (s *ClusterService) DeleteServer(serverUUID string) error {
 	if err := s.assignRepo.RemoveAll(serverUUID); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
+	s.publishClusterEvent(cluster.EventServerDeleted, map[string]interface{}{
+		"server_uuid": serverUUID,
+	})
 	s.syncNodeServerCounts()
 	return nil
 }
@@ -350,6 +440,30 @@ func (s *ClusterService) ResolveServer(serverUUID string) (*model.ServerAssignme
 	return bestAssignment, &node, nil
 }
 
+// reconcilePendingServers 在节点心跳后尝试把未分配 Server 调度到该节点。
+func (s *ClusterService) reconcilePendingServers(nodeUUID string) {
+	if s.serverRepo == nil {
+		return
+	}
+	node, err := s.nodeRepo.GetByUUID(nodeUUID)
+	if err != nil || !cluster.CanSchedule(*node) {
+		return
+	}
+	domains, _, err := s.serverRepo.List(1, 10000)
+	if err != nil {
+		return
+	}
+	for _, domain := range domains {
+		assignments, listErr := s.assignRepo.ListByServer(domain.UUID)
+		if listErr != nil {
+			continue
+		}
+		if len(assignments) == 0 {
+			_, _ = s.ScaleServer(domain.UUID, 1, nodeUUID)
+		}
+	}
+}
+
 func (s *ClusterService) syncNodeServerCounts() {
 	nodes, err := s.nodeRepo.List()
 	if err != nil {
@@ -374,4 +488,25 @@ func sanitizeClusterID(s string) string {
 		return fmt.Sprintf("local-%d", os.Getpid())
 	}
 	return s
+}
+
+func localAdvertiseURL(cfg *config.Config, host string) string {
+	if strings.TrimSpace(cfg.ClusterAdvertiseURL) != "" {
+		return cfg.ClusterAdvertiseURL
+	}
+	port := strings.TrimSpace(cfg.ServerPort)
+	if port == "" {
+		port = "8998"
+	}
+	if host == "" {
+		host = "localhost"
+	}
+	return "http://" + host + ":" + port
+}
+
+func (s *ClusterService) publishClusterEvent(event string, payload interface{}) {
+	if s.notifier == nil {
+		return
+	}
+	_ = s.notifier.PublishInternal(context.Background(), event, payload)
 }

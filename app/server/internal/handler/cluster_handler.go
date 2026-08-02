@@ -113,6 +113,34 @@ func (h *ClusterHandler) Deregister(c *gin.Context) {
 	pkg.Success(c, nil)
 }
 
+// Drain 标记节点 draining，停止新分配。
+func (h *ClusterHandler) Drain(c *gin.Context) {
+	var req DeregisterNodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	if err := h.clusterSvc.DrainNode(req.NodeID); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, nil)
+}
+
+// Undrain 恢复节点 ready，允许继续调度。
+func (h *ClusterHandler) Undrain(c *gin.Context) {
+	var req DeregisterNodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	if err := h.clusterSvc.UndrainNode(req.NodeID); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, nil)
+}
+
 // List 返回节点列表。
 func (h *ClusterHandler) List(c *gin.Context) {
 	nodes, err := h.clusterSvc.ListNodes()
