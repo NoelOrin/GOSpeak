@@ -170,7 +170,7 @@ export const SFU_ENFORCEMENT_PROFILES: Record<
 				key: "serverMute",
 				label: "服务端静音",
 				level: "degraded",
-				impl: "kicking-rule 撤销 publish_audio/video，保留在频道",
+				impl: "kicking-rule 撤销 publish_audio/video，保留在房间",
 				fallback: "信令禁言 + 前端 speechRestricted 停推",
 			},
 			{
@@ -184,21 +184,21 @@ export const SFU_ENFORCEMENT_PROFILES: Record<
 				key: "deleteRoom",
 				label: "删除房间",
 				level: "hard",
-				impl: "DeleteChannel 删除频道",
+				impl: "DeleteChannel 删除房间",
 				fallback: "信令清房间",
 			},
 			{
 				key: "listMembers",
 				label: "成员列表",
 				level: "hard",
-				impl: "channel user REST 列表",
+				impl: "Agora channel user REST 列表",
 				fallback: "不与 WS 在线表互相伪装",
 			},
 			{
 				key: "listRooms",
 				label: "房间列表",
 				level: "hard",
-				impl: "channel list REST",
+				impl: "Agora channel list REST",
 				fallback: "不与信令房间表互相伪装",
 			},
 			{

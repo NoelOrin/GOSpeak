@@ -652,7 +652,7 @@ export const socketStore = createRoot(() => {
 			showToast("连接已切换到其他标签页", { type: "warning" });
 			disconnect();
 		});
-		// 确保 channel 已建立，能响应 probe
+		// 确保 BroadcastChannel 已建立，能响应 probe
 		tabLock.ensureListening();
 	}
 

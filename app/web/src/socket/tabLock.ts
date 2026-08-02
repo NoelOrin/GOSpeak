@@ -16,7 +16,7 @@ export type TabLock = {
 	claim: () => Promise<boolean>;
 	release: () => void;
 	isOwner: () => boolean;
-	/** 确保 channel 已建立，能响应 probe */
+	/** 确保 BroadcastChannel 已建立，能响应 probe */
 	ensureListening: () => void;
 	setOnForeignClaim: (cb: (() => void) | null) => void;
 };
