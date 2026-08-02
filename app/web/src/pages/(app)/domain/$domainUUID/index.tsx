@@ -10,7 +10,8 @@ import { extractDomainInviteCode, domainInviteUrl } from "@/utils/domainInvite";
 import { hasPermission } from "@/utils/permissions";
 
 export const Route = createFileRoute("/(app)/domain/$domainUUID/")({
-	component: RouteComponent,
+	// component: RouteComponent,
+	component: () => <></>,
 	staticData: { title: "语音域", icon: "icon-domain" },
 });
 
