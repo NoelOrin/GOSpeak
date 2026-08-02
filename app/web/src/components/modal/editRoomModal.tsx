@@ -5,6 +5,17 @@ import type { RoomRecord } from "@/api/room";
 import { updateRoom } from "@/api/room";
 import { Form, type FormFieldConfig } from "@/components/form";
 
+function apiErrorMessage(error: unknown) {
+	const response = (
+		error as {
+			response?: { data?: { msg?: string } };
+		}
+	)?.response?.data?.msg;
+	if (response) return response;
+	if (error instanceof Error) return error.message;
+	return "请求失败";
+}
+
 export interface EditRoomFormErrors {
 	name?: string;
 	description?: string;
@@ -36,19 +47,11 @@ interface EditRoomModalProps {
 }
 
 const EditRoomModal: Component<EditRoomModalProps> = (props) => {
-	const roomNameValidation = (value: string) => {
-		const trimmed = value.trim();
-		if (trimmed.length < 2) return "房间名称至少需要 2 个字符";
-		if (trimmed.length > 32) return "房间名称不能超过 32 个字符";
-		return undefined;
-	};
+	const roomNameValidation = (value: string) =>
+		validateEditRoomForm(value, "", 2).name;
 
-	const limitValidation = (value: number) => {
-		if (Number.isNaN(value)) return "请填写人数上限";
-		if (value < 2) return "人数上限至少为 2";
-		if (value > 200) return "人数上限不能超过 200";
-		return undefined;
-	};
+	const limitValidation = (value: number) =>
+		validateEditRoomForm("x", "", value).limit;
 
 	const form = createForm(() => ({
 		defaultValues: {
@@ -71,7 +74,9 @@ const EditRoomModal: Component<EditRoomModalProps> = (props) => {
 				await props.onSaved(updated);
 				showToast(`已更新房间: ${updated.name}`, { type: "success" });
 				props.onClose();
-			} catch {}
+			} catch (error) {
+				showToast(apiErrorMessage(error), { type: "error" });
+			}
 		},
 	}));
 
@@ -107,7 +112,7 @@ const EditRoomModal: Component<EditRoomModalProps> = (props) => {
 			type: "textarea",
 			placeholder: "选填，用于说明当前房间的主题或规则",
 			validation: (value: string) =>
-				value.trim().length > 120 ? "房间说明不能超过 120 个字符" : undefined,
+				validateEditRoomForm("x", value, 2).description,
 			className: "min-h-24",
 		},
 	];
