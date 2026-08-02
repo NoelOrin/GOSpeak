@@ -22,6 +22,7 @@ export interface CreateRoomConfig {
 interface CreateRoomModalProps {
 	ref: HTMLDialogElement;
 	onClose: () => void;
+	domainUUID?: string;
 	onCreated?: (config: CreateRoomConfig) => void | Promise<void>;
 }
 
@@ -63,7 +64,10 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 					allowAudience: value.allowAudience,
 					description: value.description.trim(),
 					type: value.type === "text" ? "text" : "voice",
-					domainUUID: domainStore.state.currentDomainUUID ?? undefined,
+					domainUUID:
+						props.domainUUID ??
+						domainStore.state.currentDomainUUID ??
+						undefined,
 				};
 
 				const room = await createRoomApi({
