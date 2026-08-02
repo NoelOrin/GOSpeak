@@ -17,6 +17,19 @@ func NewMessageHandler(msgSvc *service.MessageService, permSvc *service.Permissi
 	return &MessageHandler{msgSvc: msgSvc, permSvc: permSvc}
 }
 
+func messageActorFromContext(c *gin.Context) (service.MessageActor, bool) {
+	usernameVal, ok := c.Get("username")
+	if !ok {
+		return service.MessageActor{}, false
+	}
+	username, _ := usernameVal.(string)
+	userUUID := currentUserUUID(c)
+	if userUUID == "" {
+		return service.MessageActor{}, false
+	}
+	return service.MessageActor{Identity: username, UserUUID: userUUID}, true
+}
+
 // List
 // @Summary      消息历史
 // @Description  分页获取房间消息历史，最新在前
@@ -37,7 +50,12 @@ func (h *MessageHandler) List(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	items, hasMore, nextBefore, err := h.msgSvc.ListHistory(req.RoomUUID, req.Before, req.Limit)
+	actor, ok := messageActorFromContext(c)
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	items, hasMore, nextBefore, err := h.msgSvc.ListHistory(req.RoomUUID, actor, req.Before, req.Limit)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -65,7 +83,12 @@ func (h *MessageHandler) Search(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	items, err := h.msgSvc.Search(req.RoomUUID, req.Query)
+	actor, ok := messageActorFromContext(c)
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	items, err := h.msgSvc.Search(req.RoomUUID, actor, req.Query)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -94,13 +117,12 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	usernameVal, ok := c.Get("username")
+	actor, ok := messageActorFromContext(c)
 	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
-	username, _ := usernameVal.(string)
-	dto, err := h.msgSvc.Send(req.RoomUUID, username, req.Content, req.ReplyTo, req.ClientNonce, req.Mentions)
+	dto, err := h.msgSvc.Send(req.RoomUUID, actor, req.Content, req.ReplyTo, req.ClientNonce, req.Mentions)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -128,13 +150,12 @@ func (h *MessageHandler) Edit(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	usernameVal, ok := c.Get("username")
+	actor, ok := messageActorFromContext(c)
 	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
-	username, _ := usernameVal.(string)
-	dto, err := h.msgSvc.Edit(req.RoomUUID, req.MessageUUID, username, req.Content)
+	dto, err := h.msgSvc.Edit(req.RoomUUID, req.MessageUUID, actor, req.Content)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -161,12 +182,11 @@ func (h *MessageHandler) Delete(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	usernameVal, ok := c.Get("username")
+	actor, ok := messageActorFromContext(c)
 	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
-	username, _ := usernameVal.(string)
 	roleVal, ok := c.Get("role")
 	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
@@ -174,7 +194,7 @@ func (h *MessageHandler) Delete(c *gin.Context) {
 	}
 	roleStr, _ := roleVal.(string)
 	canDeleteOthers := h.permSvc != nil && h.permSvc.HasPermission(roleStr, permcode.PermMessageDeleteOthers)
-	if err := h.msgSvc.Delete(req.RoomUUID, req.MessageUUID, username, canDeleteOthers); err != nil {
+	if err := h.msgSvc.Delete(req.RoomUUID, req.MessageUUID, actor, canDeleteOthers); err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
@@ -201,13 +221,12 @@ func (h *MessageHandler) React(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	usernameVal, ok := c.Get("username")
+	actor, ok := messageActorFromContext(c)
 	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
-	username, _ := usernameVal.(string)
-	if err := h.msgSvc.React(req.RoomUUID, req.MessageUUID, username, req.Emoji); err != nil {
+	if err := h.msgSvc.React(req.RoomUUID, req.MessageUUID, actor, req.Emoji); err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
@@ -234,13 +253,12 @@ func (h *MessageHandler) Unreact(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	usernameVal, ok := c.Get("username")
+	actor, ok := messageActorFromContext(c)
 	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
-	username, _ := usernameVal.(string)
-	if err := h.msgSvc.Unreact(req.RoomUUID, req.MessageUUID, username, req.Emoji); err != nil {
+	if err := h.msgSvc.Unreact(req.RoomUUID, req.MessageUUID, actor, req.Emoji); err != nil {
 		pkg.HandleError(c, err)
 		return
 	}

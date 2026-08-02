@@ -2,6 +2,8 @@ export type MessageDTO = {
 	uuid: string;
 	room_uuid: string;
 	author_id: string;
+	author_name?: string;
+	author_avatar?: string;
 	content: string;
 	reply_to?: string;
 	mentions?: string[];

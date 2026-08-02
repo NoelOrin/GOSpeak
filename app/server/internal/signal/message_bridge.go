@@ -12,16 +12,17 @@ import (
 // messageSender abstracts message operations for the signal layer.
 // Satisfied by *service.MessageService.
 type messageSender interface {
-	Send(roomUUID, authorID, content, replyTo, clientNonce string, mentions []string) (*service.MessageDTO, error)
-	Edit(roomUUID, messageUUID, authorID, content string) (*service.MessageDTO, error)
-	Delete(roomUUID, messageUUID, actorID string, canDeleteOthers bool) error
-	React(roomUUID, messageUUID, userID, emoji string) error
-	Unreact(roomUUID, messageUUID, userID, emoji string) error
+	Send(roomUUID string, actor service.MessageActor, content, replyTo, clientNonce string, mentions []string) (*service.MessageDTO, error)
+	Edit(roomUUID, messageUUID string, actor service.MessageActor, content string) (*service.MessageDTO, error)
+	Delete(roomUUID, messageUUID string, actor service.MessageActor, canDeleteOthers bool) error
+	React(roomUUID, messageUUID string, actor service.MessageActor, emoji string) error
+	Unreact(roomUUID, messageUUID string, actor service.MessageActor, emoji string) error
 }
 
 // messageSendPayload is the client->server payload for message:send.
 type messageSendPayload struct {
 	Room        string   `json:"room"`
+	DomainUUID  string   `json:"domain_uuid,omitempty"`
 	Content     string   `json:"content"`
 	ReplyTo     string   `json:"reply_to,omitempty"`
 	Mentions    []string `json:"mentions,omitempty"`
@@ -32,6 +33,7 @@ type messageSendPayload struct {
 // targeting an existing message (edit/delete/react/unreact).
 type messageMutatePayload struct {
 	Room        string `json:"room"`
+	DomainUUID  string `json:"domain_uuid,omitempty"`
 	MessageUUID string `json:"message_uuid"`
 	Content     string `json:"content,omitempty"`
 	Emoji       string `json:"emoji,omitempty"`
@@ -39,16 +41,25 @@ type messageMutatePayload struct {
 
 // resolveMessageRoom looks up a DB room by name, validates the conn slot,
 // and returns (roomUUID, roomType) or an ack error string.
-func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, roomName string) (roomUUID, roomType string, ackErr string) {
+func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, roomName, domainUUID string) (roomUUID, roomType string, ackErr string) {
 	identity := clientIdentity(c)
 	if identity == "" {
+		return "", "", `{"error":"unauthorized"}`
+	}
+	if c == nil || c.Claims() == nil || c.Claims().UserUUID == "" {
 		return "", "", `{"error":"unauthorized"}`
 	}
 
 	if h.roomStore == nil {
 		return "", "", `{"error":"room store unavailable"}`
 	}
-	dbRoom, err := h.roomStore.GetByName(roomName)
+	var dbRoom *model.Room
+	var err error
+	if domainUUID != "" {
+		dbRoom, err = h.roomStore.GetByDomainAndName(domainUUID, roomName)
+	} else {
+		dbRoom, err = h.roomStore.GetByName(roomName)
+	}
 	if err != nil || dbRoom == nil {
 		return "", "", fmt.Sprintf(`{"error":"room not found: %s"}`, roomName)
 	}
@@ -86,6 +97,14 @@ func (h *Hub) checkMessagePerm(c ws.ClientMessenger) string {
 	return ""
 }
 
+func messageActorFromConn(c ws.ClientMessenger) (service.MessageActor, bool) {
+	identity := clientIdentity(c)
+	if identity == "" || c == nil || c.Claims() == nil || c.Claims().UserUUID == "" {
+		return service.MessageActor{}, false
+	}
+	return service.MessageActor{Identity: identity, UserUUID: c.Claims().UserUUID}, true
+}
+
 // OnMessageSend handles message:send events from clients.
 func (h *Hub) OnMessageSend(c ws.ClientMessenger, data string) (string, error) {
 	if h.msgSvc == nil {
@@ -100,17 +119,17 @@ func (h *Hub) OnMessageSend(c ws.ClientMessenger, data string) (string, error) {
 		return marshalAck(map[string]interface{}{"error": "room is required"})
 	}
 
-	identity := clientIdentity(c)
-	if identity == "" {
+	actor, ok := messageActorFromConn(c)
+	if !ok {
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room)
+	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
 	if ackErr != "" {
 		return ackErr, nil
 	}
 
-	if _, err := h.msgSvc.Send(roomUUID, identity, req.Content, req.ReplyTo, req.ClientNonce, req.Mentions); err != nil {
+	if _, err := h.msgSvc.Send(roomUUID, actor, req.Content, req.ReplyTo, req.ClientNonce, req.Mentions); err != nil {
 		return marshalAck(map[string]interface{}{"error": err.Error()})
 	}
 	return marshalAck(map[string]interface{}{"success": true})
@@ -130,17 +149,17 @@ func (h *Hub) OnMessageEdit(c ws.ClientMessenger, data string) (string, error) {
 		return marshalAck(map[string]interface{}{"error": "room and message_uuid are required"})
 	}
 
-	identity := clientIdentity(c)
-	if identity == "" {
+	actor, ok := messageActorFromConn(c)
+	if !ok {
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room)
+	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
 	if ackErr != "" {
 		return ackErr, nil
 	}
 
-	if _, err := h.msgSvc.Edit(roomUUID, req.MessageUUID, identity, req.Content); err != nil {
+	if _, err := h.msgSvc.Edit(roomUUID, req.MessageUUID, actor, req.Content); err != nil {
 		return marshalAck(map[string]interface{}{"error": err.Error()})
 	}
 	return marshalAck(map[string]interface{}{"success": true})
@@ -160,12 +179,12 @@ func (h *Hub) OnMessageDelete(c ws.ClientMessenger, data string) (string, error)
 		return marshalAck(map[string]interface{}{"error": "room and message_uuid are required"})
 	}
 
-	identity := clientIdentity(c)
-	if identity == "" {
+	actor, ok := messageActorFromConn(c)
+	if !ok {
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room)
+	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
 	if ackErr != "" {
 		return ackErr, nil
 	}
@@ -176,7 +195,7 @@ func (h *Hub) OnMessageDelete(c ws.ClientMessenger, data string) (string, error)
 		canDeleteOthers = h.permChecker.HasPermission(claims.Role, permcode.PermMessageDeleteOthers)
 	}
 
-	if err := h.msgSvc.Delete(roomUUID, req.MessageUUID, identity, canDeleteOthers); err != nil {
+	if err := h.msgSvc.Delete(roomUUID, req.MessageUUID, actor, canDeleteOthers); err != nil {
 		return marshalAck(map[string]interface{}{"error": err.Error()})
 	}
 	return marshalAck(map[string]interface{}{"success": true})
@@ -196,17 +215,17 @@ func (h *Hub) OnMessageReact(c ws.ClientMessenger, data string) (string, error) 
 		return marshalAck(map[string]interface{}{"error": "room, message_uuid, and emoji are required"})
 	}
 
-	identity := clientIdentity(c)
-	if identity == "" {
+	actor, ok := messageActorFromConn(c)
+	if !ok {
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room)
+	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
 	if ackErr != "" {
 		return ackErr, nil
 	}
 
-	if err := h.msgSvc.React(roomUUID, req.MessageUUID, identity, req.Emoji); err != nil {
+	if err := h.msgSvc.React(roomUUID, req.MessageUUID, actor, req.Emoji); err != nil {
 		return marshalAck(map[string]interface{}{"error": err.Error()})
 	}
 	return marshalAck(map[string]interface{}{"success": true})
@@ -226,17 +245,17 @@ func (h *Hub) OnMessageUnreact(c ws.ClientMessenger, data string) (string, error
 		return marshalAck(map[string]interface{}{"error": "room, message_uuid, and emoji are required"})
 	}
 
-	identity := clientIdentity(c)
-	if identity == "" {
+	actor, ok := messageActorFromConn(c)
+	if !ok {
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room)
+	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
 	if ackErr != "" {
 		return ackErr, nil
 	}
 
-	if err := h.msgSvc.Unreact(roomUUID, req.MessageUUID, identity, req.Emoji); err != nil {
+	if err := h.msgSvc.Unreact(roomUUID, req.MessageUUID, actor, req.Emoji); err != nil {
 		return marshalAck(map[string]interface{}{"error": err.Error()})
 	}
 	return marshalAck(map[string]interface{}{"success": true})

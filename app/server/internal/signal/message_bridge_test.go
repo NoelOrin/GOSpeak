@@ -18,29 +18,31 @@ type mockMessageSvc struct {
 	deleteCalled  int
 	reactCalled   int
 	unreactCalled int
+	lastRoomUUID  string
 }
 
-func (m *mockMessageSvc) Send(roomUUID, authorID, content, replyTo, clientNonce string, mentions []string) (*service.MessageDTO, error) {
+func (m *mockMessageSvc) Send(roomUUID string, actor service.MessageActor, content, replyTo, clientNonce string, mentions []string) (*service.MessageDTO, error) {
 	m.sendCalled++
-	return &service.MessageDTO{UUID: "mock-uuid", RoomUUID: roomUUID, AuthorID: authorID, Content: content}, nil
+	m.lastRoomUUID = roomUUID
+	return &service.MessageDTO{UUID: "mock-uuid", RoomUUID: roomUUID, AuthorID: actor.Identity, Content: content}, nil
 }
 
-func (m *mockMessageSvc) Edit(roomUUID, messageUUID, authorID, content string) (*service.MessageDTO, error) {
+func (m *mockMessageSvc) Edit(roomUUID, messageUUID string, actor service.MessageActor, content string) (*service.MessageDTO, error) {
 	m.editCalled++
 	return &service.MessageDTO{UUID: messageUUID, Content: content}, nil
 }
 
-func (m *mockMessageSvc) Delete(roomUUID, messageUUID, actorID string, canDeleteOthers bool) error {
+func (m *mockMessageSvc) Delete(roomUUID, messageUUID string, actor service.MessageActor, canDeleteOthers bool) error {
 	m.deleteCalled++
 	return nil
 }
 
-func (m *mockMessageSvc) React(roomUUID, messageUUID, userID, emoji string) error {
+func (m *mockMessageSvc) React(roomUUID, messageUUID string, actor service.MessageActor, emoji string) error {
 	m.reactCalled++
 	return nil
 }
 
-func (m *mockMessageSvc) Unreact(roomUUID, messageUUID, userID, emoji string) error {
+func (m *mockMessageSvc) Unreact(roomUUID, messageUUID string, actor service.MessageActor, emoji string) error {
 	m.unreactCalled++
 	return nil
 }
@@ -203,6 +205,52 @@ func TestOnMessageSend_Success(t *testing.T) {
 	}
 }
 
+func TestOnMessageSend_UsesDomainScopedRoom(t *testing.T) {
+	store := &mockRoomStore{rooms: []model.Room{
+		{UUID: "uuid-domain", Name: "text-chat", Type: model.RoomTypeText, DomainUUID: "domain-a"},
+		{UUID: "uuid-platform", Name: "text-chat", Type: model.RoomTypeText},
+	}}
+	h := newTestHub()
+	h.roomStore = store
+	msgSvc := &mockMessageSvc{}
+	h.SetMessageService(msgSvc)
+	conn := newAuthedMockClient("conn-1", "alice")
+
+	if _, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"alice","domain_uuid":"domain-a"}`); err != nil {
+		t.Fatalf("join domain text room: %v", err)
+	}
+	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","domain_uuid":"domain-a","content":"hello"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var ackMap map[string]interface{}
+	json.Unmarshal([]byte(ack), &ackMap)
+	if ackMap["success"] != true {
+		t.Errorf("expected success, got %v", ackMap)
+	}
+	if msgSvc.lastRoomUUID != "uuid-domain" {
+		t.Fatalf("expected domain room UUID, got %s", msgSvc.lastRoomUUID)
+	}
+}
+
+func TestOnMessageSend_RejectsMissingUserUUID(t *testing.T) {
+	store := newMockRoomStoreWithType("text-chat", model.RoomTypeText)
+	h := newTestHub()
+	h.roomStore = store
+	h.SetMessageService(&mockMessageSvc{})
+	conn := newAuthedMockClient("conn-1", "alice")
+	conn.claims.UserUUID = ""
+	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","content":"hello"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var ackMap map[string]interface{}
+	json.Unmarshal([]byte(ack), &ackMap)
+	if ackMap["error"] != "unauthorized" {
+		t.Errorf("expected unauthorized, got %v", ackMap)
+	}
+}
+
 func TestOnMessageSend_Unauthed(t *testing.T) {
 	store := newMockRoomStoreWithType("text-chat", model.RoomTypeText)
 	h := NewHub(store, nil, nil, nil)
@@ -297,7 +345,7 @@ func TestResolveMessageRoom_IdentityRequired(t *testing.T) {
 
 	conn := newMockClient("conn-1") // no claims
 
-	_, _, ackErr := h.resolveMessageRoom(conn, "text-chat")
+	_, _, ackErr := h.resolveMessageRoom(conn, "text-chat", "")
 	if ackErr == "" {
 		t.Fatal("expected error")
 	}
