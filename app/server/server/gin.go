@@ -322,13 +322,13 @@ func StartGin(env EnvEnum) {
 	userH := handler.NewUserHandler(userSvc, storageSvc)
 	oauthH := handler.NewOAuthHandler(oauthSvc)
 	roleH := handler.NewRoleHandler(roleSvc)
-	roomH := handler.NewRoomHandler(roomSvc, permSvc)
-	msgH := handler.NewMessageHandler(messageSvc, permSvc)
-	permH := handler.NewPermissionHandler(permSvc)
-	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
 	domainSvc := service.NewDomainService(repository.NewDomainRepository(repository.DB))
 	middleware.SetDomainChecker(domainSvc.IsMember)
 	signalHub.SetDomainChecker(domainSvc.IsMember)
+	roomH := handler.NewRoomHandler(roomSvc, permSvc, domainSvc)
+	msgH := handler.NewMessageHandler(messageSvc, permSvc)
+	permH := handler.NewPermissionHandler(permSvc)
+	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
 	conversationSvc := service.NewConversationService(conversationRepo, messageRepo)
 	conversationSvc.SetEventBus(eventBus)
 	signalHub.SetConversationService(conversationSvc)
@@ -377,7 +377,7 @@ func StartGin(env EnvEnum) {
 		SRSCallback:  srsCallbackH,
 		Bot:          botH,
 		Plugin:       pluginH,
-		Domain:        domainH,
+		Domain:       domainH,
 		Conversation: conversationH,
 		PluginHost:   pluginHost,
 	})

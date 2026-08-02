@@ -11,12 +11,13 @@ import (
 )
 
 type RoomHandler struct {
-	roomSvc *service.RoomService
-	permSvc *service.PermissionService
+	roomSvc   *service.RoomService
+	permSvc   *service.PermissionService
+	domainSvc *service.DomainService
 }
 
-func NewRoomHandler(roomSvc *service.RoomService, permSvc *service.PermissionService) *RoomHandler {
-	return &RoomHandler{roomSvc: roomSvc, permSvc: permSvc}
+func NewRoomHandler(roomSvc *service.RoomService, permSvc *service.PermissionService, domainSvc *service.DomainService) *RoomHandler {
+	return &RoomHandler{roomSvc: roomSvc, permSvc: permSvc, domainSvc: domainSvc}
 }
 
 func currentUserUUID(c *gin.Context) string {
@@ -33,6 +34,25 @@ func currentUserUUID(c *gin.Context) string {
 	return ""
 }
 
+func (h *RoomHandler) canManageRoom(c *gin.Context, room *model.Room, perm string) bool {
+	username, _ := c.Get("username")
+	usernameStr, _ := username.(string)
+	if h.permSvc != nil && h.permSvc.HasPermission(roleFromContext(c), perm) {
+		return true
+	}
+	if room.DomainUUID != "" && h.domainSvc != nil &&
+		h.domainSvc.HasDomainRole(room.DomainUUID, currentUserUUID(c), service.DomainRoleAdmin) {
+		return true
+	}
+	return room.CreatedBy == usernameStr
+}
+
+func roleFromContext(c *gin.Context) string {
+	role, _ := c.Get("role")
+	roleStr, _ := role.(string)
+	return roleStr
+}
+
 type CreateRoomRequest struct {
 	Name          string `json:"name" binding:"required"`
 	Password      string `json:"password"`
@@ -41,7 +61,7 @@ type CreateRoomRequest struct {
 	AudioOnly     *bool  `json:"audio_only"`
 	AllowAudience *bool  `json:"allow_audience"`
 	Type          string `json:"type"`
-	DomainUUID     string `json:"domain_uuid"`
+	DomainUUID    string `json:"domain_uuid"`
 }
 
 // Create
@@ -138,9 +158,9 @@ func (h *RoomHandler) Get(c *gin.Context) {
 // @Router       /room/list [post]
 func (h *RoomHandler) List(c *gin.Context) {
 	var req struct {
-		Page      int    `json:"page"`
-		PageSize  int    `json:"page_size"`
-		Type      string `json:"type"`
+		Page       int    `json:"page"`
+		PageSize   int    `json:"page_size"`
+		Type       string `json:"type"`
 		DomainUUID string `json:"domain_uuid"`
 	}
 	_ = c.ShouldBindJSON(&req)
@@ -214,24 +234,9 @@ func (h *RoomHandler) Update(c *gin.Context) {
 		return
 	}
 
-	// 资源归属校验：非 room:update 权限的用户只能编辑自己创建的房间
-	usernameVal, ok := c.Get("username")
-	if !ok {
-		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+	if !h.canManageRoom(c, room, permcode.PermRoomUpdate) {
+		pkg.Fail(c, pkg.FORBIDDEN, "没有权限编辑该房间")
 		return
-	}
-	username, _ := usernameVal.(string)
-	roleVal, ok := c.Get("role")
-	if !ok {
-		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
-		return
-	}
-	roleStr, _ := roleVal.(string)
-	if h.permSvc == nil || !h.permSvc.HasPermission(roleStr, permcode.PermRoomUpdate) {
-		if room.CreatedBy != username {
-			pkg.Fail(c, pkg.FORBIDDEN, "只能编辑自己创建的房间")
-			return
-		}
 	}
 
 	if req.Name != nil {
@@ -285,6 +290,11 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 
 	if room.DomainUUID != "" && !middleware.IsDomainMember(room.DomainUUID, currentUserUUID(c)) {
 		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
+		return
+	}
+
+	if !h.canManageRoom(c, room, permcode.PermRoomDelete) {
+		pkg.Fail(c, pkg.FORBIDDEN, "没有权限删除该房间")
 		return
 	}
 
