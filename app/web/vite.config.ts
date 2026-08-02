@@ -87,7 +87,8 @@ export default defineConfig(async ({ mode }) => {
         },
       },
       // 打包结果可视化
-      ...(isProduction ? [{
+      // 默认关闭，需要时 BUILD_STATS=1 pnpm build
+      ...(isProduction && process.env.BUILD_STATS === "1" ? [{
         ...visualizer({
           filename: "dist/stats.html",
           title: "Bundle Analyzer",

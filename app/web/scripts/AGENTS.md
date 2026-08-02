@@ -33,8 +33,10 @@ cui-solid 升级新增图标 import 同理自动收录。
 
 ### 验证
 
+默认构建不输出 `stats.html`，验证树摇结果时显式开启：
+
 ```bash
-pnpm build
+BUILD_STATS=1 pnpm build
 python3 -c "
 import json,json.decoder as jd
 h=open('dist/stats.html',encoding='utf-8').read()

@@ -20,11 +20,9 @@ components/
 │   ├── input.tsx         # 消息输入
 │   └── output.tsx        # 消息展示
 ├── modal/          # 弹窗组件
-│   ├── searchModal.tsx   # 搜索弹窗
 │   └── settting/         # 设置弹窗（子目录）
 ├── form/           # 表单组件
 ├── home/           # 首页组件
-├── funcButton.tsx  # 功能按钮（固定在主区域右下角）
 ├── svgIcon.tsx     # SVG 图标组件
 └── userBar.tsx     # 底部用户栏（头像/状态/音量控制）
 ```

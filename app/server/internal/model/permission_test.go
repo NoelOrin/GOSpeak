@@ -19,6 +19,8 @@ func TestDefaultPermissionsContainDomainCodes(t *testing.T) {
 		permcode.PermDomainInvite,
 		permcode.PermDomainKick,
 		permcode.PermDomainRoleManage,
+		permcode.PermClusterRead,
+		permcode.PermClusterManage,
 	} {
 		if _, ok := codes[code]; !ok {
 			t.Errorf("DefaultPermissions missing %q", code)
@@ -39,6 +41,8 @@ func TestDefaultRolePermissionsContainDomainCodes(t *testing.T) {
 		permcode.PermDomainInvite,
 		permcode.PermDomainKick,
 		permcode.PermDomainRoleManage,
+		permcode.PermClusterRead,
+		permcode.PermClusterManage,
 	} {
 		if _, ok := admin[code]; !ok {
 			t.Errorf("admin role missing %q", code)

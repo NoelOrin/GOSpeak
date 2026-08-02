@@ -424,6 +424,7 @@ export interface GetJoinTokenParams {
 export interface JoinTokenResponse {
 	token: string;
 	serverUrl: string;
+	workerUrl?: string;
 	room: string;
 	identity: string;
 	provider?: SFUProvider;
