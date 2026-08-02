@@ -157,6 +157,16 @@ func (s *MessageService) requireDomainMembership(room *model.Room, actor Message
 	return nil
 }
 
+// broadcastRoomKey constructs the domain-scoped composite room key used by the
+// signal layer's fanout.  This mirrors signal.roomKey so that broadcasts
+// actually reach clients joined via Hub.OnRoomJoin.
+func broadcastRoomKey(domainUUID, roomName string) string {
+	if domainUUID == "" {
+		return roomName
+	}
+	return domainUUID + ":" + roomName
+}
+
 // Send creates and broadcasts a new text message, then enqueues async persist.
 // Returns the MessageDTO on success.
 func (s *MessageService) Send(roomUUID string, actor MessageActor, content, replyTo, clientNonce string, mentions []string) (*MessageDTO, error) {
@@ -201,7 +211,7 @@ func (s *MessageService) Send(roomUUID string, actor MessageActor, content, repl
 
 	// 1) broadcast first (fire-and-forget; bus nil or error is acceptable)
 	if s.bus != nil {
-		_ = s.bus.PublishRoom(context.Background(), room.Name, "message:created", dto)
+		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:created", dto)
 	}
 
 	// 2) enqueue persist; fall back to sync DB write on failure
@@ -292,7 +302,7 @@ func (s *MessageService) Edit(roomUUID, messageUUID string, actor MessageActor, 
 
 	// 1) broadcast first
 	if s.bus != nil {
-		_ = s.bus.PublishRoom(context.Background(), room.Name, "message:updated", dto)
+		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:updated", dto)
 	}
 
 	// 2) enqueue mutate
@@ -352,7 +362,7 @@ func (s *MessageService) Delete(roomUUID, messageUUID string, actor MessageActor
 		CreatedAt: msg.CreatedAt,
 	}
 	if s.bus != nil {
-		_ = s.bus.PublishRoom(context.Background(), room.Name, "message:deleted", dto)
+		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:deleted", dto)
 	}
 
 	// 2) enqueue mutate
@@ -403,7 +413,7 @@ func (s *MessageService) React(roomUUID, messageUUID string, actor MessageActor,
 
 	// 1) broadcast first
 	if s.bus != nil {
-		_ = s.bus.PublishRoom(context.Background(), room.Name, "message:reaction", map[string]interface{}{
+		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:reaction", map[string]interface{}{
 			"action":       "added",
 			"message_uuid": messageUUID,
 			"user_id":      actor.Identity,
@@ -465,7 +475,7 @@ func (s *MessageService) Unreact(roomUUID, messageUUID string, actor MessageActo
 
 	// 1) broadcast first
 	if s.bus != nil {
-		_ = s.bus.PublishRoom(context.Background(), room.Name, "message:reaction", map[string]interface{}{
+		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:reaction", map[string]interface{}{
 			"action":       "removed",
 			"message_uuid": messageUUID,
 			"user_id":      actor.Identity,

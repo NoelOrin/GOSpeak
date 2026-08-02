@@ -793,7 +793,7 @@ func TestHub_GetRoomMembers_NotFound(t *testing.T) {
 // ─── GetRooms Tests ───
 
 func TestHub_GetMergedRooms_DBOnly(t *testing.T) {
-	hub := NewHub(newMockRoomStore("综合大厅", "游戏频道", "音乐房间"), nil, nil, nil)
+	hub := NewHub(newMockRoomStore("综合大厅", "游戏房", "音乐房间"), nil, nil, nil)
 	server := newMockBroadcaster()
 	hub.fanout = server
 
@@ -806,7 +806,7 @@ func TestHub_GetMergedRooms_DBOnly(t *testing.T) {
 	for _, r := range rooms {
 		names[r.Name] = true
 	}
-	for _, name := range []string{"综合大厅", "游戏频道", "音乐房间"} {
+	for _, name := range []string{"综合大厅", "游戏房", "音乐房间"} {
 		if !names[name] {
 			t.Errorf("expected room %s in result", name)
 		}

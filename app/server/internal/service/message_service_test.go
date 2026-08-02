@@ -24,13 +24,15 @@ import (
 
 type fakeBus struct {
 	mu    sync.Mutex
-	calls []string // event names recorded
+	calls []string     // event names recorded
+	rooms []string     // room keys recorded
 }
 
 func (f *fakeBus) PublishRoom(_ context.Context, room, event string, payload interface{}) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, event)
+	f.rooms = append(f.rooms, room)
 	return nil
 }
 
@@ -38,6 +40,7 @@ func (f *fakeBus) reset() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = nil
+	f.rooms = nil
 }
 
 type fakeQueue struct {
@@ -1160,4 +1163,95 @@ func TestMessageService_Search_RejectsVoiceRoom(t *testing.T) {
 	voiceUUID := mustFindVoiceUUID(roomRepo)
 	_, err := svc.Search(voiceUUID, testActorWithUUID("alice", "uuid-alice"), "needle")
 	assertErrorCode(t, err, pkg.FORBIDDEN)
+}
+
+// ─── broadcastRoomKey Tests ───
+
+func TestBroadcastRoomKey_PlatformRoom(t *testing.T) {
+	got := broadcastRoomKey("", "my-room")
+	if got != "my-room" {
+		t.Errorf("expected 'my-room', got %q", got)
+	}
+}
+
+func TestBroadcastRoomKey_DomainRoom(t *testing.T) {
+	got := broadcastRoomKey("dom-123", "my-room")
+	if got != "dom-123:my-room" {
+		t.Errorf("expected 'dom-123:my-room', got %q", got)
+	}
+}
+
+// ─── Domain-scoped broadcast room key tests ───
+
+func TestMessageService_Send_BroadcastUsesDomainScopedKey(t *testing.T) {
+	svc, bus, _, roomRepo, textUUID := setupMessageServiceTest(t)
+	svc.SetEventBus(bus)
+
+	// Add a domain-scoped text room
+	domainRoomUUID := uuid.New().String()
+	roomRepo.mu.Lock()
+	roomRepo.rooms[domainRoomUUID] = &model.Room{
+		UUID:       domainRoomUUID,
+		Name:       "domain-text-room",
+		Type:       model.RoomTypeText,
+		DomainUUID: "guild-abc",
+	}
+	roomRepo.mu.Unlock()
+
+	_, err := svc.Send(domainRoomUUID, testActorWithUUID("alice", "uuid-alice"), "hello", "", "", nil)
+	assertNoError(t, err)
+
+	if len(bus.rooms) != 1 {
+		t.Fatalf("expected 1 broadcast, got %d", len(bus.rooms))
+	}
+	if bus.rooms[0] != "guild-abc:domain-text-room" {
+		t.Errorf("expected domain-scoped room key 'guild-abc:domain-text-room', got %q", bus.rooms[0])
+	}
+}
+
+func TestMessageService_Send_BroadcastUsesPlainKeyForPlatformRoom(t *testing.T) {
+	svc, bus, _, _, _ := setupMessageServiceTest(t)
+	svc.SetEventBus(bus)
+
+	_, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "hello", "", "", nil)
+	assertNoError(t, err)
+
+	if len(bus.rooms) != 1 {
+		t.Fatalf("expected 1 broadcast, got %d", len(bus.rooms))
+	}
+	// Platform room (no DomainUUID) should use plain room name
+	if bus.rooms[0] != "test-text-room" {
+		t.Errorf("expected plain room key 'test-text-room', got %q", bus.rooms[0])
+	}
+}
+
+func TestMessageService_Edit_BroadcastUsesDomainScopedKey(t *testing.T) {
+	svc, bus, _, roomRepo, _ := setupMessageServiceTest(t)
+	svc.SetEventBus(bus)
+
+	domainRoomUUID := uuid.New().String()
+	roomRepo.mu.Lock()
+	roomRepo.rooms[domainRoomUUID] = &model.Room{
+		UUID:       domainRoomUUID,
+		Name:       "domain-room",
+		Type:       model.RoomTypeText,
+		DomainUUID: "guild-xyz",
+	}
+	roomRepo.mu.Unlock()
+
+	dto, err := svc.Send(domainRoomUUID, testActorWithUUID("alice", "uuid-alice"), "orig", "", "", nil)
+	assertNoError(t, err)
+
+	// Reset to only track the Edit broadcast
+	bus.reset()
+
+	_, err = svc.Edit(domainRoomUUID, dto.UUID, testActorWithUUID("alice", "uuid-alice"), "edited")
+	assertNoError(t, err)
+
+	if len(bus.rooms) != 1 {
+		t.Fatalf("expected 1 broadcast, got %d", len(bus.rooms))
+	}
+	if bus.rooms[0] != "guild-xyz:domain-room" {
+		t.Errorf("expected domain-scoped key, got %q", bus.rooms[0])
+	}
 }
