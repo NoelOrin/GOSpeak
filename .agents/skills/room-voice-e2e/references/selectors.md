@@ -11,15 +11,15 @@
 | 登录按钮 | role=button name=`登录` |
 | 强制改密 | 文案含 `修改密码` / `首次登录`（e2e 账号应避开默认 admin 首登） |
 
-## Channel 页 `/channel`
+## Domain 页 `/domain/$domainUUID`
 
-登录后 e2e 应进入 `/channel` 才有左侧房间列表。
+登录后 e2e 应进入域工作区 `/domain/:domainUUID` 才有左侧房间列表。
 
 ## Room List 左侧列表
 
 | 元素 | 选择器 / 文案 |
 |------|----------------|
-| 列表标题 | `服务器` |
+| 列表标题 | `语音域` |
 | 刷新 | button `刷新` |
 | 房间行 | 含房间名的列表项；**双击**进入 |
 | 创建入口 | `button[title="新建房间"]`（图标 +） |
@@ -35,7 +35,7 @@
 | 房间名称 | label `房间名称` / placeholder `例如：产品评审会` |
 | 房间密码 | label `房间密码` / placeholder `选填，留空表示公开房间` |
 | 人数上限 | label `人数上限`（默认 12） |
-| 创建后进入频道页 | label `创建后进入频道页`（默认 true；e2e 常关掉以便列表双击进房） |
+| 创建后进入域页 | label `创建后进入域页`（默认 true；e2e 常关掉以便列表双击进房） |
 | 弹窗标题 | heading `新建房间` |
 | 提交 | role=button name=`创建房间` |
 | 成功 toast | `已创建房间: {name}` |

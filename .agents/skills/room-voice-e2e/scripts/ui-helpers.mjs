@@ -27,7 +27,19 @@ export async function grantMediaPermissions(context) {
   });
 }
 
-export async function login(page, { username, password, goChannel = true }) {
+export async function firstDomainPath(page) {
+  return page.evaluate(async () => {
+    const token = localStorage.getItem("accessToken");
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch("/api/v1/domain/my-domains", { headers });
+    if (!res.ok) return "";
+    const body = await res.json();
+    const uuid = body?.data?.domain_uuids?.[0];
+    return uuid ? `/domain/${uuid}` : "";
+  });
+}
+
+export async function login(page, { username, password, goDomain = true }) {
   await page.goto("/login", { waitUntil: "domcontentloaded" });
   await page.getByPlaceholder("请输入用户名").fill(username);
   await page.getByPlaceholder("请输入密码").fill(password);
@@ -46,10 +58,23 @@ export async function login(page, { username, password, goChannel = true }) {
   });
   await page.waitForLoadState("networkidle").catch(() => {});
 
-  if (goChannel) {
-    await page.goto("/channel", { waitUntil: "domcontentloaded" });
-    // room list header
-    await page.getByText("服务器").first().waitFor({ state: "visible", timeout: 15000 });
+  if (goDomain) {
+    const domainPath = await firstDomainPath(page);
+    if (domainPath) {
+      await page.goto(domainPath, { waitUntil: "domcontentloaded" });
+      // room list header
+      await page
+        .getByText(/语音域|刷新/)
+        .first()
+        .waitFor({ state: "visible", timeout: 15000 });
+    } else {
+      await page.goto("/discover", { waitUntil: "domcontentloaded" });
+      await page
+        .getByText(/发现域|快捷进入已加入的语音域/)
+        .first()
+        .waitFor({ state: "visible", timeout: 15000 })
+        .catch(() => {});
+    }
     // socket connected eventually (room list or empty state)
     await page
       .getByText(/暂无房间|刷新/)
@@ -60,7 +85,7 @@ export async function login(page, { username, password, goChannel = true }) {
 }
 
 export async function openCreateRoomModal(page) {
-  // Channel sidebar uses icon button title="新建房间"; dashboard uses "快速创建房间".
+  // Domain sidebar uses icon button title="新建房间"; dashboard uses "快速创建房间".
   const createBtn = page
     .locator('button[title="新建房间"]')
     .or(page.getByRole("button", { name: /快速创建房间|创建房间|新建房间/ }))
@@ -104,7 +129,7 @@ export async function createRoom(page, { name, password = "", limit = "12", join
 
   // Default modal joins after create; for suite isolation prefer staying in list mode.
   if (!joinAfterCreate) {
-    const joinToggle = page.getByLabel("创建后进入频道页").first();
+    const joinToggle = page.getByLabel("创建后进入域页").first();
     if (await joinToggle.isVisible().catch(() => false)) {
       const checked = await joinToggle.isChecked().catch(() => true);
       if (checked) await joinToggle.click();
@@ -119,8 +144,11 @@ export async function createRoom(page, { name, password = "", limit = "12", join
 		.first()
 		.waitFor({ state: "attached", timeout: 15000 });
 
-	if (!page.url().includes("/channel")) {
-		await page.goto("/channel", { waitUntil: "domcontentloaded" });
+	if (!page.url().includes("/domain")) {
+		const domainPath = await firstDomainPath(page);
+		if (domainPath) {
+			await page.goto(domainPath, { waitUntil: "domcontentloaded" });
+		}
 	}
 	await page.waitForTimeout(1200);
 	return name;

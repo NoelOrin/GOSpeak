@@ -136,7 +136,7 @@ pnpm exec playwright install chromium firefox webkit
 | `media` | 单人推流/会话 | getUserMedia + PC/local track |
 | `multi-user` | 两用户同房 | 双方 ≥2 人在线 + 各自 remote audio |
 
-先进入 `/channel`。房间进入方式：**双击**左侧房间行（不是单击）；创建按钮是 `title="新建房间"` 的图标按钮。切房通常**不必先点离开**。
+先进入域工作区 `/domain/:domainUUID`。房间进入方式：**双击**左侧房间行（不是单击）；创建按钮是 `title="新建房间"` 的图标按钮。切房通常**不必先点离开**。
 
 ## Computer-use 流程
 
