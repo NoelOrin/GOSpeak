@@ -24,6 +24,7 @@ import (
 	swaggerRoutes "GOSpeak/internal/router/routes/swagger"
 	systemRoutes "GOSpeak/internal/router/routes/system"
 	userRoutes "GOSpeak/internal/router/routes/user"
+	userGroupRoutes "GOSpeak/internal/router/routes/user_group"
 
 	"net/http"
 	"os"
@@ -41,6 +42,7 @@ type Handlers struct {
 	Auth         *handler.AuthHandler
 	User         *handler.UserHandler
 	Signal       *handler.SignalHandler
+	UserGroup    *handler.UserGroupHandler
 	Cloudflare   *handler.CloudflareHandler
 	OAuth        *handler.OAuthHandler
 	Role         *handler.RoleHandler
@@ -86,6 +88,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	protected.Use(middleware.JWTAuth())
 	protected.Use(middleware.BanCheck())
 	userRoutes.Register(protected.Group("/user"), h.User)
+	userGroupRoutes.RegisterProtected(protected.Group("/user-group"), h.UserGroup)
 	authRoutes.RegisterProtected(protected.Group("/auth"), h.Auth)
 	signalRoutes.RegisterProtected(protected.Group("/signal"), h.Signal, h.Cloudflare)
 	oauthRoutes.RegisterAdmin(protected.Group("/oauth/admin"), h.OAuth)

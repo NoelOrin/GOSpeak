@@ -88,6 +88,7 @@ func StartGin(env EnvEnum) {
 
 	userRepo := repository.NewUserRepository(repository.DB)
 	adminUUID := seedAdminUser(userRepo)
+	userGroupRepo := repository.NewUserGroupRepository(repository.DB)
 	if adminUUID != "" {
 		if err := repository.EnsureDefaultDomain(repository.DB, adminUUID); err != nil {
 			logger.WithComponent("Seed").Warnf("同步默认语音域失败: %v", err)
@@ -120,6 +121,7 @@ func StartGin(env EnvEnum) {
 	authSvc := service.NewAuthService(userRepo, emailConfigSvc, emailVerificationSvc)
 	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
 	userSvc := service.NewUserService(userRepo, storageSvc)
+	userGroupSvc := service.NewUserGroupService(userGroupRepo)
 	oauthSvc := service.NewOAuthService(oauthProviderRepo, oauthAccountRepo, userRepo)
 	roomSvc := service.NewRoomService(roomRepo)
 	messageSvc := service.NewMessageService(messageRepo, roomRepo)
@@ -320,6 +322,7 @@ func StartGin(env EnvEnum) {
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)
 	emailConfigH := handler.NewEmailConfigHandler(emailConfigSvc)
 	userH := handler.NewUserHandler(userSvc, storageSvc)
+	userGroupH := handler.NewUserGroupHandler(userGroupSvc, userSvc)
 	oauthH := handler.NewOAuthHandler(oauthSvc)
 	roleH := handler.NewRoleHandler(roleSvc)
 	domainSvc := service.NewDomainService(repository.NewDomainRepository(repository.DB))
@@ -361,6 +364,7 @@ func StartGin(env EnvEnum) {
 	router.SetupRoutes(r, &router.Handlers{
 		Auth:         authH,
 		User:         userH,
+		UserGroup:    userGroupH,
 		Signal:       signalH,
 		Cloudflare:   cfH,
 		OAuth:        oauthH,
