@@ -118,30 +118,12 @@ describe("DomainMemberTable kick flow", () => {
 
 describe("Domain manage form validation", () => {
 	it("rejects an empty domain name", () => {
-		expect(validateDomainForm("   ", 20)).toEqual({
+		expect(validateDomainForm("   ")).toEqual({
 			name: "域名称不能为空",
 		});
 	});
 
-	it("rejects max_rooms below one", () => {
-		expect(validateDomainForm("Domain", 0)).toEqual({
-			maxRooms: "房间上限必须是大于等于 1 的整数",
-		});
-	});
-
-	it("rejects non-integer max_rooms", () => {
-		expect(validateDomainForm("Domain", 1.5)).toEqual({
-			maxRooms: "房间上限必须是大于等于 1 的整数",
-		});
-	});
-
-	it("rejects empty max_rooms", () => {
-		expect(validateDomainForm("Domain", "")).toEqual({
-			maxRooms: "房间上限必须是大于等于 1 的整数",
-		});
-	});
-
-	it("accepts a valid name and integer room limit", () => {
-		expect(validateDomainForm("  My Domain  ", 20)).toEqual({});
+	it("accepts a valid domain name", () => {
+		expect(validateDomainForm("  My Domain  ")).toEqual({});
 	});
 });

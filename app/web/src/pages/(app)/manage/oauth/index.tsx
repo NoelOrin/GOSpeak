@@ -158,7 +158,7 @@ function OAuthPage() {
 					enabled: enabled(),
 				};
 				if (clientSecret()) input.client_secret = clientSecret().trim();
-				const res = await updateProvider(input);
+				await updateProvider(input);
 				showToast("已更新", { type: "success" });
 			} else {
 				const input: any = {
@@ -178,12 +178,12 @@ function OAuthPage() {
 					email_field: emailField().trim(),
 					enabled: enabled(),
 				};
-				const res = await createProvider(input);
+				await createProvider(input);
 				showToast("已创建", { type: "success" });
 			}
 			closeForm();
 			refetch();
-		} catch (e: any) {
+		} catch {
 		} finally {
 			setSaving(false);
 		}
@@ -194,10 +194,10 @@ function OAuthPage() {
 			return;
 		setDeletingId(p.id);
 		try {
-			const res = await deleteProvider(p.id);
+			await deleteProvider(p.id);
 			showToast("已删除", { type: "success" });
 			refetch();
-		} catch (e: any) {
+		} catch {
 		} finally {
 			setDeletingId(null);
 		}

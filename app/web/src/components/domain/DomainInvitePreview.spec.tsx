@@ -13,7 +13,6 @@ const domain: Domain = {
 	description: "",
 	owner_uuid: "u-owner",
 	invite_code: "ABCDEFGH",
-	max_rooms: 10,
 	is_public: true,
 	created_at: "2026-01-01",
 };

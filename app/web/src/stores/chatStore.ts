@@ -61,7 +61,7 @@ export function remapRecordKey<T>(
 ): Record<string, T> {
 	if (!from || !to || from === to || !(from in records)) return records;
 	const next = { ...records };
-	next[to] = next[from];
+	next[to] = to in next ? next[to] : next[from];
 	delete next[from];
 	return next;
 }
@@ -125,6 +125,9 @@ export function remapConversationList(
 export const chatStore = createRoot(() => {
 	const [textRoom, setTextRoom] = createSignal<string | null>(null);
 	const [textRoomName, setTextRoomName] = createSignal<string | null>(null);
+	const [textRoomDomainUUID, setTextRoomDomainUUID] = createSignal<
+		string | null
+	>(null);
 	const [messages, setMessages] = createSignal<MessageDTO[]>([]);
 	const [hasMore, setHasMore] = createSignal(false);
 	const [nextBefore, setNextBefore] = createSignal<string | null>(null);
@@ -203,9 +206,13 @@ export const chatStore = createRoot(() => {
 		uuid: string;
 		name: string;
 		password?: string;
+		domain_uuid?: string;
 	}) {
 		setTextRoom(room.uuid);
 		setTextRoomName(room.name);
+		setTextRoomDomainUUID(
+			room.domain_uuid ?? socketStore.currentDomainUUID() ?? null,
+		);
 		setMessages([]);
 		setHasMore(false);
 		setNextBefore(null);
@@ -217,6 +224,8 @@ export const chatStore = createRoot(() => {
 			if (socket?.isConnected()) {
 				socket.emitFireAndForget(EVENTS.ROOM_JOIN, {
 					room: room.name,
+					domain_uuid:
+						room.domain_uuid ?? socketStore.currentDomainUUID() ?? undefined,
 					...(room.password ? { password: room.password } : {}),
 				});
 			}
@@ -230,6 +239,7 @@ export const chatStore = createRoot(() => {
 		removeListeners();
 		setTextRoom(null);
 		setTextRoomName(null);
+		setTextRoomDomainUUID(null);
 		setMessages([]);
 		setHasMore(false);
 		setNextBefore(null);
@@ -309,6 +319,7 @@ export const chatStore = createRoot(() => {
 			void socket
 				.emitAck(EVENTS.MESSAGE_SEND, {
 					room: roomName,
+					domain_uuid: textRoomDomainUUID() ?? undefined,
 					content,
 					reply_to: opts?.reply_to ?? "",
 					mentions: opts?.mentions ?? [],
@@ -386,6 +397,7 @@ export const chatStore = createRoot(() => {
 		if (socket?.isConnected()) {
 			socket.emitFireAndForget(EVENTS.MESSAGE_DELETE, {
 				room: roomName,
+				domain_uuid: textRoomDomainUUID() ?? undefined,
 				message_uuid: messageUUID,
 			});
 		}

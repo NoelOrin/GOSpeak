@@ -86,7 +86,7 @@ function UsersPage() {
 			await updateUserRole(userId, newRole);
 			showToast("角色已更新", { type: "success" });
 			_refetchUsers();
-		} catch (e: any) {}
+		} catch {}
 	};
 
 	const handleDeleteUser = async (userId: number) => {
@@ -99,7 +99,7 @@ function UsersPage() {
 			await deleteUser(userId);
 			showToast("用户已删除", { type: "success" });
 			_refetchUsers();
-		} catch (e: any) {}
+		} catch {}
 	};
 
 	// Mute management
@@ -138,7 +138,7 @@ function UsersPage() {
 			setMutePerm(false);
 			setMuteReason("");
 			_refetchMutes();
-		} catch (e: any) {
+		} catch {
 		} finally {
 			setSubmitting(false);
 		}
@@ -154,7 +154,7 @@ function UsersPage() {
 			await cancelMute(uid);
 			showToast("禁言已解除", { type: "success" });
 			_refetchMutes();
-		} catch (e: any) {
+		} catch {
 		} finally {
 			setCancellingId(null);
 		}

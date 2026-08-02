@@ -167,7 +167,6 @@ function RouteComponent() {
 						分享邀请
 					</button>
 				</Show>
-				<span>成员上限: {domain()?.max_rooms || "无限"}</span>
 			</div>
 			<div class="flex gap-2">
 				<Show when={canManage()}>

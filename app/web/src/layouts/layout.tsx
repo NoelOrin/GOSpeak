@@ -16,7 +16,6 @@ import {
 	Show,
 } from "solid-js";
 import DynamicRender from "@/components/common/dynamicRender";
-// import FuncButton from "@/components/funcButton";
 import SettingModal from "@/components/modal/settting/settingModal";
 import MemberSidebar from "@/components/room/components/memberSidebar";
 import RoomDetail from "@/components/room/roomDetail";
@@ -301,7 +300,6 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 								{children}
 							</div>
 							<DomainWorkspace isDomain={isDomain} />
-							{/* <FuncButton /> */}
 						</Main>
 					</Slot>
 				</Split>

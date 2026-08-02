@@ -33,13 +33,6 @@ const HomePage = () => {
 
 	return (
 		<div class="flex h-full min-h-0 min-w-0 flex-col overflow-y-auto bg-base-100">
-			<div class="min-w-0 border-b border-base-300 px-4 pb-3 pt-4">
-				<h2 class="text-base font-semibold">快捷入口</h2>
-				<p class="mt-1 text-xs leading-5 text-base-content/60">
-					创建房间、进入最近频道，快速开始语音或文字会话。
-				</p>
-			</div>
-
 			<div class="min-w-0 px-2 py-1">
 				<QuickActions compact />
 			</div>

@@ -23,12 +23,12 @@ export default function MessageItem(props: MessageItemProps) {
 	};
 
 	const displayName = () => {
-		const short =
-			msg().author_id.length > 8
-				? `${msg().author_id.slice(0, 8)}...`
-				: msg().author_id;
+		const name = msg().author_name || msg().author_id;
+		const short = name.length > 8 ? `${name.slice(0, 8)}...` : name;
 		return short || "?";
 	};
+
+	const avatarUrl = () => msg().author_avatar || "";
 
 	const replyMessage = () =>
 		msg().reply_to
@@ -68,8 +68,10 @@ export default function MessageItem(props: MessageItemProps) {
 						<CornerDownRight class="size-3 shrink-0 mt-0.5 text-base-content/40" />
 						<span class="text-[11px] text-base-content/50 truncate">
 							<Show when={!reply().deleted}>
-								<strong class="font-semibold">{reply().author_id}</strong>:{" "}
-								{reply().content}
+								<strong class="font-semibold">
+									{reply().author_name || reply().author_id}
+								</strong>
+								: {reply().content}
 							</Show>
 							<Show when={reply().deleted}>[消息已删除]</Show>
 						</span>
@@ -78,9 +80,20 @@ export default function MessageItem(props: MessageItemProps) {
 			</Show>
 
 			<div class="flex items-center gap-2 mb-0.5">
-				<div class="size-6 rounded-full bg-primary text-primary-content text-[11px] flex items-center justify-center font-bold shrink-0">
-					{displayName().charAt(0).toUpperCase()}
-				</div>
+				<Show
+					when={avatarUrl()}
+					fallback={
+						<div class="size-6 rounded-full bg-primary text-primary-content text-[11px] flex items-center justify-center font-bold shrink-0">
+							{displayName().charAt(0).toUpperCase()}
+						</div>
+					}
+				>
+					<img
+						src={avatarUrl()}
+						alt={displayName()}
+						class="size-6 rounded-full object-cover shrink-0"
+					/>
+				</Show>
 				<span class="text-sm font-semibold text-base-content leading-tight">
 					{displayName()}
 				</span>

@@ -110,7 +110,7 @@ function ApiKeyPage() {
 			setSelectedPermissions([]);
 			setExpiry("720h");
 			refetch();
-		} catch (e: any) {
+		} catch {
 		} finally {
 			setCreating(false);
 		}
@@ -142,11 +142,11 @@ function ApiKeyPage() {
 		if (!key) return;
 		setRevokingUuid(key.uuid);
 		try {
-			const res = await revokeBotKey(key.uuid);
+			await revokeBotKey(key.uuid);
 			showToast("密钥已吊销", { type: "success" });
 			closeRevokeModal();
 			refetch();
-		} catch (e: any) {
+		} catch {
 		} finally {
 			setRevokingUuid(null);
 		}

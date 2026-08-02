@@ -19,6 +19,7 @@ const PasswordModal = ({ room, onClose }: PasswordModalProps) => {
 				uuid: room.uuid,
 				name: room.name,
 				password: pwd,
+				domain_uuid: room.domain_uuid,
 			});
 		} else {
 			// 设置选择的房间，把密码暂存到 selectedRoomInfo 上供 joinRoom 使用
