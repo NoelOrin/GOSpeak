@@ -1,25 +1,36 @@
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import ArrowLeft from "lucide-solid/icons/arrow-left";
+import CirclePlus from "lucide-solid/icons/circle-plus";
 import Globe from "lucide-solid/icons/globe";
 import Lock from "lucide-solid/icons/lock";
 import Save from "lucide-solid/icons/save";
 import Settings2 from "lucide-solid/icons/settings-2";
-import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import {
+	createEffect,
+	createMemo,
+	createSignal,
+	Show,
+	untrack,
+} from "solid-js";
 import { showToast } from "solid-notifications";
 import type { DomainMember } from "@/api/domain";
 import { kickDomainMember, updateDomain } from "@/api/domain";
+import { deleteRoom, listRooms, type RoomRecord } from "@/api/room";
 import ConfirmModal from "@/components/common/ConfirmModal";
+import DomainMemberTable, {
+	executeKickMember,
+} from "@/components/domain/DomainMemberTable";
+import DomainRoomTable from "@/components/domain/DomainRoomTable";
 import {
 	ManageHeader,
 	ManagePage,
 	ManageSection,
 } from "@/components/manage/ManageShell";
-import DomainMemberTable, {
-	executeKickMember,
-} from "@/components/domain/DomainMemberTable";
+import CreateRoomModal from "@/components/modal/createRoomModal";
+import EditRoomModal from "@/components/modal/editRoomModal";
 import domainStore from "@/stores/domainStore";
 import userStore from "@/stores/userStore";
-import { hasPermission } from "@/utils/permissions";
+import { hasAnyPermission, hasPermission } from "@/utils/permissions";
 
 export const Route = createFileRoute("/(app)/manage/domains/$domainUUID/")({
 	component: RouteComponent,
@@ -91,6 +102,30 @@ function RouteComponent() {
 			isOwner() || currentRole() === "admin" || hasPermission("domain:kick"),
 	);
 
+	const ROOM_PAGE_SIZE = 10;
+	const [rooms, setRooms] = createSignal<RoomRecord[]>([]);
+	const [roomTotal, setRoomTotal] = createSignal(0);
+	const [roomPage, setRoomPage] = createSignal(1);
+	const [roomLoading, setRoomLoading] = createSignal(true);
+	const [roomRefreshing, setRoomRefreshing] = createSignal(false);
+	const [roomError, setRoomError] = createSignal("");
+	const [editingRoom, setEditingRoom] = createSignal<RoomRecord | null>(null);
+	const [deletingRoom, setDeletingRoom] = createSignal<RoomRecord | null>(null);
+	const [deleting, setDeleting] = createSignal(false);
+	const [deleteError, setDeleteError] = createSignal("");
+	const totalRoomPages = createMemo(() =>
+		Math.max(1, Math.ceil(roomTotal() / ROOM_PAGE_SIZE)),
+	);
+	const canManageRooms = createMemo(
+		() =>
+			isOwner() ||
+			currentRole() === "admin" ||
+			hasAnyPermission("room:update", "room:delete"),
+	);
+	let createRoomDialogRef!: HTMLDialogElement;
+	let editRoomDialogRef!: HTMLDialogElement;
+	let deleteDialogRef!: HTMLDialogElement;
+
 	const [name, setName] = createSignal("");
 	const [description, setDescription] = createSignal("");
 	const [isPublic, setIsPublic] = createSignal(false);
@@ -107,10 +142,74 @@ function RouteComponent() {
 	let formUUID = "";
 	let kickDialogRef!: HTMLDialogElement;
 
+	async function fetchRooms(page: number) {
+		setRoomError("");
+		if (rooms().length > 0) setRoomRefreshing(true);
+		else setRoomLoading(true);
+		try {
+			const result = await listRooms(page, ROOM_PAGE_SIZE, uuid());
+			setRooms(result.rooms);
+			setRoomTotal(result.total);
+			setRoomPage(result.page);
+		} catch (error) {
+			setRoomError(apiErrorMessage(error));
+		} finally {
+			setRoomLoading(false);
+			setRoomRefreshing(false);
+		}
+	}
+
+	function resetRooms() {
+		setRooms([]);
+		setRoomTotal(0);
+		setRoomPage(1);
+		setRoomError("");
+	}
+
+	function openEditRoom(room: RoomRecord) {
+		setEditingRoom(room);
+		queueMicrotask(() => editRoomDialogRef?.showModal?.());
+	}
+
+	function requestDeleteRoom(room: RoomRecord) {
+		setDeleteError("");
+		setDeletingRoom(room);
+		queueMicrotask(() => deleteDialogRef?.showModal?.());
+	}
+
+	function closeDeleteModal() {
+		deleteDialogRef?.close();
+		setDeletingRoom(null);
+		setDeleteError("");
+	}
+
+	async function handleDeleteRoom() {
+		const room = deletingRoom();
+		if (!room) return;
+		setDeleting(true);
+		setDeleteError("");
+		try {
+			await deleteRoom(room.id);
+			closeDeleteModal();
+			showToast("房间已删除", { type: "success" });
+			void fetchRooms(roomPage());
+		} catch (error) {
+			const message = apiErrorMessage(error);
+			setDeleteError(message);
+			showToast(message, { type: "error" });
+		} finally {
+			setDeleting(false);
+		}
+	}
+
 	createEffect(() => {
 		const currentUUID = uuid();
 		setCurrentDomain(currentUUID);
 		void loadMembers(currentUUID).catch(() => {});
+		untrack(() => {
+			resetRooms();
+			void fetchRooms(1);
+		});
 	});
 
 	createEffect(() => {
@@ -224,7 +323,7 @@ function RouteComponent() {
 
 	return (
 		<div class="flex-1 min-w-0 h-full overflow-y-auto">
-			<ManagePage class="mx-auto max-w-6xl">
+			<ManagePage class="min-h-full w-full">
 				<ManageHeader
 					icon={<Settings2 size={18} />}
 					title={domain()?.name || "域管理"}
@@ -439,6 +538,58 @@ function RouteComponent() {
 							/>
 						</ManageSection>
 					</div>
+
+					<ManageSection
+						title="房间管理"
+						description={`${roomTotal()} 个房间`}
+						padded={false}
+						actions={
+							<>
+								<button
+									type="button"
+									class="btn btn-ghost btn-xs"
+									disabled={roomLoading() || roomRefreshing()}
+									onClick={() => {
+										resetRooms();
+										void fetchRooms(1);
+									}}
+								>
+									{roomLoading() || roomRefreshing() ? (
+										<span class="loading loading-spinner loading-xs" />
+									) : null}
+									刷新
+								</button>
+								<Show when={canManageRooms()}>
+									<button
+										type="button"
+										class="btn btn-primary btn-xs"
+										onClick={() => createRoomDialogRef?.showModal?.()}
+									>
+										<CirclePlus size={14} />
+										新建房间
+									</button>
+								</Show>
+							</>
+						}
+					>
+						<DomainRoomTable
+							rooms={rooms()}
+							currentUserName={currentUser()?.name}
+							canManage={canManageRooms()}
+							loading={roomLoading()}
+							refreshing={roomRefreshing()}
+							error={roomError()}
+							page={roomPage()}
+							totalPages={totalRoomPages()}
+							onPageChange={(page) => void fetchRooms(page)}
+							onRefresh={() => {
+								resetRooms();
+								void fetchRooms(1);
+							}}
+							onEdit={openEditRoom}
+							onDelete={requestDeleteRoom}
+						/>
+					</ManageSection>
 				</Show>
 
 				<Show when={!domain() && domainError()}>
@@ -482,6 +633,47 @@ function RouteComponent() {
 				}}
 				onClose={closeKickModal}
 				onConfirm={handleKick}
+			/>
+			<CreateRoomModal
+				ref={createRoomDialogRef}
+				domainUUID={uuid()}
+				onClose={() => createRoomDialogRef?.close?.()}
+				onCreated={() => {
+					resetRooms();
+					void fetchRooms(1);
+				}}
+			/>
+			<Show when={editingRoom()}>
+				{(room) => (
+					<EditRoomModal
+						ref={editRoomDialogRef}
+						room={room()}
+						onClose={() => editRoomDialogRef?.close?.()}
+						onSaved={() => {
+							void fetchRooms(roomPage());
+						}}
+					/>
+				)}
+			</Show>
+			<ConfirmModal
+				open={!!deletingRoom()}
+				title="删除房间"
+				message={
+					<span>
+						确认删除房间 {deletingRoom()?.name || "该房间"}？删除后不可恢复。
+						<Show when={deleteError()}>
+							<span class="mt-2 block text-error">{deleteError()}</span>
+						</Show>
+					</span>
+				}
+				confirmText="删除"
+				confirmClass="btn btn-error"
+				loading={deleting()}
+				dialogRef={(el) => {
+					deleteDialogRef = el;
+				}}
+				onClose={closeDeleteModal}
+				onConfirm={handleDeleteRoom}
 			/>
 		</div>
 	);
