@@ -7,7 +7,12 @@ import { socketStore } from "@/stores/socketStore";
 
 interface MessageInputProps {
 	replyTo?: string | null;
+	threadParent?: string | null;
 	onCancelReply?: () => void;
+}
+
+interface UploadingFile {
+	name: string;
 }
 
 export default function MessageInput(props: MessageInputProps) {
@@ -16,7 +21,8 @@ export default function MessageInput(props: MessageInputProps) {
 	const [mentionOpen, setMentionOpen] = createSignal(false);
 	const [mentionQuery, setMentionQuery] = createSignal("");
 	const [mentionIndex, setMentionIndex] = createSignal(0);
-	const { upload, uploading } = useUpload("chat");
+	const [uploadingFiles, setUploadingFiles] = createSignal<UploadingFile[]>([]);
+	const { upload, uploading, progress } = useUpload("chat");
 	let textareaRef: HTMLTextAreaElement | undefined;
 	let fileInputRef: HTMLInputElement | undefined;
 
@@ -34,6 +40,8 @@ export default function MessageInput(props: MessageInputProps) {
 			.filter((name) => !q || name.toLowerCase().includes(q))
 			.slice(0, 8);
 	};
+
+	const replyTarget = () => props.threadParent || props.replyTo;
 
 	function resetTextareaHeight() {
 		const el = textareaRef;
@@ -57,7 +65,8 @@ export default function MessageInput(props: MessageInputProps) {
 		if (!text || uploading()) return;
 
 		const opts: { reply_to?: string; mentions?: string[] } = {};
-		if (props.replyTo) opts.reply_to = props.replyTo;
+		const target = replyTarget();
+		if (target) opts.reply_to = target;
 		if (mentions().length > 0) opts.mentions = mentions();
 
 		chatStore.send(text, opts);
@@ -128,31 +137,51 @@ export default function MessageInput(props: MessageInputProps) {
 		}
 	}
 
-	async function handleFile(file: File | undefined) {
-		if (!file) return;
-		try {
-			const result = await upload(file);
-			const token = file.type.startsWith("image/")
-				? `![${file.name}](${result.public_url})`
-				: `[${file.name}](${result.public_url})`;
-			setContent((prev) => `${prev.trimEnd()}\n${token}\n`);
-			requestAnimationFrame(() => {
-				if (textareaRef) {
-					textareaRef.focus();
-					resetTextareaHeight();
-				}
-			});
-		} catch (err) {
-			showToast(err instanceof Error ? err.message : "上传失败", {
-				type: "error",
-			});
-		} finally {
-			if (fileInputRef) fileInputRef.value = "";
+	async function handleFiles(files: FileList | File[] | undefined) {
+		const list = files ? Array.from(files) : [];
+		if (list.length === 0) return;
+
+		setUploadingFiles((prev) => [
+			...prev,
+			...list.map((file) => ({ name: file.name })),
+		]);
+
+		for (const file of list) {
+			try {
+				const result = await upload(file);
+				const token = file.type.startsWith("image/")
+					? `![${file.name}](${result.public_url})`
+					: `[${file.name}](${result.public_url})`;
+				setContent((prev) => `${prev.trimEnd()}\n${token}\n`);
+			} catch (err) {
+				showToast(err instanceof Error ? err.message : "上传失败", {
+					type: "error",
+				});
+			} finally {
+				setUploadingFiles((prev) => prev.slice(1));
+			}
 		}
+
+		requestAnimationFrame(() => {
+			if (textareaRef) {
+				textareaRef.focus();
+				resetTextareaHeight();
+			}
+		});
+		if (fileInputRef) fileInputRef.value = "";
+	}
+
+	function onDrop(e: DragEvent) {
+		e.preventDefault();
+		if (e.dataTransfer?.files) void handleFiles(e.dataTransfer.files);
 	}
 
 	return (
-		<div class="border-t border-base-300 p-2 sm:p-3 safe-bottom relative">
+		<div
+			class="relative border-t border-base-300 p-2 sm:p-3 safe-bottom"
+			onDragOver={(e) => e.preventDefault()}
+			onDrop={onDrop}
+		>
 			<Show when={mentionOpen() && mentionCandidates().length > 0}>
 				<div class="absolute bottom-full left-3 mb-2 w-56 rounded-lg border border-base-300 bg-base-100 shadow-xl z-20 overflow-hidden">
 					<For each={mentionCandidates()}>
@@ -166,6 +195,20 @@ export default function MessageInput(props: MessageInputProps) {
 							>
 								@{name}
 							</button>
+						)}
+					</For>
+				</div>
+			</Show>
+
+			<Show when={uploadingFiles().length > 0}>
+				<div class="mb-2 space-y-1">
+					<For each={uploadingFiles()}>
+						{(file) => (
+							<div class="flex items-center gap-2 rounded-lg bg-base-200 px-3 py-1.5 text-xs text-base-content/70">
+								<span class="loading loading-spinner loading-xs" />
+								<span class="min-w-0 flex-1 truncate">{file.name}</span>
+								<span>{progress()}%</span>
+							</div>
 						)}
 					</For>
 				</div>
@@ -185,6 +228,13 @@ export default function MessageInput(props: MessageInputProps) {
 				</div>
 			</Show>
 
+			<Show when={props.threadParent && !props.replyTo}>
+				<div class="mb-2 flex items-center gap-2 rounded-lg bg-primary/5 px-3 py-1.5 text-xs text-primary">
+					<span class="i-lucide-corner-down-right shrink-0" />
+					<span class="truncate">回复到线程</span>
+				</div>
+			</Show>
+
 			<div class="flex items-end gap-2">
 				<textarea
 					ref={(el) => {
@@ -201,8 +251,9 @@ export default function MessageInput(props: MessageInputProps) {
 					ref={(el) => (fileInputRef = el)}
 					type="file"
 					class="hidden"
+					multiple
 					accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain"
-					onChange={(e) => void handleFile(e.currentTarget.files?.[0])}
+					onChange={(e) => void handleFiles(e.currentTarget.files)}
 				/>
 				<button
 					type="button"

@@ -20,9 +20,26 @@ export default function MessageList(props: MessageListProps) {
 		if (props.searchActive && props.messages) return props.messages;
 		if (props.threadParent) {
 			const root = props.threadParent;
-			return chatStore
-				.messages()
-				.filter((m) => m.uuid === root || m.reply_to === root);
+			const messages = chatStore.messages();
+			const byParent = new Map<string, MessageDTO[]>();
+			for (const m of messages) {
+				if (!m.reply_to) continue;
+				const children = byParent.get(m.reply_to) || [];
+				children.push(m);
+				byParent.set(m.reply_to, children);
+			}
+			const out: MessageDTO[] = [];
+			const seen = new Set<string>();
+			const append = (uuid: string) => {
+				if (seen.has(uuid)) return;
+				const message = messages.find((m) => m.uuid === uuid);
+				if (!message) return;
+				seen.add(uuid);
+				out.push(message);
+				for (const child of byParent.get(uuid) || []) append(child.uuid);
+			};
+			append(root);
+			return out.sort((a, b) => a.created_at.localeCompare(b.created_at));
 		}
 		return chatStore.messages();
 	});

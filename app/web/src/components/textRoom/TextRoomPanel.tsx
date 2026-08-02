@@ -1,6 +1,6 @@
 import Search from "lucide-solid/icons/search";
 import X from "lucide-solid/icons/x";
-import { createSignal, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import { searchMessages } from "@/api/message";
 import { chatStore } from "@/stores/chatStore";
 import type { MessageDTO } from "@/types/message";
@@ -14,6 +14,12 @@ export default function TextRoomPanel() {
 	const [searchResults, setSearchResults] = createSignal<MessageDTO[]>([]);
 	const [searchActive, setSearchActive] = createSignal(false);
 	const [searching, setSearching] = createSignal(false);
+
+	const threadRoot = createMemo(() =>
+		threadParent()
+			? chatStore.messages().find((m) => m.uuid === threadParent())
+			: undefined,
+	);
 
 	async function runSearch(e?: Event) {
 		e?.preventDefault();
@@ -56,6 +62,11 @@ export default function TextRoomPanel() {
 					<Show when={threadParent()}>
 						<span class="badge badge-sm badge-outline shrink-0">线程视图</span>
 					</Show>
+					<Show when={threadRoot()}>
+						<span class="badge badge-sm badge-ghost shrink-0 truncate max-w-40">
+							{threadRoot()?.content.slice(0, 40)}
+						</span>
+					</Show>
 					<form
 						class="ml-auto flex items-center gap-1 min-w-0"
 						onSubmit={runSearch}
@@ -91,7 +102,10 @@ export default function TextRoomPanel() {
 						<button
 							type="button"
 							class="btn btn-sm btn-ghost shrink-0"
-							onClick={() => setThreadParent(null)}
+							onClick={() => {
+								setThreadParent(null);
+								setReplyTo(null);
+							}}
 						>
 							退出线程
 						</button>
@@ -109,16 +123,21 @@ export default function TextRoomPanel() {
 					searchActive={searchActive()}
 					threadParent={threadParent()}
 					onReply={(uuid) => {
-						setThreadParent(null);
+						if (threadParent()) {
+							setReplyTo(threadParent());
+							return;
+						}
 						setReplyTo(uuid);
 					}}
 					onOpenThread={(uuid) => {
 						setSearchActive(false);
 						setThreadParent(uuid);
+						setReplyTo(null);
 					}}
 				/>
 				<MessageInput
 					replyTo={replyTo()}
+					threadParent={threadParent()}
 					onCancelReply={() => setReplyTo(null)}
 				/>
 			</div>
