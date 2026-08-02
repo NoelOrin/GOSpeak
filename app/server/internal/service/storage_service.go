@@ -204,7 +204,7 @@ func (s *StorageService) getEnvFallbackConfig() *model.StorageConfig {
 		PublicBaseURL: s.cfg.StoragePublicBaseURL,
 		PathPrefix:    s.cfg.StoragePathPrefix,
 		MaxFileSize:   5,
-		AllowedTypes:  "image/jpeg,image/png,image/gif,image/webp",
+		AllowedTypes:  "image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain",
 	}
 }
 
