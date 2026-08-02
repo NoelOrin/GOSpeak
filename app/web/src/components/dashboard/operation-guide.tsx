@@ -4,7 +4,7 @@ import { createSignal, For, Show } from "solid-js";
 const GUIDE_ITEMS = [
 	{
 		title: "创建或加入房间",
-		text: "在左侧频道列表双击房间进入，或用首页快捷入口先进入频道页再操作。",
+		text: "在左侧房间列表双击房间进入，或用首页快捷入口先进入域页再操作。",
 	},
 	{
 		title: "音量与静音",
@@ -12,7 +12,7 @@ const GUIDE_ITEMS = [
 	},
 	{
 		title: "退出与切换",
-		text: "进入房间后可在右上角离开，返回频道列表后可以继续切换到其他房间。",
+		text: "进入房间后可在右上角离开，返回房间列表后可以继续切换到其他房间。",
 	},
 	{
 		title: "管理入口",

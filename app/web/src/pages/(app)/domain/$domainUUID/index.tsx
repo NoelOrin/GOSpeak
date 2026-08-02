@@ -11,7 +11,7 @@ import { hasPermission } from "@/utils/permissions";
 
 export const Route = createFileRoute("/(app)/domain/$domainUUID/")({
 	component: RouteComponent,
-	staticData: { title: "语音域", icon: "icon-channel" },
+	staticData: { title: "语音域", icon: "icon-domain" },
 });
 
 function apiErrorMessage(error: unknown): string {

@@ -16,7 +16,7 @@ const VoiceForm = () => {
 		<Page title="语音行为" desc="进房默认状态、本机输入/输出音量与提示音。">
 			<Section title="进房行为">
 				<Toggle
-					label="加入频道时静音麦克风"
+					label="加入房间时静音麦克风"
 					desc="进房后默认不推流，可手动开麦"
 					checked={AudioDeviceStore.state.muteOnJoin}
 					onChange={AudioDeviceStore.setMuteOnJoin}

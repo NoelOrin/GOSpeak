@@ -63,7 +63,7 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 		() => !!socketStore.selectedRoomInfo() || !!socketStore.currentRoom(),
 	);
 	const hasTextFocus = createMemo(() => !!chatStore.textRoom());
-	const hasChannelFocus = createMemo(() => hasVoiceFocus() || hasTextFocus());
+	const hasRoomFocus = createMemo(() => hasVoiceFocus() || hasTextFocus());
 
 	// 进房自动切舞台；退房回列表
 	createEffect(() => {
@@ -71,7 +71,7 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 			setMobileStage(false);
 			return;
 		}
-		if (hasChannelFocus()) {
+		if (hasRoomFocus()) {
 			setMobileStage(true);
 			if (hasVoiceFocus() && !hasTextFocus()) setStageTab("voice");
 			else if (hasTextFocus() && !hasVoiceFocus()) setStageTab("text");
@@ -104,12 +104,12 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 
 	const stageTitle = () => {
 		if (stageTab() === "text") {
-			return chatStore.textRoomName() || "文字频道";
+			return chatStore.textRoomName() || "文字房";
 		}
 		return (
 			socketStore.selectedRoomInfo()?.name ||
 			socketStore.currentRoom() ||
-			"语音频道"
+			"语音房"
 		);
 	};
 

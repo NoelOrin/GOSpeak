@@ -127,7 +127,7 @@ const AudioForm = () => {
 	return (
 		<Page
 			title="音频"
-			desc="设备、采集质量与传输参数。更改后通常需重新加入频道生效。"
+			desc="设备、采集质量与传输参数。更改后通常需重新进入房间生效。"
 		>
 			<Section
 				title="设备"
