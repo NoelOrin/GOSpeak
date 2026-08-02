@@ -51,24 +51,7 @@ services:
       - gospeak-logs:/app/logs
       - gospeak-uploads:/app/uploads
     depends_on:
-    
-  # ── NATS（可选，多副本信号总线；单机默认用 gospeak 内嵌）──
-  nats:
-    <<: *restart
-    profiles: ["nats"]
-    image: nats:2-alpine
-    container_name: gospeak-nats
-    ports:
-      - "${NATS_PORT:-4222}:4222"
-      - "${NATS_HTTP_PORT:-8222}:8222"
-    command: ["-js", "-m", "8222"]
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
-      interval: 10s
-      timeout: 3s
-      retries: 6
-
-  redis:
+      redis:
         condition: service_healthy
         required: false
       postgres:
@@ -88,6 +71,89 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  # ── NATS（可选，多副本信号总线；单机默认用 gospeak 内嵌）──
+  nats:
+    <<: *restart
+    profiles: ["nats", "cluster"]
+    image: nats:2-alpine
+    container_name: gospeak-nats
+    ports:
+      - "${NATS_PORT:-4222}:4222"
+      - "${NATS_HTTP_PORT:-8222}:8222"
+    command: ["-js", "-m", "8222"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  # ── 集群控制面（Agent + Worker）──────────────────────────────────────
+  gospeak-agent:
+    <<: *restart
+    profiles: ["cluster"]
+    image: gospeak:latest
+    env_file:
+      - ${GOSPEAK_ENV_FILE:-./env/app.srs.env}
+    environment:
+      GOSPEAK_ROLE: agent
+      SERVER_PORT: "9000"
+      STATIC_DIR: /app/static
+      DB_PATH: ${DB_PATH:-/app/db/app.db}
+      DB_TYPE: ${DB_TYPE:-PostgresSQL}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-gospeak}
+      DB_PASSWORD: ${DB_PASSWORD:-gospeak}
+      CLUSTER_ADVERTISE_URL: ${CLUSTER_AGENT_ADVERTISE_URL:-http://gospeak-agent:9000}
+      CLUSTER_AGENT_TOKEN: ${CLUSTER_AGENT_TOKEN:-}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      STATE_STORE: ${STATE_STORE:-nats}
+    ports:
+      - "${GOSPEAK_AGENT_PORT:-9000}:9000"
+    volumes:
+      - gospeak-db:/app/db
+      - gospeak-logs:/app/logs
+      - gospeak-uploads:/app/uploads
+    depends_on:
+      nats:
+        condition: service_healthy
+        required: false
+
+  gospeak-worker:
+    <<: *restart
+    profiles: ["cluster"]
+    image: gospeak:latest
+    env_file:
+      - ${GOSPEAK_ENV_FILE:-./env/app.srs.env}
+    environment:
+      GOSPEAK_ROLE: worker
+      SERVER_PORT: "8998"
+      STATIC_DIR: /app/static
+      DB_PATH: ${DB_PATH:-/app/db/app.db}
+      DB_TYPE: ${DB_TYPE:-PostgresSQL}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-gospeak}
+      DB_PASSWORD: ${DB_PASSWORD:-gospeak}
+      CLUSTER_AGENT_URL: ${CLUSTER_AGENT_URL:-http://gospeak-agent:9000}
+      CLUSTER_AGENT_TOKEN: ${CLUSTER_AGENT_TOKEN:-}
+      CLUSTER_NODE_ID: ${CLUSTER_WORKER_NODE_ID:-worker-1}
+      CLUSTER_ADVERTISE_URL: ${CLUSTER_WORKER_ADVERTISE_URL:-http://gospeak-worker:8998}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      STATE_STORE: ${STATE_STORE:-nats}
+    ports:
+      - "${GOSPEAK_WORKER_PORT:-8998}:8998"
+    volumes:
+      - gospeak-db:/app/db
+      - gospeak-logs:/app/logs
+      - gospeak-uploads:/app/uploads
+    depends_on:
+      gospeak-agent:
+        condition: service_started
+      nats:
+        condition: service_healthy
+        required: false
 
   # ── Nginx 入口 (SRS 模式推荐) ─────────────────────────────────────────
   nginx:
@@ -189,7 +255,7 @@ services:
   # ── PostgreSQL ────────────────────────────────────────────────────────
   postgres:
     <<: *restart
-    profiles: ["postgres", "postgres-redis"]
+    profiles: ["postgres", "postgres-redis", "cluster"]
     image: postgres:16-alpine
     container_name: gospeak-postgres
     ports:

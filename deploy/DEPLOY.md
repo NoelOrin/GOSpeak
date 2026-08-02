@@ -69,7 +69,17 @@ docker compose --profile livekit --profile redis --profile app up -d --build
 docker compose --profile postgres --profile redis --profile srs --profile app up -d --build
 ```
 
-### 3.4 仅依赖 (本地 pnpm 开发)
+### 3.4 Agent + Worker 集群
+
+```bash
+# 需要一个 admin JWT 作为 worker→agent 控制面鉴权 token
+export CLUSTER_AGENT_TOKEN=<admin-jwt>
+docker compose -f deploy/docker-compose.yml --profile cluster up -d --build
+```
+
+多 Worker 时通过 `CLUSTER_WORKER_NODE_ID` 为每个副本设置不同节点 ID；生产环境浏览器访问的 Worker 地址由 `CLUSTER_WORKER_ADVERTISE_URL` 指定。
+
+### 3.5 仅依赖 (本地 pnpm 开发)
 
 ```bash
 # 旧 dev 依赖栈仍可用 example 文件; 推荐改用 profiles:
@@ -214,4 +224,3 @@ docker compose -f deploy/docker-compose.yml --profile srs --profile app down
 NATS_URL=nats://nats:4222
 docker compose --profile nats --profile app up -d
 ```
-

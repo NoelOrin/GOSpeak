@@ -1,5 +1,8 @@
 # GOSpeak 中心 Agent + Worker 架构实施计划
 
+> 当前状态：Phase 1-3 后端控制面基础已实现（GOSPEAK_ROLE、internal/cluster、节点注册/心跳、Server 分配与扩缩容 API、drain/undrain、join token workerUrl、cluster compose profile）。Phase 4 的 Agent 独占写面与状态对账仍待后续阶段。
+> 详细剩余计划：`docs/superpowers/plans/2026-08-02-cluster-control-plane-completion.md`
+
 ## 1. 背景
 
 GOSpeak 当前是单进程/对等实例架构：多个后端实例通过 NATS/Redis 共享运行时状态，没有中心控制节点。Guild（多 Server）功能已有数据模型、路由、信令隔离雏形，但权限种子、房间归属、前端 guild 上下文、删除清理等链路未接通，实际不可用。
