@@ -1,6 +1,8 @@
 import { Portal } from "solid-js/web";
 import clsx from "clsx";
 import CirclePlus from "lucide-solid/icons/circle-plus";
+import LogOut from "lucide-solid/icons/log-out";
+import Pencil from "lucide-solid/icons/pencil";
 import { useNavigate } from "@tanstack/solid-router";
 import {
 	createEffect,
@@ -12,9 +14,12 @@ import {
 	Show,
 } from "solid-js";
 import CreateRoomModal from "@/components/modal/createRoomModal";
+import EditRoomModal from "@/components/modal/editRoomModal";
+import type { RoomRecord } from "@/api/room";
 import { chatStore } from "@/stores/chatStore";
 import domainStore from "@/stores/domainStore";
 import { type RoomInfo, socketStore } from "@/stores/socketStore";
+import userStore from "@/stores/userStore";
 import { hasPermission } from "@/utils/permissions";
 import Divider from "../common/divider";
 import MemberItemButton from "./components/memberItemButton";
@@ -28,6 +33,39 @@ interface RoomItemPropsType {
 	selectedMember: () => { identity: string; x: number; y: number } | null;
 	onSelectMember: (identity: string, x: number, y: number) => void;
 	onCloseMember: () => void;
+	onEditRoom: (room: RoomInfo) => void;
+}
+
+export function canEditRoomItem(
+	currentUser: { uuid?: string } | null,
+	domain: { owner_uuid?: string } | null,
+	memberRole: string | null | undefined,
+	hasRoomUpdatePermission: boolean,
+) {
+	return (
+		hasRoomUpdatePermission ||
+		(!!currentUser?.uuid && domain?.owner_uuid === currentUser.uuid) ||
+		memberRole === "admin"
+	);
+}
+
+export function toEditRoomRecord(room: RoomInfo): RoomRecord {
+	return {
+		id: room.id,
+		uuid: room.uuid,
+		name: room.name,
+		description: room.description ?? "",
+		limit: room.limit,
+		audio_only: room.audioOnly ?? true,
+		allow_audience: room.allowAudience ?? true,
+		type:
+			room.type === "text"
+				? "text"
+				: room.type === "voice"
+					? "voice"
+					: undefined,
+		domain_uuid: room.domain_uuid,
+	};
 }
 
 const RoomItem = (props: RoomItemPropsType) => {
@@ -41,7 +79,86 @@ const RoomItem = (props: RoomItemPropsType) => {
 		left: number;
 		top: number;
 	} | null>(null);
+	const [contextMenu, setContextMenu] = createSignal<{
+		x: number;
+		y: number;
+	} | null>(null);
 	let nameRef: HTMLSpanElement | undefined;
+	let contextMenuRef: HTMLDivElement | undefined;
+
+	const canEdit = () =>
+		canEditRoomItem(
+			userStore.user(),
+			socketStore.currentDomainUUID()
+				? (domainStore.state.domainCache[
+						socketStore.currentDomainUUID() ?? ""
+					] ?? null)
+				: null,
+			socketStore.currentDomainUUID()
+				? domainStore.state.memberCache[
+						socketStore.currentDomainUUID() ?? ""
+					]?.find((member) => member.user_uuid === userStore.user()?.uuid)
+						?.role_name
+				: undefined,
+			hasPermission("room:update"),
+		);
+
+	const isInRoom = () => {
+		if (props.room.type === "text") {
+			return (
+				chatStore.textRoom() === props.room.uuid ||
+				chatStore.textRoomName() === props.room.name
+			);
+		}
+		const selected = socketStore.selectedRoomInfo();
+		const sameDomain = (domainUUID?: string) =>
+			(domainUUID || "") === (props.room.domain_uuid || "");
+		return (
+			(socketStore.currentRoom() === props.room.name &&
+				sameDomain(socketStore.currentDomainUUID() ?? undefined)) ||
+			(!!selected &&
+				selected.name === props.room.name &&
+				sameDomain(selected.domain_uuid))
+		);
+	};
+
+	const openContextMenu = (event: MouseEvent) => {
+		if (!canEdit() && !isInRoom()) return;
+		event.preventDefault();
+		const menuWidth = 176;
+		const menuHeight = 132;
+		const x = Math.max(
+			8,
+			Math.min(event.clientX, Math.max(8, window.innerWidth - menuWidth - 8)),
+		);
+		const y = Math.max(
+			8,
+			Math.min(event.clientY, Math.max(8, window.innerHeight - menuHeight - 8)),
+		);
+		setContextMenu({ x, y });
+	};
+
+	const closeContextMenu = () => setContextMenu(null);
+
+	createEffect(() => {
+		if (!contextMenu()) return;
+		const onPointerDown = (event: MouseEvent) => {
+			if (!contextMenuRef?.contains(event.target as Node)) closeContextMenu();
+		};
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") closeContextMenu();
+		};
+		document.addEventListener("mousedown", onPointerDown);
+		document.addEventListener("keydown", onKeyDown);
+		window.addEventListener("scroll", closeContextMenu, true);
+		window.addEventListener("resize", closeContextMenu);
+		onCleanup(() => {
+			document.removeEventListener("mousedown", onPointerDown);
+			document.removeEventListener("keydown", onKeyDown);
+			window.removeEventListener("scroll", closeContextMenu, true);
+			window.removeEventListener("resize", closeContextMenu);
+		});
+	});
 
 	createEffect(() => {
 		props.room.name;
@@ -74,6 +191,7 @@ const RoomItem = (props: RoomItemPropsType) => {
 	});
 
 	const handleJoin = () => {
+		closeContextMenu();
 		if (props.room.hasPassword) {
 			setShowPasswordModal(true);
 		} else if (props.room.type === "text") {
@@ -81,6 +199,22 @@ const RoomItem = (props: RoomItemPropsType) => {
 		} else {
 			socketStore.selectRoom(props.room);
 		}
+	};
+
+	const handleLeave = () => {
+		closeContextMenu();
+		void socketStore.leaveRoom(props.room.name).catch(() => {});
+		if (props.room.type === "text") {
+			chatStore.leaveTextRoom();
+			return;
+		}
+		socketStore.clearCurrentRoom();
+		socketStore.clearSelectedRoom();
+	};
+
+	const handleEdit = () => {
+		closeContextMenu();
+		props.onEditRoom(props.room);
 	};
 
 	return (
@@ -93,6 +227,9 @@ const RoomItem = (props: RoomItemPropsType) => {
 							props.isActive ? "btn-active" : "",
 							isSelected() && !props.isActive ? "bg-base-200" : "",
 						)}
+						aria-haspopup="menu"
+						aria-expanded={!!contextMenu()}
+						onContextMenu={openContextMenu}
 						onMouseEnter={showTip}
 						onMouseLeave={hideTip}
 						onClick={() => {
@@ -205,6 +342,42 @@ const RoomItem = (props: RoomItemPropsType) => {
 						</div>
 					)}
 				</Show>
+				<Show when={contextMenu()}>
+					{(menu) => (
+						<div
+							ref={contextMenuRef}
+							role="menu"
+							class="fixed z-[9999] min-w-44 overflow-hidden rounded-lg border border-base-300 bg-base-100 p-1 shadow-xl"
+							style={{
+								left: `${menu().x}px`,
+								top: `${menu().y}px`,
+							}}
+						>
+							<Show when={canEdit()}>
+								<button
+									type="button"
+									role="menuitem"
+									class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-base-200 focus-visible:bg-base-200 focus:outline-none"
+									onClick={handleEdit}
+								>
+									<Pencil size={14} />
+									<span>编辑房间</span>
+								</button>
+							</Show>
+							<Show when={isInRoom()}>
+								<button
+									type="button"
+									role="menuitem"
+									class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-base-200 focus-visible:bg-base-200 focus:outline-none"
+									onClick={handleLeave}
+								>
+									<LogOut size={14} />
+									<span>退出房间</span>
+								</button>
+							</Show>
+						</div>
+					)}
+				</Show>
 			</Portal>
 		</>
 	);
@@ -304,11 +477,13 @@ interface RoomListPropsType {
 
 const RoomList = ({ ref }: RoomListPropsType) => {
 	let createRoomModalRef!: HTMLDialogElement;
+	let editRoomModalRef!: HTMLDialogElement;
 	const [selectedMember, setSelectedMember] = createSignal<{
 		identity: string;
 		x: number;
 		y: number;
 	} | null>(null);
+	const [editingRoom, setEditingRoom] = createSignal<RoomInfo | null>(null);
 
 	// 进入时加载房间列表
 	onMount(() => {
@@ -321,6 +496,34 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 
 	const closeCreateRoomModal = () => {
 		createRoomModalRef?.close?.();
+	};
+
+	const openEditRoom = (room: RoomInfo) => {
+		setEditingRoom(room);
+		queueMicrotask(() => editRoomModalRef?.showModal?.());
+	};
+
+	const closeEditRoom = () => {
+		editRoomModalRef?.close?.();
+	};
+
+	const handleRoomSaved = (updated: RoomRecord) => {
+		const selected = socketStore.selectedRoomInfo();
+		if (selected?.id === updated.id) {
+			socketStore.selectRoom({
+				...selected,
+				id: updated.id,
+				uuid: updated.uuid,
+				name: updated.name,
+				domain_uuid: updated.domain_uuid,
+				description: updated.description,
+				limit: updated.limit,
+				audioOnly: updated.audio_only,
+				allowAudience: updated.allow_audience,
+				type: updated.type,
+			});
+		}
+		socketStore.listRooms();
 	};
 
 	const visibleRooms = createMemo(() =>
@@ -365,6 +568,7 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 												setSelectedMember({ identity, x, y })
 											}
 											onCloseMember={() => setSelectedMember(null)}
+											onEditRoom={openEditRoom}
 										/>
 									)}
 								</For>
@@ -377,6 +581,16 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 				ref={createRoomModalRef}
 				onClose={closeCreateRoomModal}
 			/>
+			<Show when={editingRoom()}>
+				{(room) => (
+					<EditRoomModal
+						ref={editRoomModalRef}
+						room={toEditRoomRecord(room())}
+						onClose={closeEditRoom}
+						onSaved={handleRoomSaved}
+					/>
+				)}
+			</Show>
 			<Show when={selectedMember()}>
 				{(sel) => (
 					<UserInfoPopover
