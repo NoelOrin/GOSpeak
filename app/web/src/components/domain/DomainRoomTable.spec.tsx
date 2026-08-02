@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateEditRoomForm } from "../modal/EditRoomModal";
+import { validateEditRoomForm } from "../modal/editRoomModal";
 
 describe("EditRoomModal form validation", () => {
 	it("rejects an empty room name", () => {
