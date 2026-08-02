@@ -55,7 +55,6 @@ func (r *UserRepository) GetByEmail(email string) (*model.User, error) {
 	return &user, nil
 }
 
-func (r *UserRepository) List(page, pageSize int, excludeBots bool) ([]model.User, int64, error) {
 func (r *UserRepository) List(page, pageSize int, excludeBots bool, keyword string) ([]model.User, int64, error) {
 	var users []model.User
 	var total int64
@@ -90,6 +89,7 @@ func (r *UserRepository) UpdateEmail(userID uint, email string) error {
 func (r *UserRepository) UpdateEmailVerified(userID uint, verified bool) error {
 	return r.db.Model(&model.User{}).Where("id = ?", userID).Update("email_verified", verified).Error
 }
+
 // IncrementTokenVersion 递增用户的 TokenVersion，使所有已签发的 access/refresh token 失效。
 // UpdatePasswordAndInvalidate 原子地保存新密码并递增 TokenVersion，
 // 避免两步独立写间失败导致旧 token 仍有效（auth_service 改密/重置场景）。
@@ -103,13 +103,11 @@ func (r *UserRepository) UpdatePasswordAndInvalidate(user *model.User) error {
 	})
 }
 
-
 // IncrementTokenVersion 递增用户 TokenVersion，使已签发 token 失效。
 func (r *UserRepository) IncrementTokenVersion(userID uint) error {
 	return r.db.Model(&model.User{}).Where("id = ?", userID).
 		UpdateColumn("token_version", gorm.Expr("token_version + 1")).Error
 }
-
 
 // UpdateRoleAndInvalidate 原子更新角色并递增 TokenVersion，使旧 JWT 立即失效。
 func (r *UserRepository) UpdateRoleAndInvalidate(userID uint, role string) error {

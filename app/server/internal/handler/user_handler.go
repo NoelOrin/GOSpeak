@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"strings"
+
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
+
 	"github.com/gin-gonic/gin"
-	"strings"
 )
 
 type UserHandler struct {

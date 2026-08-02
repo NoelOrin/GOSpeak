@@ -102,3 +102,124 @@ func TestPermissionGranted_FallsBackToRoleChecker(t *testing.T) {
 		t.Fatal("role without permission should deny")
 	}
 }
+
+func TestVerifyToken_AcceptsAccessAndBot(t *testing.T) {
+	access, err := pkg.GenerateToken("alice", "Alice", "uuid-alice", "user", 1)
+	if err != nil {
+		t.Fatalf("GenerateToken: %v", err)
+	}
+	if _, code := VerifyToken(access); code != pkg.SUCCESS {
+		t.Fatalf("expected access token accepted, got code=%d", code)
+	}
+
+	bot, err := pkg.GenerateBotToken("bot", "Bot", "uuid-bot", "bot", 1, []string{"signal:kick"}, false)
+	if err != nil {
+		t.Fatalf("GenerateBotToken: %v", err)
+	}
+	if _, code := VerifyToken(bot); code != pkg.SUCCESS {
+		t.Fatalf("expected bot token accepted, got code=%d", code)
+	}
+}
+
+func TestVerifyToken_RejectsMissingUserUUID(t *testing.T) {
+	access, err := pkg.GenerateToken("alice", "Alice", "", "user", 1)
+	if err != nil {
+		t.Fatalf("GenerateToken: %v", err)
+	}
+	if _, code := VerifyToken(access); code != pkg.TOKEN_WRONG {
+		t.Fatalf("expected access token rejected without user_uuid, got code=%d", code)
+	}
+
+	bot, err := pkg.GenerateBotToken("bot", "Bot", "", "bot", 1, []string{"signal:kick"}, false)
+	if err != nil {
+		t.Fatalf("GenerateBotToken: %v", err)
+	}
+	if _, code := VerifyToken(bot); code != pkg.TOKEN_WRONG {
+		t.Fatalf("expected bot token rejected without user_uuid, got code=%d", code)
+	}
+
+	ticket, err := pkg.GenerateWSTicket("alice", "Alice", "", "user", 1)
+	if err != nil {
+		t.Fatalf("GenerateWSTicket: %v", err)
+	}
+	if _, code := VerifyWSTicket(ticket); code != pkg.TOKEN_WRONG {
+		t.Fatalf("expected ws ticket rejected without user_uuid, got code=%d", code)
+	}
+}
+
+func TestVerifyToken_RejectsRefreshAndWSTicket(t *testing.T) {
+	refresh, err := pkg.GenerateRefreshToken("alice", "Alice", "uuid-alice", "user", 1)
+	if err != nil {
+		t.Fatalf("GenerateRefreshToken: %v", err)
+	}
+	ticket, err := pkg.GenerateWSTicket("alice", "Alice", "uuid-alice", "user", 1)
+	if err != nil {
+		t.Fatalf("GenerateWSTicket: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		token string
+	}{
+		{name: "refresh", token: refresh},
+		{name: "ws-ticket", token: ticket},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			claims, code := VerifyToken(tc.token)
+			if code != pkg.TOKEN_WRONG {
+				t.Fatalf("expected TOKEN_WRONG, got code=%d", code)
+			}
+			if claims != nil {
+				t.Fatalf("expected nil claims, got %#v", claims)
+			}
+		})
+	}
+}
+
+func TestVerifyWSTicket_AcceptsWSTicket(t *testing.T) {
+	ticket, err := pkg.GenerateWSTicket("alice", "Alice", "uuid-alice", "user", 1)
+	if err != nil {
+		t.Fatalf("GenerateWSTicket: %v", err)
+	}
+	claims, code := VerifyWSTicket(ticket)
+	if code != pkg.SUCCESS {
+		t.Fatalf("expected ws ticket accepted, got code=%d", code)
+	}
+	if claims == nil || claims.Username != "alice" {
+		t.Fatalf("expected alice claims, got %#v", claims)
+	}
+}
+
+func TestVerifyWSTicket_RejectsNonWSTicket(t *testing.T) {
+	access, err := pkg.GenerateToken("alice", "Alice", "uuid-alice", "user", 1)
+	if err != nil {
+		t.Fatalf("GenerateToken: %v", err)
+	}
+	bot, err := pkg.GenerateBotToken("bot", "Bot", "uuid-bot", "bot", 1, []string{"signal:kick"}, false)
+	if err != nil {
+		t.Fatalf("GenerateBotToken: %v", err)
+	}
+	refresh, err := pkg.GenerateRefreshToken("alice", "Alice", "uuid-alice", "user", 1)
+	if err != nil {
+		t.Fatalf("GenerateRefreshToken: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		token string
+	}{
+		{name: "access", token: access},
+		{name: "bot", token: bot},
+		{name: "refresh", token: refresh},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			claims, code := VerifyWSTicket(tc.token)
+			if code != pkg.TOKEN_WRONG {
+				t.Fatalf("expected TOKEN_WRONG, got code=%d", code)
+			}
+			if claims != nil {
+				t.Fatalf("expected nil claims, got %#v", claims)
+			}
+		})
+	}
+}

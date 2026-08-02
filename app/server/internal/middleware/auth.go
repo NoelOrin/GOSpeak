@@ -36,11 +36,32 @@ func SetTokenVersionChecker(tvc tokenVersionChecker) {
 	tokenVersionCheck = tvc
 }
 
-// VerifyToken 执行完整的 token 校验链：签名解析 → 过期 → 黑名单 → 版本。
-// 供 JWTAuth / signal.OnConnect 共用，保证校验口径一致。
+// VerifyToken 校验 HTTP 可用的 access/bot token。
 func VerifyToken(tokenStr string) (*pkg.Claims, pkg.ErrCode) {
+	return verifyToken(tokenStr, pkg.AccessTokenType, pkg.BotTokenType)
+}
+
+// VerifyWSTicket 校验 WebSocket 短时 ticket。
+func VerifyWSTicket(tokenStr string) (*pkg.Claims, pkg.ErrCode) {
+	claims, code := verifyToken(tokenStr, pkg.WSTicketType)
+	if code != pkg.SUCCESS {
+		return nil, code
+	}
+	if pkg.WSTicketExpired(claims) {
+		return nil, pkg.TOKEN_EXPIRED
+	}
+	return claims, pkg.SUCCESS
+}
+
+func verifyToken(tokenStr string, allowedTypes ...string) (*pkg.Claims, pkg.ErrCode) {
 	claims, err := pkg.ParseToken(tokenStr)
 	if err != nil {
+		return nil, pkg.TOKEN_WRONG
+	}
+	if !tokenTypeAllowed(claims, allowedTypes...) {
+		return nil, pkg.TOKEN_WRONG
+	}
+	if claims.UserUUID == "" {
 		return nil, pkg.TOKEN_WRONG
 	}
 	if pkg.IsTokenExpired(claims) {
@@ -59,6 +80,18 @@ func VerifyToken(tokenStr string) (*pkg.Claims, pkg.ErrCode) {
 		}
 	}
 	return claims, pkg.SUCCESS
+}
+
+func tokenTypeAllowed(claims *pkg.Claims, allowedTypes ...string) bool {
+	if claims == nil || claims.TokenType == "" {
+		return false
+	}
+	for _, allowed := range allowedTypes {
+		if claims.TokenType == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 func setClaimsContext(c *gin.Context, claims *pkg.Claims) {
