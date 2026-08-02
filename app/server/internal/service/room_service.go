@@ -3,6 +3,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"sync"
 
 	"GOSpeak/internal/model"
@@ -27,6 +28,9 @@ func NewRoomService(roomRepo *repository.RoomRepository) *RoomService {
 
 // Create 创建房间，并保证同一 Domain 内房间名唯一。
 func (s *RoomService) Create(room *model.Room) error {
+	if strings.TrimSpace(room.DomainUUID) == "" {
+		return pkg.NewAppError(pkg.INVALID_PARAMS, "domain_uuid is required")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -140,7 +144,7 @@ func (s *RoomService) List(page, pageSize int, roomType, domainUUID string) ([]m
 	return rooms, total, nil
 }
 
-// ListPlatform 分页查询平台级房间（无 DomainUUID）。
+// ListPlatform 分页查询历史遗留的无归属房间；新数据不得再创建空 domain_uuid。
 func (s *RoomService) ListPlatform(page, pageSize int, roomType string) ([]model.Room, int64, error) {
 	if page < 1 {
 		page = 1

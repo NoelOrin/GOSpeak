@@ -24,8 +24,8 @@ import (
 
 type fakeBus struct {
 	mu    sync.Mutex
-	calls []string     // event names recorded
-	rooms []string     // room keys recorded
+	calls []string // event names recorded
+	rooms []string // room keys recorded
 }
 
 func (f *fakeBus) PublishRoom(_ context.Context, room, event string, payload interface{}) error {
@@ -121,6 +121,20 @@ func newMemRoomRepo() *memRoomRepo {
 			},
 		},
 	}
+}
+
+// addDomainTextRoom seeds a domain-scoped text room and returns its UUID.
+func addDomainTextRoom(repo *memRoomRepo, name, domainUUID string) string {
+	roomUUID := uuid.New().String()
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	repo.rooms[roomUUID] = &model.Room{
+		UUID:       roomUUID,
+		Name:       name,
+		Type:       model.RoomTypeText,
+		DomainUUID: domainUUID,
+	}
+	return roomUUID
 }
 
 // ─── Test Setup ───
@@ -1184,19 +1198,10 @@ func TestBroadcastRoomKey_DomainRoom(t *testing.T) {
 // ─── Domain-scoped broadcast room key tests ───
 
 func TestMessageService_Send_BroadcastUsesDomainScopedKey(t *testing.T) {
-	svc, bus, _, roomRepo, textUUID := setupMessageServiceTest(t)
+	svc, bus, _, roomRepo, _ := setupMessageServiceTest(t)
 	svc.SetEventBus(bus)
 
-	// Add a domain-scoped text room
-	domainRoomUUID := uuid.New().String()
-	roomRepo.mu.Lock()
-	roomRepo.rooms[domainRoomUUID] = &model.Room{
-		UUID:       domainRoomUUID,
-		Name:       "domain-text-room",
-		Type:       model.RoomTypeText,
-		DomainUUID: "guild-abc",
-	}
-	roomRepo.mu.Unlock()
+	domainRoomUUID := addDomainTextRoom(roomRepo, "domain-text-room", "guild-abc")
 
 	_, err := svc.Send(domainRoomUUID, testActorWithUUID("alice", "uuid-alice"), "hello", "", "", nil)
 	assertNoError(t, err)
@@ -1210,7 +1215,7 @@ func TestMessageService_Send_BroadcastUsesDomainScopedKey(t *testing.T) {
 }
 
 func TestMessageService_Send_BroadcastUsesPlainKeyForPlatformRoom(t *testing.T) {
-	svc, bus, _, _, _ := setupMessageServiceTest(t)
+	svc, bus, _, _, textUUID := setupMessageServiceTest(t)
 	svc.SetEventBus(bus)
 
 	_, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "hello", "", "", nil)
@@ -1229,15 +1234,7 @@ func TestMessageService_Edit_BroadcastUsesDomainScopedKey(t *testing.T) {
 	svc, bus, _, roomRepo, _ := setupMessageServiceTest(t)
 	svc.SetEventBus(bus)
 
-	domainRoomUUID := uuid.New().String()
-	roomRepo.mu.Lock()
-	roomRepo.rooms[domainRoomUUID] = &model.Room{
-		UUID:       domainRoomUUID,
-		Name:       "domain-room",
-		Type:       model.RoomTypeText,
-		DomainUUID: "guild-xyz",
-	}
-	roomRepo.mu.Unlock()
+	domainRoomUUID := addDomainTextRoom(roomRepo, "domain-room", "guild-xyz")
 
 	dto, err := svc.Send(domainRoomUUID, testActorWithUUID("alice", "uuid-alice"), "orig", "", "", nil)
 	assertNoError(t, err)
@@ -1252,6 +1249,64 @@ func TestMessageService_Edit_BroadcastUsesDomainScopedKey(t *testing.T) {
 		t.Fatalf("expected 1 broadcast, got %d", len(bus.rooms))
 	}
 	if bus.rooms[0] != "guild-xyz:domain-room" {
+		t.Errorf("expected domain-scoped key, got %q", bus.rooms[0])
+	}
+}
+
+func TestMessageService_Delete_BroadcastUsesDomainScopedKey(t *testing.T) {
+	svc, bus, _, roomRepo, _ := setupMessageServiceTest(t)
+	svc.SetEventBus(bus)
+
+	domainRoomUUID := addDomainTextRoom(roomRepo, "domain-delete-room", "guild-del")
+	dto, err := svc.Send(domainRoomUUID, testActorWithUUID("alice", "uuid-alice"), "orig", "", "", nil)
+	assertNoError(t, err)
+
+	bus.reset()
+	assertNoError(t, svc.Delete(domainRoomUUID, dto.UUID, testActorWithUUID("alice", "uuid-alice"), false))
+
+	if len(bus.calls) != 1 || bus.calls[0] != "message:deleted" {
+		t.Fatalf("expected message:deleted broadcast, got %v", bus.calls)
+	}
+	if bus.rooms[0] != "guild-del:domain-delete-room" {
+		t.Errorf("expected domain-scoped key, got %q", bus.rooms[0])
+	}
+}
+
+func TestMessageService_React_BroadcastUsesDomainScopedKey(t *testing.T) {
+	svc, bus, _, roomRepo, _ := setupMessageServiceTest(t)
+	svc.SetEventBus(bus)
+
+	domainRoomUUID := addDomainTextRoom(roomRepo, "domain-react-room", "guild-react")
+	dto, err := svc.Send(domainRoomUUID, testActorWithUUID("alice", "uuid-alice"), "orig", "", "", nil)
+	assertNoError(t, err)
+
+	bus.reset()
+	assertNoError(t, svc.React(domainRoomUUID, dto.UUID, testActorWithUUID("alice", "uuid-alice"), "+1"))
+
+	if len(bus.calls) != 1 || bus.calls[0] != "message:reaction" {
+		t.Fatalf("expected message:reaction broadcast, got %v", bus.calls)
+	}
+	if bus.rooms[0] != "guild-react:domain-react-room" {
+		t.Errorf("expected domain-scoped key, got %q", bus.rooms[0])
+	}
+}
+
+func TestMessageService_Unreact_BroadcastUsesDomainScopedKey(t *testing.T) {
+	svc, bus, _, roomRepo, _ := setupMessageServiceTest(t)
+	svc.SetEventBus(bus)
+
+	domainRoomUUID := addDomainTextRoom(roomRepo, "domain-unreact-room", "guild-unreact")
+	dto, err := svc.Send(domainRoomUUID, testActorWithUUID("alice", "uuid-alice"), "orig", "", "", nil)
+	assertNoError(t, err)
+	assertNoError(t, svc.React(domainRoomUUID, dto.UUID, testActorWithUUID("alice", "uuid-alice"), "+1"))
+
+	bus.reset()
+	assertNoError(t, svc.Unreact(domainRoomUUID, dto.UUID, testActorWithUUID("alice", "uuid-alice"), "+1"))
+
+	if len(bus.calls) != 1 || bus.calls[0] != "message:reaction" {
+		t.Fatalf("expected message:reaction broadcast, got %v", bus.calls)
+	}
+	if bus.rooms[0] != "guild-unreact:domain-unreact-room" {
 		t.Errorf("expected domain-scoped key, got %q", bus.rooms[0])
 	}
 }

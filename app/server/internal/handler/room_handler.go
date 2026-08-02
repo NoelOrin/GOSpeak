@@ -61,7 +61,7 @@ type CreateRoomRequest struct {
 	AudioOnly     *bool  `json:"audio_only"`
 	AllowAudience *bool  `json:"allow_audience"`
 	Type          string `json:"type"`
-	DomainUUID    string `json:"domain_uuid"`
+	DomainUUID    string `json:"domain_uuid" binding:"required"`
 }
 
 // Create

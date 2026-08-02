@@ -17,8 +17,8 @@ type Room struct {
 	AllowAudience bool   `gorm:"not null;default:true" json:"allow_audience"`
 	Type          string `gorm:"size:16;not null;default:voice;index" json:"type"`
 	CreatedBy     string `gorm:"index;size:64" json:"created_by"`
-	// DomainUUID 归属的语音域 CUID2。空值表示平台级房间（仅迁移期兼容）。
-	DomainUUID string    `gorm:"size:32;index" json:"domain_uuid"`
+	// DomainUUID 归属的语音域 CUID2，不允许为空。
+	DomainUUID string    `gorm:"size:32;index;not null" json:"domain_uuid"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }

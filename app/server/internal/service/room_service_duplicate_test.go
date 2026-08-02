@@ -39,7 +39,7 @@ func TestRoomService_CreateRoom_RejectsDuplicateNameInSameDomain(t *testing.T) {
 	}
 }
 
-func TestRoomService_CreateRoom_RejectsDuplicatePlatformRoomName(t *testing.T) {
+func TestRoomService_CreateRoom_RejectsEmptyDomainUUID(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -49,16 +49,12 @@ func TestRoomService_CreateRoom_RejectsDuplicatePlatformRoomName(t *testing.T) {
 	}
 
 	svc := NewRoomService(repository.NewRoomRepository(db))
-	if _, err := svc.CreateRoom("general", "", "", 10, true, true, "user-1", "voice", ""); err != nil {
-		t.Fatalf("first CreateRoom: %v", err)
-	}
-
-	_, err = svc.CreateRoom("general", "", "", 10, true, true, "user-2", "voice", "")
+	_, err = svc.CreateRoom("general", "", "", 10, true, true, "user-1", "voice", "")
 	if err == nil {
-		t.Fatal("expected duplicate platform room to fail")
+		t.Fatal("expected empty domain_uuid to fail")
 	}
 	appErr, ok := err.(*pkg.AppError)
-	if !ok || appErr.Code != pkg.ALREADY_EXISTS {
-		t.Fatalf("expected ALREADY_EXISTS, got %#v", err)
+	if !ok || appErr.Code != pkg.INVALID_PARAMS {
+		t.Fatalf("expected INVALID_PARAMS, got %#v", err)
 	}
 }
