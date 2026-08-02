@@ -41,7 +41,7 @@ import { createFileRoute } from '@tanstack/solid-router'
 export const Route = createFileRoute('/(app)/domain/$domainUUID/')({
   component: RouteComponent,
   // 可选配置
-  staticData: { title: '语音域', icon: 'icon-channel' },
+  staticData: { title: '语音域', icon: 'icon-domain' },
   beforeLoad: async () => { /* 路由守卫 */ },
   loader: async () => { /* 数据预加载 */ },
   errorComponent: ErrorComponent,
@@ -199,7 +199,7 @@ export const Route = createFileRoute('/(app)')({
 export const Route = createFileRoute('/(app)/domain/$domainUUID/')({
   staticData: {
     title: '语音域',
-    icon: 'icon-channel',
+    icon: 'icon-domain',
   },
 })
 ```
@@ -315,7 +315,7 @@ function RouteComponent() {
 // pages/(app)/domain/$domainUUID/index.tsx — 页面路由
 export const Route = createFileRoute('/(app)/domain/$domainUUID/')({
   component: RouteComponent,
-  staticData: { title: '语音域', icon: 'icon-channel' },
+  staticData: { title: '语音域', icon: 'icon-domain' },
 })
 
 function RouteComponent() {

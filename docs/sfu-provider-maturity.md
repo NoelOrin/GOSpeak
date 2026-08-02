@@ -37,7 +37,7 @@
 
 | Provider | 方法 | 严重程度 | 当前行为 | 建议 / 状态 |
 |----------|------|----------|----------|-------------|
-| Agora | `MuteParticipant` | 中 | 降级 hard：kicking-rule 撤销 publish_*，保留在频道 | unmute 尽量删 rule；否则依赖 TTL/软解禁 |
+| Agora | `MuteParticipant` | 中 | 降级 hard：kicking-rule 撤销 publish_*，保留在房间 | unmute 尽量删 rule；否则依赖 TTL/软解禁 |
 | Agora | `GenerateAdminToken` | 中 | 返回空字符串 `""` | 返回真实 token 或 `AppError` |
 | Agora | `RemoveParticipant` | 低 | 短时 kicking-rule（默认 60s）强制离会 | 语义接近 hard kick，短暂挡重进；非永久 ban |
 | MediaSoup | `GenerateToken` | 中 | 返回 `room:identity` 内部约定，非真实 JWT | 设计如此，可接受 |

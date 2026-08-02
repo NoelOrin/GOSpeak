@@ -113,7 +113,7 @@ E2E_BROWSER 显式指定 → OS 默认浏览器 → chrome → chromium → msed
 
 ### 5.1 join
 
-1. 登录后进入 `/channel`。
+1. 登录后进入域工作区 `/domain/:domainUUID`。
 2. 使用 `title="新建房间"` 图标按钮创建唯一房间 `e2e-join-*`。
 3. 双击左侧房间行进入，不使用单击。
 4. 等待 `离开` 按钮可见且房间标题为目标房间名。
@@ -181,7 +181,7 @@ E2E_BROWSER 显式指定 → OS 默认浏览器 → chrome → chromium → msed
 
 ## 6. 浏览器操作规范
 
-- 进入 `/channel` 后操作房间列表。
+- 进入域工作区 `/domain/:domainUUID` 后操作房间列表。
 - 房间进入方式为**双击**左侧房间行；创建按钮使用 `button[title="新建房间"]`。
 - 切房时直接双击目标房间，不需要先点 `离开`。
 - 多人场景使用两个独立 Playwright context，避免共享 cookie。

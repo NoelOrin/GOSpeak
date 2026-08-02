@@ -38,7 +38,7 @@ pnpm check        # biome check (format + lint)
 src/
 ├── pages/          # 文件路由（TanStack Router）
 │   ├── (app)/      # 需要登录的路由组
-│   │   ├── channel/  # 频道页（VoiceChat 主界面）
+│   │   ├── domain/$domainUUID/  # 域工作区
 │   │   ├── index/    # 首页
 │   │   └── link/     # 链接页
 │   └── login/      # 登录页

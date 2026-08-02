@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-GOSpeak 是一个自托管的**游戏语音平台**，类似自部署版 Discord 语音频道。基于 WebRTC，pnpm monorepo：Go 后端 + SolidJS 前端，多 SFU Provider 抽象。
+GOSpeak 是一个自托管的**游戏语音平台**，类似自部署版 Discord 语音房间。基于 WebRTC，pnpm monorepo：Go 后端 + SolidJS 前端，多 SFU Provider 抽象。
 
 **为什么自建？** 游戏语音数据不经第三方、自定义语音路由策略、无用户数限制、完全控制部署架构。
 
@@ -13,7 +13,7 @@ GOSpeak 是一个自托管的**游戏语音平台**，类似自部署版 Discord
 - 渐进式数据库（SQLite 开箱即用 → PostgreSQL → MySQL）
 - JWT + OAuth2 三端登录（GitHub / Google / QQ）
 - Guild（语音服务器）多租户隔离
-- 文字频道消息（房间消息 + 私聊）
+- 文字房间消息（房间消息 + 私聊）
 - 插件系统（内置 Bot + 外部插件）
 - 多实例部署（NATS 事件总线 + Redis 状态共享）
 
