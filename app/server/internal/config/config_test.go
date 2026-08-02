@@ -128,6 +128,37 @@ func TestLoadAcceptsLogConfig(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsClusterRole(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("GOSPEAK_ROLE", "agent")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ClusterRole != "agent" {
+		t.Fatalf("ClusterRole=%q want agent", cfg.ClusterRole)
+	}
+	if !cfg.IsAgent() || cfg.IsWorker() {
+		t.Fatalf("agent role should be agent-only")
+	}
+}
+
+func TestLoadRejectsInvalidClusterRole(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("GOSPEAK_ROLE", "controller")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid GOSPEAK_ROLE error")
+	}
+}
+
+func TestLoadRejectsWorkerWithoutAgentURL(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("GOSPEAK_ROLE", "worker")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected worker config error")
+	}
+}
+
 func clearConfigEnv(t *testing.T) {
 	t.Helper()
 	keys := []string{
@@ -136,6 +167,8 @@ func clearConfigEnv(t *testing.T) {
 		"LOG_LEVEL", "LOG_FORMAT", "LOG_OUTPUT", "LOG_FILE", "LOG_CALLER",
 		"REDIS_HOST", "REDIS_PORT", "REDIS_PASSWORD", "REDIS_DB",
 		"NATS_URL", "NATS_SUBJECT_PREFIX", "NATS_NAME", "NATS_CONNECT_TIMEOUT", "NATS_EMBEDDED_PORT", "STATE_STORE",
+		"GOSPEAK_ROLE", "CLUSTER_NODE_ID", "CLUSTER_ADVERTISE_URL", "CLUSTER_AGENT_URL", "CLUSTER_AGENT_TOKEN",
+		"CLUSTER_HEARTBEAT_INTERVAL", "CLUSTER_HEARTBEAT_TIMEOUT", "CLUSTER_MAX_SERVERS", "CLUSTER_MAX_ROOMS", "CLUSTER_LABELS",
 		"EMAIL_ENABLED", "SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM", "SMTP_FROM_NAME",
 		"EMAIL_CODE_TTL", "EMAIL_SEND_COOLDOWN", "EMAIL_CODE_SECRET",
 		"STORAGE_TYPE", "STORAGE_ENDPOINT", "STORAGE_BUCKET", "STORAGE_REGION", "STORAGE_ACCESS_KEY",

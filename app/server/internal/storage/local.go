@@ -31,6 +31,11 @@ func (p *LocalProvider) PresignUpload(key string, contentType string, maxSize in
 	return &PresignedResult{ObjectKey: key}, nil
 }
 
+// TestConnection 本地存储无需额外连接校验。
+func (p *LocalProvider) TestConnection() error {
+	return nil
+}
+
 // resolvePath 清理 key 并拼接 basePath，拒绝包含 ../ 的路径穿越。
 // 返回绝对全路径与 basePath 绝对路径，供调用方二次校验。
 func (p *LocalProvider) resolvePath(key string) (string, string, error) {

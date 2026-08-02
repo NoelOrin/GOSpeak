@@ -4,7 +4,6 @@ import {
 	createSignal,
 	For,
 	onCleanup,
-	onMount,
 	Show,
 } from "solid-js";
 import Avatar from "@/components/common/avatar";
@@ -15,19 +14,11 @@ import { type MemberInfo, socketStore } from "@/stores/socketStore";
 import userStore from "@/stores/userStore";
 import VoiceChatStore from "@/stores/voiceChatStore";
 import { hasPermission } from "@/utils/permissions";
-import MemberSidebar from "./components/memberSidebar";
 import { useRoomAudioBridge } from "./hooks/useRoomAudioBridge";
 import { useRoomSounds } from "./hooks/useRoomSounds";
 import { useVoiceSession } from "./hooks/useVoiceSession";
 
-const RoomDetail = ({
-	ref,
-	mobileHideMembers = false,
-}: {
-	ref?: HTMLDivElement;
-	/** 移动端舞台自管成员 tab，隐藏侧栏 */
-	mobileHideMembers?: boolean;
-}) => {
+const RoomDetail = ({ ref }: { ref?: HTMLDivElement }) => {
 	const {
 		selectedRoom,
 		phase,
@@ -53,11 +44,12 @@ const RoomDetail = ({
 		});
 	});
 	const [_columnCount, setColumnCount] = createSignal(4);
-	let containerRef: HTMLDivElement | undefined;
+	const [containerRef, setContainerRef] = createSignal<HTMLDivElement>();
 
 	const updateColumnCount = () => {
-		if (!containerRef) return;
-		const containerWidth = containerRef.clientWidth;
+		const el = containerRef();
+		if (!el) return;
+		const containerWidth = el.clientWidth;
 		const minItemWidth = 220;
 		const gap = 16;
 		const maxColumns = Math.max(
@@ -67,10 +59,11 @@ const RoomDetail = ({
 		setColumnCount(maxColumns);
 	};
 
-	onMount(() => {
-		if (!containerRef) return;
+	createEffect(() => {
+		const el = containerRef();
+		if (!el) return;
 		const resizeObserver = new ResizeObserver(updateColumnCount);
-		resizeObserver.observe(containerRef);
+		resizeObserver.observe(el);
 		updateColumnCount();
 		onCleanup(() => resizeObserver.disconnect());
 	});
@@ -115,7 +108,7 @@ const RoomDetail = ({
 									"grid-template-columns": `repeat(auto-fit, minmax(min(100%, 140px), 1fr))`,
 								}}
 								ref={(el) => {
-									containerRef = el;
+									setContainerRef(el);
 								}}
 							>
 								<Show
@@ -133,9 +126,7 @@ const RoomDetail = ({
 							</div>
 						</div>
 					</div>
-					<Show when={!mobileHideMembers}>
-						<MemberSidebar />
-					</Show>
+
 					<Show when={!isJoined()}>
 						<div class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-base-100/90 px-4">
 							<div class="text-lg font-bold text-center">

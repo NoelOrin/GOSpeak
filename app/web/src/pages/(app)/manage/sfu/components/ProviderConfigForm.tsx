@@ -192,7 +192,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 							onInput={(event) =>
 								updateField("mediasoup_bridge_url", event.currentTarget.value)
 							}
-							disabled={saving() || true}
+							disabled={true}
 						/>
 					</FormField>
 					<FormField label="Host" error={errors().mediasoup_host}>
@@ -207,7 +207,7 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 							onInput={(event) =>
 								updateField("mediasoup_host", event.currentTarget.value)
 							}
-							disabled={saving() || true}
+							disabled={true}
 						/>
 					</FormField>
 				</div>

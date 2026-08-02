@@ -1,6 +1,12 @@
 import { createFileRoute, redirect } from "@tanstack/solid-router";
 import Users from "lucide-solid/icons/users";
-import { createResource, createSignal, Show } from "solid-js";
+import {
+	createEffect,
+	createMemo,
+	createResource,
+	createSignal,
+	Show,
+} from "solid-js";
 import { showToast } from "solid-notifications";
 import { cancelMute, createMute, listMutes, type MuteRecord } from "@/api/mute";
 import { deleteUser, listUsers, updateUserRole } from "@/api/user";
@@ -13,6 +19,7 @@ import QuickMuteForm from "./components/QuickMuteForm";
 import UsersTable from "./components/UsersTable";
 
 const ROLES = ["user", "admin", "ban"];
+const USER_PAGE_SIZE = 20;
 
 const canUpdateUser = () => hasPermission("user:update");
 const canDeleteUser = () => hasPermission("user:delete");
@@ -32,9 +39,26 @@ export const Route = createFileRoute("/(app)/manage/users/")({
 });
 
 function UsersPage() {
-	const [_usersData, { refetch: _refetchUsers }] = createResource(() =>
-		listUsers(1, 200),
+	const [userPage, setUserPage] = createSignal(1);
+	const [userSearchInput, setUserSearchInput] = createSignal("");
+	const [userKeyword, setUserKeyword] = createSignal("");
+	const [_usersData, { refetch: _refetchUsers }] = createResource(
+		() => ({
+			page: userPage(),
+			pageSize: USER_PAGE_SIZE,
+			keyword: userKeyword(),
+		}),
+		({ page, pageSize, keyword }) =>
+			listUsers(page, pageSize, true, keyword || undefined),
 	);
+	const userTotal = () => _usersData()?.total ?? 0;
+	const userTotalPages = createMemo(() =>
+		Math.max(1, Math.ceil(userTotal() / USER_PAGE_SIZE)),
+	);
+	createEffect(() => {
+		if (userPage() > userTotalPages())
+			setUserPage(Math.max(1, userTotalPages()));
+	});
 	const [mutes, { refetch: _refetchMutes }] = createResource(
 		() => canManageMute(),
 		async (enabled) => {
@@ -156,6 +180,16 @@ function UsersPage() {
 			<UsersTable
 				loading={_usersData.loading}
 				users={users()}
+				total={userTotal()}
+				searchInput={userSearchInput()}
+				onSearchInput={setUserSearchInput}
+				onSearch={() => {
+					setUserPage(1);
+					setUserKeyword(userSearchInput().trim());
+				}}
+				page={userPage()}
+				totalPages={userTotalPages()}
+				onPageChange={setUserPage}
 				roles={ROLES}
 				muteMap={_muteMap()}
 				canManageMute={canManageMute()}

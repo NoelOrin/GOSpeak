@@ -107,3 +107,15 @@ export async function updateStorageConfig(
 
 	return (res as any).data.data;
 }
+
+/** 测试存储配置连接，不保存配置 */
+export async function testStorageConfig(
+	config: StorageConfigInput,
+): Promise<{ ok: boolean }> {
+	const res = (await apiClient.post({
+		url: "/api/v1/storage/test-config",
+		data: config,
+	})) as AxiosResponse<Result<{ ok: boolean }>>;
+
+	return (res as any).data.data ?? { ok: true };
+}

@@ -13,10 +13,16 @@ export async function listUsers(
 	page = 1,
 	pageSize = 100,
 	excludeBots = true,
+	keyword?: string,
 ): Promise<{ users: BackendUser[]; total: number }> {
 	const res = (await apiClient.post({
 		url: "/api/v1/user/list",
-		data: { page, page_size: pageSize, exclude_bots: excludeBots },
+		data: {
+			page,
+			page_size: pageSize,
+			exclude_bots: excludeBots,
+			...(keyword?.trim() ? { keyword: keyword.trim() } : {}),
+		},
 	})) as AxiosResponse<Result<UserListResponse>>;
 
 	return {

@@ -39,8 +39,8 @@ const Dashboard = () => {
 	);
 
 	return (
-		<div class="h-full overflow-y-auto bg-base-200">
-			<div class="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 lg:px-6">
+		<div class="h-full overflow-y-auto bg-base-200 min-w-0">
+			<div class=" flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
 				<section class="rounded-lg border border-base-300 bg-base-100 p-6 shadow-sm">
 					<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
 						<div>

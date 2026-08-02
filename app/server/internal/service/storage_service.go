@@ -125,6 +125,48 @@ func (s *StorageService) UpdateConfigFromDTO(req UpdateStorageConfigRequest) (*P
 	return ToPublicStorageConfig(saved), nil
 }
 
+// TestConnectionFromDTO 使用表单里的配置临时创建 provider 并测试连接，不写入数据库。
+func (s *StorageService) TestConnectionFromDTO(req UpdateStorageConfigRequest) error {
+	cfg := model.StorageConfig{
+		ProviderType:  req.ProviderType,
+		Endpoint:      req.Endpoint,
+		Bucket:        req.Bucket,
+		Region:        req.Region,
+		AccessKey:     req.AccessKey,
+		SecretKey:     req.SecretKey,
+		PublicBaseURL: req.PublicBaseURL,
+		PathPrefix:    req.PathPrefix,
+		MaxFileSize:   req.MaxFileSize,
+		AllowedTypes:  req.AllowedTypes,
+	}
+
+	existing, err := s.repo.GetConfig()
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if existing != nil {
+		cfg.AccessKey = pkg.KeepSecret(cfg.AccessKey, existing.AccessKey)
+		cfg.SecretKey = pkg.KeepSecret(cfg.SecretKey, existing.SecretKey)
+	}
+
+	var p storage.Provider
+	switch cfg.ProviderType {
+	case "s3":
+		p, err = storage.NewS3Provider(cfg)
+	case "local":
+		p = storage.NewLocalProvider("", "", cfg.PublicBaseURL)
+	default:
+		return pkg.NewAppError(pkg.INVALID_PARAMS, "provider_type must be s3 or local")
+	}
+	if err != nil {
+		return pkg.NewAppError(pkg.STORAGE_ERROR, "init s3 provider failed: "+err.Error())
+	}
+	if err := p.TestConnection(); err != nil {
+		return pkg.NewAppError(pkg.STORAGE_ERROR, err.Error())
+	}
+	return nil
+}
+
 // ReloadProvider 重建存储 provider
 func (s *StorageService) ReloadProvider() (storage.Provider, error) {
 	s.mu.Lock()

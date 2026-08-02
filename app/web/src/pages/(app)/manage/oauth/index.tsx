@@ -132,6 +132,7 @@ function OAuthPage() {
 	};
 
 	const handleSave = async () => {
+		if (saving()) return;
 		if (!name().trim()) {
 			showToast("请填写提供商名称", { type: "warning" });
 			return;

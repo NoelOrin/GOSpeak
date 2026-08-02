@@ -90,6 +90,17 @@ func NewS3Provider(cfg model.StorageConfig) (*S3Provider, error) {
 	}, nil
 }
 
+// TestConnection 通过 HeadBucket 校验 endpoint、凭证与 bucket。
+func (p *S3Provider) TestConnection() error {
+	_, err := p.client.HeadBucket(context.Background(), &s3.HeadBucketInput{
+		Bucket: aws.String(p.bucket),
+	})
+	if err != nil {
+		return fmt.Errorf("s3 connection test failed: %w", err)
+	}
+	return nil
+}
+
 // PresignUpload 生成预签名 PUT URL
 func (p *S3Provider) PresignUpload(key string, contentType string, maxSize int64) (*PresignedResult, error) {
 	putInput := &s3.PutObjectInput{

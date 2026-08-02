@@ -37,5 +37,7 @@ const (
 
 	PermPluginRead   = "plugin:read"
 	PermPluginManage = "plugin:manage"
-)
 
+	PermClusterRead   = "cluster:read"
+	PermClusterManage = "cluster:manage"
+)

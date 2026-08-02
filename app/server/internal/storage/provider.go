@@ -24,4 +24,7 @@ type Provider interface {
 
 	// Delete 删除对象
 	Delete(key string) error
+
+	// TestConnection 校验存储后端连接是否可用
+	TestConnection() error
 }

@@ -7,6 +7,7 @@ import (
 	authRoutes "GOSpeak/internal/router/routes/auth"
 	botRoutes "GOSpeak/internal/router/routes/bot"
 	conversationRoutes "GOSpeak/internal/router/routes/conversation"
+	clusterRoutes "GOSpeak/internal/router/routes/cluster"
 	domainRoutes "GOSpeak/internal/router/routes/domain"
 	emailRoutes "GOSpeak/internal/router/routes/email"
 	emailConfigRoutes "GOSpeak/internal/router/routes/email_config"
@@ -60,6 +61,7 @@ type Handlers struct {
 	Plugin       *handler.PluginHandler
 	Domain       *handler.DomainHandler
 	Conversation *handler.ConversationHandler
+	Cluster      *handler.ClusterHandler
 	// PluginHost 用于挂载插件自定义路由
 	PluginHost interface{ MountRoutes(*gin.RouterGroup) }
 }
@@ -83,6 +85,19 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	oauthRoutes.Register(api.Group("/oauth"), h.OAuth)
 	srsRoutes.Register(api.Group("/srs"), h.SRSCallback)
 	systemRoutes.Register(api.Group("/system"), h.Monitor)
+
+	if cfg := config.Current(); cfg != nil && cfg.ClusterRole == "worker" {
+		signalRoutes.Register(api.Group("/signal"), h.Signal)
+		srsRoutes.Register(api.Group("/srs"), h.SRSCallback)
+		systemRoutes.Register(api.Group("/system"), h.Monitor)
+
+		workerProtected := api.Group("")
+		workerProtected.Use(middleware.JWTAuth())
+		workerProtected.Use(middleware.BanCheck())
+		signalRoutes.RegisterProtected(workerProtected.Group("/signal"), h.Signal, h.Cloudflare)
+		return r
+	}
+
 
 	protected := api.Group("")
 	protected.Use(middleware.JWTAuth())
@@ -113,6 +128,9 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	}
 	if h.Domain != nil {
 		domainRoutes.Register(protected.Group("/domain"), h.Domain)
+	}
+	if h.Cluster != nil {
+		clusterRoutes.RegisterProtected(protected.Group("/cluster"), h.Cluster)
 	}
 
 	return r

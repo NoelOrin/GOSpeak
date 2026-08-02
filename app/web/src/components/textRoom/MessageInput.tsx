@@ -178,6 +178,7 @@ export default function MessageInput(props: MessageInputProps) {
 
 	return (
 		<div
+			role="region"
 			class="relative border-t border-base-300 p-2 sm:p-3 safe-bottom"
 			onDragOver={(e) => e.preventDefault()}
 			onDrop={onDrop}
@@ -253,7 +254,7 @@ export default function MessageInput(props: MessageInputProps) {
 					class="hidden"
 					multiple
 					accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain"
-					onChange={(e) => void handleFiles(e.currentTarget.files)}
+					onChange={(e) => void handleFiles(e.currentTarget.files ?? undefined)}
 				/>
 				<button
 					type="button"

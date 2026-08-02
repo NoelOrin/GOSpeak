@@ -58,6 +58,9 @@ const (
 	PermPluginRead   = permcode.PermPluginRead
 	PermPluginManage = permcode.PermPluginManage
 
+	PermClusterRead   = permcode.PermClusterRead
+	PermClusterManage = permcode.PermClusterManage
+
 	PermMessageSend         = permcode.PermMessageSend
 	PermMessageRead         = permcode.PermMessageRead
 	PermMessageDeleteOthers = permcode.PermMessageDeleteOthers
@@ -102,6 +105,9 @@ var DefaultPermissions = []Permission{
 
 	{Code: PermPluginRead, Name: "查看插件", Description: "查看后端插件列表与配置"},
 	{Code: PermPluginManage, Name: "管理插件", Description: "启用/停用插件并修改插件配置"},
+
+	{Code: PermClusterRead, Name: "查看集群节点", Description: "查看节点状态与 Server 分配"},
+	{Code: PermClusterManage, Name: "管理集群节点", Description: "注册节点、接收心跳、调整 Server 实例组"},
 
 	{Code: PermMessageSend, Name: "发送消息", Description: "在文字房间发送消息"},
 	{Code: PermMessageRead, Name: "查看消息", Description: "查看文字房间历史消息"},
@@ -155,6 +161,7 @@ var DefaultRolePermissions = map[string][]string{
 		PermOAuthRead, PermOAuthManage,
 		PermPluginRead, PermPluginManage,
 		PermMessageSend, PermMessageRead, PermMessageDeleteOthers,
+		PermClusterRead, PermClusterManage,
 	},
 	"user": {
 		PermRoomCreate, PermRoomRead,

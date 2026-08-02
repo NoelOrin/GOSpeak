@@ -8,9 +8,7 @@ interface MemberSidebarProps {
 }
 
 const MemberSidebar = (props: MemberSidebarProps) => {
-	const [selectedIdentity, setSelectedIdentity] = createSignal<string | null>(
-		null,
-	);
+	const [_, setSelectedIdentity] = createSignal<string | null>(null);
 
 	const members = () => socketStore.members();
 
@@ -29,7 +27,7 @@ const MemberSidebar = (props: MemberSidebarProps) => {
 	};
 
 	return (
-		<div class="flex flex-col w-52 border-l border-base-300 h-full overflow-hidden shrink-0">
+		<div class="flex flex-col w-52 border-l border-base-300 h-full overflow-hidden shrink-0 ml-auto">
 			<div class="flex items-center px-3 h-10 border-b border-base-300 text-xs font-bold text-base-content/70">
 				服务器成员 ({members().length})
 			</div>

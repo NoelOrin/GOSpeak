@@ -42,8 +42,8 @@ const QuickActions = (props: QuickActionsProps) => {
 
 	return (
 		<>
-			<section class="rounded-lg bg-transparent px-2 py-2">
-				<div class="mb-5">
+			<section class="min-w-0 rounded-lg bg-transparent px-2 py-2">
+				<div class="mb-5 min-w-0">
 					<h2 class="text-lg font-semibold">快捷入口</h2>
 					<p class="text-sm text-base-content/60">
 						{props.compact ? "常用操作" : "把常用操作放在首页，减少跳转成本"}
@@ -52,39 +52,39 @@ const QuickActions = (props: QuickActionsProps) => {
 				<div
 					class={
 						props.compact
-							? "grid gap-2"
-							: "grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+							? "grid min-w-0 gap-2"
+							: "grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4"
 					}
 				>
 					<button
 						type="button"
-						class={`btn justify-between rounded-lg border-0 bg-base-200 px-4 text-left normal-case hover:bg-base-300 ${props.compact ? "h-18" : "h-24"}`}
+						class={`btn min-w-0 justify-between overflow-hidden rounded-lg border-0 bg-base-200 px-4 text-left normal-case hover:bg-base-300 ${props.compact ? "h-18" : "h-24"}`}
 						onClick={handleCreateRoom}
 					>
-						<div>
-							<div class="font-medium">快速创建房间</div>
-							<div class="mt-1 text-xs text-base-content/60">
+						<div class="min-w-0 flex-1">
+							<div class="truncate font-medium">快速创建房间</div>
+							<div class="mt-1 truncate text-xs text-base-content/60">
 								填写配置后创建新房间
 							</div>
 						</div>
-						<CirclePlus size={20} />
+						<CirclePlus size={20} class="shrink-0" />
 					</button>
 					<button
 						type="button"
-						class={`btn justify-between rounded-lg border-0 bg-base-200 px-4 text-left normal-case hover:bg-base-300 ${props.compact ? "h-18" : "h-24"}`}
+						class={`btn min-w-0 justify-between overflow-hidden rounded-lg border-0 bg-base-200 px-4 text-left normal-case hover:bg-base-300 ${props.compact ? "h-18" : "h-24"}`}
 						onClick={handleJoinRandom}
 					>
-						<div>
-							<div class="font-medium">随机加入房间</div>
-							<div class="mt-1 text-xs text-base-content/60">
+						<div class="min-w-0 flex-1">
+							<div class="truncate font-medium">随机加入房间</div>
+							<div class="mt-1 truncate text-xs text-base-content/60">
 								优先选择当前最活跃房间
 							</div>
 						</div>
-						<Radio size={20} />
+						<Radio size={20} class="shrink-0" />
 					</button>
 					<button
 						type="button"
-						class={`btn justify-between rounded-lg border-0 bg-base-200 px-4 text-left normal-case hover:bg-base-300 ${props.compact ? "h-18" : "h-24"}`}
+						class={`btn min-w-0 justify-between overflow-hidden rounded-lg border-0 bg-base-200 px-4 text-left normal-case hover:bg-base-300 ${props.compact ? "h-18" : "h-24"}`}
 						onClick={() => {
 							const uuid = socketStore.currentDomainUUID();
 							if (uuid)
@@ -95,27 +95,27 @@ const QuickActions = (props: QuickActionsProps) => {
 							else navigate({ to: "/discover" });
 						}}
 					>
-						<div>
-							<div class="font-medium">前往域</div>
-							<div class="mt-1 text-xs text-base-content/60">
+						<div class="min-w-0 flex-1">
+							<div class="truncate font-medium">前往域</div>
+							<div class="mt-1 truncate text-xs text-base-content/60">
 								查看全部房间与在线成员
 							</div>
 						</div>
-						<ArrowRight size={20} />
+						<ArrowRight size={20} class="shrink-0" />
 					</button>
 					{canManage() ? (
 						<button
 							type="button"
-							class={`btn justify-between rounded-lg border-0 bg-base-200 px-4 text-left normal-case hover:bg-base-300 ${props.compact ? "h-18" : "h-24"}`}
+							class={`btn min-w-0 justify-between overflow-hidden rounded-lg border-0 bg-base-200 px-4 text-left normal-case hover:bg-base-300 ${props.compact ? "h-18" : "h-24"}`}
 							onClick={() => navigate({ to: "/manage/permission" })}
 						>
-							<div>
-								<div class="font-medium">权限管理</div>
-								<div class="mt-1 text-xs text-base-content/60">
+							<div class="min-w-0 flex-1">
+								<div class="truncate font-medium">权限管理</div>
+								<div class="mt-1 truncate text-xs text-base-content/60">
 									进入权限与禁言管理页面
 								</div>
 							</div>
-							<ShieldCheck size={20} />
+							<ShieldCheck size={20} class="shrink-0" />
 						</button>
 					) : null}
 				</div>

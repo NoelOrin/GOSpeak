@@ -138,7 +138,7 @@ func (s *ConversationService) GetMessages(conversationID, identity, before strin
 		limit = MaxListLimit
 	}
 
-	rows, hasMore, err := s.messageRepo.ListBefore(conversationID, before, limit)
+	rows, hasMore, err := s.messageRepo.ListBeforeConversation(conversationID, before, limit)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}

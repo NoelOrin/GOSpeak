@@ -11,6 +11,8 @@ import (
 func Register(r *gin.RouterGroup, h *handler.UserHandler) {
 	r.POST("/profile", h.GetProfile)
 	r.POST("/info", h.GetByName)
+	r.GET("/preset-avatars", h.PresetAvatars)
+	r.POST("/preset-avatars", h.PresetAvatars)
 	r.POST("/update-profile", h.UpdateProfile)
 	r.POST("/upload-avatar", h.UploadAvatar)
 	r.POST("/list", middleware.RequirePermission(permcode.PermUserRead), h.List)

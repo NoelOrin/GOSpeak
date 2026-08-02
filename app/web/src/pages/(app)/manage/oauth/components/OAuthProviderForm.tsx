@@ -81,7 +81,10 @@ export default function OAuthProviderForm(props: OAuthProviderFormProps) {
 	const setFormMode = (mode: "preset") => {
 		if (mode === "preset") props.onBackToPreset();
 	};
-	const handleSave = () => props.onSave();
+	const handleSave = () => {
+		if (saving()) return;
+		props.onSave();
+	};
 	const closeForm = () => props.onCancel();
 
 	return (
@@ -278,7 +281,7 @@ export default function OAuthProviderForm(props: OAuthProviderFormProps) {
 					<button
 						type="button"
 						class="btn btn-sm border border-base-300 bg-base-100 text-base-content shadow-none hover:bg-base-200"
-						classList={{ "btn-disabled": saving() }}
+						disabled={saving()}
 						onClick={handleSave}
 					>
 						<Show when={saving()} fallback={<Save size={16} />}>

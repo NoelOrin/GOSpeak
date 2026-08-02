@@ -129,6 +129,37 @@ export const chatCache = {
 		});
 	},
 
+	async renameConversation(oldID: string, newID: string): Promise<void> {
+		if (!oldID || !newID || oldID === newID) return;
+		const db = await openDB();
+		return new Promise((resolve, reject) => {
+			const tx = db.transaction(["conversations", "messages"], "readwrite");
+			const convStore = tx.objectStore("conversations");
+			const msgStore = tx.objectStore("messages");
+			const index = msgStore.index("by_conv");
+			const msgReq = index.getAll(oldID);
+			msgReq.onerror = () => reject(msgReq.error);
+			msgReq.onsuccess = () => {
+				const messages = msgReq.result as CachedMessage[];
+				const convReq = convStore.get(oldID);
+				convReq.onerror = () => reject(convReq.error);
+				convReq.onsuccess = () => {
+					const conv = convReq.result as CachedConversation | undefined;
+					if (conv) {
+						convStore.delete(oldID);
+						convStore.put({ ...conv, conversation_id: newID });
+					}
+					for (const msg of messages) {
+						msgStore.delete(msg.id);
+						msgStore.put({ ...msg, conversation_id: newID });
+					}
+				};
+			};
+			tx.oncomplete = () => resolve();
+			tx.onerror = () => reject(tx.error);
+		});
+	},
+
 	async prependMessages(convID: string, msgs: CachedMessage[]): Promise<void> {
 		const db = await openDB();
 		return new Promise((resolve, reject) => {

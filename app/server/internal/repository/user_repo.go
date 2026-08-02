@@ -2,6 +2,7 @@ package repository
 
 import (
 	"GOSpeak/internal/model"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -55,11 +56,19 @@ func (r *UserRepository) GetByEmail(email string) (*model.User, error) {
 }
 
 func (r *UserRepository) List(page, pageSize int, excludeBots bool) ([]model.User, int64, error) {
+func (r *UserRepository) List(page, pageSize int, excludeBots bool, keyword string) ([]model.User, int64, error) {
 	var users []model.User
 	var total int64
 	query := r.db.Model(&model.User{})
 	if excludeBots {
 		query = query.Where("is_bot = ?", false)
+	}
+	if keyword = strings.TrimSpace(keyword); keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where(
+			"(LOWER(name) LIKE LOWER(?) OR LOWER(display_name) LIKE LOWER(?) OR LOWER(email) LIKE LOWER(?))",
+			like, like, like,
+		)
 	}
 	query.Count(&total)
 	err := query.Offset((page - 1) * pageSize).Limit(pageSize).Find(&users).Error

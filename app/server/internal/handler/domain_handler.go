@@ -13,16 +13,23 @@ type DomainHandler struct {
 	domainSvc      *service.DomainService
 	permSvc       *service.PermissionService
 	onDomainDelete func(string)
+	onDomainCreated func(string)
 }
 
 func NewDomainHandler(domainSvc *service.DomainService, permSvc *service.PermissionService) *DomainHandler {
 	return &DomainHandler{domainSvc: domainSvc, permSvc: permSvc}
 }
 
+// SetOnDomainCreated 注入创建 Server 后的集群调度回调。
+func (h *DomainHandler) SetOnDomainCreated(fn func(string)) {
+	h.onDomainCreated = fn
+}
+
 // SetOnDomainDelete 注入删除后的信令清理回调（生产环境为 signalHub.OnDomainDelete）。
 func (h *DomainHandler) SetOnDomainDelete(fn func(string)) {
 	h.onDomainDelete = fn
 }
+
 
 func (h *DomainHandler) hasPermission(c *gin.Context, code string) bool {
 	if h.permSvc == nil {
@@ -59,6 +66,9 @@ func (h *DomainHandler) Create(c *gin.Context) {
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
+	}
+	if h.onDomainCreated != nil {
+		h.onDomainCreated(domain.UUID)
 	}
 	pkg.Success(c, domain)
 }

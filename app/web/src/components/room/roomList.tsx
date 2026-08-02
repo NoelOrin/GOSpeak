@@ -25,6 +25,7 @@ import Divider from "../common/divider";
 import MemberItemButton from "./components/memberItemButton";
 import PasswordModal from "./components/passwordModal";
 import UserInfoPopover from "./components/userInfoPopover";
+import { canEditRoomItem, toEditRoomRecord } from "./roomListUtils";
 
 // 子项
 interface RoomItemPropsType {
@@ -35,39 +36,6 @@ interface RoomItemPropsType {
 	onCloseMember: () => void;
 	onEditRoom: (room: RoomInfo) => void;
 }
-
-export function canEditRoomItem(
-	currentUser: { uuid?: string } | null,
-	domain: { owner_uuid?: string } | null,
-	memberRole: string | null | undefined,
-	hasRoomUpdatePermission: boolean,
-) {
-	return (
-		hasRoomUpdatePermission ||
-		(!!currentUser?.uuid && domain?.owner_uuid === currentUser.uuid) ||
-		memberRole === "admin"
-	);
-}
-
-export function toEditRoomRecord(room: RoomInfo): RoomRecord {
-	return {
-		id: room.id,
-		uuid: room.uuid,
-		name: room.name,
-		description: room.description ?? "",
-		limit: room.limit,
-		audio_only: room.audioOnly ?? true,
-		allow_audience: room.allowAudience ?? true,
-		type:
-			room.type === "text"
-				? "text"
-				: room.type === "voice"
-					? "voice"
-					: undefined,
-		domain_uuid: room.domain_uuid,
-	};
-}
-
 const RoomItem = (props: RoomItemPropsType) => {
 	const isSelected = () =>
 		socketStore.selectedRoomInfo()?.name === props.room.name &&

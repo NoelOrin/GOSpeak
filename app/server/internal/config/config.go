@@ -80,6 +80,17 @@ type Config struct {
 	NATSTLS            bool   `env:"NATS_TLS" envDefault:"false"`
 	StateStore         string `env:"STATE_STORE" envDefault:"auto"`
 
+	ClusterRole              string `env:"GOSPEAK_ROLE" envDefault:"all"`
+	ClusterNodeID            string `env:"CLUSTER_NODE_ID" envDefault:""`
+	ClusterAdvertiseURL      string `env:"CLUSTER_ADVERTISE_URL" envDefault:""`
+	ClusterAgentURL          string `env:"CLUSTER_AGENT_URL" envDefault:""`
+	ClusterAgentToken        string `env:"CLUSTER_AGENT_TOKEN" envDefault:""`
+	ClusterHeartbeatInterval string `env:"CLUSTER_HEARTBEAT_INTERVAL" envDefault:"5s"`
+	ClusterHeartbeatTimeout  string `env:"CLUSTER_HEARTBEAT_TIMEOUT" envDefault:"30s"`
+	ClusterMaxServers        int    `env:"CLUSTER_MAX_SERVERS" envDefault:"100"`
+	ClusterMaxRooms          int    `env:"CLUSTER_MAX_ROOMS" envDefault:"1000"`
+	ClusterLabels            string `env:"CLUSTER_LABELS" envDefault:""`
+
 	EmailEnabled      bool   `env:"EMAIL_ENABLED" envDefault:"false"`
 	SMTPHost          string `env:"SMTP_HOST" envDefault:""`
 	SMTPPort          string `env:"SMTP_PORT" envDefault:"587"`
@@ -221,6 +232,34 @@ func (c *Config) NATSConnectTimeoutDuration() (time.Duration, error) {
 	return time.ParseDuration(strings.TrimSpace(c.NATSConnectTimeout))
 }
 
+// ClusterHeartbeatIntervalDuration 解析节点心跳间隔。
+func (c *Config) ClusterHeartbeatIntervalDuration() time.Duration {
+	d, err := time.ParseDuration(strings.TrimSpace(c.ClusterHeartbeatInterval))
+	if err != nil || d <= 0 {
+		return 5 * time.Second
+	}
+	return d
+}
+
+// ClusterHeartbeatTimeoutDuration 解析节点离线判定超时。
+func (c *Config) ClusterHeartbeatTimeoutDuration() time.Duration {
+	d, err := time.ParseDuration(strings.TrimSpace(c.ClusterHeartbeatTimeout))
+	if err != nil || d <= 0 {
+		return 30 * time.Second
+	}
+	return d
+}
+
+// IsAgent 返回当前进程是否承担 Agent 控制面职责。
+func (c *Config) IsAgent() bool {
+	return c.ClusterRole == "agent" || c.ClusterRole == "all"
+}
+
+// IsWorker 返回当前进程是否承担 Worker 数据面职责。
+func (c *Config) IsWorker() bool {
+	return c.ClusterRole == "worker" || c.ClusterRole == "all"
+}
+
 // WSAllowedOriginsList 返回 WebSocket Origin 白名单。
 // 未配置 WS_ALLOWED_ORIGINS 时默认只允许同源握手；配置 "*" 表示允许任意来源。
 func (c *Config) WSAllowedOriginsList() []string {
@@ -250,6 +289,14 @@ func (c *Config) normalize() {
 		c.CORSOrigin = "*"
 	}
 	c.WSAllowedOrigins = strings.TrimSpace(c.WSAllowedOrigins)
+	c.ClusterRole = strings.ToLower(strings.TrimSpace(c.ClusterRole))
+	c.ClusterNodeID = strings.TrimSpace(c.ClusterNodeID)
+	c.ClusterAdvertiseURL = strings.TrimSpace(c.ClusterAdvertiseURL)
+	c.ClusterAgentURL = strings.TrimSpace(c.ClusterAgentURL)
+	c.ClusterAgentToken = strings.TrimSpace(c.ClusterAgentToken)
+	c.ClusterHeartbeatInterval = strings.TrimSpace(c.ClusterHeartbeatInterval)
+	c.ClusterHeartbeatTimeout = strings.TrimSpace(c.ClusterHeartbeatTimeout)
+	c.ClusterLabels = strings.TrimSpace(c.ClusterLabels)
 	if c.DBPath == "" {
 		c.DBPath = "db/app.db"
 	}
@@ -290,6 +337,15 @@ func (c *Config) normalize() {
 	if c.ServerPort == "" {
 		c.ServerPort = "8998"
 	}
+	if c.ClusterRole == "" {
+		c.ClusterRole = "all"
+	}
+	if c.ClusterHeartbeatInterval == "" {
+		c.ClusterHeartbeatInterval = "5s"
+	}
+	if c.ClusterHeartbeatTimeout == "" {
+		c.ClusterHeartbeatTimeout = "30s"
+	}
 
 	c.LogLevel = strings.ToLower(strings.TrimSpace(c.LogLevel))
 	c.LogFormat = strings.ToLower(strings.TrimSpace(c.LogFormat))
@@ -323,6 +379,24 @@ func (c *Config) Validate() error {
 	case "auto", "redis", "nats", "none":
 	default:
 		errs = append(errs, fmt.Sprintf("STATE_STORE %q unsupported (auto|redis|nats|none)", c.StateStore))
+	}
+
+	switch c.ClusterRole {
+	case "agent", "worker", "all":
+	default:
+		errs = append(errs, fmt.Sprintf("GOSPEAK_ROLE %q unsupported (agent|worker|all)", c.ClusterRole))
+	}
+	if c.ClusterRole == "worker" && strings.TrimSpace(c.ClusterAgentURL) == "" {
+		errs = append(errs, "CLUSTER_AGENT_URL is required when GOSPEAK_ROLE=worker")
+	}
+	if c.ClusterRole == "worker" && strings.TrimSpace(c.ClusterAgentToken) == "" {
+		errs = append(errs, "CLUSTER_AGENT_TOKEN is required when GOSPEAK_ROLE=worker")
+	}
+	if c.ClusterMaxServers < 1 {
+		errs = append(errs, "CLUSTER_MAX_SERVERS must be >= 1")
+	}
+	if c.ClusterMaxRooms < 1 {
+		errs = append(errs, "CLUSTER_MAX_ROOMS must be >= 1")
 	}
 
 	switch c.StorageType {
@@ -362,6 +436,12 @@ func (c *Config) Validate() error {
 	}
 	if _, err := time.ParseDuration(strings.TrimSpace(c.NATSConnectTimeout)); err != nil {
 		errs = append(errs, fmt.Sprintf("NATS_CONNECT_TIMEOUT %q invalid duration", c.NATSConnectTimeout))
+	}
+	if _, err := time.ParseDuration(strings.TrimSpace(c.ClusterHeartbeatInterval)); err != nil {
+		errs = append(errs, fmt.Sprintf("CLUSTER_HEARTBEAT_INTERVAL %q invalid duration", c.ClusterHeartbeatInterval))
+	}
+	if _, err := time.ParseDuration(strings.TrimSpace(c.ClusterHeartbeatTimeout)); err != nil {
+		errs = append(errs, fmt.Sprintf("CLUSTER_HEARTBEAT_TIMEOUT %q invalid duration", c.ClusterHeartbeatTimeout))
 	}
 	if _, err := time.ParseDuration(strings.TrimSpace(c.EmailCodeTTL)); err != nil {
 		errs = append(errs, fmt.Sprintf("EMAIL_CODE_TTL %q invalid duration", c.EmailCodeTTL))

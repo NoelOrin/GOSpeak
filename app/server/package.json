@@ -6,7 +6,6 @@
     "predev": "[ -f \"$(go env GOPATH)/bin/air\" ] || go install github.com/air-verse/air@latest",
     "dev": "$(go env GOPATH)/bin/air",
     "prod": "go run main.go server -e prod",
-    "build": "go build -o gospeak main.go",
-    "test": "node test/run.js"
+    "build": "go build -o gospeak main.go"
   }
 }

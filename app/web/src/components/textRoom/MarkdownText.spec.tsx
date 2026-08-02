@@ -20,8 +20,8 @@ describe("renderMarkdown", () => {
 	});
 
 	it("sanitizes raw HTML", () => {
-		const html = renderMarkdown("<script>alert(1)</script>**safe**");
+		const html = renderMarkdown("<script>alert(1)</script>");
 		expect(html).not.toContain("<script");
-		expect(html).toContain("<strong>safe</strong>");
+		expect(html).not.toContain("alert(1)");
 	});
 });

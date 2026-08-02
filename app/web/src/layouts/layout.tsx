@@ -16,7 +16,7 @@ import {
 	Show,
 } from "solid-js";
 import DynamicRender from "@/components/common/dynamicRender";
-import FuncButton from "@/components/funcButton";
+// import FuncButton from "@/components/funcButton";
 import SettingModal from "@/components/modal/settting/settingModal";
 import MemberSidebar from "@/components/room/components/memberSidebar";
 import RoomDetail from "@/components/room/roomDetail";
@@ -24,6 +24,7 @@ import TextRoomPanel from "@/components/textRoom/TextRoomPanel";
 import UserBar from "@/components/userBar";
 import { useIsMobile } from "@/hooks/useBreakpoint";
 import { useTitle } from "@/hooks/useTitle";
+import DomainWorkspace from "@/layouts/common/domainWorkspace";
 import Header from "@/layouts/common/header";
 import Main from "@/layouts/common/main";
 import Sidebar from "@/layouts/common/sidebar";
@@ -54,11 +55,6 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 
 	let prevRef!: HTMLDivElement;
 	let settingModalRef!: HTMLDialogElement;
-	let dragRef!: HTMLDivElement;
-
-	const [verticalSplit, setVerticalSplit] = createSignal(
-		localStorage.getItem("vertSplit") || "50%",
-	);
 
 	// 移动端：列表 vs 舞台；域内 tab
 	const [mobileStage, setMobileStage] = createSignal(false);
@@ -82,30 +78,6 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 			else if (hasTextFocus() && !hasVoiceFocus()) setStageTab("text");
 		}
 	});
-
-	const onDragMouseDown = (e: MouseEvent) => {
-		e.preventDefault();
-		const startY = e.clientY;
-		const startRatio = parseFloat(verticalSplit()) / 100;
-		const containerHeight = dragRef.parentElement?.offsetHeight;
-		if (!containerHeight) return;
-
-		const onMouseMove = (e: MouseEvent) => {
-			const delta = e.clientY - startY;
-			const newRatio = (startRatio + delta / containerHeight) * 100;
-			const clamped = Math.max(10, Math.min(90, newRatio));
-			setVerticalSplit(`${clamped}%`);
-			localStorage.setItem("vertSplit", `${clamped}%`);
-		};
-
-		const onMouseUp = () => {
-			document.removeEventListener("mousemove", onMouseMove);
-			document.removeEventListener("mouseup", onMouseUp);
-		};
-
-		document.addEventListener("mousemove", onMouseMove);
-		document.addEventListener("mouseup", onMouseUp);
-	};
 
 	createEffect(() => {
 		if (!prevRef || isMobile()) return;
@@ -244,7 +216,7 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 					<div class="flex-1 min-h-0 overflow-hidden">
 						<Show when={stageTab() === "voice"}>
 							<div class="h-full">
-								<RoomDetail mobileHideMembers />
+								<RoomDetail />
 							</div>
 						</Show>
 						<Show when={stageTab() === "text"}>
@@ -312,7 +284,7 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 						<div class="flex flex-col justify-between h-full" ref={prevRef}>
 							<div class="flex h-full">
 								<Sidebar onOpenSettings={openSettings} />
-								<div class="box-border flex-1 border-color border-t border-l border-solid">
+								<div class="box-border min-w-0 flex-1 border-color border-t border-l border-solid">
 									<DynamicRender />
 								</div>
 							</div>
@@ -328,29 +300,8 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 							>
 								{children}
 							</div>
-							<div
-								class="flex-1 border-color border-t w-full h-full bg-base-200"
-								style={{ display: isDomain() ? undefined : "none" }}
-							>
-								<div class="flex flex-col h-full">
-									<div
-										class="overflow-hidden"
-										style={{ height: verticalSplit() }}
-									>
-										<RoomDetail />
-									</div>
-									<div
-										class="h-1.5 bg-base-300 hover:bg-primary cursor-row-resize rounded-full mx-2 flex-shrink-0"
-										ref={dragRef}
-										onMouseDown={onDragMouseDown}
-										title="拖动调整语音与文字高度"
-									/>
-									<div class="flex-1 overflow-hidden">
-										<TextRoomPanel />
-									</div>
-								</div>
-							</div>
-							<FuncButton />
+							<DomainWorkspace isDomain={isDomain} />
+							{/* <FuncButton /> */}
 						</Main>
 					</Slot>
 				</Split>

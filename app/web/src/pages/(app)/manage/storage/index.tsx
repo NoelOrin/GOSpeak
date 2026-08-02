@@ -6,6 +6,7 @@ import {
 	getStorageConfig,
 	type StorageConfigInput,
 	updateStorageConfig,
+	testStorageConfig,
 } from "@/api/storage";
 import {
 	ManageHeader,
@@ -67,6 +68,7 @@ function StoragePage() {
 	});
 
 	const handleSave = async () => {
+		if (testing() || saving()) return;
 		setSaving(true);
 		try {
 			const input: StorageConfigInput = {
@@ -95,6 +97,7 @@ function StoragePage() {
 	};
 
 	const handleTestConnection = async () => {
+		if (testing() || saving()) return;
 		setTesting(true);
 		try {
 			const input: StorageConfigInput = {
@@ -110,18 +113,7 @@ function StoragePage() {
 			if (accessKey()) input.access_key = accessKey();
 			if (secretKey()) input.secret_key = secretKey();
 
-			await updateStorageConfig(input);
-
-			if (providerType() === "s3") {
-				const { presignUpload } = await import("@/api/storage");
-				await presignUpload({
-					file_name: "test.txt",
-					content_type: "text/plain",
-					file_size: 1,
-					category: "test",
-				});
-			}
-
+			await testStorageConfig(input);
 			showToast("连接测试成功", { type: "success" });
 		} catch {
 		} finally {
@@ -241,14 +233,14 @@ function StoragePage() {
 						<div class="flex gap-2">
 							<button
 								class="btn btn-sm border border-base-300 bg-base-100 text-base-content/80 shadow-none hover:bg-base-200"
-								classList={{ "btn-disabled": testing() || saving() }}
+								disabled={testing() || saving()}
 								onClick={handleTestConnection}
 							>
 								{testing() ? "测试中..." : "测试连接"}
 							</button>
 							<button
 								class="btn btn-sm border border-base-300 bg-base-100 text-base-content shadow-none hover:bg-base-200"
-								classList={{ "btn-disabled": saving() || testing() }}
+								disabled={saving() || testing()}
 								onClick={handleSave}
 							>
 								{saving() ? "保存中..." : "保存配置"}

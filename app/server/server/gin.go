@@ -326,6 +326,7 @@ func StartGin(env EnvEnum) {
 	oauthH := handler.NewOAuthHandler(oauthSvc)
 	roleH := handler.NewRoleHandler(roleSvc)
 	domainSvc := service.NewDomainService(repository.NewDomainRepository(repository.DB))
+	clusterSvc := service.NewClusterService(repository.NewClusterNodeRepository(repository.DB), repository.NewServerAssignmentRepository(repository.DB))
 	middleware.SetDomainChecker(domainSvc.IsMember)
 	signalHub.SetDomainChecker(domainSvc.IsMember)
 	roomH := handler.NewRoomHandler(roomSvc, permSvc, domainSvc)
@@ -339,6 +340,25 @@ func StartGin(env EnvEnum) {
 	storageH := handler.NewStorageHandler(storageSvc)
 	botH := handler.NewBotHandler(botSvc)
 	pluginH := handler.NewPluginHandler(pluginSvc)
+
+	var clusterHandler *handler.ClusterHandler
+	if cfg.IsAgent() {
+		clusterHandler = handler.NewClusterHandler(clusterSvc)
+	}
+	var clusterStop func()
+	localNodeUUID := ""
+	switch cfg.ClusterRole {
+	case "all":
+		localNodeUUID, clusterStop, err = startLocalClusterRuntime(cfg, clusterSvc, signalHub, eventBus.InstanceID())
+	case "worker":
+		clusterStop, err = startWorkerClusterRuntime(cfg, signalHub)
+	case "agent":
+		clusterStop, err = startAgentClusterRuntime(cfg, clusterSvc)
+	}
+	if err != nil {
+		panic(fmt.Sprintf("failed to start cluster runtime: %v", err))
+	}
+
 	domainH := handler.NewDomainHandler(domainSvc, permSvc)
 	domainH.SetOnDomainDelete(signalHub.OnDomainDelete)
 	conversationH := handler.NewConversationHandler(conversationSvc)

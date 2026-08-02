@@ -16,6 +16,7 @@ import {
 	manageTableHeadClass,
 	manageTableRowClass,
 } from "@/components/manage/ManageShell";
+import UserSearchSelect from "@/components/manage/UserSearchSelect";
 import MuteDurationPicker from "@/components/manage/MuteDurationPicker";
 import { formatRemaining } from "@/utils/format";
 import { hasPermission } from "@/utils/permissions";
@@ -35,7 +36,12 @@ export const Route = createFileRoute("/(app)/manage/mute/")({
 
 function MutePage() {
 	const [mutes, { refetch: refetchMutes }] = createResource(listMutes);
-	const [users] = createResource(() => listUsers(1, 200));
+	const [userSearch, setUserSearch] = createSignal("");
+	const [userQuery, setUserQuery] = createSignal("");
+	const [users] = createResource(
+		() => userQuery().trim(),
+		(keyword) => listUsers(1, 50, true, keyword || undefined),
+	);
 	const [userId, setUserId] = createSignal<number | "">("");
 	const [duration, setDuration] = createSignal(3600);
 	const [permanent, setPermanent] = createSignal(false);
@@ -198,32 +204,17 @@ function MutePage() {
 				}
 			>
 				<div class="grid grid-cols-1 gap-4 xl:grid-cols-[220px_minmax(0,1fr)_240px]">
-					<div class="form-control">
-						<label class="label py-1" for="mute-user">
-							<span class="label-text text-xs font-medium text-base-content/70">
-								用户
-							</span>
-						</label>
-						<select
-							id="mute-user"
-							class="select select-bordered select-sm bg-base-100"
-							value={userId()}
-							onChange={(e) =>
-								setUserId(
-									e.currentTarget.value ? Number(e.currentTarget.value) : "",
-								)
-							}
-						>
-							<option value="">选择用户</option>
-							<For each={users()?.users || []}>
-								{(u) => (
-									<option value={u.id}>
-										{u.display_name || u.name} ({u.name})
-									</option>
-								)}
-							</For>
-						</select>
-					</div>
+					<UserSearchSelect
+						id="mute-user"
+						value={userId()}
+						onChange={setUserId}
+						users={users()?.users || []}
+						loading={users.loading}
+						disabled={submitting()}
+						searchValue={userSearch()}
+						onSearchInput={setUserSearch}
+						onSearch={() => setUserQuery(userSearch().trim())}
+					/>
 
 					<div class="form-control min-w-0">
 						<div class="label py-1">

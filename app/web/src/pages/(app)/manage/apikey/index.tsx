@@ -83,6 +83,7 @@ function ApiKeyPage() {
 	};
 
 	const handleCreate = async () => {
+		if (creating()) return;
 		if (!name().trim()) {
 			showToast("请填写密钥名称", { type: "warning" });
 			return;
@@ -234,7 +235,7 @@ function ApiKeyPage() {
 					<button
 						type="button"
 						class="btn btn-sm border border-base-300 bg-base-100 text-base-content shadow-none hover:bg-base-200"
-						classList={{ "btn-disabled": creating() }}
+						disabled={creating()}
 						onClick={handleCreate}
 					>
 						<Show when={creating()} fallback="生成密钥">

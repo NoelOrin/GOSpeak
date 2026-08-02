@@ -203,6 +203,7 @@ function SFUPage() {
 	};
 
 	const handleSave = async () => {
+		if (saving()) return;
 		const current = form();
 		const e = validateSFUForm(current, secretFlags());
 		setErrors(e);
@@ -228,6 +229,7 @@ function SFUPage() {
 	};
 
 	const handleSwitch = async (provider: SFUProvider) => {
+		if (saving()) return;
 		setSaving(true);
 		try {
 			const cfg = await switchSFUProvider(provider);
@@ -451,7 +453,7 @@ function SFUPage() {
 							<button
 								type="button"
 								class="btn btn-sm border border-base-300 bg-base-100 text-base-content shadow-none hover:bg-base-200"
-								classList={{ "btn-disabled": saving() }}
+								disabled={saving()}
 								onClick={handleSave}
 							>
 								<Show when={saving()} fallback={<Save size={16} />}>

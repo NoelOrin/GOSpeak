@@ -29,6 +29,95 @@ export function mergeMessages(
 	return result;
 }
 
+export function mergePrivateMessages(
+	existing: PrivateMessageDTO[],
+	incoming: PrivateMessageDTO[],
+): PrivateMessageDTO[] {
+	const byUUID = new Map<string, PrivateMessageDTO>();
+	const byNonce = new Map<string, PrivateMessageDTO>();
+
+	for (const m of existing) {
+		byUUID.set(m.uuid, m);
+		if (m.client_nonce) byNonce.set(m.client_nonce, m);
+	}
+	for (const m of incoming) {
+		byUUID.set(m.uuid, m);
+		if (m.client_nonce) {
+			const pending = byNonce.get(m.client_nonce);
+			if (pending && pending.uuid !== m.uuid) byUUID.delete(pending.uuid);
+			byNonce.set(m.client_nonce, m);
+		}
+	}
+
+	const result = Array.from(byUUID.values());
+	result.sort((a, b) => a.created_at.localeCompare(b.created_at));
+	return result;
+}
+
+export function remapRecordKey<T>(
+	records: Record<string, T>,
+	from: string,
+	to: string,
+): Record<string, T> {
+	if (!from || !to || from === to || !(from in records)) return records;
+	const next = { ...records };
+	next[to] = next[from];
+	delete next[from];
+	return next;
+}
+
+export function remapPrivateMessages(
+	records: Record<string, PrivateMessageDTO[]>,
+	from: string,
+	to: string,
+): Record<string, PrivateMessageDTO[]> {
+	if (!from || !to || from === to || !(from in records)) return records;
+	const next = { ...records };
+	const moved = (next[from] || []).map((m) => ({
+		...m,
+		conversation_id: to,
+	}));
+	delete next[from];
+	next[to] = mergePrivateMessages(next[to] || [], moved);
+	return next;
+}
+
+export function remapConversationList(
+	conversations: ConversationDTO[],
+	from: string,
+	to: string,
+): ConversationDTO[] {
+	if (!from || !to || from === to) return conversations;
+	const tempIndex = conversations.findIndex((c) => c.conversation_id === from);
+	if (tempIndex === -1) return conversations;
+	const realIndex = conversations.findIndex((c) => c.conversation_id === to);
+	const temp = conversations[tempIndex];
+	const real = realIndex >= 0 ? conversations[realIndex] : undefined;
+	const merged: ConversationDTO = {
+		...real,
+		...temp,
+		conversation_id: to,
+		other_identity: real?.other_identity || temp.other_identity,
+		other_display_name: real?.other_display_name || temp.other_display_name,
+		other_avatar: real?.other_avatar || temp.other_avatar,
+		last_content: real?.last_content || temp.last_content,
+		last_sender_identity:
+			real?.last_sender_identity || temp.last_sender_identity,
+		last_message_at: real?.last_message_at || temp.last_message_at,
+		unread_count: real?.unread_count ?? temp.unread_count,
+	};
+	const out = [...conversations];
+	out.splice(tempIndex, 1);
+	const target =
+		realIndex === -1
+			? Math.min(tempIndex, out.length)
+			: realIndex > tempIndex
+				? realIndex - 1
+				: realIndex;
+	out.splice(target, realIndex === -1 ? 0 : 1, merged);
+	return out;
+}
+
 // ---------------------------------------------------------------------------
 // Chat store
 // ---------------------------------------------------------------------------
@@ -324,26 +413,41 @@ export const chatStore = createRoot(() => {
 
 	// Track pending nonces for private messages
 	const pmPendingNonces = new Set<string>();
-	function handlePrivateNew(dto: PrivateMessageDTO) {
-		const convID = dto.conversation_id;
-		if (!convID) {
-			void loadConversations();
-			return;
-		}
 
-		setPmMessages((prev) => {
-			const existing = prev[convID] || [];
-			if (dto.client_nonce && pmPendingNonces.has(dto.client_nonce)) {
-				pmPendingNonces.delete(dto.client_nonce);
-				const filtered = existing.filter(
-					(m) => m.client_nonce !== dto.client_nonce,
-				);
-				return { ...prev, [convID]: [...filtered, dto] };
+	function tempConversationID(identity: string) {
+		return `pm_${identity}`;
+	}
+
+	function replaceConversationID(from: string, to: string) {
+		if (!from || !to || from === to) return;
+		setConversations((prev) => remapConversationList(prev, from, to));
+		setPmMessages((prev) => remapPrivateMessages(prev, from, to));
+		setPmHasMore((prev) => remapRecordKey(prev, from, to));
+		setPmNextCursor((prev) => remapRecordKey(prev, from, to));
+		setLoadingMessages((prev) => remapRecordKey(prev, from, to));
+		setActiveConversationID((prev) => (prev === from ? to : prev));
+		void chatCache.renameConversation(from, to).catch(() => undefined);
+	}
+
+	function resolvePrivateConversationID(dto: PrivateMessageDTO) {
+		const realID = dto.conversation_id;
+		if (!realID) return null;
+		const me = userStore.user()?.name ?? "";
+		const other = me === dto.author_id ? dto.target_identity : dto.author_id;
+		if (other) {
+			const tempID = tempConversationID(other);
+			if (
+				tempID !== realID &&
+				conversations().some((c) => c.conversation_id === tempID)
+			) {
+				replaceConversationID(tempID, realID);
 			}
-			if (existing.some((m) => m.uuid === dto.uuid)) return prev;
-			return { ...prev, [convID]: [...existing, dto] };
-		});
-
+		}
+		return realID;
+	}
+	function upsertPrivateConversation(dto: PrivateMessageDTO) {
+		const convID = dto.conversation_id;
+		if (!convID) return;
 		setConversations((prev) => {
 			const me = userStore.user()?.name ?? "";
 			const other = me === dto.author_id ? dto.target_identity : dto.author_id;
@@ -374,12 +478,45 @@ export const chatStore = createRoot(() => {
 				? prev.map((c) => (c.conversation_id === convID ? next : c))
 				: [next, ...prev];
 		});
+	}
 
+	function appendPrivateMessage(convID: string, dto: PrivateMessageDTO) {
+		setPmMessages((prev) => {
+			const existing = prev[convID] || [];
+			if (dto.client_nonce && pmPendingNonces.has(dto.client_nonce)) {
+				pmPendingNonces.delete(dto.client_nonce);
+				const filtered = existing.filter(
+					(m) => m.client_nonce !== dto.client_nonce,
+				);
+				return {
+					...prev,
+					[convID]: mergePrivateMessages(filtered, [dto]),
+				};
+			}
+			if (existing.some((m) => m.uuid === dto.uuid)) return prev;
+			return {
+				...prev,
+				[convID]: mergePrivateMessages(existing, [dto]),
+			};
+		});
+	}
+
+	function acceptPrivateMessage(dto: PrivateMessageDTO) {
+		const convID = resolvePrivateConversationID(dto);
+		if (!convID) {
+			void loadConversations();
+			return;
+		}
+		appendPrivateMessage(convID, dto);
+		upsertPrivateConversation(dto);
 		void loadConversations();
-
 		if (activeConversationID() === convID) {
 			void markRead(convID);
 		}
+	}
+
+	function handlePrivateNew(dto: PrivateMessageDTO) {
+		acceptPrivateMessage(dto);
 	}
 
 	async function loadConversations() {
@@ -529,7 +666,16 @@ export const chatStore = createRoot(() => {
 					client_nonce: clientNonce,
 				})
 				.then((resp: any) => {
-					if (resp?.error) removePending();
+					if (resp?.error) {
+						removePending();
+						return;
+					}
+					const dto = resp as PrivateMessageDTO;
+					if (!dto?.conversation_id) {
+						removePending();
+						return;
+					}
+					acceptPrivateMessage(dto);
 				})
 				.catch(removePending);
 		}

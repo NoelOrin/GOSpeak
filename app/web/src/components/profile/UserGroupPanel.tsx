@@ -151,10 +151,10 @@ export default function UserGroupPanel() {
 
 			<div class="mt-5">
 				<Show
-					when={!loading && groups().length > 0}
+					when={!loading() && groups().length > 0}
 					fallback={
 						<div class="rounded-lg bg-base-200/70 px-4 py-8 text-center text-sm text-base-content/50">
-							{loading ? "正在加载分组..." : "还没有用户分组"}
+							{loading() ? "正在加载分组..." : "还没有用户分组"}
 						</div>
 					}
 				>
@@ -218,7 +218,7 @@ export default function UserGroupPanel() {
 										title="删除"
 										onClick={() => {
 											setDeleteTarget(group);
-											deleteDialogRef.showModal();
+											requestAnimationFrame(() => deleteDialogRef?.showModal());
 										}}
 									>
 										<Trash2 size={14} />

@@ -4,6 +4,7 @@ import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
 	"github.com/gin-gonic/gin"
+	"strings"
 )
 
 type UserHandler struct {
@@ -13,6 +14,29 @@ type UserHandler struct {
 func NewUserHandler(userService *service.UserService, _ ...*service.StorageService) *UserHandler {
 	// storage 已注入 UserService；保留可选参数兼容旧 DI 调用
 	return &UserHandler{userService: userService}
+}
+
+var presetAvatarPaths = []string{
+	"/presets/avatar-1.svg",
+	"/presets/avatar-2.svg",
+	"/presets/avatar-3.svg",
+	"/presets/avatar-4.svg",
+	"/presets/avatar-5.svg",
+	"/presets/avatar-6.svg",
+	"/presets/avatar-7.svg",
+	"/presets/avatar-8.svg",
+}
+
+// PresetAvatars
+// @Summary      获取预设头像列表
+// @Description  获取个人资料页可选的本地预设头像 URL
+// @Tags         用户
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  pkg.Response
+// @Router       /user/preset-avatars [get]
+func (h *UserHandler) PresetAvatars(c *gin.Context) {
+	pkg.Success(c, gin.H{"avatars": presetAvatarPaths})
 }
 
 // GetProfile
@@ -85,9 +109,10 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 // @Router       /user/list [post]
 func (h *UserHandler) List(c *gin.Context) {
 	var req struct {
-		Page     int `json:"page"`
-		PageSize int `json:"page_size"`
-		ExcludeBots bool `json:"exclude_bots"`
+		Page        int    `json:"page"`
+		PageSize    int    `json:"page_size"`
+		ExcludeBots bool   `json:"exclude_bots"`
+		Keyword     string `json:"keyword"`
 	}
 	_ = c.ShouldBindJSON(&req)
 	if req.Page <= 0 {
@@ -97,7 +122,7 @@ func (h *UserHandler) List(c *gin.Context) {
 		req.PageSize = 20
 	}
 
-	users, total, err := h.userService.List(req.Page, req.PageSize, req.ExcludeBots)
+	users, total, err := h.userService.List(req.Page, req.PageSize, req.ExcludeBots, strings.TrimSpace(req.Keyword))
 	if err != nil {
 		pkg.HandleError(c, err)
 		return

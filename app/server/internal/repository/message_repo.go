@@ -42,13 +42,22 @@ func (r *MessageRepository) SoftDelete(uuid string) error {
 	return r.db.Where("uuid = ?", uuid).Delete(&model.Message{}).Error
 }
 
-// ListBefore returns up to limit messages older than beforeUUID (exclusive), ASC.
+// ListBefore returns up to limit room messages older than beforeUUID (exclusive), ASC.
 // beforeUUID empty = newest page. hasMore true if more older rows exist.
 func (r *MessageRepository) ListBefore(roomUUID, beforeUUID string, limit int) ([]model.Message, bool, error) {
+	return r.listBefore(r.db.Model(&model.Message{}).Where("room_uuid = ?", roomUUID), beforeUUID, limit)
+}
+
+// ListBeforeConversation returns up to limit private messages older than beforeUUID (exclusive), ASC.
+func (r *MessageRepository) ListBeforeConversation(conversationID, beforeUUID string, limit int) ([]model.Message, bool, error) {
+	return r.listBefore(r.db.Model(&model.Message{}).
+		Where("conversation_type = ? AND conversation_id = ?", "private", conversationID), beforeUUID, limit)
+}
+
+func (r *MessageRepository) listBefore(q *gorm.DB, beforeUUID string, limit int) ([]model.Message, bool, error) {
 	if limit < 1 {
 		limit = 100
 	}
-	q := r.db.Model(&model.Message{}).Where("room_uuid = ?", roomUUID)
 	if beforeUUID != "" {
 		var pivot model.Message
 		if err := r.db.Where("uuid = ?", beforeUUID).First(&pivot).Error; err != nil {

@@ -1,6 +1,7 @@
 import Clock from "lucide-solid/icons/clock";
 import Gavel from "lucide-solid/icons/gavel";
 import InfinityIcon from "lucide-solid/icons/infinity";
+import Search from "lucide-solid/icons/search";
 import Trash from "lucide-solid/icons/trash";
 import UserCheck from "lucide-solid/icons/user-check";
 import { For, Show } from "solid-js";
@@ -22,6 +23,13 @@ export interface UserRow {
 export interface UsersTableProps {
 	loading: boolean;
 	users: UserRow[];
+	total: number;
+	searchInput: string;
+	onSearchInput: (value: string) => void;
+	onSearch: () => void;
+	page: number;
+	totalPages: number;
+	onPageChange: (page: number) => void;
 	roles: string[];
 	muteMap: Map<number, MuteRecord>;
 	canManageMute: boolean;
@@ -46,9 +54,35 @@ export default function UsersTable(props: UsersTableProps) {
 	return (
 		<ManageSection
 			title="用户列表"
-			description={`共 ${props.users.length} 人`}
+			description={`共 ${props.total} 人`}
 			padded={false}
 		>
+			<div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+				<form
+					class="flex min-w-72 flex-1 items-center gap-2"
+					onSubmit={(e) => {
+						e.preventDefault();
+						props.onSearch();
+					}}
+				>
+					<label class="input input-bordered input-sm flex min-w-0 flex-1 items-center gap-2">
+						<Search size={14} class="shrink-0 text-base-content/40" />
+						<input
+							type="search"
+							class="min-w-0 grow bg-transparent outline-none"
+							placeholder="搜索用户名、显示名、邮箱"
+							value={props.searchInput}
+							onInput={(e) => props.onSearchInput(e.currentTarget.value)}
+						/>
+					</label>
+					<button type="submit" class="btn btn-sm">
+						搜索
+					</button>
+				</form>
+				<span class="text-xs text-base-content/50">
+					第 {props.page} / {props.totalPages} 页
+				</span>
+			</div>
 			<div class="overflow-x-auto">
 				<Show
 					when={!props.loading}
@@ -191,6 +225,27 @@ export default function UsersTable(props: UsersTableProps) {
 						</table>
 					</Show>
 				</Show>
+			</div>
+			<div class="flex items-center justify-between gap-3 border-t border-base-300/70 px-4 py-3">
+				<span class="text-xs text-base-content/50">共 {props.total} 人</span>
+				<div class="flex items-center gap-1.5">
+					<button
+						type="button"
+						class="btn btn-ghost btn-xs"
+						disabled={props.page <= 1}
+						onClick={() => props.onPageChange(Math.max(1, props.page - 1))}
+					>
+						上一页
+					</button>
+					<button
+						type="button"
+						class="btn btn-ghost btn-xs"
+						disabled={props.page >= props.totalPages}
+						onClick={() => props.onPageChange(props.page + 1)}
+					>
+						下一页
+					</button>
+				</div>
 			</div>
 		</ManageSection>
 	);

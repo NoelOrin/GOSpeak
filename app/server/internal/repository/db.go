@@ -2,7 +2,6 @@ package repository
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -87,12 +86,6 @@ func InitDB(cfg *config.Config) error {
 		return err
 	}
 	if err := migrateEmailVerificationCodesSchema(DB); err != nil {
-		return err
-	}
-	if err := migrateGuildToDomainSchema(DB); err != nil {
-		return err
-	}
-	if err := migrateGuildPermissions(DB); err != nil {
 		return err
 	}
 
@@ -458,157 +451,6 @@ func migrateEmailVerificationCodesSchema(db *gorm.DB) error {
 	return nil
 }
 
-// renameLegacyTable 把旧表重命名为新表。两者并存时视为旧模型 AutoMigrate 重建的残留：
-// 新表有数据则直接丢弃旧表，新表为空则先删空表再重命名，保留旧表数据。
-func renameLegacyTable(db *gorm.DB, oldName, newName string) error {
-	if !db.Migrator().HasTable(oldName) {
-		return nil
-	}
-	if db.Migrator().HasTable(newName) {
-		var count int64
-		if err := db.Table(newName).Count(&count).Error; err != nil {
-			return fmt.Errorf("count %s: %w", newName, err)
-		}
-		if count > 0 {
-			if err := db.Migrator().DropTable(oldName); err != nil {
-				return fmt.Errorf("drop stale %s: %w", oldName, err)
-			}
-			return nil
-		}
-		if err := db.Migrator().DropTable(newName); err != nil {
-			return fmt.Errorf("drop empty %s: %w", newName, err)
-		}
-	}
-	if err := db.Exec("ALTER TABLE " + oldName + " RENAME TO " + newName).Error; err != nil {
-		return fmt.Errorf("rename %s to %s: %w", oldName, newName, err)
-	}
-	return nil
-}
-
-func migrateGuildToDomainSchema(db *gorm.DB) error {
-	if err := renameLegacyTable(db, "guilds", "domains"); err != nil {
-		return err
-	}
-	if err := renameLegacyTable(db, "guild_members", "domain_members"); err != nil {
-		return err
-	}
-	if err := renameDomainColumn(db, "domain_members", &model.DomainMember{}, "guild_uuid", "domain_uuid"); err != nil {
-		return err
-	}
-	if err := renameDomainColumn(db, "room", &model.Room{}, "guild_uuid", "domain_uuid"); err != nil {
-		return err
-	}
-	return repairOrphanRoomDomains(db)
-}
-
-// renameDomainColumn 把旧列改名为新列。glebarez/sqlite 的 DropColumn 需要 struct
-// value 才能解析 schema，传字符串表名会 nil panic。
-func renameDomainColumn(db *gorm.DB, table string, value interface{}, oldName, newName string) error {
-	if !db.Migrator().HasColumn(value, oldName) {
-		return nil
-	}
-	if db.Migrator().HasColumn(value, newName) {
-		// 新旧列并存：把旧列值复制进新列后删旧列
-		if err := db.Exec("UPDATE " + table + " SET " + newName + " = " + oldName +
-			" WHERE " + newName + " IS NULL OR " + newName + " = ''").Error; err != nil {
-			return fmt.Errorf("copy %s.%s to %s: %w", table, oldName, newName, err)
-		}
-		if err := db.Migrator().DropColumn(value, oldName); err != nil {
-			return fmt.Errorf("drop %s.%s: %w", table, oldName, err)
-		}
-		return nil
-	}
-	var err error
-	switch db.Dialector.Name() {
-	case "mysql":
-		err = db.Exec("ALTER TABLE " + table + " CHANGE COLUMN " + oldName + " " + newName + " varchar(32)").Error
-	default:
-		err = db.Exec("ALTER TABLE " + table + " RENAME COLUMN " + oldName + " TO " + newName).Error
-	}
-	if err != nil {
-		return fmt.Errorf("rename %s.%s to %s: %w", table, oldName, newName, err)
-	}
-	return nil
-}
-
-// repairOrphanRoomDomains 修复指向失效 guild/domain uuid 的房间：唯一 domain 时归入
-// 其中，否则清空为平台级房间。
-func repairOrphanRoomDomains(db *gorm.DB) error {
-	if !db.Migrator().HasTable("room") || !db.Migrator().HasTable("domains") {
-		return nil
-	}
-	var domains []model.Domain
-	if err := db.Order("id").Find(&domains).Error; err != nil {
-		return err
-	}
-	if len(domains) == 0 {
-		return nil
-	}
-	valid := make([]interface{}, 0, len(domains))
-	for _, d := range domains {
-		valid = append(valid, d.UUID)
-	}
-	var orphanIDs []uint
-	if err := db.Table("room").
-		Where("domain_uuid <> '' AND domain_uuid NOT IN (?)", valid).
-		Pluck("id", &orphanIDs).Error; err != nil {
-		return err
-	}
-	if len(orphanIDs) == 0 {
-		return nil
-	}
-	if len(domains) == 1 {
-		return db.Table("room").Where("id IN (?)", orphanIDs).Update("domain_uuid", domains[0].UUID).Error
-	}
-	return db.Table("room").Where("id IN (?)", orphanIDs).Update("domain_uuid", "").Error
-}
-
-func migrateGuildPermissions(db *gorm.DB) error {
-	if !db.Migrator().HasTable("permissions") {
-		return nil
-	}
-	// 两代 seed 可能并存：guild:xxx 与 domain:xxx 同时存在时直接替换会撞
-	// permissions.code 的 UNIQUE 约束。这里把角色引用重挂到 domain 权限后删除旧行。
-	var guildPerms []struct {
-		ID   uint
-		Code string
-	}
-	if err := db.Table("permissions").Where("code LIKE 'guild:%'").Find(&guildPerms).Error; err != nil {
-		return fmt.Errorf("load guild permissions: %w", err)
-	}
-	for _, gp := range guildPerms {
-		domainCode := strings.Replace(gp.Code, "guild:", "domain:", 1)
-		var domainPerm struct{ ID uint }
-		err := db.Table("permissions").Where("code = ?", domainCode).First(&domainPerm).Error
-		switch {
-		case err == nil:
-			if err := db.Table("role_permissions").Where("permission_id = ?", gp.ID).
-				Update("permission_id", domainPerm.ID).Error; err != nil {
-				return fmt.Errorf("migrate role_permissions for %s: %w", gp.Code, err)
-			}
-			if err := db.Exec("DELETE FROM permissions WHERE id = ?", gp.ID).Error; err != nil {
-				return fmt.Errorf("delete stale permission %s: %w", gp.Code, err)
-			}
-		case errors.Is(err, gorm.ErrRecordNotFound):
-			if err := db.Table("permissions").Where("id = ?", gp.ID).
-				Update("code", domainCode).Error; err != nil {
-				return fmt.Errorf("rename permission %s: %w", gp.Code, err)
-			}
-		default:
-			return fmt.Errorf("lookup %s: %w", domainCode, err)
-		}
-	}
-	if err := db.Exec("UPDATE permissions SET name = REPLACE(name, '语音服务器', '域'), description = REPLACE(description, '语音服务器', '域') WHERE code LIKE 'domain:%'").Error; err != nil {
-		return fmt.Errorf("migrate permission labels: %w", err)
-	}
-	if db.Migrator().HasTable("bot_tokens") {
-		if err := db.Exec("UPDATE bot_tokens SET permissions = REPLACE(permissions, 'guild:', 'domain:') WHERE permissions LIKE '%guild:%'").Error; err != nil {
-			return fmt.Errorf("migrate bot permissions: %w", err)
-		}
-	}
-	return nil
-}
-
 func migrateDomainCUID2(db *gorm.DB) error {
 	type domainRow struct {
 		ID   uint
@@ -659,6 +501,8 @@ func autoMigrate() error {
 		&model.MessageMention{},
 		&model.Domain{},
 		&model.DomainMember{},
+		&model.ClusterNode{},
+		&model.ServerAssignment{},
 	)
 }
 

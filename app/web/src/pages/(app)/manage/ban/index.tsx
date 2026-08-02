@@ -11,6 +11,7 @@ import {
 	manageTableHeadClass,
 	manageTableRowClass,
 } from "@/components/manage/ManageShell";
+import UserSearchSelect from "@/components/manage/UserSearchSelect";
 import { hasPermission } from "@/utils/permissions";
 
 const BAN_ROLE = "ban";
@@ -30,7 +31,12 @@ export const Route = createFileRoute("/(app)/manage/ban/")({
 });
 
 function BanPage() {
-	const [usersData, { refetch }] = createResource(() => listUsers(1, 200));
+	const [userSearch, setUserSearch] = createSignal("");
+	const [userQuery, setUserQuery] = createSignal("");
+	const [usersData, { refetch }] = createResource(
+		() => userQuery().trim(),
+		(keyword) => listUsers(1, 50, true, keyword || undefined),
+	);
 	const [targetUserId, setTargetUserId] = createSignal<number | "">("");
 	const [banning, setBanning] = createSignal(false);
 	const [unbanningId, setUnbanningId] = createSignal<number | null>(null);
@@ -138,32 +144,17 @@ function BanPage() {
 
 			<ManageSection title="添加封禁" description="将用户角色设为 ban">
 				<div class="flex flex-wrap items-end gap-3">
-					<div class="form-control min-w-60 flex-1">
-						<label class="label py-1" for="ban-user">
-							<span class="label-text text-xs font-medium text-base-content/70">
-								用户
-							</span>
-						</label>
-						<select
-							id="ban-user"
-							class="select select-bordered select-sm bg-base-100"
-							value={targetUserId()}
-							onChange={(e) =>
-								setTargetUserId(
-									e.currentTarget.value ? Number(e.currentTarget.value) : "",
-								)
-							}
-						>
-							<option value="">选择用户</option>
-							<For each={_normalUsers()}>
-								{(u) => (
-									<option value={u.id}>
-										{u.display_name || u.name} ({u.name})
-									</option>
-								)}
-							</For>
-						</select>
-					</div>
+					<UserSearchSelect
+						id="ban-user"
+						value={targetUserId()}
+						onChange={setTargetUserId}
+						users={_normalUsers()}
+						loading={usersData.loading}
+						disabled={banning()}
+						searchValue={userSearch()}
+						onSearchInput={setUserSearch}
+						onSearch={() => setUserQuery(userSearch().trim())}
+					/>
 					<button
 						type="button"
 						class="btn btn-sm border border-base-300 bg-base-100 text-base-content shadow-none hover:bg-base-200"
