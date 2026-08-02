@@ -2,6 +2,9 @@
 package service
 
 import (
+	"errors"
+	"sync"
+
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
@@ -15,15 +18,29 @@ var ErrRoomNotFound = pkg.NewAppError(pkg.NOT_FOUND, "room not found")
 // RoomService 房间服务，提供房间的增删改查能力。
 type RoomService struct {
 	roomRepo *repository.RoomRepository
+	mu       sync.Mutex
 }
 
 func NewRoomService(roomRepo *repository.RoomRepository) *RoomService {
 	return &RoomService{roomRepo: roomRepo}
 }
 
-// Create 创建房间，透传 repository 层结果。
+// Create 创建房间，并保证同一 Domain 内房间名唯一。
 func (s *RoomService) Create(room *model.Room) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.roomRepo.GetByDomainAndName(room.DomainUUID, room.Name)
+	if err == nil {
+		return pkg.NewAppError(pkg.ALREADY_EXISTS, "room already exists")
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
 	if err := s.roomRepo.Create(room); err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return pkg.NewAppError(pkg.ALREADY_EXISTS, "room already exists")
+		}
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	return nil
@@ -45,14 +62,14 @@ func (s *RoomService) CreateRoom(name, password, description string, limit uint,
 		AllowAudience: allowAudience,
 		CreatedBy:     createdBy,
 		Type:          model.NormalizeRoomType(roomType),
-		DomainUUID:     domainUUID,
+		DomainUUID:    domainUUID,
 	}
 	// text rooms: force audio_only true / no SFU expectations
 	if room.Type == model.RoomTypeText {
 		room.AudioOnly = true
 	}
-	if err := s.roomRepo.Create(room); err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	if err := s.Create(room); err != nil {
+		return nil, err
 	}
 	return room, nil
 }

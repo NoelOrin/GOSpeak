@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { RoomInfo } from "@/socket/types";
-import { canEditRoomItem, toEditRoomRecord } from "./roomListUtils";
+import {
+	canDeleteRoomItem,
+	canEditRoomItem,
+	toEditRoomRecord,
+} from "./roomListUtils";
 
 const room: RoomInfo = {
 	id: 1,
@@ -50,6 +54,47 @@ describe("canEditRoomItem", () => {
 	it("denies ordinary members without room:update", () => {
 		expect(
 			canEditRoomItem(
+				{ uuid: "user-1" },
+				{ owner_uuid: "user-2" },
+				"member",
+				false,
+			),
+		).toBe(false);
+	});
+});
+
+describe("canDeleteRoomItem", () => {
+	it("grants delete access to domain owners", () => {
+		expect(
+			canDeleteRoomItem(
+				{ uuid: "user-1" },
+				{ owner_uuid: "user-1" },
+				"member",
+				false,
+			),
+		).toBe(true);
+	});
+
+	it("grants delete access to domain admins", () => {
+		expect(
+			canDeleteRoomItem(
+				{ uuid: "user-1" },
+				{ owner_uuid: "user-2" },
+				"admin",
+				false,
+			),
+		).toBe(true);
+	});
+
+	it("grants delete access to users with room:delete", () => {
+		expect(canDeleteRoomItem({ uuid: "user-1" }, null, "member", true)).toBe(
+			true,
+		);
+	});
+
+	it("denies ordinary members without room:delete", () => {
+		expect(
+			canDeleteRoomItem(
 				{ uuid: "user-1" },
 				{ owner_uuid: "user-2" },
 				"member",

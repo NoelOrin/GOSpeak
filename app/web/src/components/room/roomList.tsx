@@ -3,6 +3,7 @@ import clsx from "clsx";
 import CirclePlus from "lucide-solid/icons/circle-plus";
 import LogOut from "lucide-solid/icons/log-out";
 import Pencil from "lucide-solid/icons/pencil";
+import Trash2 from "lucide-solid/icons/trash-2";
 import { useNavigate } from "@tanstack/solid-router";
 import {
 	createEffect,
@@ -16,16 +17,31 @@ import {
 import CreateRoomModal from "@/components/modal/createRoomModal";
 import EditRoomModal from "@/components/modal/editRoomModal";
 import type { RoomRecord } from "@/api/room";
+import { deleteRoom } from "@/api/room";
 import { chatStore } from "@/stores/chatStore";
 import domainStore from "@/stores/domainStore";
 import { type RoomInfo, socketStore } from "@/stores/socketStore";
+import { showToast } from "solid-notifications";
 import userStore from "@/stores/userStore";
 import { hasPermission } from "@/utils/permissions";
 import Divider from "../common/divider";
+import ConfirmModal from "@/components/common/ConfirmModal";
 import MemberItemButton from "./components/memberItemButton";
 import PasswordModal from "./components/passwordModal";
 import UserInfoPopover from "./components/userInfoPopover";
-import { canEditRoomItem, toEditRoomRecord } from "./roomListUtils";
+import {
+	canDeleteRoomItem,
+	canEditRoomItem,
+	toEditRoomRecord,
+} from "./roomListUtils";
+
+function apiErrorMessage(error: unknown): string {
+	const response = (error as { response?: { data?: { msg?: string } } })
+		?.response?.data?.msg;
+	if (response) return response;
+	if (error instanceof Error) return error.message;
+	return "删除房间失败";
+}
 
 // 子项
 interface RoomItemPropsType {
@@ -35,6 +51,7 @@ interface RoomItemPropsType {
 	onSelectMember: (identity: string, x: number, y: number) => void;
 	onCloseMember: () => void;
 	onEditRoom: (room: RoomInfo) => void;
+	onDeleteRoom: (room: RoomInfo) => void;
 }
 const RoomItem = (props: RoomItemPropsType) => {
 	const isSelected = () =>
@@ -71,6 +88,23 @@ const RoomItem = (props: RoomItemPropsType) => {
 			hasPermission("room:update"),
 		);
 
+	const canDelete = () =>
+		canDeleteRoomItem(
+			userStore.user(),
+			socketStore.currentDomainUUID()
+				? (domainStore.state.domainCache[
+						socketStore.currentDomainUUID() ?? ""
+					] ?? null)
+				: null,
+			socketStore.currentDomainUUID()
+				? domainStore.state.memberCache[
+						socketStore.currentDomainUUID() ?? ""
+					]?.find((member) => member.user_uuid === userStore.user()?.uuid)
+						?.role_name
+				: undefined,
+			hasPermission("room:delete"),
+		);
+
 	const isInRoom = () => {
 		if (props.room.type === "text") {
 			return (
@@ -91,10 +125,13 @@ const RoomItem = (props: RoomItemPropsType) => {
 	};
 
 	const openContextMenu = (event: MouseEvent) => {
-		if (!canEdit() && !isInRoom()) return;
+		if (!canEdit() && !canDelete() && !isInRoom()) return;
 		event.preventDefault();
 		const menuWidth = 176;
-		const menuHeight = 132;
+		const visibleMenuCount = [canEdit(), canDelete(), isInRoom()].filter(
+			Boolean,
+		).length;
+		const menuHeight = visibleMenuCount * 40 + 8;
 		const x = Math.max(
 			8,
 			Math.min(event.clientX, Math.max(8, window.innerWidth - menuWidth - 8)),
@@ -163,7 +200,11 @@ const RoomItem = (props: RoomItemPropsType) => {
 		if (props.room.hasPassword) {
 			setShowPasswordModal(true);
 		} else if (props.room.type === "text") {
-			chatStore.joinTextRoom({ uuid: props.room.uuid, name: props.room.name });
+			chatStore.joinTextRoom({
+				uuid: props.room.uuid,
+				name: props.room.name,
+				domain_uuid: props.room.domain_uuid,
+			});
 		} else {
 			socketStore.selectRoom(props.room);
 		}
@@ -183,6 +224,11 @@ const RoomItem = (props: RoomItemPropsType) => {
 	const handleEdit = () => {
 		closeContextMenu();
 		props.onEditRoom(props.room);
+	};
+
+	const handleDelete = () => {
+		closeContextMenu();
+		props.onDeleteRoom(props.room);
 	};
 
 	return (
@@ -343,6 +389,17 @@ const RoomItem = (props: RoomItemPropsType) => {
 									<span>退出房间</span>
 								</button>
 							</Show>
+							<Show when={canDelete()}>
+								<button
+									type="button"
+									role="menuitem"
+									class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-error transition-colors hover:bg-error/10 focus-visible:bg-error/10 focus:outline-none"
+									onClick={handleDelete}
+								>
+									<Trash2 size={14} />
+									<span>删除房间</span>
+								</button>
+							</Show>
 						</div>
 					)}
 				</Show>
@@ -452,6 +509,10 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 		y: number;
 	} | null>(null);
 	const [editingRoom, setEditingRoom] = createSignal<RoomInfo | null>(null);
+	const [deletingRoom, setDeletingRoom] = createSignal<RoomInfo | null>(null);
+	const [deleting, setDeleting] = createSignal(false);
+	const [deleteError, setDeleteError] = createSignal("");
+	let deleteDialogRef!: HTMLDialogElement;
 
 	// 进入时加载房间列表
 	onMount(() => {
@@ -469,6 +530,37 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 	const openEditRoom = (room: RoomInfo) => {
 		setEditingRoom(room);
 		queueMicrotask(() => editRoomModalRef?.showModal?.());
+	};
+
+	const openDeleteRoom = (room: RoomInfo) => {
+		setDeleteError("");
+		setDeletingRoom(room);
+		queueMicrotask(() => deleteDialogRef?.showModal?.());
+	};
+
+	const closeDeleteModal = () => {
+		deleteDialogRef?.close();
+		setDeletingRoom(null);
+		setDeleteError("");
+	};
+
+	const handleDeleteRoom = async () => {
+		const room = deletingRoom();
+		if (!room) return;
+		setDeleting(true);
+		setDeleteError("");
+		try {
+			await deleteRoom(room.id);
+			closeDeleteModal();
+			showToast("房间已删除", { type: "success" });
+			socketStore.listRooms();
+		} catch (error) {
+			const message = apiErrorMessage(error);
+			setDeleteError(message);
+			showToast(message, { type: "error" });
+		} finally {
+			setDeleting(false);
+		}
 	};
 
 	const closeEditRoom = () => {
@@ -537,6 +629,7 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 											}
 											onCloseMember={() => setSelectedMember(null)}
 											onEditRoom={openEditRoom}
+											onDeleteRoom={openDeleteRoom}
 										/>
 									)}
 								</For>
@@ -556,6 +649,30 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 						room={toEditRoomRecord(room())}
 						onClose={closeEditRoom}
 						onSaved={handleRoomSaved}
+					/>
+				)}
+			</Show>
+			<Show when={deletingRoom()}>
+				{(room) => (
+					<ConfirmModal
+						open
+						title="删除房间"
+						message={
+							<span>
+								确认删除房间 {room().name}？删除后不可恢复。
+								<Show when={deleteError()}>
+									<span class="mt-2 block text-error">{deleteError()}</span>
+								</Show>
+							</span>
+						}
+						confirmText="删除"
+						confirmClass="btn btn-error"
+						loading={deleting()}
+						dialogRef={(el) => {
+							deleteDialogRef = el;
+						}}
+						onClose={closeDeleteModal}
+						onConfirm={handleDeleteRoom}
 					/>
 				)}
 			</Show>

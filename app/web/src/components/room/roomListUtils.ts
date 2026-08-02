@@ -14,6 +14,19 @@ export function canEditRoomItem(
 	);
 }
 
+export function canDeleteRoomItem(
+	currentUser: { uuid?: string } | null,
+	domain: { owner_uuid?: string } | null,
+	memberRole: string | null | undefined,
+	hasRoomDeletePermission: boolean,
+) {
+	return (
+		hasRoomDeletePermission ||
+		(!!currentUser?.uuid && domain?.owner_uuid === currentUser.uuid) ||
+		memberRole === "admin"
+	);
+}
+
 export function toEditRoomRecord(room: RoomInfo): RoomRecord {
 	return {
 		id: room.id,
