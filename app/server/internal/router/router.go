@@ -216,14 +216,18 @@ func serveSPA(r *gin.Engine) {
 
 // serveUploads 以安全响应头提供上传文件，并拒绝路径穿越。
 func serveUploads(c *gin.Context) {
+	uploadDir := "uploads"
+	if cfg := config.Current(); cfg != nil && cfg.StoragePathPrefix != "" {
+		uploadDir = strings.TrimSuffix(cfg.StoragePathPrefix, "/")
+	}
 	clean := filepath.Clean("/" + strings.TrimPrefix(c.Param("filepath"), "/"))
-	full := filepath.Join("uploads", strings.TrimPrefix(clean, "/"))
+	full := filepath.Join(uploadDir, strings.TrimPrefix(clean, "/"))
 	abs, err := filepath.Abs(full)
 	if err != nil {
 		c.Status(http.StatusInternalServerError)
 		return
 	}
-	base, err := filepath.Abs("uploads")
+	base, err := filepath.Abs(uploadDir)
 	if err != nil || (abs != base && !strings.HasPrefix(abs, base+string(filepath.Separator))) {
 		c.Status(http.StatusNotFound)
 		return
