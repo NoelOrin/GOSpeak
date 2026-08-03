@@ -83,7 +83,13 @@ func (h *StorageHandler) PresignUpload(c *gin.Context) {
 	}
 
 	// 生成对象键：{path_prefix}{category}/{uuid}.{ext}
-	objectKey := generateObjectKey(cfg.PathPrefix, req.Category, req.FileName)
+	userUUID := currentUserUUID(c)
+	if userUUID == "" {
+		pkg.Fail(c, pkg.TOKEN_WRONG, "user_uuid is required")
+		return
+	}
+	// 对象键绑定当前用户，防止上传阶段覆盖他人对象。
+	objectKey := generateObjectKey(cfg.PathPrefix, req.Category, req.FileName, userUUID)
 
 	// 获取预签名 URL
 	result, err := h.storageService.PresignUpload(objectKey, contentType, maxBytes)
@@ -160,6 +166,13 @@ func (h *StorageHandler) Upload(c *gin.Context) {
 	cfg, err := h.storageService.GetConfig()
 	if err != nil {
 		pkg.HandleError(c, err)
+		return
+	}
+
+	// 本地中转上传必须使用当前用户 presign 时生成的对象键，防止覆盖他人对象。
+	userUUID := currentUserUUID(c)
+	if userUUID == "" || !strings.HasPrefix(objectKey, objectKeyUserPrefix(cfg.PathPrefix, userUUID)) {
+		pkg.Fail(c, pkg.FORBIDDEN, "object_key does not belong to current user")
 		return
 	}
 
@@ -297,7 +310,7 @@ func (h *StorageHandler) UpdateConfig(c *gin.Context) {
 }
 
 // generateObjectKey 生成对象键
-func generateObjectKey(pathPrefix, category, fileName string) string {
+func generateObjectKey(pathPrefix, category, fileName, userUUID string) string {
 	ext := filepath.Ext(fileName)
 	if ext == "" {
 		ext = ".bin"
@@ -310,7 +323,18 @@ func generateObjectKey(pathPrefix, category, fileName string) string {
 	if !strings.HasSuffix(pathPrefix, "/") {
 		pathPrefix += "/"
 	}
-	return pathPrefix + category + "/" + id + ext
+	return pathPrefix + userUUID + "/" + category + "/" + id + ext
+}
+
+// objectKeyUserPrefix 返回当前用户 presign 对象键的前缀，用于上传所有权校验。
+func objectKeyUserPrefix(pathPrefix, userUUID string) string {
+	if pathPrefix == "" {
+		pathPrefix = "uploads/"
+	}
+	if !strings.HasSuffix(pathPrefix, "/") {
+		pathPrefix += "/"
+	}
+	return pathPrefix + userUUID + "/"
 }
 
 // normalizeContentType 去掉 MIME 后的 charset 等参数。

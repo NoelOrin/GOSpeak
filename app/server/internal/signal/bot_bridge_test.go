@@ -198,3 +198,22 @@ func TestPublishBotMessage_BotWithPermissions(t *testing.T) {
 		t.Errorf("expected identity 'helper-bot', got %q", b.From.Identity)
 	}
 }
+
+func TestPublishBotCommand_DomainRoom_BroadcastsToCompoundKey(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.fanout = newMockBroadcaster()
+	seedKickRoom(hub, "domain-a:test-room", map[string]string{
+		"socket-1": "user-1",
+	})
+
+	conn := newAuthedMockClient("socket-1", "user-1")
+	hub.PublishBotCommand(conn, `{"room":"test-room","domain_uuid":"domain-a","text":"/kick alice"}`)
+
+	b := decodeBotBroadcast(t, hub.fanout.(*mockBroadcaster), "domain-a:test-room", EventBotCommand)
+	if b == nil {
+		t.Fatal("expected bot:command broadcast on compound key")
+	}
+	if b.Room != "test-room" {
+		t.Errorf("expected logical room 'test-room', got %q", b.Room)
+	}
+}

@@ -11,6 +11,7 @@ import (
 // botMessagePayload is the client→server payload for bot:command and bot:message.
 type botMessagePayload struct {
 	Room    string `json:"room"`
+	DomainUUID string `json:"domain_uuid,omitempty"`
 	Text    string `json:"text"`
 	Content string `json:"content"`
 	ReplyTo string `json:"replyTo,omitempty"`
@@ -71,7 +72,8 @@ func (h *Hub) publishBotMessage(c ws.ClientMessenger, data string, event string)
 
 	// Must be in the room
 	h.mu.RLock()
-	room, exists := h.rooms[req.Room]
+	rk := roomKey(req.DomainUUID, req.Room)
+	room, exists := h.rooms[rk]
 	if !exists {
 		h.mu.RUnlock()
 		return
@@ -115,6 +117,6 @@ func (h *Hub) publishBotMessage(c ws.ClientMessenger, data string, event string)
 
 	// Broadcast to entire room
 	if h.fanout != nil {
-		h.fanout.BroadcastToRoom(req.Room, event, string(payload))
+		h.fanout.BroadcastToRoom(rk, event, string(payload))
 	}
 }

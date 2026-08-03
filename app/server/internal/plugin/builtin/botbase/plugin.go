@@ -10,6 +10,7 @@ import (
 
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/plugin"
+	"GOSpeak/internal/storage"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -40,23 +41,110 @@ type Config struct {
 }
 
 type SideServerConfig struct {
-	Enabled bool   `json:"enabled"`
+	Enabled bool `json:"enabled"`
 	// Addr 如 127.0.0.1:9200；空则随机端口
 	Addr string `json:"addr"`
 }
 
 type LLMProviderConfig struct {
-	Name     string            `json:"name"`
-	Display  string            `json:"display_name"`
+	Name    string `json:"name"`
+	Display string `json:"display_name"`
 	// Protocol: openai-compatible | anthropic | custom-http | ollama | gemini | gemini-response
-	Protocol string            `json:"protocol"`
-	BaseURL  string            `json:"base_url"`
-	APIKey   string            `json:"api_key"`
-	Model    string            `json:"model"`
-	Enabled  bool              `json:"enabled"`
+	Protocol string `json:"protocol"`
+	BaseURL  string `json:"base_url"`
+	APIKey   string `json:"api_key"`
+	Model    string `json:"model"`
+	Enabled  bool   `json:"enabled"`
 	// Extra 协议扩展字段（temperature 默认值、headers 等）
-	Extra    map[string]any    `json:"extra,omitempty"`
-	Headers  map[string]string `json:"headers,omitempty"`
+	Extra   map[string]any    `json:"extra,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+const secretPrefix = "enc:v1:"
+
+func encryptSecretValue(plaintext string) (string, error) {
+	if plaintext == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(plaintext, secretPrefix) {
+		if _, err := storage.DecryptSecret(strings.TrimPrefix(plaintext, secretPrefix)); err == nil {
+			return plaintext, nil
+		}
+	}
+	encoded, err := storage.EncryptSecret(plaintext)
+	if err != nil {
+		return "", err
+	}
+	return secretPrefix + encoded, nil
+}
+
+func decryptSecretValue(encoded string) string {
+	if encoded == "" || !strings.HasPrefix(encoded, secretPrefix) {
+		return encoded
+	}
+	if plain, err := storage.DecryptSecret(strings.TrimPrefix(encoded, secretPrefix)); err == nil {
+		return plain
+	}
+	return encoded
+}
+
+func encryptConfigSecrets(m map[string]any) (map[string]any, error) {
+	providers, _ := m["llm_providers"].([]any)
+	for _, item := range providers {
+		p, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if key, ok := p["api_key"].(string); ok {
+			enc, err := encryptSecretValue(key)
+			if err != nil {
+				return nil, err
+			}
+			p["api_key"] = enc
+		}
+	}
+	return m, nil
+}
+
+func decryptConfigSecrets(m map[string]any) map[string]any {
+	m = copyConfigMap(m)
+	providers, _ := m["llm_providers"].([]any)
+	for _, item := range providers {
+		p, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if key, ok := p["api_key"].(string); ok {
+			p["api_key"] = decryptSecretValue(key)
+		}
+	}
+	return m
+}
+
+// copyConfigMap 返回顶层 map 与 llm_providers 的浅拷贝，避免加解密原地改写调用方配置。
+func copyConfigMap(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	raw, ok := out["llm_providers"].([]any)
+	if !ok {
+		return out
+	}
+	providers := make([]any, len(raw))
+	for i, item := range raw {
+		if p, ok := item.(map[string]any); ok {
+			cp := make(map[string]any, len(p))
+			for k, v := range p {
+				cp[k] = v
+			}
+			providers[i] = cp
+		} else {
+			providers[i] = item
+		}
+	}
+	out["llm_providers"] = providers
+	return out
 }
 
 func New() *Plugin {
@@ -259,6 +347,7 @@ func (p *Plugin) Stop(ctx context.Context) error {
 
 // ValidateConfig implements plugin.Configurable
 func (p *Plugin) ValidateConfig(raw map[string]any) (map[string]any, error) {
+	raw = decryptConfigSecrets(raw)
 	b, err := json.Marshal(raw)
 	if err != nil {
 		return nil, err
@@ -302,7 +391,7 @@ func (p *Plugin) ValidateConfig(raw map[string]any) (map[string]any, error) {
 	nb, _ := json.Marshal(cfg)
 	m := map[string]any{}
 	_ = json.Unmarshal(nb, &m)
-	return m, nil
+	return encryptConfigSecrets(m)
 }
 
 func (p *Plugin) OnConfigUpdated(cfg map[string]any) error {
@@ -317,6 +406,7 @@ func (p *Plugin) OnConfigUpdated(cfg map[string]any) error {
 }
 
 func (p *Plugin) applyConfig(m map[string]any) {
+	m = decryptConfigSecrets(m)
 	b, _ := json.Marshal(m)
 	var cfg Config
 	_ = json.Unmarshal(b, &cfg)
@@ -331,7 +421,8 @@ func (p *Plugin) configMap() map[string]any {
 	b, _ := json.Marshal(p.cfg)
 	m := map[string]any{}
 	_ = json.Unmarshal(b, &m)
-	return m
+	encrypted, _ := encryptConfigSecrets(m)
+	return encrypted
 }
 
 func (p *Plugin) publicProviders() []map[string]any {

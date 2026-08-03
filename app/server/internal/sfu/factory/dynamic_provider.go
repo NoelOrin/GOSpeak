@@ -11,6 +11,14 @@ import (
 
 type ConfigResolver func() (*config.Config, error)
 
+type ownerAwareProvider interface {
+	GenerateTokenForUser(room, identity, ownerUUID string) (string, error)
+}
+
+type sessionOwnerLookup interface {
+	SessionOwner(sessionID string) (string, bool)
+}
+
 type DynamicProvider struct {
 	resolve           ConfigResolver
 	mu                sync.RWMutex
@@ -67,6 +75,31 @@ func (p *DynamicProvider) GenerateToken(room, identity string) (string, error) {
 		return "", err
 	}
 	return provider.GenerateToken(room, identity)
+}
+
+// GenerateTokenForUser forwards owner-aware token generation when the
+// active provider supports it, so sessions can be bound to their creator.
+func (p *DynamicProvider) GenerateTokenForUser(room, identity, ownerUUID string) (string, error) {
+	provider, err := p.current()
+	if err != nil {
+		return "", err
+	}
+	if op, ok := provider.(ownerAwareProvider); ok {
+		return op.GenerateTokenForUser(room, identity, ownerUUID)
+	}
+	return provider.GenerateToken(room, identity)
+}
+
+// SessionOwner returns the user UUID bound to a provider session when supported.
+func (p *DynamicProvider) SessionOwner(sessionID string) (string, bool) {
+	provider, err := p.current()
+	if err != nil {
+		return "", false
+	}
+	if lp, ok := provider.(sessionOwnerLookup); ok {
+		return lp.SessionOwner(sessionID)
+	}
+	return "", false
 }
 
 func (p *DynamicProvider) GenerateAdminToken() (string, error) {

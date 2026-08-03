@@ -24,6 +24,9 @@ const (
 	EnforcementNone     = "none"
 )
 
+// PermanentMuteTTLSeconds is used for permanent mutes on providers that require a media rule TTL.
+const PermanentMuteTTLSeconds = 365 * 24 * 60 * 60
+
 // Capabilities declares media-layer enforcement for a provider.
 // Signaling always runs first; *Level fields describe how media is enforced.
 //

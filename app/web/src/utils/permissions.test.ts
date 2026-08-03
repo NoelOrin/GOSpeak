@@ -38,4 +38,23 @@ describe("rolePermissions", () => {
 	it("user has create domain permission", () => {
 		expect(rolePermissions.user).toContain("domain:create");
 	});
+
+	it("admin has message, plugin and cluster permissions", () => {
+		for (const code of [
+			"message:send",
+			"message:read",
+			"message:delete_others",
+			"plugin:read",
+			"plugin:manage",
+			"cluster:read",
+			"cluster:manage",
+		]) {
+			expect(rolePermissions.admin).toContain(code);
+		}
+	});
+
+	it("user has message permissions", () => {
+		expect(rolePermissions.user).toContain("message:send");
+		expect(rolePermissions.user).toContain("message:read");
+	});
 });

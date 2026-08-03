@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	nhooyrws "nhooyr.io/websocket"
@@ -13,9 +14,9 @@ import (
 )
 
 const (
-	writeTimeout   = 5 * time.Second
+	writeTimeout     = 5 * time.Second
 	sendQueueTimeout = 500 * time.Millisecond
-	readLimit      = 65536 // 64KB max message size
+	readLimit        = 65536 // 64KB max message size
 )
 
 // Client 封装 nhooyr WebSocket 连接，提供 goroutine-safe 写能力。
@@ -32,6 +33,8 @@ type Client struct {
 
 	writeCh chan []byte
 	closed  chan struct{}
+	// dropped 统计因队列满被显式降级丢弃的消息数（原子计数）。
+	dropped uint64
 
 	// OnClose 是连接关闭时的回调（由 Upgrader 设置，用于从 Fanout 注销）。
 	OnClose func(clientID string)
@@ -45,6 +48,10 @@ var _ ClientMessenger = (*Client)(nil)
 // NewClient 创建一个 Client，但不启动读取循环（调用方需自行 StartReadLoop）。
 func NewClient(conn *nhooyrws.Conn, clientID string, claims *pkg.Claims) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
+	if conn != nil {
+		// nhooyr 默认 32KB，超限会直接断连；必须与 StartReadLoop 的 readLimit 检查一致。
+		conn.SetReadLimit(readLimit)
+	}
 	return &Client{
 		id:      clientID,
 		claims:  claims,
@@ -126,7 +133,8 @@ func (c *Client) Send(v interface{}) bool {
 	case c.writeCh <- data:
 		return true
 	case <-t.C:
-		log.Printf("[ws] drop message to slow client %s", c.id)
+		dropped := atomic.AddUint64(&c.dropped, 1)
+		log.Printf("[ws] drop message to slow client %s (total=%d)", c.id, dropped)
 		return false
 	case <-c.closed:
 		return false
@@ -141,6 +149,11 @@ func (c *Client) SendACK(id, event string, data interface{}) {
 // SendErrorACK 实现 ClientMessenger.SendErrorACK。
 func (c *Client) SendErrorACK(id, event string, code int, message string) {
 	c.Send(ACK{ID: id, Event: event, Error: &ACKError{Code: code, Message: message}})
+}
+
+// DroppedCount 返回因发送队列满被显式降级丢弃的消息总数（统计入口）。
+func (c *Client) DroppedCount() uint64 {
+	return atomic.LoadUint64(&c.dropped)
 }
 
 // Close 实现 ClientMessenger.Close。

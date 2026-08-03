@@ -173,3 +173,26 @@ func TestOnRoomKick_HumanAdminCanKickAdmin(t *testing.T) {
 		t.Fatal("human admin should be able to kick another admin")
 	}
 }
+
+func TestOnRoomKick_ClearsTargetConnSlot(t *testing.T) {
+	perms := &mockPermChecker{rolePerms: map[string]map[string]bool{
+		"admin": {"signal:kick": true},
+	}}
+	hub := NewHub(nil, nil, nil, perms)
+	hub.fanout = newMockBroadcaster()
+	seedKickRoom(hub, "domain-a:room-1", map[string]string{
+		"alice-sock": "alice",
+		"admin-sock": "admin",
+	})
+	hub.connSlots["alice-sock"] = &connRoomSlots{VoiceRoom: "domain-a:room-1"}
+
+	caller := &mockClient{id: "admin-sock", claims: &pkg.Claims{Username: "admin", UserUUID: "admin", Role: "admin"}}
+	hub.OnRoomKick(caller, `{"room":"room-1","domain_uuid":"domain-a","targetIdentity":"alice"}`)
+
+	hub.mu.RLock()
+	_, exists := hub.connSlots["alice-sock"]
+	hub.mu.RUnlock()
+	if exists {
+		t.Fatal("expected target conn slot removed after kick")
+	}
+}

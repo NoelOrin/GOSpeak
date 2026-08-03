@@ -122,7 +122,7 @@ export function useVoiceSession() {
 	};
 
 	const tokenQuery = useQuery(() => ({
-		queryKey: ["token", selectedRoom()?.name],
+		queryKey: ["token", selectedRoom()?.domain_uuid, selectedRoom()?.name],
 		enabled: !!selectedRoom(),
 		queryFn: async ({ signal }) => {
 			const room = selectedRoom();
@@ -134,6 +134,7 @@ export function useVoiceSession() {
 					room: room.name,
 					identity: userStore.user()?.name ?? "",
 					password: room._password,
+					domain_uuid: room.domain_uuid,
 				},
 				signal,
 			);
@@ -273,10 +274,10 @@ export function useVoiceSession() {
 							{
 								loadClient: loadSfuClient,
 								setupAudio: setupAudioHandler,
-								joinSignalRoom: (room, identity, password) =>
-									socketStore.joinRoom(room, identity, password),
-								joinSignalSfu: (room, identity, stream) =>
-									socketStore.joinRoomSFU(room, identity, stream),
+								joinSignalRoom: (room, identity, password, domain_uuid) =>
+									socketStore.joinRoom(room, identity, password, domain_uuid),
+								joinSignalSfu: (room, identity, stream, domain_uuid) =>
+									socketStore.joinRoomSFU(room, identity, stream, domain_uuid),
 								onPhase: (nextPhase) => {
 									if (signal.aborted) return;
 									setSession((s) =>

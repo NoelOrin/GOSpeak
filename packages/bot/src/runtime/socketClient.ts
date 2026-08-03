@@ -109,6 +109,12 @@ export class GOSpeakSocketClient {
 	private pendingAcks = new Map<string, PendingAck>();
 	private msgId = 0;
 	private _adapter = new EventAdapter();
+	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	private reconnectAttempts = 0;
+	private reconnecting = false;
+	private manualDisconnect = false;
+	private rejoinRooms: Map<string, { identity: string }> = new Map();
+	private readonly maxReconnectDelayMs = 30_000;
 
 	constructor(opts: SocketClientOptions) {
 		this.opts = opts;
@@ -133,6 +139,12 @@ export class GOSpeakSocketClient {
 
 	connect(): Promise<void> {
 		if (this.socket) return Promise.resolve();
+		this.manualDisconnect = false;
+		this.reconnecting = false;
+		if (this.reconnectTimer) {
+			clearTimeout(this.reconnectTimer);
+			this.reconnectTimer = null;
+		}
 		return (async () => {
 			let ticket: string | undefined;
 			if (this.opts.token) {
@@ -163,6 +175,12 @@ export class GOSpeakSocketClient {
 					this.connectResolve?.();
 					this.connectResolve = null;
 					this.connectReject = null;
+					this.reconnectAttempts = 0;
+					this.reconnecting = false;
+					for (const [room, info] of this.rejoinRooms) {
+						this.joinRoom(room, info.identity);
+					}
+					this.rejoinRooms.clear();
 					this.logger.info("WS connected");
 				};
 
@@ -196,6 +214,7 @@ export class GOSpeakSocketClient {
 				wsHandle.onclose = (ev: CloseEvent) => {
 					if (this.socket === wsHandle) this.socket = null;
 					this.connected = false;
+					this.rejoinRooms = new Map(this.joinedRooms);
 					this.joinedRooms.clear();
 					for (const [_id, pending] of this.pendingAcks) {
 						clearTimeout(pending.timer);
@@ -212,12 +231,20 @@ export class GOSpeakSocketClient {
 							),
 						);
 					this.logger.info("WS disconnected:", ev.reason || "closed");
+					this.scheduleReconnect();
 				};
 			});
 		})();
 	}
 
 	disconnect(): void {
+		this.manualDisconnect = true;
+		this.reconnecting = false;
+		if (this.reconnectTimer) {
+			clearTimeout(this.reconnectTimer);
+			this.reconnectTimer = null;
+		}
+		this.rejoinRooms.clear();
 		if (this.socket) {
 			this.socket.onclose = null;
 			this.socket.close();
@@ -232,6 +259,26 @@ export class GOSpeakSocketClient {
 		this.pendingAcks.clear();
 		this.connectResolve = null;
 		this.connectReject = null;
+	}
+
+	private scheduleReconnect(): void {
+		if (this.manualDisconnect || this.reconnecting || this.reconnectTimer)
+			return;
+		this.reconnecting = true;
+		const delay = Math.min(
+			1000 * 2 ** this.reconnectAttempts,
+			this.maxReconnectDelayMs,
+		);
+		this.reconnectAttempts += 1;
+		this.logger.info(`WS reconnect scheduled in ${delay}ms`);
+		this.reconnectTimer = setTimeout(() => {
+			this.reconnectTimer = null;
+			this.reconnecting = false;
+			this.connect().catch((err) => {
+				this.logger.error("WS reconnect failed:", err);
+				this.scheduleReconnect();
+			});
+		}, delay);
 	}
 
 	joinRoom(room: string, identity: string): void {

@@ -2,10 +2,13 @@ package signal
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 
 	"GOSpeak/internal/bus"
+
+	"github.com/nats-io/nats.go"
 )
 
 // EventStateRoomChanged is an internal (non-WebSocket) event: peers should
@@ -45,14 +48,34 @@ func (h *Hub) SetStateNotifier(n stateNotifier) {
 // room views stay complete. If this instance has no local members and no remote
 // members remain, the room key is deleted.
 // Best-effort: errors are logged, never fail the socket path.
+
+const maxMembershipSyncAttempts = 3
+
+// revisionedMembershipStore 是 NATS KV 后端提供的乐观锁扩展接口。
+type revisionedMembershipStore interface {
+	GetRoomMembersRev(ctx context.Context, room string) (bus.RoomMembersSnapshot, uint64, error)
+	PutRoomMembersRev(ctx context.Context, snap bus.RoomMembersSnapshot, rev uint64) error
+	DeleteRoomMembersRev(ctx context.Context, room string, rev uint64) error
+}
+
 func (h *Hub) syncRoomToStore(key string) {
 	if h.membershipStore == nil || key == "" {
 		return
 	}
 
 	now := time.Now().UnixMilli()
+	local := h.localRoomMembers(key, now)
+	if rs, ok := h.membershipStore.(revisionedMembershipStore); ok {
+		h.syncRoomToStoreWithRevision(rs, key, now, local)
+		return
+	}
+	h.syncRoomToStorePlain(key, now, local)
+}
+
+func (h *Hub) localRoomMembers(key string, now int64) []bus.MemberRecord {
 	local := make([]bus.MemberRecord, 0)
 	h.mu.RLock()
+	defer h.mu.RUnlock()
 	if room, ok := h.rooms[key]; ok {
 		local = make([]bus.MemberRecord, 0, len(room.Members))
 		for sid, m := range room.Members {
@@ -71,31 +94,15 @@ func (h *Hub) syncRoomToStore(key string) {
 			})
 		}
 	}
-	h.mu.RUnlock()
+	return local
+}
 
-	merged := make([]bus.MemberRecord, 0, len(local))
+// syncRoomToStorePlain 保留非 NATS 后端（如 Redis）的无 CAS 合并行为。
+func (h *Hub) syncRoomToStorePlain(key string, now int64, local []bus.MemberRecord) {
+	merged := local
 	if prev, err := h.membershipStore.GetRoomMembers(context.Background(), key); err == nil {
-		for _, rec := range prev.Members {
-			if rec.Identity == "" {
-				continue
-			}
-			if rec.InstanceID == "" || (h.instanceID != "" && rec.InstanceID == h.instanceID) {
-				continue
-			}
-			collide := false
-			for _, l := range local {
-				if l.Identity == rec.Identity {
-					collide = true
-					break
-				}
-			}
-			if collide {
-				continue
-			}
-			merged = append(merged, rec)
-		}
+		merged = mergeRemoteMembers(prev.Members, local, h.instanceID)
 	}
-	merged = append(merged, local...)
 
 	if len(merged) == 0 {
 		if err := h.membershipStore.DeleteRoomMembers(context.Background(), key); err != nil {
@@ -115,6 +122,83 @@ func (h *Hub) syncRoomToStore(key string) {
 		return
 	}
 	h.notifyRoomStateChanged(key)
+}
+
+// syncRoomToStoreWithRevision 用 NATS KV revision 做乐观锁：读取当前 rev，CAS 写入；
+// 冲突时重试，超过次数则放弃并记录，避免并发实例互相覆盖。
+func (h *Hub) syncRoomToStoreWithRevision(rs revisionedMembershipStore, key string, now int64, local []bus.MemberRecord) {
+	for attempt := 0; attempt < maxMembershipSyncAttempts; attempt++ {
+		prev, rev, err := rs.GetRoomMembersRev(context.Background(), key)
+		if err != nil && !errors.Is(err, nats.ErrKeyNotFound) {
+			log.Printf("[Signal] state store get room %s: %v", key, err)
+			return
+		}
+
+		merged := mergeRemoteMembers(prev.Members, local, h.instanceID)
+		if len(merged) == 0 {
+			if rev != 0 {
+				if err := rs.DeleteRoomMembersRev(context.Background(), key, rev); err != nil {
+					if isMembershipCASConflict(err) {
+						continue
+					}
+					log.Printf("[Signal] state store delete room %s: %v", key, err)
+					return
+				}
+			}
+			h.notifyRoomStateChanged(key)
+			return
+		}
+
+		snap := bus.RoomMembersSnapshot{
+			Room:      key,
+			UpdatedAt: now,
+			Members:   merged,
+		}
+		if err := rs.PutRoomMembersRev(context.Background(), snap, rev); err != nil {
+			if isMembershipCASConflict(err) {
+				continue
+			}
+			log.Printf("[Signal] state store put room %s: %v", key, err)
+			return
+		}
+		h.notifyRoomStateChanged(key)
+		return
+	}
+	log.Printf("[Signal] state store sync room %s: revision conflicts exceeded %d attempts", key, maxMembershipSyncAttempts)
+}
+
+func mergeRemoteMembers(prev []bus.MemberRecord, local []bus.MemberRecord, instanceID string) []bus.MemberRecord {
+	merged := make([]bus.MemberRecord, 0, len(local))
+	for _, rec := range prev {
+		if rec.Identity == "" {
+			continue
+		}
+		if rec.InstanceID == "" || (instanceID != "" && rec.InstanceID == instanceID) {
+			continue
+		}
+		collide := false
+		for _, l := range local {
+			if l.Identity == rec.Identity {
+				collide = true
+				break
+			}
+		}
+		if collide {
+			continue
+		}
+		merged = append(merged, rec)
+	}
+	merged = append(merged, local...)
+	return merged
+}
+
+// isMembershipCASConflict 识别 NATS KV 的 revision 不匹配 / 已存在冲突。
+func isMembershipCASConflict(err error) bool {
+	if errors.Is(err, nats.ErrKeyExists) {
+		return true
+	}
+	var apiErr *nats.APIError
+	return errors.As(err, &apiErr) && apiErr.ErrorCode == nats.JSErrCodeStreamWrongLastSequence
 }
 
 func (h *Hub) syncStreamPut(stream, key, identity string) {
@@ -214,6 +298,10 @@ func (h *Hub) roomInfoMerged(key string) RoomInfo {
 		merged := h.GetRoomMembersMerged(key)
 		info.Members = merged
 		info.Count = len(merged)
+	} else {
+		// 无 KV 时在锁外补全成员资料/禁言，避免 roomInfoLocked 持锁查 DB。
+		info.Members = h.enrichMembers(info.Members)
+		info.Count = len(info.Members)
 	}
 	return info
 }
