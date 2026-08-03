@@ -214,6 +214,10 @@ func (h *Hub) roomInfoMerged(key string) RoomInfo {
 		merged := h.GetRoomMembersMerged(key)
 		info.Members = merged
 		info.Count = len(merged)
+	} else {
+		// 无 KV 时在锁外补全成员资料/禁言，避免 roomInfoLocked 持锁查 DB。
+		info.Members = h.enrichMembers(info.Members)
+		info.Count = len(info.Members)
 	}
 	return info
 }
