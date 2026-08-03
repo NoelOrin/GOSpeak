@@ -4,6 +4,7 @@ import (
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/middleware"
+	"GOSpeak/internal/permcode"
 	authRoutes "GOSpeak/internal/router/routes/auth"
 	botRoutes "GOSpeak/internal/router/routes/bot"
 	clusterRoutes "GOSpeak/internal/router/routes/cluster"
@@ -126,7 +127,9 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	}
 	if h.PluginHost != nil {
 		// route registry: /api/v1/plugins/:name/*
-		h.PluginHost.MountRoutes(protected.Group("/plugins"))
+		pluginGroup := protected.Group("/plugins")
+		pluginGroup.Use(middleware.RequirePermission(permcode.PermPluginManage))
+		h.PluginHost.MountRoutes(pluginGroup)
 	}
 	if h.Domain != nil {
 		domainRoutes.Register(protected.Group("/domain"), h.Domain)

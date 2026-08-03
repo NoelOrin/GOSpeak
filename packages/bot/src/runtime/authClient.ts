@@ -67,11 +67,11 @@ export class AuthClient {
 			access_token: string;
 			refresh_token: string;
 			user: {
-				ID: number;
-				UUID: string;
-				Name: string;
-				DisplayName: string;
-				Role: string;
+				id: number;
+				uuid: string;
+				name: string;
+				display_name: string;
+				role: string;
 			};
 			need_change_password: boolean;
 		}>;
@@ -86,11 +86,11 @@ export class AuthClient {
 		return {
 			accessToken: json.data.access_token,
 			refreshToken: json.data.refresh_token,
-			userId: json.data.user.ID,
-			uuid: json.data.user.UUID,
-			username: json.data.user.Name,
-			displayName: json.data.user.DisplayName,
-			role: json.data.user.Role,
+			userId: json.data.user.id,
+			uuid: json.data.user.uuid,
+			username: json.data.user.name,
+			displayName: json.data.user.display_name,
+			role: json.data.user.role,
 			needChangePassword: json.data.need_change_password,
 		};
 	}
