@@ -172,9 +172,8 @@ func (s *StorageService) ReloadProvider() (storage.Provider, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.provider != nil {
-		return s.provider, nil
-	}
+	// 配置更新后必须重建 provider；旧实例先清空，避免复用过期配置。
+	s.provider = nil
 
 	cfg, err := s.getConfigForProvider()
 	if err != nil {
