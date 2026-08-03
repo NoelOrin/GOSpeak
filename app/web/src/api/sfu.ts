@@ -419,6 +419,7 @@ export interface GetJoinTokenParams {
 	room: string;
 	identity: string;
 	password?: string;
+	domain_uuid?: string;
 }
 
 export interface JoinTokenResponse {
@@ -426,6 +427,8 @@ export interface JoinTokenResponse {
 	serverUrl: string;
 	workerUrl?: string;
 	room: string;
+	sfuRoom?: string;
+	domain_uuid?: string;
 	identity: string;
 	provider?: SFUProvider;
 	appId?: string;

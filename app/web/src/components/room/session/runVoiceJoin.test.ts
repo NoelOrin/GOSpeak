@@ -74,6 +74,36 @@ describe("runVoiceJoin", () => {
 		vi.clearAllMocks();
 	});
 
+	it("uses sfuRoom for media join while signal keeps logical room + domain_uuid", async () => {
+		const { deps, client } = makeDeps();
+		const token = makeToken({
+			sfuRoom: "domain-a:r1",
+			domain_uuid: "domain-a",
+		});
+		await runVoiceJoin(token as any, deps as any);
+
+		expect(client.joinRoom).toHaveBeenCalledWith({
+			token: "tok",
+			serverUrl: "wss://lk.example",
+			identity: "alice",
+			room: "domain-a:r1",
+			stream: undefined,
+			streamToken: undefined,
+		});
+		expect(deps.joinSignalRoom).toHaveBeenCalledWith(
+			"r1",
+			"alice",
+			"pwd",
+			"domain-a",
+		);
+		expect(deps.joinSignalSfu).toHaveBeenCalledWith(
+			"r1",
+			"alice",
+			undefined,
+			"domain-a",
+		);
+	});
+
 	it("livekit awaits signal after media (no media_ready early return)", async () => {
 		const { deps, client, phases, order } = makeDeps();
 		const token = makeToken();
@@ -111,8 +141,18 @@ describe("runVoiceJoin", () => {
 			streamToken: undefined,
 		});
 		expect(deps.setupAudio).toHaveBeenCalledWith(client);
-		expect(deps.joinSignalRoom).toHaveBeenCalledWith("r1", "alice", "pwd");
-		expect(deps.joinSignalSfu).toHaveBeenCalledWith("r1", "alice", undefined);
+		expect(deps.joinSignalRoom).toHaveBeenCalledWith(
+			"r1",
+			"alice",
+			"pwd",
+			undefined,
+		);
+		expect(deps.joinSignalSfu).toHaveBeenCalledWith(
+			"r1",
+			"alice",
+			undefined,
+			undefined,
+		);
 	});
 
 	it("srs adapter subscribePeers after ack", async () => {
@@ -138,6 +178,7 @@ describe("runVoiceJoin", () => {
 				"r1",
 				"alice",
 				"gs-alice",
+				undefined,
 			);
 			expect(client.subscribePeers).toHaveBeenCalledWith([
 				{ identity: "bob", stream: "gs-bob" },

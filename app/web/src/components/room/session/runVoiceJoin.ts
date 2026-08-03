@@ -35,11 +35,13 @@ export type VoiceJoinDeps = {
 		room: string,
 		identity: string,
 		password?: string,
+		domain_uuid?: string,
 	) => Promise<unknown>;
 	joinSignalSfu: (
 		room: string,
 		identity: string,
 		stream?: string,
+		domain_uuid?: string,
 	) => Promise<VoiceJoinAck>;
 	onPhase: (phase: VoicePhase) => void;
 	/**
@@ -161,7 +163,7 @@ async function executeVoiceJoin(
 				token: token.token,
 				serverUrl: adapter.resolveConnectTarget(token),
 				identity: token.identity,
-				room: token.room,
+				room: token.sfuRoom || token.room,
 				stream: token.stream,
 				streamToken: token.streamToken,
 			}),
@@ -177,13 +179,18 @@ async function executeVoiceJoin(
 
 		const joinSignal = async () => {
 			await raceAbort(
-				joinSignalRoom(token.room, token.identity, password),
+				joinSignalRoom(token.room, token.identity, password, token.domain_uuid),
 				signal,
 			);
 			throwIfAborted(signal);
 
 			const ack = await raceAbort(
-				joinSignalSfu(token.room, token.identity, token.stream),
+				joinSignalSfu(
+					token.room,
+					token.identity,
+					token.stream,
+					token.domain_uuid,
+				),
 				signal,
 			);
 			throwIfAborted(signal);

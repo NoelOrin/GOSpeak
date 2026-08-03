@@ -449,14 +449,19 @@ export const socketStore = createRoot(() => {
 		});
 	}
 
-	function joinRoom(room: string, identity: string, password?: string) {
+	function joinRoom(
+		room: string,
+		identity: string,
+		password?: string,
+		domain_uuid?: string,
+	) {
 		return waitForConnected()
 			.then(() =>
 				signalEmit(EVENTS.ROOM_JOIN, {
 					room,
 					identity,
 					password,
-					domain_uuid: currentDomainUUID() ?? undefined,
+					domain_uuid: domain_uuid ?? currentDomainUUID() ?? undefined,
 				}),
 			)
 			.then((data) => {
@@ -483,14 +488,19 @@ export const socketStore = createRoot(() => {
 		});
 	}
 
-	function joinRoomSFU(room: string, identity: string, stream?: string) {
+	function joinRoomSFU(
+		room: string,
+		identity: string,
+		stream?: string,
+		domain_uuid?: string,
+	) {
 		return waitForConnected()
 			.then(() =>
 				signalEmit(EVENTS.ROOM_JOIN_SFU, {
 					room,
 					identity,
 					stream,
-					domain_uuid: currentDomainUUID() ?? undefined,
+					domain_uuid: domain_uuid ?? currentDomainUUID() ?? undefined,
 				}),
 			)
 			.then((data) => {
@@ -501,7 +511,7 @@ export const socketStore = createRoot(() => {
 						upsertRoomMembersFromAck(
 							prev,
 							data.room,
-							currentDomainUUID() ?? undefined,
+							domain_uuid ?? currentDomainUUID() ?? undefined,
 							ackMembers,
 						),
 					);
