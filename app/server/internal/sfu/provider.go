@@ -1,6 +1,6 @@
 package sfu
 
-// Provider abstracts an SFU backend (LiveKit, SRS, Agora, MediaSoup, Daily, etc.).
+// Provider abstracts an SFU backend (LiveKit, SRS, Agora, Cloudflare, etc.).
 //
 // Capability contract:
 //   - Supported operations return concrete results / nil error.

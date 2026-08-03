@@ -192,7 +192,7 @@
 
 ## SFUConfig（SFU 配置）— `sfu_configs`
 
-每个 provider 一行，以 `Provider` 为主键；切换 provider 互不覆盖配置。字段覆盖 LiveKit / Agora / MediaSoup / SRS / Daily / Cloudflare 的全部连接参数（host、key、secret、证书、端口、WHIP URL、STUN 等）。
+每个 provider 一行，以 `Provider` 为主键；切换 provider 互不覆盖配置。字段覆盖 LiveKit / Agora / SRS / Cloudflare 的全部连接参数（host、key、secret、证书、端口、WHIP URL、STUN 等）。
 
 ## SFUActiveProvider（当前激活 provider）— `sfu_active_provider`
 

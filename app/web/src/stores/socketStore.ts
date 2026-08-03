@@ -10,7 +10,6 @@ import { preloadSfuClient } from "@/components/room/services/loadSfuClient";
 import { setSpeakingIdentities } from "@/handler_audio/speakingStore";
 import { createWSClient } from "@/socket/wsClient";
 import { EVENTS } from "@/socket/events";
-import { createMediasoupSignal } from "@/socket/mediasoupSignal";
 import { createProviderReloadHandler } from "@/socket/providerReload";
 import {
 	addCreatedRoom,
@@ -301,8 +300,6 @@ export const socketStore = createRoot(() => {
 			},
 		);
 
-		mediasoupSignal.bindServerEvents();
-
 		// 用户级禁言事件：允许收听，不允许发布本地音轨
 		// 必须按 user_id 过滤，避免全服广播误伤其他客户端
 		adapter.onServerEvent(
@@ -383,7 +380,6 @@ export const socketStore = createRoot(() => {
 	}
 
 	function disconnect() {
-		mediasoupSignal.clearListeners();
 		activityListeners.clear();
 		presenceListeners.clear();
 		kickedListeners.clear();
@@ -414,11 +410,6 @@ export const socketStore = createRoot(() => {
 	): Promise<any> {
 		return adapter.emitAck(event, payload);
 	}
-
-	const mediasoupSignal = createMediasoupSignal({
-		emitAck: (event, payload) => signalEmit(event, payload),
-		onServerEvent: (event, cb) => adapter.onServerEvent(event, cb),
-	});
 
 	createEffect(() => {
 		if (!userStore.accessToken()) disconnect();
@@ -526,61 +517,6 @@ export const socketStore = createRoot(() => {
 			});
 	}
 
-	// 8. mediasoup API forwarding
-	function getRouterCapabilities(room: string) {
-		return mediasoupSignal.getRouterCapabilities(room);
-	}
-
-	function createTransport(room: string, direction: "send" | "recv") {
-		return mediasoupSignal.createTransport(room, direction);
-	}
-
-	function connectTransport(
-		room: string,
-		transportId: string,
-		dtlsParameters: unknown,
-	) {
-		return mediasoupSignal.connectTransport(room, transportId, dtlsParameters);
-	}
-
-	function produce(
-		room: string,
-		transportId: string,
-		kind: string,
-		rtpParameters: unknown,
-		appData: unknown,
-	) {
-		return mediasoupSignal.produce(
-			room,
-			transportId,
-			kind,
-			rtpParameters,
-			appData,
-		);
-	}
-
-	function consume(
-		room: string,
-		transportId: string,
-		producerId: string,
-		rtpCapabilities: unknown,
-	) {
-		return mediasoupSignal.consume(
-			room,
-			transportId,
-			producerId,
-			rtpCapabilities,
-		);
-	}
-
-	function onProducerReady(cb: (info: any) => void): () => void {
-		return mediasoupSignal.onProducerReady(cb);
-	}
-
-	function onProducerClosed(cb: (info: any) => void): () => void {
-		return mediasoupSignal.onProducerClosed(cb);
-	}
-
 	function onActivity(cb: (event: ActivityEvent) => void): () => void {
 		activityListeners.add(cb);
 		return () => {
@@ -685,13 +621,6 @@ export const socketStore = createRoot(() => {
 		leaveRoom,
 		joinRoomSFU,
 		clearCurrentRoom,
-		getRouterCapabilities,
-		createTransport,
-		connectTransport,
-		produce,
-		consume,
-		onProducerReady,
-		onProducerClosed,
 		onActivity,
 		onPresence,
 		onRoomKicked,

@@ -12,7 +12,7 @@ GOSpeak 前端客户端，基于 SolidJS 构建的实时语音聊天应用。当
 - **Data Fetching**: TanStack Solid Query
 - **Styling**: Tailwind CSS v4 + DaisyUI 5 + `tailwind-merge` / `clsx`
 - **UI Library**: cui-solid
-- **Realtime**: Native WebSocket + provider-specific RTC SDKs（当前以 LiveKit 为主，逐步支持 Agora / MediaSoup）
+- **Realtime**: Native WebSocket + provider-specific RTC SDKs（当前以 LiveKit 为主，逐步支持 Agora / SRS / Cloudflare）
 - **Lint/Format**: Biome（tab 缩进，LF 换行）
 - **Build**: Vite (rolldown-vite) + vite-plugin-solid
 
@@ -74,7 +74,7 @@ src/
 
 ### Realtime Architecture
 - **WebSocket**: 房间管理（创建/加入/离开/列表）+ 成员同步 + 部分 provider 专属信令
-- **SFU client layer**: 统一页面侧媒体会话生命周期，内部按 provider 分发到 LiveKit / Agora / MediaSoup
+- **SFU client layer**: 统一页面侧媒体会话生命周期，内部按 provider 分发到 LiveKit / Agora / SRS / Cloudflare
 - **Current state**: socketStore 管理房间状态；媒体接入仍残留部分 LiveKit 命名和结构，需要继续收敛
 
 ### Multi-SFU rules

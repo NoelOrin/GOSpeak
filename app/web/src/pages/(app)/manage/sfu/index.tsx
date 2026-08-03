@@ -6,7 +6,6 @@ import Info from "lucide-solid/icons/info";
 import RefreshCcw from "lucide-solid/icons/refresh-ccw";
 import Save from "lucide-solid/icons/save";
 import ServerCog from "lucide-solid/icons/server-cog";
-import TriangleAlert from "lucide-solid/icons/triangle-alert";
 import {
 	createEffect,
 	createResource,
@@ -32,7 +31,6 @@ import {
 import { hasPermission } from "@/utils/permissions";
 import CapabilityBadge from "./components/CapabilityBadge";
 import {
-	DISABLED_PROVIDERS,
 	emptyFormForProvider,
 	emptySecretFlags,
 	pickProviderForm,
@@ -130,7 +128,6 @@ function SFUPage() {
 			agora_app_certificate_set?: boolean;
 			agora_customer_secret_set?: boolean;
 			srs_secret_set?: boolean;
-			daily_api_key_set?: boolean;
 			cf_app_secret_set?: boolean;
 		},
 		options?: { preserveDraft?: boolean },
@@ -148,7 +145,6 @@ function SFUPage() {
 			"agora_app_certificate",
 			"agora_customer_secret",
 			"srs_secret",
-			"daily_api_key",
 			"cf_app_secret",
 		] as const) {
 			if (key in base) base[key] = "";
@@ -307,10 +303,6 @@ function SFUPage() {
 								label="服务端踢人"
 								active={!!capabilities().serverKick}
 							/>
-							<CapabilityBadge
-								label="专属信令"
-								active={capabilities().requiresSignalAdapter}
-							/>
 						</div>
 					</div>
 
@@ -409,16 +401,6 @@ function SFUPage() {
 								</span>
 								的配置，尚未激活。保存配置将自动激活，或直接切换。
 							</div>
-						</div>
-					</Show>
-
-					<Show when={DISABLED_PROVIDERS.includes("mediasoup")}>
-						<div class="flex items-start gap-2.5 rounded-2xl border border-warning/20 bg-warning/8 px-4 py-3 text-sm text-base-content/70">
-							<TriangleAlert
-								size={16}
-								class="mt-0.5 shrink-0 text-base-content/45"
-							/>
-							<div>MediaSoup 当前保留展示但暂不开放配置与切换。</div>
 						</div>
 					</Show>
 				</section>

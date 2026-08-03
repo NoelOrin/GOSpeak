@@ -61,12 +61,5 @@
     "severity": "🟡risk",
     "problem": "JWT access token is passed in the SSE EventSource URL query parameter (`?token=...`). This leaks the token to server access logs, the Referer header, and browser history. Window.EventSource does not support custom headers, so this is a common trade-off, but it still exposes the bearer credential.",
     "fix": "Use a short-lived SSE-specific token or a session cookie instead of the full JWT. Alternatively, proxy SSE through a service-worker that can attach the Authorization header."
-  },
-  {
-    "file": "app/web/src/pages/(app)/manage/sfu/components/ProviderConfigForm.tsx",
-    "line": 195,
-    "severity": "🔵nit",
-    "problem": "`disabled={saving() || true}` always evaluates to true for mediasoup fields. Intentional (MediaSoup is in DISABLED_PROVIDERS) but the `|| true` looks like a debugging leftover.",
-    "fix": "Use `disabled={true}` or remove the `saving()` check, since the result is always the same."
   }
 ]

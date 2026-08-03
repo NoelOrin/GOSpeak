@@ -1,10 +1,4 @@
-export type SFUProviderName =
-	| "livekit"
-	| "mediasoup"
-	| "srs"
-	| "agora"
-	| "daily"
-	| "cloudflare";
+export type SFUProviderName = "livekit" | "srs" | "agora" | "cloudflare";
 
 export interface SFUListenJoinParams {
 	room: string;

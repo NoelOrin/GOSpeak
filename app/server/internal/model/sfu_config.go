@@ -14,6 +14,7 @@ type SFUConfig struct {
 	AgoraHost           string    `gorm:"size:255" json:"agora_host"`
 	AgoraCustomerID     string    `gorm:"size:255" json:"agora_customer_id"`
 	AgoraCustomerSecret string    `gorm:"size:255" json:"-"`
+	// MediaSoup/Daily 已禁用保留：字段随实现保留，不再通过管理端启用。
 	MediaSoupBridgeURL  string    `gorm:"size:255" json:"mediasoup_bridge_url"`
 	MediaSoupHost       string    `gorm:"size:255" json:"mediasoup_host"`
 	SRSHost             string    `gorm:"size:255" json:"srs_host"`

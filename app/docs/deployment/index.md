@@ -39,7 +39,7 @@ Nginx :80/:443（可选）
 GOSpeak (Go)
     ├── DB: SQLite/PG
     ├── Redis (可选): JWT黑名单、密钥轮换
-    └── SFU: LiveKit/SRS/MediaSoup
+    └── SFU: LiveKit/SRS/Agora/Cloudflare
 
 浏览器 ──WebRTC──► SFU 媒体端口（直连）
 ```

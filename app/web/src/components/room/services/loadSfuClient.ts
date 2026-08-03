@@ -12,9 +12,7 @@ const STORAGE_LAST_SFU_PROVIDER = "lastSfuProvider";
 const providerPreloaders: Record<SFUProvider, () => Promise<void>> = {
 	livekit: () => preloadSFUClient("livekit"),
 	agora: () => preloadSFUClient("agora"),
-	mediasoup: () => preloadSFUClient("mediasoup"),
 	srs: () => preloadSFUClient("srs"),
-	daily: () => preloadSFUClient("daily"),
 	cloudflare: () => preloadSFUClient("cloudflare"),
 };
 

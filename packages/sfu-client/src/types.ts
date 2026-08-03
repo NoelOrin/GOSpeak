@@ -69,8 +69,8 @@ export interface SFUClientOptions {
 	audioCapture?: SFUAudioCaptureOptions;
 	publishAudio?: SFUPublishAudioOptions;
 	/**
-	 * Native WS signal socket. Required when provider is "mediasoup" for its
-	 * custom signaling flow; ignored by LiveKit and Agora.
+	 * Native WS signal socket used by SRS/Cloudflare for member join/leave
+	 * events; ignored by LiveKit and Agora.
 	 */
 	socket?: SignalSocket | null;
 }

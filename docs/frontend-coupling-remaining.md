@@ -5,6 +5,6 @@
 > - #2 ✅ socketStore 音频解耦 — 通过 `onActiveSpeakers` 回调桥接解耦 (2026-07-25)
 > - #3 ⚠️ roomDetail 拆 hooks — 组件 94 行已拆 3 个 hooks，不再臃肿
 
-**后端 SFU 解耦**: 6 个 SFU provider (`livekit/srs/agora/daily/mediasoup/cloudflare`) 已于 2026-07-25 从 `internal/` 顶层归入 `internal/sfu/providers/`。
+**后端 SFU 解耦**: 当前 4 个启用 provider（livekit/srs/agora/cloudflare），其余实现保留但未注册。
 
 ---

@@ -7,12 +7,12 @@
 │                              GOSpeak Monorepo                                   │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                 │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐              │
-│  │    app/web      │    │   app/server    │    │ app/mediasoup-  │              │
-│  │   (SolidJS)     │    │      (Go)       │    │    worker       │              │
-│  └────────┬────────┘    └────────┬────────┘    └────────┬────────┘              │
-│           │                      │                      │                       │
-│           └──────────────────────┼──────────────────────┘                       │
+│  ┌─────────────────┐    ┌─────────────────┐                              │
+│  │    app/web      │    │   app/server    │                              │
+│  │   (SolidJS)     │    │      (Go)       │                              │
+│  └────────┬────────┘    └────────┬────────┘                                  │
+│           │                      │                                             │
+│           └──────────────────────┘                                             │
 │                                  │                                              │
 └──────────────────────────────────┼──────────────────────────────────────────────┘
                                    │
@@ -21,10 +21,10 @@
 │                              Infrastructure                                     │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                 │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐          │
-│  │ LiveKit  │  │   SRS    │  │  Agora   │  │  Daily   │  │MediaSoup │          │
-│  │   SFU    │  │   SFU    │  │   SFU    │  │   SFU    │  │   SFU    │          │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘          │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐                        │
+│  │ LiveKit  │  │   SRS    │  │  Agora   │  │Cloudflare│                        │
+│  │   SFU    │  │   SFU    │  │   SFU    │  │   SFU    │                        │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘                        │
 │                                                                                 │
 │  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐              │
 │  │     Redis       │    │    Database     │    │     OAuth       │              │
@@ -65,7 +65,6 @@ GOSpeak/
 │   │       ├── layouts/     # 布局 (header, sidebar, main, footer)
 │   │       ├── stores/      # 状态管理 (socket, user, theme, audioDevice, voiceChat)
 │   │       └── types/       # TypeScript 类型定义
-│   └── mediasoup-worker/    # MediaSoup Node 服务
 ├── package.json             # Root scripts
 ├── pnpm-workspace.yaml      # Workspace config
 └── AGENTS.md                # AI Agent 开发指南
@@ -240,12 +239,12 @@ Tech Stack:
 │                    ┌───────────────┼───────────────┐                           │
 │                    ▼               ▼               ▼                           │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
-│  │ LiveKit  │  │   SRS    │  │  Agora   │  │  Daily   │  │MediaSoup │        │
-│  │ Highest  │  │  High    │  │  Medium  │  │  Medium  │  │  Medium  │        │
-│  │ Full API │  │ Partial  │  │ Partial  │  │ Partial  │  │ Partial  │        │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘        │
-│                                                                                 │
-│  配置: SFU_PROVIDER="livekit" | "srs" | "agora" | "daily" | "mediasoup"       │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐                        │
+│  │ LiveKit  │  │   SRS    │  │  Agora   │  │Cloudflare│                        │
+│  │ Highest  │  │  High    │  │  Medium  │  │  Medium  │                        │
+│  │ Full API │  │ Partial  │  │ Partial  │  │ Partial  │                        │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘                        │
+│  配置: SFU_PROVIDER="livekit" | "srs" | "agora" | "cloudflare"             │
 │                                                                                 │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -272,7 +271,7 @@ Tech Stack:
 │       │                                    ├─── Memory ──► Room Registry       │
 │       │                                    │                                    │
 │       │                                    └─── SFU Provider ──► SFU Server    │
-│       │                                          (LiveKit/SRS/Agora/Daily)     │
+│       │                                          (LiveKit/SRS/Agora/Cloudflare)     │
 │       │                                                                         │
 │       └─── WebRTC ────────────────────► SFU Server                             │
 │                                            │                                    │
@@ -459,7 +458,7 @@ WS Endpoint: /ws
 | **路由** | TanStack Router | 客户端路由 |
 | **数据获取** | TanStack Query | 服务端状态管理 |
 | **实时通信** | WebSocket | 信令服务器 |
-| **WebRTC** | LiveKit / SRS / Agora / Daily / MediaSoup | 音视频通信 |
+| **WebRTC** | LiveKit / SRS / Agora / Cloudflare | 音视频通信 |
 | **后端语言** | Go | 服务器逻辑 |
 | **HTTP 框架** | Gin | REST API |
 | **ORM** | GORM | 数据库操作 |

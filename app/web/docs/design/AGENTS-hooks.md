@@ -41,5 +41,4 @@ LiveKit Room → Track Subscribed → handler_audio (AudioContext) → 音量控
 
 - 页面层统一依赖 `@gospeak/sfu-client`
 - hook 层负责把房间页状态、socketStore、audio handler 与 SFU client 实例装配起来
-- MediaSoup 所需的 signal adapter 不直接暴露给页面业务组件
 - 远端音轨、活跃说话者、麦克风控制等输出统一为 provider-agnostic 结构

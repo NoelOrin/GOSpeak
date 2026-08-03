@@ -1,16 +1,11 @@
 import type { SFUProvider } from "@gospeak/sfu-client/types";
 import Check from "lucide-solid/icons/check";
-import CircleAlert from "lucide-solid/icons/circle-alert";
 import Cloud from "lucide-solid/icons/cloud";
 import Radio from "lucide-solid/icons/radio";
 import Server from "lucide-solid/icons/server";
 import { For, type JSX, Show } from "solid-js";
 import type { SFUConfig } from "@/api/sfu";
-import {
-	DISABLED_PROVIDERS,
-	isProviderConfigured,
-	PROVIDER_OPTIONS,
-} from "./constants";
+import { isProviderConfigured, PROVIDER_OPTIONS } from "./constants";
 
 export interface ProviderCardGridProps {
 	activeProvider: SFUProvider;
@@ -23,16 +18,11 @@ export interface ProviderCardGridProps {
 const PROVIDER_ICONS: Record<SFUProvider, () => JSX.Element> = {
 	livekit: () => <Radio size={16} />,
 	agora: () => <Radio size={16} />,
-	mediasoup: () => <Server size={16} />,
 	srs: () => <Server size={16} />,
-	daily: () => <Cloud size={16} />,
 	cloudflare: () => <Cloud size={16} />,
 };
 
 export default function ProviderCardGrid(props: ProviderCardGridProps) {
-	const isProviderDisabled = (provider: SFUProvider) =>
-		DISABLED_PROVIDERS.includes(provider);
-
 	return (
 		<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
 			<For each={PROVIDER_OPTIONS}>
@@ -45,8 +35,7 @@ export default function ProviderCardGrid(props: ProviderCardGridProps) {
 						);
 						return cfg ? isProviderConfigured(option.value, cfg) : false;
 					};
-					const disabled = () =>
-						!!props.disabled || isProviderDisabled(option.value);
+					const disabled = () => !!props.disabled;
 
 					return (
 						<button
@@ -119,12 +108,6 @@ export default function ProviderCardGrid(props: ProviderCardGridProps) {
 								<span class="text-[11px] text-base-content/40">
 									{isActive() ? "运行中" : "点击选择"}
 								</span>
-								<Show when={isProviderDisabled(option.value)}>
-									<span class="inline-flex items-center gap-1 text-[11px] font-medium text-base-content/55">
-										<CircleAlert size={12} />
-										暂不可用
-									</span>
-								</Show>
 							</div>
 						</button>
 					);

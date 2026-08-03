@@ -74,11 +74,6 @@ export function validateSFUForm(
 		);
 		if (f.agora_host && !isUrl(f.agora_host, ["http", "https"]))
 			e.agora_host = "需要 http(s):// 开头的合法 URL";
-	} else if (p === "mediasoup") {
-		if (!isUrl(f.mediasoup_bridge_url ?? "", ["http", "https"]))
-			e.mediasoup_bridge_url = "需要 http(s):// 开头的合法 URL";
-		if (!isUrl(f.mediasoup_host ?? "", ["ws", "wss"]))
-			e.mediasoup_host = "需要 ws:// 或 wss:// 开头的合法 URL";
 	} else if (p === "srs") {
 		if (!isHost(f.srs_host ?? ""))
 			e.srs_host = "需要域名或 IP, 不含 scheme / 路径 / 引号";
@@ -97,10 +92,6 @@ export function validateSFUForm(
 			)
 		)
 			e.srs_whip_url = "需要绝对路径或 http(s) URL";
-	} else if (p === "daily") {
-		requireSecret("daily_api_key", flags.daily_api_key_set, "API Key 必填");
-		if (!isHost(f.daily_domain ?? ""))
-			e.daily_domain = "需要域名, 不含 scheme / 路径 / 引号";
 	} else if (p === "cloudflare") {
 		require("cf_app_id", "App ID 必填");
 		requireSecret("cf_app_secret", flags.cf_app_secret_set, "App Secret 必填");

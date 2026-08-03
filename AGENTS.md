@@ -9,7 +9,7 @@ GOSpeak 是一个自托管的**游戏语音平台**，类似自部署版 Discord
 关键能力：
 - 语音房间管理（创建/加入/密码保护/踢人）
 - 实时发言检测 + 成员独立音量控制
-- 多 SFU 运行时切换（LiveKit / SRS / MediaSoup / Agora / Daily / Cloudflare）
+- 多 SFU 运行时切换（LiveKit / SRS / Agora / Cloudflare）
 - 渐进式数据库（SQLite 开箱即用 → PostgreSQL → MySQL）
 - JWT + OAuth2 三端登录（GitHub / Google / QQ）
 - Guild（语音服务器）多租户隔离
@@ -62,9 +62,7 @@ app/server/
 │   │   └── providers/      # Per-provider implementations
 │   │       ├── livekit/    # LiveKit gRPC SDK
 │   │       ├── srs/        # SRS REST + WHIP/WHEP
-│   │       ├── mediasoup/  # MediaSoup HTTP bridge
 │   │       ├── agora/      # Agora REST
-│   │       ├── daily/      # Daily REST
 │   │       └── cloudflare/ # Cloudflare Realtime (WHIP/WHEP)
 │   ├── signal/             # WebSocket signaling hub
 │   │   ├── events.go       # 30+ event name constants
@@ -392,19 +390,16 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 
 ### SFU Provider
 
-`SFU_PROVIDER` selects the active backend: `livekit` (default), `srs`, `mediasoup`, `agora`, `daily`, `cloudflare`. Provider-specific config:
+`SFU_PROVIDER` selects the active backend: `livekit` (default), `srs`, `agora`, `cloudflare`. Provider-specific config:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LIVEKIT_HOST` / `LIVEKIT_KEY` / `LIVEKIT_SECRET` | — | LiveKit server URL, API key/secret |
 | `AGORA_APP_ID` / `AGORA_APP_CERTIFICATE` / `AGORA_HOST` / `AGORA_CUSTOMER_ID` / `AGORA_CUSTOMER_SECRET` | — | Agora credentials |
-| `MEDIASOUP_BRIDGE_URL` | `http://localhost:3012` | MediaSoup worker HTTP bridge |
-| `MEDIASOUP_HOST` | `localhost:3012` | Client-facing MediaSoup host |
 | `SRS_HOST` / `SRS_API_PORT` | `localhost` / `1985` | SRS management API |
 | `SRS_WHIP_URL` | `/rtc/v1/whip/` | SRS WHIP endpoint path |
 | `SRS_SECRET` | — | SRS stream/room token HMAC key (required) |
 | `SRS_PUBLIC_HOST` | — | Browser-side serverUrl prefix |
-| `DAILY_API_KEY` / `DAILY_DOMAIN` | — | Daily credentials |
 | `CF_APP_ID` / `CF_APP_SECRET` / `CF_STUN_URL` | — / — / `stun.cloudflare.com:3478` | Cloudflare Realtime credentials |
 
 > Base SFU config is loaded from env; persistent per-provider config is managed through `/api/v1/sfu/*` and resolved at runtime by `sfu.NewDynamicProvider(...)`.
@@ -549,15 +544,13 @@ type Capabilities struct {
 | Provider | ServerMute | ServerKick | MuteLevel | KickLevel | AdminToken |
 |----------|-----------|-----------|-----------|-----------|-----------|
 | LiveKit | ✅ | ✅ | hard | hard | ✅ |
-| MediaSoup | ✅ | ✅ | hard | hard | ❌ |
 | SRS | ✅ | ✅ | degraded | hard | ✅ |
-| Daily | ❌ | ✅ | soft | hard | ❌ |
 | Cloudflare | ❌ | ✅ | soft | hard | ❌ |
 | Agora | ✅ | ✅ | degraded | degraded | ❌ |
 
 ### Factory (`internal/sfu/factory/factory.go`)
 
-`factory.NewProvider(cfg)` reads `cfg.SFUProvider` and returns the matching implementation. Registered providers: `livekit`, `agora`, `mediasoup`, `srs`, `daily`, `cloudflare`.
+`factory.NewProvider(cfg)` reads `cfg.SFUProvider` and returns the matching implementation. Registered providers: `livekit`, `agora`, `srs`, `cloudflare`.
 
 `sfu.NewDynamicProvider(resolve)` is the runtime entry used by server wiring. It resolves config via `SFUConfigService.ResolveConfig()` and delegates each call to the current provider.
 
@@ -726,8 +719,6 @@ type Hub struct {
 |----------|----------------------|------|
 | livekit | ✅ LiveKit gRPC | 完整实现 |
 | srs | ✅ SRS REST `DELETE /clients/{id}` | 完整实现 |
-| mediasoup | ✅ bridge `CloseParticipant` | 完整实现 |
-| daily | ✅ list → 按 session id `RemoveParticipant` | 完整实现 |
 | agora | ❌ `ErrSFUNotSupported` | 未实现（无单用户 REST API）|
 | cloudflare | ❌ `ErrSFUNotSupported` | 未实现（WHIP/WHEP 无单用户踢人 REST）|
 
@@ -744,7 +735,7 @@ type Hub struct {
 无 SFU 原生 active speaker 的 provider（SRS / Cloudflare）：
 - 前端 `onLocalSpeakingChange` 上报「自身」本地麦克风音量状态，经 `member:speaking` 发往信令层
 - `Hub.OnMemberSpeaking` 按房间聚合 `Room.Speaking`，广播 `room:active-speakers`（identities 列表）
-- LiveKit / Daily / Agora / MediaSoup 仍由各自 SFU 原生事件驱动，不经此链路
+- LiveKit / Agora 仍由各自 SFU 原生事件驱动，不经此链路
 - 成员离开 / 断连 / 被踢时清发言态；原本在发言则广播最新列表以重置高亮
 
 ---
@@ -1004,7 +995,6 @@ app/web/src/
 │   ├── events.ts       # Event name constants (30+)
 │   ├── types.ts        # RoomInfo, MemberInfo, MuteEvent, etc.
 │   ├── roomState.ts    # Room list/members state merge helpers
-│   ├── mediasoupSignal.ts  # MediaSoup-specific signal bridge
 │   ├── providerReload.ts   # SFU hot-swap handler (disconnect + reload)
 │   ├── tabLock.ts      # Single-tab socket owner (BroadcastChannel)
 │   └── *.test.ts       # Unit tests
@@ -1097,8 +1087,6 @@ Global singleton (createRoot). Manages WebSocket connection, room/member state, 
 | `onActivity(cb)` | Activity events (room_joined, member_joined, etc.) |
 | `onPresence(cb)` | Presence events (member_joined, member_left) |
 | `onRoomKicked(cb)` | Room kick events |
-| `onProducerReady(cb)` | MediaSoup producer ready |
-| `onProducerClosed(cb)` | MediaSoup producer closed |
 
 ### WS Client (`src/socket/wsClient.ts`)
 

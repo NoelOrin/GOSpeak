@@ -17,7 +17,6 @@ import (
 	"GOSpeak/internal/service"
 	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/sfu/factory"
-	"GOSpeak/internal/sfu/providers/mediasoup"
 	"GOSpeak/internal/signal"
 	"context"
 	"fmt"
@@ -160,10 +159,6 @@ func StartGin(env EnvEnum) {
 		)
 	}
 	var sfuProvider sfu.Provider = factory.NewDynamicProvider(sfuConfigSvc.ResolveConfig)
-	resolvedSFUCfg, err := sfuConfigSvc.ResolveConfig()
-	if err != nil {
-		panic(fmt.Sprintf("failed to resolve sfu config: %v", err))
-	}
 
 	r := gin.New()
 	r.Use(logger.GinRecovery(), logger.GinLogger())
@@ -294,11 +289,7 @@ func StartGin(env EnvEnum) {
 	if rs, ok := sfuProvider.(pkg.RoomRegistrySetter); ok {
 		rs.SetRoomRegistry(signalHub)
 	}
-	if resolvedSFUCfg.SFUProvider == "mediasoup" {
-		msService := mediasoup.NewService(resolvedSFUCfg)
-		msSignal := mediasoup.NewMediasoupSignal(msService.Bridge, signalHub.BroadcastToRoom)
-		signalHub.SetSFUSignalHandler(msSignal)
-	}
+	// MediaSoup 专用信号初始化已禁用保留：SetSFUSignalHandler 不再调用。
 	signalHub.SetupFanout(wsFanout, wsHandler)
 	sfuSvc := service.NewSFUService(sfuProvider, signalHub)
 	sfuSvc.SetDomainMemberChecker(domainSvc.IsMember)

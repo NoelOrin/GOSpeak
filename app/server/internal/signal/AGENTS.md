@@ -34,8 +34,6 @@ Hub.rooms            — map[string]*Room, roomName → 在线房间（有 WS �
 |----------|------------------------------------|----------|
 | livekit  | ✅ LiveKit gRPC SDK | 原始完整实现 |
 | srs      | ✅ SRS REST API (`DELETE /clients/{id}`) | 原始完整实现 |
-| mediasoup| ✅ bridge `CloseParticipant` | 补全实现（历史文档误标为跳过） |
-| daily    | ✅ list → 按 session id `RemoveParticipant` | 补全实现（历史文档误标为跳过） |
 | agora    | ❌ 跳过（返回 `ErrSFUNotSupported`，无单用户踢人 REST API） | 未实现，仅 ban 语义 |
 | cloudflare | ❌ 跳过（返回 `ErrSFUNotSupported`，WHIP/WHEP 媒体无单用户踢人 REST） | 未实现 |
 
@@ -50,7 +48,7 @@ Mute/ListParticipants 不由信令层触发 SFU 调用——靠前端 WebSocket 
 - 发言检测（无 SFU 原生 active speaker 的 provider：SRS / Cloudflare）：
   - 前端 `onLocalSpeakingChange` 上报「自身」本地麦克风音量状态，经 `member:speaking` 发往信令层；
   - `Hub.OnMemberSpeaking` 按房间聚合 `Room.Speaking`，广播 `room:active-speakers`（identities 列表）；
-  - LiveKit / Daily / Agora / MediaSoup 仍由各自 SFU 原生事件驱动 `onActiveSpeakers`，不经此链路。
+  - LiveKit / Agora 仍由各自 SFU 原生事件驱动 `onActiveSpeakers`，不经此链路。
   - 成员离开 / 断连 / 被踢时清发言态；原本在发言则广播最新列表以重置高亮。
 
 ## 依赖

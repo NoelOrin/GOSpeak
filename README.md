@@ -6,7 +6,7 @@
     <a href="https://go.dev" target="_blank"><img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go" alt="Go" /></a>
     <a href="https://www.solidjs.com" target="_blank"><img src="https://img.shields.io/badge/SolidJS-1.9-2C4F7C?style=flat&logo=solid" alt="SolidJS" /></a>
     <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank"><img src="https://img.shields.io/badge/License-Apache%202.0-blue?style=flat" alt="License" /></a>
-    <a href="./docs/sfu-provider-maturity.md"><img src="https://img.shields.io/badge/SFU-LiveKit%20%7C%20SRS%20%7C%20MediaSoup%20%7C%20Agora%20%7C%20Daily-blue?style=flat" alt="SFU" /></a>
+    <a href="./docs/sfu-provider-maturity.md"><img src="https://img.shields.io/badge/SFU-LiveKit%20%7C%20SRS%20%7C%20Agora%20%7C%20Cloudflare-blue?style=flat" alt="SFU" /></a>
   </p>
 
   <p>
@@ -24,7 +24,7 @@
 
 ---
 
-**GOSpeak** 是一个自托管的游戏语音平台。支持多种 SFU 后端（LiveKit / SRS / MediaSoup / Agora / Daily），运行时一键切换。提供房间管理、发言检测、成员音量独立调节、权限控制等游戏语音场景功能。
+**GOSpeak** 是一个自托管的游戏语音平台。支持多种 SFU 后端（LiveKit / SRS / Agora / Cloudflare），运行时一键切换。提供房间管理、发言检测、成员音量独立调节、权限控制等游戏语音场景功能。
 
 ---
 
@@ -35,7 +35,7 @@
 | 🎮 游戏语音频道 | 创建/加入语音房间，类 Discord 频道体验 |
 | 🗣️ 发言检测 | 实时语音活动指示，谁在说话一目了然 |
 | 🔊 独立音量控制 | 每个成员单独调节音量 |
-| 🔄 多 SFU 切换 | LiveKit / SRS / MediaSoup / Agora / Daily 运行时切换 |
+| 🔄 多 SFU 切换 | LiveKit / SRS / Agora / Cloudflare 运行时切换 |
 | 🔐 房间权限 | 密码保护、创建者/管理员踢人、角色权限体系 |
 | 🔌 多认证方式 | JWT + OAuth2（GitHub / Google / QQ）|
 | 🗄️ 渐进式数据库 | 单文件 SQLite → PostgreSQL → PostgreSQL + Redis |
@@ -192,18 +192,10 @@ docker run -d \
 # SRS
 SFU_PROVIDER="srs"
 
-# MediaSoup
-SFU_PROVIDER="mediasoup"
-MEDIASOUP_BRIDGE_URL="http://localhost:3001"
-
 # Agora Cloud
 SFU_PROVIDER="agora"
 AGORA_APP_ID="xxx"
 AGORA_APP_CERTIFICATE="xxx"
-
-# Daily
-SFU_PROVIDER="daily"
-```
 
 仅改 `.env`，无需代码改动。SFU Provider 成熟度：[`docs/sfu-provider-maturity.md`](./docs/sfu-provider-maturity.md)
 
@@ -217,7 +209,7 @@ SFU_PROVIDER="daily"
 |----|------|
 | 后端 | Go + Gin + GORM + nhooyr.io/websocket |
 | 前端 | SolidJS + TypeScript + Vite + TanStack Router + Tailwind v4 |
-| SFU | LiveKit（主）/ SRS / MediaSoup / Agora / Daily |
+| SFU | LiveKit（主）/ SRS / Agora / Cloudflare |
 | 数据库 | SQLite / PostgreSQL / MySQL |
 | 缓存 | Redis（可选，缺失优雅降级）|
 | 存储 | Local / S3（MinIO / R2）|
@@ -262,7 +254,6 @@ app/
 │       └── utils/
 │── packages/
 │   ├── sfu-client/          # 前端 SFU 客户端抽象
-│   └── mediasoup-worker/   # MediaSoup Node 服务
 └── deploy/                  # Docker Compose + 配置
 ```
 

@@ -37,6 +37,7 @@ type Config struct {
 	AgoraHost           string `env:"AGORA_HOST" envDefault:""`
 	AgoraCustomerID     string `env:"AGORA_CUSTOMER_ID" envDefault:""`
 	AgoraCustomerSecret string `env:"AGORA_CUSTOMER_SECRET" envDefault:""`
+	// MediaSoup/Daily 已禁用保留：实现文件仍在仓库，但 SFU_PROVIDER 不再接受。
 	MediaSoupBridgeURL  string `env:"MEDIASOUP_BRIDGE_URL" envDefault:"http://localhost:3012"`
 	MediaSoupHost       string `env:"MEDIASOUP_HOST" envDefault:"localhost:3012"`
 	SRSHost             string `env:"SRS_HOST" envDefault:"localhost"`
@@ -370,7 +371,7 @@ func (c *Config) Validate() error {
 	}
 
 	switch c.SFUProvider {
-	case "livekit", "srs", "mediasoup", "agora", "daily", "cloudflare":
+	case "livekit", "srs", "agora", "cloudflare":
 	default:
 		errs = append(errs, fmt.Sprintf("SFU_PROVIDER %q unsupported", c.SFUProvider))
 	}

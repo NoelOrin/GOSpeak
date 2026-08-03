@@ -15,7 +15,7 @@
 │   Go Server :8098     │     │              │
 │                       │     │   SFU 服务器  │
 │  ┌─────────────────┐  │     │  LiveKit/SRS │
-│  │ Handler → Service│  │     │  MediaSoup   │
+│  │ Handler → Service│  │     │  Agora/CF   │
 │  │ → Repository     │  │     │   :7880/1985 │
 │  └────────┬────────┘  │     └──────────────┘
 │           │           │
@@ -111,7 +111,6 @@ app/
 ├── packages/
 │   ├── sfu-client/      # 前端多 SFU 客户端抽象
 │   ├── bot/             # Hono 机器人
-│   └── mediasoup-worker/ # MediaSoup Worker
 └── docs/                # 项目设计文档
 ```
 

@@ -16,7 +16,7 @@ Playwright/浏览器 UI
   → 前端页面与状态
   → HTTP/WS 信令
   → 信号 Hub 与房间状态
-  → SFU Provider（LiveKit / SRS / Agora / MediaSoup / Daily / Cloudflare）
+  → SFU Provider（LiveKit / SRS / Agora / Cloudflare）
 ```
 
 本规范覆盖：
@@ -226,7 +226,6 @@ const remote = await page.evaluate(() =>
 | LiveKit | PC/track 语义最标准 |
 | SRS | WHIP publish + WHEP subscribe；`media_ready` 可能早于 signal 完成 |
 | Agora | SDK 内部封装，PC hook 可能不完整，优先 UI joined + remote audio DOM |
-| MediaSoup | 依赖 socket 自定义信令；确保 socket 已连接 |
 | Cloudflare | WHIP/WHEP 会话；关注 tracks/new 与 remote attach |
 
 当某 provider 无法通过 `RTCPeerConnection` wrap 抓取实例时，按以下顺序降级：

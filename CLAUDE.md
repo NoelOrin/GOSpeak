@@ -13,7 +13,7 @@ GOSpeak 是基于 WebRTC 的实时音视频沟通平台。pnpm monorepo：Go 后
 | 后端 | Go 1.26 (实际 1.24+) · Gin · GORM · cobra CLI |
 | 前端 | SolidJS · TypeScript · Vite · TanStack Router · Tailwind v4 |
 | 信令 | WebSocket (GOSpeak/internal/ws) |
-| SFU | LiveKit(主) / SRS / MediaSoup / Daily / Agora — 抽象层动态解析 |
+| SFU | LiveKit(主) / SRS / Agora / Cloudflare — 抽象层动态解析 |
 | DB | SQLite(默认) / PostgreSQL / MySQL — GORM 自动迁移 |
 | 缓存 | Redis(可选，缺失优雅降级) — JWT 轮换 + Token 黑名单 |
 | 存储 | local / S3(MinIO/R2) |
@@ -48,7 +48,6 @@ packages/
 ├── web/             # SolidJS 前端
 │   └── src/{api,components,hooks,layouts,stores,types,utils}
 ├── sfu-client/      # 前端多 SFU 客户端抽象
-├── mediasoup-worker/ # MediaSoup Node 服务
 └── bot/             # Hono 机器人
 deploy/              # docker-compose + 各 SFU 配置
 docs/                # design + plans + specs
@@ -116,7 +115,7 @@ pnpm format          # biome format -r
 完全由 env 驱动，无独立配置文件。详见 `docs/deployment-guide.md` 第 3 节。
 
 关键项:
-- `SFU_PROVIDER` = `livekit` | `srs` | `mediasoup` | `agora` | `daily`
+- `SFU_PROVIDER` = `livekit` | `srs` | `agora` | `cloudflare`
 - `DB_TYPE` = `SQLite` | `PostgresSQL` | `MYSQL`
 - `REDIS_HOST` 空 → 跳过 Redis，JWT 用静态密钥
 - `STORAGE_ENCRYPT_KEY` 生产必设 (64 位 hex)
@@ -163,7 +162,7 @@ OpenAPI: `app/server/docs/swagger.yaml`，访问 `/swagger/*any`。
 - `factory.go` — 按 `SFU_PROVIDER` 实例化
 - `NewDynamicProvider(resolve)` — 运行时解析，服务层统一调用 `sfu.Provider`，禁止在 handler 泄漏 provider 分支
 
-成熟度: LiveKit(高) > SRS(高) > Daily/Agora/MediaSoup(中)
+成熟度: LiveKit(高) > SRS(高) > Agora/Cloudflare(中)
 
 新增 SFU 后端步骤见 `AGENTS.md` §Adding a New SFU Backend。
 

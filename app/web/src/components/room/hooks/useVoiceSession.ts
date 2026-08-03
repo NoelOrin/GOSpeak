@@ -1,7 +1,7 @@
 /**
  * LOCKED JOIN ORCHESTRATOR
  *
- * Do NOT modify this file for SFU provider adaptation (LiveKit / SRS / Agora / Daily / MediaSoup).
+ * Do NOT modify this file for SFU provider adaptation (LiveKit / SRS / Agora / Cloudflare).
  * Provider-specific connect targets, subscribePeers, WHIP/WHEP, token fields, etc. belong in:
  * - app/web/src/components/room/session/providers.ts
  * - app/web/src/components/room/session/runVoiceJoin.ts

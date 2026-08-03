@@ -78,10 +78,10 @@ func TestDynamicProvider_ProviderNameIgnoresStaleCache(t *testing.T) {
 
 func TestDynamicProvider_ProviderNameFallsBackToConfig(t *testing.T) {
 	p := NewDynamicProvider(func() (*config.Config, error) {
-		return &config.Config{SFUProvider: "daily"}, nil
+		return &config.Config{SFUProvider: "cloudflare"}, nil
 	})
-	if got := p.ProviderName(); got != "daily" {
-		t.Fatalf("ProviderName = %q, want daily", got)
+	if got := p.ProviderName(); got != "cloudflare" {
+		t.Fatalf("ProviderName = %q, want cloudflare", got)
 	}
 }
 

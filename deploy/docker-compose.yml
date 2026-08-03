@@ -19,7 +19,6 @@
 #   redis     应用/LiveKit Redis
 #   srs       SRS + Nginx 反代
 #   livekit   LiveKit
-#   mediasoup MediaSoup worker
 #   minio     MinIO
 # =============================================================================
 
@@ -214,27 +213,27 @@ services:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
-  # ── MediaSoup ─────────────────────────────────────────────────────────
-  mediasoup-worker:
-    <<: *restart
-    profiles: ["mediasoup"]
-    build:
-      context: ..
-      dockerfile: deploy/mediasoup-worker/Dockerfile
-    image: gospeak-mediasoup-worker:latest
-    container_name: gospeak-mediasoup-worker
-    ports:
-      - "3012:3012"
-      - "40000-40100:40000-40100/udp"
-    environment:
-      PORT: 3012
-      RTC_MIN_PORT: 40000
-      RTC_MAX_PORT: 40100
-      LISTEN_IP: 0.0.0.0
-      ANNOUNCED_IP: ${MEDIASOUP_ANNOUNCED_IP:-127.0.0.1}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+  # MediaSoup worker 已禁用保留：实现/镜像配置仍在，默认不启用。
+  # 如需恢复，取消注释并同时恢复 factory/config 注册。
+  # mediasoup-worker:
+  #   <<: *restart
+  #   profiles: ["mediasoup"]
+  #   build:
+  #     context: ..
+  #     dockerfile: deploy/mediasoup-worker/Dockerfile
+  #   image: gospeak-mediasoup-worker:latest
+  #   container_name: gospeak-mediasoup-worker
+  #   ports:
+  #     - "3012:3012"
+  #     - "40000-40100:40000-40100/udp"
+  #   environment:
+  #     PORT: 3012
+  #     RTC_MIN_PORT: 40000
+  #     RTC_MAX_PORT: 40100
+  #     LISTEN_IP: 0.0.0.0
+  #     ANNOUNCED_IP: ${MEDIASOUP_ANNOUNCED_IP:-127.0.0.1}
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
 
   # ── Redis ─────────────────────────────────────────────────────────────
   redis:

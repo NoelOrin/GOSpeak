@@ -20,7 +20,7 @@
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `SFU_PROVIDER` | `livekit` | SFU 类型：`livekit` / `srs` / `mediasoup` / `agora` / `daily` / `cloudflare` |
+| `SFU_PROVIDER` | `livekit` | SFU 类型：`livekit` / `srs` / `agora` / `cloudflare` |
 
 ### LiveKit
 
@@ -40,12 +40,6 @@
 | `SRS_SECRET` | — | stream/room token HMAC 密钥（**必填非空**）|
 | `SRS_PUBLIC_HOST` | — | 浏览器侧 serverUrl 前缀（如 `https://your.domain`）|
 
-### MediaSoup
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `MEDIASOUP_BRIDGE_URL` | `http://localhost:3012` | MediaSoup worker HTTP bridge 地址 |
-| `MEDIASOUP_HOST` | `localhost:3012` | 客户端侧 MediaSoup host |
 
 ### Agora
 
@@ -57,12 +51,6 @@
 | `AGORA_CUSTOMER_ID` | — | Agora 客户 ID |
 | `AGORA_CUSTOMER_SECRET` | — | Agora 客户密钥 |
 
-### Daily
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `DAILY_API_KEY` | — | Daily API 密钥 |
-| `DAILY_DOMAIN` | — | Daily 域名 |
 
 ## Redis（可选）
 
