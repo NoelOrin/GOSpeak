@@ -3,6 +3,7 @@ package signal
 import (
 	"fmt"
 
+	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/service"
@@ -87,11 +88,17 @@ func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, roomName, domainUUID stri
 
 // checkMessagePerm returns an ack error string if the connection lacks message:send.
 func (h *Hub) checkMessagePerm(c ws.ClientMessenger) string {
-	if h.permChecker == nil {
+	claims := c.Claims()
+	if claims == nil {
 		return ""
 	}
-	claims := c.Claims()
-	if claims != nil && !h.permChecker.HasPermission(claims.Role, permcode.PermMessageSend) {
+	role := claims.Role
+	if role == "" && h.userStore != nil {
+		if user, err := h.userStore.GetByName(clientIdentity(c)); err == nil && user != nil {
+			role = user.Role
+		}
+	}
+	if !middleware.PermissionGranted(claims, role, permcode.PermMessageSend, h.permChecker) {
 		return `{"error":"permission denied"}`
 	}
 	return ""

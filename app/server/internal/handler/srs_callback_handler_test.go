@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"GOSpeak/internal/signal"
 	"GOSpeak/internal/sfu/providers/srs"
+	"GOSpeak/internal/signal"
 
 	"github.com/gin-gonic/gin"
 )
@@ -152,11 +152,41 @@ func TestSrsCallback_OnUnpublish_UnregistersStream(t *testing.T) {
 	payload := map[string]string{
 		"action": "on_unpublish",
 		"stream": "gs-ddd",
-		"param":  "app=live&stream=gs-ddd",
+		"param":  "app=live&stream=gs-ddd&token=" + srsStreamTokenForTest("gs-ddd", "secret"),
 	}
 	postJSON(t, h, payload)
 	if hub.IsStreamActive("gs-ddd") {
 		t.Fatal("stream should be unregistered after on_unpublish")
+	}
+}
+
+func TestSrsCallback_OnUnpublish_InvalidToken_Rejects(t *testing.T) {
+	hub := newCallbackHub()
+	hub.RegisterStream("gs-invalid")
+	h := NewSRSCallbackHandler(hub, "secret")
+	payload := map[string]string{
+		"action": "on_unpublish",
+		"stream": "gs-invalid",
+		"param":  "app=live&stream=gs-invalid&token=wrong",
+	}
+	postJSON(t, h, payload)
+	if !hub.IsStreamActive("gs-invalid") {
+		t.Fatal("stream should remain registered after invalid on_unpublish")
+	}
+}
+
+func TestSrsCallback_OnUnpublish_MissingToken_Rejects(t *testing.T) {
+	hub := newCallbackHub()
+	hub.RegisterStream("gs-notoken")
+	h := NewSRSCallbackHandler(hub, "secret")
+	payload := map[string]string{
+		"action": "on_unpublish",
+		"stream": "gs-notoken",
+		"param":  "app=live&stream=gs-notoken",
+	}
+	postJSON(t, h, payload)
+	if !hub.IsStreamActive("gs-notoken") {
+		t.Fatal("stream should remain registered when on_unpublish token is missing")
 	}
 }
 
@@ -221,4 +251,3 @@ func TestAuthorizeSRSPlay_RoomTokenUnknownStream(t *testing.T) {
 		t.Fatal("unknown stream room mapping must not authorize play")
 	}
 }
-

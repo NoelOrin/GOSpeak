@@ -249,8 +249,12 @@ func assertLeft(t *testing.T, hub *Hub, clientID, room string) {
 
 // newTestHub returns a Hub pre-configured with mock broadcaster and stream resolver.
 // Use in tests that don't need custom setup.
+type allowAllPermChecker struct{}
+
+func (allowAllPermChecker) HasPermission(roleName, permCode string) bool { return true }
+
 func newTestHub() *Hub {
-	hub := NewHub(nil, nil, nil, nil)
+	hub := NewHub(nil, nil, nil, allowAllPermChecker{})
 	hub.fanout = newMockBroadcaster()
 	hub.SetStreamResolver(fakeStreamResolver{})
 	hub.SetDomainChecker(func(domainUUID, userUUID string) bool { return true })
