@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -142,6 +143,18 @@ func (s *BotService) Revoke(uuid string) error {
 }
 
 // parseBotExpiry 解析过期时间。isBot=true 时允许永久，isBot=false 时必须有限期
+// parseExpiryDuration 支持 Go duration 与天（如 30d）两种格式。
+func parseExpiryDuration(s string) (time.Duration, error) {
+	if strings.HasSuffix(s, "d") {
+		days, err := strconv.Atoi(strings.TrimSuffix(s, "d"))
+		if err != nil || days <= 0 {
+			return 0, fmt.Errorf("invalid day duration: %s", s)
+		}
+		return time.Duration(days) * 24 * time.Hour, nil
+	}
+	return time.ParseDuration(s)
+}
+
 func parseBotExpiry(expiresIn string, isBot bool) (time.Time, bool, error) {
 	expiresIn = strings.TrimSpace(expiresIn)
 
@@ -152,7 +165,7 @@ func parseBotExpiry(expiresIn string, isBot bool) (time.Time, bool, error) {
 		return time.Time{}, false, pkg.NewAppError(pkg.INVALID_PARAMS, "expires_in is required for non-bot users")
 	}
 
-	d, err := time.ParseDuration(expiresIn)
+	d, err := parseExpiryDuration(expiresIn)
 	if err != nil {
 		return time.Time{}, false, pkg.NewAppError(pkg.INVALID_PARAMS, "invalid expires_in, use Go duration like 720h or 30d")
 	}

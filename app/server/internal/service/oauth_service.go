@@ -5,6 +5,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"GOSpeak/internal/model"
@@ -135,6 +136,11 @@ func (s *OAuthService) HandleCallback(providerName, code string) (*AuthResponse,
 	userInfo, err := p.GetUserInfo(accessToken)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.OAUTH_GET_USER_FAILED, err.Error())
+	}
+
+	// ProviderUID 为空时拒绝绑定，避免字段映射错误导致所有用户落到同一 OAuth 记录。
+	if strings.TrimSpace(userInfo.ProviderUID) == "" {
+		return nil, pkg.NewAppError(pkg.OAUTH_GET_USER_FAILED, "oauth provider returned empty user id")
 	}
 
 	// 并行查询：OAuth 绑定账户 + 用户名可用性
