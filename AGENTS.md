@@ -24,6 +24,8 @@ GOSpeak/
 │   ├── web/             # SolidJS 前端 (TypeScript + Vite + TanStack Router)
 │   └── sfu-client/      # 前端多 SFU 客户端抽象包
 ├── packages/
+│   ├── bot/             # Bot 运行时与插件框架
+│   ├── mediasoup-worker/ # MediaSoup Worker 独立进程
 │   └── sfu-client/      # 共享 SFU 客户端类型与工厂
 ├── test/                # API 集成测试 (Node.js)
 ├── docs/                # Swagger 生成文档
@@ -284,8 +286,8 @@ if err := c.ShouldBindJSON(&req); err != nil {
 | POST | `/api/v1/user/update-role` | JWT | `user:update` | UserHandler.UpdateRole |
 | POST | `/api/v1/signal/token` | JWT | — | SignalHandler.GetJoinToken |
 | POST | `/api/v1/signal/signal` | No | — | SignalHandler.Signal |
-| GET | `/api/v1/signal/rooms` | No | — | SignalHandler.ListRooms |
-| GET | `/api/v1/signal/participants` | No | — | SignalHandler.ListParticipants |
+| GET | `/api/v1/signal/rooms` | JWT | — | SignalHandler.ListRooms |
+| GET | `/api/v1/signal/participants` | JWT | — | SignalHandler.ListParticipants |
 | POST | `/api/v1/signal/webhook` | No | — | SignalHandler.LivekitWebhook |
 | POST | `/api/v1/signal/cloudflare/sessions/:sessionId/tracks/new` | JWT | — | CloudflareHandler.AddTracks |
 | PUT | `/api/v1/signal/cloudflare/sessions/:sessionId/renegotiate` | JWT | — | CloudflareHandler.Renegotiate |
