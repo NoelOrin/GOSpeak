@@ -2,8 +2,8 @@ package cloudflare
 
 import (
 	"encoding/json"
-	"io"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -66,6 +66,38 @@ func TestService_GenerateToken(t *testing.T) {
 	}
 }
 
+func TestService_GenerateTokenForUser_StoresOwner(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/apps/test-app/sessions/new" && r.Method == http.MethodPost {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(NewSessionResponse{SessionID: "session-owner"})
+			return
+		}
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	svc := NewService(&config.Config{CFAppID: "test-app", CFAppSecret: "test-secret"})
+	svc.client.baseURL = server.URL
+	svc.client.httpClient = http.DefaultClient
+
+	if _, err := svc.GenerateTokenForUser("room1", "user1", "uuid-owner"); err != nil {
+		t.Fatalf("GenerateTokenForUser failed: %v", err)
+	}
+	meta, ok := svc.getSession("room1", "user1")
+	if !ok || meta.ownerUUID != "uuid-owner" {
+		t.Fatalf("expected owner uuid-owner in session meta, got %+v ok=%v", meta, ok)
+	}
+	owner, ok := svc.SessionOwner("session-owner")
+	if !ok || owner != "uuid-owner" {
+		t.Fatalf("expected SessionOwner uuid-owner, got %q ok=%v", owner, ok)
+	}
+	if _, ok := svc.SessionOwner("unknown-session"); ok {
+		t.Fatal("expected unknown session to have no owner")
+	}
+}
+
 func TestService_GenerateToken_NotConfigured(t *testing.T) {
 	svc := NewService(&config.Config{})
 	if _, err := svc.GenerateToken("room1", "user1"); err == nil {
@@ -75,8 +107,8 @@ func TestService_GenerateToken_NotConfigured(t *testing.T) {
 
 func TestService_ListRooms(t *testing.T) {
 	svc := &Service{
-		appID:    "test-app",
-		stunURL:  "stun.cloudflare.com:3478",
+		appID:   "test-app",
+		stunURL: "stun.cloudflare.com:3478",
 		sessions: map[string]map[string]sessionMeta{
 			"room1": {"user1": {sessionID: "sess-1"}},
 			"room2": {"user2": {sessionID: "sess-2"}},

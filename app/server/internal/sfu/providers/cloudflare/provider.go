@@ -14,6 +14,7 @@ import (
 var _ sfu.Provider = (*Service)(nil)
 var _ sfu.StreamProvider = (*Service)(nil)
 var _ sfu.ClientInfoProvider = (*Service)(nil)
+
 // Service implements sfu.Provider for Cloudflare Realtime SFU.
 // Cloudflare has no native rooms; sessions are tracked locally after GenerateToken.
 type Service struct {
@@ -29,6 +30,7 @@ type Service struct {
 type sessionMeta struct {
 	sessionID string
 	joinedAt  int64
+	ownerUUID string
 }
 
 func NewService(cfg *config.Config) *Service {
@@ -49,6 +51,12 @@ func (s *Service) SetRoomRegistry(r pkg.RoomRegistry) {
 }
 
 func (s *Service) GenerateToken(room, identity string) (string, error) {
+	return s.GenerateTokenForUser(room, identity, "")
+}
+
+// GenerateTokenForUser creates a Cloudflare session and records the joining
+// user UUID as its owner so media routes can reject cross-user access.
+func (s *Service) GenerateTokenForUser(room, identity, ownerUUID string) (string, error) {
 	if s.appID == "" || s.client == nil || s.client.appSecret == "" {
 		return "", pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "CF_APP_ID and CF_APP_SECRET are required")
 	}
@@ -61,7 +69,7 @@ func (s *Service) GenerateToken(room, identity string) (string, error) {
 	}
 
 	now := time.Now().Unix()
-	s.putSession(room, identity, sessionResp.SessionID, now)
+	s.putSession(room, identity, sessionResp.SessionID, now, ownerUUID)
 
 	tokenData := map[string]interface{}{
 		"appId":     s.appID,
@@ -185,7 +193,6 @@ func (s *Service) Capabilities() sfu.Capabilities {
 	return sfu.CapabilitiesFor("cloudflare")
 }
 
-
 func (s *Service) StreamName(room, identity string) string {
 	meta, ok := s.getSession(room, identity)
 	if !ok {
@@ -202,6 +209,20 @@ func (s *Service) StreamInfo(room, identity string) (string, string, error) {
 	return meta.sessionID, "", nil
 }
 
+// SessionOwner returns the user UUID bound to a session, if one is known.
+func (s *Service) SessionOwner(sessionID string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, members := range s.sessions {
+		for _, meta := range members {
+			if meta.sessionID == sessionID && meta.ownerUUID != "" {
+				return meta.ownerUUID, true
+			}
+		}
+	}
+	return "", false
+}
+
 func (s *Service) ClientInfo() map[string]interface{} {
 	return map[string]interface{}{
 		"appId":   s.appID,
@@ -209,13 +230,13 @@ func (s *Service) ClientInfo() map[string]interface{} {
 	}
 }
 
-func (s *Service) putSession(room, identity, sessionID string, joinedAt int64) {
+func (s *Service) putSession(room, identity, sessionID string, joinedAt int64, ownerUUID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.sessions[room] == nil {
 		s.sessions[room] = make(map[string]sessionMeta)
 	}
-	s.sessions[room][identity] = sessionMeta{sessionID: sessionID, joinedAt: joinedAt}
+	s.sessions[room][identity] = sessionMeta{sessionID: sessionID, joinedAt: joinedAt, ownerUUID: ownerUUID}
 }
 
 func (s *Service) getSession(room, identity string) (sessionMeta, bool) {

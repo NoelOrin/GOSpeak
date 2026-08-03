@@ -7,6 +7,12 @@ import (
 	"GOSpeak/internal/sfu"
 )
 
+// ownerAwareProvider is implemented by SFU providers that bind the joining
+// user UUID to the session created by GenerateToken.
+type ownerAwareProvider interface {
+	GenerateTokenForUser(room, identity, ownerUUID string) (string, error)
+}
+
 // JoinTokenResult 是 GetJoinToken 的聚合结果，handler 直接映射为 JSON 响应。
 type JoinTokenResult struct {
 	Token        string
@@ -59,7 +65,7 @@ func (s *SFUService) GetJoinToken(domainUUID, room, identity, userUUID, password
 	}
 
 	sfuRoom := pkg.RoomKey(domainUUID, room)
-	token, err := s.provider.GenerateToken(sfuRoom, identity)
+	token, err := s.generateToken(sfuRoom, identity, userUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -82,6 +88,13 @@ func (s *SFUService) GetJoinToken(domainUUID, room, identity, userUUID, password
 		res.StreamToken = stok
 	}
 	return res, nil
+}
+
+func (s *SFUService) generateToken(room, identity, userUUID string) (string, error) {
+	if op, ok := s.provider.(ownerAwareProvider); ok {
+		return op.GenerateTokenForUser(room, identity, userUUID)
+	}
+	return s.provider.GenerateToken(room, identity)
 }
 
 func (s *SFUService) ListRooms() ([]sfu.RoomSummary, error) {
