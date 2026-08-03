@@ -52,12 +52,12 @@ func TestNATSBus_FanoutToPeerSkipsSelf(t *testing.T) {
 	d2 := &memDeliverer{}
 
 	b1, err := NewNATSBus(NATSBusConfig{
-		URL:        url,
+		URL:           url,
 		SubjectPrefix: "gospeak",
-		Name:       "inst-a",
-		InstanceID: "inst-a",
-		Mode:       "embedded",
-		Deliverer:  d1,
+		Name:          "inst-a",
+		InstanceID:    "inst-a",
+		Mode:          "embedded",
+		Deliverer:     d1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -65,12 +65,12 @@ func TestNATSBus_FanoutToPeerSkipsSelf(t *testing.T) {
 	defer b1.Close()
 
 	b2, err := NewNATSBus(NATSBusConfig{
-		URL:        url,
+		URL:           url,
 		SubjectPrefix: "gospeak",
-		Name:       "inst-b",
-		InstanceID: "inst-b",
-		Mode:       "embedded",
-		Deliverer:  d2,
+		Name:          "inst-b",
+		InstanceID:    "inst-b",
+		Mode:          "embedded",
+		Deliverer:     d2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -180,8 +180,6 @@ func TestNATSBus_CloseIdempotent(t *testing.T) {
 	}
 }
 
-
-
 func TestNATSBus_PublishInternal_NoSocketDeliver(t *testing.T) {
 	es, err := StartEmbeddedServer()
 	if err != nil {
@@ -222,9 +220,58 @@ func TestNATSBus_PublishInternal_NoSocketDeliver(t *testing.T) {
 		t.Fatal("timeout waiting remote hook")
 	}
 
-	d1.mu.Lock(); n1 := len(d1.namespace) + len(d1.roomEvents); d1.mu.Unlock()
-	d2.mu.Lock(); n2 := len(d2.namespace) + len(d2.roomEvents); d2.mu.Unlock()
+	d1.mu.Lock()
+	n1 := len(d1.namespace) + len(d1.roomEvents)
+	d1.mu.Unlock()
+	d2.mu.Lock()
+	n2 := len(d2.namespace) + len(d2.roomEvents)
+	d2.mu.Unlock()
 	if n1 != 0 || n2 != 0 {
 		t.Fatalf("deliverer should stay empty, d1=%d d2=%d", n1, n2)
+	}
+}
+
+func TestNATSBus_PublishDisconnectedReturnsErrorAndCountsDrop(t *testing.T) {
+	es, err := StartEmbeddedServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer es.Shutdown()
+	b, err := NewNATSBus(NATSBusConfig{
+		URL:           es.ClientURL(),
+		SubjectPrefix: "gospeak_drop",
+		InstanceID:    "drop-1",
+		Name:          "drop-1",
+		Mode:          "external",
+		Deliverer:     &memDeliverer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := b.PublishRoom(context.Background(), "r1", "private:new", map[string]string{}); err == nil {
+		t.Fatal("publish while disconnected should return error")
+	}
+	if got := b.DroppedPublishCount(); got != 1 {
+		t.Fatalf("drop count = %d, want 1", got)
+	}
+	if err := b.PublishNamespace(context.Background(), "user:muted", map[string]string{}); err == nil {
+		t.Fatal("namespace publish while disconnected should return error")
+	}
+	if got := b.DroppedPublishCount(); got != 2 {
+		t.Fatalf("drop count = %d, want 2", got)
+	}
+}
+
+func TestNATSBus_PublishFallbackFromExternalStaysSilent(t *testing.T) {
+	b := &NATSBus{fallbackFromExternal: true}
+	if err := b.PublishRoom(context.Background(), "r1", "member:joined", map[string]string{}); err != nil {
+		t.Fatalf("fallback publish should stay silent: %v", err)
+	}
+	if got := b.DroppedPublishCount(); got != 0 {
+		t.Fatalf("fallback drop count = %d, want 0", got)
 	}
 }

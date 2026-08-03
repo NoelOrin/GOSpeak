@@ -68,8 +68,10 @@ func startLocalClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterSer
 	stop := func() {
 		cancel()
 		<-done
+		if err := clusterSvc.DeregisterNode(node.UUID); err != nil {
+			logger.WithComponent("Cluster").Debugf("local node deregister failed: %v", err)
+		}
 	}
-	_ = clusterSvc.DeregisterNode(node.UUID)
 	return node.UUID, stop, nil
 }
 

@@ -7,7 +7,11 @@ import (
 	"testing"
 
 	"GOSpeak/internal/bus"
+
+	"github.com/nats-io/nats.go"
 )
+
+var errCASConflict = nats.ErrKeyExists
 
 var errNotFound = errors.New("not found")
 
@@ -15,12 +19,14 @@ type memStateStore struct {
 	mu    sync.Mutex
 	rooms map[string]bus.RoomMembersSnapshot
 	strm  map[string][2]string // stream -> [room, identity]
+	revs  map[string]uint64
 }
 
 func newMemStateStore() *memStateStore {
 	return &memStateStore{
 		rooms: make(map[string]bus.RoomMembersSnapshot),
 		strm:  make(map[string][2]string),
+		revs:  make(map[string]uint64),
 	}
 }
 
@@ -30,6 +36,24 @@ func (m *memStateStore) PutRoomMembers(ctx context.Context, snap bus.RoomMembers
 	cp := snap
 	cp.Members = append([]bus.MemberRecord(nil), snap.Members...)
 	m.rooms[snap.Room] = cp
+	m.revs[snap.Room]++
+	return nil
+}
+
+func (m *memStateStore) PutRoomMembersRev(ctx context.Context, snap bus.RoomMembersSnapshot, rev uint64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if rev == 0 {
+		if _, ok := m.rooms[snap.Room]; ok {
+			return errCASConflict
+		}
+	} else if m.revs[snap.Room] != rev {
+		return errCASConflict
+	}
+	cp := snap
+	cp.Members = append([]bus.MemberRecord(nil), snap.Members...)
+	m.rooms[snap.Room] = cp
+	m.revs[snap.Room]++
 	return nil
 }
 
@@ -43,10 +67,35 @@ func (m *memStateStore) GetRoomMembers(ctx context.Context, room string) (bus.Ro
 	return snap, nil
 }
 
+func (m *memStateStore) GetRoomMembersRev(ctx context.Context, room string) (bus.RoomMembersSnapshot, uint64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	snap, ok := m.rooms[room]
+	if !ok {
+		return bus.RoomMembersSnapshot{}, 0, nats.ErrKeyNotFound
+	}
+	return snap, m.revs[room], nil
+}
+
 func (m *memStateStore) DeleteRoomMembers(ctx context.Context, room string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.rooms, room)
+	delete(m.revs, room)
+	return nil
+}
+
+func (m *memStateStore) DeleteRoomMembersRev(ctx context.Context, room string, rev uint64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if rev == 0 {
+		return nil
+	}
+	if m.revs[room] != rev {
+		return errCASConflict
+	}
+	delete(m.rooms, room)
+	delete(m.revs, room)
 	return nil
 }
 
@@ -148,6 +197,7 @@ func TestHub_GetRoomMembers_MergesKV(t *testing.T) {
 func TestHub_SyncRoomToStore_DeletesEmpty(t *testing.T) {
 	store := newMemStateStore()
 	store.rooms["r1"] = bus.RoomMembersSnapshot{Room: "r1", Members: []bus.MemberRecord{{Identity: "x"}}}
+	store.revs["r1"] = 1
 	hub := NewHub(nil, nil, nil, nil)
 	hub.SetMembershipStore(store, "i")
 	hub.syncRoomToStore("r1") // room not in local map
@@ -289,5 +339,86 @@ func TestHub_SyncRoomToStore_PreservesRemoteMembers(t *testing.T) {
 	}
 	if len(snap.Members) != 1 || snap.Members[0].Identity != "bob" {
 		t.Fatalf("expected only remote bob, got %+v", snap.Members)
+	}
+}
+
+func TestHub_SyncRoomToStore_ConcurrentRevisionMerge(t *testing.T) {
+	store := newMemStateStore()
+	hubA := NewHub(nil, nil, nil, nil)
+	hubB := NewHub(nil, nil, nil, nil)
+	hubA.SetMembershipStore(store, "inst-a")
+	hubB.SetMembershipStore(store, "inst-b")
+
+	seedRoom := func(hub *Hub, sid, identity string) {
+		hub.mu.Lock()
+		defer hub.mu.Unlock()
+		hub.rooms["r1"] = &Room{
+			Name:     "r1",
+			Members:  map[string]*MemberInfo{sid: {ID: sid, Identity: identity}},
+			MicMuted: map[string]bool{},
+			Speaking: map[string]bool{},
+		}
+	}
+	seedRoom(hubA, "s1", "alice")
+	seedRoom(hubB, "s2", "bob")
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); hubA.syncRoomToStore("r1") }()
+	go func() { defer wg.Done(); hubB.syncRoomToStore("r1") }()
+	wg.Wait()
+
+	snap, rev, err := store.GetRoomMembersRev(context.Background(), "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev == 0 {
+		t.Fatal("expected nonzero revision")
+	}
+	got := map[string]bool{}
+	for _, m := range snap.Members {
+		got[m.Identity] = true
+	}
+	if !got["alice"] || !got["bob"] {
+		t.Fatalf("concurrent sync lost members: %+v", snap.Members)
+	}
+}
+
+type conflictOnceStore struct {
+	*memStateStore
+	conflicted bool
+}
+
+func (c *conflictOnceStore) PutRoomMembersRev(ctx context.Context, snap bus.RoomMembersSnapshot, rev uint64) error {
+	if !c.conflicted {
+		c.conflicted = true
+		return errCASConflict
+	}
+	return c.memStateStore.PutRoomMembersRev(ctx, snap, rev)
+}
+
+func TestHub_SyncRoomToStore_RetriesRevisionConflict(t *testing.T) {
+	store := &conflictOnceStore{memStateStore: newMemStateStore()}
+	hub := NewHub(nil, nil, nil, nil)
+	hub.SetMembershipStore(store, "inst-a")
+	hub.mu.Lock()
+	hub.rooms["r1"] = &Room{
+		Name:     "r1",
+		Members:  map[string]*MemberInfo{"s1": {ID: "s1", Identity: "alice"}},
+		MicMuted: map[string]bool{},
+		Speaking: map[string]bool{},
+	}
+	hub.mu.Unlock()
+
+	hub.syncRoomToStore("r1")
+	snap, _, err := store.GetRoomMembersRev(context.Background(), "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.Members) != 1 || snap.Members[0].Identity != "alice" {
+		t.Fatalf("expected alice after retry, got %+v", snap.Members)
+	}
+	if !store.conflicted {
+		t.Fatal("conflict injection was not exercised")
 	}
 }

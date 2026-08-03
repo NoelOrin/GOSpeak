@@ -4,6 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"context"
+	"errors"
+	"sync"
+
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
@@ -134,4 +138,88 @@ func TestConversationService_MarkRead_RejectsNonParticipant(t *testing.T) {
 func TestConversationService_MarkRead_UnknownConversation(t *testing.T) {
 	svc, _ := setupConversationServiceTestDB(t)
 	assertErrorCode(t, svc.MarkRead("missing", "alice"), pkg.NOT_FOUND)
+}
+
+type conversationTestBus struct {
+	mu         sync.Mutex
+	publishErr error
+	rooms      []string
+}
+
+func (b *conversationTestBus) PublishNamespace(_ context.Context, _ string, _ interface{}) error {
+	return nil
+}
+func (b *conversationTestBus) PublishInternal(_ context.Context, _ string, _ interface{}) error {
+	return nil
+}
+func (b *conversationTestBus) PublishRoom(_ context.Context, room, event string, _ interface{}) error {
+	if b.publishErr != nil {
+		return b.publishErr
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.rooms = append(b.rooms, room+":"+event)
+	return nil
+}
+func (b *conversationTestBus) Mode() string       { return "test" }
+func (b *conversationTestBus) IsConnected() bool  { return true }
+func (b *conversationTestBus) InstanceID() string { return "test" }
+func (b *conversationTestBus) Close() error       { return nil }
+
+func TestConversationService_GetMessages_ReturnsUnreadCount(t *testing.T) {
+	svc, db := setupConversationServiceTestDB(t)
+	convID := "conv-unread"
+	if err := db.Create(&model.ConversationParticipant{
+		ConversationID: convID,
+		IdentityA:      "alice",
+		IdentityB:      "bob",
+		UnreadCountA:   3,
+		UnreadCountB:   7,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := svc.GetMessages(convID, "alice", "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.UnreadCount != 3 {
+		t.Fatalf("alice unread = %d, want 3", out.UnreadCount)
+	}
+	out, err = svc.GetMessages(convID, "bob", "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.UnreadCount != 7 {
+		t.Fatalf("bob unread = %d, want 7", out.UnreadCount)
+	}
+}
+
+func TestConversationService_SendDirect_PersistsWhenPublishFails(t *testing.T) {
+	svc, db := setupConversationServiceTestDB(t)
+	bus := &conversationTestBus{publishErr: errors.New("nats disconnected")}
+	svc.SetEventBus(bus)
+
+	dto, err := svc.SendDirect("alice", "bob", "offline hello", "nonce-1")
+	if err != nil {
+		t.Fatalf("SendDirect: %v", err)
+	}
+	if dto == nil {
+		t.Fatal("expected dto")
+	}
+
+	var cp model.ConversationParticipant
+	if err := db.First(&cp, "conversation_id = ?", dto.ConversationID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if cp.UnreadCountB != 1 {
+		t.Fatalf("receiver unread = %d, want 1", cp.UnreadCountB)
+	}
+	var count int64
+	if err := db.Model(&model.Message{}).Where("conversation_id = ?", dto.ConversationID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("persisted messages = %d, want 1", count)
+	}
 }

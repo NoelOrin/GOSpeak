@@ -133,9 +133,54 @@ func (s *StateStore) GetRoomMembers(ctx context.Context, room string) (RoomMembe
 	return snap, nil
 }
 
+// GetRoomMembersRev 返回 membership 快照及其 NATS KV revision，供乐观锁合并使用。
+func (s *StateStore) GetRoomMembersRev(ctx context.Context, room string) (RoomMembersSnapshot, uint64, error) {
+	_ = ctx
+	entry, err := s.mem.Get("room." + sanitizeKey(room))
+	if err != nil {
+		return RoomMembersSnapshot{}, 0, err
+	}
+	var snap RoomMembersSnapshot
+	if err := json.Unmarshal(entry.Value(), &snap); err != nil {
+		return RoomMembersSnapshot{}, 0, err
+	}
+	if snap.Members == nil {
+		snap.Members = []MemberRecord{}
+	}
+	return snap, entry.Revision(), nil
+}
+
 func (s *StateStore) DeleteRoomMembers(ctx context.Context, room string) error {
 	_ = ctx
 	return s.mem.Delete("room." + sanitizeKey(room))
+}
+
+// PutRoomMembersRev 使用 NATS KV revision 乐观写入：rev=0 表示仅创建，非零表示期望的当前 revision。
+func (s *StateStore) PutRoomMembersRev(ctx context.Context, snap RoomMembersSnapshot, rev uint64) error {
+	_ = ctx
+	if snap.Members == nil {
+		snap.Members = []MemberRecord{}
+	}
+	b, err := json.Marshal(snap)
+	if err != nil {
+		return err
+	}
+	key := "room." + sanitizeKey(snap.Room)
+	if rev == 0 {
+		_, err = s.mem.Create(key, b)
+	} else {
+		_, err = s.mem.Update(key, b, rev)
+	}
+	return err
+}
+
+// DeleteRoomMembersRev 仅在最新 revision 匹配时删除 membership 记录。
+func (s *StateStore) DeleteRoomMembersRev(ctx context.Context, room string, rev uint64) error {
+	_ = ctx
+	if rev == 0 {
+		return nil
+	}
+	return s.mem.Delete("room."+sanitizeKey(room), nats.LastRevision(rev))
 }
 
 func (s *StateStore) PutStream(ctx context.Context, stream, room, identity string) error {
@@ -168,7 +213,6 @@ func (s *StateStore) DeleteStream(ctx context.Context, stream string) error {
 	_ = ctx
 	return s.strm.Delete("stream." + sanitizeKey(stream))
 }
-
 
 // ListRoomNames returns room names currently present in membership KV.
 func (s *StateStore) ListRoomNames(ctx context.Context) ([]string, error) {

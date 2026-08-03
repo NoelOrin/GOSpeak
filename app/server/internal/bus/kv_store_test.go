@@ -108,3 +108,57 @@ func TestOpenStateStore_ReusesConn(t *testing.T) {
 		t.Fatal("shared conn should remain connected after StateStore.Close")
 	}
 }
+
+func TestMembershipKV_RevisionCAS(t *testing.T) {
+	es, err := StartEmbeddedServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(es.Shutdown)
+
+	store, err := OpenStateStore(StateStoreConfig{
+		URL:    es.ClientURL(),
+		Prefix: "gospeak_test_rev",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	snap := RoomMembersSnapshot{
+		Room:    "r-cas",
+		Members: []MemberRecord{{Identity: "alice", InstanceID: "i1"}},
+	}
+	if err := store.PutRoomMembersRev(context.Background(), snap, 0); err != nil {
+		t.Fatal(err)
+	}
+	got, rev, err := store.GetRoomMembersRev(context.Background(), "r-cas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev == 0 || len(got.Members) != 1 {
+		t.Fatalf("got=%+v rev=%d", got, rev)
+	}
+
+	snap.Members = append(snap.Members, MemberRecord{Identity: "bob", InstanceID: "i2"})
+	if err := store.PutRoomMembersRev(context.Background(), snap, rev+1); err == nil {
+		t.Fatal("stale revision should conflict")
+	}
+	if err := store.PutRoomMembersRev(context.Background(), snap, rev); err != nil {
+		t.Fatalf("matching revision should succeed: %v", err)
+	}
+	_, rev, err = store.GetRoomMembersRev(context.Background(), "r-cas")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.DeleteRoomMembersRev(context.Background(), "r-cas", rev+1); err == nil {
+		t.Fatal("delete with stale revision should conflict")
+	}
+	if err := store.DeleteRoomMembersRev(context.Background(), "r-cas", rev); err != nil {
+		t.Fatalf("delete with matching revision should succeed: %v", err)
+	}
+	if _, _, err := store.GetRoomMembersRev(context.Background(), "r-cas"); !errors.Is(err, nats.ErrKeyNotFound) {
+		t.Fatalf("expected key not found after CAS delete, got %v", err)
+	}
+}

@@ -48,6 +48,8 @@ type NATSBus struct {
 
 	closed atomic.Bool
 	done   chan struct{}
+
+	droppedPublish atomic.Uint64 // 断线期间丢弃的跨实例发布计数
 }
 
 // NewNATSBus 创建并启动 NATSBus。
@@ -125,6 +127,11 @@ func (b *NATSBus) IsConnected() bool {
 
 func (b *NATSBus) InstanceID() string { return b.instanceID }
 
+// DroppedPublishCount 返回因 NATS 断线而未发出的跨实例发布次数。
+func (b *NATSBus) DroppedPublishCount() uint64 {
+	return b.droppedPublish.Load()
+}
+
 // Conn returns the underlying NATS connection (for JetStream KV/jobs reuse).
 func (b *NATSBus) Conn() *nats.Conn { return b.nc }
 
@@ -170,7 +177,6 @@ func (b *NATSBus) PublishInternal(ctx context.Context, event string, payload int
 	}
 	return b.publish(InternalSubject(b.prefix), env)
 }
-
 
 func (b *NATSBus) Close() error {
 	if !b.closed.CompareAndSwap(false, true) {
@@ -268,8 +274,10 @@ func (b *NATSBus) publish(subject string, env Envelope) error {
 		if b.fallbackFromExternal {
 			return nil
 		}
-		log.Printf("[EventBus] skip nats publish (disconnected): %s %s", env.Scope, env.Event)
-		return nil
+		b.droppedPublish.Add(1)
+		err := fmt.Errorf("nats publish %s: disconnected", subject)
+		log.Printf("[EventBus] drop nats publish (disconnected): %s %s", env.Scope, env.Event)
+		return err
 	}
 	data, err := json.Marshal(env)
 	if err != nil {
