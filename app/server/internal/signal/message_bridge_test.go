@@ -205,6 +205,64 @@ func TestOnMessageSend_Success(t *testing.T) {
 	}
 }
 
+func TestOnMessageSend_BotWithClaimPermissionCanSend(t *testing.T) {
+	store := newMockRoomStoreWithType("text-chat", model.RoomTypeText)
+	h := newTestHub()
+	h.roomStore = store
+	h.permChecker = &mockPermChecker{rolePerms: map[string]map[string]bool{
+		"user": {},
+	}}
+	msgSvc := &mockMessageSvc{}
+	h.SetMessageService(msgSvc)
+
+	conn := newMockClient("conn-1")
+	conn.claims = &pkg.Claims{Username: "bot_helper", UserUUID: "bot-helper", Role: "user", Permissions: []string{"message:send"}}
+
+	if _, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"bot_helper"}`); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","content":"hello"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ackMap := decodeAck(t, ack)
+	if ackMap["success"] != true {
+		t.Errorf("expected success, got %v", ackMap)
+	}
+	if msgSvc.sendCalled != 1 {
+		t.Errorf("expected 1 send call, got %d", msgSvc.sendCalled)
+	}
+}
+
+func TestOnMessageSend_BotWithoutPermissionDenied(t *testing.T) {
+	store := newMockRoomStoreWithType("text-chat", model.RoomTypeText)
+	h := newTestHub()
+	h.roomStore = store
+	h.permChecker = &mockPermChecker{rolePerms: map[string]map[string]bool{
+		"user": {},
+	}}
+	msgSvc := &mockMessageSvc{}
+	h.SetMessageService(msgSvc)
+
+	conn := newMockClient("conn-1")
+	conn.claims = &pkg.Claims{Username: "bot_helper", UserUUID: "bot-helper", Role: "user", Permissions: []string{"message:read"}}
+
+	if _, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"bot_helper"}`); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","content":"hello"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ackMap := decodeAck(t, ack)
+	if ackMap["error"] != "permission denied" {
+		t.Errorf("expected permission denied, got %v", ackMap)
+	}
+	if msgSvc.sendCalled != 0 {
+		t.Errorf("expected no send call, got %d", msgSvc.sendCalled)
+	}
+}
+
 func TestOnMessageSend_UsesDomainScopedRoom(t *testing.T) {
 	store := &mockRoomStore{rooms: []model.Room{
 		{UUID: "uuid-domain", Name: "text-chat", Type: model.RoomTypeText, DomainUUID: "domain-a"},

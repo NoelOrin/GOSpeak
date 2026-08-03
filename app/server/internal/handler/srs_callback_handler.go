@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"GOSpeak/internal/signal"
 	"GOSpeak/internal/sfu/providers/srs"
+	"GOSpeak/internal/signal"
 
 	"github.com/gin-gonic/gin"
 )
@@ -67,6 +67,11 @@ func (h *SRSCallbackHandler) HandleCallback(c *gin.Context) {
 		}
 		c.JSON(http.StatusOK, gin.H{"code": 0})
 	case "on_unpublish":
+		token := params["token"]
+		if token == "" || !srs.ValidateStreamToken(stream, token, secret) {
+			c.JSON(http.StatusOK, gin.H{"code": 0})
+			return
+		}
 		if h.jobs != nil {
 			_ = h.jobs.PublishSRS(c.Request.Context(), "on_unpublish", stream)
 		} else {

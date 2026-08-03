@@ -2,9 +2,16 @@ package handler
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log"
+	"strconv"
+	"strings"
+	"time"
 
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
@@ -16,12 +23,19 @@ type livekitJobPublisher interface {
 	PublishLiveKit(ctx context.Context, raw []byte) error
 }
 
+const (
+	livekitSignatureHeader = "Livekit-Signature"
+	livekitSignatureMaxAge = 5 * time.Minute
+)
+
 type SignalHandler struct {
 	sfuSvc *service.SFUService
 
 	jobs livekitJobPublisher
 
 	clusterResolver func(domainUUID string) (string, error)
+
+	resolveLiveKitSecret func() string
 }
 
 func NewSignalHandler(sfuSvc *service.SFUService) *SignalHandler {
@@ -35,6 +49,59 @@ func (h *SignalHandler) SetClusterResolver(fn func(domainUUID string) (string, e
 
 func (h *SignalHandler) SetJobs(j livekitJobPublisher) {
 	h.jobs = j
+}
+
+// SetLiveKitSecretResolver 注入当前 LiveKit API secret 解析器（env/DB 配置）。
+func (h *SignalHandler) SetLiveKitSecretResolver(fn func() string) {
+	h.resolveLiveKitSecret = fn
+}
+
+func (h *SignalHandler) currentLiveKitSecret() string {
+	if h.resolveLiveKitSecret == nil {
+		return ""
+	}
+	return strings.TrimSpace(h.resolveLiveKitSecret())
+}
+
+// verifyLiveKitSignature 校验 LiveKit-Signature: t=<unix ts>,v1=<hex hmac-sha256>。
+func verifyLiveKitSignature(header string, body []byte, secret string, now time.Time) bool {
+	if secret == "" {
+		return false
+	}
+	var tsStr, sigHex string
+	for _, part := range strings.Split(header, ",") {
+		key, value, ok := strings.Cut(part, "=")
+		if !ok {
+			continue
+		}
+		switch strings.TrimSpace(key) {
+		case "t":
+			tsStr = strings.TrimSpace(value)
+		case "v1":
+			sigHex = strings.TrimSpace(value)
+		}
+	}
+	if tsStr == "" || sigHex == "" {
+		return false
+	}
+	ts, err := strconv.ParseInt(tsStr, 10, 64)
+	if err != nil || ts <= 0 {
+		return false
+	}
+	diff := now.Unix() - ts
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > int64(livekitSignatureMaxAge/time.Second) {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(tsStr + "." + string(body)))
+	sig, err := hex.DecodeString(sigHex)
+	if err != nil || len(sig) != sha256.Size {
+		return false
+	}
+	return subtle.ConstantTimeCompare(sig, mac.Sum(nil)) == 1
 }
 
 // GetWSTicket
@@ -218,6 +285,15 @@ func (h *SignalHandler) LivekitWebhook(c *gin.Context) {
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	secret := h.currentLiveKitSecret()
+	if secret == "" {
+		pkg.Fail(c, pkg.SFU_NOT_CONFIGURED)
+		return
+	}
+	if !verifyLiveKitSignature(c.GetHeader(livekitSignatureHeader), body, secret, time.Now()) {
+		pkg.Fail(c, pkg.TOKEN_WRONG, "invalid webhook signature")
 		return
 	}
 	var event map[string]interface{}

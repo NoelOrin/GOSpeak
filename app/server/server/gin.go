@@ -303,6 +303,16 @@ func StartGin(env EnvEnum) {
 	sfuSvc := service.NewSFUService(sfuProvider, signalHub)
 	sfuSvc.SetDomainMemberChecker(domainSvc.IsMember)
 	signalH := handler.NewSignalHandler(sfuSvc)
+	signalH.SetLiveKitSecretResolver(func() string {
+		resolved, err := sfuConfigSvc.ResolveConfig()
+		if err != nil || resolved == nil {
+			return cfg.LiveKitSecret
+		}
+		if resolved.LiveKitSecret != "" {
+			return resolved.LiveKitSecret
+		}
+		return cfg.LiveKitSecret
+	})
 	if jobQueue != nil {
 		signalH.SetJobs(jobQueue)
 	}

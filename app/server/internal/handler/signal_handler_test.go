@@ -1,12 +1,18 @@
 package handler
 
 import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
@@ -96,8 +102,35 @@ func setupRouterFull(sfu *mockSFU, checker func(domainUUID, userUUID string) boo
 	r.POST("/signal", h.Signal)
 	r.GET("/rooms", h.ListRooms)
 	r.GET("/participants", h.ListParticipants)
+	return r
+}
+
+type mockLiveKitJobPublisher struct {
+	published [][]byte
+}
+
+func (m *mockLiveKitJobPublisher) PublishLiveKit(ctx context.Context, raw []byte) error {
+	m.published = append(m.published, append([]byte(nil), raw...))
+	return nil
+}
+
+func setupWebhookRouter(sfu *mockSFU, secret string, jobs livekitJobPublisher) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	h := NewSignalHandler(service.NewSFUService(sfu, nil))
+	h.SetLiveKitSecretResolver(func() string { return secret })
+	if jobs != nil {
+		h.SetJobs(jobs)
+	}
 	r.POST("/webhook", h.LivekitWebhook)
 	return r
+}
+
+func signLiveKitWebhook(t *testing.T, body, secret string, ts int64) string {
+	t.Helper()
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(fmt.Sprintf("%d.%s", ts, body)))
+	return fmt.Sprintf("t=%d,v1=%s", ts, hex.EncodeToString(mac.Sum(nil)))
 }
 
 type response struct {
@@ -314,6 +347,90 @@ func TestSignal_MissingType(t *testing.T) {
 	}
 }
 
+func TestLivekitWebhook_MissingSignatureRejected(t *testing.T) {
+	r := setupWebhookRouter(&mockSFU{}, "test-secret", nil)
+	body := `{"event":"participant_left","room":{"name":"test-room"}}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/webhook", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
+	}
+	resp := parseResp(t, w.Body.String())
+	if resp.Code != pkg.TOKEN_WRONG {
+		t.Fatalf("expected TOKEN_WRONG, got %d", resp.Code)
+	}
+}
+
+func TestLivekitWebhook_InvalidSignatureRejected(t *testing.T) {
+	r := setupWebhookRouter(&mockSFU{}, "test-secret", nil)
+	body := `{"event":"participant_left","room":{"name":"test-room"}}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/webhook", strings.NewReader(body))
+	req.Header.Set("Livekit-Signature", "t=1,v1=deadbeef")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
+	}
+	resp := parseResp(t, w.Body.String())
+	if resp.Code != pkg.TOKEN_WRONG {
+		t.Fatalf("expected TOKEN_WRONG, got %d", resp.Code)
+	}
+}
+
+func TestLivekitWebhook_StaleTimestampRejected(t *testing.T) {
+	r := setupWebhookRouter(&mockSFU{}, "test-secret", nil)
+	body := `{"event":"participant_left","room":{"name":"test-room"}}`
+	sig := signLiveKitWebhook(t, body, "test-secret", time.Now().Add(-10*time.Minute).Unix())
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/webhook", strings.NewReader(body))
+	req.Header.Set("Livekit-Signature", sig)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
+	}
+}
+
+func TestLivekitWebhook_NoSecretConfiguredRejected(t *testing.T) {
+	r := setupWebhookRouter(&mockSFU{}, "", nil)
+	body := `{"event":"participant_left","room":{"name":"test-room"}}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/webhook", strings.NewReader(body))
+	req.Header.Set("Livekit-Signature", signLiveKitWebhook(t, body, "test-secret", time.Now().Unix()))
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", w.Code)
+	}
+	resp := parseResp(t, w.Body.String())
+	if resp.Code != pkg.SFU_NOT_CONFIGURED {
+		t.Fatalf("expected SFU_NOT_CONFIGURED, got %d", resp.Code)
+	}
+}
+
+func TestLivekitWebhook_ValidSignaturePublishesJob(t *testing.T) {
+	jobs := &mockLiveKitJobPublisher{}
+	r := setupWebhookRouter(&mockSFU{}, "test-secret", jobs)
+
+	body := `{"event":"participant_left","room":{"name":"test-room"}}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/webhook", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Livekit-Signature", signLiveKitWebhook(t, body, "test-secret", time.Now().Unix()))
+	r.ServeHTTP(w, req)
+
+	resp := parseResp(t, w.Body.String())
+	if resp.Code != pkg.SUCCESS {
+		t.Fatalf("expected SUCCESS, got %d", resp.Code)
+	}
+	if len(jobs.published) != 1 || string(jobs.published[0]) != body {
+		t.Fatalf("expected raw webhook body published, got %q", jobs.published)
+	}
+}
+
 // ─── ListRooms Tests ───
 
 func TestListRooms_Success(t *testing.T) {
@@ -413,12 +530,13 @@ func TestListParticipants_MissingRoom(t *testing.T) {
 // ─── LivekitWebhook Tests ───
 
 func TestLivekitWebhook_Success(t *testing.T) {
-	r := setupRouter(&mockSFU{})
+	r := setupWebhookRouter(&mockSFU{}, "test-secret", nil)
 
 	body := `{"event":"participant_joined","room":{"name":"test-room"}}`
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/webhook", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Livekit-Signature", signLiveKitWebhook(t, body, "test-secret", time.Now().Unix()))
 	r.ServeHTTP(w, req)
 
 	resp := parseResp(t, w.Body.String())
@@ -428,11 +546,12 @@ func TestLivekitWebhook_Success(t *testing.T) {
 }
 
 func TestLivekitWebhook_InvalidJSON(t *testing.T) {
-	r := setupRouter(&mockSFU{})
+	r := setupWebhookRouter(&mockSFU{}, "test-secret", nil)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/webhook", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Livekit-Signature", signLiveKitWebhook(t, "not json", "test-secret", time.Now().Unix()))
 	r.ServeHTTP(w, req)
 
 	resp := parseResp(t, w.Body.String())
