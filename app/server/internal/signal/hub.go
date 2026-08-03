@@ -1884,7 +1884,7 @@ func (h *Hub) BroadcastMute(userID uint, info *MuteInfo) {
 	ttlSeconds := 0
 	if info != nil {
 		if info.Permanent {
-			ttlSeconds = 24 * 60 * 60
+			ttlSeconds = sfu.PermanentMuteTTLSeconds
 		} else if info.Duration > 0 {
 			ttlSeconds = int(info.Duration)
 		}

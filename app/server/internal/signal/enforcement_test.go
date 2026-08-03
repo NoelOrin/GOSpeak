@@ -172,3 +172,24 @@ func TestEnforcementFromLevelHelper(t *testing.T) {
 		t.Fatal("expected soft")
 	}
 }
+
+func TestBroadcastMute_PermanentUsesLongTTL(t *testing.T) {
+	hub := NewHub(nil, nil, &idUserStore{users: map[uint]*model.User{
+		1: {ID: 1, Name: "alice"},
+	}}, nil)
+	p := &capsProvider{caps: sfu.Capabilities{ServerMute: true, MuteLevel: sfu.EnforcementDegraded}}
+	hub.SetSFU(p)
+	hub.rooms["lobby"] = &Room{
+		Name: "lobby",
+		Members: map[string]*MemberInfo{
+			"sid-1": {Identity: "alice"},
+		},
+		MicMuted: make(map[string]bool),
+		Speaking: make(map[string]bool),
+	}
+
+	hub.BroadcastMute(1, &MuteInfo{Permanent: true})
+	if p.ttlSeen != sfu.PermanentMuteTTLSeconds {
+		t.Fatalf("permanent mute ttl=%d, want %d", p.ttlSeen, sfu.PermanentMuteTTLSeconds)
+	}
+}
