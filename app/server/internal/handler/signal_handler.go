@@ -191,7 +191,7 @@ func (h *SignalHandler) ListRooms(c *gin.Context) {
 // @Success      200   {object}  pkg.Response
 // @Router       /signal/participants [get]
 func (h *SignalHandler) ListParticipants(c *gin.Context) {
-	room := c.Query("room")
+	room := pkg.RoomKey(c.Query("domain_uuid"), c.Query("room"))
 	if room == "" {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "room is required")
 		return

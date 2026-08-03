@@ -170,6 +170,25 @@ type connRoomSlots struct {
 	VoiceRoom string
 }
 
+// clearConnRoomSlot removes the matching room slot and drops the entry when empty.
+func (h *Hub) clearConnRoomSlot(socketID, key string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	slots := h.connSlots[socketID]
+	if slots == nil {
+		return
+	}
+	if slots.TextRoom == key {
+		slots.TextRoom = ""
+	}
+	if slots.VoiceRoom == key {
+		slots.VoiceRoom = ""
+	}
+	if slots.TextRoom == "" && slots.VoiceRoom == "" {
+		delete(h.connSlots, socketID)
+	}
+}
+
 type Hub struct {
 	fanout           ws.Broadcaster
 	eventBus         eventBus
@@ -346,7 +365,6 @@ func (h *Hub) OnConnect(c ws.ClientMessenger) error {
 func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	type disconnectCleanup struct {
 		room        string
-		logicalRoom string
 		identity    string
 		deleted     bool
 	}
@@ -391,8 +409,7 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 			})
 			updatedRooms = append(updatedRooms, roomName)
 			deleted := h.deleteRoomIfEmptyLocked(roomName)
-			_, logicalRoom := splitRoomKey(roomName)
-			cleanups = append(cleanups, disconnectCleanup{roomName, logicalRoom, identity, deleted})
+			cleanups = append(cleanups, disconnectCleanup{roomName, identity, deleted})
 		}
 	}
 	delete(h.connSlots, c.ID())
@@ -431,20 +448,20 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	// 丢后台 goroutine，handler 立即返回。
 	if len(cleanups) > 0 {
 		if h.cleanupPub != nil {
-			for _, c := range cleanups {
-				if err := h.cleanupPub.PublishSFUCleanup(context.Background(), c.logicalRoom, c.identity, c.deleted); err != nil {
+		for _, c := range cleanups {
+				if err := h.cleanupPub.PublishSFUCleanup(context.Background(), c.room, c.identity, c.deleted); err != nil {
 					log.Printf("[Signal] enqueue sfu cleanup: %v", err)
 				}
 			}
 		} else {
 			go func(cleanups []disconnectCleanup) {
 				for _, c := range cleanups {
-					h.removeParticipantSafe(c.logicalRoom, c.identity)
+					h.removeParticipantSafe(c.room, c.identity)
 					if c.deleted {
-						h.deleteRoomSafe(c.logicalRoom)
+						h.deleteRoomSafe(c.room)
 					}
 					if h.participantCleanup != nil {
-						h.participantCleanup.OnParticipantLeft(c.logicalRoom, c.identity)
+						h.participantCleanup.OnParticipantLeft(c.room, c.identity)
 					}
 				}
 			}(cleanups)
@@ -617,6 +634,7 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 	}
 
 	// Dual-slot tracking: resolve room type, manage text/voice slot per conn.
+	key := roomKey(req.DomainUUID, req.Room)
 	h.mu.Lock()
 	roomType := model.RoomTypeVoice
 	if h.roomStore != nil {
@@ -631,20 +649,20 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 	}
 	if roomType == model.RoomTypeText {
 		// Switching text rooms: leave old slot
-		if slots.TextRoom != "" && slots.TextRoom != req.Room {
+		if slots.TextRoom != "" && slots.TextRoom != key {
 			h.fanout.Leave(slots.TextRoom, c.ID())
 		}
-		slots.TextRoom = req.Room
+		slots.TextRoom = key
 	} else {
 		// Switching voice rooms: leave old slot
-		if slots.VoiceRoom != "" && slots.VoiceRoom != req.Room {
+		if slots.VoiceRoom != "" && slots.VoiceRoom != key {
 			h.fanout.Leave(slots.VoiceRoom, c.ID())
 		}
-		slots.VoiceRoom = req.Room
+		slots.VoiceRoom = key
 	}
 	h.mu.Unlock()
 
-	h.fanout.Join(roomKey(req.DomainUUID, req.Room), c.ID())
+	h.fanout.Join(key, c.ID())
 
 	log.Printf("[Signal] %s (%s) signaling ready for room: %s (type=%s)", c.ID(), identity, req.Room, roomType)
 
@@ -709,7 +727,7 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 
 	// 服务端覆写 stream：客户端提报值不可信，使用服务端基于 room+identity 计算的预期值
 	if h.streamResolver != nil {
-		req.Stream = h.streamResolver.StreamName(req.Room, identity)
+		req.Stream = h.streamResolver.StreamName(roomKey(req.DomainUUID, req.Room), identity)
 	}
 
 	member := &MemberInfo{
@@ -804,14 +822,16 @@ func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 		})
 	}
 
-	h.fanout.Leave(roomKey(req.DomainUUID, req.Room), c.ID())
+	key := roomKey(req.DomainUUID, req.Room)
+	h.fanout.Leave(key, c.ID())
+	h.clearConnRoomSlot(c.ID(), key)
 
 	var identity string
 	var stream string
 	wasSpeaking := false
 	roomDeleted := false
 	h.mu.Lock()
-	if room, exists := h.rooms[roomKey(req.DomainUUID, req.Room)]; exists {
+	if room, exists := h.rooms[key]; exists {
 		if member, ok := room.Members[c.ID()]; ok {
 			identity = member.Identity
 			wasSpeaking = room.Speaking[identity]
@@ -819,13 +839,13 @@ func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 			roomDelMember(room, c.ID())
 			delete(room.Speaking, identity)
 			delete(room.MicMuted, identity)
-			h.unregisterStreamLocked(roomKey(req.DomainUUID, req.Room), identity, stream)
+			h.unregisterStreamLocked(key, identity, stream)
 			// 成员清空则删除房间，与 OnDisconnect 行为一致
-			roomDeleted = h.deleteRoomIfEmptyLocked(roomKey(req.DomainUUID, req.Room))
+			roomDeleted = h.deleteRoomIfEmptyLocked(key)
 		}
 	}
 	h.mu.Unlock()
-	h.syncRoomToStore(roomKey(req.DomainUUID, req.Room))
+	h.syncRoomToStore(key)
 	if stream != "" {
 		h.syncStreamDelete(stream)
 	}
@@ -835,13 +855,13 @@ func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 
 	// 同步清理 SFU 端：移除 participant，空房时删除 SFU room
 	if identity != "" {
-		h.removeParticipantSafe(req.Room, identity)
+		h.removeParticipantSafe(key, identity)
 		if h.participantCleanup != nil {
-			h.participantCleanup.OnParticipantLeft(req.Room, identity)
+			h.participantCleanup.OnParticipantLeft(key, identity)
 		}
 	}
 	if roomDeleted {
-		h.deleteRoomSafe(req.Room)
+		h.deleteRoomSafe(key)
 	}
 
 	if identity == "" {
@@ -855,7 +875,7 @@ func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 		"domain_uuid": req.DomainUUID,
 	}})
 
-	h.publishRoom(roomKey(req.DomainUUID, req.Room), EventMemberLeft, map[string]interface{}{
+	h.publishRoom(key, EventMemberLeft, map[string]interface{}{
 		"room":       req.Room,
 		"domain_uuid": req.DomainUUID,
 		"identity":   identity,
@@ -867,7 +887,7 @@ func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 		h.broadcastRoomList(req.DomainUUID)
 	} else {
 		// NOTE: roomInfoLocked 在 !exists 时返回零值 RoomInfo（并发删房场景安全）
-		h.broadcastRoomUpdatedLocal(roomKey(req.DomainUUID, req.Room))
+		h.broadcastRoomUpdatedLocal(key)
 	}
 
 	return marshalAck(map[string]interface{}{
@@ -964,8 +984,9 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 	}
 
 	// 权限通过，重新加锁执行踢出
+	key := roomKey(req.DomainUUID, req.Room)
 	h.mu.Lock()
-	room, exists = h.rooms[roomKey(req.DomainUUID, req.Room)]
+	room, exists = h.rooms[key]
 	if !exists {
 		h.mu.Unlock()
 		return
@@ -983,9 +1004,9 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 			roomDelMember(room, sid)
 			delete(room.Speaking, m.Identity)
 			delete(room.MicMuted, m.Identity)
-			h.unregisterStreamLocked(roomKey(req.DomainUUID, req.Room), m.Identity, targetStream)
+			h.unregisterStreamLocked(key, m.Identity, targetStream)
 			// 踢出最后一人也删房，与 OnRoomLeave / OnDisconnect 行为一致
-			roomDeleted = h.deleteRoomIfEmptyLocked(roomKey(req.DomainUUID, req.Room))
+			roomDeleted = h.deleteRoomIfEmptyLocked(key)
 			break
 		}
 	}
@@ -994,13 +1015,14 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 	if targetSocketID == "" {
 		return
 	}
+	h.clearConnRoomSlot(targetSocketID, key)
 	if targetStream != "" {
 		h.syncStreamDelete(targetStream)
 	}
 
 	// 从 fanout room 移除目标连接，避免继续收事件
 	if h.fanout != nil {
-		h.fanout.ForEach(roomKey(req.DomainUUID, req.Room), func(conn ws.ClientMessenger) bool {
+		h.fanout.ForEach(key, func(conn ws.ClientMessenger) bool {
 			if conn != nil && conn.ID() == targetSocketID {
 				targetConn = conn
 				return false
@@ -1008,17 +1030,17 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 			return true
 		})
 		if targetConn != nil {
-			h.fanout.Leave(roomKey(req.DomainUUID, req.Room), targetConn.ID())
+			h.fanout.Leave(key, targetConn.ID())
 		}
 	}
 
 	log.Printf("[Signal] %s kicked %s from room: %s", c.ID(), req.TargetIdentity, req.Room)
 
 	// 信令层踢人始终先生效；SFU 层按 Capabilities.ServerKick 尽力 hard-enforce。
-	enforcement := h.removeParticipantSafe(req.Room, req.TargetIdentity)
+	enforcement := h.removeParticipantSafe(key, req.TargetIdentity)
 
 	// 通知被踢者；payload 带 targetIdentity，前端按 identity 过滤避免误伤同房他人
-	h.publishRoom(roomKey(req.DomainUUID, req.Room), EventRoomKicked, map[string]interface{}{
+	h.publishRoom(key, EventRoomKicked, map[string]interface{}{
 		"room":           req.Room,
 		"domain_uuid":     req.DomainUUID,
 		"targetIdentity": req.TargetIdentity,
@@ -1034,7 +1056,7 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 	}
 
 	// 通知全员成员离开
-	h.publishRoom(roomKey(req.DomainUUID, req.Room), EventMemberLeft, map[string]interface{}{
+	h.publishRoom(key, EventMemberLeft, map[string]interface{}{
 		"room":        req.Room,
 		"domain_uuid":  req.DomainUUID,
 		"identity":    req.TargetIdentity,
@@ -1043,17 +1065,17 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 	})
 
 	// SFU remove 已在上方 removeParticipantSafe 完成；此处同步房间状态并做 provider 清理。
-	h.syncRoomToStore(roomKey(req.DomainUUID, req.Room))
+	h.syncRoomToStore(key)
 	if h.participantCleanup != nil {
-		h.participantCleanup.OnParticipantLeft(req.Room, req.TargetIdentity)
+		h.participantCleanup.OnParticipantLeft(key, req.TargetIdentity)
 	}
 
 	// 空房删除 SFU room 并广播列表，否则广播单房间更新
 	if roomDeleted {
-		h.deleteRoomSafe(req.Room)
+		h.deleteRoomSafe(key)
 		h.broadcastRoomList(req.DomainUUID)
 	} else {
-		h.broadcastRoomUpdatedLocal(roomKey(req.DomainUUID, req.Room))
+		h.broadcastRoomUpdatedLocal(key)
 		if targetWasSpeaking {
 			h.broadcastActiveSpeakers(req.DomainUUID, req.Room)
 		}
@@ -1676,8 +1698,8 @@ func (h *Hub) OnDomainDelete(domainUUID string) {
 		if !strings.HasPrefix(key, prefix) {
 			continue
 		}
-		// 收集 SFU 房间名（去掉 domain 前缀的原始 roomName）
-		sfuRooms = append(sfuRooms, room.Name)
+		// 收集 SFU 房间名（复合 key 与 token/媒体层一致）
+		sfuRooms = append(sfuRooms, key)
 		// 断开所有成员
 		for sid := range room.Members {
 			if m := room.Members[sid]; m != nil {
@@ -1744,7 +1766,6 @@ func (h *Hub) HandleRemoteEvent(event string, payload interface{}) {
 func (h *Hub) clearLocalRoomsForSFUSwitch() {
 	type cleanupItem struct {
 		room        string
-		logicalRoom string
 		identity    string
 	}
 	var cleanups []cleanupItem
@@ -1756,8 +1777,7 @@ func (h *Hub) clearLocalRoomsForSFUSwitch() {
 		for sid, m := range room.Members {
 			identity := m.Identity
 			stream := m.Stream
-			_, logicalRoom := splitRoomKey(roomName)
-			cleanups = append(cleanups, cleanupItem{room: roomName, logicalRoom: logicalRoom, identity: identity})
+			cleanups = append(cleanups, cleanupItem{room: roomName, identity: identity})
 			if stream != "" {
 				streamsToDelete = append(streamsToDelete, stream)
 			}
@@ -1792,14 +1812,13 @@ func (h *Hub) clearLocalRoomsForSFUSwitch() {
 		h.syncRoomToStore(roomName)
 	}
 	for _, c := range cleanups {
-		h.removeParticipantSafe(c.logicalRoom, c.identity)
+		h.removeParticipantSafe(c.room, c.identity)
 		if h.participantCleanup != nil {
-			h.participantCleanup.OnParticipantLeft(c.logicalRoom, c.identity)
+			h.participantCleanup.OnParticipantLeft(c.room, c.identity)
 		}
 	}
 	for _, roomName := range roomsToDelete {
-		_, logicalRoom := splitRoomKey(roomName)
-		h.deleteRoomSafe(logicalRoom)
+		h.deleteRoomSafe(roomName)
 	}
 	h.broadcastRoomListKnownDomains()
 }
@@ -1862,7 +1881,6 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 
 	type target struct {
 		room        string // composite key (domainUUID:roomName)
-		logicalRoom string
 		identity    string
 	}
 	seen := make(map[string]struct{})
@@ -1873,8 +1891,7 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 			if member.Identity == identity {
 				if _, ok := seen[roomName]; !ok {
 					seen[roomName] = struct{}{}
-					_, lr := splitRoomKey(roomName)
-					targets = append(targets, target{room: roomName, logicalRoom: lr, identity: identity})
+					targets = append(targets, target{room: roomName, identity: identity})
 				}
 				break
 			}
@@ -1898,8 +1915,7 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 				for _, m := range snap.Members {
 					if m.Identity == identity {
 						seen[roomName] = struct{}{}
-						_, lr := splitRoomKey(roomName)
-						targets = append(targets, target{room: roomName, logicalRoom: lr, identity: identity})
+						targets = append(targets, target{room: roomName, identity: identity})
 						break
 					}
 				}
@@ -1915,9 +1931,9 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 	for _, t := range targets {
 		var err error
 		if tp, ok := h.sfuProvider.(sfu.TimedMuteProvider); ok {
-			err = tp.MuteParticipantTimed(t.logicalRoom, t.identity, "", muted, ttlSeconds)
+			err = tp.MuteParticipantTimed(t.room, t.identity, "", muted, ttlSeconds)
 		} else {
-			err = h.sfuProvider.MuteParticipant(t.logicalRoom, t.identity, "", muted)
+			err = h.sfuProvider.MuteParticipant(t.room, t.identity, "", muted)
 		}
 		if err != nil {
 			if errors.Is(err, pkg.ErrSFUNotSupported) {

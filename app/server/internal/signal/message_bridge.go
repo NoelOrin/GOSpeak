@@ -72,9 +72,9 @@ func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, roomName, domainUUID stri
 	allowed := false
 	if slots != nil {
 		if roomType == model.RoomTypeText {
-			allowed = slots.TextRoom == roomName
+			allowed = slots.TextRoom == roomKey(domainUUID, roomName)
 		} else {
-			allowed = slots.VoiceRoom == roomName
+			allowed = slots.VoiceRoom == roomKey(domainUUID, roomName)
 		}
 	}
 	h.mu.RUnlock()

@@ -1,6 +1,8 @@
 package signal
 
 import (
+	"encoding/json"
+	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"testing"
 )
@@ -21,6 +23,70 @@ func TestHub_RoomKey_Format(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("roomKey(%q, %q) = %q, want %q", tt.domainUUID, tt.roomName, got, tt.want)
 		}
+	}
+}
+
+func TestHub_OnRoomJoin_DomainSlotUsesCompositeKey(t *testing.T) {
+	store := &mockRoomStore{rooms: []model.Room{
+		{Name: "text-a", Type: model.RoomTypeText, DomainUUID: "domain-a"},
+		{Name: "text-c", Type: model.RoomTypeText, DomainUUID: "domain-a"},
+	}}
+	h := newTestHub()
+	h.roomStore = store
+	conn := newAuthedMockClient("conn-1", "alice")
+
+	if _, err := h.OnRoomJoin(conn, `{"room":"text-a","domain_uuid":"domain-a","identity":"alice"}`); err != nil {
+		t.Fatalf("join text A: %v", err)
+	}
+	if _, err := h.OnRoomJoin(conn, `{"room":"text-c","domain_uuid":"domain-a","identity":"alice"}`); err != nil {
+		t.Fatalf("join text C: %v", err)
+	}
+
+	h.mu.RLock()
+	slots := h.connSlots["conn-1"]
+	h.mu.RUnlock()
+	if slots == nil || slots.TextRoom != "domain-a:text-c" {
+		t.Fatalf("expected text slot 'domain-a:text-c', got %#v", slots)
+	}
+	fanout := h.fanout.(*mockBroadcaster)
+	if !fanout.didLeave("conn-1", "domain-a:text-a") {
+		t.Error("expected domain-a:text-a to be left with composite key")
+	}
+}
+
+func TestHub_OnRoomLeave_ClearsConnSlot(t *testing.T) {
+	store := &mockRoomStore{rooms: []model.Room{
+		{Name: "text-chat", Type: model.RoomTypeText, DomainUUID: "domain-a"},
+	}}
+	h := newTestHub()
+	h.roomStore = store
+	msgSvc := &mockMessageSvc{}
+	h.SetMessageService(msgSvc)
+	conn := newAuthedMockClient("conn-1", "alice")
+
+	if _, err := h.OnRoomJoin(conn, `{"room":"text-chat","domain_uuid":"domain-a","identity":"alice"}`); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	if _, err := h.OnRoomLeave(conn, `{"room":"text-chat","domain_uuid":"domain-a"}`); err != nil {
+		t.Fatalf("leave: %v", err)
+	}
+
+	h.mu.RLock()
+	_, exists := h.connSlots["conn-1"]
+	h.mu.RUnlock()
+	if exists {
+		t.Fatal("expected conn slot removed after leave")
+	}
+	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","domain_uuid":"domain-a","content":"hello"}`)
+	if err != nil {
+		t.Fatalf("send after leave: %v", err)
+	}
+	var ackMap map[string]interface{}
+	if err := json.Unmarshal([]byte(ack), &ackMap); err != nil {
+		t.Fatalf("bad ack json: %v", err)
+	}
+	if ackMap["error"] != "not in room: text-chat" {
+		t.Errorf("expected not in room error, got %v", ackMap["error"])
 	}
 }
 
