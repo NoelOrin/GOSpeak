@@ -323,7 +323,7 @@ func generateObjectKey(pathPrefix, category, fileName, userUUID string) string {
 	if !strings.HasSuffix(pathPrefix, "/") {
 		pathPrefix += "/"
 	}
-	return pathPrefix + category + "/" + userUUID + "/" + id + ext
+	return pathPrefix + userUUID + "/" + category + "/" + id + ext
 }
 
 // objectKeyUserPrefix 返回当前用户 presign 对象键的前缀，用于上传所有权校验。

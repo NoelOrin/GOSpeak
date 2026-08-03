@@ -41,23 +41,23 @@ type Config struct {
 }
 
 type SideServerConfig struct {
-	Enabled bool   `json:"enabled"`
+	Enabled bool `json:"enabled"`
 	// Addr 如 127.0.0.1:9200；空则随机端口
 	Addr string `json:"addr"`
 }
 
 type LLMProviderConfig struct {
-	Name     string            `json:"name"`
-	Display  string            `json:"display_name"`
+	Name    string `json:"name"`
+	Display string `json:"display_name"`
 	// Protocol: openai-compatible | anthropic | custom-http | ollama | gemini | gemini-response
-	Protocol string            `json:"protocol"`
-	BaseURL  string            `json:"base_url"`
-	APIKey   string            `json:"api_key"`
-	Model    string            `json:"model"`
-	Enabled  bool              `json:"enabled"`
+	Protocol string `json:"protocol"`
+	BaseURL  string `json:"base_url"`
+	APIKey   string `json:"api_key"`
+	Model    string `json:"model"`
+	Enabled  bool   `json:"enabled"`
 	// Extra 协议扩展字段（temperature 默认值、headers 等）
-	Extra    map[string]any    `json:"extra,omitempty"`
-	Headers  map[string]string `json:"headers,omitempty"`
+	Extra   map[string]any    `json:"extra,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 const secretPrefix = "enc:v1:"
@@ -107,6 +107,7 @@ func encryptConfigSecrets(m map[string]any) (map[string]any, error) {
 }
 
 func decryptConfigSecrets(m map[string]any) map[string]any {
+	m = copyConfigMap(m)
 	providers, _ := m["llm_providers"].([]any)
 	for _, item := range providers {
 		p, ok := item.(map[string]any)
@@ -118,6 +119,32 @@ func decryptConfigSecrets(m map[string]any) map[string]any {
 		}
 	}
 	return m
+}
+
+// copyConfigMap 返回顶层 map 与 llm_providers 的浅拷贝，避免加解密原地改写调用方配置。
+func copyConfigMap(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	raw, ok := out["llm_providers"].([]any)
+	if !ok {
+		return out
+	}
+	providers := make([]any, len(raw))
+	for i, item := range raw {
+		if p, ok := item.(map[string]any); ok {
+			cp := make(map[string]any, len(p))
+			for k, v := range p {
+				cp[k] = v
+			}
+			providers[i] = cp
+		} else {
+			providers[i] = item
+		}
+	}
+	out["llm_providers"] = providers
+	return out
 }
 
 func New() *Plugin {
