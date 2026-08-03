@@ -317,6 +317,9 @@ func StartGin(env EnvEnum) {
 		signalH.SetJobs(jobQueue)
 	}
 	cfMediaSvc := service.NewCloudflareMediaService(sfuConfigSvc.ResolveConfig)
+	if dp, ok := sfuProvider.(*factory.DynamicProvider); ok {
+		cfMediaSvc.SetSessionOwnerLookup(dp.SessionOwner)
+	}
 	cfH := handler.NewCloudflareHandler(cfMediaSvc)
 	srsCallbackH := handler.NewSRSCallbackHandlerWithResolver(signalHub, func() string {
 		resolved, err := sfuConfigSvc.ResolveConfig()
