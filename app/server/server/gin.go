@@ -301,6 +301,7 @@ func StartGin(env EnvEnum) {
 	}
 	signalHub.SetupFanout(wsFanout, wsHandler)
 	sfuSvc := service.NewSFUService(sfuProvider, signalHub)
+	sfuSvc.SetDomainMemberChecker(domainSvc.IsMember)
 	signalH := handler.NewSignalHandler(sfuSvc)
 	if jobQueue != nil {
 		signalH.SetJobs(jobQueue)

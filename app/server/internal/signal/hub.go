@@ -95,18 +95,12 @@ type cleanupPublisher interface {
 // roomKey generates a domain-scoped composite key for room map isolation.
 // Platform-level rooms (no DomainUUID) use a "platform:" prefix for backward compatibility.
 func roomKey(domainUUID, roomName string) string {
-	if domainUUID == "" {
-		return roomName
-	}
-	return domainUUID + ":" + roomName
+	return pkg.RoomKey(domainUUID, roomName)
 }
 
 // splitRoomKey reverses roomKey to extract domainUUID and roomName.
 func splitRoomKey(key string) (domainUUID, roomName string) {
-	if idx := strings.IndexByte(key, ':'); idx >= 0 {
-		return key[:idx], key[idx+1:]
-	}
-	return "", key
+	return pkg.SplitRoomKey(key)
 }
 
 func roomKeyMatchesDomain(key, domainUUID string) bool {

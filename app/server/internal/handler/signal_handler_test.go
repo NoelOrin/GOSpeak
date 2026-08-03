@@ -73,9 +73,15 @@ func setupRouter(sfu *mockSFU) *gin.Engine {
 }
 
 func setupRouterWithClusterResolver(sfu *mockSFU, resolver func(domainUUID string) (string, error)) *gin.Engine {
+	return setupRouterFull(sfu, nil, resolver)
+}
+
+func setupRouterFull(sfu *mockSFU, checker func(domainUUID, userUUID string) bool, resolver func(domainUUID string) (string, error)) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	h := NewSignalHandler(service.NewSFUService(sfu, nil))
+	svc := service.NewSFUService(sfu, nil)
+	svc.SetDomainMemberChecker(checker)
+	h := NewSignalHandler(svc)
 	h.SetClusterResolver(resolver)
 	// 模拟 JWTAuth 注入 username
 	r.Use(func(c *gin.Context) {
@@ -145,6 +151,12 @@ func TestGetJoinToken_Success(t *testing.T) {
 	if data["serverUrl"] != "wss://test.livekit.cloud" {
 		t.Errorf("expected serverUrl, got %v", data["serverUrl"])
 	}
+	if data["sfuRoom"] != "test-room" {
+		t.Errorf("expected sfuRoom 'test-room', got %v", data["sfuRoom"])
+	}
+	if data["domain_uuid"] != "" {
+		t.Errorf("expected empty domain_uuid, got %v", data["domain_uuid"])
+	}
 }
 
 func TestGetJoinToken_MissingRoom(t *testing.T) {
@@ -213,6 +225,56 @@ func TestGetJoinToken_SFUError(t *testing.T) {
 	resp := parseResp(t, w.Body.String())
 	if resp.Code != pkg.SFU_ERROR {
 		t.Fatalf("expected SFU_ERROR (6002), got %d", resp.Code)
+	}
+}
+
+func TestGetJoinToken_DomainSuccess(t *testing.T) {
+	r := setupRouterFull(&mockSFU{}, func(domainUUID, userUUID string) bool {
+		return domainUUID == "domain-a" && userUUID == "user-1"
+	}, nil)
+
+	body := `{"room":"test-room","domain_uuid":"domain-a"}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/token", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	resp := parseResp(t, w.Body.String())
+	if resp.Code != pkg.SUCCESS {
+		t.Fatalf("expected code 0, got %d", resp.Code)
+	}
+	data := resp.Data.(map[string]interface{})
+	if data["room"] != "test-room" {
+		t.Errorf("expected logical room 'test-room', got %v", data["room"])
+	}
+	if data["sfuRoom"] != "domain-a:test-room" {
+		t.Errorf("expected sfuRoom 'domain-a:test-room', got %v", data["sfuRoom"])
+	}
+	if data["domain_uuid"] != "domain-a" {
+		t.Errorf("expected domain_uuid 'domain-a', got %v", data["domain_uuid"])
+	}
+}
+
+func TestGetJoinToken_DomainNonMemberForbidden(t *testing.T) {
+	r := setupRouterFull(&mockSFU{}, func(domainUUID, userUUID string) bool {
+		return false
+	}, nil)
+
+	body := `{"room":"test-room","domain_uuid":"domain-a"}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/token", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	resp := parseResp(t, w.Body.String())
+	if resp.Code != pkg.FORBIDDEN {
+		t.Fatalf("expected FORBIDDEN (1013), got %d", resp.Code)
 	}
 }
 

@@ -101,17 +101,19 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 	}
 	req.Identity = identity
 
-	result, err := h.sfuSvc.GetJoinToken(req.DomainUUID, req.Room, req.Identity, req.Password)
+	result, err := h.sfuSvc.GetJoinToken(req.DomainUUID, req.Room, req.Identity, currentUserUUID(c), req.Password)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
 
 	data := gin.H{
-		"token":     result.Token,
-		"serverUrl": result.ServerURL,
-		"room":      req.Room,
-		"identity":  req.Identity,
+		"token":       result.Token,
+		"serverUrl":   result.ServerURL,
+		"room":        req.Room,
+		"identity":    req.Identity,
+		"sfuRoom":     result.SFURoom,
+		"domain_uuid": req.DomainUUID,
 	}
 	if req.DomainUUID != "" && h.clusterResolver != nil {
 		if workerURL, resolveErr := h.clusterResolver(req.DomainUUID); resolveErr == nil && workerURL != "" {
