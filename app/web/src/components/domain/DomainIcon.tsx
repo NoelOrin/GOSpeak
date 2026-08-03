@@ -6,6 +6,7 @@ interface DomainIconProps {
 	iconUrl?: string;
 	active?: boolean;
 	onClick?: () => void;
+	requiresDoubleClick?: boolean;
 	class?: string;
 }
 
@@ -15,6 +16,10 @@ const DomainIcon: Component<DomainIconProps> = (props) => {
 		<OptionSquare
 			label={props.name}
 			onClick={props.onClick}
+			onDoubleClick={props.onClick}
+			active={props.active}
+			requiresDoubleClick={props.requiresDoubleClick}
+			actionHint="双击进入"
 			class={props.class}
 		>
 			{props.iconUrl ? (

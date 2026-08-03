@@ -10,7 +10,7 @@ export interface CreateRoomReq {
 	audio_only: boolean;
 	allow_audience: boolean;
 	type?: "text" | "voice";
-	domain_uuid?: string;
+	domain_uuid: string;
 }
 
 export interface RoomRecord {

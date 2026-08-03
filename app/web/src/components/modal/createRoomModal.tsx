@@ -16,7 +16,7 @@ export interface CreateRoomConfig {
 	allowAudience: boolean;
 	description: string;
 	type: "text" | "voice";
-	domainUUID?: string;
+	domainUUID: string;
 }
 
 interface CreateRoomModalProps {
@@ -55,6 +55,12 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 		},
 		onSubmit: async ({ value }) => {
 			try {
+				const domainUUID =
+					props.domainUUID ?? domainStore.state.currentDomainUUID ?? "";
+				if (!domainUUID) {
+					showToast("请先选择域", { type: "warning" });
+					return;
+				}
 				const payload: CreateRoomConfig = {
 					name: value.name.trim(),
 					password: value.password,
@@ -64,10 +70,7 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 					allowAudience: value.allowAudience,
 					description: value.description.trim(),
 					type: value.type === "text" ? "text" : "voice",
-					domainUUID:
-						props.domainUUID ??
-						domainStore.state.currentDomainUUID ??
-						undefined,
+					domainUUID,
 				};
 
 				const room = await createRoomApi({

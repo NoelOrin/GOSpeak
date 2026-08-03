@@ -1,14 +1,11 @@
-import { createFileRoute } from "@tanstack/solid-router";
-import Dashboard from "@/components/dashboard";
+import { createFileRoute, redirect } from "@tanstack/solid-router";
 
 export const Route = createFileRoute("/(app)/")({
-	component: RouteComponent,
+	beforeLoad: () => {
+		throw redirect({ to: "/discover" });
+	},
 	staticData: {
-		title: "首页",
-		icon: "home",
+		title: "发现域",
+		icon: "compass",
 	},
 });
-
-function RouteComponent() {
-	return <Dashboard />;
-}

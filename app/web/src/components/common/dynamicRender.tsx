@@ -12,7 +12,7 @@ const PREFIX_MAP: [string, (...args: any[]) => JSX.Element][] = [
 	["/manage", ManageNav],
 	["/domain", RoomList],
 	["/chat", ConversationList],
-	["/", HomePage],
+	["/discover", HomePage],
 ];
 
 const DynamicRender = () => {

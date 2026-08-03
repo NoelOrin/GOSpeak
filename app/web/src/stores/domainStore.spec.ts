@@ -232,6 +232,22 @@ describe("domainStore", () => {
 		expect(store.state.domainErrors["g-1"]).toBeNull();
 	});
 
+	it("activates a domain by UUID and loads its members", async () => {
+		const domain = makeDomain();
+		const members = makeMembers();
+		getDomainMock.mockResolvedValue(domain);
+		domainMembersMock.mockResolvedValue(members);
+		const store = createDomainStore();
+
+		store.activateDomain("g-1");
+
+		expect(store.state.currentDomainUUID).toBe("g-1");
+		await vi.waitFor(() => {
+			expect(store.state.domainCache["g-1"]).toEqual(domain);
+			expect(store.state.memberCache["g-1"]).toEqual(members);
+		});
+	});
+
 	it("reports a domain load failure without blocking retry", async () => {
 		getDomainMock.mockRejectedValueOnce(new Error("network"));
 		const store = createDomainStore();

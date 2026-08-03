@@ -33,6 +33,7 @@ import {
 	canDeleteRoomItem,
 	canEditRoomItem,
 	toEditRoomRecord,
+	visibleRoomsForDomain,
 } from "./roomListUtils";
 
 function apiErrorMessage(error: unknown): string {
@@ -63,6 +64,10 @@ const RoomItem = (props: RoomItemPropsType) => {
 		text: string;
 		left: number;
 		top: number;
+	} | null>(null);
+	const [clickHint, setClickHint] = createSignal<{
+		x: number;
+		y: number;
 	} | null>(null);
 	const [contextMenu, setContextMenu] = createSignal<{
 		x: number;
@@ -127,6 +132,7 @@ const RoomItem = (props: RoomItemPropsType) => {
 	const openContextMenu = (event: MouseEvent) => {
 		if (!canEdit() && !canDelete() && !isInRoom()) return;
 		event.preventDefault();
+		setClickHint(null);
 		const menuWidth = 176;
 		const visibleMenuCount = [canEdit(), canDelete(), isInRoom()].filter(
 			Boolean,
@@ -185,17 +191,26 @@ const RoomItem = (props: RoomItemPropsType) => {
 		setTip({ text: tipText(), left: rect.left, top: rect.bottom + 6 });
 	};
 
+	const showDoubleClickHint = (event: MouseEvent) => {
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		setClickHint({ x: rect.left + rect.width / 2, y: rect.bottom + 6 });
+	};
+
 	const hideTip = () => setTip(null);
 
 	// 滚动容器滚动时 tooltip 位置错位，捕获阶段监听滚动即时清除
 	createEffect(() => {
-		if (!tip()) return;
-		const onScroll = () => hideTip();
+		if (!tip() && !clickHint()) return;
+		const onScroll = () => {
+			hideTip();
+			setClickHint(null);
+		};
 		window.addEventListener("scroll", onScroll, true);
 		onCleanup(() => window.removeEventListener("scroll", onScroll, true));
 	});
 
 	const handleJoin = () => {
+		setClickHint(null);
 		closeContextMenu();
 		if (props.room.hasPassword) {
 			setShowPasswordModal(true);
@@ -245,13 +260,19 @@ const RoomItem = (props: RoomItemPropsType) => {
 						aria-expanded={!!contextMenu()}
 						onContextMenu={openContextMenu}
 						onMouseEnter={showTip}
-						onMouseLeave={hideTip}
-						onClick={() => {
+						onMouseLeave={() => {
+							hideTip();
+							setClickHint(null);
+						}}
+						onClick={(event) => {
 							if (window.matchMedia("(max-width: 767px)").matches) {
 								handleJoin();
+								return;
 							}
+							showDoubleClickHint(event);
 						}}
 						onDblClick={() => {
+							setClickHint(null);
 							handleJoin();
 						}}
 					>
@@ -353,6 +374,20 @@ const RoomItem = (props: RoomItemPropsType) => {
 							}}
 						>
 							{t().text}
+						</div>
+					)}
+				</Show>
+				<Show when={clickHint()}>
+					{(hint) => (
+						<div
+							class="pointer-events-none fixed z-[9999] whitespace-nowrap rounded-md bg-base-content px-2 py-1 text-xs font-medium text-base-100 shadow-lg"
+							style={{
+								left: `${hint().x}px`,
+								top: `${hint().y}px`,
+								transform: "translateX(-50%)",
+							}}
+						>
+							双击进入
 						</div>
 					)}
 				</Show>
@@ -458,7 +493,7 @@ const RoomListHeader = (props: { onOpenCreate: () => void }) => {
 	);
 	return (
 		<div class="flex justify-between mt-2">
-			<h3 class="font-bold">{currentDomain()?.name || "语音域"}</h3>
+			<h3 class="font-bold">{currentDomain()?.name || "选择域"}</h3>
 			<div class="flex items-center gap-1">
 				<Show when={currentDomain()}>
 					<button
@@ -474,7 +509,7 @@ const RoomListHeader = (props: { onOpenCreate: () => void }) => {
 						管理
 					</button>
 				</Show>
-				<Show when={hasPermission("room:create")}>
+				<Show when={currentDomain() && hasPermission("room:create")}>
 					<button
 						type="button"
 						class="btn btn-xs btn-ghost btn-square"
@@ -587,12 +622,7 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 	};
 
 	const visibleRooms = createMemo(() =>
-		socketStore
-			.rooms()
-			.filter(
-				(room) =>
-					(room.domain_uuid || "") === (socketStore.currentDomainUUID() || ""),
-			),
+		visibleRoomsForDomain(socketStore.rooms(), socketStore.currentDomainUUID()),
 	);
 
 	return (

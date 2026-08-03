@@ -19,6 +19,10 @@ const QuickActions = (props: QuickActionsProps) => {
 	let createRoomModalRef!: HTMLDialogElement;
 
 	const handleCreateRoom = () => {
+		if (!socketStore.currentDomainUUID()) {
+			showToast("请先选择域", { type: "warning" });
+			return;
+		}
 		createRoomModalRef?.showModal?.();
 	};
 
@@ -27,16 +31,29 @@ const QuickActions = (props: QuickActionsProps) => {
 	};
 
 	const handleJoinRandom = () => {
-		const rooms = socketStore.rooms().filter((room) => room.count < room.limit);
+		const domainUUID = socketStore.currentDomainUUID();
+		if (!domainUUID) {
+			showToast("请先选择域", { type: "warning" });
+			return;
+		}
+		const rooms = socketStore
+			.rooms()
+			.filter(
+				(room) =>
+					room.count < room.limit && (room.domain_uuid || "") === domainUUID,
+			);
 		if (rooms.length === 0) {
-			showToast("当前没有可加入的房间", { type: "warning" });
+			showToast("当前域没有可加入的房间", { type: "warning" });
 			return;
 		}
 		const target = [...rooms].sort((a, b) => b.count - a.count)[0];
 		socketStore.selectRoom(target);
-		const domainUUID = target.domain_uuid;
-		if (domainUUID)
-			navigate({ to: "/domain/$domainUUID", params: { domainUUID } });
+		const targetDomainUUID = target.domain_uuid;
+		if (targetDomainUUID)
+			navigate({
+				to: "/domain/$domainUUID",
+				params: { domainUUID: targetDomainUUID },
+			});
 		else navigate({ to: "/discover" });
 	};
 

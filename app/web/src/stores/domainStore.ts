@@ -99,6 +99,11 @@ export function createDomainStore() {
 		}
 	};
 
+	const activateDomain = (uuid: string) => {
+		setCurrentDomain(uuid);
+		void loadMembers(uuid).catch(() => {});
+	};
+
 	const loadMembers = async (domainUUID: string) => {
 		if (removedUUIDs.has(domainUUID)) return state.memberCache[domainUUID];
 		const generation = currentGeneration(domainUUID);
@@ -175,6 +180,7 @@ export function createDomainStore() {
 		loadMyDomains,
 		ensureDomainLoaded,
 		setCurrentDomain,
+		activateDomain,
 		loadMembers,
 		updateCachedDomain,
 		addDomain,

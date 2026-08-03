@@ -4,6 +4,7 @@ import {
 	canDeleteRoomItem,
 	canEditRoomItem,
 	toEditRoomRecord,
+	visibleRoomsForDomain,
 } from "./roomListUtils";
 
 const room: RoomInfo = {
@@ -137,5 +138,28 @@ describe("toEditRoomRecord", () => {
 			allow_audience: true,
 			type: "text",
 		});
+	});
+});
+
+describe("visibleRoomsForDomain", () => {
+	const orphan: RoomInfo = {
+		id: 2,
+		uuid: "orphan-1",
+		name: "orphan",
+		domain_uuid: "",
+		hasPassword: false,
+		limit: 10,
+		type: "voice",
+		members: [],
+		count: 0,
+		createdAt: 0,
+	};
+
+	it("returns no rooms before a domain is selected", () => {
+		expect(visibleRoomsForDomain([room, orphan], undefined)).toEqual([]);
+	});
+
+	it("only returns rooms that belong to the selected domain", () => {
+		expect(visibleRoomsForDomain([room, orphan], "domain-1")).toEqual([room]);
 	});
 });

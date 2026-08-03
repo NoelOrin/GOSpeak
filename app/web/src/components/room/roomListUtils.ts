@@ -1,6 +1,14 @@
 import type { RoomRecord } from "@/api/room";
 import type { RoomInfo } from "@/socket/types";
 
+export function visibleRoomsForDomain(
+	rooms: RoomInfo[],
+	domainUUID: string | null | undefined,
+): RoomInfo[] {
+	if (!domainUUID) return [];
+	return rooms.filter((room) => room.domain_uuid === domainUUID);
+}
+
 export function canEditRoomItem(
 	currentUser: { uuid?: string } | null,
 	domain: { owner_uuid?: string } | null,

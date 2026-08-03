@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/solid-router";
-import Search from "lucide-solid/icons/search";
+// import Search from "lucide-solid/icons/search";
 import MessageSquare from "lucide-solid/icons/message-square";
 import Home from "lucide-solid/icons/home";
 import Settings from "lucide-solid/icons/settings";
@@ -75,12 +75,14 @@ const Sidebar = (props: SidebarProps) => {
 			</div>
 			<div class="flex-1 min-h-0 overflow-y-auto pb-3">
 				<div class="flex flex-col items-center gap-2">
+					{/* 发现服务器
 					<OptionSquare
 						label="发现服务器"
 						onClick={() => navigate({ to: "/discover" })}
 					>
 						<Search {...iconProps} />
 					</OptionSquare>
+					*/}
 					<For each={domains() || []}>
 						{(domain) => (
 							<DomainIcon
@@ -88,6 +90,7 @@ const Sidebar = (props: SidebarProps) => {
 								iconUrl={domain.icon_url}
 								active={state.currentDomainUUID === domain.uuid}
 								onClick={() => void handleSelect(domain.uuid)}
+								requiresDoubleClick
 							/>
 						)}
 					</For>

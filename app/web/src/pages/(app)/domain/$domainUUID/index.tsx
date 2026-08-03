@@ -10,8 +10,11 @@ import { extractDomainInviteCode, domainInviteUrl } from "@/utils/domainInvite";
 import { hasPermission } from "@/utils/permissions";
 
 export const Route = createFileRoute("/(app)/domain/$domainUUID/")({
-	// component: RouteComponent,
-	component: () => <></>,
+	beforeLoad: ({ params }) => {
+		const { domainUUID } = params;
+		domainStore.activateDomain(domainUUID);
+	},
+	component: RouteComponent,
 	staticData: { title: "语音域", icon: "icon-domain" },
 });
 
@@ -29,13 +32,7 @@ function apiErrorMessage(error: unknown): string {
 function RouteComponent() {
 	const params = Route.useParams();
 	const navigate = useNavigate();
-	const {
-		state,
-		setCurrentDomain,
-		loadMembers,
-		leaveAndClear,
-		deleteAndClear,
-	} = domainStore;
+	const { state, activateDomain, leaveAndClear, deleteAndClear } = domainStore;
 	const [loading, setLoading] = createSignal(false);
 	const [error, setError] = createSignal("");
 	const [confirmAction, setConfirmAction] = createSignal<
@@ -46,8 +43,7 @@ function RouteComponent() {
 
 	createEffect(() => {
 		const uuid = params().domainUUID;
-		setCurrentDomain(uuid);
-		void loadMembers(uuid).catch(() => {});
+		activateDomain(uuid);
 	});
 
 	const currentUser = () => userStore.user();

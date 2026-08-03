@@ -397,10 +397,15 @@ export const socketStore = createRoot(() => {
 
 	// 7. room APIs (create/join/leave/list/kick/select)
 	function createRoom(name: string, password?: string) {
+		const domainUUID = currentDomainUUID();
+		if (!domainUUID) {
+			showToast("请先选择域", { type: "warning" });
+			return;
+		}
 		adapter.emitFireAndForget(EVENTS.ROOM_CREATE, {
 			room: name,
 			password,
-			domain_uuid: currentDomainUUID() ?? undefined,
+			domain_uuid: domainUUID,
 		});
 	}
 
@@ -543,9 +548,12 @@ export const socketStore = createRoot(() => {
 	}
 
 	function listRooms() {
-		adapter.emitFireAndForget(EVENTS.ROOM_LIST, {
-			domain_uuid: currentDomainUUID() ?? undefined,
-		});
+		const domainUUID = currentDomainUUID();
+		if (!domainUUID) {
+			setRooms([]);
+			return;
+		}
+		adapter.emitFireAndForget(EVENTS.ROOM_LIST, { domain_uuid: domainUUID });
 	}
 
 	function kickMember(room: string, targetIdentity: string) {
