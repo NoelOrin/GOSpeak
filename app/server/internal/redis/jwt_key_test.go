@@ -4,7 +4,12 @@ import (
 	"testing"
 	"time"
 
+	"sync"
+
 	"GOSpeak/internal/config"
+
+	"github.com/alicebob/miniredis/v2"
+	goredis "github.com/redis/go-redis/v9"
 )
 
 type stubAuthBackend struct {
@@ -37,7 +42,7 @@ func (s *stubAuthBackend) AddHistoryKey(key string) error {
 	return nil
 }
 func (s *stubAuthBackend) HistoryKeys() []string { return append([]string(nil), s.history...) }
-func (s *stubAuthBackend) Backend() string      { return "stub" }
+func (s *stubAuthBackend) Backend() string       { return "stub" }
 
 func TestGetSigningKey_DevUsesStaticEvenWithAuthBackend(t *testing.T) {
 	prevClient := Client
@@ -99,5 +104,56 @@ func TestGetSigningKey_ProdUsesAuthBackend(t *testing.T) {
 	got := string(GetSigningKey())
 	if got != "shared-prod-key" {
 		t.Fatalf("prod GetSigningKey = %q, want auth backend key", got)
+	}
+}
+
+func TestGetSigningKey_ConcurrentFirstUseCreatesOneKey(t *testing.T) {
+	prevClient := Client
+	prevAuth := secondaryAuth
+	prevProd := production
+	t.Cleanup(func() {
+		Client = prevClient
+		secondaryAuth = prevAuth
+		production = prevProd
+		config.SetCurrent(nil)
+	})
+
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(mr.Close)
+	Client = goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
+	production = true
+	config.SetCurrent(&config.Config{JWTKeyTTL: "24h"})
+
+	const goroutines = 16
+	keys := make(chan string, goroutines)
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			keys <- string(GetSigningKey())
+		}()
+	}
+	wg.Wait()
+	close(keys)
+
+	first := ""
+	for k := range keys {
+		if first == "" {
+			first = k
+		}
+		if k != first {
+			t.Fatalf("concurrent GetSigningKey returned different keys")
+		}
+	}
+	history, err := mr.SMembers("jwt:signing_key:history")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("first-use key created %d times, want 1", len(history))
 	}
 }

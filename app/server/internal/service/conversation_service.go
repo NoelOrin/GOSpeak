@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"sort"
 	"strings"
 	"time"
@@ -24,8 +25,9 @@ const (
 )
 
 type MessageListResult struct {
-	Messages   []MessageDTO `json:"messages"`
-	NextCursor string       `json:"next_cursor,omitempty"`
+	Messages    []MessageDTO `json:"messages"`
+	NextCursor  string       `json:"next_cursor,omitempty"`
+	UnreadCount int          `json:"unread_count,omitempty"` // 离线拉取时返回该会话当前未读数
 }
 
 type ConversationService struct {
@@ -143,7 +145,11 @@ func (s *ConversationService) GetMessages(conversationID, identity, before strin
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	out := &MessageListResult{Messages: make([]MessageDTO, 0, len(rows))}
+	unread := cp.UnreadCountB
+	if cp.IdentityA == identity {
+		unread = cp.UnreadCountA
+	}
+	out := &MessageListResult{UnreadCount: unread, Messages: make([]MessageDTO, 0, len(rows))}
 	for i := range rows {
 		out.Messages = append(out.Messages, toPrivateMessageDTO(&rows[i]))
 	}
@@ -218,7 +224,9 @@ func (s *ConversationService) SendDirect(senderIdentity, targetIdentity, content
 	}
 
 	// Increment unread for receiver
-	_ = s.convRepo.IncrementUnread(convID, senderIdentity)
+	if err := s.convRepo.IncrementUnread(convID, senderIdentity); err != nil {
+		log.Printf("[Conversation] increment unread %s failed: %v", convID, err)
+	}
 
 	dto := &MessageDTO{
 		UUID:           msgUUID,
@@ -235,8 +243,12 @@ func (s *ConversationService) SendDirect(senderIdentity, targetIdentity, content
 	// Hub.OnConnect 会把每个已认证连接加入 __user:{identity}。
 	if s.eventBus != nil {
 		payload, _ := json.Marshal(dto)
-		_ = s.eventBus.PublishRoom(context.Background(), "__user:"+senderIdentity, "private:new", payload)
-		_ = s.eventBus.PublishRoom(context.Background(), "__user:"+targetIdentity, "private:new", payload)
+		if err := s.eventBus.PublishRoom(context.Background(), "__user:"+senderIdentity, "private:new", payload); err != nil {
+			log.Printf("[Conversation] publish private:new to sender %s failed: %v", senderIdentity, err)
+		}
+		if err := s.eventBus.PublishRoom(context.Background(), "__user:"+targetIdentity, "private:new", payload); err != nil {
+			log.Printf("[Conversation] publish private:new to receiver %s failed: %v", targetIdentity, err)
+		}
 	}
 	// Persist message
 	convIDPtr := convID

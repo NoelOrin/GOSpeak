@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"sync"
 	"time"
 
 	"GOSpeak/internal/config"
@@ -23,6 +24,9 @@ const (
 // 生产模式下未配置 JWT_KEY 且未连接 Redis 时拒绝启动，避免使用公开的默认密钥签发 token。
 var production bool
 
+// keyMu 串行化签名密钥的读取与轮换，避免并发首启时各自生成并写入不同密钥。
+var keyMu sync.Mutex
+
 // SetProductionMode 标记当前为生产环境，应在 gin.go 启动时调用。
 func SetProductionMode() {
 	production = true
@@ -32,6 +36,8 @@ func SetProductionMode() {
 // 密钥永不过期（无 TTL），由 RotateSigningKey 主动轮换。
 // 开发环境且未接 Redis 时固定使用 JWT_KEY，避免内嵌 NATS 重启导致随机密钥丢失、强制重新登录。
 func GetSigningKey() []byte {
+	keyMu.Lock()
+	defer keyMu.Unlock()
 	if Client == nil {
 		// 开发态：静态密钥优先，不把随机密钥写进易失 AuthStore。
 		if !production {
@@ -102,6 +108,8 @@ func ShouldRotateKey() bool {
 // 原子性地：备份旧密钥 → 写入新密钥 → 更新创建时间。
 // 返回新密钥。
 func RotateSigningKey() []byte {
+	keyMu.Lock()
+	defer keyMu.Unlock()
 	if Client == nil {
 		// 开发态始终返回静态 JWT_KEY。
 		if !production || secondaryAuth == nil {
