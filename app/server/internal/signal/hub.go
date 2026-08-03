@@ -762,8 +762,9 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	}
 	roomSetMember(room, c.ID(), identity, member)
 	h.registerStreamLocked(roomKey(req.DomainUUID, req.Room), identity, req.Stream)
-	memberList := h.getMembersLocked(roomKey(req.DomainUUID, req.Room))
+	memberList := h.memberSnapshotLocked(roomKey(req.DomainUUID, req.Room))
 	h.mu.Unlock()
+	memberList = h.enrichMembers(memberList)
 	h.syncRoomToStore(roomKey(req.DomainUUID, req.Room))
 	if req.Stream != "" {
 		h.syncStreamPut(req.Stream, roomKey(req.DomainUUID, req.Room), identity)
@@ -1132,13 +1133,39 @@ func (h *Hub) OnMemberSpeaking(c ws.ClientMessenger, data string) {
 		return
 	}
 
-	h.mu.Lock()
+	// 先在校验锁内确认调用者是本人，再在锁外做禁言检查，避免 DB 查询阻塞信令。
+	h.mu.RLock()
 	room, ok := h.rooms[roomKey(req.DomainUUID, req.Room)]
+	if !ok {
+		h.mu.RUnlock()
+		return
+	}
+	caller := room.Members[c.ID()]
+	valid := caller != nil && caller.Identity == req.Identity
+	h.mu.RUnlock()
+	if !valid {
+		return
+	}
+
+	// 与 join 一致做禁言检查（fail-closed）：被禁言或检查失败时忽略发言态上报。
+	if h.muteStore != nil {
+		muted, _, muteErr := h.muteStore.IsMutedByIdentity(req.Identity)
+		if muteErr != nil {
+			log.Printf("[signal] OnMemberSpeaking IsMutedByIdentity error: identity=%q err=%v", req.Identity, muteErr)
+			return
+		}
+		if muted {
+			return
+		}
+	}
+
+	h.mu.Lock()
+	room, ok = h.rooms[roomKey(req.DomainUUID, req.Room)]
 	if !ok {
 		h.mu.Unlock()
 		return
 	}
-	caller := room.Members[c.ID()]
+	caller = room.Members[c.ID()]
 	if caller == nil || caller.Identity != req.Identity {
 		h.mu.Unlock()
 		return
@@ -1244,6 +1271,14 @@ func (h *Hub) getMergedRoomsScoped(domainUUID string, platformOnly bool) []RoomI
 			memRooms[name] = h.roomInfoLocked(name)
 		}
 		h.mu.RUnlock()
+		// 无 KV 合并时在锁外补全成员资料/禁言；有 KV 时后续 GetRoomMembersMerged 已含该补全。
+		if h.membershipStore == nil {
+			for name, info := range memRooms {
+				info.Members = h.enrichMembers(info.Members)
+				info.Count = len(info.Members)
+				memRooms[name] = info
+			}
+		}
 		return nil
 	})
 
@@ -1350,11 +1385,14 @@ func (h *Hub) GetStats() HubStats {
 
 func (h *Hub) GetSFURooms() []RoomInfo {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-
 	result := make([]RoomInfo, 0, len(h.rooms))
 	for key := range h.rooms {
 		result = append(result, h.roomInfoLocked(key))
+	}
+	h.mu.RUnlock()
+	for i := range result {
+		result[i].Members = h.enrichMembers(result[i].Members)
+		result[i].Count = len(result[i].Members)
 	}
 	return result
 }
@@ -1448,9 +1486,7 @@ func (h *Hub) CheckRoomPassword(domainUUID, roomName, password string) (ok bool,
 }
 
 func (h *Hub) GetRoomMembers(roomName string) []MemberInfo {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.getMembersLocked(roomName)
+	return h.getMembers(roomName)
 }
 
 // IsIdentityMuted 检查指定 identity（用户名）是否被禁言
@@ -1693,6 +1729,7 @@ func (h *Hub) OnDomainDelete(domainUUID string) {
 	var sfuRooms []string
 	var roomKeys []string
 	var deletedStreams []string
+	var closedClients []ws.ClientMessenger
 	h.mu.Lock()
 	for key, room := range h.rooms {
 		if !strings.HasPrefix(key, prefix) {
@@ -1709,12 +1746,29 @@ func (h *Hub) OnDomainDelete(domainUUID string) {
 				}
 			}
 			delete(h.connSlots, sid)
+			if client := h.fanout.GetClient(sid); client != nil {
+				// Fanout.GetClient 对已删除 key 会返回带类型的 nil 指针；该 socket 已断开，跳过避免误 Close。
+				if typed, ok := client.(*ws.Client); ok && typed == nil {
+					continue
+				}
+				closedClients = append(closedClients, client)
+			}
 			h.fanout.Remove(sid)
 		}
 		delete(h.rooms, key)
 		roomKeys = append(roomKeys, key)
 	}
 	h.mu.Unlock()
+
+	// 在锁外关闭成员连接，避免 Close 阻塞拖住所有信令。
+	closed := make(map[string]struct{}, len(closedClients))
+	for _, client := range closedClients {
+		if _, ok := closed[client.ID()]; ok {
+			continue
+		}
+		closed[client.ID()] = struct{}{}
+		client.Close()
+	}
 
 	// 清理 SFU 侧
 	for _, room := range sfuRooms {
@@ -1971,7 +2025,9 @@ func (h *Hub) identityForUserID(userID uint) string {
 
 // ─── 内部辅助 ───
 
-func (h *Hub) getMembersLocked(roomName string) []MemberInfo {
+// memberSnapshotLocked 仅拷贝房间成员快照与本地麦克风状态，不做任何 IO。
+// 调用方须持有 h.mu（读或写）；用户资料与禁言状态由 enrichMembers 在锁外补齐。
+func (h *Hub) memberSnapshotLocked(roomName string) []MemberInfo {
 	room, exists := h.rooms[roomName]
 	if !exists {
 		return nil
@@ -1979,22 +2035,44 @@ func (h *Hub) getMembersLocked(roomName string) []MemberInfo {
 	members := make([]MemberInfo, 0, len(room.Members))
 	for _, m := range room.Members {
 		info := *m
-		if h.userStore != nil {
-			if u, err := h.userStore.GetByName(m.Identity); err == nil && u != nil {
-				info.Name = u.Name
-				info.DisplayName = u.DisplayName
-				info.Avatar = u.Avatar
-			}
-		}
-		if h.muteStore != nil {
-			if muted, _, _ := h.muteStore.IsMutedByIdentity(m.Identity); muted {
-				info.IsMuted = true
-			}
-		}
 		info.IsMicMuted = room.MicMuted[m.Identity]
 		members = append(members, info)
 	}
 	return members
+}
+
+// enrichMembers 在 h.mu 锁外为成员快照补全用户资料与禁言状态（DB/缓存 IO）。
+// 失败按原逻辑降级：查不到用户时保留成员自身字段，禁言查询失败按未禁言处理。
+func (h *Hub) enrichMembers(members []MemberInfo) []MemberInfo {
+	if members == nil {
+		return nil
+	}
+	out := make([]MemberInfo, len(members))
+	copy(out, members)
+	for i := range out {
+		m := &out[i]
+		if h.userStore != nil {
+			if u, err := h.userStore.GetByName(m.Identity); err == nil && u != nil {
+				m.Name = u.Name
+				m.DisplayName = u.DisplayName
+				m.Avatar = u.Avatar
+			}
+		}
+		if h.muteStore != nil {
+			if muted, _, _ := h.muteStore.IsMutedByIdentity(m.Identity); muted {
+				m.IsMuted = true
+			}
+		}
+	}
+	return out
+}
+
+// getMembers 返回房间成员完整信息；锁内只做快照，锁外补全 IO，避免大房间阻塞全部信令。
+func (h *Hub) getMembers(roomName string) []MemberInfo {
+	h.mu.RLock()
+	members := h.memberSnapshotLocked(roomName)
+	h.mu.RUnlock()
+	return h.enrichMembers(members)
 }
 
 func (h *Hub) roomInfoLocked(roomName string) RoomInfo {
@@ -2007,7 +2085,7 @@ func (h *Hub) roomInfoLocked(roomName string) RoomInfo {
 		Name:        room.Name,
 		DomainUUID:   func() string { g, _ := splitRoomKey(roomName); return g }(),
 		HasPassword: room.Password != "",
-		Members:     h.getMembersLocked(roomName),
+		Members:     h.memberSnapshotLocked(roomName),
 		Count:       len(room.Members),
 		CreatedAt:   room.CreatedAt.UnixMilli(),
 	}

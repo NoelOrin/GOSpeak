@@ -134,6 +134,8 @@ func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if u.cfg.Fanout != nil {
 				u.cfg.Fanout.Remove(clientID)
 			}
+			// OnConnect panic 时已 Accept 的连接不会进入读取循环，必须主动关闭。
+			client.Close()
 		}
 	}()
 

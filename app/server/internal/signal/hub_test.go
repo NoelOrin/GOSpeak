@@ -79,6 +79,7 @@ type mockClient struct {
 	claims  *pkg.Claims
 	emitted []interface{}
 	mu      sync.Mutex
+	closed  bool
 }
 
 func newMockClient(id string) *mockClient {
@@ -111,7 +112,17 @@ func (m *mockClient) SendErrorACK(id, event string, code int, message string) {
 	m.Send(map[string]interface{}{"id": id, "event": event, "error": map[string]interface{}{"code": code, "message": message}})
 }
 
-func (m *mockClient) Close() {}
+func (m *mockClient) Close() {
+	m.mu.Lock()
+	m.closed = true
+	m.mu.Unlock()
+}
+
+func (m *mockClient) isClosed() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.closed
+}
 
 // lastEvent returns the data of the most recent message with the given event name.
 func (m *mockClient) lastEvent(event string) interface{} {

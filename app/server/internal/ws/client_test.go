@@ -54,6 +54,19 @@ func TestClient_SendACK(t *testing.T) {
 	}
 }
 
+func TestClient_SendQueueFull_DropsIncrement(t *testing.T) {
+	c := NewTestClient("c1", nil)
+	for i := 0; i < cap(c.writeCh); i++ {
+		c.writeCh <- []byte{1}
+	}
+	if ok := c.Send(map[string]string{"msg": "overflow"}); ok {
+		t.Fatal("expected Send to fail when queue is full")
+	}
+	if got := c.DroppedCount(); got != 1 {
+		t.Fatalf("expected dropped count 1, got %d", got)
+	}
+}
+
 func TestClient_SendErrorACK(t *testing.T) {
 	c := NewTestClient("c1", nil)
 	c.SendErrorACK("req-1", "event:fail", 5001, "error msg")
