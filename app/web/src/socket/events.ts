@@ -20,6 +20,7 @@ export const EVENTS = {
 	// 发言检测（无 SFU 原生 active speaker 的 provider：SRS / Cloudflare）
 	MEMBER_SPEAKING: "member:speaking",
 	ROOM_ACTIVE_SPEAKERS: "room:active-speakers",
+	// 已禁用保留：mediasoup 信令常量保留，socketStore 不再使用。
 	SFU_GET_ROUTER_CAPABILITIES: "sfu:get-router-capabilities",
 	SFU_CREATE_TRANSPORT: "sfu:create-transport",
 	SFU_CONNECT_TRANSPORT: "sfu:connect-transport",

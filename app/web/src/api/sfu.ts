@@ -9,8 +9,6 @@ export type { SFUProvider } from "@gospeak/sfu-client/types";
 export interface SFUProviderCapabilities {
 	/** @deprecated use server-side media capabilities instead */
 	supportsParticipants: boolean;
-	/** @deprecated MediaSoup-only frontend adapter flag */
-	requiresSignalAdapter: boolean;
 	/** @deprecated kick always goes through signal; use serverKick for media force */
 	kickViaSignal: boolean;
 	// Media-layer hard-enforcement (from backend sfu.Capabilities)
@@ -114,54 +112,6 @@ export const SFU_ENFORCEMENT_PROFILES: Record<
 			},
 		],
 	},
-	mediasoup: {
-		provider: "mediasoup",
-		summary: "经 bridge 强制 pause/close；需专属 WebSocket 信令适配。",
-		details: [
-			{
-				key: "serverMute",
-				label: "服务端静音",
-				level: "hard",
-				impl: "PauseProducer / PauseParticipant",
-				fallback: "信令 user:muted + 前端停麦",
-			},
-			{
-				key: "serverKick",
-				label: "服务端踢人",
-				level: "hard",
-				impl: "CloseParticipant 关闭 transport",
-				fallback: "信令 room:kicked + 成员表移除",
-			},
-			{
-				key: "deleteRoom",
-				label: "删除房间",
-				level: "hard",
-				impl: "bridge 清理 router/room",
-				fallback: "信令清房间",
-			},
-			{
-				key: "listMembers",
-				label: "成员列表",
-				level: "hard",
-				impl: "bridge ListParticipants",
-				fallback: "不与 WS 在线表互相伪装",
-			},
-			{
-				key: "listRooms",
-				label: "房间列表",
-				level: "hard",
-				impl: "bridge ListRouters",
-				fallback: "不与信令房间表互相伪装",
-			},
-			{
-				key: "adminToken",
-				label: "管理 Token",
-				level: "none",
-				impl: "无 admin join token，bridge 自身鉴权",
-				fallback: "返回 not supported",
-			},
-		],
-	},
 	agora: {
 		provider: "agora",
 		summary: "无原生 mute/kick REST；用 kicking-rule 做降级 hard。",
@@ -255,54 +205,6 @@ export const SFU_ENFORCEMENT_PROFILES: Record<
 				level: "hard",
 				impl: "HMAC/JWT stream admin token",
 				fallback: "无 secret 时拒签",
-			},
-		],
-	},
-	daily: {
-		provider: "daily",
-		summary: "踢人 REST 可用；静音无可靠服务端 track mute，走 soft。",
-		details: [
-			{
-				key: "serverMute",
-				label: "服务端静音",
-				level: "soft",
-				impl: "无服务端轨道静音 API",
-				fallback: "信令 user:muted + 前端 setMicEnabled(false)",
-			},
-			{
-				key: "serverKick",
-				label: "服务端踢人",
-				level: "hard",
-				impl: "presence 查 session id → remove participant",
-				fallback: "信令 room:kicked",
-			},
-			{
-				key: "deleteRoom",
-				label: "删除房间",
-				level: "hard",
-				impl: "DELETE /rooms/{name}",
-				fallback: "信令清房间",
-			},
-			{
-				key: "listMembers",
-				label: "成员列表",
-				level: "hard",
-				impl: "rooms/{name}/presence",
-				fallback: "不与 WS 在线表互相伪装",
-			},
-			{
-				key: "listRooms",
-				label: "房间列表",
-				level: "hard",
-				impl: "GET /rooms",
-				fallback: "不与信令房间表互相伪装",
-			},
-			{
-				key: "adminToken",
-				label: "管理 Token",
-				level: "none",
-				impl: "管理使用 API Key，非 meeting token",
-				fallback: "返回 not supported",
 			},
 		],
 	},
@@ -429,9 +331,7 @@ export interface JoinTokenResponse {
 	identity: string;
 	provider?: SFUProvider;
 	appId?: string;
-	bridgeUrl?: string;
 	whipUrl?: string;
-	dailyDomain?: string;
 	stream?: string;
 	streamToken?: string;
 	capabilities?: SFUMediaCapabilities;
@@ -444,7 +344,6 @@ export const SFU_PROVIDER_CAPABILITIES: Record<
 > = {
 	livekit: {
 		supportsParticipants: true,
-		requiresSignalAdapter: false,
 		kickViaSignal: true,
 		serverMute: true,
 		serverKick: true,
@@ -455,18 +354,6 @@ export const SFU_PROVIDER_CAPABILITIES: Record<
 	},
 	agora: {
 		supportsParticipants: true,
-		requiresSignalAdapter: false,
-		kickViaSignal: true,
-		serverMute: true,
-		serverKick: true,
-		deleteRoom: true,
-		adminToken: false,
-		listRooms: true,
-		listMembers: true,
-	},
-	mediasoup: {
-		supportsParticipants: true,
-		requiresSignalAdapter: true,
 		kickViaSignal: true,
 		serverMute: true,
 		serverKick: true,
@@ -477,7 +364,6 @@ export const SFU_PROVIDER_CAPABILITIES: Record<
 	},
 	srs: {
 		supportsParticipants: true,
-		requiresSignalAdapter: false,
 		kickViaSignal: true,
 		serverMute: true,
 		serverKick: true,
@@ -486,20 +372,8 @@ export const SFU_PROVIDER_CAPABILITIES: Record<
 		listRooms: true,
 		listMembers: true,
 	},
-	daily: {
-		supportsParticipants: true,
-		requiresSignalAdapter: false,
-		kickViaSignal: true,
-		serverMute: false,
-		serverKick: true,
-		deleteRoom: true,
-		adminToken: false,
-		listRooms: true,
-		listMembers: true,
-	},
 	cloudflare: {
 		supportsParticipants: true,
-		requiresSignalAdapter: false,
 		kickViaSignal: true,
 		serverMute: false,
 		serverKick: true,
@@ -524,17 +398,12 @@ export interface SFUConfig {
 	agora_customer_id: string;
 	agora_customer_secret: string;
 	agora_customer_secret_set?: boolean;
-	mediasoup_bridge_url: string;
-	mediasoup_host: string;
 	srs_host: string;
 	srs_api_port: string;
 	srs_secret: string;
 	srs_secret_set?: boolean;
 	srs_whip_url: string;
 	srs_public_host: string;
-	daily_api_key: string;
-	daily_api_key_set?: boolean;
-	daily_domain: string;
 	cf_app_id: string;
 	cf_app_secret: string;
 	cf_app_secret_set?: boolean;
@@ -556,7 +425,6 @@ export type UpdateSFUConfigParams = {
 		| "agora_app_certificate_set"
 		| "agora_customer_secret_set"
 		| "srs_secret_set"
-		| "daily_api_key_set"
 		| "cf_app_secret_set"
 	>
 >;

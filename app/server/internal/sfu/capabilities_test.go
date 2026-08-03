@@ -21,7 +21,7 @@ func TestCapabilitiesForSRSMuteDegraded(t *testing.T) {
 
 func TestAllProviderCapabilitiesCoversKnownProviders(t *testing.T) {
 	all := AllProviderCapabilities()
-	for _, name := range []string{"livekit", "agora", "mediasoup", "srs", "daily", "cloudflare"} {
+	for _, name := range []string{"livekit", "agora", "srs", "cloudflare"} {
 		if _, ok := all[name]; !ok {
 			t.Fatalf("missing provider %s", name)
 		}

@@ -12,15 +12,11 @@ export const emptyForm: UpdateSFUConfigParams = {
 	agora_host: "",
 	agora_customer_id: "",
 	agora_customer_secret: "",
-	mediasoup_bridge_url: "",
-	mediasoup_host: "",
 	srs_host: "",
 	srs_api_port: "1985",
 	srs_secret: "",
 	srs_whip_url: "",
 	srs_public_host: "",
-	daily_api_key: "",
-	daily_domain: "",
 	cf_app_id: "",
 	cf_app_secret: "",
 	cf_stun_url: "stun.cloudflare.com:3478",
@@ -39,7 +35,6 @@ export const PROVIDER_FIELD_KEYS: Record<
 		"agora_customer_id",
 		"agora_customer_secret",
 	],
-	mediasoup: ["mediasoup_bridge_url", "mediasoup_host"],
 	srs: [
 		"srs_host",
 		"srs_api_port",
@@ -47,20 +42,15 @@ export const PROVIDER_FIELD_KEYS: Record<
 		"srs_whip_url",
 		"srs_public_host",
 	],
-	daily: ["daily_api_key", "daily_domain"],
 	cloudflare: ["cf_app_id", "cf_app_secret", "cf_stun_url"],
 };
 
 export const PROVIDER_OPTIONS: { value: SFUProvider; label: string }[] = [
 	{ value: "livekit", label: "LiveKit" },
 	{ value: "agora", label: "Agora" },
-	{ value: "mediasoup", label: "MediaSoup" },
 	{ value: "srs", label: "SRS" },
-	{ value: "daily", label: "Daily" },
 	{ value: "cloudflare", label: "Cloudflare" },
 ];
-
-export const DISABLED_PROVIDERS: SFUProvider[] = ["mediasoup"];
 
 export function emptyFormForProvider(
 	provider: SFUProvider,
@@ -92,12 +82,8 @@ export function isProviderConfigured(
 			return !!config.livekit_host;
 		case "agora":
 			return !!config.agora_app_id;
-		case "mediasoup":
-			return !!config.mediasoup_bridge_url;
 		case "srs":
 			return !!config.srs_host;
-		case "daily":
-			return !!config.daily_domain;
 		case "cloudflare":
 			return !!config.cf_app_id;
 		default:
@@ -110,7 +96,6 @@ export type SecretFlags = {
 	agora_app_certificate_set: boolean;
 	agora_customer_secret_set: boolean;
 	srs_secret_set: boolean;
-	daily_api_key_set: boolean;
 	cf_app_secret_set: boolean;
 };
 
@@ -120,7 +105,6 @@ export function emptySecretFlags(): SecretFlags {
 		agora_app_certificate_set: false,
 		agora_customer_secret_set: false,
 		srs_secret_set: false,
-		daily_api_key_set: false,
 		cf_app_secret_set: false,
 	};
 }
@@ -133,7 +117,6 @@ export function secretFlagsFromConfig(
 		agora_app_certificate_set: !!data?.agora_app_certificate_set,
 		agora_customer_secret_set: !!data?.agora_customer_secret_set,
 		srs_secret_set: !!data?.srs_secret_set,
-		daily_api_key_set: !!data?.daily_api_key_set,
 		cf_app_secret_set: !!data?.cf_app_secret_set,
 	};
 }

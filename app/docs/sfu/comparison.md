@@ -2,28 +2,26 @@
 
 ## 功能覆盖矩阵
 
-| 功能 | LiveKit | SRS | MediaSoup | Agora | Daily | Cloudflare |
-|------|---------|-----|-----------|-------|-------|------------|
-| `GenerateToken` | ✅ | ✅ (WHIP Bearer) | ✅ | ✅ | ✅ | ✅ (WHIP/WHEP) |
-| `GenerateAdminToken` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `ListRooms` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `ListParticipants` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `MuteParticipant` | ✅ 服务端强制 | ❌ (前端自行停止) | ❌ | ❌ | ❌ | ❌ |
-| `RemoveParticipant` | ✅ | ✅ (KickParticipant) | ✅ (bridge CloseParticipant) | ❌ | ✅ (list→session id) | ✅ |
-| `DeleteRoom` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `GetHost` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Webhook | ✅ | ✅ (HTTP Hooks) | ❌ | ❌ | ❌ | ❌ |
+| 功能 | LiveKit | SRS | Agora | Cloudflare |
+|------|---------|-----|-------|------------|
+| `GenerateToken` | ✅ | ✅ (WHIP Bearer) | ✅ | ✅ (WHIP/WHEP) |
+| `GenerateAdminToken` | ✅ | ✅ | ❌ | ❌ |
+| `ListRooms` | ✅ | ✅ | ✅ | ✅ (进程内缓存) |
+| `ListParticipants` | ✅ | ✅ | ✅ | ✅ (进程内缓存) |
+| `MuteParticipant` | ✅ 服务端强制 | ✅ 强制停推 | ✅ kicking-rule 降级 | ❌ (soft，前端停推) |
+| `RemoveParticipant` | ✅ | ✅ (KickParticipant) | ❌ | ✅ (DeleteSession) |
+| `DeleteRoom` | ✅ | ✅ | ✅ | ✅ (批量删 session) |
+| `GetHost` | ✅ | ✅ | ✅ | ✅ |
+| Webhook | ✅ | ✅ (HTTP Hooks) | ❌ | ❌ |
 
 ## 成熟度评级
 
 | Provider | 评级 | 说明 |
 |----------|------|------|
 | **LiveKit** | ⭐⭐⭐⭐⭐ | 最完整。所有 Provider 接口均可工作，Webhook 集成完善 |
-| **SRS** | ⭐⭐⭐⭐ | 核心功能完整。Mute 不支持服务端强制，但 WHIP/WHEP 协议设计干净 |
-| **MediaSoup** | ⭐⭐⭐ | Token + 基础房间 API + 踢人可用，禁言需前端自行停止 |
-| **Agora** | ⭐⭐⭐ | Token 生成和基础查询工作，踢人/禁言未完整实现 |
-| **Daily** | ⭐⭐⭐ | Token、房间查询和踢人可用，禁言需前端自行停止 |
-| **Cloudflare** | ⭐⭐⭐ | Realtime SFU，WHIP/WHEP 媒体 + REST 房间/Token/踢人，全球边缘节点 |
+| **SRS** | ⭐⭐⭐⭐ | 核心功能完整。静音通过强制停推降级实现，WHIP/WHEP 协议设计干净 |
+| **Agora** | ⭐⭐⭐ | Token 和基础查询工作，静音/踢人通过 kicking-rule 降级实现 |
+| **Cloudflare** | ⭐⭐⭐ | Realtime SFU，WHIP/WHEP 媒体 + REST 房间/Token/踢人，列表仅进程内缓存 |
 
 ## 信令 vs SFU 分工
 
@@ -49,16 +47,9 @@ SFU_PROVIDER=livekit   # 踢人、禁言、Webhook 全套
 SFU_PROVIDER=srs   # 国产、高性能，GOSpeak 对 SRS 支持完善
 ```
 
-### 不需要服务端禁言
-
-```env
-SFU_PROVIDER=mediasoup  # 高度可定制，踢人可用
-```
-
-### 零运维（云服务）
+### 云服务
 
 ```env
 SFU_PROVIDER=agora       # 国内用户
-SFU_PROVIDER=daily       # 海外用户
-SFU_PROVIDER=cloudflare  # 全球边缘、WHIP/WHEP
+SFU_PROVIDER=cloudflare  # 海外用户、全球边缘、WHIP/WHEP
 ```

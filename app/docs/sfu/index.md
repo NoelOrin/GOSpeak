@@ -8,9 +8,7 @@ GOSpeak 通过 **Provider 抽象层**支持多种 SFU（Selective Forwarding Uni
 |----------|------|---------|--------|---------|
 | **LiveKit** | 自建 / 云 | Docker / LiveKit Cloud | ⭐⭐⭐⭐⭐ | 全功能、最成熟 |
 | **SRS** | 自建 | Docker | ⭐⭐⭐⭐ | 国产开源、高性能 |
-| **MediaSoup** | 自建 | Node.js Worker | ⭐⭐⭐ | 高度自定义 |
 | **Agora** | 云服务 | SDK 集成 | ⭐⭐⭐ | 不想管服务器 |
-| **Daily** | 云服务 | REST API | ⭐⭐⭐ | 快速集成 |
 | **Cloudflare** | 云服务 | WHIP/WHEP + REST | ⭐⭐⭐ | 全球边缘节点 |
 
 ## Provider 接口
@@ -39,9 +37,8 @@ type Provider interface {
   ├─ HTTP/WSS ──► Go Server ──► SFU Provider 抽象层
   │                                ├── LiveKit (自建/云)
   │                                ├── SRS (自建)
-  │                                ├── MediaSoup (自建)
   │                                ├── Agora (云)
-  │                                └── Daily (云)
+  │                                └── Cloudflare (云)
   └─ WebRTC ──► SFU 服务器 ──► 其他用户
 ```
 
@@ -81,8 +78,8 @@ Authorization: Bearer <admin-token>
 
 ## 自建 vs 云服务对比
 
-| 方面 | 自建 (SRS/LiveKit/MediaSoup) | 云 (Agora/Daily) |
-|------|------------------------------|-------------------|
+| 方面 | 自建 (SRS/LiveKit) | 云 (Agora/Cloudflare) |
+|------|--------------------|-----------------------|
 | 数据控制 | ✅ 完全自主 | ❌ 经过第三方 |
 | 费用 | 仅服务器成本 | 按分钟/带宽计费 |
 | 维护 | 需自己运维 | 零运维 |
@@ -96,8 +93,7 @@ Authorization: Bearer <admin-token>
 |----------|---------|
 | 游戏语音、完全自控 | **LiveKit**（完整功能）或 **SRS**（轻量）|
 | 快速搭建、功能全面 | **LiveKit** Docker |
-| 不想管基础设施 | **Agora**（国内）或 **Daily**（海外）|
-| 自定义信令/媒体逻辑 | **MediaSoup** |
+| 不想管基础设施 | **Agora**（国内）或 **Cloudflare**（海外）|
 | 本地开发测试 | **LiveKit** 或 **SRS** Docker |
 
 ## 各 SFU 配置文档
@@ -105,8 +101,6 @@ Authorization: Bearer <admin-token>
 - [LiveKit 自建 →](/sfu/livekit-selfhost)
 - [LiveKit 云服务 →](/sfu/livekit-cloud)
 - [SRS 自建 →](/sfu/srs-selfhost)
-- [MediaSoup 自建 →](/sfu/mediasoup-selfhost)
 - [Agora 云服务 →](/sfu/agora-cloud)
-- [Daily 云服务 →](/sfu/daily-cloud)
 - [Cloudflare 云服务 →](/sfu/cloudflare)
 - [成熟度对比 →](/sfu/comparison)

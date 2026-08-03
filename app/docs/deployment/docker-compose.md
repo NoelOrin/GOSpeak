@@ -11,7 +11,6 @@ GOSpeak 提供 `deploy/docker-compose.yml` 统一编排，通过 **profile** 按
 | `livekit` | LiveKit | LiveKit 自建方案 |
 | `redis` | Redis | JWT 密钥轮换 + Token 黑名单 |
 | `postgres` | PostgreSQL | 生产级数据库 |
-| `mediasoup` | MediaSoup Worker | MediaSoup 自建方案 |
 | `minio` | MinIO 对象存储 | S3 兼容存储 |
 
 ## 渐进式方案

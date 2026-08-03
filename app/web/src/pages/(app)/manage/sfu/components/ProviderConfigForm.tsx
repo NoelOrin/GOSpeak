@@ -177,42 +177,6 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 				</div>
 			</Show>
 
-			{/* MediaSoup config fields */}
-			<Show when={selectedProvider() === "mediasoup"}>
-				<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
-					<FormField label="Bridge URL" error={errors().mediasoup_bridge_url}>
-						<input
-							type="text"
-							class="input input-bordered input-sm w-full"
-							classList={{
-								"input-error": !!errors().mediasoup_bridge_url,
-							}}
-							placeholder="https://mediasoup-bridge.example.com"
-							value={form().mediasoup_bridge_url ?? ""}
-							onInput={(event) =>
-								updateField("mediasoup_bridge_url", event.currentTarget.value)
-							}
-							disabled={true}
-						/>
-					</FormField>
-					<FormField label="Host" error={errors().mediasoup_host}>
-						<input
-							type="text"
-							class="input input-bordered input-sm w-full"
-							classList={{
-								"input-error": !!errors().mediasoup_host,
-							}}
-							placeholder="wss://mediasoup.example.com"
-							value={form().mediasoup_host ?? ""}
-							onInput={(event) =>
-								updateField("mediasoup_host", event.currentTarget.value)
-							}
-							disabled={true}
-						/>
-					</FormField>
-				</div>
-			</Show>
-
 			{/* SRS config fields */}
 			<Show when={selectedProvider() === "srs"}>
 				<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
@@ -298,47 +262,6 @@ export default function ProviderConfigForm(props: ProviderConfigFormProps) {
 				</div>
 			</Show>
 
-			{/* Daily config fields */}
-			<Show when={selectedProvider() === "daily"}>
-				<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
-					<FormField label="API Key" error={errors().daily_api_key}>
-						<input
-							type="password"
-							class="input input-bordered input-sm w-full"
-							classList={{
-								"input-error": !!errors().daily_api_key,
-							}}
-							placeholder={
-								secretFlags().daily_api_key_set
-									? "已配置，留空保留"
-									: "Daily API key"
-							}
-							value={form().daily_api_key ?? ""}
-							onInput={(event) =>
-								updateField("daily_api_key", event.currentTarget.value)
-							}
-							disabled={saving()}
-						/>
-					</FormField>
-					<FormField label="Domain" error={errors().daily_domain}>
-						<input
-							type="text"
-							class="input input-bordered input-sm w-full"
-							classList={{
-								"input-error": !!errors().daily_domain,
-							}}
-							placeholder="your-team.daily.co"
-							value={form().daily_domain ?? ""}
-							onInput={(event) =>
-								updateField("daily_domain", event.currentTarget.value)
-							}
-							disabled={saving()}
-						/>
-					</FormField>
-				</div>
-			</Show>
-
-			{/* Cloudflare Realtime config fields */}
 			<Show when={selectedProvider() === "cloudflare"}>
 				<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
 					<FormField label="App ID" error={errors().cf_app_id}>

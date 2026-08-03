@@ -52,22 +52,6 @@ const agoraAdapter: VoiceProviderAdapter = {
 	joinKey: defaultJoinKey,
 };
 
-const dailyAdapter: VoiceProviderAdapter = {
-	provider: "daily",
-	resolveConnectTarget: (token) => token.dailyDomain || token.serverUrl,
-	signalJoinMode: "await",
-	serializeJoins: false,
-	joinKey: defaultJoinKey,
-};
-
-const mediasoupAdapter: VoiceProviderAdapter = {
-	provider: "mediasoup",
-	resolveConnectTarget: (token) => token.bridgeUrl || token.serverUrl,
-	signalJoinMode: "await",
-	serializeJoins: false,
-	joinKey: defaultJoinKey,
-};
-
 // Cloudflare Realtime：本端 publish 成功即可交互；stream 字段承载 sessionId，用于拉远端 track。
 const cloudflareAdapter: VoiceProviderAdapter = {
 	provider: "cloudflare",
@@ -89,8 +73,6 @@ const ADAPTERS: Record<SFUProvider, VoiceProviderAdapter> = {
 	livekit: livekitAdapter,
 	srs: srsAdapter,
 	agora: agoraAdapter,
-	daily: dailyAdapter,
-	mediasoup: mediasoupAdapter,
 	cloudflare: cloudflareAdapter,
 };
 

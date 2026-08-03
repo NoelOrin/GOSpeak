@@ -100,7 +100,7 @@ func (s *SFUConfigService) Get() (*model.SFUConfig, error) {
 // GetProviderConfig 返回指定 provider 的配置。未找到时以 env 默认值创建。
 func (s *SFUConfigService) GetProviderConfig(provider string) (*model.SFUConfig, error) {
 	if !isValidProvider(provider) {
-		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "invalid provider: must be livekit, agora, mediasoup, srs, daily, or cloudflare")
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "invalid provider: must be livekit, agora, srs, or cloudflare")
 	}
 	cfg, err := s.repo.GetByProvider(provider)
 	if err == nil {
@@ -120,7 +120,7 @@ func (s *SFUConfigService) GetProviderConfig(provider string) (*model.SFUConfig,
 // 每个 provider 的行独立，切换时其他 provider 的配置不受影响。
 func (s *SFUConfigService) UpdateFromDTO(req *UpdateSFUConfigRequest) (*model.SFUConfig, error) {
 	if !isValidProvider(req.Provider) {
-		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "provider must be livekit, agora, mediasoup, srs, daily, or cloudflare")
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "provider must be livekit, agora, srs, or cloudflare")
 	}
 
 	// 读取现有配置（若有），保留未在请求中发送的字段
@@ -143,6 +143,7 @@ func (s *SFUConfigService) UpdateFromDTO(req *UpdateSFUConfigRequest) (*model.SF
 		cfg.AgoraHost = req.AgoraHost
 		cfg.AgoraCustomerID = req.AgoraCustomerID
 		cfg.AgoraCustomerSecret = pkg.KeepSecret(req.AgoraCustomerSecret, cfg.AgoraCustomerSecret)
+	// 已禁用保留：mediasoup/daily 不再通过管理端启用。
 	case "mediasoup":
 		cfg.MediaSoupBridgeURL = req.MediaSoupBridgeURL
 		cfg.MediaSoupHost = req.MediaSoupHost
@@ -176,7 +177,7 @@ func (s *SFUConfigService) UpdateFromDTO(req *UpdateSFUConfigRequest) (*model.SF
 // SwitchProvider 切换当前激活的 provider，不修改配置。返回新激活 provider 的配置。
 func (s *SFUConfigService) SwitchProvider(provider string) (*model.SFUConfig, error) {
 	if !isValidProvider(provider) {
-		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "provider must be livekit, agora, mediasoup, srs, daily, or cloudflare")
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "provider must be livekit, agora, srs, or cloudflare")
 	}
 	if err := s.repo.SetActiveProvider(provider); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -201,7 +202,7 @@ func (s *SFUConfigService) ListProviders() ([]model.SFUConfig, string, error) {
 // SyncFromEnv 启动时调用，将所有 provider 的 env 配置写入 DB（仅当该 provider 尚无 DB 记录时）。
 // 不会覆盖用户在 DB 中已保存的配置。
 func (s *SFUConfigService) SyncFromEnv() error {
-	providers := []string{"livekit", "agora", "mediasoup", "srs", "daily", "cloudflare"}
+	providers := []string{"livekit", "agora", "srs", "cloudflare"}
 	for _, p := range providers {
 		_, err := s.repo.GetByProvider(p)
 		if err == nil {
@@ -314,7 +315,7 @@ func (s *SFUConfigService) ResolveConfig() (*config.Config, error) {
 
 func isValidProvider(p string) bool {
 	switch p {
-	case "livekit", "agora", "mediasoup", "srs", "daily", "cloudflare":
+	case "livekit", "agora", "srs", "cloudflare":
 		return true
 	default:
 		return false

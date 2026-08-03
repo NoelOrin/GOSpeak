@@ -2,9 +2,8 @@ import type { SFUProvider } from "./provider";
 import type { SFUClient, SFUClientOptions } from "./types";
 
 const providerLoaders: Record<SFUProvider, () => Promise<unknown>> = {
-	daily: () => import("./daily-client"),
+	// MediaSoup/Daily 已禁用保留：对应 client 文件未注册，避免被工厂加载。
 	agora: () => import("./agora-client"),
-	mediasoup: () => import("./mediasoup-client"),
 	srs: () => import("./srs-client"),
 	livekit: () => import("./livekit-client"),
 	cloudflare: () => import("./cloudflare-client"),
@@ -26,23 +25,11 @@ export async function createSFUClient(
 	options?: SFUClientOptions,
 ): Promise<SFUClient> {
 	switch (provider) {
-		case "daily": {
-			const { DailySFUClient } = (await providerLoaders.daily()) as {
-				DailySFUClient: new (o?: SFUClientOptions) => SFUClient;
-			};
-			return new DailySFUClient(options);
-		}
 		case "agora": {
 			const { AgoraSFUClient } = (await providerLoaders.agora()) as {
 				AgoraSFUClient: new (o?: SFUClientOptions) => SFUClient;
 			};
 			return new AgoraSFUClient(options);
-		}
-		case "mediasoup": {
-			const { MediaSoupSFUClient } = (await providerLoaders.mediasoup()) as {
-				MediaSoupSFUClient: new (o?: SFUClientOptions) => SFUClient;
-			};
-			return new MediaSoupSFUClient(options);
 		}
 		case "srs": {
 			const { SRSSFUClient } = (await providerLoaders.srs()) as {

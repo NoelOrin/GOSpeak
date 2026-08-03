@@ -12,7 +12,7 @@
   │                      └─ /rtc/v1            ──► srs:1985   (SRS 模式)
   ├─ WebRTC UDP/TCP :8000 ──► srs 直连媒体
 
-gospeak ──HTTP──► srs:1985 | livekit:7880 | mediasoup:3012
+gospeak ──HTTP──► srs:1985 | livekit:7880 | cloudflare API
 gospeak ──DB────► sqlite volume | postgres
 gospeak ──Redis─► redis (可选)
 ```
@@ -97,7 +97,6 @@ pnpm dev:web
 | 1985 | srs | HTTP API / WHIP 源 |
 | 8000/udp+tcp | srs | WebRTC 媒体 |
 | 7880-7882 | livekit | LiveKit 控制/媒体 |
-| 3012 | mediasoup | bridge HTTP |
 | 5432 | postgres | DB |
 | 6379 | redis | 缓存/JWT |
 | 9000/9001 | minio | 对象存储 |
@@ -106,7 +105,7 @@ pnpm dev:web
 
 | 变量 | 作用 |
 |------|------|
-| `SFU_PROVIDER` | `srs` / `livekit` / `mediasoup` ... |
+| `SFU_PROVIDER` | `srs` / `livekit` / `agora` / `cloudflare` |
 | `SRS_HOST` | Go→SRS 管理 API, compose 内填 `srs` |
 | `SRS_PUBLIC_HOST` | 浏览器侧 serverUrl 前缀, 如 `https://domain` |
 | `SRS_SECRET` | stream/room token HMAC, 必填 |

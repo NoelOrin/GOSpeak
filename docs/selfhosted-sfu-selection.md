@@ -13,9 +13,7 @@
 |----------|--------|----------|----------|----------|----------------|
 | LiveKit | ✅ | 活跃 | Docker | gRPC + REST | 9/9 ✅ |
 | SRS | ✅ | 活跃 | Docker | HTTP WHIP/WHEP | 6/9 |
-| MediaSoup | ✅ | 活跃 | Node.js 进程 | 自定义 bridge | 5/9 |
 | Agora | ❌ Cloud-only | 活跃 | N/A | REST | 6/9 |
-| Daily | ❌ Cloud-only | 活跃 | N/A | REST | 5/9 |
 
 ---
 
@@ -103,42 +101,6 @@ client.MuteParticipant(room, id, sid, b)  // ✅
 
 ---
 
-### 2.3 MediaSoup（已集成）
-
-| 项目 | |
-|------|--|
-| 仓库 | github.com/versatica/mediasoup |
-| 语言 | C++（核心）+ Node.js（API） |
-| License | ISC |
-| 推荐度 | ★★★☆☆ |
-
-**部署**: mediasoup-worker 子进程 + Node.js 服务桥接
-
-**特点**: 底层媒体库，非开箱即用 SFU 服务，需自行搭建信令桥
-
-**Provider 覆盖**:
-
-| 方法 | 状态 | 说明 |
-|------|------|------|
-| `GenerateToken` | ✅ | 由中介 `mediasoup-worker` 自定义实现 |
-| `ListRooms` | ✅ | 由 GOSpeak 服务自行维护 |
-| `ListParticipants` | ❌ | bridge 无参与列表端点 |
-| `MuteParticipant/MuteRoomParticipant` | ❌ | `notSupportedErr()` |
-| `RemoveParticipant` | ❌ | `notSupportedErr()` |
-| `DeleteRoom` | ✅ | 关闭 Router |
-
-**优点**:
-- 底层能力极强：Simulcast、SVC、PipeTransport
-- 模块化，可深度定制
-- 纯 C++ 核心，性能上限高
-
-**缺点**:
-- 非 SFU 服务，是媒体引擎——需自建完整信令、房间、控制层
-- 必须有 mediasoup-worker 外部进程
-- 项目已有 mediator bridge（`mediasoup-worker/` + `packages/mediasoup-worker/`），但维护成本高
-- 无明显优势替代 LiveKit/SRS
-
----
 
 ### 2.4 Galene（新增候选）
 
@@ -331,11 +293,9 @@ session := s.NewSession(sfu.SessionConfig{...})
 |----------|-------|-----------|-----------|------|----------|------|------------|--------|------|------|
 | **LiveKit** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ 活跃 | Go |
 | **SRS** | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ 活跃 | C++ |
-| MediaSoup | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ 活跃 | C++/Node |
 | Galene | ✅ | ✅ | ⚠️ WS | ❌ | ❌ | ✅ WS | ✅ | ✅ | ✅ 活跃 | Go |
 | Ion SFU | ❌ | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ✅ | ✅ | ✅ | ❌ 停维 | Go |
 | Agora | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ 活跃 | REST |
-| Daily | ⚠️ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ 活跃 | REST |
 
 ### 3.2 Go 技术栈契合度
 
@@ -343,7 +303,6 @@ session := s.NewSession(sfu.SessionConfig{...})
 |----------|----------------------|----------|----------|-----------|
 | **LiveKit** | ✅ | Go Server | gRPC Go SDK | ★★★★★ |
 | **SRS** | ❌ C++ | Docker | HTTP | ★★★☆☆ |
-| MediaSoup | ❌ C++/Node | Docker + Node | HTTP Bridge | ★★☆☆☆ |
 | **Galene** | ✅ Go (pion-based) | 单二进 | HTTP + WS | ★★★★☆ |
 | Ion SFU | ✅ Go (pion-based) | 单二进 / 嵌入 | Go 包 import | ★★★☆☆(停维) |
 
@@ -355,7 +314,6 @@ session := s.NewSession(sfu.SessionConfig{...})
 | Ion SFU | 单二进 ~15MB | 无 | 低（TOML） | ❌ |
 | SRS | Docker 200MB+ | 无 | 中 | ❌ |
 | LiveKit | Docker 100MB+ | Redis | 中 | ✅ |
-| MediaSoup | Docker + Node | Redis(可选) | 高 | ❌ |
 
 ---
 
@@ -372,11 +330,9 @@ session := s.NewSession(sfu.SessionConfig{...})
             ┌──────────────┼──────────────┐
             │              │              │
         ┌───┴───┐    ┌────┴────┐    ┌────┴───┐
-        │  SRS   │    │ Galene  │    │ Mediasoup│
         └───┬───┘    └────┬────┘    └────┬───┘
             │              │              │
         轻量生产/        极轻量/         深度定制/
-        直播场景        教育场景         研究场景
             │              │              │
         ┌───┴───┐    ┌────┴────┐
         │ Ion   │    │  Janus  │
@@ -391,7 +347,6 @@ session := s.NewSession(sfu.SessionConfig{...})
 | 生产上线 | **LiveKit** | SRS | 功能完整、集群支持、Go 栈 |
 | 轻量自托管 | **SRS** | Galene | 单 docker、HTTP API 够用 |
 | 极简单机 | **Galene** | — | 单二进 10MB，零依赖 |
-| 与研究 | **MediaSoup** | — | 底层能力强、灵活定制 |
 | ~~纯 Go 嵌入~~ | — | — | Ion 停维，无合格替代 |
 
 ### 4.2 详细建议

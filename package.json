@@ -17,7 +17,7 @@
     "start:prod": "pnpm run prod:server",
     "format": "pnpm -r format",
     "prepare": "lefthook install",
-    "typecheck": "pnpm --filter @gospeak/web --filter @gospeak/bot --filter @gospeak/sfu-client --filter @gospeak/mediasoup-worker exec tsc --noEmit"
+    "typecheck": "pnpm --filter @gospeak/web --filter @gospeak/bot --filter @gospeak/sfu-client exec tsc --noEmit"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",

@@ -1,6 +1,6 @@
 # server 模块
 
-GoRTC 服务端入口，基于 Gin + WebSocket 的 WebRTC 信令服务器。媒体层通过多 provider SFU 抽象接入，支持 LiveKit、SRS、MediaSoup、Agora、Daily、Cloudflare 六种后端，运行时可切换。
+GoRTC 服务端入口，基于 Gin + WebSocket 的 WebRTC 信令服务器。媒体层通过多 provider SFU 抽象接入，支持 LiveKit、SRS、Agora、Cloudflare 四种后端，运行时可切换。
 
 ## 目录结构
 
@@ -24,8 +24,6 @@ server/
 │   │   └── providers/    # 各 SFU 后端实现
 │   │       ├── livekit/  # LiveKit 实现
 │   │       ├── agora/    # Agora 实现
-│   │       ├── daily/    # Daily 实现
-│   │       ├── mediasoup/# MediaSoup 实现
 │   │       ├── srs/      # SRS 实现（WHIP/WHEP）
 │   │       └── cloudflare/ # Cloudflare Realtime 实现
 │   ├── bus/              # 多实例事件总线（NATS/Redis）
@@ -50,16 +48,14 @@ go run main.go server -e dev   # 开发模式
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | SERVER_PORT | `8998` | HTTP 监听端口 |
-| SFU_PROVIDER | `livekit` | SFU 类型：`livekit` / `srs` / `mediasoup` / `agora` / `daily` / `cloudflare` |
+| SFU_PROVIDER | `livekit` | SFU 类型：`livekit` / `srs` / `agora` / `cloudflare` |
 | LIVEKIT_HOST | — | LiveKit 服务器地址 |
 | LIVEKIT_KEY | — | LiveKit API Key |
 | LIVEKIT_SECRET | — | LiveKit API Secret |
 | AGORA_APP_ID | — | Agora App ID |
 | AGORA_APP_CERTIFICATE | — | Agora App Certificate |
-| MEDIASOUP_BRIDGE_URL | `http://localhost:3012` | MediaSoup bridge 地址 |
 | SRS_HOST / SRS_API_PORT | `localhost` / `1985` | SRS 管理 API |
 | SRS_SECRET | — | SRS token HMAC 密钥（必填）|
-| DAILY_API_KEY / DAILY_DOMAIN | — | Daily 凭据 |
 | CF_APP_ID / CF_APP_SECRET / CF_STUN_URL | — / — / `stun.cloudflare.com:3478` | Cloudflare 凭据 |
 | DB_TYPE | `SQLite` | `SQLite` / `PostgresSQL` / `MYSQL` |
 | DB_WAL | `false` | SQLite WAL 模式开关（并发读建议开启）|
@@ -76,7 +72,7 @@ go run main.go server -e dev   # 开发模式
 main.go → cmd/ → server/gin.go
                    ├── internal/repository/ → SQLite/PostgreSQL/MySQL
                    ├── internal/sfu/        → SFU provider 抽象 / 动态分发
-                   │   └── providers/       → livekit|agora|daily|mediasoup|srs|cloudflare
+                   │   └── providers/       → livekit|agora|srs|cloudflare
                    ├── internal/bus/        → 多实例事件总线（NATS/Redis/fanout）
                    ├── internal/service/    → 业务逻辑层
                    ├── internal/handler/    → HTTP 处理层

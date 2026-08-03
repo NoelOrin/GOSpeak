@@ -28,9 +28,6 @@ broadcast-first + JetStream async persist 架构，双槽 Hub (text/voice)。
 
 `packages/bot/` 仅含 `package.json` (依赖 hono + await-to-js)，零源码。
 
-### mediasoup-worker — 🟡 初步可用
-
-`packages/mediasoup-worker/src/` 共 3 文件 ~295 行。有 Express API + worker 逻辑，离生产距离大。
 
 ### 前端占位/简陋文件
 
@@ -80,6 +77,5 @@ broadcast-first + JetStream async persist 架构，双槽 Hub (text/voice)。
 ### AGENTS.md 需同步
 
 1. 路由表缺 storage / mute / permission 三个路由组
-2. Provider 成熟度表缺 Daily、SRS
 3. `hooks/livekit/` 目录已删除，引用需替换为 `packages/sfu-client`
 4. `useSubcribeTrack.ts` / `useTitle.ts` 从 hooks 列表移除或标记待实现

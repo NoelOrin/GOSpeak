@@ -39,7 +39,7 @@ pnpm install
 docker compose -f deploy/docker-compose.example.yml up -d
 ```
 
-默认启动: LiveKit + Redis + MinIO。MediaSoup/SRS 见文件内注释启用。
+默认启动: LiveKit + Redis + MinIO。SRS 见文件内注释启用。
 
 ### 2.3 启动后端
 
@@ -117,13 +117,6 @@ pnpm start:dev
 | `LIVEKIT_KEY` | API Key |
 | `LIVEKIT_SECRET` | API Secret |
 
-**MediaSoup:**
-
-| 变量 | 说明 |
-|------|------|
-| `SFU_PROVIDER` | `mediasoup` |
-| `MEDIASOUP_BRIDGE_URL` | `http://localhost:3001` |
-| `MEDIASOUP_HOST` | `localhost:3001` |
 
 **SRS:** 见 `sfu-provider-maturity.md` 及对应客户端文档。
 
@@ -164,7 +157,7 @@ pnpm start:dev
 ### 应用层 Redis 复用规则
 
 - **用 LiveKit 时**（默认）→ LiveKit 自身需要 Redis 服务（下方 `redis`），C 档应用直接复用，设 `REDIS_HOST=redis`。不另起独立 Redis。
-- **不用 LiveKit**（纯 mediasoup/srs）又要应用 Redis → `docker compose -f deploy/docker-compose.example.yml --profile redis up -d` 起独立 `app-redis`，设 `REDIS_HOST=app-redis`（端口 6380，避让本机 6379）。
+- **不用 LiveKit**（纯 SRS）又要应用 Redis → `docker compose -f deploy/docker-compose.example.yml --profile redis up -d` 起独立 `app-redis`，设 `REDIS_HOST=app-redis`（端口 6380，避让本机 6379）。
 
 PG/Redis 默认凭证见 compose 文件，生产必改。
 
@@ -172,7 +165,7 @@ PG/Redis 默认凭证见 compose 文件，生产必改。
 
 与 DB 档正交。默认 LiveKit。
 
-MediaSoup/SRS：编辑 `deploy/docker-compose.example.yml` 取消对应注释 + `.env.prod` 设 `SFU_PROVIDER`。
+SRS：编辑 `deploy/docker-compose.example.yml` 取消对应注释 + `.env.prod` 设 `SFU_PROVIDER`。
 
 ### 4.2 构建应用镜像
 

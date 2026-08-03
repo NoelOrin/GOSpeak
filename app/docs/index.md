@@ -28,7 +28,7 @@ features:
     details: 创建/加入语音房间，类Discord频道体验。支持密码保护、创建者/管理员踢人、角色权限体系。
   - icon: 🔄
     title: 多 SFU 切换
-    details: 运行时切换 LiveKit / SRS / MediaSoup / Agora / Daily，不修改代码。自建或云服务任选。
+    details: 运行时切换 LiveKit / SRS / Agora / Cloudflare，不修改代码。自建或云服务任选。
   - icon: 🗄️
     title: 渐进式数据库
     details: SQLite 开箱即用零配置，可按需升级到 PostgreSQL + Redis，无供应商锁定。

@@ -10,6 +10,7 @@ func CapabilitiesFor(provider string) Capabilities {
 			MuteLevel: EnforcementHard, KickLevel: EnforcementHard, DeleteLevel: EnforcementHard,
 			ListLevel: EnforcementHard, AdminLevel: EnforcementHard,
 		}
+	// 已禁用保留：mediasoup/daily 实现仍在仓库，但不参与 provider 注册。
 	case "mediasoup":
 		return Capabilities{
 			ServerMute: true, ServerKick: true, DeleteRoom: true, AdminToken: false, ListRooms: true, ListMembers: true,
@@ -23,17 +24,17 @@ func CapabilitiesFor(provider string) Capabilities {
 			MuteLevel: EnforcementDegraded, KickLevel: EnforcementHard, DeleteLevel: EnforcementHard,
 			ListLevel: EnforcementDegraded, AdminLevel: EnforcementHard,
 		}
-	case "daily":
-		return Capabilities{
-			ServerMute: false, ServerKick: true, DeleteRoom: true, AdminToken: false, ListRooms: true, ListMembers: true,
-			MuteLevel: EnforcementSoft, KickLevel: EnforcementHard, DeleteLevel: EnforcementHard,
-			ListLevel: EnforcementHard, AdminLevel: EnforcementNone,
-		}
 	case "cloudflare":
 		return Capabilities{
 			ServerMute: false, ServerKick: true, DeleteRoom: true, AdminToken: false, ListRooms: true, ListMembers: true,
 			MuteLevel: EnforcementSoft, KickLevel: EnforcementHard, DeleteLevel: EnforcementDegraded,
 			ListLevel: EnforcementDegraded, AdminLevel: EnforcementNone,
+		}
+	case "daily":
+		return Capabilities{
+			ServerMute: false, ServerKick: true, DeleteRoom: true, AdminToken: false, ListRooms: true, ListMembers: true,
+			MuteLevel: EnforcementSoft, KickLevel: EnforcementHard, DeleteLevel: EnforcementHard,
+			ListLevel: EnforcementHard, AdminLevel: EnforcementNone,
 		}
 	case "agora":
 		// Kick/mute via kicking-rule (degraded hard).
@@ -52,7 +53,7 @@ func CapabilitiesFor(provider string) Capabilities {
 
 // AllProviderCapabilities returns capability matrices for every known provider.
 func AllProviderCapabilities() map[string]Capabilities {
-	names := []string{"livekit", "agora", "mediasoup", "srs", "daily", "cloudflare"}
+	names := []string{"livekit", "agora", "srs", "cloudflare"}
 	out := make(map[string]Capabilities, len(names))
 	for _, name := range names {
 		out[name] = CapabilitiesFor(name)

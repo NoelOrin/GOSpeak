@@ -16,8 +16,7 @@
 | 场景 | 推荐 SFU |
 |------|----------|
 | 自建、完全控制 | **SRS** 或 **LiveKit**（成熟度最高）|
-| 不想管服务器 | **Agora** 或 **Daily**（云服务按量计费）|
-| 自定义信令需求 | **MediaSoup**（最灵活，但开发成本最高）|
+| 不想管服务器 | **Agora** 或 **Cloudflare**（云服务按量计费）|
 | 本地开发快速起步 | **LiveKit** 或 **SRS**（docker 一键起）|
 
 详见 [SFU 配置对比](/sfu/comparison)。
@@ -75,7 +74,7 @@ DB_PASSWORD="gospeak"
 - **LiveKit 自建**：内置 TURN 服务器（docker-compose 中 `turn.enabled=true`，端口 3478/udp），无需额外部署
 - **LiveKit Cloud**：自带 TURN 中继，零配置
 - **SRS 自建**：不内置 TURN。大多数非对称 NAT 场景下 SRS 的 8000/udp + TCP 回退已足够；对称 NAT 环境建议自行部署 Coturn
-- **Agora / Daily / Cloudflare**：云服务自带 ICE 穿透能力
+- **Agora / Cloudflare**：云服务自带 ICE 穿透能力
 
 对于大多数非对称 NAT 场景，无需额外 TURN 服务器。
 

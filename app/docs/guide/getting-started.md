@@ -107,7 +107,6 @@ GOSpeak/
 │   │   │   └── pkg/         # 工具包 (JWT, OAuth, errors)
 │   │   └── test/            # API 集成测试
 │   ├── web/                 # SolidJS 前端
-│   └── mediasoup-worker/    # MediaSoup Worker (via packages/)
 ├── deploy/                  # Docker Compose 编排
 ├── packages/
 │   └── sfu-client/          # 前端 SFU 客户端抽象

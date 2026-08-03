@@ -25,7 +25,6 @@ export default store;
 - `socket/client.ts`：transport
 - `socket/tabLock.ts`：单标签页独占
 - `socket/roomState.ts`：房间/成员纯状态变换
-- `socket/mediasoupSignal.ts`：MediaSoup 信令
 - `socket/providerReload.ts`：SFU 热切换刷新
 - `socket/types.ts`：领域类型
 
