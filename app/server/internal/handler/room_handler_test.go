@@ -41,6 +41,7 @@ func TestRoomHandler_List_FiltersDomainUUID(t *testing.T) {
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "user-1")
 		c.Set("user_uuid", "user-1")
+		c.Set("domain_uuid", "domain-a")
 		c.Next()
 	})
 	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)
@@ -89,6 +90,7 @@ func TestRoomHandler_Create_PersistsDomainUUID(t *testing.T) {
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "user-1")
 		c.Set("user_uuid", "user-1")
+		c.Set("domain_uuid", "domain-a")
 		c.Next()
 	})
 	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)
@@ -178,6 +180,7 @@ func TestRoomHandler_Create_RejectsNonDomainMember(t *testing.T) {
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "user-1")
 		c.Set("user_uuid", "user-1")
+		c.Set("domain_uuid", "domain-a")
 		c.Next()
 	})
 	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)
@@ -213,6 +216,7 @@ func TestRoomHandler_List_RejectsNonDomainMember(t *testing.T) {
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "user-1")
 		c.Set("user_uuid", "user-1")
+		c.Set("domain_uuid", "domain-a")
 		c.Next()
 	})
 	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)

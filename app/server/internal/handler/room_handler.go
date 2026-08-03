@@ -34,6 +34,16 @@ func currentUserUUID(c *gin.Context) string {
 	return ""
 }
 
+// domainUUIDFromContext returns the domain_uuid resolved by RequireDomainMember middleware.
+func domainUUIDFromContext(c *gin.Context) string {
+	if v, ok := c.Get("domain_uuid"); ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
 func (h *RoomHandler) canManageRoom(c *gin.Context, room *model.Room, perm string) bool {
 	username, _ := c.Get("username")
 	usernameStr, _ := username.(string)
@@ -87,7 +97,8 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		return
 	}
 	username, _ := usernameVal.(string)
-	if req.DomainUUID != "" && !middleware.IsDomainMember(req.DomainUUID, currentUserUUID(c)) {
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID != "" && !middleware.IsDomainMember(domainUUID, currentUserUUID(c)) {
 		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
 		return
 	}
@@ -103,7 +114,7 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		req.Name, req.Password, req.Description,
 		req.Limit, audioOnly, allowAudience,
 		username, req.Type,
-		req.DomainUUID,
+		domainUUID,
 	)
 	if err != nil {
 		pkg.HandleError(c, err)
@@ -161,7 +172,6 @@ func (h *RoomHandler) List(c *gin.Context) {
 		Page       int    `json:"page"`
 		PageSize   int    `json:"page_size"`
 		Type       string `json:"type"`
-		DomainUUID string `json:"domain_uuid"`
 	}
 	_ = c.ShouldBindJSON(&req)
 	if req.Page <= 0 {
@@ -171,7 +181,8 @@ func (h *RoomHandler) List(c *gin.Context) {
 		req.PageSize = 20
 	}
 
-	if req.DomainUUID != "" && !middleware.IsDomainMember(req.DomainUUID, currentUserUUID(c)) {
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID != "" && !middleware.IsDomainMember(domainUUID, currentUserUUID(c)) {
 		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
 		return
 	}
@@ -179,8 +190,8 @@ func (h *RoomHandler) List(c *gin.Context) {
 	var rooms []model.Room
 	var total int64
 	var err error
-	if req.DomainUUID != "" {
-		rooms, total, err = h.roomSvc.List(req.Page, req.PageSize, req.Type, req.DomainUUID)
+	if domainUUID != "" {
+		rooms, total, err = h.roomSvc.List(req.Page, req.PageSize, req.Type, domainUUID)
 	} else {
 		rooms, total, err = h.roomSvc.ListPlatform(req.Page, req.PageSize, req.Type)
 	}

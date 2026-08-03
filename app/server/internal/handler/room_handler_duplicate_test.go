@@ -37,6 +37,7 @@ func TestRoomHandler_Create_RejectsDuplicateNameInSameDomain(t *testing.T) {
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "user-1")
 		c.Set("user_uuid", "user-1")
+		c.Set("domain_uuid", "domain-a")
 		c.Next()
 	})
 	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)

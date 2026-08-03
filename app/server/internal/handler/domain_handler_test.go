@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,12 +52,26 @@ func setupDomainHandlerRouter(t *testing.T, domainSvc *service.DomainService) *g
 		c.Set("role", c.GetHeader("X-User-Role"))
 		c.Set("auth_type", "jwt")
 		c.Set("permissions", []string{})
+		domainUUID := c.Query("domain_uuid")
+		if domainUUID == "" {
+			raw, _ := io.ReadAll(c.Request.Body)
+			c.Request.Body = io.NopCloser(bytes.NewReader(raw))
+			var body struct {
+				DomainUUID string `json:"domain_uuid"`
+			}
+			_ = json.Unmarshal(raw, &body)
+			domainUUID = body.DomainUUID
+		}
+		if domainUUID != "" {
+			c.Set("domain_uuid", domainUUID)
+		}
 		c.Next()
 	})
 
 	rg := r.Group("/api/v1/domain")
 	rg.POST("/create", h.Create)
 	rg.POST("/get", h.Get)
+	rg.GET("/get", h.Get)
 	rg.POST("/list", h.List)
 	rg.POST("/list-public", h.ListPublic)
 	rg.POST("/my-domains", h.MyDomains)
@@ -168,6 +184,35 @@ func TestDomainHandler_Get_Success(t *testing.T) {
 	resp := parseDomainResp(t, w.Body.String())
 	if code := intCode(resp["code"]); code != 0 {
 		t.Fatalf("expected code 0, got %d: %s", code, resp["msg"])
+	}
+}
+
+func TestDomainHandler_Get_UsesContextDomainUUID(t *testing.T) {
+	db, domainSvc := setupDomainHandlerTestDB(t)
+	router := setupDomainHandlerRouter(t, domainSvc)
+
+	g := &model.Domain{Name: "Query Domain", OwnerUUID: "owner-1"}
+	if err := db.Create(g).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+
+	// query 与 body 不一致时，必须以 middleware 解析的 query/context 为准。
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/domain/get?domain_uuid="+g.UUID, strings.NewReader(`{"domain_uuid":"body-uuid"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-UUID", "user-1")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	resp := parseDomainResp(t, w.Body.String())
+	if code := intCode(resp["code"]); code != 0 {
+		t.Fatalf("expected code 0, got %d: %s", code, resp["msg"])
+	}
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected data object")
+	}
+	if data["uuid"] != g.UUID {
+		t.Fatalf("expected domain %q, got %v", g.UUID, data["uuid"])
 	}
 }
 
