@@ -73,17 +73,16 @@ func (h *DomainHandler) Create(c *gin.Context) {
 }
 
 type UUIDRequest struct {
-	DomainUUID string `json:"domain_uuid" binding:"required"`
 }
 
 // Get 获取语音域详情。
 func (h *DomainHandler) Get(c *gin.Context) {
-	var req UUIDRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
 		return
 	}
-	domain, err := h.domainSvc.GetByUUID(req.DomainUUID)
+	domain, err := h.domainSvc.GetByUUID(domainUUID)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -144,7 +143,6 @@ func (h *DomainHandler) MyDomains(c *gin.Context) {
 }
 
 type UpdateDomainRequest struct {
-	DomainUUID  string  `json:"domain_uuid" binding:"required"`
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
 	IconURL     *string `json:"icon_url"`
@@ -158,7 +156,12 @@ func (h *DomainHandler) Update(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	domain, err := h.domainSvc.GetByUUID(req.DomainUUID)
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	domain, err := h.domainSvc.GetByUUID(domainUUID)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -169,7 +172,7 @@ func (h *DomainHandler) Update(c *gin.Context) {
 		return
 	}
 	userUUID, _ := userUUIDVal.(string)
-	if !h.hasPermission(c, permcode.PermDomainManage) && !h.domainSvc.IsOwner(req.DomainUUID, userUUID) {
+	if !h.hasPermission(c, permcode.PermDomainManage) && !h.domainSvc.IsOwner(domainUUID, userUUID) {
 		pkg.Fail(c, pkg.FORBIDDEN, "not domain owner or missing permission")
 		return
 	}
@@ -193,14 +196,13 @@ func (h *DomainHandler) Update(c *gin.Context) {
 }
 
 type DeleteDomainRequest struct {
-	DomainUUID string `json:"domain_uuid" binding:"required"`
 }
 
 // Delete 删除语音域。仅 Owner 和持有 domain:delete 权限的用户可调用。
 func (h *DomainHandler) Delete(c *gin.Context) {
-	var req DeleteDomainRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
 		return
 	}
 	userUUIDVal, ok := c.Get("user_uuid")
@@ -210,17 +212,17 @@ func (h *DomainHandler) Delete(c *gin.Context) {
 	}
 	userUUID, _ := userUUIDVal.(string)
 	permOK := h.hasPermission(c, permcode.PermDomainDelete)
-	ownerOK := h.domainSvc.IsOwner(req.DomainUUID, userUUID)
+	ownerOK := h.domainSvc.IsOwner(domainUUID, userUUID)
 	if !permOK && !ownerOK {
 		pkg.Fail(c, pkg.FORBIDDEN, "not domain owner or missing permission")
 		return
 	}
-	if err := h.domainSvc.Delete(req.DomainUUID); err != nil {
+	if err := h.domainSvc.Delete(domainUUID); err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
 	if h.onDomainDelete != nil {
-		h.onDomainDelete(req.DomainUUID)
+		h.onDomainDelete(domainUUID)
 	}
 	pkg.Success(c, nil)
 }
@@ -266,14 +268,13 @@ func (h *DomainHandler) Preview(c *gin.Context) {
 }
 
 type LeaveDomainRequest struct {
-	DomainUUID string `json:"domain_uuid" binding:"required"`
 }
 
 // Leave 离开语音域。
 func (h *DomainHandler) Leave(c *gin.Context) {
-	var req LeaveDomainRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
 		return
 	}
 	userUUIDVal, ok := c.Get("user_uuid")
@@ -282,7 +283,7 @@ func (h *DomainHandler) Leave(c *gin.Context) {
 		return
 	}
 	userUUID, _ := userUUIDVal.(string)
-	if err := h.domainSvc.Leave(req.DomainUUID, userUUID); err != nil {
+	if err := h.domainSvc.Leave(domainUUID, userUUID); err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
@@ -290,7 +291,6 @@ func (h *DomainHandler) Leave(c *gin.Context) {
 }
 
 type KickDomainMemberRequest struct {
-	DomainUUID string `json:"domain_uuid" binding:"required"`
 	UserUUID   string `json:"user_uuid" binding:"required"`
 }
 
@@ -301,6 +301,11 @@ func (h *DomainHandler) Kick(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
 	userUUIDVal, ok := c.Get("user_uuid")
 	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
@@ -308,12 +313,12 @@ func (h *DomainHandler) Kick(c *gin.Context) {
 	}
 	userUUID, _ := userUUIDVal.(string)
 	permOK := h.hasPermission(c, permcode.PermDomainKick)
-	roleOK := h.domainSvc.HasDomainRole(req.DomainUUID, userUUID, service.DomainRoleAdmin)
+	roleOK := h.domainSvc.HasDomainRole(domainUUID, userUUID, service.DomainRoleAdmin)
 	if !permOK && !roleOK {
 		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain role or permission")
 		return
 	}
-	if err := h.domainSvc.Kick(req.DomainUUID, req.UserUUID); err != nil {
+	if err := h.domainSvc.Kick(domainUUID, req.UserUUID); err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
@@ -321,17 +326,16 @@ func (h *DomainHandler) Kick(c *gin.Context) {
 }
 
 type DomainMembersRequest struct {
-	DomainUUID string `json:"domain_uuid" binding:"required"`
 }
 
 // Members 列出语音域成员。
 func (h *DomainHandler) Members(c *gin.Context) {
-	var req DomainMembersRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
 		return
 	}
-	members, err := h.domainSvc.ListMembers(req.DomainUUID)
+	members, err := h.domainSvc.ListMembers(domainUUID)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
