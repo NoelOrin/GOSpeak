@@ -5,6 +5,7 @@ import (
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/permcode"
+	"GOSpeak/internal/pkg"
 	authRoutes "GOSpeak/internal/router/routes/auth"
 	botRoutes "GOSpeak/internal/router/routes/bot"
 	clusterRoutes "GOSpeak/internal/router/routes/cluster"
@@ -99,6 +100,10 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 		workerProtected.Use(middleware.JWTAuth())
 		workerProtected.Use(middleware.BanCheck())
 		signalRoutes.RegisterProtected(workerProtected.Group("/signal"), h.Signal, h.Cloudflare)
+		api.POST("/room/create", func(c *gin.Context) {
+			pkg.Fail(c, pkg.FORBIDDEN, "worker mode does not accept business writes")
+			c.Abort()
+		})
 		return r
 	}
 
