@@ -2,6 +2,7 @@ package server
 
 import (
 	"GOSpeak/internal/bus"
+	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/jobs"
@@ -19,6 +20,7 @@ import (
 	"GOSpeak/internal/sfu/factory"
 	"GOSpeak/internal/signal"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -216,6 +218,15 @@ func StartGin(env EnvEnum) {
 	if nb, ok := eventBus.(*bus.NATSBus); ok {
 		natsConn = nb.Conn()
 		nb.SetRemoteHook(func(event string, payload interface{}) {
+			if event == cluster.EventControlCommand {
+				var cmd cluster.ControlCommand
+				raw, _ := json.Marshal(payload)
+				_ = json.Unmarshal(raw, &cmd)
+				if cmd.NodeID == "" || cmd.NodeID == instanceID {
+					_ = signalHub.HandleClusterCommand(cmd)
+				}
+				return
+			}
 			if event == service.EventPermissionsInvalidated {
 				permSvc.OnRemoteInvalidate(payload)
 				return
@@ -359,9 +370,11 @@ func StartGin(env EnvEnum) {
 	middleware.SetDomainChecker(domainSvc.IsMember)
 	signalHub.SetDomainChecker(domainSvc.IsMember)
 	roomH := handler.NewRoomHandler(roomSvc, permSvc, domainSvc)
+	roomH.SetControlPublisher(clusterSvc)
 	msgH := handler.NewMessageHandler(messageSvc, permSvc)
 	permH := handler.NewPermissionHandler(permSvc)
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
+	muteH.SetControlPublisher(clusterSvc)
 	conversationSvc := service.NewConversationService(conversationRepo, messageRepo)
 	conversationSvc.SetEventBus(eventBus)
 	signalHub.SetConversationService(conversationSvc)
@@ -389,6 +402,7 @@ func StartGin(env EnvEnum) {
 	}
 
 	domainH := handler.NewDomainHandler(domainSvc, permSvc)
+	domainH.SetControlPublisher(clusterSvc)
 	domainH.SetOnDomainCreated(func(serverUUID string) {
 		if err := clusterSvc.EnsureServer(serverUUID, 1, localNodeUUID); err != nil {
 			logger.WithComponent("Cluster").Warnf("schedule server %s failed: %v", serverUUID, err)

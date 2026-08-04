@@ -1,6 +1,7 @@
 package signal
 
 import (
+	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
@@ -219,8 +220,8 @@ type Hub struct {
 	connSlots          map[string]*connRoomSlots // socketID -> slots
 	msgSvc             messageSender
 	convSvc            conversationSender
-	domainChecker       func(domainUUID, userUUID string) bool
-	clientDomains       map[string]string // socketID -> current domain scope (empty = platform)
+	domainChecker      func(domainUUID, userUUID string) bool
+	clientDomains      map[string]string // socketID -> current domain scope (empty = platform)
 }
 
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
@@ -235,7 +236,7 @@ func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permCh
 		streamRoomCache:  make(map[string]string),
 		streamByIdentity: make(map[string]map[string]string),
 		connSlots:        make(map[string]*connRoomSlots),
-		clientDomains:     make(map[string]string),
+		clientDomains:    make(map[string]string),
 	}
 }
 
@@ -364,9 +365,9 @@ func (h *Hub) OnConnect(c ws.ClientMessenger) error {
 
 func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	type disconnectCleanup struct {
-		room        string
-		identity    string
-		deleted     bool
+		room     string
+		identity string
+		deleted  bool
 	}
 	type leaveEvent struct {
 		room     string
@@ -423,10 +424,10 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	for _, e := range leaveEvents {
 		domainUUID, logicalName := splitRoomKey(e.room)
 		h.publishRoom(e.room, EventMemberLeft, map[string]interface{}{
-			"room":       logicalName,
+			"room":        logicalName,
 			"domain_uuid": domainUUID,
-			"identity":   e.identity,
-			"id":         e.id,
+			"identity":    e.identity,
+			"id":          e.id,
 		})
 	}
 
@@ -448,7 +449,7 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	// 丢后台 goroutine，handler 立即返回。
 	if len(cleanups) > 0 {
 		if h.cleanupPub != nil {
-		for _, c := range cleanups {
+			for _, c := range cleanups {
 				if err := h.cleanupPub.PublishSFUCleanup(context.Background(), c.room, c.identity, c.deleted); err != nil {
 					log.Printf("[Signal] enqueue sfu cleanup: %v", err)
 				}
@@ -788,11 +789,11 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	}
 
 	h.publishRoom(roomKey(req.DomainUUID, req.Room), EventMemberJoined, map[string]interface{}{
-		"room":       req.Room,
+		"room":        req.Room,
 		"domain_uuid": req.DomainUUID,
-		"identity":   identity,
-		"id":         c.ID(),
-		"stream":     req.Stream,
+		"identity":    identity,
+		"id":          c.ID(),
+		"stream":      req.Stream,
 	})
 
 	h.broadcastRoomUpdatedLocal(roomKey(req.DomainUUID, req.Room))
@@ -872,15 +873,15 @@ func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 	log.Printf("[Signal] %s (%s) left room: %s", c.ID(), identity, req.Room)
 
 	c.Send(map[string]interface{}{"event": EventRoomLeft, "data": map[string]interface{}{
-		"room":       req.Room,
+		"room":        req.Room,
 		"domain_uuid": req.DomainUUID,
 	}})
 
 	h.publishRoom(key, EventMemberLeft, map[string]interface{}{
-		"room":       req.Room,
+		"room":        req.Room,
 		"domain_uuid": req.DomainUUID,
-		"identity":   identity,
-		"id":         c.ID(),
+		"identity":    identity,
+		"id":          c.ID(),
 	})
 
 	// 房间已空被删除则广播房间列表，否则广播单房间更新（与 OnDisconnect 一致）
@@ -931,7 +932,7 @@ func (h *Hub) OnRoomList(c ws.ClientMessenger, data string) {
 func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 	var req struct {
 		Room           string `json:"room"`
-		DomainUUID      string `json:"domain_uuid,omitempty"`
+		DomainUUID     string `json:"domain_uuid,omitempty"`
 		TargetIdentity string `json:"targetIdentity"`
 	}
 	if err := parseJSON(data, &req); err != nil || req.Room == "" || req.TargetIdentity == "" {
@@ -1043,14 +1044,14 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 	// 通知被踢者；payload 带 targetIdentity，前端按 identity 过滤避免误伤同房他人
 	h.publishRoom(key, EventRoomKicked, map[string]interface{}{
 		"room":           req.Room,
-		"domain_uuid":     req.DomainUUID,
+		"domain_uuid":    req.DomainUUID,
 		"targetIdentity": req.TargetIdentity,
 		"enforcement":    enforcement,
 	})
 	if targetConn != nil {
 		targetConn.Send(map[string]interface{}{"event": EventRoomKicked, "data": map[string]interface{}{
 			"room":           req.Room,
-			"domain_uuid":     req.DomainUUID,
+			"domain_uuid":    req.DomainUUID,
 			"targetIdentity": req.TargetIdentity,
 			"enforcement":    enforcement,
 		}})
@@ -1059,7 +1060,7 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 	// 通知全员成员离开
 	h.publishRoom(key, EventMemberLeft, map[string]interface{}{
 		"room":        req.Room,
-		"domain_uuid":  req.DomainUUID,
+		"domain_uuid": req.DomainUUID,
 		"identity":    req.TargetIdentity,
 		"id":          targetSocketID,
 		"enforcement": enforcement,
@@ -1086,7 +1087,7 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 func (h *Hub) OnMemberMicState(c ws.ClientMessenger, data string) {
 	var req struct {
 		Room       string `json:"room"`
-		DomainUUID  string `json:"domain_uuid,omitempty"`
+		DomainUUID string `json:"domain_uuid,omitempty"`
 		Identity   string `json:"identity"`
 		IsMicMuted bool   `json:"isMicMuted"`
 	}
@@ -1112,10 +1113,10 @@ func (h *Hub) OnMemberMicState(c ws.ClientMessenger, data string) {
 	h.mu.Unlock()
 
 	h.BroadcastToRoom(roomKey(req.DomainUUID, req.Room), EventMemberUpdated, map[string]interface{}{
-		"room":       req.Room,
+		"room":        req.Room,
 		"domain_uuid": req.DomainUUID,
-		"identity":   req.Identity,
-		"isMicMuted": req.IsMicMuted,
+		"identity":    req.Identity,
+		"isMicMuted":  req.IsMicMuted,
 	})
 }
 
@@ -1124,10 +1125,10 @@ func (h *Hub) OnMemberMicState(c ws.ClientMessenger, data string) {
 // 仅持有本地麦克风的成员可上报自身状态，避免伪造他人发言态。
 func (h *Hub) OnMemberSpeaking(c ws.ClientMessenger, data string) {
 	var req struct {
-		Room      string `json:"room"`
+		Room       string `json:"room"`
 		DomainUUID string `json:"domain_uuid,omitempty"`
-		Identity  string `json:"identity"`
-		Speaking  bool   `json:"speaking"`
+		Identity   string `json:"identity"`
+		Speaking   bool   `json:"speaking"`
 	}
 	if err := parseJSON(data, &req); err != nil || req.Room == "" || req.Identity == "" {
 		return
@@ -1205,9 +1206,9 @@ func (h *Hub) broadcastActiveSpeakers(domainUUID, roomName string) {
 	identities := h.computeActiveSpeakersLocked(rk)
 	h.mu.RUnlock()
 	h.publishRoom(rk, EventRoomActiveSpeakers, map[string]interface{}{
-		"room":       roomName,
+		"room":        roomName,
 		"domain_uuid": domainUUID,
-		"identities": identities,
+		"identities":  identities,
 	})
 }
 
@@ -1240,7 +1241,7 @@ func (h *Hub) getMergedRoomsScoped(domainUUID string, platformOnly bool) []RoomI
 						ID:            r.ID,
 						UUID:          r.UUID,
 						Name:          r.Name,
-						DomainUUID:     r.DomainUUID,
+						DomainUUID:    r.DomainUUID,
 						HasPassword:   r.Password != "",
 						Description:   r.Description,
 						Limit:         r.Limit,
@@ -1789,6 +1790,116 @@ func (h *Hub) OnDomainDelete(domainUUID string) {
 }
 
 // HandleRemoteEvent 处理来自其他实例的控制面事件。
+// HandleClusterCommand 执行 Agent 下发的本地信令控制命令。
+func (h *Hub) HandleClusterCommand(cmd cluster.ControlCommand) error {
+	switch cmd.Command {
+	case cluster.CommandKick:
+		h.KickFromRoom(cmd.DomainUUID, cmd.Room, cmd.Identity)
+		return nil
+	case cluster.CommandDeleteRoom:
+		h.DeleteRoomByDomainName(cmd.DomainUUID, cmd.Room)
+		return nil
+	case cluster.CommandDeleteServer:
+		h.OnDomainDelete(cmd.DomainUUID)
+		return nil
+	case cluster.CommandMute:
+		if userID, ok := controlCommandUserID(cmd); ok {
+			h.enforceUserMediaMute(userID, true, 0)
+		}
+		return nil
+	case cluster.CommandUnmute:
+		if userID, ok := controlCommandUserID(cmd); ok {
+			h.enforceUserMediaMute(userID, false, 0)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported cluster command %q", cmd.Command)
+	}
+}
+
+// KickFromRoom 从指定房间移除 identity 对应的本地信令成员，并尽力触发 SFU 媒体移除。
+func (h *Hub) KickFromRoom(domainUUID, room, targetIdentity string) {
+	if targetIdentity == "" {
+		return
+	}
+	key := roomKey(domainUUID, room)
+	h.mu.Lock()
+	roomState, ok := h.rooms[key]
+	if !ok {
+		h.mu.Unlock()
+		return
+	}
+	for sid, member := range roomState.Members {
+		if member == nil || member.Identity != targetIdentity {
+			continue
+		}
+		h.unregisterStreamLocked(key, member.Identity, member.Stream)
+		roomDelMember(roomState, sid)
+		delete(roomState.Speaking, targetIdentity)
+		delete(roomState.MicMuted, targetIdentity)
+		delete(h.connSlots, sid)
+		if h.fanout != nil {
+			h.fanout.Leave(key, sid)
+		}
+		break
+	}
+	h.mu.Unlock()
+	h.removeParticipantSafe(key, targetIdentity)
+	h.syncRoomToStore(key)
+	h.broadcastRoomList(domainUUID)
+}
+
+// DeleteRoomByDomainName 删除指定 Domain 下的单个信令房间，并清理 SFU 与共享状态。
+func (h *Hub) DeleteRoomByDomainName(domainUUID, room string) {
+	key := roomKey(domainUUID, room)
+	var deletedStreams []string
+	h.mu.Lock()
+	roomState, ok := h.rooms[key]
+	if !ok {
+		h.mu.Unlock()
+		return
+	}
+	for sid, member := range roomState.Members {
+		if member == nil {
+			continue
+		}
+		h.unregisterStreamLocked(key, member.Identity, member.Stream)
+		if member.Stream != "" {
+			deletedStreams = append(deletedStreams, member.Stream)
+		}
+		roomDelMember(roomState, sid)
+		delete(h.connSlots, sid)
+		if h.fanout != nil {
+			h.fanout.Leave(key, sid)
+		}
+	}
+	delete(h.rooms, key)
+	h.mu.Unlock()
+	for _, stream := range deletedStreams {
+		h.syncStreamDelete(stream)
+	}
+	h.deleteRoomSafe(key)
+	h.syncRoomToStore(key)
+	h.broadcastRoomList(domainUUID)
+}
+
+func controlCommandUserID(cmd cluster.ControlCommand) (uint, bool) {
+	if cmd.Payload == nil {
+		return 0, false
+	}
+	switch v := cmd.Payload["user_id"].(type) {
+	case float64:
+		return uint(v), true
+	case int:
+		return uint(v), true
+	case int64:
+		return uint(v), true
+	case uint:
+		return v, true
+	}
+	return 0, false
+}
+
 // 当前仅对 sfu:provider-changed 做本机房间清理；其余事件已由 EventBus 投递到本地 WebSocket。
 func (h *Hub) HandleRemoteEvent(event string, payload interface{}) {
 	switch event {
@@ -1819,8 +1930,8 @@ func (h *Hub) HandleRemoteEvent(event string, payload interface{}) {
 // clearLocalRoomsForSFUSwitch 清理本机信令房间与 stream 视图（不重复广播 provider-changed）。
 func (h *Hub) clearLocalRoomsForSFUSwitch() {
 	type cleanupItem struct {
-		room        string
-		identity    string
+		room     string
+		identity string
 	}
 	var cleanups []cleanupItem
 	var roomsToDelete []string
@@ -1934,8 +2045,8 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 	}
 
 	type target struct {
-		room        string // composite key (domainUUID:roomName)
-		identity    string
+		room     string // composite key (domainUUID:roomName)
+		identity string
 	}
 	seen := make(map[string]struct{})
 	targets := make([]target, 0)
@@ -2083,7 +2194,7 @@ func (h *Hub) roomInfoLocked(roomName string) RoomInfo {
 	}
 	return RoomInfo{
 		Name:        room.Name,
-		DomainUUID:   func() string { g, _ := splitRoomKey(roomName); return g }(),
+		DomainUUID:  func() string { g, _ := splitRoomKey(roomName); return g }(),
 		HasPassword: room.Password != "",
 		Members:     h.memberSnapshotLocked(roomName),
 		Count:       len(room.Members),
