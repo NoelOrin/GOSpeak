@@ -47,7 +47,12 @@ export const chatStore = createRoot(() => {
 	const [loading, setLoading] = createSignal(false);
 
 	createEffect(() => {
-		const domain = socketStore.currentDomainUUID();
+		// socketStore 与 chatStore 存在模块循环引用，加载期可能尚未初始化完成；
+		// currentDomainUUID 缺失时跳过，避免模块加载崩溃。
+		const store = socketStore as
+			| { currentDomainUUID?: () => string | null }
+			| undefined;
+		const domain = store?.currentDomainUUID?.() ?? null;
 		const roomDomain = textRoomDomainUUID();
 		if (roomDomain && roomDomain !== (domain ?? undefined)) {
 			leaveTextRoom();

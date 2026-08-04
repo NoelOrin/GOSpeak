@@ -1,17 +1,17 @@
 package signal
 
 import (
-	"encoding/json"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
+	"encoding/json"
 	"testing"
 )
 
 func TestHub_RoomKey_Format(t *testing.T) {
 	tests := []struct {
 		domainUUID string
-		roomName  string
-		want      string
+		roomName   string
+		want       string
 	}{
 		{"domain-uuid-1", "lobby", "domain-uuid-1:lobby"},
 		{"", "lobby", "lobby"},

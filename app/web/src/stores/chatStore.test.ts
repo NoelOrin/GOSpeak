@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 // Mock modules with side effects to avoid indexedDB / socket issues in test
 vi.mock("@/stores/socketStore", () => ({
-	socketStore: { getSocket: () => null },
+	socketStore: {
+		getSocket: () => null,
+		currentDomainUUID: () => "fallback-domain",
+	},
 }));
 vi.mock("@/api/message", () => ({
 	listMessages: vi.fn(),
