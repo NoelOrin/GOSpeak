@@ -7,6 +7,7 @@ import HardDrive from "lucide-solid/icons/hard-drive";
 import KeyRound from "lucide-solid/icons/key-round";
 import LogIn from "lucide-solid/icons/log-in";
 import Mail from "lucide-solid/icons/mail";
+import Network from "lucide-solid/icons/network";
 import ServerCog from "lucide-solid/icons/server-cog";
 import ShieldCheck from "lucide-solid/icons/shield-check";
 import Users from "lucide-solid/icons/users";
@@ -15,6 +16,7 @@ import { hasPermission } from "@/utils/permissions";
 
 type ManagePath =
 	| "domains"
+	| "cluster"
 	| "permission"
 	| "sfu"
 	| "users"
@@ -31,6 +33,7 @@ type ManageTab = {
 	path: ManagePath;
 	to:
 		| "/manage/domains"
+		| "/manage/cluster"
 		| "/manage/permission"
 		| "/manage/sfu"
 		| "/manage/users"
@@ -57,6 +60,13 @@ const MANAGE_TABS: ManageTab[] = [
 		permissions: ["domain:read"],
 	},
 	// 用户与权限
+	{
+		path: "cluster",
+		to: "/manage/cluster",
+		label: "集群",
+		icon: Network,
+		permissions: ["cluster:read", "cluster:manage"],
+	},
 	{
 		path: "users",
 		to: "/manage/users",

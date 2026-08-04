@@ -28,6 +28,7 @@ import { Route as appManageMuteIndexRouteImport } from './pages/(app)/manage/mut
 import { Route as appManageMonitorIndexRouteImport } from './pages/(app)/manage/monitor/index'
 import { Route as appManageEmailIndexRouteImport } from './pages/(app)/manage/email/index'
 import { Route as appManageDomainsIndexRouteImport } from './pages/(app)/manage/domains/index'
+import { Route as appManageClusterIndexRouteImport } from './pages/(app)/manage/cluster/index'
 import { Route as appManageBotPluginsIndexRouteImport } from './pages/(app)/manage/bot-plugins/index'
 import { Route as appManageBanIndexRouteImport } from './pages/(app)/manage/ban/index'
 import { Route as appManageApikeyIndexRouteImport } from './pages/(app)/manage/apikey/index'
@@ -130,6 +131,11 @@ const appManageDomainsIndexRoute = appManageDomainsIndexRouteImport.update({
   path: '/domains/',
   getParentRoute: () => appManageRouteRoute,
 } as any)
+const appManageClusterIndexRoute = appManageClusterIndexRouteImport.update({
+  id: '/cluster/',
+  path: '/cluster/',
+  getParentRoute: () => appManageRouteRoute,
+} as any)
 const appManageBotPluginsIndexRoute =
   appManageBotPluginsIndexRouteImport.update({
     id: '/bot-plugins/',
@@ -178,6 +184,7 @@ export interface FileRoutesByFullPath {
   '/manage/apikey/': typeof appManageApikeyIndexRoute
   '/manage/ban/': typeof appManageBanIndexRoute
   '/manage/bot-plugins/': typeof appManageBotPluginsIndexRoute
+  '/manage/cluster/': typeof appManageClusterIndexRoute
   '/manage/domains/': typeof appManageDomainsIndexRoute
   '/manage/email/': typeof appManageEmailIndexRoute
   '/manage/monitor/': typeof appManageMonitorIndexRoute
@@ -203,6 +210,7 @@ export interface FileRoutesByTo {
   '/manage/apikey': typeof appManageApikeyIndexRoute
   '/manage/ban': typeof appManageBanIndexRoute
   '/manage/bot-plugins': typeof appManageBotPluginsIndexRoute
+  '/manage/cluster': typeof appManageClusterIndexRoute
   '/manage/domains': typeof appManageDomainsIndexRoute
   '/manage/email': typeof appManageEmailIndexRoute
   '/manage/monitor': typeof appManageMonitorIndexRoute
@@ -231,6 +239,7 @@ export interface FileRoutesById {
   '/(app)/manage/apikey/': typeof appManageApikeyIndexRoute
   '/(app)/manage/ban/': typeof appManageBanIndexRoute
   '/(app)/manage/bot-plugins/': typeof appManageBotPluginsIndexRoute
+  '/(app)/manage/cluster/': typeof appManageClusterIndexRoute
   '/(app)/manage/domains/': typeof appManageDomainsIndexRoute
   '/(app)/manage/email/': typeof appManageEmailIndexRoute
   '/(app)/manage/monitor/': typeof appManageMonitorIndexRoute
@@ -259,6 +268,7 @@ export interface FileRouteTypes {
     | '/manage/apikey/'
     | '/manage/ban/'
     | '/manage/bot-plugins/'
+    | '/manage/cluster/'
     | '/manage/domains/'
     | '/manage/email/'
     | '/manage/monitor/'
@@ -284,6 +294,7 @@ export interface FileRouteTypes {
     | '/manage/apikey'
     | '/manage/ban'
     | '/manage/bot-plugins'
+    | '/manage/cluster'
     | '/manage/domains'
     | '/manage/email'
     | '/manage/monitor'
@@ -311,6 +322,7 @@ export interface FileRouteTypes {
     | '/(app)/manage/apikey/'
     | '/(app)/manage/ban/'
     | '/(app)/manage/bot-plugins/'
+    | '/(app)/manage/cluster/'
     | '/(app)/manage/domains/'
     | '/(app)/manage/email/'
     | '/(app)/manage/monitor/'
@@ -464,6 +476,13 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof appManageDomainsIndexRouteImport
       parentRoute: typeof appManageRouteRoute
     }
+    '/(app)/manage/cluster/': {
+      id: '/(app)/manage/cluster/'
+      path: '/cluster'
+      fullPath: '/manage/cluster/'
+      preLoaderRoute: typeof appManageClusterIndexRouteImport
+      parentRoute: typeof appManageRouteRoute
+    }
     '/(app)/manage/bot-plugins/': {
       id: '/(app)/manage/bot-plugins/'
       path: '/bot-plugins'
@@ -514,6 +533,7 @@ interface appManageRouteRouteChildren {
   appManageApikeyIndexRoute: typeof appManageApikeyIndexRoute
   appManageBanIndexRoute: typeof appManageBanIndexRoute
   appManageBotPluginsIndexRoute: typeof appManageBotPluginsIndexRoute
+  appManageClusterIndexRoute: typeof appManageClusterIndexRoute
   appManageDomainsIndexRoute: typeof appManageDomainsIndexRoute
   appManageEmailIndexRoute: typeof appManageEmailIndexRoute
   appManageMonitorIndexRoute: typeof appManageMonitorIndexRoute
@@ -531,6 +551,7 @@ const appManageRouteRouteChildren: appManageRouteRouteChildren = {
   appManageApikeyIndexRoute: appManageApikeyIndexRoute,
   appManageBanIndexRoute: appManageBanIndexRoute,
   appManageBotPluginsIndexRoute: appManageBotPluginsIndexRoute,
+  appManageClusterIndexRoute: appManageClusterIndexRoute,
   appManageDomainsIndexRoute: appManageDomainsIndexRoute,
   appManageEmailIndexRoute: appManageEmailIndexRoute,
   appManageMonitorIndexRoute: appManageMonitorIndexRoute,
