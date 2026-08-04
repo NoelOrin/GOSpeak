@@ -402,7 +402,6 @@ func (s *ClusterService) ListAssignments(serverUUID string) ([]model.ServerAssig
 	return assignments, nil
 }
 
-// ResolveServer 返回 Server 当前可路由的 Worker 节点与 workerUrl。
 // PublishControl 发布 NATS 控制命令，由目标 Worker 执行本地信令操作。
 func (s *ClusterService) PublishControl(cmd cluster.ControlCommand) error {
 	if err := cmd.Validate(); err != nil {
@@ -412,6 +411,32 @@ func (s *ClusterService) PublishControl(cmd cluster.ControlCommand) error {
 	return nil
 }
 
+// ReconcileAll 对账集群状态：回收离线节点并清理不可调度节点上的历史分配。
+func (s *ClusterService) ReconcileAll(timeout time.Duration) error {
+	if err := s.ReapOffline(timeout); err != nil {
+		return err
+	}
+	nodes, err := s.nodeRepo.List()
+	if err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	for _, node := range nodes {
+		if cluster.CanSchedule(node) {
+			continue
+		}
+		assignments, listErr := s.assignRepo.ListByNode(node.UUID)
+		if listErr != nil {
+			continue
+		}
+		for _, assignment := range assignments {
+			_ = s.assignRepo.Remove(assignment.ServerUUID, node.UUID)
+		}
+	}
+	s.syncNodeServerCounts()
+	return nil
+}
+
+// ResolveServer 返回 Server 当前可路由的 Worker 节点与 workerUrl。
 func (s *ClusterService) ResolveServer(serverUUID string) (*model.ServerAssignment, *model.ClusterNode, error) {
 	assignments, err := s.assignRepo.ListByServer(serverUUID)
 	if err != nil {

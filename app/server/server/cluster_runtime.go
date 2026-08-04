@@ -65,6 +65,12 @@ func startLocalClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterSer
 		}()
 	}
 
+	if cfg.IsAgent() {
+		if err := clusterSvc.ReconcileAll(timeout); err != nil {
+			logger.WithComponent("Cluster").Warnf("reconcile failed: %v", err)
+		}
+	}
+
 	stop := func() {
 		cancel()
 		<-done
@@ -95,6 +101,10 @@ func startAgentClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterSer
 			}
 		}
 	}()
+
+	if err := clusterSvc.ReconcileAll(timeout); err != nil {
+		logger.WithComponent("Cluster").Warnf("reconcile failed: %v", err)
+	}
 
 	stop := func() {
 		cancel()

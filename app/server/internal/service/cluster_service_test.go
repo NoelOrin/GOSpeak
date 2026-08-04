@@ -260,3 +260,29 @@ func TestClusterServicePublishControlCommand(t *testing.T) {
 		t.Fatalf("expected control event, got %q", notifier.event)
 	}
 }
+
+func TestClusterServiceReconcileAllRemovesOfflineAssignments(t *testing.T) {
+	svc, db := setupClusterServiceTestDB(t)
+	nodeRepo := repository.NewClusterNodeRepository(db)
+	assignRepo := repository.NewServerAssignmentRepository(db)
+	node := &model.ClusterNode{
+		UUID: "node-old", Name: "old", Status: model.ClusterNodeOffline, SFUHealthy: false,
+		MaxServers: 10, MaxRooms: 100,
+	}
+	if err := nodeRepo.Create(node); err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	if err := assignRepo.Ensure("srv-1", node.UUID); err != nil {
+		t.Fatalf("seed assignment: %v", err)
+	}
+	if err := svc.ReconcileAll(time.Hour); err != nil {
+		t.Fatalf("ReconcileAll: %v", err)
+	}
+	assignments, err := assignRepo.ListByServer("srv-1")
+	if err != nil {
+		t.Fatalf("ListByServer: %v", err)
+	}
+	if len(assignments) != 0 {
+		t.Fatalf("expected offline assignment removed, got %+v", assignments)
+	}
+}
