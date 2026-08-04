@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
@@ -11,13 +12,19 @@ import (
 )
 
 type RoomHandler struct {
-	roomSvc   *service.RoomService
-	permSvc   *service.PermissionService
-	domainSvc *service.DomainService
+	roomSvc          *service.RoomService
+	permSvc          *service.PermissionService
+	domainSvc        *service.DomainService
+	controlPublisher ControlPublisher
 }
 
 func NewRoomHandler(roomSvc *service.RoomService, permSvc *service.PermissionService, domainSvc *service.DomainService) *RoomHandler {
 	return &RoomHandler{roomSvc: roomSvc, permSvc: permSvc, domainSvc: domainSvc}
+}
+
+// SetControlPublisher 注入集群控制命令发布器。
+func (h *RoomHandler) SetControlPublisher(p ControlPublisher) {
+	h.controlPublisher = p
 }
 
 func currentUserUUID(c *gin.Context) string {
@@ -169,9 +176,9 @@ func (h *RoomHandler) Get(c *gin.Context) {
 // @Router       /room/list [post]
 func (h *RoomHandler) List(c *gin.Context) {
 	var req struct {
-		Page       int    `json:"page"`
-		PageSize   int    `json:"page_size"`
-		Type       string `json:"type"`
+		Page     int    `json:"page"`
+		PageSize int    `json:"page_size"`
+		Type     string `json:"type"`
 	}
 	_ = c.ShouldBindJSON(&req)
 	if req.Page <= 0 {
@@ -312,6 +319,14 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 	if err := h.roomSvc.Delete(req.ID); err != nil {
 		pkg.HandleError(c, err)
 		return
+	}
+
+	if h.controlPublisher != nil {
+		_ = h.controlPublisher.PublishControl(cluster.ControlCommand{
+			Command:    cluster.CommandDeleteRoom,
+			DomainUUID: room.DomainUUID,
+			Room:       room.Name,
+		})
 	}
 
 	pkg.Success(c, nil)

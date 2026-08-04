@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
 	"GOSpeak/internal/signal"
@@ -15,14 +16,25 @@ type MuteBroadcaster interface {
 	BroadcastUnmute(userID uint)
 }
 
+// ControlPublisher 发布集群控制命令，由目标 Worker 执行本地信令操作。
+type ControlPublisher interface {
+	PublishControl(cluster.ControlCommand) error
+}
+
 type MuteHandler struct {
-	muteSvc     *service.MuteService
-	userSvc     *service.UserService
-	broadcaster MuteBroadcaster
+	muteSvc          *service.MuteService
+	userSvc          *service.UserService
+	broadcaster      MuteBroadcaster
+	controlPublisher ControlPublisher
 }
 
 func NewMuteHandler(muteSvc *service.MuteService, userSvc *service.UserService, broadcaster MuteBroadcaster) *MuteHandler {
 	return &MuteHandler{muteSvc: muteSvc, userSvc: userSvc, broadcaster: broadcaster}
+}
+
+// SetControlPublisher 注入集群控制命令发布器。
+func (h *MuteHandler) SetControlPublisher(p ControlPublisher) {
+	h.controlPublisher = p
 }
 
 // CreateMute
@@ -88,6 +100,16 @@ func (h *MuteHandler) CreateMute(c *gin.Context) {
 		h.broadcaster.BroadcastMute(req.UserID, info)
 	}
 
+	if h.controlPublisher != nil {
+		_ = h.controlPublisher.PublishControl(cluster.ControlCommand{
+			Command:  cluster.CommandMute,
+			Identity: userUUIDStr,
+			Payload: map[string]interface{}{
+				"user_id": req.UserID, "permanent": req.Permanent, "duration": req.Duration, "reason": req.Reason,
+			},
+		})
+	}
+
 	pkg.Success(c, mute)
 }
 
@@ -118,6 +140,13 @@ func (h *MuteHandler) CancelMute(c *gin.Context) {
 	// 广播取消禁言事件
 	if h.broadcaster != nil {
 		h.broadcaster.BroadcastUnmute(req.UserID)
+	}
+
+	if h.controlPublisher != nil {
+		_ = h.controlPublisher.PublishControl(cluster.ControlCommand{
+			Command: cluster.CommandUnmute,
+			Payload: map[string]interface{}{"user_id": req.UserID},
+		})
 	}
 
 	pkg.Success(c, nil)

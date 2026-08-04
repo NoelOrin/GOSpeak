@@ -403,6 +403,15 @@ func (s *ClusterService) ListAssignments(serverUUID string) ([]model.ServerAssig
 }
 
 // ResolveServer 返回 Server 当前可路由的 Worker 节点与 workerUrl。
+// PublishControl 发布 NATS 控制命令，由目标 Worker 执行本地信令操作。
+func (s *ClusterService) PublishControl(cmd cluster.ControlCommand) error {
+	if err := cmd.Validate(); err != nil {
+		return pkg.NewAppError(pkg.INVALID_PARAMS, err.Error())
+	}
+	s.publishClusterEvent(cluster.EventControlCommand, cmd)
+	return nil
+}
+
 func (s *ClusterService) ResolveServer(serverUUID string) (*model.ServerAssignment, *model.ClusterNode, error) {
 	assignments, err := s.assignRepo.ListByServer(serverUUID)
 	if err != nil {

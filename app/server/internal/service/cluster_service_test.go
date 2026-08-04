@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"context"
+
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/repository"
@@ -232,5 +234,29 @@ func TestClusterService_ReapOffline(t *testing.T) {
 	}
 	if len(nodes) != 1 || nodes[0].Status != model.ClusterNodeOffline {
 		t.Fatalf("expected node offline, got %+v", nodes)
+	}
+}
+
+type fakeClusterNotifier struct {
+	event   string
+	payload interface{}
+}
+
+func (f *fakeClusterNotifier) PublishInternal(_ context.Context, event string, payload interface{}) error {
+	f.event = event
+	f.payload = payload
+	return nil
+}
+
+func TestClusterServicePublishControlCommand(t *testing.T) {
+	svc, _ := setupClusterServiceTestDB(t)
+	notifier := &fakeClusterNotifier{}
+	svc.SetNotifier(notifier)
+	err := svc.PublishControl(cluster.ControlCommand{Command: cluster.CommandKick, NodeID: "node-a"})
+	if err != nil {
+		t.Fatalf("PublishControl: %v", err)
+	}
+	if notifier.event != cluster.EventControlCommand {
+		t.Fatalf("expected control event, got %q", notifier.event)
 	}
 }

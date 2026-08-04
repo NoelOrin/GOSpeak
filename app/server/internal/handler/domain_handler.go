@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
@@ -10,10 +11,11 @@ import (
 )
 
 type DomainHandler struct {
-	domainSvc       *service.DomainService
-	permSvc         *service.PermissionService
-	onDomainDelete  func(string)
-	onDomainCreated func(string)
+	domainSvc        *service.DomainService
+	permSvc          *service.PermissionService
+	onDomainDelete   func(string)
+	onDomainCreated  func(string)
+	controlPublisher ControlPublisher
 }
 
 func NewDomainHandler(domainSvc *service.DomainService, permSvc *service.PermissionService) *DomainHandler {
@@ -28,6 +30,11 @@ func (h *DomainHandler) SetOnDomainCreated(fn func(string)) {
 // SetOnDomainDelete 注入删除后的信令清理回调（生产环境为 signalHub.OnDomainDelete）。
 func (h *DomainHandler) SetOnDomainDelete(fn func(string)) {
 	h.onDomainDelete = fn
+}
+
+// SetControlPublisher 注入集群控制命令发布器。
+func (h *DomainHandler) SetControlPublisher(p ControlPublisher) {
+	h.controlPublisher = p
 }
 
 func (h *DomainHandler) hasPermission(c *gin.Context, code string) bool {
@@ -224,6 +231,12 @@ func (h *DomainHandler) Delete(c *gin.Context) {
 	if h.onDomainDelete != nil {
 		h.onDomainDelete(domainUUID)
 	}
+	if h.controlPublisher != nil {
+		_ = h.controlPublisher.PublishControl(cluster.ControlCommand{
+			Command:    cluster.CommandDeleteServer,
+			DomainUUID: domainUUID,
+		})
+	}
 	pkg.Success(c, nil)
 }
 
@@ -291,7 +304,7 @@ func (h *DomainHandler) Leave(c *gin.Context) {
 }
 
 type KickDomainMemberRequest struct {
-	UserUUID   string `json:"user_uuid" binding:"required"`
+	UserUUID string `json:"user_uuid" binding:"required"`
 }
 
 // Kick 踢出成员。仅 Owner/Admin 或持有 domain:kick 权限的用户可调用。

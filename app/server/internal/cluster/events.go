@@ -8,4 +8,5 @@ const (
 	EventNodeHeartbeat    = "cluster.node.heartbeat"
 	EventServerScaled     = "cluster.server.scaled"
 	EventServerDeleted    = "cluster.server.deleted"
+	EventControlCommand   = "cluster.control.command"
 )
