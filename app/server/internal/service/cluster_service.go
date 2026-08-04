@@ -394,6 +394,31 @@ func (s *ClusterService) DeleteServer(serverUUID string) error {
 }
 
 // ListAssignments 返回 Server 当前实例分配。
+// AutoScale 按目标副本数扩缩 Server；无可用节点时不动作。
+func (s *ClusterService) AutoScale(serverUUID string, targetReplicas int) error {
+	stats, err := s.Stats()
+	if err != nil {
+		return err
+	}
+	if stats.ReadyNodes == 0 {
+		return nil
+	}
+	_, err = s.ScaleServer(serverUUID, targetReplicas, "")
+	return err
+}
+
+// MarkServerAssignmentsDraining 标记 Server 全部副本为 draining，配合灰度下线。
+func (s *ClusterService) MarkServerAssignmentsDraining(serverUUID string) error {
+	assignments, err := s.assignRepo.ListByServer(serverUUID)
+	if err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	for _, assignment := range assignments {
+		_ = s.assignRepo.UpdateStatus(serverUUID, assignment.NodeUUID, model.ServerAssignmentDraining)
+	}
+	return nil
+}
+
 func (s *ClusterService) ListAssignments(serverUUID string) ([]model.ServerAssignment, error) {
 	assignments, err := s.assignRepo.ListByServer(serverUUID)
 	if err != nil {

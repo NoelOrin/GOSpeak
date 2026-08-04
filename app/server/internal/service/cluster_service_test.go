@@ -297,3 +297,40 @@ func TestClusterServiceStats(t *testing.T) {
 		t.Fatalf("expected zero ready nodes, got %d", stats.ReadyNodes)
 	}
 }
+
+func TestClusterServiceAutoScaleNoReadyNodes(t *testing.T) {
+	svc, _ := setupClusterServiceTestDB(t)
+	if err := svc.AutoScale("srv-1", 3); err != nil {
+		t.Fatalf("AutoScale: %v", err)
+	}
+	assignments, err := svc.ListAssignments("srv-1")
+	if err != nil {
+		t.Fatalf("ListAssignments: %v", err)
+	}
+	if len(assignments) != 0 {
+		t.Fatalf("expected no scaling without ready nodes, got %+v", assignments)
+	}
+}
+
+func TestClusterServiceMarkServerAssignmentsDraining(t *testing.T) {
+	svc, db := setupClusterServiceTestDB(t)
+	nodeRepo := repository.NewClusterNodeRepository(db)
+	assignRepo := repository.NewServerAssignmentRepository(db)
+	node := &model.ClusterNode{UUID: "node-a", Name: "a", Status: model.ClusterNodeReady, SFUHealthy: true, MaxServers: 10, MaxRooms: 100}
+	if err := nodeRepo.Create(node); err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	if err := assignRepo.Ensure("srv-1", node.UUID); err != nil {
+		t.Fatalf("seed assignment: %v", err)
+	}
+	if err := svc.MarkServerAssignmentsDraining("srv-1"); err != nil {
+		t.Fatalf("MarkServerAssignmentsDraining: %v", err)
+	}
+	assignments, err := assignRepo.ListByServer("srv-1")
+	if err != nil {
+		t.Fatalf("ListByServer: %v", err)
+	}
+	if len(assignments) != 1 || assignments[0].Status != model.ServerAssignmentDraining {
+		t.Fatalf("expected draining assignment, got %+v", assignments)
+	}
+}
