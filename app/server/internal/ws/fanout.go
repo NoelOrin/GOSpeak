@@ -134,3 +134,14 @@ func (f *Fanout) GetClient(clientID string) ClientMessenger {
 	defer f.mu.RUnlock()
 	return f.clients[clientID]
 }
+
+// DroppedCount 汇总所有已注册客户端的显式降级丢弃消息数，供监控面板使用。
+func (f *Fanout) DroppedCount() uint64 {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	var total uint64
+	for _, c := range f.clients {
+		total += c.DroppedCount()
+	}
+	return total
+}

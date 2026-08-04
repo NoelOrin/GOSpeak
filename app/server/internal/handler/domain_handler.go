@@ -232,10 +232,13 @@ func (h *DomainHandler) Delete(c *gin.Context) {
 		h.onDomainDelete(domainUUID)
 	}
 	if h.controlPublisher != nil {
-		_ = h.controlPublisher.PublishControl(cluster.ControlCommand{
+		if err := h.controlPublisher.PublishControl(cluster.ControlCommand{
 			Command:    cluster.CommandDeleteServer,
 			DomainUUID: domainUUID,
-		})
+		}); err != nil {
+			pkg.HandleError(c, err)
+			return
+		}
 	}
 	pkg.Success(c, nil)
 }

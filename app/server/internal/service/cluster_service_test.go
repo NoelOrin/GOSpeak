@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -240,24 +241,38 @@ func TestClusterService_ReapOffline(t *testing.T) {
 type fakeClusterNotifier struct {
 	event   string
 	payload interface{}
+	err     error
 }
 
 func (f *fakeClusterNotifier) PublishInternal(_ context.Context, event string, payload interface{}) error {
 	f.event = event
 	f.payload = payload
-	return nil
+	return f.err
 }
 
 func TestClusterServicePublishControlCommand(t *testing.T) {
 	svc, _ := setupClusterServiceTestDB(t)
 	notifier := &fakeClusterNotifier{}
 	svc.SetNotifier(notifier)
-	err := svc.PublishControl(cluster.ControlCommand{Command: cluster.CommandKick, NodeID: "node-a"})
+	err := svc.PublishControl(cluster.ControlCommand{Command: cluster.CommandKick, NodeID: "node-a", Room: "lobby", Identity: "alice"})
 	if err != nil {
 		t.Fatalf("PublishControl: %v", err)
 	}
 	if notifier.event != cluster.EventControlCommand {
 		t.Fatalf("expected control event, got %q", notifier.event)
+	}
+}
+
+func TestClusterServicePublishControlPropagatesError(t *testing.T) {
+	svc, _ := setupClusterServiceTestDB(t)
+	notifier := &fakeClusterNotifier{err: errors.New("publish failed")}
+	svc.SetNotifier(notifier)
+	err := svc.PublishControl(cluster.ControlCommand{Command: cluster.CommandKick, NodeID: "node-a", Room: "lobby", Identity: "alice"})
+	if err == nil {
+		t.Fatal("expected publish error")
+	}
+	if notifier.event != cluster.EventControlCommand {
+		t.Fatalf("expected control event attempted, got %q", notifier.event)
 	}
 }
 
@@ -284,6 +299,57 @@ func TestClusterServiceReconcileAllRemovesOfflineAssignments(t *testing.T) {
 	}
 	if len(assignments) != 0 {
 		t.Fatalf("expected offline assignment removed, got %+v", assignments)
+	}
+}
+
+func TestClusterServiceReconcileAllPreservesPendingAndDraining(t *testing.T) {
+	svc, db := setupClusterServiceTestDB(t)
+	nodeRepo := repository.NewClusterNodeRepository(db)
+	assignRepo := repository.NewServerAssignmentRepository(db)
+	nodes := []*model.ClusterNode{
+		{UUID: "node-pending", Name: "pending", Status: model.ClusterNodePending, SFUHealthy: true, MaxServers: 10, MaxRooms: 100},
+		{UUID: "node-draining", Name: "draining", Status: model.ClusterNodeDraining, SFUHealthy: true, MaxServers: 10, MaxRooms: 100},
+	}
+	for _, node := range nodes {
+		if err := nodeRepo.Create(node); err != nil {
+			t.Fatalf("create node: %v", err)
+		}
+		if err := assignRepo.Ensure("srv-1", node.UUID); err != nil {
+			t.Fatalf("seed assignment: %v", err)
+		}
+	}
+	if err := svc.ReconcileAll(time.Hour); err != nil {
+		t.Fatalf("ReconcileAll: %v", err)
+	}
+	assignments, err := assignRepo.ListByServer("srv-1")
+	if err != nil {
+		t.Fatalf("ListByServer: %v", err)
+	}
+	if len(assignments) != 2 {
+		t.Fatalf("expected pending/draining assignments preserved, got %+v", assignments)
+	}
+}
+
+func TestClusterServiceReconcileAllRemovesUnhealthyAssignments(t *testing.T) {
+	svc, db := setupClusterServiceTestDB(t)
+	nodeRepo := repository.NewClusterNodeRepository(db)
+	assignRepo := repository.NewServerAssignmentRepository(db)
+	node := &model.ClusterNode{UUID: "node-unhealthy", Name: "unhealthy", Status: model.ClusterNodeUnhealthy, SFUHealthy: false, MaxServers: 10, MaxRooms: 100}
+	if err := nodeRepo.Create(node); err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	if err := assignRepo.Ensure("srv-1", node.UUID); err != nil {
+		t.Fatalf("seed assignment: %v", err)
+	}
+	if err := svc.ReconcileAll(time.Hour); err != nil {
+		t.Fatalf("ReconcileAll: %v", err)
+	}
+	assignments, err := assignRepo.ListByServer("srv-1")
+	if err != nil {
+		t.Fatalf("ListByServer: %v", err)
+	}
+	if len(assignments) != 0 {
+		t.Fatalf("expected unhealthy assignment removed, got %+v", assignments)
 	}
 }
 

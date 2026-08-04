@@ -135,16 +135,49 @@ export const socketStore = createRoot(() => {
 	// 6. connect / bindServerEvents / disconnect
 	let serverEventsBound = false;
 
-	async function connectToWorker(workerUrl: string): Promise<string> {
+	async function connectWithLock(url: string): Promise<string> {
 		if (adapter.isConnected()) {
 			const current = adapter.getCurrentUrl?.();
-			if (current === workerUrl) return current;
+			if (current === url) return current;
 			adapter.disconnect();
 		}
-		const ticket = await getWSTicket();
-		adapter.connect(workerUrl, ticket);
-		setConnecting(false);
-		return workerUrl;
+		if (connecting()) {
+			throw new Error("socket connection already in progress");
+		}
+		// 源头禁止多标签页连接：BroadcastChannel 探测，同一浏览器仅允许一个活动标签页持有 socket
+		setConnecting(true);
+		const ok = await tabLock.claim();
+		if (!ok) {
+			setConnecting(false);
+			showToast("已在其他标签页连接，请关闭其他标签页后重试", {
+				type: "error",
+			});
+			throw new Error("已在其他标签页连接，请关闭其他标签页后重试");
+		}
+		if (adapter.isConnected()) {
+			const current = adapter.getCurrentUrl?.();
+			if (current === url) {
+				setConnecting(false);
+				return current;
+			}
+			adapter.disconnect();
+		}
+		try {
+			const ticket = await getWSTicket();
+			adapter.connect(url, ticket);
+			if (!serverEventsBound) {
+				serverEventsBound = true;
+				bindServerEvents();
+			}
+			return url;
+		} catch (err) {
+			setConnecting(false);
+			showToast(
+				`获取连接凭证失败: ${err instanceof Error ? err.message : String(err)}`,
+				{ type: "error" },
+			);
+			throw err;
+		}
 	}
 
 	function connect() {
@@ -154,35 +187,12 @@ export const socketStore = createRoot(() => {
 			showToast("请先登录", { type: "warning" });
 			return;
 		}
-		// 源头禁止多标签页连接：BroadcastChannel 探测，同一浏览器仅允许一个活动标签页持有 socket
-		setConnecting(true);
-		void tabLock.claim().then(async (ok) => {
-			if (!ok) {
-				setConnecting(false);
-				showToast("已在其他标签页连接，请关闭其他标签页后重试", {
-					type: "error",
-				});
-				return;
-			}
-			if (adapter.isConnected()) {
-				setConnecting(false);
-				return;
-			}
-			try {
-				const socketUrl = import.meta.env.VITE_SOCKET_URL || "";
-				const ticket = await getWSTicket();
-				adapter.connect(socketUrl, ticket);
-				if (serverEventsBound) return;
-				serverEventsBound = true;
-				bindServerEvents();
-			} catch (err) {
-				setConnecting(false);
-				showToast(
-					`获取连接凭证失败: ${err instanceof Error ? err.message : String(err)}`,
-					{ type: "error" },
-				);
-			}
-		});
+		const socketUrl = import.meta.env.VITE_SOCKET_URL || "";
+		void connectWithLock(socketUrl).catch(() => {});
+	}
+
+	async function connectToWorker(workerUrl: string): Promise<string> {
+		return connectWithLock(workerUrl);
 	}
 
 	function bindServerEvents() {

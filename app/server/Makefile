@@ -41,6 +41,11 @@ endef
 
 all: clean web linux windows darwin freebsd openbsd
 
+lint: vet
+
+vet:
+	go vet ./...
+
 clean:
 	rm -rf $(BUILDDIR)
 	mkdir -p $(BUILDDIR)

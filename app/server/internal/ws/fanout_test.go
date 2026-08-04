@@ -2,6 +2,7 @@ package ws
 
 import (
 	"fmt"
+	"sync/atomic"
 	"testing"
 )
 
@@ -116,6 +117,20 @@ func TestFanout_ForEach_StopEarly(t *testing.T) {
 	})
 	if count != 1 {
 		t.Fatalf("expected 1 iteration, got %d", count)
+	}
+}
+
+func TestFanout_DroppedCount(t *testing.T) {
+	f := NewFanout()
+	c1 := NewTestClient("c1", nil)
+	c2 := NewTestClient("c2", nil)
+	f.Add(c1)
+	f.Add(c2)
+	atomic.AddUint64(&c1.dropped, 2)
+	atomic.AddUint64(&c2.dropped, 3)
+
+	if got := f.DroppedCount(); got != 5 {
+		t.Fatalf("expected dropped count 5, got %d", got)
 	}
 }
 

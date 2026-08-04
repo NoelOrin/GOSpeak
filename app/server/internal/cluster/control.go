@@ -1,6 +1,10 @@
 package cluster
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
 
 const (
 	CommandKick         = "kick"
@@ -20,10 +24,53 @@ type ControlCommand struct {
 	Payload    map[string]interface{} `json:"payload,omitempty"`
 }
 
-// Validate 校验控制命令必填字段。
+// Validate 校验控制命令的已知类型与必填字段。
 func (c ControlCommand) Validate() error {
 	if c.Command == "" {
 		return errors.New("command is required")
 	}
+	switch c.Command {
+	case CommandKick:
+		if strings.TrimSpace(c.Room) == "" {
+			return errors.New("kick requires room")
+		}
+		if strings.TrimSpace(c.Identity) == "" {
+			return errors.New("kick requires identity")
+		}
+	case CommandDeleteRoom:
+		if strings.TrimSpace(c.DomainUUID) == "" {
+			return errors.New("delete_room requires domain_uuid")
+		}
+		if strings.TrimSpace(c.Room) == "" {
+			return errors.New("delete_room requires room")
+		}
+	case CommandDeleteServer:
+		if strings.TrimSpace(c.DomainUUID) == "" {
+			return errors.New("delete_server requires domain_uuid")
+		}
+	case CommandMute, CommandUnmute:
+		if !controlPayloadHasUserID(c.Payload) {
+			return fmt.Errorf("%s requires payload.user_id", c.Command)
+		}
+	default:
+		return fmt.Errorf("unsupported command %q", c.Command)
+	}
 	return nil
+}
+
+func controlPayloadHasUserID(payload map[string]interface{}) bool {
+	if payload == nil {
+		return false
+	}
+	switch v := payload["user_id"].(type) {
+	case float64:
+		return v >= 0
+	case int:
+		return v >= 0
+	case int64:
+		return v >= 0
+	case uint:
+		return true
+	}
+	return false
 }

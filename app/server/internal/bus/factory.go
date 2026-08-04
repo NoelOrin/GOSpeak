@@ -29,6 +29,7 @@ type Stats struct {
 	Connected            bool   `json:"connected"`
 	InstanceID           string `json:"instance_id"`
 	FallbackFromExternal bool   `json:"fallback_from_external"`
+	DroppedPublish       uint64 `json:"dropped_publish"`
 }
 
 // Init 创建 EventBus。
@@ -122,6 +123,7 @@ func GetStats(b EventBus) Stats {
 	}
 	if nb, ok := b.(*NATSBus); ok {
 		st.FallbackFromExternal = nb.fallbackFromExternal
+		st.DroppedPublish = nb.DroppedPublishCount()
 	}
 	return st
 }

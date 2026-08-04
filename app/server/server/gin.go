@@ -384,16 +384,39 @@ func StartGin(env EnvEnum) {
 	pluginH := handler.NewPluginHandler(pluginSvc)
 
 	var clusterHandler *handler.ClusterHandler
+	var clusterStop func()
+	localNodeUUID := ""
+	degradedToWorker := false
+	if cfg.IsAgent() {
+		acquireCtx, cancel := context.WithTimeout(context.Background(), agentLeaderAcquireTimeout)
+		leader, lockErr := acquireAgentLeader(acquireCtx, natsConn, cfg.NATSSubjectPrefix, instanceID)
+		cancel()
+		switch {
+		case lockErr != nil:
+			logger.WithComponent("Cluster").Warnf("agent leader lock unavailable; degraded-to-worker instance=%s role=%s err=%v", instanceID, cfg.ClusterRole, lockErr)
+			degradedToWorker = true
+		case !leader:
+			logger.WithComponent("Cluster").Warnf("agent leader lock held by another instance; degraded-to-worker instance=%s role=%s", instanceID, cfg.ClusterRole)
+			degradedToWorker = true
+		default:
+			logger.WithComponent("Cluster").Infof("agent leader lock acquired instance=%s role=%s", instanceID, cfg.ClusterRole)
+		}
+	}
+	if degradedToWorker {
+		cfg.ClusterRole = model.ClusterRoleWorker
+	}
 	if cfg.IsAgent() {
 		clusterHandler = handler.NewClusterHandler(clusterSvc)
 	}
-	var clusterStop func()
-	localNodeUUID := ""
 	switch cfg.ClusterRole {
 	case "all":
 		localNodeUUID, clusterStop, err = startLocalClusterRuntime(cfg, clusterSvc, signalHub, eventBus.InstanceID())
 	case "worker":
-		clusterStop, err = startWorkerClusterRuntime(cfg, signalHub)
+		if degradedToWorker && (cfg.ClusterAgentURL == "" || cfg.ClusterAgentToken == "") {
+			localNodeUUID, clusterStop, err = startDegradedLocalWorkerRuntime(cfg, signalHub, eventBus.InstanceID())
+		} else {
+			clusterStop, err = startWorkerClusterRuntime(cfg, signalHub)
+		}
 	case "agent":
 		clusterStop, err = startAgentClusterRuntime(cfg, clusterSvc)
 	}
@@ -403,17 +426,19 @@ func StartGin(env EnvEnum) {
 
 	domainH := handler.NewDomainHandler(domainSvc, permSvc)
 	domainH.SetControlPublisher(clusterSvc)
-	domainH.SetOnDomainCreated(func(serverUUID string) {
-		if err := clusterSvc.EnsureServer(serverUUID, 1, localNodeUUID); err != nil {
-			logger.WithComponent("Cluster").Warnf("schedule server %s failed: %v", serverUUID, err)
-		}
-	})
-	domainH.SetOnDomainDelete(func(serverUUID string) {
-		if err := clusterSvc.DeleteServer(serverUUID); err != nil {
-			logger.WithComponent("Cluster").Warnf("delete server %s assignments failed: %v", serverUUID, err)
-		}
-		signalHub.OnDomainDelete(serverUUID)
-	})
+	if !degradedToWorker {
+		domainH.SetOnDomainCreated(func(serverUUID string) {
+			if err := clusterSvc.EnsureServer(serverUUID, 1, localNodeUUID); err != nil {
+				logger.WithComponent("Cluster").Warnf("schedule server %s failed: %v", serverUUID, err)
+			}
+		})
+		domainH.SetOnDomainDelete(func(serverUUID string) {
+			if err := clusterSvc.DeleteServer(serverUUID); err != nil {
+				logger.WithComponent("Cluster").Warnf("delete server %s assignments failed: %v", serverUUID, err)
+			}
+			signalHub.OnDomainDelete(serverUUID)
+		})
+	}
 	if cfg.IsAgent() {
 		domains, _, listErr := domainSvc.List(1, 1000)
 		if listErr != nil {

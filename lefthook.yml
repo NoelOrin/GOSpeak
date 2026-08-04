@@ -7,6 +7,10 @@ pre-commit:
       run: npx @biomejs/biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
       stage_fixed: true
 
+    "go vet":
+      glob: "app/server/**/*.go"
+      run: cd app/server && go vet ./...
+
 # Use this to validate commit messages
 commit-msg:
   commands:

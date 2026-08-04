@@ -5,6 +5,7 @@
   "scripts": {
     "predev": "[ -f \"$(go env GOPATH)/bin/air\" ] || go install github.com/air-verse/air@latest",
     "dev": "$(go env GOPATH)/bin/air",
+    "lint": "go vet ./...",
     "prod": "go run main.go server -e prod",
     "build": "go build -o gospeak main.go"
   }

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"html/template"
+	"net"
 	"net/smtp"
 	"strings"
 	"time"
@@ -101,7 +102,8 @@ func (s *EmailService) SendVerificationCode(email, scene, code string) error {
 		return sendMailTLS(addr, cfg.SMTPHost, auth, cfg.SMTPFrom, []string{email}, []byte(message))
 	}
 
-	if err := smtp.SendMail(addr, auth, cfg.SMTPFrom, []string{email}, []byte(message)); err != nil {
+	// 非 465 端口拒绝无 STARTTLS 的明文通道，避免 SMTP 凭据被截获。
+	if err := sendMailStartTLS(addr, cfg.SMTPHost, auth, cfg.SMTPFrom, []string{email}, []byte(message)); err != nil {
 		return pkg.NewAppError(pkg.EMAIL_SEND_FAILED, err.Error())
 	}
 	return nil
@@ -174,4 +176,53 @@ func sendMailTLS(addr, host string, auth smtp.Auth, from string, to []string, ms
 		return pkg.NewAppError(pkg.EMAIL_SEND_FAILED, err.Error())
 	}
 	return nil
+}
+
+// sendMailStartTLS 通过 STARTTLS 升级连接后发送邮件；
+// 服务器不声明 STARTTLS 时拒绝发送，避免凭据走明文通道。
+func sendMailStartTLS(addr, host string, auth smtp.Auth, from string, to []string, msg []byte) error {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if ok, _ := client.Extension("STARTTLS"); !ok {
+		return fmt.Errorf("smtp server %s does not advertise STARTTLS", addr)
+	}
+	if err := client.StartTLS(&tls.Config{ServerName: host}); err != nil {
+		return err
+	}
+	if auth != nil {
+		if ok, _ := client.Extension("AUTH"); ok {
+			if err := client.Auth(auth); err != nil {
+				return err
+			}
+		}
+	}
+	if err := client.Mail(from); err != nil {
+		return err
+	}
+	for _, recipient := range to {
+		if err := client.Rcpt(recipient); err != nil {
+			return err
+		}
+	}
+	w, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(msg); err != nil {
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	return client.Quit()
 }

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockAdapter } = vi.hoisted(() => {
+const { mockAdapter, mockTabLock } = vi.hoisted(() => {
 	return {
 		mockAdapter: {
 			isConnected: vi.fn(() => false),
@@ -12,9 +12,16 @@ const { mockAdapter } = vi.hoisted(() => {
 			onServerEvent: vi.fn(() => () => {}),
 			offServerEvent: vi.fn(),
 			offAllServerEvents: vi.fn(),
-			onConnected: vi.fn(() => () => {}),
+			onConnected: vi.fn<(cb: () => void) => () => void>(() => () => {}),
 			onDisconnected: vi.fn(() => () => {}),
 			onConnectError: vi.fn(() => () => {}),
+		},
+		mockTabLock: {
+			claim: vi.fn(async () => true),
+			release: vi.fn(),
+			isOwner: vi.fn(() => true),
+			ensureListening: vi.fn(),
+			setOnForeignClaim: vi.fn(),
 		},
 	};
 });
@@ -28,13 +35,7 @@ vi.mock("@/api/ws", () => ({
 }));
 
 vi.mock("@/socket/tabLock", () => ({
-	createTabLock: () => ({
-		claim: vi.fn(async () => true),
-		release: vi.fn(),
-		isOwner: vi.fn(() => true),
-		ensureListening: vi.fn(),
-		setOnForeignClaim: vi.fn(),
-	}),
+	createTabLock: () => mockTabLock,
 }));
 
 vi.mock("@/socket/providerReload", () => ({
@@ -81,14 +82,20 @@ vi.mock("solid-notifications", () => ({
 
 import { socketStore } from "./socketStore";
 
+const onConnectedCb = mockAdapter.onConnected.mock.calls[0]?.[0] as
+	| (() => void)
+	| undefined;
+
 describe("socketStore worker routing", () => {
 	beforeEach(() => {
+		socketStore.disconnect();
 		vi.clearAllMocks();
 		mockAdapter.isConnected.mockReturnValue(false);
 		mockAdapter.getCurrentUrl.mockReturnValue("");
+		mockTabLock.claim.mockResolvedValue(true);
 	});
 
-	it("connectToWorker uses worker URL before default socket URL", async () => {
+	it("connectToWorker claims the tab lock and connects to worker URL", async () => {
 		const url = await socketStore.connectToWorker("wss://worker-a.example");
 
 		expect(url).toBe("wss://worker-a.example");
@@ -96,5 +103,29 @@ describe("socketStore worker routing", () => {
 			"wss://worker-a.example",
 			"ticket",
 		);
+		expect(mockTabLock.claim).toHaveBeenCalledTimes(1);
+		expect(mockAdapter.onServerEvent.mock.calls.length).toBeGreaterThan(0);
+	});
+
+	it("connectToWorker rejects when another tab owns the lock", async () => {
+		mockTabLock.claim.mockResolvedValueOnce(false);
+
+		await expect(
+			socketStore.connectToWorker("wss://worker-a.example"),
+		).rejects.toThrow("已在其他标签页连接");
+		expect(mockAdapter.connect).not.toHaveBeenCalled();
+		expect(mockAdapter.onServerEvent).not.toHaveBeenCalled();
+	});
+
+	it("connectToWorker binds server events only once", async () => {
+		await socketStore.connectToWorker("wss://worker-a.example");
+		const boundCount = mockAdapter.onServerEvent.mock.calls.length;
+		expect(boundCount).toBeGreaterThan(0);
+
+		onConnectedCb?.();
+		await socketStore.connectToWorker("wss://worker-b.example");
+
+		expect(mockAdapter.connect).toHaveBeenCalledTimes(2);
+		expect(mockAdapter.onServerEvent.mock.calls.length).toBe(boundCount);
 	});
 });

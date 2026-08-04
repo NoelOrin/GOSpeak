@@ -124,9 +124,10 @@ type healthSnapshot struct {
 	DiskPercent float64 `json:"disk_percent"`
 
 	// 业务
-	HubRoomCount        int `json:"hub_room_count"`
-	HubParticipantCount int `json:"hub_participant_count"`
-	HubOnlineUserCount  int `json:"hub_online_user_count"`
+	HubRoomCount        int    `json:"hub_room_count"`
+	HubParticipantCount int    `json:"hub_participant_count"`
+	HubOnlineUserCount  int    `json:"hub_online_user_count"`
+	WSClientDropped     uint64 `json:"ws_client_dropped"`
 
 	// DB 连接池
 	DBConnected      bool  `json:"db_connected"`
@@ -149,6 +150,7 @@ type healthSnapshot struct {
 	EventBusConnected            bool   `json:"eventbus_connected"`
 	EventBusInstanceID           string `json:"eventbus_instance_id"`
 	EventBusFallbackFromExternal bool   `json:"eventbus_fallback_from_external"`
+	EventBusDroppedPublish       uint64 `json:"eventbus_dropped_publish"`
 
 	// Shared multi-instance backends
 	AuthStoreBackend string `json:"auth_store_backend"`
@@ -195,6 +197,7 @@ func (h *MonitorHandler) collect() healthSnapshot {
 		snap.HubRoomCount = hs.RoomCount
 		snap.HubParticipantCount = hs.ParticipantCount
 		snap.HubOnlineUserCount = hs.OnlineUserCount
+		snap.WSClientDropped = hs.WSClientDropped
 	}
 
 	// DB 连接池
@@ -226,6 +229,7 @@ func (h *MonitorHandler) collect() healthSnapshot {
 	snap.EventBusConnected = es.Connected
 	snap.EventBusInstanceID = es.InstanceID
 	snap.EventBusFallbackFromExternal = es.FallbackFromExternal
+	snap.EventBusDroppedPublish = es.DroppedPublish
 
 	if redis.IsConnected() {
 		snap.AuthStoreBackend = "redis"

@@ -11,9 +11,43 @@ import (
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/logger"
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/repository"
 	"GOSpeak/internal/service"
 	"GOSpeak/internal/signal"
+
+	"github.com/nats-io/nats.go"
 )
+
+const agentLeaderAcquireTimeout = 5 * time.Second
+
+// acquireAgentLeader 尝试通过 NATS JetStream KV 抢占 Agent 主锁。
+func acquireAgentLeader(ctx context.Context, nc *nats.Conn, prefix, instanceID string) (bool, error) {
+	if nc == nil {
+		return false, nil
+	}
+	if strings.TrimSpace(prefix) == "" {
+		prefix = "gospeak"
+	}
+	js, err := nc.JetStream()
+	if err != nil {
+		return false, err
+	}
+	lock, err := cluster.OpenLeaderLock(js, prefix)
+	if err != nil {
+		return false, err
+	}
+	return lock.TryAcquire(ctx, instanceID)
+}
+
+// startDegradedLocalWorkerRuntime 在主锁不可用时把节点作为本地 worker 数据面运行，
+// 不携带 serverRepo，避免心跳触发控制面调度写操作。
+func startDegradedLocalWorkerRuntime(cfg *config.Config, hub *signal.Hub, instanceID string) (string, func(), error) {
+	workerSvc := service.NewClusterService(
+		repository.NewClusterNodeRepository(repository.DB),
+		repository.NewServerAssignmentRepository(repository.DB),
+	)
+	return startLocalClusterRuntime(cfg, workerSvc, hub, instanceID)
+}
 
 func startLocalClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterService, hub *signal.Hub, instanceID string) (string, func(), error) {
 	node, err := clusterSvc.EnsureLocalNode(cfg, instanceID)

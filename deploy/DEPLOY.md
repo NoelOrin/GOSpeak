@@ -74,10 +74,15 @@ docker compose --profile postgres --profile redis --profile srs --profile app up
 ```bash
 # 需要一个 admin JWT 作为 worker→agent 控制面鉴权 token
 export CLUSTER_AGENT_TOKEN=<admin-jwt>
+# 必填：浏览器可达的 Worker HTTP(S) 地址，例如 https://ws.example.com
+export CLUSTER_WORKER_ADVERTISE_URL=https://ws.example.com
 docker compose -f deploy/docker-compose.yml --profile cluster up -d --build
 ```
 
-多 Worker 时通过 `CLUSTER_WORKER_NODE_ID` 为每个副本设置不同节点 ID；生产环境浏览器访问的 Worker 地址由 `CLUSTER_WORKER_ADVERTISE_URL` 指定。
+- 多 Worker 时通过 `CLUSTER_WORKER_NODE_ID` 为每个副本设置不同节点 ID（如 `worker-1` / `worker-2`）。
+- `CLUSTER_WORKER_ADVERTISE_URL` 是集群模式必填项，未设置会启动失败；必须填浏览器可访问的公网/局域网 HTTP(S) 地址，**不能**填容器服务名（如 `http://gospeak-worker:8998`），前端会把它转换为 `wss://.../ws` 再连接。
+- 默认 `deploy/nginx-cluster.conf` 只支持单 Worker：`/ws` 固定代理 `gospeak-worker:8998`，多副本时所有 WebSocket 都会打到 `worker-1`，不能当作多 Worker 负载均衡。
+- 多 Worker 部署建议让浏览器直连每个 Worker 的 `CLUSTER_WORKER_ADVERTISE_URL`（Agent 返回的 `workerUrl` 已指向对应节点）；若必须统一走 nginx，需要按 Worker 节点增加独立上游/路径路由，不能原样复用该配置文件。
 
 ### 3.5 仅依赖 (本地 pnpm 开发)
 

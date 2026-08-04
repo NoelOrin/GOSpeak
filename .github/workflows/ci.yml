@@ -67,6 +67,23 @@ jobs:
           path: app/server/gospeak
           retention-days: 3
 
+  # ── Backend: Vet Go Server ───────────────────────────────────────────
+  lint-server:
+    name: Lint Server (go vet)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: app/server/go.mod
+          cache-dependency-path: app/server/go.sum
+          cache: true
+
+      - name: Vet
+        working-directory: app/server
+        run: go vet ./...
+
   # ── Backend: Test Go Server ──────────────────────────────────────────
   test-server:
     name: Test Server (Go)

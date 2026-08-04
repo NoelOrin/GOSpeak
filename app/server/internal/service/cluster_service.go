@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -98,9 +99,11 @@ func (s *ClusterService) EnsureLocalNode(cfg *config.Config, instanceID string) 
 		if err := s.nodeRepo.Update(existing); err != nil {
 			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 		}
-		s.publishClusterEvent(cluster.EventNodeRegistered, map[string]interface{}{
+		if err := s.publishClusterEvent(cluster.EventNodeRegistered, map[string]interface{}{
 			"node_id": existing.UUID, "status": existing.Status, "advertise_url": existing.AdvertiseURL,
-		})
+		}); err != nil {
+			return nil, pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish node registered event failed")
+		}
 		return existing, nil
 	}
 	if err != gorm.ErrRecordNotFound {
@@ -157,9 +160,11 @@ func (s *ClusterService) RegisterNode(req model.ClusterNode) (*model.ClusterNode
 	if err := s.nodeRepo.Create(&req); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	s.publishClusterEvent(cluster.EventNodeRegistered, map[string]interface{}{
+	if err := s.publishClusterEvent(cluster.EventNodeRegistered, map[string]interface{}{
 		"node_id": req.UUID, "status": req.Status, "advertise_url": req.AdvertiseURL,
-	})
+	}); err != nil {
+		return nil, pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish node registered event failed")
+	}
 	return &req, nil
 }
 
@@ -206,9 +211,11 @@ func (s *ClusterService) Heartbeat(nodeID string, report cluster.HeartbeatReport
 	if err := s.nodeRepo.Update(node); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	s.publishClusterEvent(cluster.EventNodeHeartbeat, map[string]interface{}{
+	if err := s.publishClusterEvent(cluster.EventNodeHeartbeat, map[string]interface{}{
 		"node_id": node.UUID, "status": node.Status, "rooms": node.Rooms, "connections": node.Connections,
-	})
+	}); err != nil {
+		return nil, pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish node heartbeat event failed")
+	}
 	s.reconcilePendingServers(node.UUID)
 	return node, nil
 }
@@ -227,9 +234,11 @@ func (s *ClusterService) DeregisterNode(nodeID string) error {
 	if err := s.nodeRepo.Update(node); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	s.publishClusterEvent(cluster.EventNodeDeregistered, map[string]interface{}{
+	if err := s.publishClusterEvent(cluster.EventNodeDeregistered, map[string]interface{}{
 		"node_id": node.UUID, "status": node.Status,
-	})
+	}); err != nil {
+		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish node deregistered event failed")
+	}
 	return nil
 }
 
@@ -246,9 +255,11 @@ func (s *ClusterService) DrainNode(nodeID string) error {
 	if err := s.nodeRepo.Update(node); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	s.publishClusterEvent(cluster.EventNodeDraining, map[string]interface{}{
+	if err := s.publishClusterEvent(cluster.EventNodeDraining, map[string]interface{}{
 		"node_id": node.UUID, "status": node.Status,
-	})
+	}); err != nil {
+		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish node draining event failed")
+	}
 	return nil
 }
 
@@ -265,9 +276,11 @@ func (s *ClusterService) UndrainNode(nodeID string) error {
 	if err := s.nodeRepo.Update(node); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	s.publishClusterEvent(cluster.EventNodeUndrained, map[string]interface{}{
+	if err := s.publishClusterEvent(cluster.EventNodeUndrained, map[string]interface{}{
 		"node_id": node.UUID, "status": node.Status,
-	})
+	}); err != nil {
+		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish node undrained event failed")
+	}
 	return nil
 }
 
@@ -369,9 +382,11 @@ func (s *ClusterService) ScaleServer(serverUUID string, replicas int, preferredN
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	s.syncNodeServerCounts()
-	s.publishClusterEvent(cluster.EventServerScaled, map[string]interface{}{
+	if err := s.publishClusterEvent(cluster.EventServerScaled, map[string]interface{}{
 		"server_uuid": serverUUID, "replicas": len(assignments), "assignments": assignments,
-	})
+	}); err != nil {
+		return nil, pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish server scaled event failed")
+	}
 	return assignments, nil
 }
 
@@ -386,9 +401,11 @@ func (s *ClusterService) DeleteServer(serverUUID string) error {
 	if err := s.assignRepo.RemoveAll(serverUUID); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	s.publishClusterEvent(cluster.EventServerDeleted, map[string]interface{}{
+	if err := s.publishClusterEvent(cluster.EventServerDeleted, map[string]interface{}{
 		"server_uuid": serverUUID,
-	})
+	}); err != nil {
+		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish server deleted event failed")
+	}
 	s.syncNodeServerCounts()
 	return nil
 }
@@ -413,8 +430,14 @@ func (s *ClusterService) MarkServerAssignmentsDraining(serverUUID string) error 
 	if err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
+	var errs []error
 	for _, assignment := range assignments {
-		_ = s.assignRepo.UpdateStatus(serverUUID, assignment.NodeUUID, model.ServerAssignmentDraining)
+		if err := s.assignRepo.UpdateStatus(serverUUID, assignment.NodeUUID, model.ServerAssignmentDraining); err != nil {
+			errs = append(errs, fmt.Errorf("mark assignment %s/%s draining: %w", serverUUID, assignment.NodeUUID, err))
+		}
+	}
+	if len(errs) > 0 {
+		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, errors.Join(errs...), "mark server assignments draining failed")
 	}
 	return nil
 }
@@ -432,7 +455,9 @@ func (s *ClusterService) PublishControl(cmd cluster.ControlCommand) error {
 	if err := cmd.Validate(); err != nil {
 		return pkg.NewAppError(pkg.INVALID_PARAMS, err.Error())
 	}
-	s.publishClusterEvent(cluster.EventControlCommand, cmd)
+	if err := s.publishClusterEvent(cluster.EventControlCommand, cmd); err != nil {
+		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish cluster control command failed")
+	}
 	return nil
 }
 
@@ -445,19 +470,26 @@ func (s *ClusterService) ReconcileAll(timeout time.Duration) error {
 	if err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
+	var errs []error
 	for _, node := range nodes {
-		if cluster.CanSchedule(node) {
+		if node.Status != model.ClusterNodeOffline && node.Status != model.ClusterNodeUnhealthy {
 			continue
 		}
 		assignments, listErr := s.assignRepo.ListByNode(node.UUID)
 		if listErr != nil {
+			errs = append(errs, fmt.Errorf("list assignments for node %s: %w", node.UUID, listErr))
 			continue
 		}
 		for _, assignment := range assignments {
-			_ = s.assignRepo.Remove(assignment.ServerUUID, node.UUID)
+			if err := s.assignRepo.Remove(assignment.ServerUUID, node.UUID); err != nil {
+				errs = append(errs, fmt.Errorf("remove assignment %s/%s: %w", assignment.ServerUUID, node.UUID, err))
+			}
 		}
 	}
 	s.syncNodeServerCounts()
+	if len(errs) > 0 {
+		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, errors.Join(errs...), "reconcile cluster assignments failed")
+	}
 	return nil
 }
 
@@ -596,9 +628,9 @@ func localAdvertiseURL(cfg *config.Config, host string) string {
 	return "http://" + host + ":" + port
 }
 
-func (s *ClusterService) publishClusterEvent(event string, payload interface{}) {
+func (s *ClusterService) publishClusterEvent(event string, payload interface{}) error {
 	if s.notifier == nil {
-		return
+		return nil
 	}
-	_ = s.notifier.PublishInternal(context.Background(), event, payload)
+	return s.notifier.PublishInternal(context.Background(), event, payload)
 }

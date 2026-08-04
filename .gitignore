@@ -81,6 +81,9 @@ go.work.sum
 agent_test_logs/*
 !agent_test_logs/AGENTS.md
 
+# 存储 handler 测试产生的上传文件
+app/server/internal/handler/uploads/
+
 # ========================
 # Agents 配置
 # ========================

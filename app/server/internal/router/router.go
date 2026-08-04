@@ -100,10 +100,6 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 		workerProtected.Use(middleware.JWTAuth())
 		workerProtected.Use(middleware.BanCheck())
 		signalRoutes.RegisterProtected(workerProtected.Group("/signal"), h.Signal, h.Cloudflare)
-		api.POST("/room/create", func(c *gin.Context) {
-			pkg.Fail(c, pkg.FORBIDDEN, "worker mode does not accept business writes")
-			c.Abort()
-		})
 		return r
 	}
 
@@ -144,6 +140,17 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	}
 
 	return r
+}
+
+// workerModeAPIFallback 拦截未注册的 worker API 路径：写方法 403，读方法 404。
+func workerModeAPIFallback(c *gin.Context) {
+	switch c.Request.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		pkg.Fail(c, pkg.FORBIDDEN, "worker mode does not accept business writes")
+		c.Abort()
+	default:
+		c.Status(http.StatusNotFound)
+	}
 }
 
 // serveSPA 托管前端构建产物。
@@ -201,21 +208,27 @@ func serveSPA(r *gin.Engine) {
 		}
 	}
 
-	if fileServer == nil {
-		return
-	}
-
 	r.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
 		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws") || strings.HasPrefix(path, "/swagger") {
+			if strings.HasPrefix(path, "/api/") {
+				if cfg := config.Current(); cfg != nil && cfg.ClusterRole == "worker" {
+					workerModeAPIFallback(c)
+					return
+				}
+			}
 			c.Status(http.StatusNotFound)
 			return
 		}
-		if hasFile(path) {
+		if fileServer != nil && hasFile(path) {
 			fileServer.ServeHTTP(c.Writer, c.Request)
 			return
 		}
-		serveIndex(c)
+		if serveIndex != nil {
+			serveIndex(c)
+			return
+		}
+		c.Status(http.StatusNotFound)
 	})
 }
 

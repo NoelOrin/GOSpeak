@@ -322,11 +322,14 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 	}
 
 	if h.controlPublisher != nil {
-		_ = h.controlPublisher.PublishControl(cluster.ControlCommand{
+		if err := h.controlPublisher.PublishControl(cluster.ControlCommand{
 			Command:    cluster.CommandDeleteRoom,
 			DomainUUID: room.DomainUUID,
 			Room:       room.Name,
-		})
+		}); err != nil {
+			pkg.HandleError(c, err)
+			return
+		}
 	}
 
 	pkg.Success(c, nil)

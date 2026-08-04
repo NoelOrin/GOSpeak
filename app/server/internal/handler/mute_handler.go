@@ -101,13 +101,16 @@ func (h *MuteHandler) CreateMute(c *gin.Context) {
 	}
 
 	if h.controlPublisher != nil {
-		_ = h.controlPublisher.PublishControl(cluster.ControlCommand{
+		if err := h.controlPublisher.PublishControl(cluster.ControlCommand{
 			Command:  cluster.CommandMute,
 			Identity: userUUIDStr,
 			Payload: map[string]interface{}{
 				"user_id": req.UserID, "permanent": req.Permanent, "duration": req.Duration, "reason": req.Reason,
 			},
-		})
+		}); err != nil {
+			pkg.HandleError(c, err)
+			return
+		}
 	}
 
 	pkg.Success(c, mute)
@@ -143,10 +146,13 @@ func (h *MuteHandler) CancelMute(c *gin.Context) {
 	}
 
 	if h.controlPublisher != nil {
-		_ = h.controlPublisher.PublishControl(cluster.ControlCommand{
+		if err := h.controlPublisher.PublishControl(cluster.ControlCommand{
 			Command: cluster.CommandUnmute,
 			Payload: map[string]interface{}{"user_id": req.UserID},
-		})
+		}); err != nil {
+			pkg.HandleError(c, err)
+			return
+		}
 	}
 
 	pkg.Success(c, nil)

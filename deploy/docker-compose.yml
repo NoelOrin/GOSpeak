@@ -138,7 +138,7 @@ services:
       CLUSTER_AGENT_URL: ${CLUSTER_AGENT_URL:-http://gospeak-agent:9000}
       CLUSTER_AGENT_TOKEN: ${CLUSTER_AGENT_TOKEN:-}
       CLUSTER_NODE_ID: ${CLUSTER_WORKER_NODE_ID:-worker-1}
-      CLUSTER_ADVERTISE_URL: ${CLUSTER_WORKER_ADVERTISE_URL:-http://gospeak-worker:8998}
+      CLUSTER_ADVERTISE_URL: ${CLUSTER_WORKER_ADVERTISE_URL:?CLUSTER_WORKER_ADVERTISE_URL is required for cluster mode}
       NATS_URL: ${NATS_URL:-nats://nats:4222}
       STATE_STORE: ${STATE_STORE:-nats}
     ports:

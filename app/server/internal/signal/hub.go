@@ -1357,16 +1357,17 @@ func (h *Hub) getMergedRoomsScoped(domainUUID string, platformOnly bool) []RoomI
 
 // HubStats 信令面实时统计，用于监控面板。
 type HubStats struct {
-	RoomCount        int `json:"room_count"`
-	ParticipantCount int `json:"participant_count"`
-	OnlineUserCount  int `json:"online_user_count"`
+	RoomCount        int    `json:"room_count"`
+	ParticipantCount int    `json:"participant_count"`
+	OnlineUserCount  int    `json:"online_user_count"`
+	WSClientDropped  uint64 `json:"ws_client_dropped"`
 }
 
 // GetStats 返回信令面房间数、参与者总数、去重在线用户数。
 func (h *Hub) GetStats() HubStats {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
 
+	roomCount := len(h.rooms)
 	identities := make(map[string]struct{}, len(h.rooms))
 	participants := 0
 	for _, room := range h.rooms {
@@ -1377,11 +1378,17 @@ func (h *Hub) GetStats() HubStats {
 			}
 		}
 	}
-	return HubStats{
-		RoomCount:        len(h.rooms),
+	h.mu.RUnlock()
+
+	st := HubStats{
+		RoomCount:        roomCount,
 		ParticipantCount: participants,
 		OnlineUserCount:  len(identities),
 	}
+	if dc, ok := h.fanout.(interface{ DroppedCount() uint64 }); ok {
+		st.WSClientDropped = dc.DroppedCount()
+	}
+	return st
 }
 
 func (h *Hub) GetSFURooms() []RoomInfo {
@@ -1792,6 +1799,9 @@ func (h *Hub) OnDomainDelete(domainUUID string) {
 // HandleRemoteEvent 处理来自其他实例的控制面事件。
 // HandleClusterCommand 执行 Agent 下发的本地信令控制命令。
 func (h *Hub) HandleClusterCommand(cmd cluster.ControlCommand) error {
+	if err := cmd.Validate(); err != nil {
+		return err
+	}
 	switch cmd.Command {
 	case cluster.CommandKick:
 		h.KickFromRoom(cmd.DomainUUID, cmd.Room, cmd.Identity)
@@ -1829,6 +1839,9 @@ func (h *Hub) KickFromRoom(domainUUID, room, targetIdentity string) {
 		h.mu.Unlock()
 		return
 	}
+	var targetSocketID string
+	var targetStream string
+	roomDeleted := false
 	for sid, member := range roomState.Members {
 		if member == nil || member.Identity != targetIdentity {
 			continue
@@ -1841,18 +1854,78 @@ func (h *Hub) KickFromRoom(domainUUID, room, targetIdentity string) {
 		if h.fanout != nil {
 			h.fanout.Leave(key, sid)
 		}
+		targetSocketID = sid
+		targetStream = member.Stream
+		roomDeleted = h.deleteRoomIfEmptyLocked(key)
 		break
 	}
 	h.mu.Unlock()
-	h.removeParticipantSafe(key, targetIdentity)
+	if targetSocketID == "" {
+		return
+	}
+
+	h.clearConnRoomSlot(targetSocketID, key)
+	if targetStream != "" {
+		h.syncStreamDelete(targetStream)
+	}
+
+	enforcement := h.removeParticipantSafe(key, targetIdentity)
+
+	// Fanout.GetClient 对已删除 key 会返回带类型的 nil 指针；该 socket 已断开，跳过避免误 Close。
+	var targetConn ws.ClientMessenger
+	if h.fanout != nil {
+		if client := h.fanout.GetClient(targetSocketID); client != nil {
+			if typed, ok := client.(*ws.Client); !ok || typed != nil {
+				targetConn = client
+			}
+		}
+	}
+
+	h.publishRoom(key, EventRoomKicked, map[string]interface{}{
+		"room":           room,
+		"domain_uuid":    domainUUID,
+		"targetIdentity": targetIdentity,
+		"enforcement":    enforcement,
+	})
+	if targetConn != nil {
+		targetConn.Send(map[string]interface{}{"event": EventRoomKicked, "data": map[string]interface{}{
+			"room":           room,
+			"domain_uuid":    domainUUID,
+			"targetIdentity": targetIdentity,
+			"enforcement":    enforcement,
+		}})
+	}
+
+	h.publishRoom(key, EventMemberLeft, map[string]interface{}{
+		"room":        room,
+		"domain_uuid": domainUUID,
+		"identity":    targetIdentity,
+		"id":          targetSocketID,
+		"enforcement": enforcement,
+	})
+
+	if targetConn != nil {
+		targetConn.Close()
+	}
+
 	h.syncRoomToStore(key)
-	h.broadcastRoomList(domainUUID)
+	if h.participantCleanup != nil {
+		h.participantCleanup.OnParticipantLeft(key, targetIdentity)
+	}
+
+	if roomDeleted {
+		h.deleteRoomSafe(key)
+		h.broadcastRoomList(domainUUID)
+		return
+	}
+	h.broadcastRoomUpdatedLocal(key)
 }
 
 // DeleteRoomByDomainName 删除指定 Domain 下的单个信令房间，并清理 SFU 与共享状态。
 func (h *Hub) DeleteRoomByDomainName(domainUUID, room string) {
 	key := roomKey(domainUUID, room)
 	var deletedStreams []string
+	var closedClients []ws.ClientMessenger
 	h.mu.Lock()
 	roomState, ok := h.rooms[key]
 	if !ok {
@@ -1871,10 +1944,26 @@ func (h *Hub) DeleteRoomByDomainName(domainUUID, room string) {
 		delete(h.connSlots, sid)
 		if h.fanout != nil {
 			h.fanout.Leave(key, sid)
+			// Fanout.GetClient 对已删除 key 会返回带类型的 nil 指针；该 socket 已断开，跳过避免误 Close。
+			if client := h.fanout.GetClient(sid); client != nil {
+				if typed, ok := client.(*ws.Client); !ok || typed != nil {
+					closedClients = append(closedClients, client)
+				}
+			}
 		}
 	}
 	delete(h.rooms, key)
 	h.mu.Unlock()
+
+	// 在锁外关闭成员连接，避免 Close 阻塞拖住所有信令。
+	closed := make(map[string]struct{}, len(closedClients))
+	for _, client := range closedClients {
+		if _, ok := closed[client.ID()]; ok {
+			continue
+		}
+		closed[client.ID()] = struct{}{}
+		client.Close()
+	}
 	for _, stream := range deletedStreams {
 		h.syncStreamDelete(stream)
 	}
