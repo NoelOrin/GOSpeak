@@ -83,10 +83,17 @@ func StartGin(env EnvEnum) {
 	}
 
 	roleRepo := repository.NewRoleRepository(repository.DB)
-	seedRoles(roleRepo)
+	if cfg.IsAgent() {
+		seedRoles(roleRepo)
+	} else {
+		loadRoles(roleRepo)
+	}
 
 	userRepo := repository.NewUserRepository(repository.DB)
-	adminUUID := seedAdminUser(userRepo)
+	var adminUUID string
+	if cfg.IsAgent() {
+		adminUUID = seedAdminUser(userRepo)
+	}
 	userGroupRepo := repository.NewUserGroupRepository(repository.DB)
 	if adminUUID != "" {
 		if err := repository.EnsureDefaultDomain(repository.DB, adminUUID); err != nil {
@@ -108,7 +115,9 @@ func StartGin(env EnvEnum) {
 	domainSvc := service.NewDomainService(domainRepo)
 
 	// 初始化权限系统
-	seedPermissions(permRepo)
+	if cfg.IsAgent() {
+		seedPermissions(permRepo)
+	}
 	permSvc := service.NewPermissionService(permRepo)
 	if err := permSvc.LoadCache(); err != nil {
 		panic(fmt.Sprintf("failed to load permission cache: %v", err))
@@ -129,8 +138,10 @@ func StartGin(env EnvEnum) {
 	messageSvc.SetUserRepo(userRepo)
 	muteSvc := service.NewMuteService(muteRepo, userRepo)
 	sfuConfigSvc := service.NewSFUConfigService(sfuConfigRepo, cfg)
-	if err := sfuConfigSvc.SyncFromEnv(); err != nil {
-		panic(fmt.Sprintf("failed to sync sfu config from env: %v", err))
+	if cfg.IsAgent() {
+		if err := sfuConfigSvc.SyncFromEnv(); err != nil {
+			panic(fmt.Sprintf("failed to sync sfu config from env: %v", err))
+		}
 	}
 	botTokenRepo := repository.NewBotTokenRepository(repository.DB)
 	botSvc := service.NewBotService(userRepo, botTokenRepo)
@@ -144,12 +155,14 @@ func StartGin(env EnvEnum) {
 		panic(fmt.Sprintf("register builtin plugins: %v", err))
 	}
 	logger.WithComponent("Plugin").WithField("embedded", builtin.EmbeddedSummary()).Info("builtin plugins registered")
-	if err := pluginReg.InitAll(); err != nil {
-		panic(fmt.Sprintf("init plugins: %v", err))
-	}
-	// 后端启动时同步启动已启用插件（bot-base 内嵌且默认启用）
-	if err := pluginReg.StartEnabled(context.Background()); err != nil {
-		logger.WithComponent("Plugin").Warnf("start plugins: %v", err)
+	if cfg.IsAgent() {
+		if err := pluginReg.InitAll(); err != nil {
+			panic(fmt.Sprintf("init plugins: %v", err))
+		}
+		// 后端启动时同步启动已启用插件（bot-base 内嵌且默认启用）
+		if err := pluginReg.StartEnabled(context.Background()); err != nil {
+			logger.WithComponent("Plugin").Warnf("start plugins: %v", err)
+		}
 	}
 	pluginSvc := service.NewPluginService(pluginReg)
 	for _, info := range pluginSvc.List() {
@@ -532,6 +545,16 @@ func seedRoles(roleRepo *repository.RoleRepository) {
 	}
 	model.LoadRoleCache(roles)
 	logger.WithComponent("Seed").Infof("已加载 %d 个角色", len(roles))
+}
+
+func loadRoles(roleRepo *repository.RoleRepository) {
+	roles, err := roleRepo.List()
+	if err != nil {
+		logger.WithComponent("Cluster").Warnf("load roles failed: %v", err)
+		return
+	}
+	model.LoadRoleCache(roles)
+	logger.WithComponent("Cluster").Debugf("loaded %d roles", len(roles))
 }
 
 func wsAllowedOrigins(cfg *config.Config) []string {

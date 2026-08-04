@@ -76,6 +76,11 @@ func InitDB(cfg *config.Config) error {
 		panic(fmt.Sprintf("数据库 Ping 失败 [%s]: %v", dbType, err))
 	}
 
+	if cfg.IsWorker() {
+		// Worker 数据面不负责 schema 迁移，避免对共享权威库产生写操作。
+		return nil
+	}
+
 	if err := migrateOldSFUConfig(db); err != nil {
 		return err
 	}
@@ -140,6 +145,20 @@ func connectPostgreSQL(cfg *config.Config) (*gorm.DB, error) {
 
 func connectSQLite(cfg *config.Config) (*gorm.DB, error) {
 	path := cfg.DBPath
+	if cfg.ClusterRole == model.ClusterRoleWorker {
+		if path == "" {
+			return nil, fmt.Errorf("DB_PATH is required for worker SQLite mode")
+		}
+		dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(10000)", path)
+		db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+		if err != nil {
+			return nil, err
+		}
+		if err := configureDBPool(db, cfg); err != nil {
+			return nil, err
+		}
+		return db, nil
+	}
 	if path == "" {
 		if err := os.MkdirAll("db", 0755); err != nil {
 			return nil, fmt.Errorf("failed to create db directory: %w", err)
