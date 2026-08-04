@@ -21,14 +21,14 @@
 - join token 返回 `workerUrl`
 - `deploy/docker-compose.yml` 的 `cluster` profile 基础服务
 
-剩余未完成：
+本轮已完成：
 
-- 前端 socket 尚未按 `workerUrl` 连接目标 Worker
-- Worker 仍不是严格只读 DB，启动仍会执行迁移/种子
-- Agent 尚未向 Worker 下发 kick/mute/room delete/domain delete 控制命令
-- Agent 重启后没有统一对账恢复
-- 缺少 Nginx 集群路由、管理页、集群健康指标
-- Phase 6 主备/自动扩缩/滚动灰度仍只有高层描述
+- 前端 socket 按 `workerUrl` 连接目标 Worker，进房前先切换信令连接
+- Worker 跳过迁移/种子，SQLite 使用只读连接，业务写接口显式拒绝
+- Agent 通过 NATS 下发 kick/mute/unmute/room delete/domain delete 控制命令
+- Agent 启动执行 `ReconcileAll`，清理离线节点历史分配
+- Nginx 集群路由、集群管理页、`/api/v1/cluster/stats` 与健康指标
+- Phase 6 主备锁、自动扩缩与灰度标记扩展点
 
 ## 文件结构
 
@@ -62,7 +62,7 @@
 - Modify: `app/web/src/stores/socketStore.ts`
 - Test: `app/web/src/stores/socketStore.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `app/web/src/stores/socketStore.test.ts` 中增加：
 
@@ -75,12 +75,12 @@ it("connectToWorker uses worker URL before default socket URL", async () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `pnpm --filter @gospeak/web exec vitest run src/stores/socketStore.test.ts -t connectToWorker`
 Expected: FAIL，`connectToWorker` 不存在。
 
-- [ ] **Step 3: 实现 connectToWorker**
+- [x] **Step 3: 实现 connectToWorker**
 
 在 `app/web/src/stores/socketStore.ts` 的 `connect()` 函数前增加：
 
@@ -104,12 +104,12 @@ function connectToWorker(workerUrl: string) {
 getCurrentUrl: () => currentUrl,
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `pnpm --filter @gospeak/web exec vitest run src/stores/socketStore.test.ts -t connectToWorker`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/web/src/stores/socketStore.ts app/web/src/stores/socketStore.test.ts app/web/src/socket/wsClient.ts
@@ -123,7 +123,7 @@ git commit -m "feat(web): support worker URL socket connection"
 - Modify: `app/web/src/components/room/hooks/useVoiceSession.ts`
 - Test: `app/web/src/components/room/session/runVoiceJoin.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `runVoiceJoin.test.ts` 增加：
 
@@ -138,12 +138,12 @@ it("connects to workerUrl before signal join", async () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `pnpm --filter @gospeak/web exec vitest run src/components/room/session/runVoiceJoin.test.ts -t "workerUrl"`
 Expected: FAIL，`connectSignal` 未被调用。
 
-- [ ] **Step 3: 修改 VoiceJoinDeps**
+- [x] **Step 3: 修改 VoiceJoinDeps**
 
 在 `runVoiceJoin.ts` 的 `VoiceJoinDeps` 中增加：
 
@@ -151,7 +151,7 @@ Expected: FAIL，`connectSignal` 未被调用。
 connectSignal?: (workerUrl: string) => Promise<unknown>;
 ```
 
-- [ ] **Step 4: 在 executeVoiceJoin 中调用**
+- [x] **Step 4: 在 executeVoiceJoin 中调用**
 
 在 `executeVoiceJoin` 的 `joinSignalRoom` 调用前增加：
 
@@ -161,7 +161,7 @@ if (token.workerUrl && deps.connectSignal) {
 }
 ```
 
-- [ ] **Step 5: 在 useVoiceSession 中注入**
+- [x] **Step 5: 在 useVoiceSession 中注入**
 
 在 `app/web/src/components/room/hooks/useVoiceSession.ts` 的 `runVoiceJoin` 参数中增加：
 
@@ -169,12 +169,12 @@ if (token.workerUrl && deps.connectSignal) {
 connectSignal: (workerUrl) => socketStore.connectToWorker(workerUrl),
 ```
 
-- [ ] **Step 6: 运行测试确认通过**
+- [x] **Step 6: 运行测试确认通过**
 
 Run: `pnpm --filter @gospeak/web exec vitest run src/components/room/session/runVoiceJoin.test.ts -t "workerUrl"`
 Expected: PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add app/web/src/components/room/session/runVoiceJoin.ts app/web/src/components/room/hooks/useVoiceSession.ts app/web/src/components/room/session/runVoiceJoin.test.ts
@@ -192,7 +192,7 @@ git commit -m "feat(web): route voice signal join to assigned worker"
 - Modify: `app/server/server/gin.go`
 - Test: `app/server/internal/repository/db_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `app/server/internal/repository/db_test.go` 增加：
 
@@ -212,12 +212,12 @@ func TestSQLiteReadOnlyWorkerDB(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/repository -run TestSQLiteReadOnlyWorkerDB -v`
 Expected: FAIL，当前 Worker 连接仍可写。
 
-- [ ] **Step 3: 修改 connectSQLite 支持 Worker 只读**
+- [x] **Step 3: 修改 connectSQLite 支持 Worker 只读**
 
 在 `app/server/internal/repository/db.go` 的 `connectSQLite` 开头增加：
 
@@ -232,16 +232,16 @@ if cfg.ClusterRole == model.ClusterRoleWorker {
 }
 ```
 
-- [ ] **Step 4: Worker 模式跳过 AutoMigrate 与业务种子**
+- [x] **Step 4: Worker 模式跳过 AutoMigrate 与业务种子**
 
 在 `server/gin.go` 中把以下启动逻辑改为只在 `cfg.IsAgent()` 时执行：`seedRoles`、`seedAdminUser`、`EnsureDefaultDomain`、`seedPermissions`、`sfuConfigSvc.SyncFromEnv`、`pluginReg.InitAll/StartEnabled`。
 
-- [ ] **Step 5: 运行测试确认通过**
+- [x] **Step 5: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/repository -run TestSQLiteReadOnlyWorkerDB -v`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/server/internal/repository/db.go app/server/server/gin.go app/server/internal/repository/db_test.go
@@ -254,7 +254,7 @@ git commit -m "feat(cluster): worker mode uses read-only DB and skips seeding"
 - Modify: `app/server/internal/router/router.go`
 - Test: `app/server/internal/router/router_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `app/server/internal/router/router_test.go` 增加：
 
@@ -276,12 +276,12 @@ func TestWorkerModeDoesNotRegisterBusinessWrites(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/router -run TestWorkerModeDoesNotRegisterBusinessWrites -v`
 Expected: FAIL，因为测试 helper 未实现，或路由未按预期注册。
 
-- [ ] **Step 3: 在 router.go 增加显式拒绝中间件**
+- [x] **Step 3: 在 router.go 增加显式拒绝中间件**
 
 在 `SetupRoutes` 的 worker 分支中增加：
 
@@ -292,12 +292,12 @@ workerProtected.POST("/room/create", func(c *gin.Context) {
 })
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/router -run TestWorkerModeDoesNotRegisterBusinessWrites -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/server/internal/router/router.go app/server/internal/router/router_test.go
@@ -314,7 +314,7 @@ git commit -m "feat(cluster): explicitly reject worker business writes"
 - Create: `app/server/internal/cluster/control.go`
 - Test: `app/server/internal/cluster/control_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `app/server/internal/cluster/control_test.go` 增加：
 
@@ -327,12 +327,12 @@ func TestControlCommandValidate(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/cluster -run TestControlCommandValidate -v`
 Expected: FAIL，`ControlCommand` 未定义。
 
-- [ ] **Step 3: 创建 control.go**
+- [x] **Step 3: 创建 control.go**
 
 ```go
 package cluster
@@ -367,12 +367,12 @@ func (c ControlCommand) Validate() error {
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/cluster -run TestControlCommandValidate -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/server/internal/cluster/control.go app/server/internal/cluster/control_test.go
@@ -387,7 +387,7 @@ git commit -m "feat(cluster): define NATS control command envelope"
 - Modify: `app/server/internal/handler/room_handler.go`
 - Test: `app/server/internal/service/cluster_service_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `cluster_service_test.go` 增加：
 
@@ -417,12 +417,12 @@ func TestClusterServicePublishControlCommand(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/service -run TestClusterServicePublishControlCommand -v`
 Expected: FAIL，`PublishControl` 未定义。
 
-- [ ] **Step 3: 实现 PublishControl**
+- [x] **Step 3: 实现 PublishControl**
 
 在 `cluster_service.go` 增加：
 
@@ -442,7 +442,7 @@ func (s *ClusterService) PublishControl(cmd cluster.ControlCommand) error {
 EventControlCommand = "cluster.control.command"
 ```
 
-- [ ] **Step 4: 在 mute/room/domain handler 调用**
+- [x] **Step 4: 在 mute/room/domain handler 调用**
 
 在 `mute_handler.go` 中注入控制面发布器并调用：
 
@@ -483,12 +483,12 @@ if h.controlPublisher != nil {
 }
 ```
 
-- [ ] **Step 5: 运行测试确认通过**
+- [x] **Step 5: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/service -run TestClusterServicePublishControlCommand -v`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/server/internal/service/cluster_service.go app/server/internal/service/cluster_service_test.go app/server/internal/handler/mute_handler.go app/server/internal/handler/room_handler.go app/server/internal/handler/domain_handler.go app/server/internal/cluster/events.go
@@ -502,7 +502,7 @@ git commit -m "feat(cluster): publish control commands from agent"
 - Modify: `app/server/server/gin.go`
 - Test: `app/server/internal/signal/hub_control_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `app/server/internal/signal/hub_control_test.go` 增加：
 
@@ -516,12 +516,12 @@ func TestHubHandleClusterCommandKick(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/signal -run TestHubHandleClusterCommandKick -v`
 Expected: FAIL，`HandleClusterCommand` 未定义。
 
-- [ ] **Step 3: 实现 HandleClusterCommand**
+- [x] **Step 3: 实现 HandleClusterCommand**
 
 在 `hub.go` 增加：
 
@@ -597,7 +597,7 @@ func (h *Hub) DeleteRoomByDomainName(domainUUID, room string) {
 }
 ```
 
-- [ ] **Step 4: 接入 remote hook**
+- [x] **Step 4: 接入 remote hook**
 
 在 `server/gin.go` 的 `nb.SetRemoteHook` 中增加：
 
@@ -613,12 +613,12 @@ if event == cluster.EventControlCommand {
 }
 ```
 
-- [ ] **Step 5: 运行测试确认通过**
+- [x] **Step 5: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/signal -run TestHubHandleClusterCommandKick -v`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/server/internal/signal/hub.go app/server/internal/signal/hub_control_test.go app/server/server/gin.go
@@ -635,7 +635,7 @@ git commit -m "feat(cluster): worker executes NATS control commands"
 - Modify: `app/server/internal/service/cluster_service.go`
 - Test: `app/server/internal/service/cluster_service_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `cluster_service_test.go` 增加：
 
@@ -667,12 +667,12 @@ func TestClusterServiceReconcileAllRemovesOfflineAssignments(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/service -run TestClusterServiceReconcileAllRemovesOfflineAssignments -v`
 Expected: FAIL，`ReconcileAll` 未定义。
 
-- [ ] **Step 3: 实现 ReconcileAll**
+- [x] **Step 3: 实现 ReconcileAll**
 
 在 `cluster_service.go` 增加：
 
@@ -700,7 +700,7 @@ func (s *ClusterService) ReconcileAll(timeout time.Duration) error {
 }
 ```
 
-- [ ] **Step 4: 启动时调用**
+- [x] **Step 4: 启动时调用**
 
 在 `server/gin.go` 的 `startAgentClusterRuntime` 启动后立即调用：
 
@@ -710,12 +710,12 @@ if err := clusterSvc.ReconcileAll(cfg.ClusterHeartbeatTimeoutDuration()); err !=
 }
 ```
 
-- [ ] **Step 5: 运行测试确认通过**
+- [x] **Step 5: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/service -run TestClusterServiceReconcileAllRemovesOfflineAssignments -v`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/server/internal/service/cluster_service.go app/server/internal/service/cluster_service_test.go app/server/server/gin.go
@@ -732,7 +732,7 @@ git commit -m "feat(cluster): reconcile cluster state on agent startup"
 - Modify: `app/server/internal/service/cluster_service.go`
 - Test: `app/server/internal/service/cluster_service_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestClusterServiceStats(t *testing.T) {
@@ -747,7 +747,7 @@ func TestClusterServiceStats(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 实现 Stats**
+- [x] **Step 2: 实现 Stats**
 
 ```go
 type ClusterStats struct {
@@ -782,7 +782,7 @@ func (s *ClusterService) Stats() (ClusterStats, error) {
 }
 ```
 
-- [ ] **Step 3: MonitorHandler 增加字段**
+- [x] **Step 3: MonitorHandler 增加字段**
 
 在 `healthSnapshot` 增加：
 
@@ -805,7 +805,7 @@ if h.clusterSvc != nil {
 }
 ```
 
-- [ ] **Step 4: 注册 `/api/v1/cluster/stats`**
+- [x] **Step 4: 注册 `/api/v1/cluster/stats`**
 
 在 `cluster_handler.go` 增加 `Stats` handler：
 
@@ -826,7 +826,7 @@ func (h *ClusterHandler) Stats(c *gin.Context) {
 r.POST("/stats", middleware.RequirePermission(permcode.PermClusterRead), h.Stats)
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/server/internal/service/cluster_service.go app/server/internal/handler/monitor_handler.go app/server/internal/handler/cluster_handler.go app/server/internal/router/routes/cluster/routes.go
@@ -843,7 +843,7 @@ git commit -m "feat(cluster): expose cluster health stats"
 - Create: `app/web/src/api/cluster.ts`
 - Test: `app/web/src/api/cluster.spec.ts`
 
-- [ ] **Step 1: 创建 API**
+- [x] **Step 1: 创建 API**
 
 ```ts
 import apiClient from "./apiClient";
@@ -866,7 +866,7 @@ export async function scaleServer(serverUuid: string, replicas: number) {
 }
 ```
 
-- [ ] **Step 2: 创建页面**
+- [x] **Step 2: 创建页面**
 
 在 `app/web/src/pages/(app)/cluster/index.tsx` 创建：
 
@@ -891,11 +891,11 @@ export default function ClusterPage() {
 }
 ```
 
-- [ ] **Step 3: 注册路由**
+- [x] **Step 3: 注册路由**
 
 在 `app/web/src/layouts/layout.tsx` 的管理菜单增加 `/cluster` 入口。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add app/web/src/api/cluster.ts app/web/src/pages/'(app)'/cluster/index.tsx app/web/src/layouts/layout.tsx
@@ -911,7 +911,7 @@ git commit -m "feat(web): add cluster management page"
 **Files:**
 - Create: `deploy/nginx-cluster.conf`
 
-- [ ] **Step 1: 创建配置**
+- [x] **Step 1: 创建配置**
 
 ```nginx
 events {}
@@ -943,7 +943,7 @@ http {
 }
 ```
 
-- [ ] **Step 2: compose 增加 nginx-cluster 服务**
+- [x] **Step 2: compose 增加 nginx-cluster 服务**
 
 在 `deploy/docker-compose.yml` 的 `gospeak-worker` 后增加：
 
@@ -964,12 +964,12 @@ http {
         condition: service_started
 ```
 
-- [ ] **Step 3: 验证 compose**
+- [x] **Step 3: 验证 compose**
 
 Run: `docker compose -f deploy/docker-compose.yml --profile cluster config`
 Expected: exit 0，包含 `nginx-cluster`。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add deploy/nginx-cluster.conf deploy/docker-compose.yml
@@ -986,7 +986,7 @@ git commit -m "feat(deploy): add cluster nginx routing"
 - Create: `app/server/internal/cluster/leader.go`
 - Test: `app/server/internal/cluster/leader_test.go`
 
-- [ ] **Step 1: 实现 NATS KV 锁**
+- [x] **Step 1: 实现 NATS KV 锁**
 
 ```go
 type LeaderLock interface {
@@ -1023,7 +1023,7 @@ func (l *LeaderLock) TryAcquire(ctx context.Context, nodeID string) (bool, error
 
 Agent 启动时尝试获取锁；失败则只启动 Worker 数据面。
 
-- [ ] **Step 2: 自动扩缩容**
+- [x] **Step 2: 自动扩缩容**
 
 在 `ClusterService` 增加 `AutoScale`：
 
@@ -1041,7 +1041,7 @@ func (s *ClusterService) AutoScale(serverUUID string, targetReplicas int) error 
 }
 ```
 
-- [ ] **Step 3: 滚动灰度**
+- [x] **Step 3: 滚动灰度**
 
 在 `ClusterService` 增加 `MarkServerAssignmentsDraining`：
 
@@ -1060,7 +1060,7 @@ func (s *ClusterService) MarkServerAssignmentsDraining(serverUUID string) error 
 
 节点 draining 后停止新调度；房间迁移完成后由 `ScaleServer` 删除多余分配。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add app/server/internal/cluster/leader.go app/server/internal/cluster/leader_test.go app/server/internal/service/cluster_service.go
@@ -1072,13 +1072,13 @@ git commit -m "feat(cluster): add leader lock and auto-scaling hooks"
 **Files:**
 - Modify: `docs/cluster-agent-worker-plan.md`
 
-- [ ] **Step 1: 在顶部状态段增加详细计划链接**
+- [x] **Step 1: 在顶部状态段增加详细计划链接**
 
 ```markdown
 > 详细剩余计划：`docs/superpowers/plans/2026-08-02-cluster-control-plane-completion.md`
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add docs/cluster-agent-worker-plan.md docs/superpowers/plans/2026-08-02-cluster-control-plane-completion.md
@@ -1089,12 +1089,12 @@ git commit -m "docs(cluster): add remaining control plane implementation plan"
 
 ## 自检清单
 
-- [ ] 覆盖前端 workerUrl socket 路由
-- [ ] 覆盖 Worker 只读 DB 与写面拒绝
-- [ ] 覆盖 NATS 控制命令发布/执行
-- [ ] 覆盖 Agent 重启对账
-- [ ] 覆盖集群健康指标与管理页
-- [ ] 覆盖 Nginx 集群路由
-- [ ] 覆盖 Phase 6 主备/自动扩缩/灰度扩展点
-- [ ] 无 TBD/TODO 占位符
-- [ ] 类型、函数名、路径与现有代码一致
+- [x] 覆盖前端 workerUrl socket 路由
+- [x] 覆盖 Worker 只读 DB 与写面拒绝
+- [x] 覆盖 NATS 控制命令发布/执行
+- [x] 覆盖 Agent 重启对账
+- [x] 覆盖集群健康指标与管理页
+- [x] 覆盖 Nginx 集群路由
+- [x] 覆盖 Phase 6 主备/自动扩缩/灰度扩展点
+- [x] 无 TBD/TODO 占位符
+- [x] 类型、函数名、路径与现有代码一致
