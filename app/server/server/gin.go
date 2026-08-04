@@ -428,7 +428,7 @@ func StartGin(env EnvEnum) {
 	}
 	conversationH := handler.NewConversationHandler(conversationSvc)
 
-	monitorH := handler.NewMonitorHandler(signalHub, cfg, eventBus)
+	monitorH := handler.NewMonitorHandler(signalHub, cfg, eventBus, clusterSvc)
 
 	// 启动签名密钥轮换检查
 	go redis.KeyRotationLoop()

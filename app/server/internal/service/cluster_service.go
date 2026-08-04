@@ -437,6 +437,39 @@ func (s *ClusterService) ReconcileAll(timeout time.Duration) error {
 }
 
 // ResolveServer 返回 Server 当前可路由的 Worker 节点与 workerUrl。
+// ClusterStats 是集群控制面健康统计。
+type ClusterStats struct {
+	TotalNodes    int `json:"total_nodes"`
+	ReadyNodes    int `json:"ready_nodes"`
+	DrainingNodes int `json:"draining_nodes"`
+	OfflineNodes  int `json:"offline_nodes"`
+	Assignments   int `json:"assignments"`
+}
+
+// Stats 汇总节点与 Server 分配统计。
+func (s *ClusterService) Stats() (ClusterStats, error) {
+	nodes, err := s.nodeRepo.List()
+	if err != nil {
+		return ClusterStats{}, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	stats := ClusterStats{TotalNodes: len(nodes)}
+	for _, node := range nodes {
+		switch node.Status {
+		case model.ClusterNodeReady, model.ClusterNodeBusy:
+			stats.ReadyNodes++
+		case model.ClusterNodeDraining:
+			stats.DrainingNodes++
+		case model.ClusterNodeOffline:
+			stats.OfflineNodes++
+		}
+		assignments, listErr := s.assignRepo.ListByNode(node.UUID)
+		if listErr == nil {
+			stats.Assignments += len(assignments)
+		}
+	}
+	return stats, nil
+}
+
 func (s *ClusterService) ResolveServer(serverUUID string) (*model.ServerAssignment, *model.ClusterNode, error) {
 	assignments, err := s.assignRepo.ListByServer(serverUUID)
 	if err != nil {

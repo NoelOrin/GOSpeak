@@ -286,3 +286,14 @@ func TestClusterServiceReconcileAllRemovesOfflineAssignments(t *testing.T) {
 		t.Fatalf("expected offline assignment removed, got %+v", assignments)
 	}
 }
+
+func TestClusterServiceStats(t *testing.T) {
+	svc, _ := setupClusterServiceTestDB(t)
+	stats, err := svc.Stats()
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.ReadyNodes != 0 {
+		t.Fatalf("expected zero ready nodes, got %d", stats.ReadyNodes)
+	}
+}

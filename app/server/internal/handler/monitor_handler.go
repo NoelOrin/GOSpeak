@@ -19,6 +19,7 @@ import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/redis"
 	"GOSpeak/internal/repository"
+	"GOSpeak/internal/service"
 	gpsignal "GOSpeak/internal/signal"
 )
 
@@ -29,14 +30,16 @@ type MonitorHandler struct {
 	eventBus   bus.EventBus
 	dbPath     string
 	cpuSampler *cpuSampler
+	clusterSvc *service.ClusterService
 }
 
-func NewMonitorHandler(signalHub *gpsignal.Hub, cfg *config.Config, eventBus bus.EventBus) *MonitorHandler {
+func NewMonitorHandler(signalHub *gpsignal.Hub, cfg *config.Config, eventBus bus.EventBus, clusterSvc *service.ClusterService) *MonitorHandler {
 	h := &MonitorHandler{
-		startTime: time.Now(),
-		signalHub: signalHub,
-		eventBus:  eventBus,
-		dbPath:    cfg.DBPath,
+		startTime:  time.Now(),
+		signalHub:  signalHub,
+		eventBus:   eventBus,
+		dbPath:     cfg.DBPath,
+		clusterSvc: clusterSvc,
 	}
 	h.cpuSampler = newCPUSampler()
 	return h
@@ -149,6 +152,11 @@ type healthSnapshot struct {
 
 	// Shared multi-instance backends
 	AuthStoreBackend string `json:"auth_store_backend"`
+
+	// Cluster
+	ClusterTotalNodes  int `json:"cluster_total_nodes"`
+	ClusterReadyNodes  int `json:"cluster_ready_nodes"`
+	ClusterAssignments int `json:"cluster_assignments"`
 }
 
 func (h *MonitorHandler) collect() healthSnapshot {
@@ -225,6 +233,15 @@ func (h *MonitorHandler) collect() healthSnapshot {
 		snap.AuthStoreBackend = name
 	} else {
 		snap.AuthStoreBackend = "none"
+	}
+
+	if h.clusterSvc != nil {
+		stats, err := h.clusterSvc.Stats()
+		if err == nil {
+			snap.ClusterTotalNodes = stats.TotalNodes
+			snap.ClusterReadyNodes = stats.ReadyNodes
+			snap.ClusterAssignments = stats.Assignments
+		}
 	}
 
 	return snap

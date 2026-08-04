@@ -16,6 +16,7 @@ func RegisterProtected(r *gin.RouterGroup, h *handler.ClusterHandler) {
 	r.POST("/nodes/drain", middleware.RequirePermission(permcode.PermClusterManage), h.Drain)
 	r.POST("/nodes/undrain", middleware.RequirePermission(permcode.PermClusterManage), h.Undrain)
 	r.POST("/nodes/list", middleware.RequirePermission(permcode.PermClusterRead), h.List)
+	r.POST("/stats", middleware.RequirePermission(permcode.PermClusterRead), h.Stats)
 	r.POST("/servers/scale", middleware.RequirePermission(permcode.PermClusterManage), h.Scale)
 	r.POST("/servers/resolve", middleware.RequirePermission(permcode.PermClusterRead), h.Resolve)
 }

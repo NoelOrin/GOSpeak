@@ -155,6 +155,16 @@ func (h *ClusterHandler) List(c *gin.Context) {
 	pkg.Success(c, gin.H{"nodes": views})
 }
 
+// Stats 返回集群健康统计。
+func (h *ClusterHandler) Stats(c *gin.Context) {
+	stats, err := h.clusterSvc.Stats()
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, stats)
+}
+
 type ScaleServerRequest struct {
 	ServerUUID string `json:"server_uuid" binding:"required"`
 	Replicas   int    `json:"replicas" binding:"required"`
