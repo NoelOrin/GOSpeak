@@ -12,7 +12,7 @@
  * SFU adaptation changes that touch this file are rejected.
  */
 
-import type { SFUClient, SFUProvider } from "@gospeak/sfu-client/types";
+import type { SFUClient } from "@gospeak/sfu-client/types";
 import { useQuery } from "@tanstack/solid-query";
 import {
 	createEffect,
@@ -22,13 +22,14 @@ import {
 	onCleanup,
 	onMount,
 } from "solid-js";
-import {
-	dismissToast,
-	removeToast,
-	showToast,
-	updateToast,
-} from "solid-notifications";
+import { showToast } from "solid-notifications";
 import { getJoinToken, resolveSFUProvider } from "@/api/sfu";
+import { type Session, toLegacyJoinState } from "../session/voiceSessionUi";
+import {
+	clearReconnectingToast,
+	showReconnectingToast,
+	type JoinState,
+} from "../session/voiceSessionUi";
 import { cleanupAudioHandler, setupAudioHandler } from "@/handler_audio";
 import AudioDeviceStore from "@/stores/audioDeviceStore";
 import { socketStore } from "@/stores/socketStore";
@@ -42,68 +43,6 @@ import {
 	type VoicePhase,
 	voicePhaseLabel,
 } from "../session/voiceSessionTypes";
-
-const RECONNECTING_TOAST_ID = "voice-session-reconnecting";
-
-function showReconnectingToast() {
-	// 同 id 重复 showToast 会叠多个实例；优先 update，避免 dismiss 只关掉其中一个
-	const updated = updateToast({
-		id: RECONNECTING_TOAST_ID,
-		content: "正在重连...",
-		type: "info",
-		duration: false,
-	});
-	if (updated) return;
-	showToast("正在重连...", {
-		id: RECONNECTING_TOAST_ID,
-		type: "info",
-		duration: false,
-	});
-}
-
-function clearReconnectingToast() {
-	// solid-notifications 同 id 可能叠多个实例，dismiss/remove 每次只处理一个
-	for (let i = 0; i < 8; i++) {
-		try {
-			dismissToast({ id: RECONNECTING_TOAST_ID });
-		} catch {
-			// toast 可能尚未创建或已关闭
-		}
-		try {
-			removeToast({ id: RECONNECTING_TOAST_ID });
-		} catch {
-			// 没有更多同 id toast
-			break;
-		}
-	}
-}
-
-type JoinState = "idle" | "connecting" | "joined" | "reconnecting" | "failed";
-
-type Session = {
-	roomName: string;
-	client: SFUClient | null;
-	signal: AbortSignal;
-	status: VoicePhase;
-	provider?: SFUProvider;
-	error?: string | null;
-};
-
-function toLegacyJoinState(phase: VoicePhase): JoinState {
-	switch (phase) {
-		case "ready":
-		case "media_ready":
-			return "joined";
-		case "reconnecting":
-			return "reconnecting";
-		case "failed":
-			return "failed";
-		case "idle":
-			return "idle";
-		default:
-			return "connecting";
-	}
-}
 
 export function useVoiceSession() {
 	const [session, setSession] = createSignal<Session | null>(null);

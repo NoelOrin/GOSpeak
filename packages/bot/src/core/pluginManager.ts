@@ -14,6 +14,13 @@ import {
 	listPlugins,
 	setPluginActivated,
 } from "./registry";
+import {
+	copyRecursive,
+	discoverPlugins,
+	PLUGIN_EXTS,
+	pluginModulePath,
+	resolvePluginEntry,
+} from "./pluginDiscovery";
 
 export interface PluginManagerOptions {
 	/** 用户插件目录（data/plugins 对应） */
@@ -37,8 +44,6 @@ export interface ManagedPlugin {
 	metadata: PluginMetadata;
 	loaded: LoadedPlugin;
 }
-
-const PLUGIN_EXTS = new Set([".ts", ".js", ".mjs", ".cjs"]);
 
 /**
  * 运行时插件管理器（对齐 AstrBot PluginManager 核心能力）：
@@ -105,7 +110,7 @@ export class PluginManager {
 			this.logger.warn(`Plugin directory not found: ${dir}`);
 			return;
 		}
-		const entries = this.discoverPlugins(dir);
+		const entries = discoverPlugins(dir, resolvePluginEntry);
 		for (const absPath of entries) {
 			if (this.pathIndex.has(absPath)) continue;
 			try {
@@ -130,7 +135,7 @@ export class PluginManager {
 		}
 		this.loading.add(resolved);
 		try {
-			const modulePath = this.toModulePath(resolved);
+			const modulePath = pluginModulePath(resolved, this.opts.pluginDir);
 			const loaded = await loadPlugin(resolved, modulePath, cacheBust);
 			initPlugin(loaded, this.opts.buildContext);
 
@@ -229,71 +234,11 @@ export class PluginManager {
 			// 覆盖安装
 			fs.rmSync(dest, { recursive: true, force: true });
 		}
-		this.copyRecursive(src, dest);
+		copyRecursive(src, dest);
 
-		const entry = this.resolveEntry(dest);
+		const entry = resolvePluginEntry(dest);
 		if (!entry) throw new Error(`no plugin entry found under ${dest}`);
 		return this.loadFromPath(entry, true);
-	}
-
-	// ── discovery ──
-
-	discoverPlugins(dir: string): string[] {
-		const results: string[] = [];
-		if (!fs.existsSync(dir)) return results;
-		const entries = fs.readdirSync(dir, { withFileTypes: true });
-		for (const e of entries) {
-			if (e.name.startsWith(".") || e.name === "node_modules") continue;
-			const full = path.join(dir, e.name);
-			if (e.isFile() && PLUGIN_EXTS.has(path.extname(e.name))) {
-				results.push(path.resolve(full));
-			} else if (e.isDirectory()) {
-				const entry = this.resolveEntry(full);
-				if (entry) results.push(entry);
-			}
-		}
-		return results;
-	}
-
-	private resolveEntry(dirOrFile: string): string | null {
-		const st = fs.statSync(dirOrFile);
-		if (st.isFile()) {
-			return PLUGIN_EXTS.has(path.extname(dirOrFile))
-				? path.resolve(dirOrFile)
-				: null;
-		}
-		// 目录：main.ts / main.js / <dirname>.ts / index.ts
-		const name = path.basename(dirOrFile);
-		const candidates = [
-			"main.ts",
-			"main.js",
-			"main.mjs",
-			`${name}.ts`,
-			`${name}.js`,
-			"index.ts",
-			"index.js",
-		];
-		for (const c of candidates) {
-			const p = path.join(dirOrFile, c);
-			if (fs.existsSync(p)) return path.resolve(p);
-		}
-		return null;
-	}
-
-	private toModulePath(absPath: string): string {
-		const dir = this.opts.pluginDir ? path.resolve(this.opts.pluginDir) : null;
-		if (dir) {
-			const rel = path.relative(dir, absPath);
-			if (!rel.startsWith("..") && !path.isAbsolute(rel)) {
-				const noExt = rel
-					.split(path.sep)
-					.join("/")
-					.replace(/\.(ts|js|mjs|cjs)$/i, "");
-				return `user_plugins/${noExt}`;
-			}
-		}
-		const base = path.basename(absPath, path.extname(absPath));
-		return `user_plugins/${base}`;
 	}
 
 	// ── watch ──
@@ -382,7 +327,7 @@ export class PluginManager {
 		}
 
 		// 新文件：尝试加载
-		const entry = this.resolveEntry(absPath);
+		const entry = resolvePluginEntry(absPath);
 		if (!entry) return;
 		// 可能是目录下的附属文件，检查是否属于已加载插件
 		const owned = this.findManagedPathFor(entry);
@@ -398,19 +343,6 @@ export class PluginManager {
 			await this.loadFromPath(entry, true);
 		} catch (err) {
 			this.logger.error(`Hot-load failed for ${entry}:`, err);
-		}
-	}
-
-	private copyRecursive(src: string, dest: string): void {
-		const st = fs.statSync(src);
-		if (st.isDirectory()) {
-			fs.mkdirSync(dest, { recursive: true });
-			for (const name of fs.readdirSync(src)) {
-				this.copyRecursive(path.join(src, name), path.join(dest, name));
-			}
-		} else {
-			fs.mkdirSync(path.dirname(dest), { recursive: true });
-			fs.copyFileSync(src, dest);
 		}
 	}
 }

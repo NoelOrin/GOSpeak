@@ -1,9 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import ArrowLeft from "lucide-solid/icons/arrow-left";
 import CirclePlus from "lucide-solid/icons/circle-plus";
-import Globe from "lucide-solid/icons/globe";
-import Lock from "lucide-solid/icons/lock";
-import Save from "lucide-solid/icons/save";
 import Settings2 from "lucide-solid/icons/settings-2";
 import {
 	createEffect,
@@ -28,6 +25,7 @@ import {
 	ManageSection,
 } from "@/components/manage/ManageShell";
 import CreateRoomModal from "@/components/modal/createRoomModal";
+import { DomainSettingsForm } from "./components/DomainSettingsForm";
 import EditRoomModal from "@/components/modal/editRoomModal";
 import domainStore from "@/stores/domainStore";
 import userStore from "@/stores/userStore";
@@ -336,118 +334,21 @@ function RouteComponent() {
 							description="调整域名称、描述与公开状态"
 							class="min-w-0"
 						>
-							<Show
-								when={canManage()}
-								fallback={
-									<div class="grid gap-3 text-sm">
-										<div class="text-base-content/60">当前账号无编辑权限</div>
-										<dl class="grid gap-2">
-											<div>
-												<dt class="text-xs text-base-content/50">域名称</dt>
-												<dd>{domain()?.name}</dd>
-											</div>
-											<div>
-												<dt class="text-xs text-base-content/50">描述</dt>
-												<dd>{domain()?.description || "-"}</dd>
-											</div>
-											<div>
-												<dt class="text-xs text-base-content/50">公开状态</dt>
-												<dd>{domain()?.is_public ? "公开" : "私有"}</dd>
-											</div>
-										</dl>
-									</div>
-								}
-							>
-								<form
-									onSubmit={handleSave}
-									class="flex flex-col gap-4"
-									novalidate
-								>
-									<label class="form-control">
-										<span class="label">
-											<span class="label-text text-xs font-medium text-base-content/70">
-												域名称
-											</span>
-										</span>
-										<input
-											id="domain-name"
-											class="input input-bordered input-sm"
-											value={name()}
-											maxLength={100}
-											aria-invalid={!!nameError()}
-											aria-describedby={
-												nameError() ? "domain-name-error" : undefined
-											}
-											onInput={(e) => {
-												setName(e.currentTarget.value);
-												if (e.currentTarget.value.trim()) {
-													setNameError("");
-												}
-											}}
-										/>
-										<Show when={nameError()}>
-											<span
-												id="domain-name-error"
-												class="mt-1 text-xs text-error"
-											>
-												{nameError()}
-											</span>
-										</Show>
-									</label>
-									<label class="form-control">
-										<span class="label">
-											<span class="label-text text-xs font-medium text-base-content/70">
-												描述
-											</span>
-										</span>
-										<textarea
-											id="domain-description"
-											class="textarea textarea-bordered textarea-sm min-h-24"
-											value={description()}
-											onInput={(e) => setDescription(e.currentTarget.value)}
-										/>
-									</label>
-									<label class="flex items-center justify-between rounded-lg border border-base-300 px-3 py-2.5 cursor-pointer">
-										<span class="flex items-center gap-2 text-sm">
-											{isPublic() ? (
-												<Globe size={16} class="text-success" />
-											) : (
-												<Lock size={16} class="text-base-content/50" />
-											)}
-											公开域
-										</span>
-										<input
-											type="checkbox"
-											class="toggle toggle-primary toggle-sm"
-											checked={isPublic()}
-											disabled={saving()}
-											onChange={(e) => setIsPublic(e.currentTarget.checked)}
-										/>
-									</label>
-									<Show when={formError()}>
-										<p role="alert" class="text-xs text-error">
-											{formError()}
-										</p>
-									</Show>
-									<button
-										type="submit"
-										class="btn btn-primary btn-sm"
-										disabled={saving()}
-									>
-										{saving() ? (
-											<>
-												<span class="loading loading-spinner loading-xs" />
-												保存中...
-											</>
-										) : (
-											<>
-												<Save size={15} />
-												保存设置
-											</>
-										)}
-									</button>
-								</form>
-							</Show>
+							<DomainSettingsForm
+								canManage={canManage()}
+								domain={domain()}
+								name={name}
+								setName={setName}
+								nameError={nameError}
+								setNameError={setNameError}
+								description={description}
+								setDescription={setDescription}
+								isPublic={isPublic}
+								setIsPublic={setIsPublic}
+								saving={saving}
+								formError={formError}
+								onSave={handleSave}
+							/>{" "}
 						</ManageSection>
 
 						<ManageSection

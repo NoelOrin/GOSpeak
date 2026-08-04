@@ -1,10 +1,8 @@
 package service
 
 import (
-	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -25,6 +23,8 @@ var (
 )
 
 // ClusterService 是 Agent 控制面的节点与 Server 分配服务。
+
+// ClusterService 是 Agent 控制面的节点与 Server 分配服务。
 type ClusterService struct {
 	nodeRepo   *repository.ClusterNodeRepository
 	assignRepo *repository.ServerAssignmentRepository
@@ -40,9 +40,13 @@ func NewClusterService(
 }
 
 // ClusterNotifier 发布跨实例控制面事件。
+
+// ClusterNotifier 发布跨实例控制面事件。
 type ClusterNotifier interface {
 	PublishInternal(ctx context.Context, event string, payload interface{}) error
 }
+
+// SetNotifier 注入 NATS/EventBus internal 发布器。
 
 // SetNotifier 注入 NATS/EventBus internal 发布器。
 func (s *ClusterService) SetNotifier(n ClusterNotifier) {
@@ -50,9 +54,13 @@ func (s *ClusterService) SetNotifier(n ClusterNotifier) {
 }
 
 // SetServerRepo 注入 Domain 仓库，用于节点上线后补调度未分配的 Server。
+
+// SetServerRepo 注入 Domain 仓库，用于节点上线后补调度未分配的 Server。
 func (s *ClusterService) SetServerRepo(repo *repository.DomainRepository) {
 	s.serverRepo = repo
 }
+
+// EnsureLocalNode 在 all/agent 模式下注册当前进程对应的本地节点。
 
 // EnsureLocalNode 在 all/agent 模式下注册当前进程对应的本地节点。
 func (s *ClusterService) EnsureLocalNode(cfg *config.Config, instanceID string) (*model.ClusterNode, error) {
@@ -116,6 +124,8 @@ func (s *ClusterService) EnsureLocalNode(cfg *config.Config, instanceID string) 
 }
 
 // RegisterNode 创建或更新 Worker 节点。
+
+// RegisterNode 创建或更新 Worker 节点。
 func (s *ClusterService) RegisterNode(req model.ClusterNode) (*model.ClusterNode, error) {
 	if strings.TrimSpace(req.UUID) == "" {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "node uuid is required")
@@ -167,6 +177,8 @@ func (s *ClusterService) RegisterNode(req model.ClusterNode) (*model.ClusterNode
 	}
 	return &req, nil
 }
+
+// Heartbeat 更新节点运行时快照并刷新 last_seen。
 
 // Heartbeat 更新节点运行时快照并刷新 last_seen。
 func (s *ClusterService) Heartbeat(nodeID string, report cluster.HeartbeatReport) (*model.ClusterNode, error) {
@@ -221,6 +233,8 @@ func (s *ClusterService) Heartbeat(nodeID string, report cluster.HeartbeatReport
 }
 
 // DeregisterNode 注销节点并标记为 offline。
+
+// DeregisterNode 注销节点并标记为 offline。
 func (s *ClusterService) DeregisterNode(nodeID string) error {
 	node, err := s.nodeRepo.GetByUUID(nodeID)
 	if err != nil {
@@ -241,6 +255,8 @@ func (s *ClusterService) DeregisterNode(nodeID string) error {
 	}
 	return nil
 }
+
+// DrainNode 标记节点 draining，停止新的 Server 分配。
 
 // DrainNode 标记节点 draining，停止新的 Server 分配。
 func (s *ClusterService) DrainNode(nodeID string) error {
@@ -264,6 +280,8 @@ func (s *ClusterService) DrainNode(nodeID string) error {
 }
 
 // UndrainNode 恢复节点为 ready，允许继续调度。
+
+// UndrainNode 恢复节点为 ready，允许继续调度。
 func (s *ClusterService) UndrainNode(nodeID string) error {
 	node, err := s.nodeRepo.GetByUUID(nodeID)
 	if err != nil {
@@ -285,6 +303,8 @@ func (s *ClusterService) UndrainNode(nodeID string) error {
 }
 
 // ListNodes 返回全部节点记录。
+
+// ListNodes 返回全部节点记录。
 func (s *ClusterService) ListNodes() ([]model.ClusterNode, error) {
 	nodes, err := s.nodeRepo.List()
 	if err != nil {
@@ -292,6 +312,8 @@ func (s *ClusterService) ListNodes() ([]model.ClusterNode, error) {
 	}
 	return nodes, nil
 }
+
+// ReapOffline 将超过 timeout 未心跳的节点标记为 offline。
 
 // ReapOffline 将超过 timeout 未心跳的节点标记为 offline。
 func (s *ClusterService) ReapOffline(timeout time.Duration) error {
@@ -306,304 +328,6 @@ func (s *ClusterService) ReapOffline(timeout time.Duration) error {
 
 // ScaleServer 调整 Server（Domain）的实例副本数。
 // preferredNode 通常传本地 all 节点 UUID，让单机模式优先把 Server 分配回本节点。
-func (s *ClusterService) ScaleServer(serverUUID string, replicas int, preferredNode string) ([]model.ServerAssignment, error) {
-	if strings.TrimSpace(serverUUID) == "" {
-		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "server_uuid is required")
-	}
-	if replicas < 0 {
-		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "replicas must be >= 0")
-	}
-	if replicas == 0 {
-		if err := s.assignRepo.RemoveAll(serverUUID); err != nil {
-			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-		}
-		return []model.ServerAssignment{}, nil
-	}
-
-	nodes, err := s.nodeRepo.List()
-	if err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	current, err := s.assignRepo.ListByServer(serverUUID)
-	if err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-
-	byUUID := make(map[string]model.ClusterNode, len(nodes))
-	for _, node := range nodes {
-		byUUID[node.UUID] = node
-	}
-
-	activeCurrent := make([]model.ServerAssignment, 0, len(current))
-	for _, assignment := range current {
-		node, ok := byUUID[assignment.NodeUUID]
-		if !ok || !cluster.CanSchedule(node) {
-			if err := s.assignRepo.Remove(serverUUID, assignment.NodeUUID); err != nil {
-				return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-			}
-			continue
-		}
-		activeCurrent = append(activeCurrent, assignment)
-	}
-	current = activeCurrent
-
-	if len(current) > replicas {
-		sort.SliceStable(current, func(i, j int) bool {
-			ni, oki := byUUID[current[i].NodeUUID]
-			nj, okj := byUUID[current[j].NodeUUID]
-			if !oki {
-				return true
-			}
-			if !okj {
-				return false
-			}
-			return cluster.NodeScore(ni) > cluster.NodeScore(nj)
-		})
-		for len(current) > replicas {
-			removed := current[0]
-			if err := s.assignRepo.Remove(serverUUID, removed.NodeUUID); err != nil {
-				return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-			}
-			current = current[1:]
-		}
-	}
-
-	if len(current) < replicas {
-		selected := cluster.ChooseNodes(nodes, current, replicas-len(current), preferredNode)
-		for _, nodeUUID := range selected {
-			if err := s.assignRepo.Ensure(serverUUID, nodeUUID); err != nil {
-				return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-			}
-		}
-	}
-
-	assignments, err := s.assignRepo.ListByServer(serverUUID)
-	if err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	s.syncNodeServerCounts()
-	if err := s.publishClusterEvent(cluster.EventServerScaled, map[string]interface{}{
-		"server_uuid": serverUUID, "replicas": len(assignments), "assignments": assignments,
-	}); err != nil {
-		return nil, pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish server scaled event failed")
-	}
-	return assignments, nil
-}
-
-// EnsureServer 默认保证一个 Server 至少有一个分配；无可用节点时保留为空，等待节点注册。
-func (s *ClusterService) EnsureServer(serverUUID string, replicas int, preferredNode string) error {
-	_, err := s.ScaleServer(serverUUID, replicas, preferredNode)
-	return err
-}
-
-// DeleteServer 删除 Server 的全部实例分配。
-func (s *ClusterService) DeleteServer(serverUUID string) error {
-	if err := s.assignRepo.RemoveAll(serverUUID); err != nil {
-		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	if err := s.publishClusterEvent(cluster.EventServerDeleted, map[string]interface{}{
-		"server_uuid": serverUUID,
-	}); err != nil {
-		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish server deleted event failed")
-	}
-	s.syncNodeServerCounts()
-	return nil
-}
-
-// ListAssignments 返回 Server 当前实例分配。
-// AutoScale 按目标副本数扩缩 Server；无可用节点时不动作。
-func (s *ClusterService) AutoScale(serverUUID string, targetReplicas int) error {
-	stats, err := s.Stats()
-	if err != nil {
-		return err
-	}
-	if stats.ReadyNodes == 0 {
-		return nil
-	}
-	_, err = s.ScaleServer(serverUUID, targetReplicas, "")
-	return err
-}
-
-// MarkServerAssignmentsDraining 标记 Server 全部副本为 draining，配合灰度下线。
-func (s *ClusterService) MarkServerAssignmentsDraining(serverUUID string) error {
-	assignments, err := s.assignRepo.ListByServer(serverUUID)
-	if err != nil {
-		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	var errs []error
-	for _, assignment := range assignments {
-		if err := s.assignRepo.UpdateStatus(serverUUID, assignment.NodeUUID, model.ServerAssignmentDraining); err != nil {
-			errs = append(errs, fmt.Errorf("mark assignment %s/%s draining: %w", serverUUID, assignment.NodeUUID, err))
-		}
-	}
-	if len(errs) > 0 {
-		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, errors.Join(errs...), "mark server assignments draining failed")
-	}
-	return nil
-}
-
-func (s *ClusterService) ListAssignments(serverUUID string) ([]model.ServerAssignment, error) {
-	assignments, err := s.assignRepo.ListByServer(serverUUID)
-	if err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	return assignments, nil
-}
-
-// PublishControl 发布 NATS 控制命令，由目标 Worker 执行本地信令操作。
-func (s *ClusterService) PublishControl(cmd cluster.ControlCommand) error {
-	if err := cmd.Validate(); err != nil {
-		return pkg.NewAppError(pkg.INVALID_PARAMS, err.Error())
-	}
-	if err := s.publishClusterEvent(cluster.EventControlCommand, cmd); err != nil {
-		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish cluster control command failed")
-	}
-	return nil
-}
-
-// ReconcileAll 对账集群状态：回收离线节点并清理不可调度节点上的历史分配。
-func (s *ClusterService) ReconcileAll(timeout time.Duration) error {
-	if err := s.ReapOffline(timeout); err != nil {
-		return err
-	}
-	nodes, err := s.nodeRepo.List()
-	if err != nil {
-		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	var errs []error
-	for _, node := range nodes {
-		if node.Status != model.ClusterNodeOffline && node.Status != model.ClusterNodeUnhealthy {
-			continue
-		}
-		assignments, listErr := s.assignRepo.ListByNode(node.UUID)
-		if listErr != nil {
-			errs = append(errs, fmt.Errorf("list assignments for node %s: %w", node.UUID, listErr))
-			continue
-		}
-		for _, assignment := range assignments {
-			if err := s.assignRepo.Remove(assignment.ServerUUID, node.UUID); err != nil {
-				errs = append(errs, fmt.Errorf("remove assignment %s/%s: %w", assignment.ServerUUID, node.UUID, err))
-			}
-		}
-	}
-	s.syncNodeServerCounts()
-	if len(errs) > 0 {
-		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, errors.Join(errs...), "reconcile cluster assignments failed")
-	}
-	return nil
-}
-
-// ResolveServer 返回 Server 当前可路由的 Worker 节点与 workerUrl。
-// ClusterStats 是集群控制面健康统计。
-type ClusterStats struct {
-	TotalNodes    int `json:"total_nodes"`
-	ReadyNodes    int `json:"ready_nodes"`
-	DrainingNodes int `json:"draining_nodes"`
-	OfflineNodes  int `json:"offline_nodes"`
-	Assignments   int `json:"assignments"`
-}
-
-// Stats 汇总节点与 Server 分配统计。
-func (s *ClusterService) Stats() (ClusterStats, error) {
-	nodes, err := s.nodeRepo.List()
-	if err != nil {
-		return ClusterStats{}, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	stats := ClusterStats{TotalNodes: len(nodes)}
-	for _, node := range nodes {
-		switch node.Status {
-		case model.ClusterNodeReady, model.ClusterNodeBusy:
-			stats.ReadyNodes++
-		case model.ClusterNodeDraining:
-			stats.DrainingNodes++
-		case model.ClusterNodeOffline:
-			stats.OfflineNodes++
-		}
-		assignments, listErr := s.assignRepo.ListByNode(node.UUID)
-		if listErr == nil {
-			stats.Assignments += len(assignments)
-		}
-	}
-	return stats, nil
-}
-
-func (s *ClusterService) ResolveServer(serverUUID string) (*model.ServerAssignment, *model.ClusterNode, error) {
-	assignments, err := s.assignRepo.ListByServer(serverUUID)
-	if err != nil {
-		return nil, nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	nodes, err := s.nodeRepo.List()
-	if err != nil {
-		return nil, nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	byUUID := make(map[string]model.ClusterNode, len(nodes))
-	for _, node := range nodes {
-		byUUID[node.UUID] = node
-	}
-
-	var bestAssignment *model.ServerAssignment
-	var bestScore float64 = -1
-	for i := range assignments {
-		if assignments[i].Status == model.ServerAssignmentDraining {
-			continue
-		}
-		node, ok := byUUID[assignments[i].NodeUUID]
-		if !ok || !cluster.CanSchedule(node) || node.AdvertiseURL == "" {
-			continue
-		}
-		score := cluster.NodeScore(node)
-		if bestAssignment == nil || score < bestScore {
-			bestAssignment = &assignments[i]
-			bestScore = score
-		}
-	}
-	if bestAssignment == nil {
-		return nil, nil, ErrClusterServerUnassigned
-	}
-	node := byUUID[bestAssignment.NodeUUID]
-	return bestAssignment, &node, nil
-}
-
-// reconcilePendingServers 在节点心跳后尝试把未分配 Server 调度到该节点。
-func (s *ClusterService) reconcilePendingServers(nodeUUID string) {
-	if s.serverRepo == nil {
-		return
-	}
-	node, err := s.nodeRepo.GetByUUID(nodeUUID)
-	if err != nil || !cluster.CanSchedule(*node) {
-		return
-	}
-	domains, _, err := s.serverRepo.List(1, 10000)
-	if err != nil {
-		return
-	}
-	for _, domain := range domains {
-		assignments, listErr := s.assignRepo.ListByServer(domain.UUID)
-		if listErr != nil {
-			continue
-		}
-		if len(assignments) == 0 {
-			_, _ = s.ScaleServer(domain.UUID, 1, nodeUUID)
-		}
-	}
-}
-
-func (s *ClusterService) syncNodeServerCounts() {
-	nodes, err := s.nodeRepo.List()
-	if err != nil {
-		return
-	}
-	for _, node := range nodes {
-		count, err := s.assignRepo.CountByNode(node.UUID)
-		if err != nil {
-			continue
-		}
-		if node.ServingServers != int(count) {
-			node.ServingServers = int(count)
-			_ = s.nodeRepo.Update(&node)
-		}
-	}
-}
 
 func sanitizeClusterID(s string) string {
 	replacer := strings.NewReplacer(" ", "-", "/", "-", ":", "-")
