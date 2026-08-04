@@ -154,6 +154,21 @@ services:
         condition: service_healthy
         required: false
 
+  nginx-cluster:
+    <<: *restart
+    profiles: ["cluster"]
+    image: nginx:alpine
+    container_name: gospeak-nginx-cluster
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - ./nginx-cluster.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      gospeak-agent:
+        condition: service_started
+      gospeak-worker:
+        condition: service_started
+
   # ── Nginx 入口 (SRS 模式推荐) ─────────────────────────────────────────
   nginx:
     <<: *restart
