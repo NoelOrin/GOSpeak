@@ -185,7 +185,17 @@ describe("domainApi", () => {
 	});
 
 	it("domainMembers returns member list", async () => {
-		const members = [{ id: 1, user_uuid: "u-1", role_name: "member" }];
+		const members = [
+			{
+				id: 1,
+				user_uuid: "u-1",
+				nickname: "",
+				role_name: "member",
+				joined_at: "2026-01-01",
+				name: "alice",
+				display_name: "Alice",
+			},
+		];
 		(apiClient.post as any).mockResolvedValue(mockResult({ members }));
 		const result = await domainMembers("g-1");
 		expect(result).toEqual(members);

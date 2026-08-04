@@ -19,6 +19,7 @@ import { deleteRoom, listRooms, type RoomRecord } from "@/api/room";
 import ConfirmModal from "@/components/common/ConfirmModal";
 import DomainMemberTable, {
 	executeKickMember,
+	memberDisplayName,
 } from "@/components/domain/DomainMemberTable";
 import DomainRoomTable from "@/components/domain/DomainRoomTable";
 import {
@@ -126,6 +127,10 @@ function RouteComponent() {
 	const [formError, setFormError] = createSignal("");
 	const [saving, setSaving] = createSignal(false);
 	const [kickTarget, setKickTarget] = createSignal<DomainMember | null>(null);
+	const kickTargetName = () => {
+		const target = kickTarget();
+		return target ? memberDisplayName(target) : "该成员";
+	};
 	const [kicking, setKicking] = createSignal(false);
 	const [kickError, setKickError] = createSignal("");
 	let formUUID = "";
@@ -559,9 +564,7 @@ function RouteComponent() {
 				title="移出成员"
 				message={
 					<span>
-						确认将{" "}
-						{kickTarget()?.nickname || kickTarget()?.user_uuid || "该成员"}{" "}
-						移出域？
+						确认将 {kickTargetName()} 移出域？
 						<Show when={kickError()}>
 							<span class="mt-2 block text-error">{kickError()}</span>
 						</Show>

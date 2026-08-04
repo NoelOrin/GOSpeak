@@ -45,7 +45,7 @@ export function roleLabel(role: string) {
 }
 
 export function memberDisplayName(member: DomainMember) {
-	return member.nickname || member.user_uuid;
+	return member.nickname || member.name || member.user_uuid;
 }
 
 export function canKickMember(
@@ -189,7 +189,7 @@ const DomainMemberTable: Component<DomainMemberTableProps> = (props) => {
 													{memberDisplayName(member)}
 												</div>
 												<div class="truncate text-xs text-base-content/50">
-													{member.user_uuid}
+													{member.name ? `@${member.name}` : member.user_uuid}
 												</div>
 											</div>
 										</td>

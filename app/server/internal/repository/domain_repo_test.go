@@ -15,7 +15,7 @@ func newDomainTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Domain{}, &model.DomainMember{}, &model.Room{}); err != nil {
+	if err := db.AutoMigrate(&model.Domain{}, &model.DomainMember{}, &model.Room{}, &model.User{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db
@@ -163,8 +163,8 @@ func TestDomainRepo_AddMember(t *testing.T) {
 
 	member := &model.DomainMember{
 		DomainUUID: domain.UUID,
-		UserUUID:  "user-1",
-		RoleName:  "member",
+		UserUUID:   "user-1",
+		RoleName:   "member",
 	}
 	if err := repo.AddMember(member); err != nil {
 		t.Fatalf("AddMember error: %v", err)
@@ -249,12 +249,23 @@ func TestDomainRepo_ListMembers(t *testing.T) {
 		}
 	}
 
+	for i := 0; i < 3; i++ {
+		uid := string(rune('A' + i))
+		user := &model.User{UUID: uid, Name: "user-" + uid, DisplayName: "User " + uid}
+		if err := db.Create(user).Error; err != nil {
+			t.Fatalf("create user %s: %v", uid, err)
+		}
+	}
+
 	members, err := repo.ListMembers(domain.UUID)
 	if err != nil {
 		t.Fatalf("ListMembers error: %v", err)
 	}
 	if len(members) != 3 {
 		t.Fatalf("expected 3 members, got %d", len(members))
+	}
+	if members[0].Name != "user-A" || members[0].DisplayName != "User A" {
+		t.Fatalf("expected member user name, got %q / %q", members[0].Name, members[0].DisplayName)
 	}
 }
 

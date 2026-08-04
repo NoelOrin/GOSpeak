@@ -155,7 +155,7 @@ func (s *DomainService) Kick(domainUUID, targetUserUUID string) error {
 	return s.domainRepo.RemoveMember(domainUUID, targetUserUUID)
 }
 
-func (s *DomainService) ListMembers(domainUUID string) ([]model.DomainMember, error) {
+func (s *DomainService) ListMembers(domainUUID string) ([]model.DomainMemberInfo, error) {
 	if _, err := s.domainRepo.GetByUUID(domainUUID); err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, ErrDomainNotFound

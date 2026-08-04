@@ -88,9 +88,16 @@ func (r *DomainRepository) GetMember(domainUUID, userUUID string) (*model.Domain
 	return &member, err
 }
 
-func (r *DomainRepository) ListMembers(domainUUID string) ([]model.DomainMember, error) {
-	var members []model.DomainMember
-	err := r.db.Where("domain_uuid = ?", domainUUID).Order("joined_at ASC").Find(&members).Error
+func (r *DomainRepository) ListMembers(domainUUID string) ([]model.DomainMemberInfo, error) {
+	var members []model.DomainMemberInfo
+	err := r.db.Raw(`
+		SELECT dm.id, dm.domain_uuid, dm.user_uuid, dm.nickname, dm.role_name, dm.joined_at,
+	       u.name, u.display_name
+	FROM domain_members dm
+	LEFT JOIN users u ON u.uuid = dm.user_uuid
+	WHERE dm.domain_uuid = ?
+	ORDER BY dm.joined_at ASC
+	`, domainUUID).Scan(&members).Error
 	return members, err
 }
 

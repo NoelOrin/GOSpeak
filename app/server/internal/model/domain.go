@@ -49,6 +49,18 @@ func (DomainMember) TableName() string {
 	return "domain_members"
 }
 
+// DomainMemberInfo 成员列表视图，附带用户全局名称。
+type DomainMemberInfo struct {
+	ID          uint      `json:"id"`
+	DomainUUID  string    `json:"domain_uuid"`
+	UserUUID    string    `json:"user_uuid"`
+	Nickname    string    `json:"nickname"`
+	RoleName    string    `json:"role_name"`
+	JoinedAt    time.Time `json:"joined_at"`
+	Name        string    `json:"name"`
+	DisplayName string    `json:"display_name"`
+}
+
 // generateInviteCode 生成 8 字符随机邀请码。
 func generateInviteCode() string {
 	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"

@@ -21,6 +21,8 @@ export interface DomainMember {
 	nickname: string;
 	role_name: string;
 	joined_at: string;
+	name: string;
+	display_name: string;
 }
 
 export interface DomainPage {

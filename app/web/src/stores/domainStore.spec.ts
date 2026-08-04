@@ -48,6 +48,8 @@ function makeMembers(): DomainMember[] {
 			nickname: "Owner",
 			role_name: "owner",
 			joined_at: "2026-01-01T00:00:00Z",
+			name: "owner-name",
+			display_name: "Owner",
 		},
 		{
 			id: 2,
@@ -56,6 +58,8 @@ function makeMembers(): DomainMember[] {
 			nickname: "Member",
 			role_name: "member",
 			joined_at: "2026-01-02T00:00:00Z",
+			name: "member-name",
+			display_name: "Member",
 		},
 	];
 }
@@ -211,6 +215,8 @@ describe("domainStore", () => {
 				nickname: "Newcomer",
 				role_name: "member",
 				joined_at: "2026-01-03T00:00:00Z",
+				name: "newcomer-name",
+				display_name: "Newcomer",
 			},
 		];
 		domainMembersMock.mockResolvedValueOnce(refreshed);

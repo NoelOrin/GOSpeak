@@ -14,8 +14,8 @@ import (
 	"GOSpeak/internal/repository"
 	"GOSpeak/internal/service"
 
-	"github.com/glebarez/sqlite"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -25,7 +25,7 @@ func setupDomainHandlerTestDB(t *testing.T) (*gorm.DB, *service.DomainService) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Domain{}, &model.DomainMember{}, &model.Room{}); err != nil {
+	if err := db.AutoMigrate(&model.Domain{}, &model.DomainMember{}, &model.Room{}, &model.User{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	domainRepo := repository.NewDomainRepository(db)
@@ -48,7 +48,7 @@ func setupDomainHandlerRouter(t *testing.T, domainSvc *service.DomainService) *g
 			userUUID = "default-user"
 		}
 		c.Set("user_uuid", userUUID)
-		c.Set("username", userUUID)    // username = user_uuid in test fixtures
+		c.Set("username", userUUID) // username = user_uuid in test fixtures
 		c.Set("role", c.GetHeader("X-User-Role"))
 		c.Set("auth_type", "jwt")
 		c.Set("permissions", []string{})
@@ -261,7 +261,7 @@ func TestDomainHandler_ListPagination(t *testing.T) {
 	router := setupDomainHandlerRouter(t, domainSvc)
 
 	for i := 0; i < 3; i++ {
-			g := &model.Domain{Name: fmt.Sprintf("Domain-%d", i), OwnerUUID: "owner-1"}
+		g := &model.Domain{Name: fmt.Sprintf("Domain-%d", i), OwnerUUID: "owner-1"}
 		if err := db.Create(g).Error; err != nil {
 			t.Fatalf("seed domain: %v", err)
 		}
@@ -343,11 +343,28 @@ func TestDomainHandler_Members_Success(t *testing.T) {
 	if err := db.Create(g).Error; err != nil {
 		t.Fatalf("seed domain: %v", err)
 	}
-	db.Create(&model.DomainMember{DomainUUID: g.UUID, UserUUID: "owner-1", RoleName: "owner"})
+	if err := db.Create(&model.User{UUID: "owner-1", Name: "OwnerName", DisplayName: "域主"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{DomainUUID: g.UUID, UserUUID: "owner-1", RoleName: "owner"}).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
 
 	w := postDomainJSON(t, router, "/api/v1/domain/members", `{"domain_uuid":"`+g.UUID+`"}`, map[string]string{"X-User-UUID": "user-1"})
 	resp := parseDomainResp(t, w.Body.String())
 	if code := intCode(resp["code"]); code != 0 {
 		t.Fatalf("expected code 0, got %d: %s", code, resp["msg"])
+	}
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected response data object, got %#v", resp["data"])
+	}
+	members, ok := data["members"].([]interface{})
+	if !ok || len(members) != 1 {
+		t.Fatalf("expected 1 member in response, got %#v", data)
+	}
+	first := members[0].(map[string]interface{})
+	if first["name"] != "OwnerName" {
+		t.Fatalf("expected member name OwnerName, got %v", first["name"])
 	}
 }

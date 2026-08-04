@@ -6,6 +6,7 @@ import {
 	getKickAction,
 	getMemberTableStatus,
 	isMemberTableBusy,
+	memberDisplayName,
 } from "./DomainMemberTable";
 import { validateDomainForm } from "../../pages/(app)/manage/domains/$domainUUID/index";
 
@@ -16,6 +17,8 @@ const owner: DomainMember = {
 	nickname: "owner",
 	role_name: "owner",
 	joined_at: "2026-01-01",
+	name: "owner-name",
+	display_name: "Owner Name",
 };
 
 const member: DomainMember = {
@@ -25,7 +28,25 @@ const member: DomainMember = {
 	nickname: "member",
 	role_name: "member",
 	joined_at: "2026-01-02",
+	name: "member-name",
+	display_name: "Member Name",
 };
+
+describe("DomainMemberTable display name", () => {
+	it("prefers domain nickname over the global user name", () => {
+		expect(memberDisplayName(owner)).toBe("owner");
+	});
+
+	it("falls back to the global user name when nickname is empty", () => {
+		expect(memberDisplayName({ ...member, nickname: "" })).toBe("member-name");
+	});
+
+	it("falls back to the user UUID when no readable name exists", () => {
+		expect(memberDisplayName({ ...member, nickname: "", name: "" })).toBe(
+			"u-member",
+		);
+	});
+});
 
 describe("DomainMemberTable kick logic", () => {
 	it("does not allow kicking the domain owner", () => {
