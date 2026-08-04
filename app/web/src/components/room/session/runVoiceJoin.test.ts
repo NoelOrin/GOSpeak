@@ -74,6 +74,17 @@ describe("runVoiceJoin", () => {
 		vi.clearAllMocks();
 	});
 
+	it("connects to workerUrl before signal join", async () => {
+		const connectSignal = vi.fn(async () => {});
+		const { deps } = makeDeps({ connectSignal });
+		await runVoiceJoin(
+			makeToken({ workerUrl: "wss://worker-a.example" }) as any,
+			deps as any,
+		);
+		expect(connectSignal).toHaveBeenCalledWith("wss://worker-a.example");
+		expect(deps.joinSignalRoom).toHaveBeenCalled();
+	});
+
 	it("uses sfuRoom for media join while signal keeps logical room + domain_uuid", async () => {
 		const { deps, client } = makeDeps();
 		const token = makeToken({

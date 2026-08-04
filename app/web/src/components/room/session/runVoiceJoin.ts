@@ -43,6 +43,7 @@ export type VoiceJoinDeps = {
 		stream?: string,
 		domain_uuid?: string,
 	) => Promise<VoiceJoinAck>;
+	connectSignal?: (workerUrl: string) => Promise<unknown>;
 	onPhase: (phase: VoicePhase) => void;
 	/**
 	 * media join 成功后立刻回调（所有 provider 通用）。
@@ -178,6 +179,9 @@ async function executeVoiceJoin(
 		throwIfAborted(signal);
 
 		const joinSignal = async () => {
+			if (token.workerUrl && deps.connectSignal) {
+				await deps.connectSignal(token.workerUrl);
+			}
 			await raceAbort(
 				joinSignalRoom(token.room, token.identity, password, token.domain_uuid),
 				signal,

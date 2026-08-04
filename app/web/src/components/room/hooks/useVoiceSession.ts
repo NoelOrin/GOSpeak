@@ -276,6 +276,8 @@ export function useVoiceSession() {
 								setupAudio: setupAudioHandler,
 								joinSignalRoom: (room, identity, password, domain_uuid) =>
 									socketStore.joinRoom(room, identity, password, domain_uuid),
+								connectSignal: (workerUrl) =>
+									socketStore.connectToWorker(workerUrl),
 								joinSignalSfu: (room, identity, stream, domain_uuid) =>
 									socketStore.joinRoomSFU(room, identity, stream, domain_uuid),
 								onPhase: (nextPhase) => {
