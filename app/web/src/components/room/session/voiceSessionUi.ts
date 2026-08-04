@@ -51,6 +51,7 @@ export type JoinState =
 
 export type Session = {
 	roomName: string;
+	domain_uuid?: string;
 	client: SFUClient | null;
 	signal: AbortSignal;
 	status: VoicePhase;

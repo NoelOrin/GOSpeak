@@ -1,4 +1,4 @@
-import { createRoot, createSignal } from "solid-js";
+import { createEffect, createRoot, createSignal } from "solid-js";
 import {
 	type ConversationDTO,
 	getConversationMessages,
@@ -45,6 +45,14 @@ export const chatStore = createRoot(() => {
 	const [nextBefore, setNextBefore] = createSignal<string | null>(null);
 	const [isAtBottom, setIsAtBottom] = createSignal(true);
 	const [loading, setLoading] = createSignal(false);
+
+	createEffect(() => {
+		const domain = socketStore.currentDomainUUID();
+		const roomDomain = textRoomDomainUUID();
+		if (roomDomain && roomDomain !== (domain ?? undefined)) {
+			leaveTextRoom();
+		}
+	});
 
 	// Nonces currently waiting for a server ack / created event
 	let pendingNonces = new Set<string>();
@@ -148,6 +156,15 @@ export const chatStore = createRoot(() => {
 	}
 
 	function leaveTextRoom() {
+		const roomName = textRoomName();
+		const roomDomainUUID = textRoomDomainUUID();
+		const socket = socketStore.getSocket();
+		if (roomName && socket?.isConnected()) {
+			socket.emitFireAndForget(EVENTS.ROOM_LEAVE, {
+				room: roomName,
+				domain_uuid: roomDomainUUID ?? undefined,
+			});
+		}
 		removeListeners();
 		setTextRoom(null);
 		setTextRoomName(null);

@@ -252,9 +252,9 @@ func TestRoomLifecycle_RejoinAfterLeave(t *testing.T) {
 	}
 }
 
-// ─── Integration: Same User in Multiple Rooms ───
+// ─── Integration: Same User Switches Voice Rooms ───
 
-func TestRoomLifecycle_SameUserMultipleRooms(t *testing.T) {
+func TestRoomLifecycle_SameUserSwitchesVoiceRooms(t *testing.T) {
 	hub := NewHub(nil, nil, nil, nil)
 	server := newMockBroadcaster()
 	hub.fanout = server
@@ -270,27 +270,20 @@ func TestRoomLifecycle_SameUserMultipleRooms(t *testing.T) {
 	}
 	hub.OnRoomJoinSFU(user, `{"room":"room-2","identity":"alice"}`)
 
-	if len(hub.rooms["room-1"].Members) != 1 {
-		t.Errorf("room-1: expected 1 member, got %d", len(hub.rooms["room-1"].Members))
+	if _, exists := hub.rooms["room-1"]; exists {
+		t.Fatal("room-1 should be removed after switching to room-2")
 	}
 	if len(hub.rooms["room-2"].Members) != 1 {
 		t.Errorf("room-2: expected 1 member, got %d", len(hub.rooms["room-2"].Members))
 	}
 
-	// Leave room-1
-	resp, err := hub.OnRoomLeave(user, `{"room":"room-1"}`)
+	resp, err := hub.OnRoomLeave(user, `{"room":"room-2"}`)
 	if err != nil {
 		t.Fatalf("OnRoomLeave failed: %v", err)
 	}
 	_ = resp
-	if _, exists := hub.rooms["room-1"]; exists {
-		t.Fatal("room-1 should be deleted")
-	}
-	if _, exists := hub.rooms["room-2"]; !exists {
-		t.Fatal("room-2 should still exist")
-	}
-	if len(hub.rooms["room-2"].Members) != 1 {
-		t.Errorf("room-2: expected 1 member, got %d", len(hub.rooms["room-2"].Members))
+	if _, exists := hub.rooms["room-2"]; exists {
+		t.Fatal("room-2 should be deleted after leave")
 	}
 }
 

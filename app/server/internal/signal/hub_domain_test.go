@@ -271,3 +271,85 @@ func TestHub_CheckRoomLimit_UsesDomainScopedRoom(t *testing.T) {
 		t.Fatalf("domain-b room should be full, full=%v err=%v", full, err)
 	}
 }
+
+func TestHub_OnRoomJoinSFU_SwitchesVoiceRoomAcrossDomains(t *testing.T) {
+	hub := newTestHub()
+	conn := newAuthedMockClient("sock-1", "alice")
+
+	hub.OnRoomCreate(conn, `{"room":"lobby","domain_uuid":"domain-a"}`)
+	hub.OnRoomCreate(conn, `{"room":"lobby","domain_uuid":"domain-b"}`)
+
+	if _, err := hub.OnRoomJoin(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"alice"}`); err != nil {
+		t.Fatalf("join domain-a: %v", err)
+	}
+	if _, err := hub.OnRoomJoinSFU(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"alice"}`); err != nil {
+		t.Fatalf("join sfu domain-a: %v", err)
+	}
+
+	if _, err := hub.OnRoomJoin(conn, `{"room":"lobby","domain_uuid":"domain-b","identity":"alice"}`); err != nil {
+		t.Fatalf("join domain-b: %v", err)
+	}
+	if _, err := hub.OnRoomJoinSFU(conn, `{"room":"lobby","domain_uuid":"domain-b","identity":"alice"}`); err != nil {
+		t.Fatalf("join sfu domain-b: %v", err)
+	}
+
+	hub.mu.RLock()
+	_, aExists := hub.rooms["domain-a:lobby"]
+	bRoom := hub.rooms["domain-b:lobby"]
+	slots := hub.connSlots["sock-1"]
+	hub.mu.RUnlock()
+
+	if aExists {
+		t.Fatal("domain-a room should be removed after switching to domain-b")
+	}
+	if bRoom == nil || len(bRoom.Members) != 1 {
+		t.Fatalf("expected alice only in domain-b room, got %#v", bRoom)
+	}
+	if slots == nil || slots.VoiceRoom != "domain-b:lobby" {
+		t.Fatalf("expected voice slot domain-b:lobby, got %#v", slots)
+	}
+
+	fanout := hub.fanout.(*mockBroadcaster)
+	if !fanout.didLeave("sock-1", "domain-a:lobby") {
+		t.Fatal("expected fanout leave for domain-a:lobby")
+	}
+	if !fanout.didJoin("sock-1", "domain-b:lobby") {
+		t.Fatal("expected fanout join for domain-b:lobby")
+	}
+	if len(fanout.roomCasts["domain-a:lobby"][EventMemberLeft]) == 0 {
+		t.Fatal("expected member:left for domain-a:lobby after switch")
+	}
+}
+
+func TestHub_OnRoomJoin_DoesNotSwitchVoiceSlotBeforeSFUConfirm(t *testing.T) {
+	hub := newTestHub()
+	conn := newAuthedMockClient("sock-1", "alice")
+
+	hub.OnRoomCreate(conn, `{"room":"lobby","domain_uuid":"domain-a"}`)
+	hub.OnRoomCreate(conn, `{"room":"lobby","domain_uuid":"domain-b"}`)
+	if _, err := hub.OnRoomJoin(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"alice"}`); err != nil {
+		t.Fatalf("join domain-a: %v", err)
+	}
+	if _, err := hub.OnRoomJoinSFU(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"alice"}`); err != nil {
+		t.Fatalf("join sfu domain-a: %v", err)
+	}
+
+	if _, err := hub.OnRoomJoin(conn, `{"room":"lobby","domain_uuid":"domain-b","identity":"alice"}`); err != nil {
+		t.Fatalf("signaling join domain-b: %v", err)
+	}
+
+	hub.mu.RLock()
+	slots := hub.connSlots["sock-1"]
+	hub.mu.RUnlock()
+	if slots == nil || slots.VoiceRoom != "domain-a:lobby" {
+		t.Fatalf("voice slot must stay on domain-a until sfu confirm, got %#v", slots)
+	}
+
+	fanout := hub.fanout.(*mockBroadcaster)
+	if fanout.didJoin("sock-1", "domain-b:lobby") {
+		t.Fatal("domain-b fanout must not be joined before sfu confirm")
+	}
+	if fanout.didLeave("sock-1", "domain-a:lobby") {
+		t.Fatal("domain-a fanout must not be left before sfu confirm")
+	}
+}

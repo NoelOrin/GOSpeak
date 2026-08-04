@@ -82,7 +82,6 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 			"error": "not a member of this domain",
 		})
 	}
-	h.setClientDomain(c, req.DomainUUID)
 
 	identity, err := resolveIdentity(c, req.Identity)
 	if err != nil {
@@ -172,17 +171,23 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 			h.fanout.Leave(slots.TextRoom, c.ID())
 		}
 		slots.TextRoom = key
+		h.fanout.Join(key, c.ID())
 	} else {
-		// Switching voice rooms: leave old slot
-		if slots.VoiceRoom != "" && slots.VoiceRoom != key {
-			h.fanout.Leave(slots.VoiceRoom, c.ID())
+		// Voice slot does not switch until room:join:sfu succeeds.
+		// Fanout join is safe here: receiving room events in the new room
+		// before SFU confirm is harmless and avoids stranding the socket if
+		// the join is rejected.
+		// 首次加入/同房重试提前 join fanout；切换场景保持旧房 fanout，
+		// 避免 phase2 失败时 socket 被孤立在新房且旧槽位未回滚。
+		if slots.VoiceRoom == "" || slots.VoiceRoom == key {
+			h.fanout.Join(key, c.ID())
 		}
-		slots.VoiceRoom = key
 	}
 	h.mu.Unlock()
 
-	h.fanout.Join(key, c.ID())
-
+	if roomType == model.RoomTypeText {
+		h.setClientDomain(c, req.DomainUUID)
+	}
 	log.Printf("[Signal] %s (%s) signaling ready for room: %s (type=%s)", c.ID(), identity, req.Room, roomType)
 
 	return marshalAck(map[string]interface{}{
@@ -205,7 +210,6 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 			"error": "not a member of this domain",
 		})
 	}
-	h.setClientDomain(c, req.DomainUUID)
 
 	identity, err := resolveIdentity(c, req.Identity)
 	if err != nil {
@@ -258,19 +262,68 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 		Stream:   req.Stream,
 	}
 
+	newKey := roomKey(req.DomainUUID, req.Room)
+	type switchCleanup struct {
+		key         string
+		identity    string
+		stream      string
+		wasSpeaking bool
+		roomDeleted bool
+	}
+	var oldCleanups []switchCleanup
+
 	h.mu.Lock()
 	// 重复身份检查：同一房间不允许同一 identity 用不同 socket 重复加入
-	if h.duplicateIdentityLocked(roomKey(req.DomainUUID, req.Room), identity, c.ID()) {
+	if h.duplicateIdentityLocked(newKey, identity, c.ID()) {
 		h.mu.Unlock()
-		// 拒绝加入：回退 phase1 的 fanout.Join，避免 socket 残留在 WS room
-		h.fanout.Leave(roomKey(req.DomainUUID, req.Room), c.ID())
+		h.fanout.Leave(newKey, c.ID())
 		return marshalAck(map[string]interface{}{
 			"error":    "duplicate connection not allowed",
 			"room":     req.Room,
 			"identity": identity,
 		})
 	}
-	room, exists := h.rooms[roomKey(req.DomainUUID, req.Room)]
+
+	slots := h.connSlots[c.ID()]
+	if slots == nil {
+		slots = &connRoomSlots{}
+		h.connSlots[c.ID()] = slots
+	}
+	// A socket owns one voice session; joining a new room must remove stale
+	// membership from any previous voice room before publishing the new join.
+	for oldKey, oldRoom := range h.rooms {
+		if oldKey == newKey {
+			continue
+		}
+		oldMember, ok := oldRoom.Members[c.ID()]
+		if !ok {
+			continue
+		}
+		oldIdentity := oldMember.Identity
+		oldStream := oldMember.Stream
+		oldWasSpeaking := oldRoom.Speaking[oldIdentity]
+		roomDelMember(oldRoom, c.ID())
+		delete(oldRoom.Speaking, oldIdentity)
+		delete(oldRoom.MicMuted, oldIdentity)
+		h.unregisterStreamLocked(oldKey, oldIdentity, oldStream)
+		oldDeleted := h.deleteRoomIfEmptyLocked(oldKey)
+		if h.fanout != nil {
+			h.fanout.Leave(oldKey, c.ID())
+		}
+		oldCleanups = append(oldCleanups, switchCleanup{
+			key:         oldKey,
+			identity:    oldIdentity,
+			stream:      oldStream,
+			wasSpeaking: oldWasSpeaking,
+			roomDeleted: oldDeleted,
+		})
+	}
+	slots.VoiceRoom = newKey
+	if h.fanout != nil {
+		h.fanout.Join(newKey, c.ID())
+	}
+
+	room, exists := h.rooms[newKey]
 	if !exists {
 		room = &Room{
 			Name:      req.Room,
@@ -279,17 +332,46 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 			Speaking:  make(map[string]bool),
 			CreatedAt: time.Now(),
 		}
-		h.rooms[roomKey(req.DomainUUID, req.Room)] = room
+		h.rooms[newKey] = room
 	}
 	roomSetMember(room, c.ID(), identity, member)
-	h.registerStreamLocked(roomKey(req.DomainUUID, req.Room), identity, req.Stream)
-	memberList := h.memberSnapshotLocked(roomKey(req.DomainUUID, req.Room))
+	h.registerStreamLocked(newKey, identity, req.Stream)
+	memberList := h.memberSnapshotLocked(newKey)
 	h.mu.Unlock()
-	memberList = h.enrichMembers(memberList)
-	h.syncRoomToStore(roomKey(req.DomainUUID, req.Room))
-	if req.Stream != "" {
-		h.syncStreamPut(req.Stream, roomKey(req.DomainUUID, req.Room), identity)
+
+	for _, old := range oldCleanups {
+		h.syncRoomToStore(old.key)
+		if old.stream != "" {
+			h.syncStreamDelete(old.stream)
+		}
+		oldDomain, oldRoomName := splitRoomKey(old.key)
+		h.publishRoom(old.key, EventMemberLeft, map[string]interface{}{
+			"room":        oldRoomName,
+			"domain_uuid": oldDomain,
+			"identity":    old.identity,
+			"id":          c.ID(),
+		})
+		h.removeParticipantSafe(old.key, old.identity)
+		if h.participantCleanup != nil {
+			h.participantCleanup.OnParticipantLeft(old.key, old.identity)
+		}
+		if old.wasSpeaking && !old.roomDeleted {
+			h.broadcastActiveSpeakers(oldDomain, oldRoomName)
+		}
+		if old.roomDeleted {
+			h.deleteRoomSafe(old.key)
+			h.broadcastRoomList(oldDomain)
+		} else {
+			h.broadcastRoomUpdatedLocal(old.key)
+		}
 	}
+
+	memberList = h.enrichMembers(memberList)
+	h.syncRoomToStore(newKey)
+	if req.Stream != "" {
+		h.syncStreamPut(req.Stream, newKey, identity)
+	}
+	h.setClientDomain(c, req.DomainUUID)
 
 	log.Printf("[Signal] sfu confirmed: %s in %s", c.ID(), req.Room)
 

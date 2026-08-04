@@ -227,11 +227,13 @@ const RoomItem = (props: RoomItemPropsType) => {
 
 	const handleLeave = () => {
 		closeContextMenu();
-		void socketStore.leaveRoom(props.room.name).catch(() => {});
 		if (props.room.type === "text") {
 			chatStore.leaveTextRoom();
 			return;
 		}
+		void socketStore
+			.leaveRoom(props.room.name, props.room.domain_uuid)
+			.catch(() => {});
 		socketStore.clearCurrentRoom();
 		socketStore.clearSelectedRoom();
 	};

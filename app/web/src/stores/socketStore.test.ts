@@ -8,7 +8,7 @@ const { mockAdapter, mockTabLock } = vi.hoisted(() => {
 			connect: vi.fn(),
 			disconnect: vi.fn(),
 			emitFireAndForget: vi.fn(),
-			emitAck: vi.fn(),
+			emitAck: vi.fn(() => Promise.resolve({})),
 			onServerEvent: vi.fn(() => () => {}),
 			offServerEvent: vi.fn(),
 			offAllServerEvents: vi.fn(),
@@ -50,7 +50,7 @@ vi.mock("@/handler_audio/speakingStore", () => ({
 	setSpeakingIdentities: vi.fn(),
 }));
 
-vi.mock("@/socket/events", () => ({ EVENTS: {} }));
+vi.mock("@/socket/events", () => ({ EVENTS: { ROOM_LEAVE: "room:leave" } }));
 
 vi.mock("@/socket/roomState", () => ({
 	addCreatedRoom: vi.fn((prev) => prev),
@@ -127,5 +127,14 @@ describe("socketStore worker routing", () => {
 
 		expect(mockAdapter.connect).toHaveBeenCalledTimes(2);
 		expect(mockAdapter.onServerEvent.mock.calls.length).toBe(boundCount);
+	});
+
+	it("leaveRoom sends explicit domain uuid", async () => {
+		await socketStore.leaveRoom("lobby", "domain-a");
+
+		expect(mockAdapter.emitAck).toHaveBeenCalledWith(
+			"room:leave",
+			expect.objectContaining({ room: "lobby", domain_uuid: "domain-a" }),
+		);
 	});
 });

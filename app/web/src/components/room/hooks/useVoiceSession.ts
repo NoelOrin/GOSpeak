@@ -141,7 +141,9 @@ export function useVoiceSession() {
 			await teardownClient(activeJoinClient);
 		}
 		cleanupAudioHandler();
-		await socketStore.leaveRoom(sess.roomName).catch(() => {});
+		await socketStore
+			.leaveRoom(sess.roomName, sess.domain_uuid)
+			.catch(() => {});
 		setSession((cur) => (cur === sess ? null : cur));
 		socketStore.clearCurrentRoom();
 	};
@@ -156,6 +158,20 @@ export function useVoiceSession() {
 			setSession(null);
 			socketStore.clearCurrentRoom();
 			socketStore.setCurrentSFUProvider(undefined);
+		}
+	});
+
+	createEffect(() => {
+		const domain = socketStore.currentDomainUUID();
+		const sess = session();
+		const selected = selectedRoom();
+		if (sess?.domain_uuid && sess.domain_uuid !== (domain || undefined)) {
+			void socketStore
+				.leaveRoom(sess.roomName, sess.domain_uuid)
+				.catch(() => {});
+		}
+		if (selected && (selected.domain_uuid || "") !== (domain || "")) {
+			socketStore.clearSelectedRoom();
 		}
 	});
 
@@ -182,13 +198,24 @@ export function useVoiceSession() {
 
 				// 切房：立即退旧业务房（信令面马上发，不阻塞新 join）。
 				// SFU client 拆除仍需串行 await，避免与新房 createOffer 竞态。
-				if (prev && prev.roomName !== newRoom) {
-					void socketStore.leaveRoom(prev.roomName).catch(() => {});
+				const newDomain =
+					selectedRoom()?.domain_uuid ??
+					socketStore.currentDomainUUID() ??
+					undefined;
+				const roomChanged =
+					!!prev &&
+					(prev.roomName !== newRoom ||
+						(prev.domain_uuid || "") !== (newDomain || ""));
+				if (roomChanged) {
+					void socketStore
+						.leaveRoom(prev.roomName, prev.domain_uuid)
+						.catch(() => {});
 				}
 
 				// 立即把 session 切到新房 resolving，UI 显示新房
 				setSession({
 					roomName: newRoom,
+					domain_uuid: newDomain,
 					client: null,
 					signal,
 					status: "resolving",
@@ -358,6 +385,7 @@ export function useVoiceSession() {
 
 						setSession({
 							roomName: newRoom,
+							domain_uuid: newDomain,
 							client: createdClient,
 							signal,
 							status: "ready",
@@ -422,6 +450,10 @@ export function useVoiceSession() {
 					? { ...s, status: "failed", error: msg }
 					: {
 							roomName: selectedRoom()?.name ?? "",
+							domain_uuid:
+								selectedRoom()?.domain_uuid ??
+								socketStore.currentDomainUUID() ??
+								undefined,
 							client: null,
 							signal: new AbortController().signal,
 							status: "failed",

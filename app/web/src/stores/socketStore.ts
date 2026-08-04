@@ -293,7 +293,7 @@ export const socketStore = createRoot(() => {
 			});
 	}
 
-	function leaveRoom(room: string): Promise<any> {
+	function leaveRoom(room: string, domain_uuid?: string): Promise<any> {
 		// 仅发信令，不清 currentRoom。状态清理由 session 生命周期统一管理
 		// （teardownSession / handleManualLeave / room:kicked），避免切房 fire-and-forget 时
 		// .then 清状态与新房 joinRoom 设状态竞态。
@@ -301,7 +301,7 @@ export const socketStore = createRoot(() => {
 		// room:updated / room:list:result 负责刷新列表。ack 后再拉一次列表兜底。
 		return signalEmit(EVENTS.ROOM_LEAVE, {
 			room,
-			domain_uuid: currentDomainUUID() ?? undefined,
+			domain_uuid: domain_uuid ?? currentDomainUUID() ?? undefined,
 		}).then((data) => {
 			listRooms();
 			return data;

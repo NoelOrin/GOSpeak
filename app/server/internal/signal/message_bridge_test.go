@@ -111,6 +111,11 @@ func TestOnRoomJoin_DualSlot(t *testing.T) {
 		t.Fatalf("join voice B: %v", err)
 	}
 
+	// Voice slot is set only after SFU confirmation.
+	if _, err := h.OnRoomJoinSFU(conn, `{"room":"voice-b","identity":"alice"}`); err != nil {
+		t.Fatalf("join sfu voice B: %v", err)
+	}
+
 	// Both slots set
 	h.mu.RLock()
 	slots := h.connSlots["conn-1"]

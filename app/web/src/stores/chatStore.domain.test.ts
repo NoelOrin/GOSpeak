@@ -8,9 +8,11 @@ const socketMock = vi.hoisted(() => ({
 	offAllServerEvents: vi.fn(),
 }));
 
+const domainState = vi.hoisted(() => ({ currentDomain: "fallback-domain" }));
+
 vi.mock("@/stores/socketStore", () => ({
 	socketStore: {
-		currentDomainUUID: () => "fallback-domain",
+		currentDomainUUID: () => domainState.currentDomain,
 		getSocket: () => socketMock,
 	},
 }));
@@ -29,10 +31,12 @@ import { chatStore } from "./chatStore";
 describe("chatStore domain payloads", () => {
 	afterEach(() => {
 		vi.clearAllMocks();
+		domainState.currentDomain = "fallback-domain";
 		chatStore.leaveTextRoom();
 	});
 
 	it("sends domain_uuid on room join and message send", async () => {
+		domainState.currentDomain = "domain-1";
 		await chatStore.joinTextRoom({
 			uuid: "room-1",
 			name: "text-chat",
@@ -58,6 +62,7 @@ describe("chatStore domain payloads", () => {
 	});
 
 	it("falls back to the current domain uuid", async () => {
+		domainState.currentDomain = "fallback-domain";
 		await chatStore.joinTextRoom({
 			uuid: "room-2",
 			name: "text-chat-2",
@@ -66,6 +71,23 @@ describe("chatStore domain payloads", () => {
 		expect(socketMock.emitFireAndForget).toHaveBeenCalledWith(
 			EVENTS.ROOM_JOIN,
 			expect.objectContaining({ domain_uuid: "fallback-domain" }),
+		);
+	});
+
+	it("leaveTextRoom emits room leave with saved domain", async () => {
+		domainState.currentDomain = "domain-1";
+		await chatStore.joinTextRoom({
+			uuid: "room-1",
+			name: "text-chat",
+			domain_uuid: "domain-1",
+		});
+		socketMock.emitFireAndForget.mockClear();
+
+		chatStore.leaveTextRoom();
+
+		expect(socketMock.emitFireAndForget).toHaveBeenCalledWith(
+			EVENTS.ROOM_LEAVE,
+			expect.objectContaining({ room: "text-chat", domain_uuid: "domain-1" }),
 		);
 	});
 });
