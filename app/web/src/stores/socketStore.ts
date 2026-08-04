@@ -135,6 +135,18 @@ export const socketStore = createRoot(() => {
 	// 6. connect / bindServerEvents / disconnect
 	let serverEventsBound = false;
 
+	async function connectToWorker(workerUrl: string): Promise<string> {
+		if (adapter.isConnected()) {
+			const current = adapter.getCurrentUrl?.();
+			if (current === workerUrl) return current;
+			adapter.disconnect();
+		}
+		const ticket = await getWSTicket();
+		adapter.connect(workerUrl, ticket);
+		setConnecting(false);
+		return workerUrl;
+	}
+
 	function connect() {
 		if (adapter.isConnected() || connecting()) return;
 		const token = userStore.accessToken();
@@ -624,6 +636,7 @@ export const socketStore = createRoot(() => {
 		speechRestrictionInfo,
 		connect,
 		disconnect,
+		connectToWorker,
 		createRoom,
 		joinRoom,
 		leaveRoom,

@@ -59,6 +59,7 @@ export interface WSClientOptions {
 export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 	connect: (url: string, token?: string) => void;
 	disconnect: () => void;
+	getCurrentUrl: () => string;
 	offServerEvent: (event: string, cb: (...args: any[]) => void) => void;
 	offAllServerEvents: () => void;
 	onConnected: (cb: () => void) => () => void;
@@ -248,6 +249,10 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 		return ws?.readyState === WebSocket.OPEN;
 	}
 
+	function getCurrentUrl(): string {
+		return currentUrl;
+	}
+
 	function onConnected(cb: () => void): () => void {
 		connectedCbs.push(cb);
 		return () => {
@@ -275,6 +280,7 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 	return {
 		connect,
 		disconnect,
+		getCurrentUrl,
 		emitFireAndForget,
 		emitAck,
 		onServerEvent,
