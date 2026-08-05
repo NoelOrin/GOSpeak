@@ -6,19 +6,26 @@ type WebRtcTransport = Awaited<ReturnType<Router["createWebRtcTransport"]>>;
 type Producer = Awaited<ReturnType<WebRtcTransport["produce"]>>;
 type Consumer = Awaited<ReturnType<WebRtcTransport["consume"]>>;
 
+type MediasoupFactory = Pick<typeof mediasoup, "createWorker">;
+
 export interface ProducerInfo {
 	id: string;
 	kind: string;
 	appData: unknown;
 }
 
+export type RoomStatus = "open" | "closed";
+export type ParticipantStatus = "joined" | "closed";
+
 interface ParticipantState {
 	sendTransportId?: string;
 	recvTransportId?: string;
 	producerIds: Set<string>;
+	status: ParticipantStatus;
 }
 
 interface RoomState {
+	status: RoomStatus;
 	router: Router;
 	transports: Map<string, WebRtcTransport>;
 	producers: Map<string, Producer>;
@@ -27,12 +34,18 @@ interface RoomState {
 }
 
 class MediasoupWorker {
+	private readonly mediasoupFactory: MediasoupFactory;
+
+	constructor(mediasoupFactory: MediasoupFactory = mediasoup) {
+		this.mediasoupFactory = mediasoupFactory;
+	}
+
 	private worker: Worker | null = null;
 	private rooms: Map<string, RoomState> = new Map();
 	private routerPromises = new Map<string, Promise<Router>>();
 
 	async init(): Promise<void> {
-		this.worker = await mediasoup.createWorker({
+		this.worker = await this.mediasoupFactory.createWorker({
 			logLevel: "warn",
 			logTags: ["info", "ice", "dtls", "rtp", "srtp", "rtcp"],
 			rtcMinPort: Number(process.env.RTC_MIN_PORT || 40000),
@@ -65,6 +78,7 @@ class MediasoupWorker {
 			})
 			.then((router) => {
 				const state: RoomState = {
+					status: "open",
 					router,
 					transports: new Map(),
 					producers: new Map(),
@@ -88,6 +102,26 @@ class MediasoupWorker {
 
 	getRoom(roomId: string): RoomState | undefined {
 		return this.rooms.get(roomId);
+	}
+
+	private closeRoomResources(room: RoomState): void {
+		room.status = "closed";
+		for (const transport of room.transports.values()) {
+			if (!transport.closed) transport.close();
+		}
+		for (const producer of room.producers.values()) {
+			if (!producer.closed) producer.close();
+		}
+		for (const consumer of room.consumers.values()) {
+			if (!consumer.closed) consumer.close();
+		}
+		for (const participant of room.participants.values()) {
+			participant.status = "closed";
+		}
+		room.transports.clear();
+		room.producers.clear();
+		room.consumers.clear();
+		room.participants.clear();
 	}
 
 	listRooms(): string[] {
@@ -116,7 +150,7 @@ class MediasoupWorker {
 		if (identity) {
 			let participant = room.participants.get(identity);
 			if (!participant) {
-				participant = { producerIds: new Set() };
+				participant = { producerIds: new Set(), status: "joined" };
 				room.participants.set(identity, participant);
 			}
 			if (direction === "send") participant.sendTransportId = transport.id;
@@ -137,7 +171,7 @@ class MediasoupWorker {
 		if (identity) {
 			let participant = room.participants.get(identity);
 			if (!participant) {
-				participant = { producerIds: new Set() };
+				participant = { producerIds: new Set(), status: "joined" };
 				room.participants.set(identity, participant);
 			}
 			participant.producerIds.add(producer.id);
@@ -175,7 +209,7 @@ class MediasoupWorker {
 		return this.rooms.get(roomId)?.participants.get(identity);
 	}
 
-	listParticipants(roomId: string): Array<{ identity: string; producerCount: number; hasSendTransport: boolean; hasRecvTransport: boolean }> {
+	listParticipants(roomId: string): Array<{ identity: string; producerCount: number; hasSendTransport: boolean; hasRecvTransport: boolean; status: ParticipantStatus }> {
 		const room = this.rooms.get(roomId);
 		if (!room) return [];
 		return Array.from(room.participants.entries()).map(([identity, p]) => ({
@@ -183,6 +217,7 @@ class MediasoupWorker {
 			producerCount: p.producerIds.size,
 			hasSendTransport: p.sendTransportId !== undefined,
 			hasRecvTransport: p.recvTransportId !== undefined,
+			status: p.status,
 		}));
 	}
 
@@ -191,6 +226,8 @@ class MediasoupWorker {
 		if (!room) return [];
 		const participant = room.participants.get(identity);
 		if (!participant) return [];
+		if (participant.status === "closed") return [];
+		participant.status = "closed";
 		const closedProducerIds: string[] = [];
 		for (const pid of participant.producerIds) {
 			const producer = room.producers.get(pid);
@@ -245,14 +282,15 @@ class MediasoupWorker {
 
 	async closeRouter(roomId: string): Promise<void> {
 		const room = this.rooms.get(roomId);
-		if (room && !room.router.closed) room.router.close();
+		if (!room) return;
+		this.closeRoomResources(room);
 		this.rooms.delete(roomId);
+		if (!room.router.closed) room.router.close();
 	}
 
 	async close(): Promise<void> {
-		for (const [id, room] of this.rooms) {
-			if (!room.router.closed) room.router.close();
-			this.rooms.delete(id);
+		for (const roomId of Array.from(this.rooms.keys())) {
+			await this.closeRouter(roomId);
 		}
 		if (this.worker && !this.worker.closed) this.worker.close();
 	}
