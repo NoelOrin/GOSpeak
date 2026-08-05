@@ -73,11 +73,11 @@ func OpenJobQueue(cfg JobQueueConfig) (*JobQueue, error) {
 	_, err = js.StreamInfo(stream)
 	if err != nil {
 		_, err = js.AddStream(&nats.StreamConfig{
-			Name:       stream,
-			Subjects:   []string{subject},
-			Retention:  nats.WorkQueuePolicy,
-			Storage:    nats.MemoryStorage,
-			MaxAge: 24 * time.Hour,
+			Name:      stream,
+			Subjects:  []string{subject},
+			Retention: nats.WorkQueuePolicy,
+			Storage:   nats.FileStorage,
+			MaxAge:    24 * time.Hour,
 		})
 		if err != nil {
 			if own {

@@ -2,6 +2,7 @@ package bus
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -106,4 +107,16 @@ func ResolveMembershipStore(cfg ResolveMembershipConfig) (MembershipStore, strin
 	default:
 		return nil, "none", fmt.Errorf("state store: unknown mode %q (want auto|redis|nats|none)", mode)
 	}
+}
+
+// IsMembershipNotFound 判断共享状态读取错误是否为“记录不存在”。
+// 调用方只有在记录不存在时才允许继续合并/创建；其他错误必须中止，避免覆盖远程状态。
+func IsMembershipNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, nats.ErrKeyNotFound) || errors.Is(err, nats.ErrKeyDeleted) {
+		return true
+	}
+	return errors.Is(err, goredis.Nil)
 }

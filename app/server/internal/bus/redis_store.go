@@ -70,6 +70,40 @@ func (s *RedisStateStore) PutRoomMembers(ctx context.Context, snap RoomMembersSn
 	return err
 }
 
+// GetRoomMembersBatch 批量读取多个房间的成员快照（Redis MGet）。
+func (s *RedisStateStore) GetRoomMembersBatch(ctx context.Context, rooms []string) (map[string]RoomMembersSnapshot, error) {
+	out := make(map[string]RoomMembersSnapshot, len(rooms))
+	if len(rooms) == 0 {
+		return out, nil
+	}
+	keys := make([]string, len(rooms))
+	for i, room := range rooms {
+		keys[i] = s.roomKey(room)
+	}
+	vals, err := s.rdb.MGet(ctx, keys...).Result()
+	if err != nil {
+		return nil, err
+	}
+	for i, val := range vals {
+		if val == nil {
+			continue
+		}
+		raw, ok := val.(string)
+		if !ok {
+			continue
+		}
+		var snap RoomMembersSnapshot
+		if err := json.Unmarshal([]byte(raw), &snap); err != nil {
+			continue
+		}
+		if snap.Members == nil {
+			snap.Members = []MemberRecord{}
+		}
+		out[rooms[i]] = snap
+	}
+	return out, nil
+}
+
 func (s *RedisStateStore) GetRoomMembers(ctx context.Context, room string) (RoomMembersSnapshot, error) {
 	val, err := s.rdb.Get(ctx, s.roomKey(room)).Bytes()
 	if err != nil {
@@ -118,6 +152,43 @@ func (s *RedisStateStore) GetStream(ctx context.Context, stream string) (room, i
 
 func (s *RedisStateStore) DeleteStream(ctx context.Context, stream string) error {
 	return s.rdb.Del(ctx, s.streamKey(stream)).Err()
+}
+
+func (s *RedisStateStore) roomMetaKey(room string) string {
+	return s.prefix + ":membership:roommeta:" + sanitizeKey(room)
+}
+
+func (s *RedisStateStore) PutRoomMeta(ctx context.Context, room string, meta RoomMeta) error {
+	b, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	pipe := s.rdb.TxPipeline()
+	pipe.Set(ctx, s.roomMetaKey(room), b, redisStateTTL)
+	pipe.SAdd(ctx, s.roomsSetKey(), room)
+	pipe.Expire(ctx, s.roomsSetKey(), redisStateTTL)
+	_, err = pipe.Exec(ctx)
+	return err
+}
+
+func (s *RedisStateStore) GetRoomMeta(ctx context.Context, room string) (RoomMeta, error) {
+	val, err := s.rdb.Get(ctx, s.roomMetaKey(room)).Bytes()
+	if err != nil {
+		return RoomMeta{}, err
+	}
+	var meta RoomMeta
+	if err := json.Unmarshal(val, &meta); err != nil {
+		return RoomMeta{}, err
+	}
+	return meta, nil
+}
+
+func (s *RedisStateStore) DeleteRoomMeta(ctx context.Context, room string) error {
+	pipe := s.rdb.TxPipeline()
+	pipe.Del(ctx, s.roomMetaKey(room))
+	pipe.SRem(ctx, s.roomsSetKey(), room)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 func (s *RedisStateStore) ListRoomNames(ctx context.Context) ([]string, error) {

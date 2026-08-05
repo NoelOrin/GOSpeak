@@ -164,3 +164,51 @@ func TestResolveMembershipStore_None(t *testing.T) {
 		t.Fatalf("store=%v backend=%s err=%v", store, backend, err)
 	}
 }
+
+func TestRedisStateStore_RoomMetaAndBatchRead(t *testing.T) {
+	rdb, cleanup := newTestRedis(t)
+	t.Cleanup(cleanup)
+	store, err := OpenRedisStateStore(RedisStateStoreConfig{Client: rdb, Prefix: "gs_test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, room := range []string{"r1", "r2"} {
+		if err := store.PutRoomMembers(context.Background(), RoomMembersSnapshot{
+			Room:    room,
+			Members: []MemberRecord{{Identity: "alice", InstanceID: "i1"}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.PutRoomMeta(context.Background(), "remote-only", RoomMeta{Name: "remote-only", Password: "hash"}); err != nil {
+		t.Fatal(err)
+	}
+
+	names, err := store.ListRoomNames(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 3 {
+		t.Fatalf("expected 3 room names (2 members + 1 meta), got %v", names)
+	}
+
+	got, err := store.GetRoomMembersBatch(context.Background(), []string{"r1", "r2", "missing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got["r1"].Members[0].Identity != "alice" || got["r2"].Members[0].Identity != "alice" {
+		t.Fatalf("batch read mismatch: %+v", got)
+	}
+
+	if err := store.DeleteRoomMeta(context.Background(), "remote-only"); err != nil {
+		t.Fatal(err)
+	}
+	names, err = store.ListRoomNames(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 2 {
+		t.Fatalf("expected 2 room names after meta delete, got %v", names)
+	}
+}

@@ -43,3 +43,45 @@ func TestAuthStore_BlacklistAndSigningKey(t *testing.T) {
 		t.Fatalf("history=%v", hist)
 	}
 }
+
+func TestAuthStore_SigningKeyRecordAndLegacyCompat(t *testing.T) {
+	es, err := StartEmbeddedServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(es.Shutdown)
+
+	store, err := OpenAuthStore(AuthStoreConfig{
+		URL:    es.ClientURL(),
+		Prefix: "gospeak_test_auth_legacy",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	if err := store.SetSigningKey("key-new", 1234567890); err != nil {
+		t.Fatal(err)
+	}
+	val, ok, err := store.GetSigningKey()
+	if err != nil || !ok || val != "key-new" {
+		t.Fatalf("signing key=%q ok=%v err=%v", val, ok, err)
+	}
+	created, ok, err := store.GetCreatedAt()
+	if err != nil || !ok || created != 1234567890 {
+		t.Fatalf("created=%d ok=%v err=%v", created, ok, err)
+	}
+
+	// 旧格式兼容：纯字符串 key + 独立 created_at
+	legacy := &AuthStore{kv: store.kv}
+	_ = legacy.put("jwt.active", "key-legacy")
+	_ = legacy.put("jwt.created_at", "111")
+	val, ok, err = store.GetSigningKey()
+	if err != nil || !ok || val != "key-legacy" {
+		t.Fatalf("legacy key=%q ok=%v err=%v", val, ok, err)
+	}
+	created, ok, err = store.GetCreatedAt()
+	if err != nil || !ok || created != 111 {
+		t.Fatalf("legacy created=%d ok=%v err=%v", created, ok, err)
+	}
+}

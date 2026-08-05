@@ -12,6 +12,8 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
+const maxPendingPublish = 1024
+
 // NATSBusConfig 构造 NATSBus 的参数。
 type NATSBusConfig struct {
 	InstanceID    string
@@ -50,6 +52,15 @@ type NATSBus struct {
 	done   chan struct{}
 
 	droppedPublish atomic.Uint64 // 断线期间丢弃的跨实例发布计数
+
+	pendingMu sync.Mutex
+	pending   []pendingEnvelope
+}
+
+// pendingEnvelope 是 NATS 断线期间暂存的事件，重连后重放。
+type pendingEnvelope struct {
+	subject string
+	env     Envelope
 }
 
 // NewNATSBus 创建并启动 NATSBus。
@@ -102,6 +113,7 @@ func NewNATSBus(cfg NATSBusConfig) (*NATSBus, error) {
 		}),
 		nats.ReconnectHandler(func(nc *nats.Conn) {
 			log.Printf("[EventBus] nats reconnected: %s", nc.ConnectedUrl())
+			b.flushPending()
 		}),
 		nats.ClosedHandler(func(_ *nats.Conn) {
 			log.Printf("[EventBus] nats connection closed")
@@ -275,8 +287,9 @@ func (b *NATSBus) publish(subject string, env Envelope) error {
 			return nil
 		}
 		b.droppedPublish.Add(1)
+		b.enqueuePending(subject, env)
 		err := fmt.Errorf("nats publish %s: disconnected", subject)
-		log.Printf("[EventBus] drop nats publish (disconnected): %s %s", env.Scope, env.Event)
+		log.Printf("[EventBus] queue nats publish (disconnected): %s %s", env.Scope, env.Event)
 		return err
 	}
 	data, err := json.Marshal(env)
@@ -303,4 +316,34 @@ func (b *NATSBus) deliverLocalRoom(room, event string, payload interface{}) {
 		return
 	}
 	d.BroadcastToRoom(room, event, payload)
+}
+
+// enqueuePending 缓存断线期间的跨实例事件；超出容量时丢弃并继续计数。
+func (b *NATSBus) enqueuePending(subject string, env Envelope) {
+	b.pendingMu.Lock()
+	defer b.pendingMu.Unlock()
+	if len(b.pending) >= maxPendingPublish {
+		log.Printf("[EventBus] pending publish queue full, dropping: %s %s", env.Scope, env.Event)
+		return
+	}
+	b.pending = append(b.pending, pendingEnvelope{subject: subject, env: env})
+}
+
+// flushPending 在重连后重放断线期间缓存的事件。重放失败不再入队，
+// 避免连接反复抖动导致无限积压；最终一致性由共享 KV 兜底。
+func (b *NATSBus) flushPending() {
+	b.pendingMu.Lock()
+	pending := b.pending
+	b.pending = nil
+	b.pendingMu.Unlock()
+	for _, p := range pending {
+		data, err := json.Marshal(p.env)
+		if err != nil {
+			continue
+		}
+		if err := b.nc.Publish(p.subject, data); err != nil {
+			b.droppedPublish.Add(1)
+			log.Printf("[EventBus] pending publish replay failed: %s %s: %v", p.env.Scope, p.env.Event, err)
+		}
+	}
 }

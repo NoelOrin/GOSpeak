@@ -1,6 +1,7 @@
 package bus
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -146,26 +147,52 @@ func (s *AuthStore) IsBlacklisted(jti string) bool {
 	return true
 }
 
+// signingKeyRecord 将 active key 与创建时间合并为单条 KV 记录，
+// 避免多实例并发轮换时两个 key 写入交错导致验签不一致。
+type signingKeyRecord struct {
+	Key       string `json:"key"`
+	CreatedAt int64  `json:"created_at"`
+}
+
 func (s *AuthStore) GetSigningKey() (string, bool, error) {
-	return s.get("jwt.active")
+	val, ok, err := s.get("jwt.active")
+	if err != nil || !ok {
+		return "", ok, err
+	}
+	var rec signingKeyRecord
+	if json.Unmarshal([]byte(val), &rec) == nil && rec.Key != "" {
+		return rec.Key, true, nil
+	}
+	// 旧格式：纯 key 字符串
+	return val, true, nil
 }
 
 func (s *AuthStore) SetSigningKey(key string, createdAtUnix int64) error {
 	if key == "" {
 		return nil
 	}
-	if err := s.put("jwt.active", key); err != nil {
+	data, err := json.Marshal(signingKeyRecord{Key: key, CreatedAt: createdAtUnix})
+	if err != nil {
 		return err
 	}
-	return s.put("jwt.created_at", strconv.FormatInt(createdAtUnix, 10))
+	return s.put("jwt.active", string(data))
 }
 
 func (s *AuthStore) GetCreatedAt() (int64, bool, error) {
-	val, ok, err := s.get("jwt.created_at")
+	val, ok, err := s.get("jwt.active")
 	if err != nil || !ok {
 		return 0, false, err
 	}
-	n, err := strconv.ParseInt(val, 10, 64)
+	var rec signingKeyRecord
+	if json.Unmarshal([]byte(val), &rec) == nil && rec.Key != "" {
+		return rec.CreatedAt, true, nil
+	}
+	// 旧格式：读取单独创建的 jwt.created_at
+	legacy, ok2, err2 := s.get("jwt.created_at")
+	if err2 != nil || !ok2 {
+		return 0, false, err2
+	}
+	n, err := strconv.ParseInt(legacy, 10, 64)
 	if err != nil {
 		return 0, false, nil
 	}
@@ -213,4 +240,3 @@ func (s *AuthStore) HistoryKeys() []string {
 	}
 	return out
 }
-
