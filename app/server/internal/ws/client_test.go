@@ -143,3 +143,60 @@ func TestClientConcurrentSend(t *testing.T) {
 		<-c.writeCh
 	}
 }
+
+func TestClient_State_New(t *testing.T) {
+	c := NewTestClient("c1", nil)
+	if got := c.State(); got != ConnStateNew {
+		t.Fatalf("State() = %q, want new", got)
+	}
+}
+
+func TestClient_Close_StateTransitions(t *testing.T) {
+	c := NewTestClient("c1", nil)
+	var transitions []ConnState
+	c.OnStateChange = func(oldState, newState ConnState) {
+		transitions = append(transitions, oldState, newState)
+	}
+
+	c.Close()
+	if got := c.State(); got != ConnStateClosed {
+		t.Fatalf("State() after Close = %q, want closed", got)
+	}
+	if len(transitions) == 0 || transitions[len(transitions)-1] != ConnStateClosed {
+		t.Fatalf("expected final transition to closed, got %v", transitions)
+	}
+}
+
+func TestClient_StateMachine_RejectsBackwardTransition(t *testing.T) {
+	c := NewTestClient("c1", nil)
+	c.setState(ConnStateConnecting)
+	c.setState(ConnStateOpen)
+	if got := c.State(); got != ConnStateOpen {
+		t.Fatalf("State() = %q, want open", got)
+	}
+	c.setState(ConnStateClosed)
+	c.setState(ConnStateOpen)
+	if got := c.State(); got != ConnStateClosed {
+		t.Fatalf("closed state must not regress to %q", got)
+	}
+}
+
+func TestValidConnStateTransition(t *testing.T) {
+	cases := []struct {
+		from ConnState
+		to   ConnState
+		want bool
+	}{
+		{ConnStateNew, ConnStateConnecting, true},
+		{ConnStateNew, ConnStateOpen, false},
+		{ConnStateConnecting, ConnStateOpen, true},
+		{ConnStateOpen, ConnStateClosing, true},
+		{ConnStateClosing, ConnStateOpen, false},
+		{ConnStateClosed, ConnStateOpen, false},
+	}
+	for _, tc := range cases {
+		if got := validConnStateTransition(tc.from, tc.to); got != tc.want {
+			t.Errorf("validConnStateTransition(%q, %q) = %v, want %v", tc.from, tc.to, got, tc.want)
+		}
+	}
+}

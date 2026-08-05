@@ -1,6 +1,10 @@
 package ws
 
-import "log"
+import (
+	"log"
+
+	"GOSpeak/internal/pkg"
+)
 
 // handlerEntry 注册一个事件的处理函数。
 // NoAck 用于推送类事件（无需应答），Ack 用于请求-应答类事件。
@@ -59,7 +63,8 @@ func (r *HandlerRegistry) Dispatch(c ClientMessenger, msg Message) {
 		result, err := entry.Ack(c, dataStr)
 		if msg.ID != "" {
 			if err != nil {
-				c.SendErrorACK(msg.ID, msg.Event, 5001, err.Error())
+				code, clientMsg := pkg.ClientError(err)
+				c.SendErrorACK(msg.ID, msg.Event, int(code), clientMsg)
 			} else {
 				c.SendACK(msg.ID, msg.Event, result)
 			}

@@ -19,3 +19,9 @@ type ClientMessenger interface {
 	// Close 关闭连接。
 	Close()
 }
+
+// StatefulMessenger 暴露连接状态，供需要观测 WS 生命周期的调用方使用。
+type StatefulMessenger interface {
+	ClientMessenger
+	State() ConnState
+}

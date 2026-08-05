@@ -17,5 +17,6 @@ func NewTestClient(id string, claims *pkg.Claims) *Client {
 		cancel:  cancel,
 		writeCh: make(chan []byte, 64),
 		closed:  make(chan struct{}),
+		state:   ConnStateNew,
 	}
 }

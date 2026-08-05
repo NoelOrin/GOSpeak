@@ -217,7 +217,7 @@ func TestUpgrader_E2E_OnConnectPanicClosesClient(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected client to be closed after OnConnect panic")
 	}
-	if fanout.clients["e2e-uuid"] != nil {
+	if client != nil && fanout.clients[client.ID()] != nil {
 		t.Fatal("expected client removed from fanout after OnConnect panic")
 	}
 }

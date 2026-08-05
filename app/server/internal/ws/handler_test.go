@@ -13,9 +13,9 @@ type testClient struct {
 	emitted []interface{}
 }
 
-func (c *testClient) ID() string                               { return c.id }
-func (c *testClient) Claims() *pkg.Claims                       { return c.claims }
-func (c *testClient) Send(v interface{}) bool                   { c.emitted = append(c.emitted, v); return true }
+func (c *testClient) ID() string              { return c.id }
+func (c *testClient) Claims() *pkg.Claims     { return c.claims }
+func (c *testClient) Send(v interface{}) bool { c.emitted = append(c.emitted, v); return true }
 func (c *testClient) SendACK(id, event string, data interface{}) {
 	c.emitted = append(c.emitted, ack{id: id, event: event, data: data})
 }
@@ -114,6 +114,27 @@ func TestHandlerRegistry_Dispatch_AckError(t *testing.T) {
 	}
 	if _, ok := tc.emitted[0].(errAck); !ok {
 		t.Fatal("expected errAck struct")
+	}
+}
+
+func TestHandlerRegistry_Dispatch_AckError_Sanitized(t *testing.T) {
+	r := NewHandlerRegistry()
+	r.HandleAck("event:fail", func(c ClientMessenger, data string) (string, error) {
+		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, "secret sql detail")
+	})
+
+	tc := &testClient{id: "c1"}
+	r.Dispatch(tc, Message{ID: "req-1", Event: "event:fail", Data: []byte(`{}`)})
+
+	if len(tc.emitted) != 1 {
+		t.Fatalf("expected 1 error ACK, got %d", len(tc.emitted))
+	}
+	ea, ok := tc.emitted[0].(errAck)
+	if !ok {
+		t.Fatal("expected errAck struct")
+	}
+	if ea.code != int(pkg.INTERNAL_ERROR) || ea.msg != "internal server error" {
+		t.Fatalf("expected sanitized error ACK, got code=%d msg=%q", ea.code, ea.msg)
 	}
 }
 

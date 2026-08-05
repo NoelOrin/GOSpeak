@@ -13,6 +13,19 @@ import (
 	"GOSpeak/internal/pkg"
 )
 
+// ConnState 表示服务端 WS 客户端的连接生命周期状态。
+type ConnState string
+
+const (
+	ConnStateNew        ConnState = "new"
+	ConnStateConnecting ConnState = "connecting"
+	ConnStateOpen       ConnState = "open"
+	ConnStateClosing    ConnState = "closing"
+	ConnStateClosed     ConnState = "closed"
+)
+
+func (s ConnState) String() string { return string(s) }
+
 const (
 	writeTimeout     = 5 * time.Second
 	sendQueueTimeout = 500 * time.Millisecond
@@ -43,7 +56,11 @@ type Client struct {
 	// OnClose 是连接关闭时的回调（由 Upgrader 设置，用于从 Fanout 注销）。
 	OnClose func(clientID string)
 
+	// OnStateChange 在连接状态发生合法迁移时触发，便于外部观测连接生命周期。
+	OnStateChange func(oldState, newState ConnState)
+
 	mu        sync.Mutex
+	state     ConnState
 	closeOnce sync.Once
 }
 
@@ -65,6 +82,7 @@ func NewClient(conn *nhooyrws.Conn, clientID string, claims *pkg.Claims) *Client
 		cancel:  cancel,
 		writeCh: make(chan []byte, 64),
 		closed:  make(chan struct{}),
+		state:   ConnStateNew,
 	}
 }
 
@@ -74,12 +92,53 @@ func (c *Client) ID() string { return c.id }
 // Claims 实现 ClientMessenger.Claims。
 func (c *Client) Claims() *pkg.Claims { return c.claims }
 
+// State 返回当前连接状态。
+func (c *Client) State() ConnState {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.state
+}
+
+// setState 只允许合法的单向状态迁移，避免关闭后状态回退。
+func (c *Client) setState(state ConnState) {
+	c.mu.Lock()
+	old := c.state
+	if old == state || !validConnStateTransition(old, state) {
+		c.mu.Unlock()
+		return
+	}
+	c.state = state
+	c.mu.Unlock()
+	log.Printf("[ws] client=%s state=%s->%s", c.id, old, state)
+	if c.OnStateChange != nil {
+		c.OnStateChange(old, state)
+	}
+}
+
+func validConnStateTransition(from, to ConnState) bool {
+	switch from {
+	case ConnStateNew:
+		return to == ConnStateConnecting || to == ConnStateClosing || to == ConnStateClosed
+	case ConnStateConnecting:
+		return to == ConnStateOpen || to == ConnStateClosing || to == ConnStateClosed
+	case ConnStateOpen:
+		return to == ConnStateClosing || to == ConnStateClosed
+	case ConnStateClosing:
+		return to == ConnStateClosed
+	default:
+		return to == ConnStateClosed
+	}
+}
+
 // StartReadLoop 启动读取循环，阻塞直到连接关闭。
 // handler 按收每条消息。应作为 goroutine 调用。
 func (c *Client) StartReadLoop(handler func(ClientMessenger, Message)) {
+	c.setState(ConnStateConnecting)
 	defer func() {
+		c.setState(ConnStateClosing)
 		c.cancel()
 		c.closeClosed()
+		c.setState(ConnStateClosed)
 		if c.OnClose != nil {
 			c.OnClose(c.ID())
 		}
@@ -87,6 +146,7 @@ func (c *Client) StartReadLoop(handler func(ClientMessenger, Message)) {
 
 	go c.writeLoop()
 	go c.heartbeatLoop()
+	c.setState(ConnStateOpen)
 
 	for {
 		_, msgBytes, err := c.conn.Read(c.ctx)
@@ -194,11 +254,13 @@ func (c *Client) DroppedCount() uint64 {
 
 // Close 实现 ClientMessenger.Close。
 func (c *Client) Close() {
+	c.setState(ConnStateClosing)
 	c.cancel()
 	c.closeClosed()
 	if c.conn != nil {
 		_ = c.conn.Close(nhooyrws.StatusNormalClosure, "server closing")
 	}
+	c.setState(ConnStateClosed)
 }
 
 // closeClosed 以幂等方式关闭 closed channel，保证 Close 后 Send 立即返回 false。
