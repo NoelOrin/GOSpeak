@@ -1,6 +1,7 @@
 import { Portal } from "solid-js/web";
 import clsx from "clsx";
 import CirclePlus from "lucide-solid/icons/circle-plus";
+import Hash from "lucide-solid/icons/hash";
 import LogOut from "lucide-solid/icons/log-out";
 import Pencil from "lucide-solid/icons/pencil";
 import Trash2 from "lucide-solid/icons/trash-2";
@@ -183,7 +184,7 @@ const RoomItem = (props: RoomItemPropsType) => {
 	});
 
 	const tipText = () =>
-		`${props.room.type === "text" ? "# " : ""}${props.room.name}${props.room.hasPassword ? " · 需要密码" : ""}`;
+		`${props.room.name}${props.room.hasPassword ? " · 需要密码" : ""}`;
 
 	const showTip = (e: MouseEvent) => {
 		if (!truncated()) return;
@@ -280,45 +281,51 @@ const RoomItem = (props: RoomItemPropsType) => {
 					>
 						<div class="flex min-w-0 flex-1 items-center space-x-1">
 							<span>
-								<svg
-									width="16"
-									height="16"
-									viewBox="0 0 48 48"
-									fill="none"
-									xmlns="http://www.w3.org/2000/svg"
+								<Show
+									when={props.room.type === "text"}
+									fallback={
+										<svg
+											width="16"
+											height="16"
+											viewBox="0 0 48 48"
+											fill="none"
+											xmlns="http://www.w3.org/2000/svg"
+										>
+											<rect
+												x="17"
+												y="4"
+												width="14"
+												height="27"
+												rx="7"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="3"
+												stroke-linejoin="round"
+											/>
+											<path
+												d="M9 23C9 31.2843 15.7157 38 24 38C32.2843 38 39 31.2843 39 23"
+												stroke="currentColor"
+												stroke-width="3"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+											/>
+											<path
+												d="M24 38V44"
+												stroke="currentColor"
+												stroke-width="3"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+											/>
+										</svg>
+									}
 								>
-									<rect
-										x="17"
-										y="4"
-										width="14"
-										height="27"
-										rx="7"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="3"
-										stroke-linejoin="round"
-									/>
-									<path
-										d="M9 23C9 31.2843 15.7157 38 24 38C32.2843 38 39 31.2843 39 23"
-										stroke="currentColor"
-										stroke-width="3"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-									/>
-									<path
-										d="M24 38V44"
-										stroke="currentColor"
-										stroke-width="3"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-									/>
-								</svg>
+									<Hash size={16} strokeWidth={2.5} />
+								</Show>
 							</span>
 							<span
 								ref={nameRef}
 								class="min-w-0 flex-1 truncate whitespace-nowrap text-left text-[14px] leading-none"
 							>
-								{props.room.type === "text" ? "# " : ""}
 								{props.room.name}
 							</span>
 							<Show when={props.room.hasPassword}>
