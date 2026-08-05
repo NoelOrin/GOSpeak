@@ -5,7 +5,6 @@ import { showToast } from "solid-notifications";
 import { createRoom as createRoomApi } from "@/api/room";
 import { Form, type FormFieldConfig } from "@/components/form";
 import { socketStore } from "@/stores/socketStore";
-import domainStore from "@/stores/domainStore";
 
 export interface CreateRoomConfig {
 	name: string;
@@ -22,7 +21,7 @@ export interface CreateRoomConfig {
 interface CreateRoomModalProps {
 	ref: HTMLDialogElement;
 	onClose: () => void;
-	domainUUID?: string;
+	domainUUID: string;
 	onCreated?: (config: CreateRoomConfig) => void | Promise<void>;
 }
 
@@ -55,8 +54,7 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 		},
 		onSubmit: async ({ value }) => {
 			try {
-				const domainUUID =
-					props.domainUUID ?? domainStore.state.currentDomainUUID ?? "";
+				const domainUUID = props.domainUUID.trim();
 				if (!domainUUID) {
 					showToast("请先选择域", { type: "warning" });
 					return;
@@ -72,7 +70,6 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 					type: value.type === "text" ? "text" : "voice",
 					domainUUID,
 				};
-
 				const room = await createRoomApi({
 					name: payload.name,
 					password: payload.password || undefined,
@@ -90,7 +87,7 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 					id: room.id,
 					uuid: room.uuid,
 					name: room.name,
-					domain_uuid: room.domain_uuid,
+					domain_uuid: payload.domainUUID,
 					hasPassword: !!payload.password,
 					description: room.description,
 					limit: room.limit,
@@ -111,7 +108,12 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 						navigate({ to: "/domain/$domainUUID", params: { domainUUID } });
 					else navigate({ to: "/discover" });
 				}
-			} catch {}
+			} catch (error) {
+				console.error("[Room] create failed:", error);
+				showToast(error instanceof Error ? error.message : String(error), {
+					type: "error",
+				});
+			}
 		},
 	}));
 

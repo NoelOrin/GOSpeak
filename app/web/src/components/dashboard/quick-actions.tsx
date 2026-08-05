@@ -3,7 +3,7 @@ import ArrowRight from "lucide-solid/icons/arrow-right";
 import CirclePlus from "lucide-solid/icons/circle-plus";
 import Radio from "lucide-solid/icons/radio";
 import ShieldCheck from "lucide-solid/icons/shield-check";
-import { createMemo } from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 import { showToast } from "solid-notifications";
 import CreateRoomModal from "@/components/modal/createRoomModal";
 import { socketStore } from "@/stores/socketStore";
@@ -17,12 +17,15 @@ const QuickActions = (props: QuickActionsProps) => {
 	const navigate = useNavigate();
 	const canManage = createMemo(() => hasPermission("role:manage"));
 	let createRoomModalRef!: HTMLDialogElement;
+	const [createRoomDomain, setCreateRoomDomain] = createSignal("");
 
 	const handleCreateRoom = () => {
-		if (!socketStore.currentDomainUUID()) {
+		const domainUUID = socketStore.currentDomainUUID();
+		if (!domainUUID) {
 			showToast("请先选择域", { type: "warning" });
 			return;
 		}
+		setCreateRoomDomain(domainUUID);
 		createRoomModalRef?.showModal?.();
 	};
 
@@ -139,6 +142,7 @@ const QuickActions = (props: QuickActionsProps) => {
 			</section>
 			<CreateRoomModal
 				ref={createRoomModalRef}
+				domainUUID={createRoomDomain()}
 				onClose={closeCreateRoomModal}
 			/>
 		</>

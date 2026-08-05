@@ -553,6 +553,7 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 		y: number;
 	} | null>(null);
 	const [editingRoom, setEditingRoom] = createSignal<RoomInfo | null>(null);
+	const [createRoomDomain, setCreateRoomDomain] = createSignal("");
 	const [deletingRoom, setDeletingRoom] = createSignal<RoomInfo | null>(null);
 	const [deleting, setDeleting] = createSignal(false);
 	const [deleteError, setDeleteError] = createSignal("");
@@ -564,6 +565,12 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 	});
 
 	const openCreateRoomModal = () => {
+		const domainUUID = socketStore.currentDomainUUID();
+		if (!domainUUID) {
+			showToast("请先选择域", { type: "warning" });
+			return;
+		}
+		setCreateRoomDomain(domainUUID);
 		createRoomModalRef?.showModal?.();
 	};
 
@@ -674,6 +681,7 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 			</div>
 			<CreateRoomModal
 				ref={createRoomModalRef}
+				domainUUID={createRoomDomain()}
 				onClose={closeCreateRoomModal}
 			/>
 			<Show when={editingRoom()}>

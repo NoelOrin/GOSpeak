@@ -115,6 +115,7 @@ function RouteComponent() {
 			hasAnyPermission("room:update", "room:delete"),
 	);
 	let createRoomDialogRef!: HTMLDialogElement;
+	const [createRoomDomain, setCreateRoomDomain] = createSignal("");
 	let editRoomDialogRef!: HTMLDialogElement;
 	let deleteDialogRef!: HTMLDialogElement;
 
@@ -156,6 +157,11 @@ function RouteComponent() {
 		setRoomTotal(0);
 		setRoomPage(1);
 		setRoomError("");
+	}
+
+	function openCreateRoom() {
+		setCreateRoomDomain(uuid());
+		createRoomDialogRef?.showModal?.();
 	}
 
 	function openEditRoom(room: RoomRecord) {
@@ -411,7 +417,7 @@ function RouteComponent() {
 									<button
 										type="button"
 										class="btn btn-primary btn-xs"
-										onClick={() => createRoomDialogRef?.showModal?.()}
+										onClick={openCreateRoom}
 									>
 										<CirclePlus size={14} />
 										新建房间
@@ -482,7 +488,7 @@ function RouteComponent() {
 			/>
 			<CreateRoomModal
 				ref={createRoomDialogRef}
-				domainUUID={uuid()}
+				domainUUID={createRoomDomain()}
 				onClose={() => createRoomDialogRef?.close?.()}
 				onCreated={() => {
 					resetRooms();
