@@ -127,6 +127,44 @@ describe("SRSSFUClient subscribePeers", () => {
 		await client.leaveRoom();
 	});
 
+	it("accepts domain-scoped member event for composite sfuRoom", async () => {
+		(globalThis as any).fetch = makeFetch(true, true);
+		const handlers: Record<string, Function[]> = {};
+		const socket: SignalSocket = {
+			isConnected: () => true,
+			emitAck: vi.fn(),
+			emitFireAndForget: vi.fn(),
+			onServerEvent: (ev: string, cb: Function) => {
+				(handlers[ev] ||= []).push(cb);
+				return () => {};
+			},
+			onDisconnected: vi.fn(),
+		};
+		const client = new SRSSFUClient({ socket });
+		const onTrack = vi.fn();
+		client.onRemoteAudioTrack(onTrack);
+		await client.joinRoom({
+			token: "tok",
+			serverUrl: "/rtc/v1/whip/",
+			identity: "alice",
+			room: "domain-a:room-a",
+			stream: "gs-alice",
+			streamToken: "st",
+		});
+
+		handlers["member:joined"][0]({
+			room: "room-a",
+			domain_uuid: "domain-a",
+			identity: "bob",
+			stream: "gs-bob",
+		});
+		await new Promise((r) => setTimeout(r, 50));
+		expect(onTrack).toHaveBeenCalledWith(
+			expect.objectContaining({ identity: "bob" }),
+		);
+		await client.leaveRoom();
+	});
+
 	it("retries WHEP on failure without dropping membership", async () => {
 		vi.useFakeTimers();
 		try {

@@ -189,7 +189,9 @@ export class SRSSFUClient implements SFUClient {
 	private isSameRoomEvent(data: any): boolean {
 		if (!this.room) return true;
 		if (!data?.room) return true;
-		return data.room === this.room;
+		const domain = typeof data.domain_uuid === "string" ? data.domain_uuid : "";
+		const composite = domain ? `${domain}:${data.room}` : data.room;
+		return data.room === this.room || composite === this.room;
 	}
 
 	private subscribePeer(identity: string, stream: string): void {
