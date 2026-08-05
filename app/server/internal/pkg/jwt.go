@@ -71,7 +71,7 @@ func ParseToken(tokenStr string) (*Claims, error) {
 	for _, key := range keys {
 		token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 			return key, nil
-		})
+		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 		if err == nil {
 			if claims, ok := token.Claims.(*Claims); ok && token.Valid {
 				return claims, nil
@@ -139,6 +139,9 @@ func WSTicketExpired(claims *Claims) bool {
 }
 
 func IsTokenExpired(claims *Claims) bool {
+	if claims == nil || claims.ExpiresAt == nil {
+		return true
+	}
 	return time.Now().Unix() > claims.ExpiresAt.Unix()
 }
 

@@ -77,12 +77,22 @@ func TestLoadAcceptsProductionWithStorageEncryptKey(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("STORAGE_ENCRYPT_KEY", strings.Repeat("ab", 32))
+	t.Setenv("JWT_KEY", "test-production-secret")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if !cfg.IsProduction() || cfg.StorageEncryptKey == "" {
 		t.Fatal("expected production config with storage encrypt key")
+	}
+}
+
+func TestLoadRejectsProductionWithoutJWTKeyWhenNoRedis(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("STORAGE_ENCRYPT_KEY", strings.Repeat("ab", 32))
+	if _, err := Load(); err == nil {
+		t.Fatal("expected production JWT_KEY error when REDIS_HOST is empty")
 	}
 }
 
@@ -196,11 +206,11 @@ func clearConfigEnv(t *testing.T) {
 		"STORAGE_TYPE", "STORAGE_ENDPOINT", "STORAGE_BUCKET", "STORAGE_REGION", "STORAGE_ACCESS_KEY",
 		"STORAGE_SECRET_KEY", "STORAGE_PUBLIC_BASE_URL", "STORAGE_PATH_PREFIX", "STORAGE_ENCRYPT_KEY",
 		"LIVEKIT_HOST", "LIVEKIT_KEY", "LIVEKIT_SECRET",
-	"AGORA_APP_ID", "AGORA_APP_CERTIFICATE", "AGORA_HOST", "AGORA_CUSTOMER_ID", "AGORA_CUSTOMER_SECRET",
-	"MEDIASOUP_BRIDGE_URL", "MEDIASOUP_HOST",
-	"SRS_HOST", "SRS_API_PORT", "SRS_WHIP_URL", "SRS_SECRET", "SRS_PUBLIC_HOST",
-	"DAILY_API_KEY", "DAILY_DOMAIN",
-	"CF_APP_ID", "CF_APP_SECRET", "CF_STUN_URL",
+		"AGORA_APP_ID", "AGORA_APP_CERTIFICATE", "AGORA_HOST", "AGORA_CUSTOMER_ID", "AGORA_CUSTOMER_SECRET",
+		"MEDIASOUP_BRIDGE_URL", "MEDIASOUP_HOST",
+		"SRS_HOST", "SRS_API_PORT", "SRS_WHIP_URL", "SRS_SECRET", "SRS_PUBLIC_HOST",
+		"DAILY_API_KEY", "DAILY_DOMAIN",
+		"CF_APP_ID", "CF_APP_SECRET", "CF_STUN_URL",
 	}
 	for _, k := range keys {
 		t.Setenv(k, "")

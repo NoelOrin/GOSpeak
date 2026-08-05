@@ -7,6 +7,8 @@ import (
 	"GOSpeak/internal/redis"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,10 +23,29 @@ type tokenVersionChecker interface {
 	GetTokenVersionByUUID(userUUID string) (uint, error)
 }
 
+// botTokenChecker 校验 Bot token 的 DB 吊销/过期状态，补充 TokenVersion 之外的 Revoked 双源。
+type botTokenChecker interface {
+	IsBotTokenValid(userUUID string) (bool, error)
+}
+
 var (
 	permChecker       permissionChecker
 	tokenVersionCheck tokenVersionChecker
+	botTokenCheck     botTokenChecker
 )
+
+// tokenVersionCacheTTL 缩短 DB 抖动对每个请求的影响；改密/换角色后最多延迟一个 TTL 生效。
+const tokenVersionCacheTTL = 500 * time.Millisecond
+
+type tokenVersionCacheEntry struct {
+	version uint
+	expires time.Time
+}
+
+var tokenVersionCache = struct {
+	sync.Mutex
+	m map[string]tokenVersionCacheEntry
+}{m: make(map[string]tokenVersionCacheEntry)}
 
 // SetPermissionChecker 注入权限查询实现（启动时调用）。
 func SetPermissionChecker(c permissionChecker) {
@@ -34,6 +55,11 @@ func SetPermissionChecker(c permissionChecker) {
 // SetTokenVersionChecker 注入 token 版本查询实现（启动时调用）。
 func SetTokenVersionChecker(tvc tokenVersionChecker) {
 	tokenVersionCheck = tvc
+}
+
+// SetBotTokenChecker 注入 Bot token 吊销/过期校验实现（启动时调用）。
+func SetBotTokenChecker(btc botTokenChecker) {
+	botTokenCheck = btc
 }
 
 // VerifyToken 校验 HTTP 可用的 access/bot token。
@@ -49,6 +75,9 @@ func VerifyWSTicket(tokenStr string) (*pkg.Claims, pkg.ErrCode) {
 	}
 	if pkg.WSTicketExpired(claims) {
 		return nil, pkg.TOKEN_EXPIRED
+	}
+	if redis.IsBlacklisted("ws:" + claims.UserUUID) {
+		return nil, pkg.TOKEN_REVOKED
 	}
 	return claims, pkg.SUCCESS
 }
@@ -71,11 +100,21 @@ func verifyToken(tokenStr string, allowedTypes ...string) (*pkg.Claims, pkg.ErrC
 		return nil, pkg.TOKEN_REVOKED
 	}
 	if tokenVersionCheck != nil && claims.UserUUID != "" {
-		currentVersion, err := tokenVersionCheck.GetTokenVersionByUUID(claims.UserUUID)
+		currentVersion, err := cachedTokenVersion(claims.UserUUID)
 		if err != nil {
 			return nil, pkg.INTERNAL_ERROR
 		}
 		if currentVersion != claims.TokenVersion {
+			return nil, pkg.TOKEN_REVOKED
+		}
+	}
+	// Bot token 除 TokenVersion 外还必须通过 DB Revoked/ExpiresAt 校验。
+	if claims.TokenType == pkg.BotTokenType && botTokenCheck != nil {
+		valid, err := botTokenCheck.IsBotTokenValid(claims.UserUUID)
+		if err != nil {
+			return nil, pkg.INTERNAL_ERROR
+		}
+		if !valid {
 			return nil, pkg.TOKEN_REVOKED
 		}
 	}
@@ -106,6 +145,12 @@ func setClaimsContext(c *gin.Context, claims *pkg.Claims) {
 func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenHeader := c.Request.Header.Get("Authorization")
+		// EventSource 无法自定义 Header，允许 HttpOnly cookie 作为统一鉴权兜底。
+		if tokenHeader == "" {
+			if cookie, err := c.Request.Cookie("gospeak_token"); err == nil {
+				tokenHeader = cookie.Value
+			}
+		}
 		if tokenHeader == "" {
 			pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 			c.Abort()
@@ -266,4 +311,24 @@ func CORS() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// cachedTokenVersion 查询 TokenVersion，并做短 TTL 内存缓存避免每次请求都打 DB。
+func cachedTokenVersion(userUUID string) (uint, error) {
+	now := time.Now()
+	tokenVersionCache.Lock()
+	if entry, ok := tokenVersionCache.m[userUUID]; ok && now.Before(entry.expires) {
+		tokenVersionCache.Unlock()
+		return entry.version, nil
+	}
+	tokenVersionCache.Unlock()
+
+	version, err := tokenVersionCheck.GetTokenVersionByUUID(userUUID)
+	if err != nil {
+		return 0, err
+	}
+	tokenVersionCache.Lock()
+	tokenVersionCache.m[userUUID] = tokenVersionCacheEntry{version: version, expires: now.Add(tokenVersionCacheTTL)}
+	tokenVersionCache.Unlock()
+	return version, nil
 }

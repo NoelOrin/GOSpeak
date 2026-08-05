@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 
@@ -46,24 +45,16 @@ func NewMonitorHandler(signalHub *gpsignal.Hub, cfg *config.Config, eventBus bus
 }
 
 // HealthStream SSE 流式推送服务健康指标
+// 鉴权由 protected 路由组统一完成（Header/cookie 均可）；此处仅做防御性 admin 校验，
+// 避免误注册到公开路由时泄露监控指标。
 func (h *MonitorHandler) HealthStream(c *gin.Context) {
-	// 从 query param 获取 token 并校验（EventSource 不支持自定义 header）
-	// 只接受 Authorization header 或 cookie；token 不进入 URL，避免访问日志与代理日志泄露。
-	tokenStr := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
-	if tokenStr == "" {
-		tokenStr, _ = c.Cookie("gospeak_token")
-	}
-	if tokenStr == "" {
+	roleVal, ok := c.Get("role")
+	if !ok {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return
 	}
-	claims, err := pkg.ParseToken(tokenStr)
-	if err != nil || pkg.IsTokenExpired(claims) {
-		pkg.Fail(c, pkg.TOKEN_WRONG)
-		return
-	}
-	// 仅 admin 可访问监控 SSE
-	if claims.Role != "admin" {
+	role, _ := roleVal.(string)
+	if role != "admin" {
 		pkg.Fail(c, pkg.FORBIDDEN)
 		return
 	}

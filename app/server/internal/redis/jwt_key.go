@@ -69,14 +69,14 @@ func GetSigningKey() []byte {
 	// key 不存在（首次启动），创建新密钥
 	newKey := randomKey()
 	if setErr := Client.Set(ctx, jwtKeyRedisKey, newKey, 0).Err(); setErr != nil {
-		fmt.Printf("[Redis] failed to store JWT signing key: %v\n", setErr)
-	} else {
-		now := time.Now().Unix()
-		Client.Set(ctx, jwtKeyCreatedAtKey, now, 0)
-		Client.SAdd(ctx, jwtHistoryKey, newKey)
-		Client.Expire(ctx, jwtHistoryKey, histTTL)
-		fmt.Printf("[Redis] JWT signing key created\n")
+		fmt.Printf("[Redis] failed to store JWT signing key: %v; fallback to static key\n", setErr)
+		return staticKey()
 	}
+	now := time.Now().Unix()
+	Client.Set(ctx, jwtKeyCreatedAtKey, now, 0)
+	Client.SAdd(ctx, jwtHistoryKey, newKey)
+	Client.Expire(ctx, jwtHistoryKey, histTTL)
+	fmt.Printf("[Redis] JWT signing key created\n")
 	return []byte(newKey)
 }
 
@@ -137,10 +137,18 @@ func RotateSigningKey() []byte {
 		Client.SAdd(ctx, jwtHistoryKey, oldVal)
 	}
 
-	// 2. 生成新密钥并写入（不带 TTL）
+	// 2. 生成新密钥并写入（不带 TTL）；主键写失败时保留旧密钥，避免本进程与共享存储分叉。
 	newKey := randomKey()
-	Client.Set(ctx, jwtKeyRedisKey, newKey, 0)
-	Client.Set(ctx, jwtKeyCreatedAtKey, time.Now().Unix(), 0)
+	if err := Client.Set(ctx, jwtKeyRedisKey, newKey, 0).Err(); err != nil {
+		fmt.Printf("[Redis] JWT signing key rotate failed: %v; keep old key\n", err)
+		if oldVal != "" {
+			return []byte(oldVal)
+		}
+		return staticKey()
+	}
+	if err := Client.Set(ctx, jwtKeyCreatedAtKey, time.Now().Unix(), 0).Err(); err != nil {
+		fmt.Printf("[Redis] JWT signing key rotate createdAt failed: %v\n", err)
+	}
 
 	// 3. 新密钥也加入历史集合
 	Client.SAdd(ctx, jwtHistoryKey, newKey)

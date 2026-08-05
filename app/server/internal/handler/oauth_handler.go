@@ -34,7 +34,12 @@ func (h *OAuthHandler) Login(c *gin.Context) {
 	// 服务端生成高熵 state，写入 HttpOnly cookie，callback 强制校验，防 OAuth Login CSRF。
 	state := c.Query("state")
 	if state == "" {
-		state = randomState(16)
+		generated, err := randomState(16)
+		if err != nil {
+			redirectOAuthError(c, "failed to generate oauth state")
+			return
+		}
+		state = generated
 	}
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     oauthStateCookie,
@@ -122,10 +127,14 @@ func oauthErrorMessage(err error, fallback string) string {
 	return fallback
 }
 
-func randomState(n int) string {
+func randomState(n int) (string, error) {
 	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+	for i := 0; i < 3; i++ {
+		if _, err := rand.Read(b); err == nil {
+			return hex.EncodeToString(b), nil
+		}
+	}
+	return "", errors.New("oauth state: crypto/rand unavailable")
 }
 
 func (h *OAuthHandler) ListEnabledProviders(c *gin.Context) {

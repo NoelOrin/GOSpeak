@@ -130,7 +130,11 @@ func (s *UserService) UpdateRole(id uint, role string) error {
 		return nil
 	}
 
-	if err := s.userRepo.UpdateRoleAndInvalidate(user.ID, role); err != nil {
+	status := model.UserStatusActive
+	if role == "ban" {
+		status = model.UserStatusBanned
+	}
+	if err := s.userRepo.UpdateRoleStatusAndInvalidate(user.ID, role, status); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	return nil

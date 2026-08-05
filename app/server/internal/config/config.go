@@ -470,6 +470,14 @@ func (c *Config) Validate() error {
 		errs = append(errs, "STORAGE_ENCRYPT_KEY is required in production")
 	}
 
+	// 生产无 Redis 时必须有显式 JWT_KEY，避免运行时回退到公开默认密钥。
+	if c.IsProduction() && strings.TrimSpace(c.RedisHost) == "" {
+		key := strings.TrimSpace(c.JWTKey)
+		if key == "" || key == "default-secret" {
+			errs = append(errs, "JWT_KEY is required in production when REDIS_HOST is empty")
+		}
+	}
+
 	if c.StorageEncryptKey != "" && len(c.StorageEncryptKey) != 64 {
 		errs = append(errs, "STORAGE_ENCRYPT_KEY must be a 64-char hex string")
 	}

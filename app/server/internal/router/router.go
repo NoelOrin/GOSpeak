@@ -93,13 +93,13 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	}
 	signalRoutes.Register(api.Group("/signal"), h.Signal)
 	srsRoutes.Register(api.Group("/srs"), h.SRSCallback)
-	systemRoutes.Register(api.Group("/system"), h.Monitor)
 
 	if isWorker {
 		workerProtected := api.Group("")
 		workerProtected.Use(middleware.JWTAuth())
 		workerProtected.Use(middleware.BanCheck())
 		signalRoutes.RegisterProtected(workerProtected.Group("/signal"), h.Signal, h.Cloudflare)
+		systemRoutes.RegisterProtected(workerProtected.Group("/system"), h.Monitor)
 		return r
 	}
 
@@ -138,6 +138,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	if h.Cluster != nil {
 		clusterRoutes.RegisterProtected(protected.Group("/cluster"), h.Cluster)
 	}
+	systemRoutes.RegisterProtected(protected.Group("/system"), h.Monitor)
 
 	return r
 }

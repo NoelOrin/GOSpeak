@@ -89,6 +89,19 @@ func HandleError(c *gin.Context, err error) {
 	Fail(c, INTERNAL_ERROR)
 }
 
+// ClientError 将服务层错误转换为客户端安全可见的（业务码，文案）。
+// 与 HandleError 使用同一脱敏规则，供 WebSocket ACK 等非 HTTP 通道复用。
+func ClientError(err error) (ErrCode, string) {
+	var appErr *AppError
+	if errors.As(err, &appErr) {
+		if shouldHideErrorDetail(appErr.Code) {
+			return appErr.Code, GetErrMsg(appErr.Code)
+		}
+		return appErr.Code, appErr.Message
+	}
+	return INTERNAL_ERROR, GetErrMsg(INTERNAL_ERROR)
+}
+
 // shouldHideErrorDetail 判断该业务码是否可能携带底层实现细节，客户端只应看到默认文案。
 func shouldHideErrorDetail(code ErrCode) bool {
 	switch code {

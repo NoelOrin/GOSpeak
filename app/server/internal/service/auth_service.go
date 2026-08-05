@@ -65,7 +65,7 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, pkg.NewAppError(pkg.INVALID_PASSWORD)
 	}
 
-	if model.HasBanRole(user.Role) {
+	if user.IsBanned() || model.HasBanRole(user.Role) {
 		return nil, pkg.NewAppError(pkg.USER_BANNED)
 	}
 
@@ -156,7 +156,7 @@ func (s *AuthService) RefreshAccessForUserUUID(userUUID string) (string, error) 
 		}
 		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	if model.HasBanRole(user.Role) {
+	if user.IsBanned() || model.HasBanRole(user.Role) {
 		return "", pkg.NewAppError(pkg.USER_BANNED)
 	}
 	token, err := pkg.GenerateToken(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion)
@@ -192,7 +192,7 @@ func (s *AuthService) RefreshFromToken(refreshToken string) (string, error) {
 		}
 		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	if model.HasBanRole(user.Role) {
+	if user.IsBanned() || model.HasBanRole(user.Role) {
 		return "", pkg.NewAppError(pkg.USER_BANNED)
 	}
 	if user.TokenVersion != claims.TokenVersion {
@@ -207,14 +207,26 @@ func (s *AuthService) RefreshFromToken(refreshToken string) (string, error) {
 	return token, nil
 }
 
-// Logout 将 access（及可选 refresh）加入黑名单。
+// Logout 将 access（及可选 refresh）加入黑名单；黑名单写失败必须上抛，
+// 避免 Redis/NATS 瞬时故障时登出静默“成功”而 token 仍有效。
 func (s *AuthService) Logout(accessClaims *pkg.Claims, refreshToken string) error {
-	if accessClaims != nil {
-		_ = s.BlacklistToken(accessClaims)
+	if accessClaims == nil {
+		return nil
+	}
+	if err := s.BlacklistToken(accessClaims); err != nil {
+		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "blacklist access token failed")
+	}
+	// 按 user 维度吊销短时 WS ticket，登出后已签发的 45s ticket 不再可建连。
+	if accessClaims.UserUUID != "" {
+		if err := redis.BlacklistToken("ws:"+accessClaims.UserUUID, pkg.WSTicketTTL); err != nil {
+			return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "blacklist ws ticket failed")
+		}
 	}
 	if refreshToken != "" {
 		if refreshClaims, err := pkg.ParseToken(refreshToken); err == nil {
-			_ = s.BlacklistToken(refreshClaims)
+			if err := s.BlacklistToken(refreshClaims); err != nil {
+				return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "blacklist refresh token failed")
+			}
 		}
 	}
 	return nil

@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,6 +12,8 @@ import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
+
+	"gorm.io/gorm"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -116,6 +119,22 @@ func (s *BotService) Create(req *CreateBotRequest) (*CreateBotResult, error) {
 		result.ExpiresAt = &expiresAt
 	}
 	return result, nil
+}
+
+// IsBotTokenValid 校验 Bot 用户当前是否存在未吊销且未过期的 token。
+// 供中间件在 TokenVersion 之外再做 DB Revoked/ExpiresAt 双源校验。
+func (s *BotService) IsBotTokenValid(userUUID string) (bool, error) {
+	if userUUID == "" {
+		return false, nil
+	}
+	token, err := s.botRepo.GetActiveByUserUUID(userUUID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return token != nil && !token.Revoked, nil
 }
 
 func (s *BotService) List() ([]model.BotToken, error) {

@@ -6,6 +6,12 @@ import (
 	"time"
 )
 
+const (
+	UserStatusActive   = "active"
+	UserStatusBanned   = "banned"
+	UserStatusDisabled = "disabled"
+)
+
 type User struct {
 	ID            uint      `gorm:"primaryKey" json:"id"`
 	UUID          string    `gorm:"type:uuid;uniqueIndex" json:"uuid"`
@@ -17,6 +23,7 @@ type User struct {
 	IsBot         bool      `gorm:"default:false" json:"is_bot"`
 	Password      string    `json:"-"`
 	Role          string    `gorm:"default:user" json:"role"`
+	Status        string    `gorm:"size:16;default:active;index" json:"status"`
 	TokenVersion  uint      `gorm:"default:0" json:"token_version"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
@@ -26,7 +33,15 @@ func (u *User) BeforeCreate(_ *gorm.DB) error {
 	if u.UUID == "" {
 		u.UUID = uuid.New().String()
 	}
+	if u.Status == "" {
+		u.Status = UserStatusActive
+	}
 	return nil
+}
+
+// IsBanned 显式状态优先，兼容历史 Role=="ban" 的存量数据。
+func (u *User) IsBanned() bool {
+	return u != nil && (u.Status == UserStatusBanned || HasBanRole(u.Role))
 }
 
 func (u *User) TableName() string {

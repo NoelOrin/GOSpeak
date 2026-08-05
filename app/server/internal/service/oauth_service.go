@@ -197,7 +197,7 @@ func (s *OAuthService) HandleCallback(providerName, code string) (*AuthResponse,
 
 // buildAuthResponse 统一构造 OAuth 登录成功后的 AuthResponse（与密码登录复用同一结构）。
 func (s *OAuthService) buildAuthResponse(user *model.User) (*AuthResponse, error) {
-	if model.HasBanRole(user.Role) {
+	if user.IsBanned() {
 		return nil, pkg.NewAppError(pkg.USER_BANNED)
 	}
 	token, refreshToken, err := GenerateTokenPair(user)

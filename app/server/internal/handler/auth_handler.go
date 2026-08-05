@@ -118,10 +118,12 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	}
 	_ = c.ShouldBindJSON(&req)
 
-	_ = h.authService.Logout(accessClaims, req.RefreshToken)
+	if err := h.authService.Logout(accessClaims, req.RefreshToken); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
 	pkg.Success(c, nil)
 }
-
 
 // RefreshToken
 // @Summary      刷新当前用户 token

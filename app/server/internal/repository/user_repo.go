@@ -109,6 +109,18 @@ func (r *UserRepository) IncrementTokenVersion(userID uint) error {
 		UpdateColumn("token_version", gorm.Expr("token_version + 1")).Error
 }
 
+// UpdateRoleStatusAndInvalidate 原子更新角色、状态并递增 TokenVersion。
+func (r *UserRepository) UpdateRoleStatusAndInvalidate(userID uint, role, status string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.User{}).Where("id = ?", userID).
+			Updates(map[string]interface{}{"role": role, "status": status}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.User{}).Where("id = ?", userID).
+			UpdateColumn("token_version", gorm.Expr("token_version + 1")).Error
+	})
+}
+
 // UpdateRoleAndInvalidate 原子更新角色并递增 TokenVersion，使旧 JWT 立即失效。
 func (r *UserRepository) UpdateRoleAndInvalidate(userID uint, role string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
