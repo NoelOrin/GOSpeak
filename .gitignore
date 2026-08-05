@@ -95,6 +95,9 @@ app/server/internal/handler/uploads/
 tmp/
 build/
 
+# Vitest 集成测试运行目录
+test/.runtime/
+
 # ========================
 # 部署运行时密钥
 # ========================
