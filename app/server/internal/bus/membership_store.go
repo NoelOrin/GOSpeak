@@ -120,3 +120,6 @@ func IsMembershipNotFound(err error) bool {
 	}
 	return errors.Is(err, goredis.Nil)
 }
+
+// ErrMembershipConflict 表示 Redis CAS 版本不匹配，调用方应重试合并。
+var ErrMembershipConflict = errors.New("membership version mismatch")

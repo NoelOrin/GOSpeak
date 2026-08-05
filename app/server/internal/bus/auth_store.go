@@ -86,11 +86,16 @@ func (s *AuthStore) Close() error {
 	return nil
 }
 
+// authKVKey 将认证状态 key 编码为 NATS KV 安全 key，与 mute rule 存储解耦。
+func authKVKey(key string) string {
+	return "auth." + sanitizeKey(key)
+}
+
 func (s *AuthStore) put(key, val string) error {
 	if s == nil || key == "" {
 		return nil
 	}
-	_, err := s.kv.Put(muteRuleKVKey(key), []byte(val))
+	_, err := s.kv.Put(authKVKey(key), []byte(val))
 	return err
 }
 
@@ -98,7 +103,7 @@ func (s *AuthStore) get(key string) (string, bool, error) {
 	if s == nil || key == "" {
 		return "", false, nil
 	}
-	entry, err := s.kv.Get(muteRuleKVKey(key))
+	entry, err := s.kv.Get(authKVKey(key))
 	if err != nil {
 		if err == nats.ErrKeyNotFound || err == nats.ErrKeyDeleted {
 			return "", false, nil
@@ -112,7 +117,7 @@ func (s *AuthStore) del(key string) error {
 	if s == nil || key == "" {
 		return nil
 	}
-	err := s.kv.Delete(muteRuleKVKey(key))
+	err := s.kv.Delete(authKVKey(key))
 	if err == nil || err == nats.ErrKeyNotFound || err == nats.ErrKeyDeleted {
 		return nil
 	}

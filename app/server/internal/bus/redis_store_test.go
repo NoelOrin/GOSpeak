@@ -212,3 +212,54 @@ func TestRedisStateStore_RoomMetaAndBatchRead(t *testing.T) {
 		t.Fatalf("expected 2 room names after meta delete, got %v", names)
 	}
 }
+
+func TestRedisStateStore_RevisionCAS(t *testing.T) {
+	rdb, cleanup := newTestRedis(t)
+	t.Cleanup(cleanup)
+	store, err := OpenRedisStateStore(RedisStateStoreConfig{Client: rdb, Prefix: "gs_test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snap := RoomMembersSnapshot{
+		Room: "r1",
+		Members: []MemberRecord{{
+			Room: "r1", Identity: "alice", InstanceID: "i1",
+		}},
+	}
+	if err := store.PutRoomMembers(context.Background(), snap); err != nil {
+		t.Fatal(err)
+	}
+
+	got, rev, err := store.GetRoomMembersRev(context.Background(), "r1")
+	if err != nil || rev == 0 || len(got.Members) != 1 {
+		t.Fatalf("get rev: snap=%+v rev=%d err=%v", got, rev, err)
+	}
+
+	snap.Members = append(snap.Members, MemberRecord{Room: "r1", Identity: "bob", InstanceID: "i2"})
+	if err := store.PutRoomMembersRev(context.Background(), snap, rev); err != nil {
+		t.Fatalf("put rev %d: %v", rev, err)
+	}
+
+	if _, stale, err := store.GetRoomMembersRev(context.Background(), "r1"); err != nil || stale == rev {
+		t.Fatalf("expected bumped rev, got rev=%d err=%v", stale, err)
+	}
+
+	if err := store.PutRoomMembersRev(context.Background(), snap, rev); err != ErrMembershipConflict {
+		t.Fatalf("expected ErrMembershipConflict on stale rev, got %v", err)
+	}
+
+	_, currentRev, err := store.GetRoomMembersRev(context.Background(), "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteRoomMembersRev(context.Background(), "r1", rev); err != ErrMembershipConflict {
+		t.Fatalf("expected conflict on stale delete, got %v", err)
+	}
+	if err := store.DeleteRoomMembersRev(context.Background(), "r1", currentRev); err != nil {
+		t.Fatalf("delete rev %d: %v", currentRev, err)
+	}
+	if _, err := store.GetRoomMembers(context.Background(), "r1"); err == nil {
+		t.Fatal("expected room deleted after CAS delete")
+	}
+}

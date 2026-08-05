@@ -106,7 +106,12 @@ func (q *JobQueue) Publish(ctx context.Context, job JobEnvelope) error {
 	if err != nil {
 		return err
 	}
-	_, err = q.js.Publish(q.subjectFor(job.Type), b)
+	opts := []nats.PubOpt{}
+	if job.ID != "" {
+		// 以 job ID 作为 JetStream MsgId，生产端重试/重放时由服务端去重。
+		opts = append(opts, nats.MsgId(job.ID))
+	}
+	_, err = q.js.Publish(q.subjectFor(job.Type), b, opts...)
 	return err
 }
 

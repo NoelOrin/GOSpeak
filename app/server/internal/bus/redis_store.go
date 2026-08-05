@@ -54,11 +54,72 @@ func (s *RedisStateStore) streamKey(stream string) string {
 	return s.prefix + ":stream:" + sanitizeKey(stream)
 }
 
+// redisMembershipEnvelope 是 Redis 端带版本号的成员快照包装，
+// 供多实例并发合并时做 CAS 校验；旧格式纯快照仍可读取。
+type redisMembershipEnvelope struct {
+	Version uint64                `json:"version"`
+	Snap    RoomMembersSnapshot `json:"snap"`
+}
+
+const redisMembershipCASScript = `
+local raw = redis.call('GET', KEYS[1])
+local current = 0
+if raw then
+  local ok, parsed = pcall(cjson.decode, raw)
+  if ok and parsed and parsed['version'] then
+    current = tonumber(parsed['version'])
+  end
+end
+if current ~= tonumber(ARGV[1]) then
+  return redis.error_reply('ERR membership version mismatch')
+end
+redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
+redis.call('SADD', KEYS[2], ARGV[4])
+redis.call('EXPIRE', KEYS[2], ARGV[3])
+return current + 1
+`
+
+const redisMembershipDeleteCASScript = `
+local raw = redis.call('GET', KEYS[1])
+local current = 0
+if raw then
+  local ok, parsed = pcall(cjson.decode, raw)
+  if ok and parsed and parsed['version'] then
+    current = tonumber(parsed['version'])
+  end
+end
+if current ~= tonumber(ARGV[1]) then
+  return redis.error_reply('ERR membership version mismatch')
+end
+redis.call('DEL', KEYS[1])
+redis.call('SREM', KEYS[2], ARGV[2])
+return 1
+`
+
+// parseRedisMembership 兼容旧版纯快照格式与新版本包装格式。
+func parseRedisMembership(raw []byte) (RoomMembersSnapshot, uint64, error) {
+	var env redisMembershipEnvelope
+	if err := json.Unmarshal(raw, &env); err == nil && (env.Version != 0 || env.Snap.Room != "" || len(env.Snap.Members) > 0) {
+		if env.Snap.Members == nil {
+			env.Snap.Members = []MemberRecord{}
+		}
+		return env.Snap, env.Version, nil
+	}
+	var snap RoomMembersSnapshot
+	if err := json.Unmarshal(raw, &snap); err != nil {
+		return RoomMembersSnapshot{}, 0, err
+	}
+	if snap.Members == nil {
+		snap.Members = []MemberRecord{}
+	}
+	return snap, 0, nil
+}
+
 func (s *RedisStateStore) PutRoomMembers(ctx context.Context, snap RoomMembersSnapshot) error {
 	if snap.Members == nil {
 		snap.Members = []MemberRecord{}
 	}
-	b, err := json.Marshal(snap)
+	b, err := json.Marshal(redisMembershipEnvelope{Version: 1, Snap: snap})
 	if err != nil {
 		return err
 	}
@@ -92,12 +153,9 @@ func (s *RedisStateStore) GetRoomMembersBatch(ctx context.Context, rooms []strin
 		if !ok {
 			continue
 		}
-		var snap RoomMembersSnapshot
-		if err := json.Unmarshal([]byte(raw), &snap); err != nil {
+		snap, _, err := parseRedisMembership([]byte(raw))
+		if err != nil {
 			continue
-		}
-		if snap.Members == nil {
-			snap.Members = []MemberRecord{}
 		}
 		out[rooms[i]] = snap
 	}
@@ -109,14 +167,62 @@ func (s *RedisStateStore) GetRoomMembers(ctx context.Context, room string) (Room
 	if err != nil {
 		return RoomMembersSnapshot{}, err
 	}
-	var snap RoomMembersSnapshot
-	if err := json.Unmarshal(val, &snap); err != nil {
+	snap, _, err := parseRedisMembership(val)
+	if err != nil {
 		return RoomMembersSnapshot{}, err
 	}
+	return snap, nil
+}
+
+// GetRoomMembersRev 返回成员快照与当前版本号，供 Hub 做乐观锁合并。
+func (s *RedisStateStore) GetRoomMembersRev(ctx context.Context, room string) (RoomMembersSnapshot, uint64, error) {
+	val, err := s.rdb.Get(ctx, s.roomKey(room)).Bytes()
+	if err != nil {
+		return RoomMembersSnapshot{}, 0, err
+	}
+	snap, rev, err := parseRedisMembership(val)
+	if err != nil {
+		return RoomMembersSnapshot{}, 0, err
+	}
+	return snap, rev, nil
+}
+
+// PutRoomMembersRev 用 Lua 原子 CAS 写入：只有当前版本等于期望版本时才落盘。
+func (s *RedisStateStore) PutRoomMembersRev(ctx context.Context, snap RoomMembersSnapshot, rev uint64) error {
 	if snap.Members == nil {
 		snap.Members = []MemberRecord{}
 	}
-	return snap, nil
+	next := rev + 1
+	b, err := json.Marshal(redisMembershipEnvelope{Version: next, Snap: snap})
+	if err != nil {
+		return err
+	}
+	_, err = s.rdb.Eval(ctx, redisMembershipCASScript,
+		[]string{s.roomKey(snap.Room), s.roomsSetKey()},
+		rev, string(b), int64(redisStateTTL.Seconds()), snap.Room).Result()
+	if err != nil {
+		if strings.Contains(err.Error(), "membership version mismatch") {
+			return ErrMembershipConflict
+		}
+		return err
+	}
+	return nil
+}
+
+// DeleteRoomMembersRev 仅在版本匹配时删除成员快照。
+func (s *RedisStateStore) DeleteRoomMembersRev(ctx context.Context, room string, rev uint64) error {
+	if rev == 0 {
+		return nil
+	}
+	err := s.rdb.Eval(ctx, redisMembershipDeleteCASScript,
+		[]string{s.roomKey(room), s.roomsSetKey()}, rev, room).Err()
+	if err != nil {
+		if strings.Contains(err.Error(), "membership version mismatch") {
+			return ErrMembershipConflict
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *RedisStateStore) DeleteRoomMembers(ctx context.Context, room string) error {
