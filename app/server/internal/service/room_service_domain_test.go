@@ -3,6 +3,8 @@ package service
 import (
 	"testing"
 
+	"fmt"
+
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/repository"
 
@@ -42,6 +44,31 @@ func TestRoomService_List_FiltersDomainUUID(t *testing.T) {
 	}
 	if allTotal != 3 || len(all) != 3 {
 		t.Fatalf("expected all rooms, got total=%d rooms=%d", allTotal, len(all))
+	}
+}
+
+func TestRoomService_List_PageSizeCapsAt100(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Room{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	for i := 0; i < 120; i++ {
+		room := model.Room{Name: fmt.Sprintf("room-%03d", i), DomainUUID: "domain-a"}
+		if err := db.Create(&room).Error; err != nil {
+			t.Fatalf("seed room %d: %v", i, err)
+		}
+	}
+
+	svc := NewRoomService(repository.NewRoomRepository(db))
+	got, total, err := svc.List(1, 200, "", "domain-a")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if total != 120 || len(got) != 100 {
+		t.Fatalf("expected total=120 rooms=100, got total=%d rooms=%d", total, len(got))
 	}
 }
 

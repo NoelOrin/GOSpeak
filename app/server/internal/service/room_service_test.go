@@ -188,8 +188,8 @@ func TestRoomService_List_PaginationValidation(t *testing.T) {
 		{-1, -1, 1, 20, "Negative values default to page=1, pageSize=20"},
 		{0, 0, 1, 20, "Zero values default to page=1, pageSize=20"},
 		{1, 10, 1, 10, "Valid values pass through"},
-		{5, 100, 5, 20, "pageSize > 100 capped at 20"},
-		{1, 200, 1, 20, "pageSize > 100 capped at 20"},
+		{5, 100, 5, 100, "pageSize 100 is preserved"},
+		{1, 200, 1, 100, "pageSize > 100 capped at 100"},
 	}
 
 	for _, tt := range tests {

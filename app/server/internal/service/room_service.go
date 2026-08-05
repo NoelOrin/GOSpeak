@@ -14,7 +14,8 @@ import (
 )
 
 // ErrRoomNotFound is returned when a room query finds no matching row.
-var ErrRoomNotFound = pkg.NewAppError(pkg.NOT_FOUND, "room not found")
+// Cause 保留 gorm.ErrRecordNotFound，便于 signal 等调用方用 errors.Is 区分“未找到”和真实 DB 故障。
+var ErrRoomNotFound = pkg.NewAppErrorWithCause(pkg.NOT_FOUND, gorm.ErrRecordNotFound, "room not found")
 
 // RoomService 房间服务，提供房间的增删改查能力。
 type RoomService struct {
@@ -131,8 +132,11 @@ func (s *RoomService) List(page, pageSize int, roomType, domainUUID string) ([]m
 	if page < 1 {
 		page = 1
 	}
-	if pageSize < 1 || pageSize > 100 {
+	if pageSize < 1 {
 		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
 	}
 	if roomType != "" && roomType != model.RoomTypeText && roomType != model.RoomTypeVoice {
 		return nil, 0, pkg.NewAppError(pkg.INVALID_PARAMS, "type must be text, voice, or empty")
@@ -149,8 +153,11 @@ func (s *RoomService) ListPlatform(page, pageSize int, roomType string) ([]model
 	if page < 1 {
 		page = 1
 	}
-	if pageSize < 1 || pageSize > 100 {
+	if pageSize < 1 {
 		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
 	}
 	if roomType != "" && roomType != model.RoomTypeText && roomType != model.RoomTypeVoice {
 		return nil, 0, pkg.NewAppError(pkg.INVALID_PARAMS, "type must be text, voice, or empty")

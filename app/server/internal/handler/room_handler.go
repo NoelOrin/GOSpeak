@@ -2,6 +2,7 @@ package handler
 
 import (
 	"log"
+	"strings"
 
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/middleware"
@@ -13,15 +14,32 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// RoomListBroadcaster 通知信号层刷新指定 Domain 的房间列表广播。
+type RoomListBroadcaster interface {
+	BroadcastRoomList(domainUUID string)
+}
+
 type RoomHandler struct {
-	roomSvc          *service.RoomService
-	permSvc          *service.PermissionService
-	domainSvc        *service.DomainService
-	controlPublisher ControlPublisher
+	roomSvc             *service.RoomService
+	permSvc             *service.PermissionService
+	domainSvc           *service.DomainService
+	controlPublisher    ControlPublisher
+	roomListBroadcaster RoomListBroadcaster
 }
 
 func NewRoomHandler(roomSvc *service.RoomService, permSvc *service.PermissionService, domainSvc *service.DomainService) *RoomHandler {
 	return &RoomHandler{roomSvc: roomSvc, permSvc: permSvc, domainSvc: domainSvc}
+}
+
+// SetRoomListBroadcaster 注入信号层房间列表广播器。
+func (h *RoomHandler) SetRoomListBroadcaster(b RoomListBroadcaster) {
+	h.roomListBroadcaster = b
+}
+
+func (h *RoomHandler) notifyRoomList(domainUUID string) {
+	if h.roomListBroadcaster != nil {
+		h.roomListBroadcaster.BroadcastRoomList(domainUUID)
+	}
 }
 
 // SetControlPublisher 注入集群控制命令发布器。
@@ -106,8 +124,16 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		return
 	}
 	username, _ := usernameVal.(string)
-	domainUUID := domainUUIDFromContext(c)
-	if domainUUID != "" && !middleware.IsDomainMember(domainUUID, currentUserUUID(c)) {
+	domainUUID := strings.TrimSpace(req.DomainUUID)
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	if contextDomainUUID := domainUUIDFromContext(c); contextDomainUUID != "" && contextDomainUUID != domainUUID {
+		pkg.Fail(c, pkg.FORBIDDEN, "domain_uuid mismatch")
+		return
+	}
+	if !middleware.IsDomainMember(domainUUID, currentUserUUID(c)) {
 		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
 		return
 	}
@@ -129,6 +155,8 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		pkg.HandleError(c, err)
 		return
 	}
+
+	h.notifyRoomList(domainUUID)
 
 	pkg.Success(c, room)
 }
@@ -280,6 +308,8 @@ func (h *RoomHandler) Update(c *gin.Context) {
 		return
 	}
 
+	h.notifyRoomList(room.DomainUUID)
+
 	pkg.Success(c, room)
 }
 
@@ -333,6 +363,8 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 			log.Printf("[Room] publish delete control failed id=%d room=%q err=%v", req.ID, room.Name, err)
 		}
 	}
+
+	h.notifyRoomList(room.DomainUUID)
 
 	pkg.Success(c, nil)
 }

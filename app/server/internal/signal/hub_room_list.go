@@ -28,7 +28,12 @@ func (h *Hub) getMergedRoomsScoped(domainUUID string, platformOnly bool) []RoomI
 	eg.Go(func() error {
 		dbRooms = make(map[string]RoomInfo)
 		if h.roomStore != nil {
-			if rooms, _, err := h.roomStore.List(1, 200, "", domainUUID); err == nil {
+			const roomListPageSize = 100
+			for page := 1; page <= 2; page++ {
+				rooms, total, err := h.roomStore.List(page, roomListPageSize, "", domainUUID)
+				if err != nil {
+					break
+				}
 				for _, r := range rooms {
 					if platformOnly && r.DomainUUID != "" {
 						continue
@@ -49,6 +54,9 @@ func (h *Hub) getMergedRoomsScoped(domainUUID string, platformOnly bool) []RoomI
 						Count:         0,
 						CreatedAt:     r.CreatedAt.UnixMilli(),
 					}
+				}
+				if len(rooms) < roomListPageSize || page*roomListPageSize >= int(total) {
+					break
 				}
 			}
 		}
@@ -252,6 +260,11 @@ func (h *Hub) broadcastRoomList(domainUUID string) {
 		"rooms": rooms,
 		"count": len(rooms),
 	})
+}
+
+// BroadcastRoomList 供 HTTP 房间变更处理器触发 Domain 房间列表广播。
+func (h *Hub) BroadcastRoomList(domainUUID string) {
+	h.broadcastRoomList(domainUUID)
 }
 
 func (h *Hub) broadcastRoomListKnownDomains() {

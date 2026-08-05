@@ -381,6 +381,7 @@ func StartGin(env EnvEnum) error {
 	middleware.SetDomainChecker(domainSvc.IsMember)
 	signalHub.SetDomainChecker(domainSvc.IsMember)
 	roomH := handler.NewRoomHandler(roomSvc, permSvc, domainSvc)
+	roomH.SetRoomListBroadcaster(signalHub)
 	roomH.SetControlPublisher(clusterSvc)
 	msgH := handler.NewMessageHandler(messageSvc, permSvc)
 	permH := handler.NewPermissionHandler(permSvc)
