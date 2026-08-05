@@ -309,5 +309,5 @@ func (s *StateStore) Close() error {
 }
 
 func sanitizeKey(s string) string {
-	return strings.ReplaceAll(s, " ", "_")
+	return strings.ReplaceAll(strings.ReplaceAll(s, " ", "_"), ":", "_")
 }

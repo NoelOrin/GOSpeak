@@ -9,6 +9,13 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
+func TestSanitizeKeyRemovesNATSInvalidColon(t *testing.T) {
+	got := sanitizeKey("ws:user-uuid")
+	if got != "ws_user-uuid" {
+		t.Fatalf("expected ws_user-uuid, got %q", got)
+	}
+}
+
 func TestMembershipKV_PutGet(t *testing.T) {
 	es, err := StartEmbeddedServer()
 	if err != nil {
