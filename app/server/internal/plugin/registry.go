@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"log"
 	"sort"
 	"sync"
 )
@@ -182,9 +183,36 @@ func (r *Registry) List() []Info {
 func (r *Registry) setState(name string, status Status, errMsg string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if s, ok := r.states[name]; ok {
-		s.status = status
-		s.err = errMsg
+	s, ok := r.states[name]
+	if !ok {
+		return
+	}
+	if !pluginStateTransitionAllowed(s.status, status) {
+		log.Printf("[Plugin] invalid state transition %s: %s -> %s ignored", name, s.status, status)
+		return
+	}
+	s.status = status
+	s.err = errMsg
+}
+
+// pluginStateTransitionAllowed 校验插件生命周期迁移，拒绝 running->registered 等非法覆盖。
+func pluginStateTransitionAllowed(from, to Status) bool {
+	if from == to {
+		return true
+	}
+	switch from {
+	case StatusRegistered:
+		return to == StatusStarting || to == StatusStopped || to == StatusFailed
+	case StatusStarting:
+		return to == StatusRunning || to == StatusStopped || to == StatusFailed
+	case StatusRunning:
+		return to == StatusStopped || to == StatusFailed
+	case StatusStopped:
+		return to == StatusStarting || to == StatusFailed
+	case StatusFailed:
+		return to == StatusStarting || to == StatusStopped
+	default:
+		return false
 	}
 }
 
