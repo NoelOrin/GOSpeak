@@ -281,9 +281,9 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 				<Split min={MIN_SPLIT_WIDTH} split={splitWidth()} max={MAX_SPLIT_WIDTH}>
 					<Slot name="prev">
 						<div class="flex flex-col justify-between h-full" ref={prevRef}>
-							<div class="flex h-full">
+							<div class="flex flex-1 min-h-0">
 								<Sidebar onOpenSettings={openSettings} />
-								<div class="box-border min-w-0 flex-1 border-color border-t border-l border-solid">
+								<div class="box-border min-w-0 min-h-0 flex-1 border-color border-t border-l border-solid">
 									<DynamicRender />
 								</div>
 							</div>

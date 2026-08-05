@@ -251,7 +251,7 @@ const RoomItem = (props: RoomItemPropsType) => {
 
 	return (
 		<>
-			<div class="flex flex-col w-full overflow-hidden">
+			<div class="flex flex-col w-full shrink-0 overflow-hidden">
 				<div class="w-full min-w-0">
 					<button
 						class={clsx(
@@ -454,7 +454,7 @@ const RoomItem = (props: RoomItemPropsType) => {
 
 const RoomItemSkeleton = () => {
 	return (
-		<div class="flex flex-col w-full">
+		<div class="flex flex-col w-full shrink-0">
 			<div
 				aria-hidden="true"
 				class="justify-between items-center px-1.5 border-0 btn btn-ghost btn-sm"
@@ -639,42 +639,37 @@ const RoomList = ({ ref }: RoomListPropsType) => {
 			<div class="box-border flex flex-col px-2 h-full select-none" ref={ref}>
 				<RoomListHeader onOpenCreate={openCreateRoomModal} />
 				<Divider class="mx-1 my-1" />
-				<div class="relative flex-1 min-h-0">
-					<div class="box-border absolute inset-0 flex flex-col space-y-1 overflow-y-auto">
+				<div class="flex-1 min-h-0 flex flex-col space-y-1 overflow-y-auto scrollbar-none">
+					<Show when={socketStore.connected()} fallback={<RoomListFallback />}>
 						<Show
-							when={socketStore.connected()}
-							fallback={<RoomListFallback />}
+							when={visibleRooms().length > 0}
+							fallback={
+								<div class="flex justify-center items-center h-20 text-xs text-base-content/40">
+									暂无房间
+								</div>
+							}
 						>
-							<Show
-								when={visibleRooms().length > 0}
-								fallback={
-									<div class="flex justify-center items-center h-20 text-xs text-base-content/40">
-										暂无房间
-									</div>
-								}
-							>
-								<For each={visibleRooms()}>
-									{(room) => (
-										<RoomItem
-											room={room}
-											isActive={
-												socketStore.currentRoom() === room.name &&
-												(room.domain_uuid || "") ===
-													(socketStore.currentDomainUUID() || "")
-											}
-											selectedMember={selectedMember}
-											onSelectMember={(identity, x, y) =>
-												setSelectedMember({ identity, x, y })
-											}
-											onCloseMember={() => setSelectedMember(null)}
-											onEditRoom={openEditRoom}
-											onDeleteRoom={openDeleteRoom}
-										/>
-									)}
-								</For>
-							</Show>
+							<For each={visibleRooms()}>
+								{(room) => (
+									<RoomItem
+										room={room}
+										isActive={
+											socketStore.currentRoom() === room.name &&
+											(room.domain_uuid || "") ===
+												(socketStore.currentDomainUUID() || "")
+										}
+										selectedMember={selectedMember}
+										onSelectMember={(identity, x, y) =>
+											setSelectedMember({ identity, x, y })
+										}
+										onCloseMember={() => setSelectedMember(null)}
+										onEditRoom={openEditRoom}
+										onDeleteRoom={openDeleteRoom}
+									/>
+								)}
+							</For>
 						</Show>
-					</div>
+					</Show>
 				</div>
 			</div>
 			<CreateRoomModal
