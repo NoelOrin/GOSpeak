@@ -35,6 +35,34 @@ func setupClusterServiceTestDB(t *testing.T) (*ClusterService, *gorm.DB) {
 	return svc, db
 }
 
+func newTestDB(t *testing.T) (*gorm.DB, func()) {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.ClusterNode{}, &model.ServerAssignment{}, &model.Domain{}); err != nil {
+		t.Fatalf("migrate cluster models: %v", err)
+	}
+	return db, func() {
+		if sqlDB, err := db.DB(); err == nil && sqlDB != nil {
+			_ = sqlDB.Close()
+		}
+	}
+}
+
+func TestClusterService_RegisterRejectsInvalidStatus(t *testing.T) {
+	db, cleanup := newTestDB(t)
+	t.Cleanup(cleanup)
+	svc := NewClusterService(
+		repository.NewClusterNodeRepository(db),
+		repository.NewServerAssignmentRepository(db),
+	)
+	if _, err := svc.RegisterNode(model.ClusterNode{UUID: "node-x", Status: "bogus"}); err == nil {
+		t.Fatal("expected invalid status rejection")
+	}
+}
+
 func TestClusterService_RegisterAndHeartbeat(t *testing.T) {
 	svc, _ := setupClusterServiceTestDB(t)
 

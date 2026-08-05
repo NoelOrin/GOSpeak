@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"log"
+
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
@@ -15,6 +17,8 @@ type DomainHandler struct {
 	permSvc          *service.PermissionService
 	onDomainDelete   func(string)
 	onDomainCreated  func(string)
+	onDomainKick     func(domainUUID, userUUID string)
+	onDomainLeave    func(domainUUID, userUUID string)
 	controlPublisher ControlPublisher
 }
 
@@ -30,6 +34,16 @@ func (h *DomainHandler) SetOnDomainCreated(fn func(string)) {
 // SetOnDomainDelete 注入删除后的信令清理回调（生产环境为 signalHub.OnDomainDelete）。
 func (h *DomainHandler) SetOnDomainDelete(fn func(string)) {
 	h.onDomainDelete = fn
+}
+
+// SetOnDomainKick 注入踢出成员后的信令清理回调（按用户维度清理在线房间）。
+func (h *DomainHandler) SetOnDomainKick(fn func(domainUUID, userUUID string)) {
+	h.onDomainKick = fn
+}
+
+// SetOnDomainLeave 注入成员主动离开后的信令清理回调。
+func (h *DomainHandler) SetOnDomainLeave(fn func(domainUUID, userUUID string)) {
+	h.onDomainLeave = fn
 }
 
 // SetControlPublisher 注入集群控制命令发布器。
@@ -231,13 +245,13 @@ func (h *DomainHandler) Delete(c *gin.Context) {
 	if h.onDomainDelete != nil {
 		h.onDomainDelete(domainUUID)
 	}
+	// DB 与本地清理已生效；control 失败只告警，由最终一致清理兜底。
 	if h.controlPublisher != nil {
 		if err := h.controlPublisher.PublishControl(cluster.ControlCommand{
 			Command:    cluster.CommandDeleteServer,
 			DomainUUID: domainUUID,
 		}); err != nil {
-			pkg.HandleError(c, err)
-			return
+			log.Printf("[Domain] publish delete control failed domain=%s err=%v", domainUUID, err)
 		}
 	}
 	pkg.Success(c, nil)
@@ -303,6 +317,19 @@ func (h *DomainHandler) Leave(c *gin.Context) {
 		pkg.HandleError(c, err)
 		return
 	}
+	if h.onDomainLeave != nil {
+		h.onDomainLeave(domainUUID, userUUID)
+	}
+	if h.controlPublisher != nil {
+		if err := h.controlPublisher.PublishControl(cluster.ControlCommand{
+			Command:    cluster.CommandKickDomain,
+			DomainUUID: domainUUID,
+			Payload:    map[string]interface{}{"user_uuid": userUUID},
+		}); err != nil {
+			pkg.HandleError(c, err)
+			return
+		}
+	}
 	pkg.Success(c, nil)
 }
 
@@ -337,6 +364,19 @@ func (h *DomainHandler) Kick(c *gin.Context) {
 	if err := h.domainSvc.Kick(domainUUID, req.UserUUID); err != nil {
 		pkg.HandleError(c, err)
 		return
+	}
+	if h.onDomainKick != nil {
+		h.onDomainKick(domainUUID, req.UserUUID)
+	}
+	if h.controlPublisher != nil {
+		if err := h.controlPublisher.PublishControl(cluster.ControlCommand{
+			Command:    cluster.CommandKickDomain,
+			DomainUUID: domainUUID,
+			Payload:    map[string]interface{}{"user_uuid": req.UserUUID},
+		}); err != nil {
+			pkg.HandleError(c, err)
+			return
+		}
 	}
 	pkg.Success(c, nil)
 }

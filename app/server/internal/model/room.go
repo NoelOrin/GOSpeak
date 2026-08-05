@@ -9,7 +9,7 @@ import (
 type Room struct {
 	ID            uint   `gorm:"primaryKey" json:"id"`
 	UUID          string `gorm:"type:uuid;uniqueIndex" json:"uuid"`
-	Name          string `gorm:"index" json:"name"`
+	Name          string `gorm:"uniqueIndex:idx_room_domain_name,priority:1" json:"name"`
 	Password      string `json:"-"`
 	Description   string `gorm:"size:255" json:"description"`
 	Limit         uint   `json:"limit"`
@@ -18,7 +18,7 @@ type Room struct {
 	Type          string `gorm:"size:16;not null;default:voice;index" json:"type"`
 	CreatedBy     string `gorm:"index;size:64" json:"created_by"`
 	// DomainUUID 归属的语音域 CUID2，不允许为空。
-	DomainUUID string    `gorm:"size:32;index;not null" json:"domain_uuid"`
+	DomainUUID string    `gorm:"size:32;uniqueIndex:idx_room_domain_name,priority:2;not null" json:"domain_uuid"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }

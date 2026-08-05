@@ -12,6 +12,7 @@ const (
 	CommandUnmute       = "unmute"
 	CommandDeleteRoom   = "delete_room"
 	CommandDeleteServer = "delete_server"
+	CommandKickDomain   = "kick_domain"
 )
 
 // ControlCommand 是 Agent 通过 NATS internal 事件下发给 Worker 的控制命令。
@@ -48,6 +49,13 @@ func (c ControlCommand) Validate() error {
 		if strings.TrimSpace(c.DomainUUID) == "" {
 			return errors.New("delete_server requires domain_uuid")
 		}
+	case CommandKickDomain:
+		if strings.TrimSpace(c.DomainUUID) == "" {
+			return errors.New("kick_domain requires domain_uuid")
+		}
+		if !controlPayloadHasUserUUID(c.Payload) {
+			return errors.New("kick_domain requires payload.user_uuid")
+		}
 	case CommandMute, CommandUnmute:
 		if !controlPayloadHasUserID(c.Payload) {
 			return fmt.Errorf("%s requires payload.user_id", c.Command)
@@ -73,4 +81,12 @@ func controlPayloadHasUserID(payload map[string]interface{}) bool {
 		return true
 	}
 	return false
+}
+
+func controlPayloadHasUserUUID(payload map[string]interface{}) bool {
+	if payload == nil {
+		return false
+	}
+	v, ok := payload["user_uuid"].(string)
+	return ok && strings.TrimSpace(v) != ""
 }

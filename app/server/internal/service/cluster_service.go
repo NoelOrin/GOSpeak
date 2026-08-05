@@ -136,6 +136,9 @@ func (s *ClusterService) RegisterNode(req model.ClusterNode) (*model.ClusterNode
 	if req.Status == "" {
 		req.Status = model.ClusterNodePending
 	}
+	if !validClusterNodeStatus(req.Status) {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "invalid node status: "+req.Status)
+	}
 	if req.MaxServers <= 0 {
 		req.MaxServers = 100
 	}
@@ -357,4 +360,15 @@ func (s *ClusterService) publishClusterEvent(event string, payload interface{}) 
 		return nil
 	}
 	return s.notifier.PublishInternal(context.Background(), event, payload)
+}
+
+// validClusterNodeStatus 校验节点状态白名单，防止非法状态写入控制面 DB。
+func validClusterNodeStatus(status string) bool {
+	switch status {
+	case model.ClusterNodePending, model.ClusterNodeReady, model.ClusterNodeBusy,
+		model.ClusterNodeDraining, model.ClusterNodeOffline, model.ClusterNodeUnhealthy:
+		return true
+	default:
+		return false
+	}
 }

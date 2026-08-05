@@ -39,13 +39,10 @@ func (s *DomainService) Create(name, description, ownerUUID string, isPublic boo
 	domain := &model.Domain{
 		Name: name, Description: description, OwnerUUID: ownerUUID, IsPublic: isPublic,
 	}
-	if err := s.domainRepo.Create(domain); err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
 	member := &model.DomainMember{
 		DomainUUID: domain.UUID, UserUUID: ownerUUID, RoleName: DomainRoleOwner,
 	}
-	if err := s.domainRepo.AddMember(member); err != nil {
+	if err := s.domainRepo.CreateWithOwner(domain, member); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	return domain, nil
@@ -221,12 +218,16 @@ func (s *DomainService) TransferOwnership(domainUUID, currentOwnerUUID, newOwner
 		return ErrDomainMemberNotFound
 	}
 	oldMember, err := s.domainRepo.GetMember(domainUUID, currentOwnerUUID)
-	if err == nil && oldMember != nil {
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if oldMember != nil {
 		oldMember.RoleName = DomainRoleAdmin
-		_ = s.domainRepo.UpdateMember(oldMember)
 	}
 	newMember.RoleName = DomainRoleOwner
-	_ = s.domainRepo.UpdateMember(newMember)
 	domain.OwnerUUID = newOwnerUUID
-	return s.domainRepo.Update(domain)
+	if err := s.domainRepo.TransferOwnership(domain, oldMember, newMember); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return nil
 }
