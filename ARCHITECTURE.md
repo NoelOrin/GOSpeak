@@ -485,8 +485,6 @@ GOSpeak 在进程内通过 EventBus 做信令 fanout：
 - `NATS_URL` 空：启动内嵌 `nats-server`（默认随机端口；`NATS_EMBEDDED_PORT` 可固定）
 - `NATS_URL` 非空：先探测外部；可用则 external，不可用则 Warn 并回退内嵌
 - Hub 广播（`member:*` / `room:*` / `user:muted` / `sfu:provider-changed` 等）先本地 WebSocket 投递，再经 NATS 复制到其他实例
-- **不做**房间成员状态、stream 注册表的分布式同步；状态仍在进程内存
-
 二进制仍为单文件：链接 `nats.go` 客户端 + `nats-server` 库，不附带独立 nats-server 可执行文件。
 
 内部事件使用 `PublishInternal`（subject `{prefix}.internal`），例如权限缓存失效 `cache:permissions-invalidated`，不经 WebSocket Deliverer。

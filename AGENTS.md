@@ -12,7 +12,7 @@ GOSpeak 是一个自托管的**游戏语音平台**，类似自部署版 Discord
 - 多 SFU 运行时切换（LiveKit / SRS / Agora / Cloudflare）
 - 渐进式数据库（SQLite 开箱即用 → PostgreSQL → MySQL）
 - JWT + OAuth2 三端登录（GitHub / Google / QQ）
-- Guild（语音服务器）多租户隔离
+- Domain（语音服务器）多租户隔离
 - 文字房间消息（房间消息 + 私聊）
 - 插件系统（内置 Bot + 外部插件）
 - 多实例部署（NATS 事件总线 + Redis 状态共享）
@@ -65,10 +65,10 @@ app/server/
 │   │       ├── agora/      # Agora REST
 │   │       └── cloudflare/ # Cloudflare Realtime (WHIP/WHEP)
 │   ├── signal/             # WebSocket signaling hub
-│   │   ├── events.go       # 30+ event name constants
+│   │   ├── events.go       # 44 event name constants
 │   │   ├── types.go        # RoomRequest, MemberInfo, RoomInfo
 │   │   ├── hub.go          # Hub (room registry + all event handlers)
-│   │   ├── state_sync.go   # Guild 命名空间 + 跨实例状态同步
+│   │   ├── state_sync.go   # Domain 命名空间 + 跨实例状态同步
 │   │   ├── bot_bridge.go   # Bot 消息桥接
 │   │   └── message_bridge.go # 消息事件桥接
 │   ├── ws/                 # WebSocket 基础设施（nhooyr.io/websocket）
@@ -94,7 +94,7 @@ app/server/
 │   │   └── builtin/        # Built-in plugins (botbase)
 │   ├── permcode/           # Permission code constants
 │   │   ├── permcode.go     # Platform permissions
-│   │   └── guild_permcode.go  # Guild permissions
+│   │   └── domain_permcode.go  # Domain permissions
 │   ├── storage/            # Object storage abstraction (local/S3)
 │   ├── jobs/               # Background jobs (placeholder)
 │   └── pkg/                # Shared utilities
@@ -255,7 +255,7 @@ if err := c.ShouldBindJSON(&req); err != nil {
 ## API Route Conventions
 
 - **All routes** are prefixed with `/api/v1/`
-- Grouped by module: `auth`, `user`, `signal`, `oauth`, `role`, `permission`, `mute`, `room`, `storage`, `bot`, `email`, `sfu`, `srs`, `system`, `guild`, `conversation`, `message`, `plugin`
+- Grouped by module: `auth`, `user`, `signal`, `oauth`, `role`, `permission`, `mute`, `room`, `storage`, `bot`, `email`, `sfu`, `srs`, `system`, `domain`, `conversation`, `message`, `plugin`
 - The `protected` group applies `middleware.JWTAuth()` + `middleware.BanCheck()` to every route
 - Permission-gated routes additionally use `middleware.RequirePermission(permcode.X)` (permission-based RBAC)
 - Public routes (login, register, oauth, signal exchange, srs callback, system stream) are outside the protected group
@@ -340,17 +340,18 @@ if err := c.ShouldBindJSON(&req); err != nil {
 | POST | `/api/v1/sfu/providers` | JWT | `sfu:manage` | SFUConfigHandler.ListProviders |
 | POST | `/api/v1/srs/callback` | No | — | SRSCallbackHandler.HandleCallback |
 | GET | `/api/v1/system/stream` | No | — | MonitorHandler.HealthStream |
-| GET | `/api/v1/guild/create` | JWT | `guild:create` | GuildHandler.Create |
-| GET | `/api/v1/guild/get` | JWT | `guild:read` | GuildHandler.Get |
-| POST | `/api/v1/guild/list` | JWT | `guild:read` | GuildHandler.List |
-| POST | `/api/v1/guild/list-public` | JWT | — | GuildHandler.ListPublic |
-| POST | `/api/v1/guild/my-guilds` | JWT | — | GuildHandler.MyGuilds |
-| POST | `/api/v1/guild/update` | JWT | `guild:manage` | GuildHandler.Update |
-| DELETE | `/api/v1/guild/delete` | JWT | `guild:delete` | GuildHandler.Delete |
-| POST | `/api/v1/guild/join` | JWT | — | GuildHandler.Join |
-| POST | `/api/v1/guild/leave` | JWT | — | GuildHandler.Leave |
-| POST | `/api/v1/guild/kick` | JWT | `guild:kick` | GuildHandler.Kick |
-| POST | `/api/v1/guild/members` | JWT | `guild:read` | GuildHandler.Members |
+| POST | `/api/v1/domain/create` | JWT | `domain:create` | DomainHandler.Create |
+| POST | `/api/v1/domain/get` | JWT | — | DomainHandler.Get |
+| POST | `/api/v1/domain/list` | JWT | `domain:read` | DomainHandler.List |
+| POST | `/api/v1/domain/list-public` | JWT | — | DomainHandler.ListPublic |
+| POST | `/api/v1/domain/my-domains` | JWT | — | DomainHandler.MyDomains |
+| POST | `/api/v1/domain/update` | JWT | — | DomainHandler.Update |
+| POST | `/api/v1/domain/delete` | JWT | — | DomainHandler.Delete |
+| POST | `/api/v1/domain/join` | JWT | — | DomainHandler.Join |
+| POST | `/api/v1/domain/preview` | JWT | — | DomainHandler.Preview |
+| POST | `/api/v1/domain/leave` | JWT | — | DomainHandler.Leave |
+| POST | `/api/v1/domain/kick` | JWT | — | DomainHandler.Kick |
+| POST | `/api/v1/domain/members` | JWT | — | DomainHandler.Members |
 | GET | `/api/v1/conversation/list` | JWT | — | ConversationHandler.List |
 | POST | `/api/v1/conversation/messages` | JWT | — | ConversationHandler.Messages |
 | POST | `/api/v1/conversation/mark-read` | JWT | — | ConversationHandler.MarkRead |
@@ -659,7 +660,7 @@ HTTP GET /ws
 
 ### Fanout Broadcaster
 
-Room names use compound keys `signal.roomKey(guildUUID, roomName)` for Guild namespace isolation.
+Room names use compound keys `signal.roomKey(domainUUID, roomName)` for Domain namespace isolation.
 
 ```go
 // Fanout implements ws.Broadcaster
@@ -684,10 +685,10 @@ WebSocket signaling hub built on `internal/ws/`.
 
 | File | Role |
 |------|------|
-| `events.go` | 38 event name constants |
+| `events.go` | 44 event name constants |
 | `types.go` | `RoomRequest`, `MemberInfo`, `RoomInfo` structs |
-| `hub.go` | Hub (global room registry + all event handlers + Guild state sync) |
-| `state_sync.go` | Guild namespace isolation + cross-instance state synchronization |
+| `hub.go` | Hub (global room registry + all event handlers + Domain state sync) |
+| `state_sync.go` | Domain namespace isolation + cross-instance state synchronization |
 | `bot_bridge.go` | Bot command/message bridge |
 | `message_bridge.go` | Message events bridge |
 | `private_bridge.go` | Private message bridge |
@@ -728,7 +729,7 @@ type Hub struct {
 |------|--------|--------|------|
 | `RemoveParticipant` | ✅ 删 Members + 广播 | ✅ 按 provider 能力 | |
 | `ListRooms` + `ListParticipants` | 失败时返回 `[]` | ✅ 有则返回 | SFU 媒体状态 ≠ 信令层在线状态，不 fallback |
-| `MuteParticipant` | `BroadcastMute` 广播 | ❌ 不调 | 前端收到事件后自行停推流 |
+| `MuteParticipant` | `BroadcastMute` 广播 | ✅ 按 provider 能力调用 | hard/degraded 媒体强制；不支持时 soft 兜底并依赖前端停推流 |
 
 ### 发言检测
 
@@ -767,18 +768,18 @@ Built-in providers: `GitHubProvider`, `GoogleProvider`, `QQProvider`. Factory: `
 
 ---
 
-## Guild (多语音服务器)
+## Domain (语音服务器)
 
-GOSpeak 支持多 Server（类 Discord Guild）架构。每个 `Guild` 是房间、成员、角色的顶层归属容器。
+GOSpeak 支持多 Server（类 Discord Guild）架构。每个 `Domain` 是房间、成员、角色的顶层归属容器。
 
 ### 数据模型
 
 | 表 | 说明 |
 |----|------|
-| `guilds` | 语音服务器：UUID、名称、Owner、邀请码、房间上限、公开/私有 |
-| `guild_members` | 用户-Guild 多对多关系：RoleName (owner/admin/member/guest) |
+| `domains` | 语音服务器：UUID、名称、Owner、邀请码、公开/私有 |
+| `domain_members` | 用户-Domain 多对多关系：RoleName (owner/admin/member/guest) |
 
-### Guild 角色层级
+### Domain 角色层级
 
 ```
 owner (4) > admin (3) > member (2) > guest (1)
@@ -786,21 +787,21 @@ owner (4) > admin (3) > member (2) > guest (1)
 
 ### Room 归属
 
-`Room.GuildUUID` 外键关联到 Guild。空值表示平台级房间（向后兼容存量数据）。
-新增房间可指定 `guild_uuid` 将其归属到特定 Guild。
+`Room.DomainUUID` 外键关联到 Domain。空值表示平台级房间（向后兼容存量数据）。
+新增房间可指定 `domain_uuid` 将其归属到特定 Domain。
 
 ### Signal 命名空间隔离
 
-Signal Hub 中使用 `roomKey(guildUUID, roomName)` 复合键隔离不同 Guild 的同名房间。
-平台级房间（GuildUUID 为空）使用纯 roomName 作为 Map Key（向后兼容）。
+Signal Hub 中使用 `roomKey(domainUUID, roomName)` 复合键隔离不同 Domain 的同名房间。
+平台级房间（DomainUUID 为空）使用纯 roomName 作为 Map Key（向后兼容）。
 
 ### 中间件
 
-- `RequireGuildMember()` — 校验当前用户是指定 Guild 的成员。
+- `RequireDomainMember()` — 校验当前用户是指定 Domain 的成员。
 
 ### 迁移策略
 
-启动时若不存在任何 Guild，自动创建 "Default Server" 并将存量 `guild_uuid` 为空的房间归入其中。
+启动时若不存在任何 Domain，自动创建 "Default Server" 并将存量 `domain_uuid` 为空的房间归入其中。
 
 ---
 
@@ -840,13 +841,13 @@ Access control is **permission-based**, layered on top of roles.
 | `room:read` | 查看房间列表和详情 |
 | `room:update` | 修改房间 |
 | `room:delete` | 删除房间 |
-| `guild:create` | 创建语音服务器 |
-| `guild:read` | 查看语音服务器 |
-| `guild:manage` | 修改语音服务器设置 |
-| `guild:delete` | 删除语音服务器 |
-| `guild:invite` | 管理邀请码 |
-| `guild:kick` | 将成员移出语音服务器 |
-| `guild:role:manage` | 管理语音服务器内角色 |
+| `domain:create` | 创建语音服务器 |
+| `domain:read` | 查看语音服务器 |
+| `domain:manage` | 修改语音服务器设置 |
+| `domain:delete` | 删除语音服务器 |
+| `domain:invite` | 管理邀请码 |
+| `domain:kick` | 将成员移出语音服务器 |
+| `domain:role:manage` | 管理语音服务器内角色 |
 | `user:read` | 查看用户 |
 | `user:update` | 编辑用户 |
 | `user:delete` | 删除用户 |
@@ -886,7 +887,7 @@ var BotScopedPermissions = []string{
 | Role | Permissions |
 |------|------------|
 | `admin` | All platform permissions |
-| `user` | `room:create`, `room:read`, `guild:create`, `user:read`, `role:read`, `message:send`, `message:read` |
+| `user` | `room:create`, `room:read`, `domain:create`, `user:read`, `role:read`, `message:send`, `message:read` |
 | `ban` | (none — intercepted by `BanCheck()`) |
 
 ### Default admin account
@@ -904,7 +905,7 @@ First boot seeds user `admin` / `admin123` when missing. Login returns `need_cha
 | Model | Table | Key Fields |
 |-------|-------|------------|
 | `User` | `users` | ID, UUID (auto-gen), Name, DisplayName, Avatar, Email, EmailVerified, IsBot, Password (`json:"-"`), Role, TokenVersion, timestamps |
-| `Room` | `room` | ID, UUID (auto-gen), Name, Password, Description, Limit, AudioOnly, AllowAudience, CreatedBy, GuildUUID, timestamps |
+| `Room` | `room` | ID, UUID (auto-gen), Name, Password, Description, Limit, AudioOnly, AllowAudience, CreatedBy, DomainUUID, timestamps |
 | `Role` | `roles` | ID, Name (seeds: `admin` / `user` / `ban`), timestamps |
 | `Permission` | `permissions` | ID, Code (unique `permcode`), Name, Description, timestamps |
 | `RolePermission` | `role_permissions` | ID, RoleName, PermissionID |
@@ -917,8 +918,8 @@ First boot seeds user `admin` / `admin123` when missing. Login returns `need_cha
 | `StorageConfig` | `storage_configs` | ID, ProviderType (`local`/`s3`), Endpoint, Bucket, Region, AccessKey & SecretKey (hidden), PublicBaseURL, PathPrefix, MaxFileSize, AllowedTypes, timestamps |
 | `SFUConfig` | `sfu_configs` | Provider (PK), per-provider config fields, timestamps |
 | `SFUActiveProvider` | `sfu_active_provider` | ID, Provider |
-| `Guild` | `guilds` | UUID, Name, OwnerUUID, InviteCode, RoomLimit, Public, timestamps |
-| `GuildMember` | `guild_members` | GuildUUID, UserUUID, RoleName, timestamps |
+| `Domain` | `domains` | UUID, Name, OwnerUUID, InviteCode, IsPublic, timestamps |
+| `DomainMember` | `domain_members` | DomainUUID, UserUUID, RoleName, timestamps |
 | `Message` | `messages` | UUID, RoomID, SenderUUID, Content, Type, EditHistory, ReplyTo, timestamps |
 | `MessageMention` | `message_mentions` | MessageID, UserID, ReadAt |
 | `MessageReaction` | `message_reactions` | MessageID, UserID, Emoji (unique per user+message+emoji) |
@@ -980,7 +981,7 @@ app/web/src/
 │   ├── room.ts         # Room CRUD
 │   ├── sfu.ts          # SFU config + token fetch
 │   ├── ws.ts           # WS ticket
-│   ├── guild.ts        # Guild CRUD + join/leave/kick
+│   ├── domain.ts      # Domain CRUD + join/leave/kick
 │   ├── message.ts      # Message send/edit/delete/react
 │   ├── conversation.ts # Conversation list/messages/mark-read
 │   ├── mute.ts         # Mute create/cancel/status/list
@@ -992,7 +993,7 @@ app/web/src/
 │   └── apikey.ts       # Bot token management
 ├── socket/             # WebSocket client
 │   ├── wsClient.ts     # WebSocket connection manager (reconnect, ACK, fire-and-forget)
-│   ├── events.ts       # Event name constants (30+)
+│   ├── events.ts       # Event name constants (44)
 │   ├── types.ts        # RoomInfo, MemberInfo, MuteEvent, etc.
 │   ├── roomState.ts    # Room list/members state merge helpers
 │   ├── providerReload.ts   # SFU hot-swap handler (disconnect + reload)
@@ -1005,7 +1006,7 @@ app/web/src/
 │   ├── audioDeviceStore.ts  # Audio device enumeration (IndexedDB)
 │   ├── voiceChatStore.ts    # Mute/volume state (IndexedDB)
 │   ├── chatStore.ts    # Chat/conversation state (IndexedDB)
-│   └── guildStore.ts   # Guild state (IndexedDB)
+│   └── domainStore.ts # Domain state (内存 store)
 ├── hooks/              # Reusable SolidJS hooks
 │   ├── media.ts        # Audio device enumeration utility
 │   ├── useBreakpoint.ts
@@ -1020,7 +1021,7 @@ app/web/src/
 │   │   ├── hooks/         # useVoiceSession, useRoomAudioBridge, useRoomSounds
 │   │   ├── services/      # loadSfuClient, sfuSession
 │   │   └── session/       # providers.ts, runVoiceJoin.ts, voiceSessionTypes.ts
-│   ├── guild/             # CreateGuildModal, GuildIcon, InviteShareModal
+│   ├── domain/            # CreateDomainModal, DomainIcon, InviteShareModal
 │   ├── chat/              # chatPage, chatWindow, conversationList, memberSidebar
 │   ├── dashboard/         # Dashboard components
 │   ├── manage/            # Admin management views
