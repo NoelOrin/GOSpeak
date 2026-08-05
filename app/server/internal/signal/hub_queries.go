@@ -3,8 +3,12 @@ package signal
 import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
+	"errors"
 	"fmt"
+	"log"
 	"strings"
+
+	"gorm.io/gorm"
 )
 
 // ─── 公共方法 ───
@@ -78,8 +82,14 @@ func (h *Hub) CheckRoomLimit(domainUUID, roomName string) (bool, uint, int, erro
 	}
 	dbRoom, err := h.roomStore.GetByDomainAndName(domainUUID, roomName)
 	limit := uint(0)
-	if err == nil && dbRoom != nil {
+	switch {
+	case err == nil && dbRoom != nil:
 		limit = dbRoom.Limit
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		// 临时房间：继续用共享元数据兜底，not-found 不是错误。
+	default:
+		// DB 故障时 fail-closed：调用方不得按“无限制”放行。
+		return false, 0, 0, err
 	}
 	if limit == 0 {
 		// 远端临时房间：使用共享元数据中的人数上限
@@ -88,7 +98,7 @@ func (h *Hub) CheckRoomLimit(domainUUID, roomName string) (bool, uint, int, erro
 		}
 	}
 	if limit == 0 {
-		return false, 0, 0, err
+		return false, 0, 0, nil
 	}
 	currentCount := len(h.GetRoomMembersMerged(roomKey(domainUUID, roomName)))
 	return currentCount >= int(limit), limit, currentCount, nil
@@ -191,14 +201,12 @@ func (h *Hub) IsRoomMember(room, identity string) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	if r, ok := h.rooms[room]; ok {
-		roomInitByIdentity(r)
 		return roomLookupIdentity(r, identity) != nil
 	}
 	// 纯逻辑名回退扫描
 	if !strings.Contains(room, ":") {
 		for rk, r := range h.rooms {
 			if _, rn := splitRoomKey(rk); rn == room {
-				roomInitByIdentity(r)
 				return roomLookupIdentity(r, identity) != nil
 			}
 		}
@@ -245,7 +253,12 @@ func (h *Hub) enrichMembers(members []MemberInfo) []MemberInfo {
 			}
 		}
 		if h.muteStore != nil {
-			if muted, _, _ := h.muteStore.IsMutedByIdentity(m.Identity); muted {
+			muted, _, err := h.muteStore.IsMutedByIdentity(m.Identity)
+			if err != nil {
+				// 与 join 的 fail-closed 口径一致：查询失败按禁言展示，避免列表误放行。
+				log.Printf("[Signal] member mute check failed identity=%q err=%v", m.Identity, err)
+				m.IsMuted = true
+			} else if muted {
 				m.IsMuted = true
 			}
 		}

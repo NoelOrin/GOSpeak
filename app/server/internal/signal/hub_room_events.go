@@ -214,6 +214,8 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 	if targetSocketID == "" {
 		return
 	}
+	// 记录短时踢出冷却，禁止被踢者立即重连同一房间。
+	h.blockRejoin(key, req.TargetIdentity)
 	h.clearConnRoomSlot(targetSocketID, key)
 	if targetStream != "" {
 		h.syncStreamDelete(targetStream)

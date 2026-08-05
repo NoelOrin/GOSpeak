@@ -303,7 +303,7 @@ var (
 // registerRoomMembers 在共享 KV 上原子注册本实例成员快照（含新加入成员）。
 // NATS 后端使用 revision CAS 重试；合并时若发现其他实例持有同一 identity
 // （未过期），或合并后人数超过 limit，则拒绝注册，避免跨实例重复身份与超限。
-// Redis 等无 CAS 后端尽力检查后写入。
+// 无 CAS 后端尽力检查后写入。
 func (h *Hub) registerRoomMembers(key string, local []bus.MemberRecord, limit int, checkIdentity string) error {
 	if h.membershipStore == nil {
 		return nil
@@ -383,6 +383,9 @@ func (h *Hub) registerRoomMembers(key string, local []bus.MemberRecord, limit in
 // isMembershipCASConflict 识别 NATS KV 的 revision 不匹配 / 已存在冲突。
 func isMembershipCASConflict(err error) bool {
 	if errors.Is(err, nats.ErrKeyExists) {
+		return true
+	}
+	if errors.Is(err, bus.ErrMembershipConflict) {
 		return true
 	}
 	var apiErr *nats.APIError

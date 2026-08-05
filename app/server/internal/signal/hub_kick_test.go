@@ -28,6 +28,15 @@ func (m *mockUserStore) GetByID(id uint) (*model.User, error) {
 	return nil, modelNotFound(fmt.Sprintf("id=%d", id))
 }
 
+func (m *mockUserStore) GetByUUID(uuid string) (*model.User, error) {
+	for _, u := range m.users {
+		if u != nil && u.UUID == uuid {
+			return u, nil
+		}
+	}
+	return nil, modelNotFound(fmt.Sprintf("uuid=%s", uuid))
+}
+
 type mockPermChecker struct {
 	// role -> set of permissions
 	rolePerms map[string]map[string]bool
@@ -51,11 +60,11 @@ func (e errString) Error() string { return string(e) }
 func seedKickRoom(hub *Hub, room string, members map[string]string) {
 	// members: mapped to socketID
 	hub.rooms[room] = &Room{
-		Name:     room,
-		Members:  make(map[string]*MemberInfo),
+		Name:       room,
+		Members:    make(map[string]*MemberInfo),
 		ByIdentity: make(map[string]*MemberInfo),
-		MicMuted: make(map[string]bool),
-		Speaking: make(map[string]bool),
+		MicMuted:   make(map[string]bool),
+		Speaking:   make(map[string]bool),
 	}
 	for sid, identity := range members {
 		m := &MemberInfo{Identity: identity, Name: identity}
@@ -194,5 +203,31 @@ func TestOnRoomKick_ClearsTargetConnSlot(t *testing.T) {
 	hub.mu.RUnlock()
 	if exists {
 		t.Fatal("expected target conn slot removed after kick")
+	}
+}
+
+func TestKickUserFromDomain_KicksAllRooms(t *testing.T) {
+	users := &mockUserStore{users: map[string]*model.User{
+		"alice": {Name: "alice", UUID: "uuid-alice"},
+	}}
+	hub := NewHub(nil, nil, users, nil)
+	hub.fanout = newMockBroadcaster()
+	seedKickRoom(hub, "domain-a:lobby", map[string]string{"a-sock": "alice", "b-sock": "bob"})
+	seedKickRoom(hub, "domain-a:stage", map[string]string{"a-sock2": "alice"})
+	seedKickRoom(hub, "domain-b:lobby", map[string]string{"a-sock3": "alice"})
+
+	hub.KickUserFromDomain("domain-a", "uuid-alice")
+
+	if _, ok := hub.rooms["domain-a:lobby"].Members["a-sock"]; ok {
+		t.Fatal("alice should be kicked from domain-a:lobby")
+	}
+	if _, ok := hub.rooms["domain-a:lobby"].Members["b-sock"]; !ok {
+		t.Fatal("bob should remain in domain-a:lobby")
+	}
+	if _, ok := hub.rooms["domain-a:stage"]; ok {
+		t.Fatal("empty domain-a:stage should be deleted")
+	}
+	if _, ok := hub.rooms["domain-b:lobby"].Members["a-sock3"]; !ok {
+		t.Fatal("alice should remain in domain-b:lobby")
 	}
 }

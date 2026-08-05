@@ -2,6 +2,7 @@ package signal
 
 import (
 	"GOSpeak/internal/cluster"
+	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/ws"
 	"fmt"
 	"log"
@@ -101,9 +102,14 @@ func (h *Hub) HandleClusterCommand(cmd cluster.ControlCommand) error {
 	case cluster.CommandDeleteServer:
 		h.OnDomainDelete(cmd.DomainUUID)
 		return nil
+	case cluster.CommandKickDomain:
+		if userUUID, ok := controlCommandUserUUID(cmd); ok {
+			h.KickUserFromDomain(cmd.DomainUUID, userUUID)
+		}
+		return nil
 	case cluster.CommandMute:
 		if userID, ok := controlCommandUserID(cmd); ok {
-			h.enforceUserMediaMute(userID, true, 0)
+			h.enforceUserMediaMute(userID, true, controlCommandMuteTTLSeconds(cmd))
 		}
 		return nil
 	case cluster.CommandUnmute:
@@ -155,6 +161,7 @@ func (h *Hub) KickFromRoom(domainUUID, room, targetIdentity string) {
 		return
 	}
 
+	h.blockRejoin(key, targetIdentity)
 	h.clearConnRoomSlot(targetSocketID, key)
 	if targetStream != "" {
 		h.syncStreamDelete(targetStream)
@@ -210,6 +217,126 @@ func (h *Hub) KickFromRoom(domainUUID, room, targetIdentity string) {
 		return
 	}
 	h.broadcastRoomUpdatedLocal(key)
+}
+
+// KickUserFromDomain 按用户 UUID 解析身份后，将该用户从 Domain 下全部在线房间踢出。
+// 同时清理 Fanout、SFU 媒体流与共享成员状态。
+func (h *Hub) KickUserFromDomain(domainUUID, userUUID string) {
+	if domainUUID == "" || userUUID == "" {
+		return
+	}
+	if h.userStore == nil {
+		return
+	}
+	user, err := h.userStore.GetByUUID(userUUID)
+	if err != nil || user == nil {
+		log.Printf("[Signal] domain kick resolve failed domain=%s user=%s err=%v", domainUUID, userUUID, err)
+		return
+	}
+	h.kickIdentityFromDomain(domainUUID, user.Name)
+}
+
+func (h *Hub) kickIdentityFromDomain(domainUUID, identity string) {
+	if domainUUID == "" || identity == "" {
+		return
+	}
+	prefix := domainUUID + ":"
+	type cleanup struct {
+		key         string
+		identity    string
+		stream      string
+		socketID    string
+		wasSpeaking bool
+		roomDeleted bool
+		targetConn  ws.ClientMessenger
+	}
+	var cleanups []cleanup
+	h.mu.Lock()
+	for key, room := range h.rooms {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		for sid, m := range room.Members {
+			if m == nil || m.Identity != identity {
+				continue
+			}
+			stream := m.Stream
+			wasSpeaking := room.Speaking[identity]
+			h.unregisterStreamLocked(key, identity, stream)
+			roomDelMember(room, sid)
+			delete(room.Speaking, identity)
+			delete(room.MicMuted, identity)
+			delete(h.connSlots, sid)
+			roomDeleted := h.deleteRoomIfEmptyLocked(key)
+			var targetConn ws.ClientMessenger
+			if h.fanout != nil {
+				h.fanout.Leave(key, sid)
+				if client := h.fanout.GetClient(sid); client != nil {
+					if typed, ok := client.(*ws.Client); !ok || typed != nil {
+						targetConn = client
+					}
+				}
+			}
+			cleanups = append(cleanups, cleanup{
+				key: key, identity: identity, stream: stream, socketID: sid,
+				wasSpeaking: wasSpeaking, roomDeleted: roomDeleted, targetConn: targetConn,
+			})
+			break
+		}
+	}
+	h.mu.Unlock()
+	if len(cleanups) == 0 {
+		return
+	}
+
+	closed := make(map[string]struct{}, len(cleanups))
+	for _, c := range cleanups {
+		h.clearConnRoomSlot(c.socketID, c.key)
+		if c.targetConn != nil {
+			closed[c.targetConn.ID()] = struct{}{}
+		}
+	}
+
+	for _, c := range cleanups {
+		domain, roomName := splitRoomKey(c.key)
+		enforcement := h.removeParticipantSafe(c.key, c.identity)
+		if c.targetConn != nil {
+			c.targetConn.Send(map[string]interface{}{"event": EventRoomKicked, "data": map[string]interface{}{
+				"room": roomName, "domain_uuid": domain, "targetIdentity": c.identity, "enforcement": enforcement,
+			}})
+		}
+		h.publishRoom(c.key, EventRoomKicked, map[string]interface{}{
+			"room": roomName, "domain_uuid": domain, "targetIdentity": c.identity, "enforcement": enforcement,
+		})
+		h.publishRoom(c.key, EventMemberLeft, map[string]interface{}{
+			"room": roomName, "domain_uuid": domain, "identity": c.identity, "id": c.socketID, "enforcement": enforcement,
+		})
+		h.syncRoomToStore(c.key)
+		if c.stream != "" {
+			h.syncStreamDelete(c.stream)
+		}
+		if h.participantCleanup != nil {
+			h.participantCleanup.OnParticipantLeft(c.key, c.identity)
+		}
+		if c.roomDeleted {
+			h.deleteRoomSafe(c.key)
+			h.broadcastRoomList(domain)
+		} else {
+			h.broadcastRoomUpdatedLocal(c.key)
+			if c.wasSpeaking {
+				h.broadcastActiveSpeakers(domain, roomName)
+			}
+		}
+	}
+
+	for _, c := range cleanups {
+		if c.targetConn != nil {
+			if _, ok := closed[c.targetConn.ID()]; ok {
+				delete(closed, c.targetConn.ID())
+				c.targetConn.Close()
+			}
+		}
+	}
 }
 
 // DeleteRoomByDomainName 删除指定 Domain 下的单个信令房间，并清理 SFU 与共享状态。
@@ -280,6 +407,40 @@ func controlCommandUserID(cmd cluster.ControlCommand) (uint, bool) {
 		return v, true
 	}
 	return 0, false
+}
+
+// controlCommandMuteTTLSeconds 从集群命令透传原始禁言时长，避免 Agora 等 provider
+// 在 ttl<=0 时落到默认 24h，导致短时禁言到期后无法自行恢复。
+func controlCommandMuteTTLSeconds(cmd cluster.ControlCommand) int {
+	if cmd.Payload == nil {
+		return 0
+	}
+	if permanent, _ := cmd.Payload["permanent"].(bool); permanent {
+		return sfu.PermanentMuteTTLSeconds
+	}
+	switch v := cmd.Payload["duration"].(type) {
+	case float64:
+		if v > 0 {
+			return int(v)
+		}
+	case int:
+		if v > 0 {
+			return v
+		}
+	case int64:
+		if v > 0 {
+			return int(v)
+		}
+	}
+	return 0
+}
+
+func controlCommandUserUUID(cmd cluster.ControlCommand) (string, bool) {
+	if cmd.Payload == nil {
+		return "", false
+	}
+	v, ok := cmd.Payload["user_uuid"].(string)
+	return v, ok && v != ""
 }
 
 // 当前仅对 sfu:provider-changed 做本机房间清理；其余事件已由 EventBus 投递到本地 WebSocket。

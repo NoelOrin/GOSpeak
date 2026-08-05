@@ -65,6 +65,10 @@ func (m *blockingUserStore) GetByID(id uint) (*model.User, error) {
 	return nil, modelNotFound("id")
 }
 
+func (m *blockingUserStore) GetByUUID(uuid string) (*model.User, error) {
+	return nil, modelNotFound("uuid")
+}
+
 // ─── OnMemberSpeaking mute checks ───
 
 func TestHub_OnMemberSpeaking_MutedIgnored(t *testing.T) {

@@ -10,13 +10,13 @@ import (
 )
 
 type capsProvider struct {
-	caps     sfu.Capabilities
-	kickErr  error
-	muteErr  error
-	kicked   []string
-	muted    []string
-	ttlSeen  int
-	timed    bool
+	caps    sfu.Capabilities
+	kickErr error
+	muteErr error
+	kicked  []string
+	muted   []string
+	ttlSeen int
+	timed   bool
 }
 
 func (p *capsProvider) ProviderName() string           { return "test" }
@@ -62,6 +62,15 @@ func (s *idUserStore) GetByName(name string) (*model.User, error) {
 func (s *idUserStore) GetByID(id uint) (*model.User, error) {
 	if u, ok := s.users[id]; ok {
 		return u, nil
+	}
+	return nil, errors.New("not found")
+}
+
+func (s *idUserStore) GetByUUID(uuid string) (*model.User, error) {
+	for _, u := range s.users {
+		if u != nil && u.UUID == uuid {
+			return u, nil
+		}
 	}
 	return nil, errors.New("not found")
 }
