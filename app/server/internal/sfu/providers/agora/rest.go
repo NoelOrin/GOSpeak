@@ -17,6 +17,7 @@ type RESTClient struct {
 	appID          string
 	customerID     string
 	customerSecret string
+	baseURL        string
 	client         *http.Client
 }
 
@@ -83,13 +84,14 @@ func NewRESTClient(appID, customerID, customerSecret string) *RESTClient {
 		appID:          appID,
 		customerID:     customerID,
 		customerSecret: customerSecret,
+		baseURL:        "https://api.agora.io",
 		client:         &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
 func (c *RESTClient) ListRooms() ([]string, error) {
 	var result channelListResponse
-	if err := c.doJSON(http.MethodGet, fmt.Sprintf("https://api.agora.io/dev/v1/channel/%s", c.appID), nil, &result); err != nil {
+	if err := c.doJSON(http.MethodGet, fmt.Sprintf("/dev/v1/channel/%s", c.appID), nil, &result); err != nil {
 		return nil, fmt.Errorf("agora list rooms: %w", err)
 	}
 	return result.Data.Channels, nil
@@ -97,7 +99,7 @@ func (c *RESTClient) ListRooms() ([]string, error) {
 
 func (c *RESTClient) GetChannelUsers(channelName string) ([]string, error) {
 	var result channelUserResponse
-	endpoint := fmt.Sprintf("https://api.agora.io/dev/v1/channel/user/%s/%s", c.appID, url.PathEscape(channelName))
+	endpoint := fmt.Sprintf("/dev/v1/channel/user/%s/%s", c.appID, url.PathEscape(channelName))
 	if err := c.doJSON(http.MethodGet, endpoint, nil, &result); err != nil {
 		return nil, fmt.Errorf("agora get channel users: %w", err)
 	}
@@ -105,7 +107,7 @@ func (c *RESTClient) GetChannelUsers(channelName string) ([]string, error) {
 }
 
 func (c *RESTClient) DeleteChannel(channelName string) error {
-	endpoint := fmt.Sprintf("https://api.agora.io/dev/v1/channel/%s/%s", c.appID, url.PathEscape(channelName))
+	endpoint := fmt.Sprintf("/dev/v1/channel/%s/%s", c.appID, url.PathEscape(channelName))
 	if err := c.doJSON(http.MethodDelete, endpoint, nil, nil); err != nil {
 		return fmt.Errorf("agora delete channel: %w", err)
 	}
@@ -129,7 +131,7 @@ func (c *RESTClient) CreateKickingRule(channelName, identity string, ttlSeconds 
 		Privileges:    privileges,
 	}
 	var result kickingRuleResponse
-	if err := c.doJSON(http.MethodPost, "https://api.agora.io/dev/v1/kicking-rule", body, &result); err != nil {
+	if err := c.doJSON(http.MethodPost, "/dev/v1/kicking-rule", body, &result); err != nil {
 		return 0, fmt.Errorf("agora create kicking rule: %w", err)
 	}
 	if result.ID != 0 {
@@ -148,7 +150,7 @@ func (c *RESTClient) DeleteKickingRule(ruleID int) error {
 	}
 	// Agora docs: DELETE with JSON body {"appid","id"} is accepted by some versions;
 	// path form also exists. Prefer path, fall back to body delete on failure.
-	endpoint := fmt.Sprintf("https://api.agora.io/dev/v1/kicking-rule/%d", ruleID)
+	endpoint := fmt.Sprintf("/dev/v1/kicking-rule/%d", ruleID)
 	if err := c.doJSON(http.MethodDelete, endpoint, nil, nil); err == nil {
 		return nil
 	}
@@ -156,7 +158,7 @@ func (c *RESTClient) DeleteKickingRule(ruleID int) error {
 		"appid": c.appID,
 		"id":    ruleID,
 	}
-	if err := c.doJSON(http.MethodDelete, "https://api.agora.io/dev/v1/kicking-rule", body, nil); err != nil {
+	if err := c.doJSON(http.MethodDelete, "/dev/v1/kicking-rule", body, nil); err != nil {
 		return fmt.Errorf("agora delete kicking rule: %w", err)
 	}
 	return nil
@@ -165,7 +167,7 @@ func (c *RESTClient) DeleteKickingRule(ruleID int) error {
 // FindKickingRuleIDs lists rule ids matching channel+identity (best-effort recovery).
 func (c *RESTClient) FindKickingRuleIDs(channelName, identity string) ([]int, error) {
 	var result kickingRuleListResponse
-	endpoint := fmt.Sprintf("https://api.agora.io/dev/v1/kicking-rule?appid=%s", url.QueryEscape(c.appID))
+	endpoint := fmt.Sprintf("/dev/v1/kicking-rule?appid=%s", url.QueryEscape(c.appID))
 	if err := c.doJSON(http.MethodGet, endpoint, nil, &result); err != nil {
 		return nil, fmt.Errorf("agora list kicking rules: %w", err)
 	}
@@ -213,7 +215,7 @@ func (c *RESTClient) doJSON(method, endpoint string, payload interface{}, out in
 		reader = bytes.NewReader(raw)
 	}
 
-	req, err := http.NewRequest(method, endpoint, reader)
+	req, err := http.NewRequest(method, c.baseURL+endpoint, reader)
 	if err != nil {
 		return err
 	}

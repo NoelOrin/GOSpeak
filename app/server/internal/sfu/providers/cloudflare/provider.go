@@ -50,6 +50,14 @@ func (s *Service) SetRoomRegistry(r pkg.RoomRegistry) {
 	s.registry = r
 }
 
+// Close 释放 HTTP 空闲连接。
+func (s *Service) Close() error {
+	if s.client != nil && s.client.httpClient != nil {
+		s.client.httpClient.CloseIdleConnections()
+	}
+	return nil
+}
+
 func (s *Service) GenerateToken(room, identity string) (string, error) {
 	return s.GenerateTokenForUser(room, identity, "")
 }

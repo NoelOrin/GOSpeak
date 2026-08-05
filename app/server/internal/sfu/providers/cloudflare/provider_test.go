@@ -6,10 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/sfu"
 )
 
 func TestService_GenerateToken(t *testing.T) {
@@ -257,5 +259,86 @@ func TestService_ClientInfo(t *testing.T) {
 	}
 	if info["stunUrl"] != "stun.cloudflare.com:3478" {
 		t.Fatalf("expected stun url, got %v", info["stunUrl"])
+	}
+}
+
+func TestService_Capabilities(t *testing.T) {
+	caps := (&Service{}).Capabilities()
+	if !reflect.DeepEqual(caps, sfu.CapabilitiesFor("cloudflare")) {
+		t.Fatalf("Capabilities() = %+v, want %+v", caps, sfu.CapabilitiesFor("cloudflare"))
+	}
+}
+
+func TestService_RemoveParticipant_DeleteError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/apps/test-app/sessions/sess-user1" && r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	svc := &Service{
+		appID: "test-app",
+		client: &Client{
+			appID:      "test-app",
+			appSecret:  "test-secret",
+			baseURL:    server.URL,
+			httpClient: http.DefaultClient,
+		},
+		sessions: map[string]map[string]sessionMeta{
+			"room1": {"user1": {sessionID: "sess-user1"}},
+		},
+	}
+	err := svc.RemoveParticipant("room1", "user1")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.SFU_ERROR {
+		t.Fatalf("expected SFU_ERROR, got %v", err)
+	}
+	if _, ok := svc.getSession("room1", "user1"); !ok {
+		t.Fatal("session should remain after failed delete")
+	}
+}
+
+func TestService_DeleteRoom_PartialError(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Fatalf("method = %s, want DELETE", r.Method)
+		}
+		callCount++
+		if r.URL.Path == "/apps/test-app/sessions/sess-1" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	svc := &Service{
+		appID: "test-app",
+		client: &Client{
+			appID:      "test-app",
+			appSecret:  "test-secret",
+			baseURL:    server.URL,
+			httpClient: http.DefaultClient,
+		},
+		sessions: map[string]map[string]sessionMeta{
+			"room1": {
+				"alice": {sessionID: "sess-1"},
+				"bob":   {sessionID: "sess-2"},
+			},
+		},
+	}
+	err := svc.DeleteRoom("room1")
+	if err == nil {
+		t.Fatal("expected partial failure error")
+	}
+	if callCount != 2 {
+		t.Fatalf("expected 2 delete calls, got %d", callCount)
 	}
 }

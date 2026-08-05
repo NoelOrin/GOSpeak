@@ -45,6 +45,14 @@ func NewService(cfg *config.Config) *Service {
 	}
 }
 
+// Close 释放 HTTP 空闲连接。
+func (s *Service) Close() error {
+	if s.client != nil && s.client.http != nil {
+		s.client.http.CloseIdleConnections()
+	}
+	return nil
+}
+
 func (s *Service) GenerateToken(room, identity string) (string, error) {
 	return GenerateToken(room, identity, s.secret)
 }

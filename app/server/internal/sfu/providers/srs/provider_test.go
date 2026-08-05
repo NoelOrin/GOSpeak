@@ -2,6 +2,7 @@ package srs
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -10,6 +11,8 @@ import (
 	"testing"
 
 	"GOSpeak/internal/config"
+	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/sfu"
 )
 
 // stubRegistry 模拟 pkg.RoomRegistry 用于 SRS provider 测试。
@@ -326,7 +329,6 @@ func TestStreamInfo_WithSecretSucceeds(t *testing.T) {
 	}
 }
 
-
 func TestListParticipants_WithRegistry(t *testing.T) {
 	ts := newSRSTestServer()
 	defer ts.close()
@@ -406,7 +408,6 @@ func TestListRooms_MemberCount(t *testing.T) {
 	}
 }
 
-
 func TestKickByStreams_UsesNameNotInternalStreamID(t *testing.T) {
 	ts := newSRSTestServer()
 	defer ts.close()
@@ -428,7 +429,6 @@ func TestKickByStreams_UsesNameNotInternalStreamID(t *testing.T) {
 	}
 }
 
-
 func TestMuteParticipant_UnmuteNoop(t *testing.T) {
 	svc := &Service{client: NewClient("http://127.0.0.1:9")}
 	if err := svc.MuteParticipant("room", "user", "", false); err != nil {
@@ -444,4 +444,62 @@ func TestCapabilities_ServerMuteEnabled(t *testing.T) {
 	if caps.MuteLevel != "degraded" {
 		t.Fatalf("srs MuteLevel=%q, want degraded", caps.MuteLevel)
 	}
+	if !reflect.DeepEqual(caps, sfu.CapabilitiesFor("srs")) {
+		t.Fatalf("Capabilities() = %+v, want %+v", caps, sfu.CapabilitiesFor("srs"))
+	}
+}
+
+func assertSRSAppErrorCode(t *testing.T, err error, want pkg.ErrCode) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected error with code %d, got nil", want)
+	}
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("expected *pkg.AppError, got %T: %v", err, err)
+	}
+	if appErr.Code != want {
+		t.Fatalf("error code = %d, want %d: %v", appErr.Code, want, err)
+	}
+}
+
+func TestMuteParticipant_KickError(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.close()
+	stream := GenerateStreamName("room-r", "alice")
+	ts.mu.Lock()
+	ts.clients = []clientsResponseClient{{ID: "cid-1", Stream: stream}}
+	ts.kickFail["cid-1"] = true
+	ts.mu.Unlock()
+
+	s := newServiceWithURL(ts.srv.URL)
+	s.registry = &stubRegistry{streams: map[string][]string{"room-r": {stream}}}
+	assertSRSAppErrorCode(t, s.MuteParticipant("room-r", "alice", "", true), pkg.SFU_ERROR)
+}
+
+func TestRemoveParticipant_KickError(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.close()
+	stream := GenerateStreamName("room-r", "alice")
+	ts.mu.Lock()
+	ts.clients = []clientsResponseClient{{ID: "cid-1", Stream: stream}}
+	ts.kickFail["cid-1"] = true
+	ts.mu.Unlock()
+
+	s := newServiceWithURL(ts.srv.URL)
+	s.registry = &stubRegistry{streams: map[string][]string{"room-r": {stream}}}
+	assertSRSAppErrorCode(t, s.RemoveParticipant("room-r", "alice"), pkg.SFU_ERROR)
+}
+
+func TestDeleteRoom_StreamAPIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete && r.URL.Path == "/api/v1/streams/room-x" {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"code": 2049})
+			return
+		}
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+	s := newServiceWithURL(srv.URL)
+	assertSRSAppErrorCode(t, s.DeleteRoom("room-x"), pkg.SFU_ERROR)
 }

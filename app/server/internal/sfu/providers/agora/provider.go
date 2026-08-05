@@ -23,6 +23,7 @@ type Service struct {
 
 	// muteRules is multi-instance rule id cache (memory / redis / nats KV).
 	muteRules sfu.MuteRuleStore
+	rest      *RESTClient
 }
 
 func NewService(cfg *config.Config) *Service {
@@ -33,6 +34,7 @@ func NewService(cfg *config.Config) *Service {
 		customerID:     cfg.AgoraCustomerID,
 		customerSecret: cfg.AgoraCustomerSecret,
 		muteRules:      sfu.NewMemoryMuteRuleStore(),
+		rest:           NewRESTClient(cfg.AgoraAppID, cfg.AgoraCustomerID, cfg.AgoraCustomerSecret),
 	}
 }
 
@@ -53,6 +55,9 @@ func (s *Service) ProviderName() string { return "agora" }
 func (s *Service) Capabilities() sfu.Capabilities {
 	return sfu.CapabilitiesFor("agora")
 }
+
+// Close 释放 provider 资源；Agora REST client 为每次调用创建，无长期句柄。
+func (s *Service) Close() error { return nil }
 
 func (s *Service) GenerateToken(room, identity string) (string, error) {
 	if s.appID == "" || s.appCertificate == "" {
@@ -163,6 +168,9 @@ func (s *Service) ClientInfo() map[string]interface{} {
 }
 
 func (s *Service) restClient() *RESTClient {
+	if s.rest != nil {
+		return s.rest
+	}
 	return NewRESTClient(s.appID, s.customerID, s.customerSecret)
 }
 

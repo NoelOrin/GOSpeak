@@ -50,10 +50,14 @@ func (s *SFUService) GetJoinToken(domainUUID, room, identity, userUUID, password
 		return nil, pkg.NewAppError(pkg.FORBIDDEN, "not a member of this domain")
 	}
 	if s.policy != nil {
-		if muted, _ := s.policy.IsMuted(identity); muted {
+		if muted, err := s.policy.IsMuted(identity); err != nil {
+			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "mute check failed")
+		} else if muted {
 			return nil, pkg.NewAppError(pkg.USER_MUTED, "user is muted")
 		}
-		if full, limit, count, _ := s.policy.CheckRoomLimit(domainUUID, room); full {
+		if full, limit, count, err := s.policy.CheckRoomLimit(domainUUID, room); err != nil {
+			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "room limit check failed")
+		} else if full {
 			return nil, pkg.NewAppError(pkg.FORBIDDEN, fmt.Sprintf("room is full (%d/%d)", count, limit))
 		}
 		if ok, err := s.policy.CheckRoomPassword(domainUUID, room, password); !ok {

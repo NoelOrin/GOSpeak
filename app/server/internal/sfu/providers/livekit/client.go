@@ -31,6 +31,9 @@ func NewService(cfg *config.Config) *Service {
 	return s
 }
 
+// Close 释放 provider 资源；LiveKit client 当前无显式连接句柄。
+func (s *Service) Close() error { return nil }
+
 func (s *Service) GenerateToken(room, identity string) (string, error) {
 	at := auth.NewAccessToken(s.apiKey, s.apiSecret)
 	grant := &auth.VideoGrant{
@@ -125,20 +128,26 @@ func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) e
 	if err != nil {
 		return pkg.NewAppError(pkg.SFU_ERROR, err.Error())
 	}
+	found := false
 	for _, p := range resp.Participants {
-		if p.Identity == identity {
-			for _, track := range p.Tracks {
-				if _, err := s.client.MutePublishedTrack(context.Background(), &livekit.MuteRoomTrackRequest{
-					Room:     room,
-					Identity: identity,
-					TrackSid: track.Sid,
-					Muted:    muted,
-				}); err != nil {
-					return pkg.NewAppError(pkg.SFU_ERROR, err.Error())
-				}
-			}
-			break
+		if p.Identity != identity {
+			continue
 		}
+		found = true
+		for _, track := range p.Tracks {
+			if _, err := s.client.MutePublishedTrack(context.Background(), &livekit.MuteRoomTrackRequest{
+				Room:     room,
+				Identity: identity,
+				TrackSid: track.Sid,
+				Muted:    muted,
+			}); err != nil {
+				return pkg.NewAppError(pkg.SFU_ERROR, err.Error())
+			}
+		}
+		break
+	}
+	if !found {
+		return pkg.NewAppError(pkg.SFU_ERROR, "livekit participant not found")
 	}
 	return nil
 }

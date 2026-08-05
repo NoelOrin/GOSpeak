@@ -36,6 +36,14 @@ func NewService(cfg *config.Config) *Service {
 	}
 }
 
+// Close 释放 bridge HTTP 空闲连接。
+func (s *Service) Close() error {
+	if s.Bridge != nil && s.Bridge.client != nil {
+		s.Bridge.client.CloseIdleConnections()
+	}
+	return nil
+}
+
 func (s *Service) GenerateToken(room, identity string) (string, error) {
 	return fmt.Sprintf("%s:%s", room, identity), nil
 }

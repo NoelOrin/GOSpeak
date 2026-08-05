@@ -53,7 +53,7 @@ func CapabilitiesFor(provider string) Capabilities {
 
 // AllProviderCapabilities returns capability matrices for every known provider.
 func AllProviderCapabilities() map[string]Capabilities {
-	names := []string{"livekit", "agora", "srs", "cloudflare"}
+	names := []string{"livekit", "agora", "srs", "cloudflare", "daily", "mediasoup"}
 	out := make(map[string]Capabilities, len(names))
 	for _, name := range names {
 		out[name] = CapabilitiesFor(name)

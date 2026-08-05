@@ -28,6 +28,12 @@ type DynamicProvider struct {
 	cachedProvider    sfu.Provider
 }
 
+// providerCloser 是可选资源释放接口；provider 重建时旧实例若实现则关闭，
+// 避免 gRPC/HTTP client 在频繁热切换中累积。
+type providerCloser interface {
+	Close() error
+}
+
 func NewDynamicProvider(resolve ConfigResolver) *DynamicProvider {
 	return &DynamicProvider{resolve: resolve}
 }
@@ -240,6 +246,19 @@ func (p *DynamicProvider) ClientInfo() map[string]interface{} {
 	return map[string]interface{}{}
 }
 
+// Close 释放当前缓存的 provider 资源（若实现 Close）。
+func (p *DynamicProvider) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cachedProvider == nil {
+		return nil
+	}
+	if closer, ok := p.cachedProvider.(providerCloser); ok {
+		return closer.Close()
+	}
+	return nil
+}
+
 func (p *DynamicProvider) current() (sfu.Provider, error) {
 	cfg, err := p.resolve()
 	if err != nil {
@@ -263,6 +282,9 @@ func (p *DynamicProvider) current() (sfu.Provider, error) {
 	provider, err := NewProvider(cfg)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.SFU_ERROR, err.Error())
+	}
+	if old, ok := p.cachedProvider.(providerCloser); ok && old != nil {
+		_ = old.Close()
 	}
 	if p.roomRegistry != nil {
 		if rs, ok := provider.(pkg.RoomRegistrySetter); ok {
