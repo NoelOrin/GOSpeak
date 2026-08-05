@@ -76,6 +76,15 @@ func (s *UserService) GetByName(name string) (*model.User, error) {
 	return user, nil
 }
 
+// GetByNames 批量按用户名查询用户，返回 name -> user 映射，未命中直接省略。
+func (s *UserService) GetByNames(names []string) (map[string]*model.User, error) {
+	users, err := s.userRepo.GetByNames(names)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return users, nil
+}
+
 // List 分页查询用户列表，page 从 1 开始，pageSize 最大 100。
 func (s *UserService) List(page, pageSize int, excludeBots bool, keyword string) ([]model.User, int64, error) {
 	if page < 1 {

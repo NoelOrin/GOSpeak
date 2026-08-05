@@ -2,8 +2,8 @@ package service
 
 import (
 	"errors"
-	"time"
 	"sync"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -22,8 +22,8 @@ type MuteService struct {
 	userRepo *repository.UserRepository
 	// onExpired 在临时禁言过期且 DB 记录被删除后触发完整 unmute 流程。
 	onExpired MuteExpiryHandler
-	expiryMu sync.Mutex
-	expiring map[uint]bool
+	expiryMu  sync.Mutex
+	expiring  map[uint]bool
 }
 
 // MuteExpiryHandler 处理临时禁言到期后的业务通知（广播 unmute + SFU 恢复）。
@@ -78,6 +78,15 @@ func (s *MuteService) IsMutedByIdentity(identity string) (bool, *model.Mute, err
 		return false, nil, pkg.NewAppError(pkg.INTERNAL_ERROR)
 	}
 	return s.IsMuted(user.ID)
+}
+
+// IsMutedBatch 按用户名批量检查生效禁言，返回 identity -> muted 映射。
+func (s *MuteService) IsMutedBatch(identities []string) (map[string]bool, error) {
+	muted, err := s.muteRepo.IsMutedBatch(identities)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return muted, nil
 }
 
 // IsMutedByUUID 通过 UUID 检查禁言状态（供 middleware 使用）

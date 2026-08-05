@@ -14,6 +14,8 @@ import (
 
 const maxPendingPublish = 1024
 
+const maxDeliverQueue = 4096
+
 // NATSBusConfig 构造 NATSBus 的参数。
 type NATSBusConfig struct {
 	InstanceID    string
@@ -40,6 +42,8 @@ type NATSBus struct {
 
 	nc *nats.Conn
 
+	deliverCh chan queuedEnvelope
+
 	deliverer atomic.Value // stores Deliverer
 
 	fallbackFromExternal bool
@@ -51,10 +55,20 @@ type NATSBus struct {
 	closed atomic.Bool
 	done   chan struct{}
 
-	droppedPublish atomic.Uint64 // 断线期间丢弃的跨实例发布计数
+	droppedPublish atomic.Uint64 // 发布/投递路径上的损失/告警事件计数（断线、取消、队列满、重放失败）
 
+	deliverMu sync.Mutex // 保护 deliverCh 入队与 Close 关闭
 	pendingMu sync.Mutex
 	pending   []pendingEnvelope
+}
+
+// queuedEnvelope 是 onMessage 解包后等待 worker 投递的事件。
+type queuedEnvelope struct {
+	scope   string
+	room    string
+	event   string
+	payload interface{}
+	hook    func(event string, payload interface{})
 }
 
 // pendingEnvelope 是 NATS 断线期间暂存的事件，重连后重放。
@@ -124,7 +138,13 @@ func NewNATSBus(cfg NATSBusConfig) (*NATSBus, error) {
 	}
 	b.nc = nc
 
+	b.startDeliverWorkers()
+
 	if err := b.subscribeAll(); err != nil {
+		b.closed.Store(true)
+		b.deliverMu.Lock()
+		close(b.deliverCh)
+		b.deliverMu.Unlock()
 		nc.Close()
 		return nil, err
 	}
@@ -139,7 +159,10 @@ func (b *NATSBus) IsConnected() bool {
 
 func (b *NATSBus) InstanceID() string { return b.instanceID }
 
-// DroppedPublishCount 返回因 NATS 断线而未发出的跨实例发布次数。
+// DroppedPublishCount 返回发布/投递路径上的损失/告警事件计数。
+// 统计范围包括：NATS 断线未发出、ctx 已取消发布、本地投递队列满、
+// pending 队列满、重放失败。同一事件可能在多个阶段重复计数，
+// 因此该值应视为告警计数，而非精确的未投递事件数。
 func (b *NATSBus) DroppedPublishCount() uint64 {
 	return b.droppedPublish.Load()
 }
@@ -162,34 +185,33 @@ func (b *NATSBus) SetRemoteHook(hook func(event string, payload interface{})) {
 }
 
 func (b *NATSBus) PublishNamespace(ctx context.Context, event string, payload interface{}) error {
-	_ = ctx
 	b.deliverLocal(event, payload)
 	env, err := NewEnvelope(b.instanceID, "namespace", "", event, payload)
 	if err != nil {
 		return err
 	}
-	return b.publish(NamespaceSubject(b.prefix), env)
+	return b.publish(ctx, NamespaceSubject(b.prefix), env)
 }
 
 func (b *NATSBus) PublishRoom(ctx context.Context, room, event string, payload interface{}) error {
-	_ = ctx
 	b.deliverLocalRoom(room, event, payload)
 	env, err := NewEnvelope(b.instanceID, "room", room, event, payload)
 	if err != nil {
 		return err
 	}
-	return b.publish(RoomSubject(b.prefix, room), env)
+	return b.publish(ctx, RoomSubject(b.prefix, room), env)
 }
 
 func (b *NATSBus) PublishInternal(ctx context.Context, event string, payload interface{}) error {
-	_ = ctx
 	env, err := NewEnvelope(b.instanceID, "internal", "", event, payload)
 	if err != nil {
 		return err
 	}
-	return b.publish(InternalSubject(b.prefix), env)
+	return b.publish(ctx, InternalSubject(b.prefix), env)
 }
 
+// Close 关闭 NATS 连接与投递队列后立即返回；worker 会继续消费已入队事件，
+// 可能晚于 Close 完成投递，调用方不应假设 Close 返回后已无投递。
 func (b *NATSBus) Close() error {
 	if !b.closed.CompareAndSwap(false, true) {
 		return nil
@@ -206,8 +228,38 @@ func (b *NATSBus) Close() error {
 	if b.nc != nil {
 		b.nc.Close()
 	}
+	b.deliverMu.Lock()
+	if b.deliverCh != nil {
+		close(b.deliverCh)
+	}
+	b.deliverMu.Unlock()
 	close(b.done)
 	return nil
+}
+
+// startDeliverWorkers 启动 4 个并发消费同一有界队列的 worker。
+// 跨事件投递顺序不保证；RemoteHook 也在 worker 内异步执行，
+// 调用方不应依赖 onMessage 返回前 hook 已完成。
+func (b *NATSBus) startDeliverWorkers() {
+	b.deliverCh = make(chan queuedEnvelope, maxDeliverQueue)
+	for i := 0; i < 4; i++ {
+		go func() {
+			for env := range b.deliverCh {
+				if env.scope != "internal" {
+					if d, ok := b.deliverer.Load().(Deliverer); ok && d != nil {
+						if env.scope == "room" {
+							d.BroadcastToRoom(env.room, env.event, env.payload)
+						} else {
+							d.BroadcastToNamespace(env.event, env.payload)
+						}
+					}
+				}
+				if env.hook != nil {
+					env.hook(env.event, env.payload)
+				}
+			}
+		}()
+	}
 }
 
 func (b *NATSBus) subscribeAll() error {
@@ -241,6 +293,9 @@ func (b *NATSBus) subscribeAll() error {
 }
 
 func (b *NATSBus) onMessage(m *nats.Msg) {
+	if b.closed.Load() {
+		return
+	}
 	var env Envelope
 	if err := json.Unmarshal(m.Data, &env); err != nil {
 		log.Printf("[EventBus] bad envelope: %v", err)
@@ -252,22 +307,29 @@ func (b *NATSBus) onMessage(m *nats.Msg) {
 
 	payload := decodePayload(env.Payload)
 
-	// internal 事件不进 WebSocket，只走 RemoteHook（缓存失效等）。
-	if env.Scope != "internal" {
-		d, ok := b.deliverer.Load().(Deliverer)
-		if ok && d != nil {
-			switch env.Scope {
-			case "room":
-				d.BroadcastToRoom(env.Room, env.Event, payload)
-			default:
-				d.BroadcastToNamespace(env.Event, payload)
+	// 只做解包入队，实际投递由异步 worker 完成，避免阻塞 NATS 回调。
+	b.deliverMu.Lock()
+	if b.closed.Load() {
+		b.deliverMu.Unlock()
+		return
+	}
+	select {
+	case b.deliverCh <- queuedEnvelope{
+		scope:   env.Scope,
+		room:    env.Room,
+		event:   env.Event,
+		payload: payload,
+		hook: func(event string, payload interface{}) {
+			if hook, ok := b.remoteHook.Load().(func(event string, payload interface{})); ok && hook != nil {
+				hook(event, payload)
 			}
-		}
+		},
+	}:
+	default:
+		b.droppedPublish.Add(1)
+		log.Printf("[EventBus] deliver queue full, dropping: %s %s", env.Scope, env.Event)
 	}
-
-	if hook, ok := b.remoteHook.Load().(func(event string, payload interface{})); ok && hook != nil {
-		hook(env.Event, payload)
-	}
+	b.deliverMu.Unlock()
 }
 
 func decodePayload(raw json.RawMessage) interface{} {
@@ -281,10 +343,22 @@ func decodePayload(raw json.RawMessage) interface{} {
 	return payload
 }
 
-func (b *NATSBus) publish(subject string, env Envelope) error {
+func (b *NATSBus) publish(ctx context.Context, subject string, env Envelope) error {
+	// fallback 静默模式优先于 ctx 取消检查：降级实例不发布，取消也不会计数。
+	if b.fallbackFromExternal {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		b.droppedPublish.Add(1)
+		log.Printf("[EventBus] publish canceled: %s %s: %v", env.Scope, env.Event, err)
+		return err
+	}
 	if b.closed.Load() || b.nc == nil || !b.nc.IsConnected() {
-		if b.fallbackFromExternal {
-			return nil
+		// 入口检查之后、入队之前存在竞态窗口，此处为 TOCTOU 兜底，非死代码。
+		if err := ctx.Err(); err != nil {
+			b.droppedPublish.Add(1)
+			log.Printf("[EventBus] publish canceled: %s %s: %v", env.Scope, env.Event, err)
+			return err
 		}
 		b.droppedPublish.Add(1)
 		b.enqueuePending(subject, env)
@@ -323,6 +397,7 @@ func (b *NATSBus) enqueuePending(subject string, env Envelope) {
 	b.pendingMu.Lock()
 	defer b.pendingMu.Unlock()
 	if len(b.pending) >= maxPendingPublish {
+		b.droppedPublish.Add(1)
 		log.Printf("[EventBus] pending publish queue full, dropping: %s %s", env.Scope, env.Event)
 		return
 	}

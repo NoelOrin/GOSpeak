@@ -30,6 +30,21 @@ func (m *mockMuteStore) IsMutedByIdentity(identity string) (bool, *model.Mute, e
 	return m.muted[identity], nil, nil
 }
 
+func (m *mockMuteStore) IsMutedBatch(identities []string) (map[string]bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return nil, m.err
+	}
+	out := make(map[string]bool, len(identities))
+	for _, identity := range identities {
+		if m.muted[identity] {
+			out[identity] = true
+		}
+	}
+	return out, nil
+}
+
 func (m *mockMuteStore) setMuted(identity string, muted bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -59,6 +74,21 @@ func (m *blockingUserStore) GetByName(name string) (*model.User, error) {
 		return nil, modelNotFound(name)
 	}
 	return u, nil
+}
+
+func (m *blockingUserStore) GetByNames(names []string) (map[string]*model.User, error) {
+	select {
+	case m.called <- struct{}{}:
+	default:
+	}
+	<-m.release
+	out := make(map[string]*model.User, len(names))
+	for _, name := range names {
+		if u, ok := m.users[name]; ok {
+			out[name] = u
+		}
+	}
+	return out, nil
 }
 
 func (m *blockingUserStore) GetByID(id uint) (*model.User, error) {

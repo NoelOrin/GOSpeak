@@ -46,6 +46,21 @@ func (r *UserRepository) GetByName(name string) (*model.User, error) {
 	return &user, nil
 }
 
+func (r *UserRepository) GetByNames(names []string) (map[string]*model.User, error) {
+	if len(names) == 0 {
+		return map[string]*model.User{}, nil
+	}
+	var users []model.User
+	if err := r.db.Where("name IN ?", names).Find(&users).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]*model.User, len(users))
+	for i := range users {
+		out[users[i].Name] = &users[i]
+	}
+	return out, nil
+}
+
 func (r *UserRepository) GetByEmail(email string) (*model.User, error) {
 	var user model.User
 	err := r.db.Where("email = ?", email).First(&user).Error

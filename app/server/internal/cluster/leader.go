@@ -53,3 +53,47 @@ func (l *NATSLeaderLock) TryAcquire(_ context.Context, nodeID string) (bool, err
 	}
 	return err == nil, err
 }
+
+// RenewLoop 每 interval 更新锁 TTL；返回 done channel，ctx 取消后退出。
+func (l *NATSLeaderLock) RenewLoop(ctx context.Context, nodeID string, interval time.Duration) <-chan struct{} {
+	// 默认 2s，小于锁 TTL 5s。
+	if interval <= 0 {
+		interval = 2 * time.Second
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				entry, err := l.kv.Get("active")
+				if err != nil || string(entry.Value()) != nodeID {
+					// 锁已丢失：尝试重新抢占
+					_, _ = l.kv.Create("active", []byte(nodeID))
+					continue
+				}
+				_, _ = l.kv.Update("active", []byte(nodeID), entry.Revision())
+			}
+		}
+	}()
+	return done
+}
+
+// Release 显式释放锁；仅当当前持有者是 nodeID 时删除。
+func (l *NATSLeaderLock) Release(nodeID string) error {
+	entry, err := l.kv.Get("active")
+	if err != nil {
+		if errors.Is(err, nats.ErrKeyNotFound) {
+			return nil
+		}
+		return err
+	}
+	if string(entry.Value()) != nodeID {
+		return nil
+	}
+	return l.kv.Delete("active", nats.LastRevision(entry.Revision()))
+}

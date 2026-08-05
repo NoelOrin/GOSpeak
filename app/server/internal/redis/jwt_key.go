@@ -51,6 +51,10 @@ func GetSigningKey() []byte {
 			newKey := randomKey()
 			now := time.Now().Unix()
 			if err := secondaryAuth.SetSigningKey(newKey, now); err != nil {
+				// 并发首启时可能是另一实例抢占成功，先重读 active key。
+				if val, ok, err2 := secondaryAuth.GetSigningKey(); err2 == nil && ok && val != "" {
+					return []byte(val)
+				}
 				fmt.Printf("[AuthKV] failed to store JWT signing key: %v\n", err)
 				return staticKey()
 			}
@@ -115,13 +119,18 @@ func RotateSigningKey() []byte {
 		if !production || secondaryAuth == nil {
 			return staticKey()
 		}
-		if old, ok, err := secondaryAuth.GetSigningKey(); err == nil && ok && old != "" {
+		old := ""
+		if val, ok, err := secondaryAuth.GetSigningKey(); err == nil && ok && val != "" {
+			old = val
 			_ = secondaryAuth.AddHistoryKey(old)
 		}
 		newKey := randomKey()
 		now := time.Now().Unix()
-		if err := secondaryAuth.SetSigningKey(newKey, now); err != nil {
-			fmt.Printf("[AuthKV] JWT signing key rotate failed: %v\n", err)
+		if err := secondaryAuth.UpdateSigningKey(newKey, now); err != nil {
+			fmt.Printf("[AuthKV] JWT signing key rotate failed: %v; keep old key\n", err)
+			if old != "" {
+				return []byte(old)
+			}
 			return staticKey()
 		}
 		_ = secondaryAuth.AddHistoryKey(newKey)

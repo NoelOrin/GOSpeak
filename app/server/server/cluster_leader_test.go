@@ -51,7 +51,7 @@ func TestAcquireAgentLeaderSingleWriter(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ok, err := acquireAgentLeader(ctx, nc, "test", "agent-a")
+	_, ok, err := acquireAgentLeader(ctx, nc, "test", "agent-a")
 	if err != nil {
 		t.Fatalf("first acquire: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestAcquireAgentLeaderSingleWriter(t *testing.T) {
 		t.Fatal("expected first agent to acquire leader lock")
 	}
 
-	ok, err = acquireAgentLeader(ctx, nc, "test", "agent-b")
+	_, ok, err = acquireAgentLeader(ctx, nc, "test", "agent-b")
 	if err != nil {
 		t.Fatalf("second acquire: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestAcquireAgentLeaderSingleWriter(t *testing.T) {
 		t.Fatal("expected second agent to be rejected")
 	}
 
-	ok, err = acquireAgentLeader(ctx, nil, "test", "agent-c")
+	_, ok, err = acquireAgentLeader(ctx, nil, "test", "agent-c")
 	if err != nil || ok {
 		t.Fatalf("nil nats must degrade without error: ok=%v err=%v", ok, err)
 	}

@@ -21,22 +21,23 @@ import (
 const agentLeaderAcquireTimeout = 5 * time.Second
 
 // acquireAgentLeader 尝试通过 NATS JetStream KV 抢占 Agent 主锁。
-func acquireAgentLeader(ctx context.Context, nc *nats.Conn, prefix, instanceID string) (bool, error) {
+func acquireAgentLeader(ctx context.Context, nc *nats.Conn, prefix, instanceID string) (*cluster.NATSLeaderLock, bool, error) {
 	if nc == nil {
-		return false, nil
+		return nil, false, nil
 	}
 	if strings.TrimSpace(prefix) == "" {
 		prefix = "gospeak"
 	}
 	js, err := nc.JetStream()
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
 	lock, err := cluster.OpenLeaderLock(js, prefix)
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
-	return lock.TryAcquire(ctx, instanceID)
+	ok, err := lock.TryAcquire(ctx, instanceID)
+	return lock, ok, err
 }
 
 // startDegradedLocalWorkerRuntime 在主锁不可用时把节点作为本地 worker 数据面运行，

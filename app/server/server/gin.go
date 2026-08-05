@@ -401,11 +401,13 @@ func StartGin(env EnvEnum) {
 
 	var clusterHandler *handler.ClusterHandler
 	var clusterStop func()
+	var agentLeaderLock *cluster.NATSLeaderLock
+	var stopLeaderRenew func()
 	localNodeUUID := ""
 	degradedToWorker := false
 	if cfg.IsAgent() {
 		acquireCtx, cancel := context.WithTimeout(context.Background(), agentLeaderAcquireTimeout)
-		leader, lockErr := acquireAgentLeader(acquireCtx, natsConn, cfg.NATSSubjectPrefix, instanceID)
+		leaderLock, leader, lockErr := acquireAgentLeader(acquireCtx, natsConn, cfg.NATSSubjectPrefix, instanceID)
 		cancel()
 		switch {
 		case lockErr != nil:
@@ -415,6 +417,17 @@ func StartGin(env EnvEnum) {
 			logger.WithComponent("Cluster").Warnf("agent leader lock held by another instance; degraded-to-worker instance=%s role=%s", instanceID, cfg.ClusterRole)
 			degradedToWorker = true
 		default:
+			agentLeaderLock = leaderLock
+			renewCtx, renewCancel := context.WithCancel(context.Background())
+			renewInterval := cfg.ClusterHeartbeatIntervalDuration() / 2
+			if renewInterval > 2*time.Second {
+				renewInterval = 2 * time.Second
+			}
+			renewDone := leaderLock.RenewLoop(renewCtx, instanceID, renewInterval)
+			stopLeaderRenew = func() {
+				renewCancel()
+				<-renewDone
+			}
 			logger.WithComponent("Cluster").Infof("agent leader lock acquired instance=%s role=%s", instanceID, cfg.ClusterRole)
 		}
 	}
@@ -558,6 +571,15 @@ func StartGin(env EnvEnum) {
 		if clusterStop != nil {
 			clusterStop()
 			logger.WithComponent("Cluster").Info("cluster runtime stopped")
+		}
+		if stopLeaderRenew != nil {
+			stopLeaderRenew()
+		}
+		if agentLeaderLock != nil {
+			if err := agentLeaderLock.Release(instanceID); err != nil {
+				logger.WithComponent("Cluster").Warnf("release agent leader lock failed: %v", err)
+			}
+			logger.WithComponent("Cluster").Info("agent leader lock released")
 		}
 
 		// 2) stop membership lease heartbeat, then drain signal fanout

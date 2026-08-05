@@ -27,6 +27,30 @@ func (r *MuteRepository) GetByUserID(userID uint) (*model.Mute, error) {
 	return &mute, err
 }
 
+// IsMutedBatch 按用户名批量查询生效禁言（permanent 或未过期）。
+func (r *MuteRepository) IsMutedBatch(identities []string) (map[string]bool, error) {
+	if len(identities) == 0 {
+		return map[string]bool{}, nil
+	}
+	now := time.Now()
+	var rows []struct {
+		Identity string
+	}
+	err := r.db.Table("mutes").
+		Joins("JOIN users ON users.id = mutes.user_id").
+		Select("users.name AS identity").
+		Where("users.name IN ? AND (mutes.permanent = ? OR mutes.expires_at > ?)", identities, true, now).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		out[row.Identity] = true
+	}
+	return out, nil
+}
+
 // DeleteByUserID 删除用户禁言记录
 func (r *MuteRepository) DeleteByUserID(userID uint) error {
 	result := r.db.Where("user_id = ?", userID).Delete(&model.Mute{})

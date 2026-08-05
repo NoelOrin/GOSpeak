@@ -234,33 +234,48 @@ func (h *Hub) memberSnapshotLocked(roomName string) []MemberInfo {
 
 // enrichMembers 在 h.mu 锁外为成员快照补全用户资料与禁言状态（DB/缓存 IO）。
 // 失败按原逻辑降级：查不到用户时保留成员自身字段，禁言查询失败按未禁言处理。
-
-// enrichMembers 在 h.mu 锁外为成员快照补全用户资料与禁言状态（DB/缓存 IO）。
-// 失败按原逻辑降级：查不到用户时保留成员自身字段，禁言查询失败按未禁言处理。
 func (h *Hub) enrichMembers(members []MemberInfo) []MemberInfo {
-	if members == nil {
-		return nil
+	if len(members) == 0 {
+		return members
 	}
 	out := make([]MemberInfo, len(members))
 	copy(out, members)
+
+	identities := make([]string, 0, len(members))
+	for i := range out {
+		if out[i].Identity != "" {
+			identities = append(identities, out[i].Identity)
+		}
+	}
+
+	users := map[string]*model.User{}
+	if h.userStore != nil {
+		if got, err := h.userStore.GetByNames(identities); err == nil {
+			users = got
+		}
+	}
+	muted := map[string]bool{}
+	if h.muteStore != nil {
+		if got, err := h.muteStore.IsMutedBatch(identities); err == nil {
+			muted = got
+		} else {
+			// fail-closed：查询失败按禁言展示
+			for _, id := range identities {
+				muted[id] = true
+			}
+			log.Printf("[Signal] mute batch check failed: %v", err)
+		}
+	}
+
 	for i := range out {
 		m := &out[i]
-		if h.userStore != nil {
-			if u, err := h.userStore.GetByName(m.Identity); err == nil && u != nil {
-				m.Name = u.Name
-				m.DisplayName = u.DisplayName
-				m.Avatar = u.Avatar
-			}
+		if u := users[m.Identity]; u != nil {
+			m.Name = u.Name
+			m.DisplayName = u.DisplayName
+			m.Avatar = u.Avatar
 		}
-		if h.muteStore != nil {
-			muted, _, err := h.muteStore.IsMutedByIdentity(m.Identity)
-			if err != nil {
-				// 与 join 的 fail-closed 口径一致：查询失败按禁言展示，避免列表误放行。
-				log.Printf("[Signal] member mute check failed identity=%q err=%v", m.Identity, err)
-				m.IsMuted = true
-			} else if muted {
-				m.IsMuted = true
-			}
+		if muted[m.Identity] {
+			m.IsMuted = true
 		}
 	}
 	return out

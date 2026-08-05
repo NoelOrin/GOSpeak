@@ -152,6 +152,7 @@ type roomStore interface {
 // muteStore abstracts mute checking for Hub.
 type muteStore interface {
 	IsMutedByIdentity(identity string) (bool, *model.Mute, error)
+	IsMutedBatch(identities []string) (map[string]bool, error)
 }
 
 // userStore abstracts user lookup for Hub.
@@ -159,6 +160,7 @@ type muteStore interface {
 // userStore abstracts user lookup for Hub.
 type userStore interface {
 	GetByName(name string) (*model.User, error)
+	GetByNames(names []string) (map[string]*model.User, error)
 	GetByID(id uint) (*model.User, error)
 	GetByUUID(uuid string) (*model.User, error)
 }

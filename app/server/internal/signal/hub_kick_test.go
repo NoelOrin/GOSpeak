@@ -19,6 +19,16 @@ func (m *mockUserStore) GetByName(name string) (*model.User, error) {
 	return nil, modelNotFound(name)
 }
 
+func (m *mockUserStore) GetByNames(names []string) (map[string]*model.User, error) {
+	out := make(map[string]*model.User, len(names))
+	for _, name := range names {
+		if u, ok := m.users[name]; ok {
+			out[name] = u
+		}
+	}
+	return out, nil
+}
+
 func (m *mockUserStore) GetByID(id uint) (*model.User, error) {
 	for _, u := range m.users {
 		if u != nil && u.ID == id {

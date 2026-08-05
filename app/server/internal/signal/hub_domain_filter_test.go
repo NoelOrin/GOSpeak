@@ -293,3 +293,111 @@ func TestHub_OnDisconnect_LeavesDomainScope(t *testing.T) {
 		t.Fatal("expected disconnect to leave domain scope")
 	}
 }
+
+type hubBatchCalls struct {
+	GetByName         int
+	GetByNames        int
+	IsMutedByIdentity int
+	IsMutedBatch      int
+}
+
+type batchUserStore struct {
+	users map[string]*model.User
+	calls hubBatchCalls
+}
+
+func (s *batchUserStore) GetByName(name string) (*model.User, error) {
+	s.calls.GetByName++
+	if u, ok := s.users[name]; ok {
+		return u, nil
+	}
+	return nil, modelNotFound(name)
+}
+
+func (s *batchUserStore) GetByNames(names []string) (map[string]*model.User, error) {
+	s.calls.GetByNames++
+	out := make(map[string]*model.User, len(names))
+	for _, name := range names {
+		if u, ok := s.users[name]; ok {
+			out[name] = u
+		}
+	}
+	return out, nil
+}
+
+func (s *batchUserStore) GetByID(id uint) (*model.User, error) {
+	for _, u := range s.users {
+		if u != nil && u.ID == id {
+			return u, nil
+		}
+	}
+	return nil, modelNotFound("id")
+}
+
+func (s *batchUserStore) GetByUUID(uuid string) (*model.User, error) {
+	for _, u := range s.users {
+		if u != nil && u.UUID == uuid {
+			return u, nil
+		}
+	}
+	return nil, modelNotFound("uuid")
+}
+
+type batchMuteStore struct {
+	muted map[string]bool
+	calls hubBatchCalls
+}
+
+func (s *batchMuteStore) IsMutedByIdentity(identity string) (bool, *model.Mute, error) {
+	s.calls.IsMutedByIdentity++
+	return s.muted[identity], nil, nil
+}
+
+func (s *batchMuteStore) IsMutedBatch(identities []string) (map[string]bool, error) {
+	s.calls.IsMutedBatch++
+	out := make(map[string]bool, len(identities))
+	for _, identity := range identities {
+		if s.muted[identity] {
+			out[identity] = true
+		}
+	}
+	return out, nil
+}
+
+func newTestHubWithStores(t *testing.T) *Hub {
+	t.Helper()
+	users := &batchUserStore{users: map[string]*model.User{
+		"alice": {Name: "alice", DisplayName: "Alice", Avatar: "a.png"},
+		"bob":   {Name: "bob", DisplayName: "Bob", Avatar: "b.png"},
+	}}
+	hub := NewHub(nil, &batchMuteStore{muted: map[string]bool{}}, users, allowAllPermChecker{})
+	hub.fanout = newMockBroadcaster()
+	return hub
+}
+
+func testHubBatchCalls(t *testing.T, h *Hub) hubBatchCalls {
+	t.Helper()
+	var calls hubBatchCalls
+	if users, ok := h.userStore.(*batchUserStore); ok {
+		calls.GetByName = users.calls.GetByName
+		calls.GetByNames = users.calls.GetByNames
+	}
+	if mutes, ok := h.muteStore.(*batchMuteStore); ok {
+		calls.IsMutedByIdentity = mutes.calls.IsMutedByIdentity
+		calls.IsMutedBatch = mutes.calls.IsMutedBatch
+	}
+	return calls
+}
+
+func TestEnrichMembers_BatchQueries(t *testing.T) {
+	h := newTestHubWithStores(t)
+	members := []MemberInfo{{Identity: "alice"}, {Identity: "bob"}}
+	got := h.enrichMembers(members)
+	if len(got) != 2 {
+		t.Fatalf("len=%d want 2", len(got))
+	}
+	// 桩内记录批量调用，禁止逐条 GetByName
+	if calls := testHubBatchCalls(t, h); calls.GetByName != 0 || calls.GetByNames != 1 {
+		t.Fatalf("unexpected query pattern: %+v", calls)
+	}
+}

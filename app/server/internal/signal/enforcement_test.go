@@ -59,6 +59,19 @@ func (s *idUserStore) GetByName(name string) (*model.User, error) {
 	}
 	return nil, errors.New("not found")
 }
+
+func (s *idUserStore) GetByNames(names []string) (map[string]*model.User, error) {
+	out := make(map[string]*model.User, len(names))
+	for _, name := range names {
+		for _, u := range s.users {
+			if u != nil && u.Name == name {
+				out[name] = u
+			}
+		}
+	}
+	return out, nil
+}
+
 func (s *idUserStore) GetByID(id uint) (*model.User, error) {
 	if u, ok := s.users[id]; ok {
 		return u, nil
