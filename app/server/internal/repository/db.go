@@ -77,7 +77,8 @@ func InitDB(cfg *config.Config) error {
 		panic(fmt.Sprintf("数据库 Ping 失败 [%s]: %v", dbType, err))
 	}
 
-	if cfg.IsWorker() {
+	// 仅严格 worker 跳过 schema 迁移；默认 all/agent 必须负责建表。
+	if cfg.ClusterRole == model.ClusterRoleWorker {
 		// Worker 数据面不负责 schema 迁移，避免对共享权威库产生写操作。
 		return nil
 	}
@@ -96,6 +97,10 @@ func InitDB(cfg *config.Config) error {
 	}
 
 	if err := autoMigrate(); err != nil {
+		return err
+	}
+
+	if err := migrateMessageAuthorUUID(DB); err != nil {
 		return err
 	}
 

@@ -29,6 +29,7 @@ type MessageDTO struct {
 	UUID           string     `json:"uuid"`
 	RoomUUID       string     `json:"room_uuid"`
 	AuthorID       string     `json:"author_id"`
+	AuthorUUID     string     `json:"author_uuid"`
 	AuthorName     string     `json:"author_name"`
 	AuthorAvatar   string     `json:"author_avatar"`
 	Content        string     `json:"content"`
@@ -240,6 +241,7 @@ func (s *MessageService) Send(roomUUID string, actor MessageActor, content, repl
 		UUID:        msgUUID,
 		RoomUUID:    roomUUID,
 		AuthorID:    actor.Identity,
+		AuthorUUID:  actor.UserUUID,
 		Content:     content,
 		ReplyTo:     replyTo,
 		Mentions:    mentions,
@@ -248,9 +250,14 @@ func (s *MessageService) Send(roomUUID string, actor MessageActor, content, repl
 		ClientNonce: clientNonce,
 	}
 
-	// 1) broadcast first (fire-and-forget; bus nil or error is acceptable)
+	// 1) broadcast first；广播失败时立即同步落库，避免消息仅存在于易失广播面。
 	if s.bus != nil {
-		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:created", dto)
+		if err := s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:created", dto); err != nil {
+			if perr := s.persistMessageSync(msgUUID, roomUUID, actor.Identity, actor.UserUUID, content, replyTo, mentions, now); perr != nil {
+				return nil, perr
+			}
+			return dto, nil
+		}
 	}
 
 	// 2) enqueue persist; fall back to sync DB write on failure
@@ -258,6 +265,7 @@ func (s *MessageService) Send(roomUUID string, actor MessageActor, content, repl
 		"uuid":         msgUUID,
 		"room_uuid":    roomUUID,
 		"author_id":    actor.Identity,
+		"author_uuid":  actor.UserUUID,
 		"content":      content,
 		"reply_to":     replyTo,
 		"mentions":     mentions,
@@ -275,23 +283,34 @@ func (s *MessageService) Send(roomUUID string, actor MessageActor, content, repl
 		}
 	}
 	if !enqueued {
-		m := &model.Message{
-			UUID: msgUUID, RoomUUID: roomUUID, AuthorID: actor.Identity,
-			Content: content, ReplyTo: replyTo,
-			CreatedAt: now, UpdatedAt: now,
-		}
-		if err := s.msgRepo.Create(m); err != nil {
-			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-		}
-		if len(mentions) > 0 {
-			var rows []model.MessageMention
-			for _, uid := range mentions {
-				rows = append(rows, model.MessageMention{MessageUUID: msgUUID, UserID: uid})
-			}
-			_ = s.msgRepo.CreateMentions(rows)
+		if err := s.persistMessageSync(msgUUID, roomUUID, actor.Identity, actor.UserUUID, content, replyTo, mentions, now); err != nil {
+			return nil, err
 		}
 	}
 	return dto, nil
+}
+
+// persistMessageSync 同步落库一条消息及其 @提及关系，供广播/队列不可用时的兜底路径使用。
+func (s *MessageService) persistMessageSync(msgUUID, roomUUID, authorID, authorUUID, content, replyTo string, mentions []string, now time.Time) error {
+	m := &model.Message{
+		UUID: msgUUID, RoomUUID: roomUUID, AuthorID: authorID,
+		AuthorUUID: authorUUID, Content: content, ReplyTo: replyTo,
+		ConversationType: model.ConversationTypeRoom, Status: model.MessageStatusActive,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := s.msgRepo.Create(m); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if len(mentions) > 0 {
+		rows := make([]model.MessageMention, 0, len(mentions))
+		for _, uid := range mentions {
+			rows = append(rows, model.MessageMention{MessageUUID: msgUUID, UserID: uid})
+		}
+		if err := s.msgRepo.EnsureMentions(rows); err != nil {
+			return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+		}
+	}
+	return nil
 }
 
 // Edit updates a message's content, broadcasts the change, then enqueues async mutate.

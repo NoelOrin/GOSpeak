@@ -27,6 +27,16 @@ func (r *MessageRepository) CreateMentions(mentions []model.MessageMention) erro
 	return r.db.Create(&mentions).Error
 }
 
+// EnsureMentions 幂等写入 @提及关系，job 重放/兜底并发时不产生重复行。
+func (r *MessageRepository) EnsureMentions(mentions []model.MessageMention) error {
+	for i := range mentions {
+		if err := r.db.Where("message_uuid = ? AND user_id = ?", mentions[i].MessageUUID, mentions[i].UserID).FirstOrCreate(&mentions[i]).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *MessageRepository) GetByUUID(uuid string) (*model.Message, error) {
 	var m model.Message
 	err := r.db.Where("uuid = ?", uuid).First(&m).Error
@@ -39,7 +49,12 @@ func (r *MessageRepository) UpdateContent(uuid, content string, editedAt time.Ti
 }
 
 func (r *MessageRepository) SoftDelete(uuid string) error {
-	return r.db.Where("uuid = ?", uuid).Delete(&model.Message{}).Error
+	// 显式状态枚举 + 软删除时间双写，避免状态仅由 DeletedAt 派生。
+	return r.db.Unscoped().Model(&model.Message{}).Where("uuid = ?", uuid).
+		Updates(map[string]interface{}{
+			"deleted_at": time.Now(),
+			"status":     model.MessageStatusDeleted,
+		}).Error
 }
 
 // ListBefore returns up to limit room messages older than beforeUUID (exclusive), ASC.

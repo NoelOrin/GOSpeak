@@ -240,6 +240,14 @@ func autoMigrate() error {
 
 // migrateRoomPasswords 将存量明文房间密码升级为 bcrypt 哈希。
 
+// migrateMessageAuthorUUID 为存量消息回填稳定的作者 UUID，改名后历史消息仍可被本人编辑/删除。
+func migrateMessageAuthorUUID(db *gorm.DB) error {
+	if !db.Migrator().HasColumn("messages", "author_uuid") {
+		return nil
+	}
+	return db.Exec(`UPDATE messages SET author_uuid = (SELECT uuid FROM users WHERE users.name = messages.author_id) WHERE author_uuid = '' OR author_uuid IS NULL`).Error
+}
+
 // migrateRoomPasswords 将存量明文房间密码升级为 bcrypt 哈希。
 func migrateRoomPasswords(db *gorm.DB) error {
 	var rooms []model.Room

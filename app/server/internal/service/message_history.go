@@ -43,14 +43,15 @@ func (s *MessageService) ListHistory(roomUUID string, actor MessageActor, before
 			content = ""
 		}
 		items[i] = MessageDTO{
-			UUID:      m.UUID,
-			RoomUUID:  m.RoomUUID,
-			AuthorID:  m.AuthorID,
-			Content:   content,
-			ReplyTo:   m.ReplyTo,
-			EditedAt:  m.EditedAt,
-			Deleted:   deleted,
-			CreatedAt: m.CreatedAt,
+			UUID:       m.UUID,
+			RoomUUID:   m.RoomUUID,
+			AuthorID:   m.AuthorID,
+			AuthorUUID: m.AuthorUUID,
+			Content:    content,
+			ReplyTo:    m.ReplyTo,
+			EditedAt:   m.EditedAt,
+			Deleted:    deleted,
+			CreatedAt:  m.CreatedAt,
 		}
 	}
 
@@ -84,14 +85,15 @@ func (s *MessageService) Search(roomUUID string, actor MessageActor, query strin
 	items := make([]MessageDTO, 0, len(rows))
 	for _, m := range rows {
 		items = append(items, MessageDTO{
-			UUID:      m.UUID,
-			RoomUUID:  m.RoomUUID,
-			AuthorID:  m.AuthorID,
-			Content:   m.Content,
-			ReplyTo:   m.ReplyTo,
-			EditedAt:  m.EditedAt,
-			Deleted:   m.DeletedAt.Valid,
-			CreatedAt: m.CreatedAt,
+			UUID:       m.UUID,
+			RoomUUID:   m.RoomUUID,
+			AuthorID:   m.AuthorID,
+			AuthorUUID: m.AuthorUUID,
+			Content:    m.Content,
+			ReplyTo:    m.ReplyTo,
+			EditedAt:   m.EditedAt,
+			Deleted:    m.DeletedAt.Valid,
+			CreatedAt:  m.CreatedAt,
 		})
 	}
 	s.enrichMentions(items)

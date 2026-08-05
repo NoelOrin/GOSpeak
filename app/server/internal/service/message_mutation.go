@@ -15,6 +15,15 @@ import (
 
 // Edit updates a message's content, broadcasts the change, then enqueues async mutate.
 // Only the original author may edit.
+
+// isMessageAuthor 优先按稳定的 AuthorUUID 校验；历史消息未回填 UUID 时退回用户名比较。
+func isMessageAuthor(msg *model.Message, actor MessageActor) bool {
+	if msg.AuthorUUID != "" {
+		return msg.AuthorUUID == actor.UserUUID
+	}
+	return msg.AuthorID == actor.Identity
+}
+
 func (s *MessageService) Edit(roomUUID, messageUUID string, actor MessageActor, content string) (*MessageDTO, error) {
 	content = strings.TrimSpace(content)
 	if content == "" {
@@ -42,20 +51,21 @@ func (s *MessageService) Edit(roomUUID, messageUUID string, actor MessageActor, 
 	if err := s.requireDomainMembership(room, actor); err != nil {
 		return nil, err
 	}
-	if msg.AuthorID != actor.Identity {
+	if !isMessageAuthor(msg, actor) {
 		return nil, pkg.NewAppError(pkg.FORBIDDEN, "not your message")
 	}
 
 	now := time.Now().UTC()
 	dto := &MessageDTO{
-		UUID:      messageUUID,
-		RoomUUID:  roomUUID,
-		AuthorID:  actor.Identity,
-		Content:   content,
-		ReplyTo:   msg.ReplyTo,
-		EditedAt:  &now,
-		Deleted:   false,
-		CreatedAt: msg.CreatedAt,
+		UUID:       messageUUID,
+		RoomUUID:   roomUUID,
+		AuthorID:   actor.Identity,
+		AuthorUUID: msg.AuthorUUID,
+		Content:    content,
+		ReplyTo:    msg.ReplyTo,
+		EditedAt:   &now,
+		Deleted:    false,
+		CreatedAt:  msg.CreatedAt,
 	}
 
 	// 1) broadcast first
@@ -68,6 +78,9 @@ func (s *MessageService) Edit(roomUUID, messageUUID string, actor MessageActor, 
 		"action":       "edit",
 		"message_uuid": messageUUID,
 		"content":      content,
+		"room_uuid":    roomUUID,
+		"author_id":    actor.Identity,
+		"author_uuid":  actor.UserUUID,
 		"timestamp":    now,
 	})
 	enqueued := false
@@ -109,18 +122,19 @@ func (s *MessageService) Delete(roomUUID, messageUUID string, actor MessageActor
 	if err := s.requireDomainMembership(room, actor); err != nil {
 		return err
 	}
-	if msg.AuthorID != actor.Identity && !canDeleteOthers {
+	if !isMessageAuthor(msg, actor) && !canDeleteOthers {
 		return pkg.NewAppError(pkg.FORBIDDEN, "not your message")
 	}
 
 	// 1) broadcast first
 	dto := &MessageDTO{
-		UUID:      messageUUID,
-		RoomUUID:  roomUUID,
-		AuthorID:  msg.AuthorID,
-		Content:   "",
-		Deleted:   true,
-		CreatedAt: msg.CreatedAt,
+		UUID:       messageUUID,
+		RoomUUID:   roomUUID,
+		AuthorID:   msg.AuthorID,
+		AuthorUUID: msg.AuthorUUID,
+		Content:    "",
+		Deleted:    true,
+		CreatedAt:  msg.CreatedAt,
 	}
 	if s.bus != nil {
 		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:deleted", dto)
@@ -131,6 +145,9 @@ func (s *MessageService) Delete(roomUUID, messageUUID string, actor MessageActor
 	payload, _ := json.Marshal(map[string]interface{}{
 		"action":       "delete",
 		"message_uuid": messageUUID,
+		"room_uuid":    roomUUID,
+		"author_id":    actor.Identity,
+		"author_uuid":  actor.UserUUID,
 		"timestamp":    now,
 	})
 	enqueued := false

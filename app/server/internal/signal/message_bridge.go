@@ -6,6 +6,7 @@ import (
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
+	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
 	"GOSpeak/internal/ws"
 )
@@ -112,6 +113,13 @@ func messageActorFromConn(c ws.ClientMessenger) (service.MessageActor, bool) {
 	return service.MessageActor{Identity: identity, UserUUID: c.Claims().UserUUID}, true
 }
 
+// messageErrAck 将服务层错误按 pkg.HandleError 语义脱敏后返回给 WS 客户端，
+// 避免内部 SQL/SFU 实现细节通过 ACK 泄露。
+func messageErrAck(err error) (string, error) {
+	code, msg := pkg.ClientError(err)
+	return marshalAck(map[string]interface{}{"error": msg, "code": code})
+}
+
 // OnMessageSend handles message:send events from clients.
 func (h *Hub) OnMessageSend(c ws.ClientMessenger, data string) (string, error) {
 	if h.msgSvc == nil {
@@ -137,7 +145,7 @@ func (h *Hub) OnMessageSend(c ws.ClientMessenger, data string) (string, error) {
 	}
 
 	if _, err := h.msgSvc.Send(roomUUID, actor, req.Content, req.ReplyTo, req.ClientNonce, req.Mentions); err != nil {
-		return marshalAck(map[string]interface{}{"error": err.Error()})
+		return messageErrAck(err)
 	}
 	return marshalAck(map[string]interface{}{"success": true})
 }
@@ -167,7 +175,7 @@ func (h *Hub) OnMessageEdit(c ws.ClientMessenger, data string) (string, error) {
 	}
 
 	if _, err := h.msgSvc.Edit(roomUUID, req.MessageUUID, actor, req.Content); err != nil {
-		return marshalAck(map[string]interface{}{"error": err.Error()})
+		return messageErrAck(err)
 	}
 	return marshalAck(map[string]interface{}{"success": true})
 }
@@ -203,7 +211,7 @@ func (h *Hub) OnMessageDelete(c ws.ClientMessenger, data string) (string, error)
 	}
 
 	if err := h.msgSvc.Delete(roomUUID, req.MessageUUID, actor, canDeleteOthers); err != nil {
-		return marshalAck(map[string]interface{}{"error": err.Error()})
+		return messageErrAck(err)
 	}
 	return marshalAck(map[string]interface{}{"success": true})
 }
@@ -233,7 +241,7 @@ func (h *Hub) OnMessageReact(c ws.ClientMessenger, data string) (string, error) 
 	}
 
 	if err := h.msgSvc.React(roomUUID, req.MessageUUID, actor, req.Emoji); err != nil {
-		return marshalAck(map[string]interface{}{"error": err.Error()})
+		return messageErrAck(err)
 	}
 	return marshalAck(map[string]interface{}{"success": true})
 }
@@ -263,7 +271,7 @@ func (h *Hub) OnMessageUnreact(c ws.ClientMessenger, data string) (string, error
 	}
 
 	if err := h.msgSvc.Unreact(roomUUID, req.MessageUUID, actor, req.Emoji); err != nil {
-		return marshalAck(map[string]interface{}{"error": err.Error()})
+		return messageErrAck(err)
 	}
 	return marshalAck(map[string]interface{}{"success": true})
 }

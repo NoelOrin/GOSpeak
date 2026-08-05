@@ -26,11 +26,15 @@ type fakeBus struct {
 	mu    sync.Mutex
 	calls []string // event names recorded
 	rooms []string // room keys recorded
+	err   error    // if set, PublishRoom returns this error
 }
 
 func (f *fakeBus) PublishRoom(_ context.Context, room, event string, payload interface{}) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.err != nil {
+		return f.err
+	}
 	f.calls = append(f.calls, event)
 	f.rooms = append(f.rooms, room)
 	return nil
@@ -41,6 +45,7 @@ func (f *fakeBus) reset() {
 	defer f.mu.Unlock()
 	f.calls = nil
 	f.rooms = nil
+	f.err = nil
 }
 
 type fakeQueue struct {
@@ -308,6 +313,9 @@ func TestMessageService_Send_Success(t *testing.T) {
 	if dto.AuthorID != "alice" {
 		t.Errorf("expected author_id alice, got %s", dto.AuthorID)
 	}
+	if dto.AuthorUUID != "uuid-alice" {
+		t.Errorf("expected author_uuid uuid-alice, got %s", dto.AuthorUUID)
+	}
 	if dto.Content != "Hello, world!" {
 		t.Errorf("expected content 'Hello, world!', got %s", dto.Content)
 	}
@@ -569,6 +577,39 @@ func TestMessageService_Edit_NotAuthor(t *testing.T) {
 
 	_, err = svc.Edit(textUUID, dto.UUID, testActorWithUUID("bob", "uuid-bob"), "Hacked content")
 	assertErrorCode(t, err, pkg.FORBIDDEN)
+}
+
+func TestMessageService_EditDelete_UsesAuthorUUIDAfterRename(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Original", "", "", nil)
+	assertNoError(t, err)
+	if dto.AuthorUUID != "uuid-alice" {
+		t.Fatalf("expected author_uuid uuid-alice, got %s", dto.AuthorUUID)
+	}
+
+	// 同一用户改名后仍可按 UUID 编辑。
+	renamed := testActorWithUUID("alice-renamed", "uuid-alice")
+	edited, err := svc.Edit(textUUID, dto.UUID, renamed, "Edited after rename")
+	assertNoError(t, err)
+	if edited.AuthorUUID != "uuid-alice" {
+		t.Errorf("expected edited author_uuid uuid-alice, got %s", edited.AuthorUUID)
+	}
+
+	// 同名但不同 UUID 的用户不能冒名编辑。
+	_, err = svc.Edit(textUUID, dto.UUID, testActorWithUUID("alice-renamed", "uuid-eve"), "Hacked")
+	assertErrorCode(t, err, pkg.FORBIDDEN)
+
+	// 历史查询应带回稳定 UUID。
+	items, _, _, err := svc.ListHistory(textUUID, renamed, "", 50)
+	assertNoError(t, err)
+	if len(items) != 1 || items[0].AuthorUUID != "uuid-alice" {
+		t.Fatalf("expected history author_uuid uuid-alice, got %+v", items)
+	}
+
+	// 删除同样按 UUID 鉴权。
+	err = svc.Delete(textUUID, dto.UUID, renamed, false)
+	assertNoError(t, err)
 }
 
 func TestMessageService_Edit_NotFound(t *testing.T) {
@@ -1308,5 +1349,97 @@ func TestMessageService_Unreact_BroadcastUsesDomainScopedKey(t *testing.T) {
 	}
 	if bus.rooms[0] != "guild-unreact:domain-unreact-room" {
 		t.Errorf("expected domain-scoped key, got %q", bus.rooms[0])
+	}
+}
+
+// ─── Durability & Compensation Tests ───
+
+func TestMessageService_Send_BroadcastFailurePersistsSync(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+
+	svc.SetEventBus(bus)
+	svc.SetJobQueue(queue)
+	bus.err = errors.New("bus down")
+
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "durable message", "", "", nil)
+	assertNoError(t, err)
+
+	msg, err := svc.msgRepo.GetByUUID(dto.UUID)
+	assertNoError(t, err)
+	if msg.Content != "durable message" {
+		t.Fatalf("expected sync-persisted message, got %q", msg.Content)
+	}
+	if len(queue.jobs) != 0 {
+		t.Fatalf("expected no async job after broadcast failure, got %d", len(queue.jobs))
+	}
+}
+
+func TestMessageService_PersistFromJob_Idempotent(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "already persisted", "", "", nil)
+	assertNoError(t, err)
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"uuid":        dto.UUID,
+		"room_uuid":   textUUID,
+		"author_id":   "alice",
+		"author_uuid": "uuid-alice",
+		"content":     "already persisted",
+		"mentions":    []string{},
+		"created_at":  dto.CreatedAt,
+	})
+	assertNoError(t, err)
+	assertNoError(t, svc.PersistFromJob(payload))
+
+	msg, err := svc.msgRepo.GetByUUID(dto.UUID)
+	assertNoError(t, err)
+	if msg.Content != "already persisted" {
+		t.Fatalf("unexpected content %q", msg.Content)
+	}
+}
+
+func TestMessageService_MutateFromJob_EditUpsertsMissingMessage(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	msgUUID := uuid.New().String()
+	now := time.Now().UTC()
+	payload, err := json.Marshal(map[string]interface{}{
+		"action":       "edit",
+		"message_uuid": msgUUID,
+		"room_uuid":    textUUID,
+		"author_id":    "alice",
+		"author_uuid":  "uuid-alice",
+		"content":      "recovered edit",
+		"timestamp":    now,
+	})
+	assertNoError(t, err)
+	assertNoError(t, svc.MutateFromJob(payload))
+
+	msg, err := svc.msgRepo.GetByUUID(msgUUID)
+	assertNoError(t, err)
+	if msg.Content != "recovered edit" {
+		t.Fatalf("expected upserted edit content, got %q", msg.Content)
+	}
+}
+
+func TestMessageService_MutateFromJob_DeleteUpsertsMissingMessage(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+
+	msgUUID := uuid.New().String()
+	payload, err := json.Marshal(map[string]interface{}{
+		"action":       "delete",
+		"message_uuid": msgUUID,
+		"room_uuid":    textUUID,
+		"author_id":    "alice",
+		"author_uuid":  "uuid-alice",
+		"timestamp":    time.Now().UTC(),
+	})
+	assertNoError(t, err)
+	assertNoError(t, svc.MutateFromJob(payload))
+
+	if _, err := svc.msgRepo.GetByUUID(msgUUID); err == nil {
+		t.Fatal("expected upserted message to be soft-deleted")
 	}
 }

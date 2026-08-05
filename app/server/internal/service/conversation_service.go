@@ -96,14 +96,15 @@ func (s *ConversationService) List(identity string, limit int) ([]ConversationDT
 // toMessageDTO converts a model.Message to a MessageDTO.
 func toMessageDTO(m *model.Message) MessageDTO {
 	return MessageDTO{
-		UUID:      m.UUID,
-		RoomUUID:  m.RoomUUID,
-		AuthorID:  m.AuthorID,
-		Content:   m.Content,
-		ReplyTo:   m.ReplyTo,
-		EditedAt:  m.EditedAt,
-		Deleted:   m.DeletedAt.Valid,
-		CreatedAt: m.CreatedAt,
+		UUID:       m.UUID,
+		RoomUUID:   m.RoomUUID,
+		AuthorID:   m.AuthorID,
+		AuthorUUID: m.AuthorUUID,
+		Content:    m.Content,
+		ReplyTo:    m.ReplyTo,
+		EditedAt:   m.EditedAt,
+		Deleted:    m.DeletedAt.Valid,
+		CreatedAt:  m.CreatedAt,
 	}
 }
 
@@ -210,6 +211,34 @@ func (s *ConversationService) SendDirect(senderIdentity, targetIdentity, content
 	now := time.Now().UTC()
 	msgUUID := uuid.New().String()
 
+	// 先持久化消息，再更新会话摘要/未读/广播，避免消息失败时留下不一致的会话元数据。
+	dto := &MessageDTO{
+		UUID:           msgUUID,
+		AuthorID:       senderIdentity,
+		Content:        content,
+		Deleted:        false,
+		CreatedAt:      now,
+		ClientNonce:    clientNonce,
+		ConversationID: convID,
+		TargetIdentity: targetIdentity,
+	}
+	convIDPtr := convID
+	targetPtr := targetIdentity
+	msg := &model.Message{
+		UUID:             msgUUID,
+		AuthorID:         senderIdentity,
+		Content:          content,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		ConversationType: model.ConversationTypePrivate,
+		ConversationID:   &convIDPtr,
+		TargetIdentity:   &targetPtr,
+		Status:           model.MessageStatusActive,
+	}
+	if err := s.messageRepo.Create(msg); err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+
 	// Upsert conversation participant row
 	cp := &model.ConversationParticipant{
 		ConversationID:     convID,
@@ -228,17 +257,6 @@ func (s *ConversationService) SendDirect(senderIdentity, targetIdentity, content
 		log.Printf("[Conversation] increment unread %s failed: %v", convID, err)
 	}
 
-	dto := &MessageDTO{
-		UUID:           msgUUID,
-		AuthorID:       senderIdentity,
-		Content:        content,
-		Deleted:        false,
-		CreatedAt:      now,
-		ClientNonce:    clientNonce,
-		ConversationID: convID,
-		TargetIdentity: targetIdentity,
-	}
-
 	// 定向投递到双方的个人房间，避免 private:new 广播给所有在线连接。
 	// Hub.OnConnect 会把每个已认证连接加入 __user:{identity}。
 	if s.eventBus != nil {
@@ -249,22 +267,6 @@ func (s *ConversationService) SendDirect(senderIdentity, targetIdentity, content
 		if err := s.eventBus.PublishRoom(context.Background(), "__user:"+targetIdentity, "private:new", payload); err != nil {
 			log.Printf("[Conversation] publish private:new to receiver %s failed: %v", targetIdentity, err)
 		}
-	}
-	// Persist message
-	convIDPtr := convID
-	targetPtr := targetIdentity
-	msg := &model.Message{
-		UUID:             msgUUID,
-		AuthorID:         senderIdentity,
-		Content:          content,
-		CreatedAt:        now,
-		UpdatedAt:        now,
-		ConversationType: "private",
-		ConversationID:   &convIDPtr,
-		TargetIdentity:   &targetPtr,
-	}
-	if err := s.messageRepo.Create(msg); err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
 	return dto, nil
