@@ -378,12 +378,25 @@ func StartGin(env EnvEnum) {
 	permH := handler.NewPermissionHandler(permSvc)
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
 	muteH.SetControlPublisher(clusterSvc)
+
+	// 临时禁言过期：删除记录后走完整 unmute（广播 + SFU 恢复），
+	// 若期间管理员已重新禁言则跳过，避免误解除新禁言。
+	muteSvc.SetOnExpired(func(userID uint) {
+		if muted, _, err := muteSvc.IsMuted(userID); err == nil && !muted {
+			signalHub.BroadcastUnmute(userID)
+			_ = clusterSvc.PublishControl(cluster.ControlCommand{
+				Command: cluster.CommandUnmute,
+				Payload: map[string]interface{}{"user_id": userID},
+			})
+		}
+	})
 	conversationSvc := service.NewConversationService(conversationRepo, messageRepo)
 	conversationSvc.SetEventBus(eventBus)
 	signalHub.SetConversationService(conversationSvc)
 	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc, signalHub)
 	storageH := handler.NewStorageHandler(storageSvc)
 	botH := handler.NewBotHandler(botSvc)
+	middleware.SetBotTokenChecker(botSvc)
 	pluginH := handler.NewPluginHandler(pluginSvc)
 
 	var clusterHandler *handler.ClusterHandler
@@ -429,6 +442,8 @@ func StartGin(env EnvEnum) {
 
 	domainH := handler.NewDomainHandler(domainSvc, permSvc)
 	domainH.SetControlPublisher(clusterSvc)
+	domainH.SetOnDomainKick(signalHub.KickUserFromDomain)
+	domainH.SetOnDomainLeave(signalHub.KickUserFromDomain)
 	if !degradedToWorker {
 		domainH.SetOnDomainCreated(func(serverUUID string) {
 			if err := clusterSvc.EnsureServer(serverUUID, 1, localNodeUUID); err != nil {
