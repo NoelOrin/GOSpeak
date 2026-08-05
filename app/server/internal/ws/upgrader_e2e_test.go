@@ -13,6 +13,20 @@ import (
 	nhooyrws "nhooyr.io/websocket"
 )
 
+func TestNewConnID_UniquePerConnection(t *testing.T) {
+	first := newConnID("uuid-1", "user-1")
+	second := newConnID("uuid-1", "user-1")
+	if first == second {
+		t.Fatalf("expected unique connection IDs, got %q", first)
+	}
+	if !strings.HasPrefix(first, "uuid-1-") || !strings.HasPrefix(second, "uuid-1-") {
+		t.Fatalf("expected user prefix, got %q and %q", first, second)
+	}
+	if got := newConnID("", "legacy-user"); !strings.HasPrefix(got, "legacy-user-") {
+		t.Fatalf("expected username fallback prefix, got %q", got)
+	}
+}
+
 // TestUpgrader_E2E_Lifecycle verifies the full ws.Client lifecycle through Upgrader:
 // upgrade → auth → fanout.Add → OnConnect → read loop → disconnect → fanout.Remove.
 func TestUpgrader_E2E_Lifecycle(t *testing.T) {
@@ -67,12 +81,14 @@ func TestUpgrader_E2E_Lifecycle(t *testing.T) {
 	defer conn.Close(nhooyrws.StatusNormalClosure, "test done")
 
 	// Wait for OnConnect
+	var connectedID string
 	select {
 	case client := <-connected:
-		if client.ID() != "e2e-uuid" {
-			t.Fatalf("expected client ID 'e2e-uuid', got %q", client.ID())
+		connectedID = client.ID()
+		if !strings.HasPrefix(connectedID, "e2e-uuid-") {
+			t.Fatalf("expected client ID prefix 'e2e-uuid-', got %q", connectedID)
 		}
-		if fanout.GetClient("e2e-uuid") == nil {
+		if fanout.GetClient(connectedID) == nil {
 			t.Fatal("client should be registered in fanout")
 		}
 	case <-time.After(2 * time.Second):
@@ -114,15 +130,15 @@ func TestUpgrader_E2E_Lifecycle(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// After disconnect, client should be removed from fanout
-	if fanout.GetClient("e2e-uuid") != nil {
+	if connectedID != "" && fanout.GetClient(connectedID) != nil {
 		t.Log("note: client still registered in fanout (may be race in fast test)")
 	}
 
 	// Verify OnDisconnect lifecycle hook fired
 	select {
 	case c := <-disconnected:
-		if c.ID() != "e2e-uuid" {
-			t.Fatalf("expected disconnect client ID 'e2e-uuid', got %q", c.ID())
+		if !strings.HasPrefix(c.ID(), "e2e-uuid-") {
+			t.Fatalf("expected disconnect client ID prefix 'e2e-uuid-', got %q", c.ID())
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for OnDisconnect")

@@ -91,14 +91,18 @@ func TestClient_SendAfterClose(t *testing.T) {
 func TestClient_Close(t *testing.T) {
 	c := NewTestClient("c1", nil)
 	// Close without full WS conn should signal the closed channel
-	c.cancel()
-	close(c.closed)
+	c.Close()
 
 	select {
 	case <-c.closed:
 		// closed successfully
 	default:
 		t.Fatal("expected closed channel to be signaled")
+	}
+	// Close 幂等且 Send 立即失败
+	c.Close()
+	if ok := c.Send(map[string]string{"msg": "after close"}); ok {
+		t.Fatal("expected Send to fail after Close")
 	}
 }
 

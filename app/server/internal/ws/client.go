@@ -17,12 +17,16 @@ const (
 	writeTimeout     = 5 * time.Second
 	sendQueueTimeout = 500 * time.Millisecond
 	readLimit        = 65536 // 64KB max message size
+
+	heartbeatInterval     = 30 * time.Second
+	heartbeatWriteTimeout = 5 * time.Second
 )
 
 // Client 封装 nhooyr WebSocket 连接，提供 goroutine-safe 写能力。
 // 实现 ClientMessenger 接口。
 type Client struct {
-	// id 是客户端唯一标识（通常是 UserUUID），通过 ID() 访问。
+	// id 是连接级唯一标识（由 Upgrader 生成），不直接复用用户 ID，
+	// 避免同一用户多个连接互相覆盖 Fanout/Hub 中的成员状态。
 	id string
 	// claims 是 JWT 认证声明，通过 Claims() 访问。
 	claims *pkg.Claims
@@ -39,7 +43,8 @@ type Client struct {
 	// OnClose 是连接关闭时的回调（由 Upgrader 设置，用于从 Fanout 注销）。
 	OnClose func(clientID string)
 
-	mu sync.Mutex
+	mu        sync.Mutex
+	closeOnce sync.Once
 }
 
 // compile-time interface check
@@ -74,13 +79,14 @@ func (c *Client) Claims() *pkg.Claims { return c.claims }
 func (c *Client) StartReadLoop(handler func(ClientMessenger, Message)) {
 	defer func() {
 		c.cancel()
-		close(c.closed)
+		c.closeClosed()
 		if c.OnClose != nil {
 			c.OnClose(c.ID())
 		}
 	}()
 
 	go c.writeLoop()
+	go c.heartbeatLoop()
 
 	for {
 		_, msgBytes, err := c.conn.Read(c.ctx)
@@ -119,6 +125,30 @@ func (c *Client) writeLoop() {
 	}
 }
 
+// heartbeatLoop 周期性发送 ping 探测对端可达性；写超时视为连接故障并主动关闭。
+func (c *Client) heartbeatLoop() {
+	if c.conn == nil {
+		return
+	}
+	ticker := time.NewTicker(heartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-ticker.C:
+			ctx, cancel := context.WithTimeout(c.ctx, heartbeatWriteTimeout)
+			err := c.conn.Ping(ctx)
+			cancel()
+			if err != nil {
+				log.Printf("[ws] heartbeat failed client=%s: %v", c.id, err)
+				c.Close()
+				return
+			}
+		}
+	}
+}
+
 // Send 实现 ClientMessenger.Send — goroutine-safe。
 // 返回 false 表示客户端已断开或队列满，消息未发送。
 func (c *Client) Send(v interface{}) bool {
@@ -129,6 +159,12 @@ func (c *Client) Send(v interface{}) bool {
 	}
 	t := time.NewTimer(sendQueueTimeout)
 	defer t.Stop()
+	// 先做一次非阻塞检查：Close 后 writeCh 可能仍为空，select 会随机选中写入分支。
+	select {
+	case <-c.closed:
+		return false
+	default:
+	}
 	select {
 	case c.writeCh <- data:
 		return true
@@ -159,7 +195,13 @@ func (c *Client) DroppedCount() uint64 {
 // Close 实现 ClientMessenger.Close。
 func (c *Client) Close() {
 	c.cancel()
+	c.closeClosed()
 	if c.conn != nil {
 		_ = c.conn.Close(nhooyrws.StatusNormalClosure, "server closing")
 	}
+}
+
+// closeClosed 以幂等方式关闭 closed channel，保证 Close 后 Send 立即返回 false。
+func (c *Client) closeClosed() {
+	c.closeOnce.Do(func() { close(c.closed) })
 }

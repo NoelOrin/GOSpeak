@@ -8,6 +8,8 @@ import (
 
 	nhooyrws "nhooyr.io/websocket"
 
+	"github.com/google/uuid"
+
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/pkg"
 )
@@ -77,6 +79,15 @@ func (u *Upgrader) originAllowed(r *http.Request) bool {
 
 // ServeHTTP 实现 http.Handler，一次完成升级→鉴权→注册→读取循环。
 // 应该在 Gin 路由中通过 `r.GET("/ws", gin.WrapH(upgrader))` 挂载。
+// newConnID 生成连接级唯一 ID：保留用户可读前缀，追加随机后缀区分多连接。
+func newConnID(userUUID, username string) string {
+	clientID := userUUID
+	if clientID == "" {
+		clientID = username
+	}
+	return clientID + "-" + uuid.NewString()[:8]
+}
+
 func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !u.originAllowed(r) {
 		log.Printf("[ws] upgrade rejected: origin=%q client=%s", r.Header.Get("Origin"), r.RemoteAddr)
@@ -110,7 +121,9 @@ func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if clientID == "" {
 		clientID = claims.Username
 	}
-	client := NewClient(conn, clientID, claims)
+	// 追加随机后缀生成连接级唯一 ID：同一用户多连接（多标签页/断线重连）
+	// 不再共享同一个 Fanout/Hub key，旧连接断开不会误清理新连接。
+	client := NewClient(conn, newConnID(claims.UserUUID, claims.Username), claims)
 
 	// 注册到 Fanout
 	if u.cfg.Fanout != nil {
