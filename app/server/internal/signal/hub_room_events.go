@@ -309,6 +309,9 @@ func (h *Hub) OnMemberMicState(c ws.ClientMessenger, data string) {
 	room.MicMuted[req.Identity] = req.IsMicMuted
 	h.mu.Unlock()
 
+	// 同步共享成员快照，让其他实例看到最新的静音状态。
+	h.syncRoomToStore(roomKey(req.DomainUUID, req.Room))
+
 	h.BroadcastToRoom(roomKey(req.DomainUUID, req.Room), EventMemberUpdated, map[string]interface{}{
 		"room":        req.Room,
 		"domain_uuid": req.DomainUUID,

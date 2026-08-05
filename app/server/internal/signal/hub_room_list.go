@@ -1,8 +1,9 @@
 package signal
 
 import (
-	"context"
 	"sort"
+
+	"GOSpeak/internal/bus"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -93,18 +94,21 @@ func (h *Hub) getMergedRoomsScoped(domainUUID string, platformOnly bool) []RoomI
 			info.AllowAudience = existing.AllowAudience
 			info.CreatedAt = existing.CreatedAt
 		}
-		// 有 KV 时补齐其他实例成员，修正 Count
+		// 有 KV 时补齐其他实例成员，修正 Count；统一补全用户资料/禁言
 		if h.membershipStore != nil {
 			merged := h.GetRoomMembersMerged(name)
-			info.Members = merged
+			info.Members = h.enrichMembers(merged)
 			info.Count = len(merged)
 		}
 		dbRooms[name] = info
 	}
 
-	// KV 中仅远端存在的活跃房间也并入列表（跨实例可见）
+	// KV 中仅远端存在的活跃房间也并入列表（跨实例可见）。
+	// 批量读取成员快照，避免每个远端房间一次独立 KV Get（N+1）。
 	if h.membershipStore != nil {
-		if names, err := h.membershipStore.ListRoomNames(context.Background()); err == nil {
+		ctx, cancel := kvTimeoutCtx()
+		if names, err := h.membershipStore.ListRoomNames(ctx); err == nil {
+			var remoteNames []string
 			for _, name := range names {
 				if name == "" {
 					continue
@@ -119,13 +123,59 @@ func (h *Hub) getMergedRoomsScoped(domainUUID string, platformOnly bool) []RoomI
 					// already present; still refresh members/count from merge
 					info := dbRooms[name]
 					merged := h.GetRoomMembersMerged(name)
-					info.Members = merged
+					info.Members = h.enrichMembers(merged)
 					info.Count = len(merged)
 					dbRooms[name] = info
 					continue
 				}
-				dbRooms[name] = h.roomInfoMerged(name)
+				remoteNames = append(remoteNames, name)
 			}
+
+			snaps := make(map[string]bus.RoomMembersSnapshot, len(remoteNames))
+			if bulk, ok := h.membershipStore.(bulkRoomMembersReader); ok {
+				snaps, _ = bulk.GetRoomMembersBatch(ctx, remoteNames)
+			} else {
+				for _, name := range remoteNames {
+					if snap, getErr := h.membershipStore.GetRoomMembers(ctx, name); getErr == nil {
+						snaps[name] = snap
+					}
+				}
+			}
+			for _, name := range remoteNames {
+				info := h.roomInfoLocked(name)
+				if meta, metaErr := h.getRoomMeta(name); metaErr == nil && meta.Name != "" {
+					if info.Name == "" {
+						info.Name = meta.Name
+					}
+					if info.DomainUUID == "" {
+						info.DomainUUID = meta.DomainUUID
+					}
+					if info.Description == "" {
+						info.Description = meta.Description
+					}
+					if info.Limit == 0 {
+						info.Limit = meta.Limit
+					}
+					if info.Type == "" {
+						info.Type = meta.Type
+					}
+					info.HasPassword = meta.Password != ""
+					if info.CreatedAt == 0 {
+						info.CreatedAt = meta.CreatedAtMS
+					}
+				}
+				if info.Name == "" {
+					_, logicalName := splitRoomKey(name)
+					info.Name = logicalName
+				}
+				merged := h.mergeMemberSnapshot(name, snaps[name])
+				info.Members = h.enrichMembers(merged)
+				info.Count = len(merged)
+				dbRooms[name] = info
+			}
+			cancel()
+		} else {
+			cancel()
 		}
 	}
 

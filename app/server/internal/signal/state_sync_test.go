@@ -18,6 +18,7 @@ var errNotFound = errors.New("not found")
 type memStateStore struct {
 	mu    sync.Mutex
 	rooms map[string]bus.RoomMembersSnapshot
+	metas map[string]bus.RoomMeta
 	strm  map[string][2]string // stream -> [room, identity]
 	revs  map[string]uint64
 }
@@ -25,6 +26,7 @@ type memStateStore struct {
 func newMemStateStore() *memStateStore {
 	return &memStateStore{
 		rooms: make(map[string]bus.RoomMembersSnapshot),
+		metas: make(map[string]bus.RoomMeta),
 		strm:  make(map[string][2]string),
 		revs:  make(map[string]uint64),
 	}
@@ -127,10 +129,42 @@ func (m *memStateStore) ListRoomNames(ctx context.Context) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make([]string, 0, len(m.rooms))
+	seen := make(map[string]struct{})
 	for k := range m.rooms {
+		out = append(out, k)
+		seen[k] = struct{}{}
+	}
+	for k := range m.metas {
+		if _, ok := seen[k]; ok {
+			continue
+		}
 		out = append(out, k)
 	}
 	return out, nil
+}
+
+func (m *memStateStore) PutRoomMeta(ctx context.Context, room string, meta bus.RoomMeta) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.metas[room] = meta
+	return nil
+}
+
+func (m *memStateStore) GetRoomMeta(ctx context.Context, room string) (bus.RoomMeta, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	meta, ok := m.metas[room]
+	if !ok {
+		return bus.RoomMeta{}, errNotFound
+	}
+	return meta, nil
+}
+
+func (m *memStateStore) DeleteRoomMeta(ctx context.Context, room string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.metas, room)
+	return nil
 }
 
 func TestHub_JoinSFU_WritesMembershipKV(t *testing.T) {

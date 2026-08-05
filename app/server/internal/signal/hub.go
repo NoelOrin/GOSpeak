@@ -244,17 +244,18 @@ type Hub struct {
 	streamRoomCache map[string]string
 	// streamByIdentity 维护 room→identity→stream 映射，供 SRS RemoveParticipant
 	// 按 identity 查实际登记的 stream，避免反算命名约定（命名函数变更后旧连接仍可查）。
-	streamByIdentity   map[string]map[string]string
-	participantCleanup ParticipantCleanupHandler
-	membershipStore    membershipStore
-	instanceID         string
-	cleanupPub         cleanupPublisher
-	stateNotifier      stateNotifier
-	connSlots          map[string]*connRoomSlots // socketID -> slots
-	msgSvc             messageSender
-	convSvc            conversationSender
-	domainChecker      func(domainUUID, userUUID string) bool
-	clientDomains      map[string]string // socketID -> current domain scope (empty = platform)
+	streamByIdentity        map[string]map[string]string
+	participantCleanup      ParticipantCleanupHandler
+	membershipStore         membershipStore
+	instanceID              string
+	cleanupPub              cleanupPublisher
+	stateNotifier           stateNotifier
+	connSlots               map[string]*connRoomSlots // socketID -> slots
+	msgSvc                  messageSender
+	convSvc                 conversationSender
+	domainChecker           func(domainUUID, userUUID string) bool
+	clientDomains           map[string]string // socketID -> current domain scope (empty = platform)
+	membershipHeartbeatStop chan struct{}
 }
 
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
@@ -411,12 +412,14 @@ func (h *Hub) OnConnect(c ws.ClientMessenger) error {
 	return nil
 }
 
+// disconnectCleanup 记录断连后需要执行的 SFU 清理项。
+type disconnectCleanup struct {
+	room     string
+	identity string
+	deleted  bool
+}
+
 func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
-	type disconnectCleanup struct {
-		room     string
-		identity string
-		deleted  bool
-	}
 	type leaveEvent struct {
 		room     string
 		identity string
@@ -499,21 +502,12 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 		if h.cleanupPub != nil {
 			for _, c := range cleanups {
 				if err := h.cleanupPub.PublishSFUCleanup(context.Background(), c.room, c.identity, c.deleted); err != nil {
-					log.Printf("[Signal] enqueue sfu cleanup: %v", err)
+					log.Printf("[Signal] enqueue sfu cleanup: %v; fallback to inline goroutine", err)
+					h.runCleanupsInline([]disconnectCleanup{c})
 				}
 			}
 		} else {
-			go func(cleanups []disconnectCleanup) {
-				for _, c := range cleanups {
-					h.removeParticipantSafe(c.room, c.identity)
-					if c.deleted {
-						h.deleteRoomSafe(c.room)
-					}
-					if h.participantCleanup != nil {
-						h.participantCleanup.OnParticipantLeft(c.room, c.identity)
-					}
-				}
-			}(cleanups)
+			h.runCleanupsInline(cleanups)
 		}
 	}
 
@@ -531,6 +525,25 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	}
 
 	log.Printf("[Signal] client disconnected: %s", c.ID())
+}
+
+// runCleanupsInline 在后台 goroutine 中执行 SFU 清理，
+// 用于 cleanup queue 不可用或入队失败时的兜底路径。
+func (h *Hub) runCleanupsInline(cleanups []disconnectCleanup) {
+	if len(cleanups) == 0 {
+		return
+	}
+	go func(cleanups []disconnectCleanup) {
+		for _, c := range cleanups {
+			h.removeParticipantSafe(c.room, c.identity)
+			if c.deleted {
+				h.deleteRoomSafe(c.room)
+			}
+			if h.participantCleanup != nil {
+				h.participantCleanup.OnParticipantLeft(c.room, c.identity)
+			}
+		}
+	}(cleanups)
 }
 
 // ─── 房间创建 ───

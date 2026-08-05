@@ -1,7 +1,6 @@
 package signal
 
 import (
-	"context"
 	"strings"
 )
 
@@ -56,7 +55,9 @@ func (h *Hub) IsStreamActive(stream string) bool {
 	if stream == "" || h.membershipStore == nil {
 		return false
 	}
-	room, _, err := h.membershipStore.GetStream(context.Background(), stream)
+	kvCtx, kvCancel := kvTimeoutCtx()
+	room, _, err := h.membershipStore.GetStream(kvCtx, stream)
+	kvCancel()
 	return err == nil && room != ""
 }
 
@@ -70,7 +71,9 @@ func (h *Hub) RoomForStream(stream string) (string, bool) {
 	if stream == "" || h.membershipStore == nil {
 		return "", false
 	}
-	room, _, err := h.membershipStore.GetStream(context.Background(), stream)
+	kvCtx, kvCancel := kvTimeoutCtx()
+	room, _, err := h.membershipStore.GetStream(kvCtx, stream)
+	kvCancel()
 	if err != nil || room == "" {
 		return "", false
 	}
@@ -140,7 +143,8 @@ func (h *Hub) Rooms() []string {
 	}
 	h.mu.RUnlock()
 	if h.membershipStore != nil {
-		if names, err := h.membershipStore.ListRoomNames(context.Background()); err == nil {
+		kvCtx, kvCancel := kvTimeoutCtx()
+		if names, err := h.membershipStore.ListRoomNames(kvCtx); err == nil {
 			for _, room := range names {
 				if room == "" {
 					continue
@@ -148,7 +152,9 @@ func (h *Hub) Rooms() []string {
 				if _, ok := seen[room]; ok {
 					continue
 				}
-				snap, err := h.membershipStore.GetRoomMembers(context.Background(), room)
+				kvCtx2, kvCancel2 := kvTimeoutCtx()
+				snap, err := h.membershipStore.GetRoomMembers(kvCtx2, room)
+				kvCancel2()
 				if err != nil {
 					continue
 				}
@@ -166,6 +172,7 @@ func (h *Hub) Rooms() []string {
 				out = append(out, room)
 			}
 		}
+		kvCancel()
 	}
 	if len(out) == 0 {
 		return nil
@@ -215,7 +222,8 @@ func (h *Hub) Streams(room string) []string {
 	}
 	h.mu.RUnlock()
 	if h.membershipStore != nil {
-		if snap, err := h.membershipStore.GetRoomMembers(context.Background(), room); err == nil {
+		kvCtx, kvCancel := kvTimeoutCtx()
+		if snap, err := h.membershipStore.GetRoomMembers(kvCtx, room); err == nil {
 			for _, m := range snap.Members {
 				if m.Stream == "" {
 					continue
@@ -226,6 +234,7 @@ func (h *Hub) Streams(room string) []string {
 				}
 			}
 		}
+		kvCancel()
 	}
 	if len(out) == 0 {
 		return nil
@@ -294,7 +303,9 @@ func (h *Hub) StreamForIdentity(room, identity string) (string, bool) {
 	if room == "" || identity == "" || h.membershipStore == nil {
 		return "", false
 	}
-	snap, err := h.membershipStore.GetRoomMembers(context.Background(), room)
+	kvCtx, kvCancel := kvTimeoutCtx()
+	snap, err := h.membershipStore.GetRoomMembers(kvCtx, room)
+	kvCancel()
 	if err != nil {
 		return "", false
 	}
@@ -326,14 +337,18 @@ func (h *Hub) IdentityForStream(room, stream string) (string, bool) {
 		return "", false
 	}
 	// Prefer stream KV (authoritative stream→identity).
-	r, identity, err := h.membershipStore.GetStream(context.Background(), stream)
+	kvCtx, kvCancel := kvTimeoutCtx()
+	r, identity, err := h.membershipStore.GetStream(kvCtx, stream)
+	kvCancel()
 	if err == nil && identity != "" && (room == "" || r == room || r == "") {
 		return identity, true
 	}
 	if room == "" {
 		return "", false
 	}
-	snap, err := h.membershipStore.GetRoomMembers(context.Background(), room)
+	kvCtx2, kvCancel2 := kvTimeoutCtx()
+	snap, err := h.membershipStore.GetRoomMembers(kvCtx2, room)
+	kvCancel2()
 	if err != nil {
 		return "", false
 	}

@@ -3,7 +3,6 @@ package signal
 import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
-	"context"
 	"fmt"
 	"strings"
 )
@@ -78,11 +77,21 @@ func (h *Hub) CheckRoomLimit(domainUUID, roomName string) (bool, uint, int, erro
 		return false, 0, 0, nil
 	}
 	dbRoom, err := h.roomStore.GetByDomainAndName(domainUUID, roomName)
-	if err != nil || dbRoom.Limit == 0 {
+	limit := uint(0)
+	if err == nil && dbRoom != nil {
+		limit = dbRoom.Limit
+	}
+	if limit == 0 {
+		// 远端临时房间：使用共享元数据中的人数上限
+		if meta, metaErr := h.getRoomMeta(roomKey(domainUUID, roomName)); metaErr == nil {
+			limit = meta.Limit
+		}
+	}
+	if limit == 0 {
 		return false, 0, 0, err
 	}
 	currentCount := len(h.GetRoomMembersMerged(roomKey(domainUUID, roomName)))
-	return currentCount >= int(dbRoom.Limit), dbRoom.Limit, currentCount, nil
+	return currentCount >= int(limit), limit, currentCount, nil
 }
 
 // CheckRoomPassword 检查房间密码，返回 (通过, 错误)
@@ -107,6 +116,14 @@ func (h *Hub) CheckRoomPassword(domainUUID, roomName, password string) (ok bool,
 		h.mu.RUnlock()
 		if exists {
 			expected = room.Password
+			found = true
+		}
+	}
+
+	// 远端临时房间：DB 无记录时使用共享元数据中的密码 hash 校验
+	if !found {
+		if meta, metaErr := h.getRoomMeta(roomKey(domainUUID, roomName)); metaErr == nil {
+			expected = meta.Password
 			found = true
 		}
 	}
@@ -159,13 +176,15 @@ var _ pkg.JoinPolicy = (*Hub)(nil)
 func (h *Hub) IsRoomMember(room, identity string) bool {
 	// 1. 优先读 KV（无锁，跨实例可见）
 	if h.membershipStore != nil {
-		if snap, err := h.membershipStore.GetRoomMembers(context.Background(), room); err == nil {
+		kvCtx, kvCancel := kvTimeoutCtx()
+		if snap, err := h.membershipStore.GetRoomMembers(kvCtx, room); err == nil {
 			for _, m := range snap.Members {
 				if m.Identity == identity {
 					return true
 				}
 			}
 		}
+		kvCancel()
 	}
 
 	// 2. KV 未命中 → fallback 本地 map

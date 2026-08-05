@@ -1,10 +1,12 @@
 package signal
 
 import (
+	"GOSpeak/internal/bus"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/ws"
 	"encoding/json"
+	"errors"
 	"log"
 	"time"
 )
@@ -51,6 +53,15 @@ func (h *Hub) OnRoomCreate(c ws.ClientMessenger, data string) {
 	}
 	roomInfo := h.roomInfoLocked(roomKey(req.DomainUUID, req.Room))
 	h.mu.Unlock()
+
+	// 临时房间元数据同步到共享 KV，远端实例可校验密码/类型/人数上限。
+	h.syncRoomMeta(roomKey(req.DomainUUID, req.Room), bus.RoomMeta{
+		Name:        req.Room,
+		DomainUUID:  req.DomainUUID,
+		Password:    hashedPassword,
+		Type:        model.RoomTypeVoice,
+		CreatedAtMS: time.Now().UnixMilli(),
+	})
 
 	log.Printf("[Signal] room created: %s by %s", req.Room, c.ID())
 
@@ -153,13 +164,18 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 
 	// Dual-slot tracking: resolve room type, manage text/voice slot per conn.
 	key := roomKey(req.DomainUUID, req.Room)
-	h.mu.Lock()
 	roomType := model.RoomTypeVoice
 	if h.roomStore != nil {
 		if dbRoom, dbErr := h.roomStore.GetByDomainAndName(req.DomainUUID, req.Room); dbErr == nil && dbRoom != nil {
 			roomType = model.NormalizeRoomType(dbRoom.Type)
 		}
 	}
+	if roomType == model.RoomTypeVoice {
+		if meta, metaErr := h.getRoomMeta(roomKey(req.DomainUUID, req.Room)); metaErr == nil {
+			roomType = model.NormalizeRoomType(meta.Type)
+		}
+	}
+	h.mu.Lock()
 	slots := h.connSlots[c.ID()]
 	if slots == nil {
 		slots = &connRoomSlots{}
@@ -218,12 +234,19 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	req.Identity = identity
 
 	// Text room guard: text rooms have no media, reject SFU join.
+	roomType := ""
 	if h.roomStore != nil {
 		if dbRoom, dbErr := h.roomStore.GetByDomainAndName(req.DomainUUID, req.Room); dbErr == nil && dbRoom != nil {
-			if model.NormalizeRoomType(dbRoom.Type) == model.RoomTypeText {
-				return marshalAck(map[string]interface{}{"error": "text room has no media"})
-			}
+			roomType = model.NormalizeRoomType(dbRoom.Type)
 		}
+	}
+	if roomType == "" {
+		if meta, metaErr := h.getRoomMeta(roomKey(req.DomainUUID, req.Room)); metaErr == nil {
+			roomType = model.NormalizeRoomType(meta.Type)
+		}
+	}
+	if roomType == model.RoomTypeText {
+		return marshalAck(map[string]interface{}{"error": "text room has no media"})
 	}
 
 	// phase2 复检 mute / limit / password，避免 phase1 通过后状态变化
@@ -245,7 +268,8 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 			return marshalAck(map[string]interface{}{"error": "user is muted", "muted": true})
 		}
 	}
-	if full, limit, count, _ := h.CheckRoomLimit(req.DomainUUID, req.Room); full {
+	full, limit, count, _ := h.CheckRoomLimit(req.DomainUUID, req.Room)
+	if full {
 		h.fanout.Leave(roomKey(req.DomainUUID, req.Room), c.ID())
 		return marshalAck(map[string]interface{}{"error": "room is full", "limit": limit, "count": count})
 	}
@@ -270,8 +294,13 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 		wasSpeaking bool
 		roomDeleted bool
 	}
-	var oldCleanups []switchCleanup
+	var oldCleanups []*switchCleanup
 
+	// 锁内构造注册快照并通过 KV CAS 原子注册。join 为低频路径，
+	// 锁内 KV 写入可避免注册后、本地提交前其他成员的 sync 把新成员
+	// 记录当作本实例旧记录丢弃；后端故障时最多阻塞数秒后按失败处理。
+	now := time.Now().UnixMilli()
+	regLocal := make([]bus.MemberRecord, 0, 2)
 	h.mu.Lock()
 	// 重复身份检查：同一房间不允许同一 identity 用不同 socket 重复加入
 	if h.duplicateIdentityLocked(newKey, identity, c.ID()) {
@@ -283,14 +312,34 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 			"identity": identity,
 		})
 	}
-
-	slots := h.connSlots[c.ID()]
-	if slots == nil {
-		slots = &connRoomSlots{}
-		h.connSlots[c.ID()] = slots
+	if room, ok := h.rooms[newKey]; ok {
+		for sid, m := range room.Members {
+			if m == nil {
+				continue
+			}
+			regLocal = append(regLocal, bus.MemberRecord{
+				Room:        newKey,
+				Identity:    m.Identity,
+				SocketHint:  sid,
+				InstanceID:  h.instanceID,
+				Stream:      m.Stream,
+				MicMuted:    room.MicMuted[m.Identity],
+				Speaking:    room.Speaking[m.Identity],
+				UpdatedAtMS: now,
+				ExpiresAtMS: now + membershipLeaseDuration.Milliseconds(),
+			})
+		}
 	}
-	// A socket owns one voice session; joining a new room must remove stale
-	// membership from any previous voice room before publishing the new join.
+	regLocal = append(regLocal, bus.MemberRecord{
+		Room:        newKey,
+		Identity:    identity,
+		SocketHint:  c.ID(),
+		InstanceID:  h.instanceID,
+		Stream:      req.Stream,
+		UpdatedAtMS: now,
+		ExpiresAtMS: now + membershipLeaseDuration.Milliseconds(),
+	})
+	// 收集旧房间清理信息（暂不删除，注册失败时保持原状）
 	for oldKey, oldRoom := range h.rooms {
 		if oldKey == newKey {
 			continue
@@ -299,24 +348,52 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 		if !ok {
 			continue
 		}
-		oldIdentity := oldMember.Identity
-		oldStream := oldMember.Stream
-		oldWasSpeaking := oldRoom.Speaking[oldIdentity]
-		roomDelMember(oldRoom, c.ID())
-		delete(oldRoom.Speaking, oldIdentity)
-		delete(oldRoom.MicMuted, oldIdentity)
-		h.unregisterStreamLocked(oldKey, oldIdentity, oldStream)
-		oldDeleted := h.deleteRoomIfEmptyLocked(oldKey)
-		if h.fanout != nil {
-			h.fanout.Leave(oldKey, c.ID())
-		}
-		oldCleanups = append(oldCleanups, switchCleanup{
+		oldCleanups = append(oldCleanups, &switchCleanup{
 			key:         oldKey,
-			identity:    oldIdentity,
-			stream:      oldStream,
-			wasSpeaking: oldWasSpeaking,
-			roomDeleted: oldDeleted,
+			identity:    oldMember.Identity,
+			stream:      oldMember.Stream,
+			wasSpeaking: oldRoom.Speaking[oldMember.Identity],
 		})
+	}
+	if regErr := h.registerRoomMembers(newKey, regLocal, int(limit), identity); regErr != nil {
+		h.mu.Unlock()
+		h.fanout.Leave(newKey, c.ID())
+		switch {
+		case errors.Is(regErr, errDuplicateRemoteIdentity):
+			return marshalAck(map[string]interface{}{
+				"error":    "duplicate connection not allowed",
+				"room":     req.Room,
+				"identity": identity,
+			})
+		case errors.Is(regErr, errRoomLimitExceeded):
+			return marshalAck(map[string]interface{}{"error": "room is full", "limit": limit, "count": count})
+		default:
+			log.Printf("[Signal] sfu join registration failed room=%s identity=%s: %v", req.Room, identity, regErr)
+			return marshalAck(map[string]interface{}{"error": "room join failed"})
+		}
+	}
+
+	// 提交本地状态：先清理旧房间成员，再写入新房间
+	for _, old := range oldCleanups {
+		oldRoom, ok := h.rooms[old.key]
+		if !ok {
+			continue
+		}
+		if _, ok := oldRoom.Members[c.ID()]; ok {
+			delete(oldRoom.Speaking, old.identity)
+			delete(oldRoom.MicMuted, old.identity)
+			h.unregisterStreamLocked(old.key, old.identity, old.stream)
+		}
+		roomDelMember(oldRoom, c.ID())
+		old.roomDeleted = h.deleteRoomIfEmptyLocked(old.key)
+		if h.fanout != nil {
+			h.fanout.Leave(old.key, c.ID())
+		}
+	}
+	slots := h.connSlots[c.ID()]
+	if slots == nil {
+		slots = &connRoomSlots{}
+		h.connSlots[c.ID()] = slots
 	}
 	slots.VoiceRoom = newKey
 	if h.fanout != nil {
@@ -367,7 +444,6 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	}
 
 	memberList = h.enrichMembers(memberList)
-	h.syncRoomToStore(newKey)
 	if req.Stream != "" {
 		h.syncStreamPut(req.Stream, newKey, identity)
 	}

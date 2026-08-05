@@ -3,7 +3,6 @@ package signal
 import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
-	"context"
 	"errors"
 	"log"
 )
@@ -90,7 +89,8 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 	h.mu.RUnlock()
 	// Multi-instance: user may only be online on another process; still media-enforce via SFU APIs.
 	if h.membershipStore != nil {
-		if names, err := h.membershipStore.ListRoomNames(context.Background()); err == nil {
+		kvCtx, kvCancel := kvTimeoutCtx()
+		if names, err := h.membershipStore.ListRoomNames(kvCtx); err == nil {
 			for _, roomName := range names {
 				if roomName == "" {
 					continue
@@ -98,7 +98,9 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 				if _, ok := seen[roomName]; ok {
 					continue
 				}
-				snap, err := h.membershipStore.GetRoomMembers(context.Background(), roomName)
+				kvCtx2, kvCancel2 := kvTimeoutCtx()
+				snap, err := h.membershipStore.GetRoomMembers(kvCtx2, roomName)
+				kvCancel2()
 				if err != nil {
 					continue
 				}
@@ -111,6 +113,7 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 				}
 			}
 		}
+		kvCancel()
 	}
 	if len(targets) == 0 {
 		// No online media target: policy still soft-enforced; not a media hard success.

@@ -254,6 +254,9 @@ func StartGin(env EnvEnum) {
 	} else {
 		logger.WithComponent("StateStore").Info("backend=none (local membership only)")
 	}
+	if store != nil {
+		signalHub.StartMembershipHeartbeat()
+	}
 
 	// mute rule KV for degraded media mute (Agora kicking-rule ids): redis → nats → memory
 	muteRuleStore, muteRuleBackend := bus.ResolveMuteRuleStore(bus.ResolveMuteRuleConfig{
@@ -542,7 +545,9 @@ func StartGin(env EnvEnum) {
 			logger.WithComponent("Cluster").Info("cluster runtime stopped")
 		}
 
-		// 2) drain signal fanout then close socket connections
+		// 2) stop membership lease heartbeat, then drain signal fanout
+		signalHub.StopMembershipHeartbeat()
+		// 3) drain signal fanout then close socket connections
 		logger.WithComponent("Message").Info("write queue closed")
 		closeEventBus()
 		logger.WithComponent("EventBus").Info("closed")

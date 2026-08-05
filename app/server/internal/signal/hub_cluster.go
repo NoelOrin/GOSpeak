@@ -3,7 +3,6 @@ package signal
 import (
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/ws"
-	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -70,7 +69,9 @@ func (h *Hub) OnDomainDelete(domainUUID string) {
 	// 清理共享状态和 stream 映射
 	for _, key := range roomKeys {
 		if h.membershipStore != nil {
-			_ = h.membershipStore.DeleteRoomMembers(context.Background(), key)
+			kvCtx, kvCancel := kvTimeoutCtx()
+			_ = h.membershipStore.DeleteRoomMembers(kvCtx, key)
+			kvCancel()
 			h.notifyRoomStateChanged(key)
 		}
 	}
