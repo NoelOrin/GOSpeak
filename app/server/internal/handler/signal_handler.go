@@ -302,7 +302,11 @@ func (h *SignalHandler) LivekitWebhook(c *gin.Context) {
 		return
 	}
 	if h.jobs != nil {
-		_ = h.jobs.PublishLiveKit(c.Request.Context(), body)
+		if err := h.jobs.PublishLiveKit(c.Request.Context(), body); err != nil {
+			log.Printf("[Webhook] enqueue livekit event failed: %v", err)
+			pkg.Fail(c, pkg.INTERNAL_ERROR, "webhook enqueue failed")
+			return
+		}
 	} else {
 		eventType, _ := event["event"].(string)
 		log.Printf("[Webhook] livekit event (sync no-queue): %v", eventType)

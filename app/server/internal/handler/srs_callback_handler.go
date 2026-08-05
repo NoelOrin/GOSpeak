@@ -46,7 +46,7 @@ func (h *SRSCallbackHandler) currentSecret() string {
 func (h *SRSCallbackHandler) HandleCallback(c *gin.Context) {
 	var p srsCallbackPayload
 	if err := c.ShouldBind(&p); err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 0})
+		c.JSON(http.StatusOK, gin.H{"code": 1})
 		return
 	}
 	stream := stripAppPrefix(p.Stream)
@@ -57,7 +57,7 @@ func (h *SRSCallbackHandler) HandleCallback(c *gin.Context) {
 	case "on_publish":
 		token := params["token"]
 		if token == "" || !srs.ValidateStreamToken(stream, token, secret) {
-			c.JSON(http.StatusOK, gin.H{"code": 0})
+			c.JSON(http.StatusOK, gin.H{"code": 1})
 			return
 		}
 		if h.jobs != nil {
@@ -69,7 +69,7 @@ func (h *SRSCallbackHandler) HandleCallback(c *gin.Context) {
 	case "on_unpublish":
 		token := params["token"]
 		if token == "" || !srs.ValidateStreamToken(stream, token, secret) {
-			c.JSON(http.StatusOK, gin.H{"code": 0})
+			c.JSON(http.StatusOK, gin.H{"code": 1})
 			return
 		}
 		if h.jobs != nil {
@@ -82,11 +82,11 @@ func (h *SRSCallbackHandler) HandleCallback(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"code": 0})
 	case "on_play":
 		if !h.hub.IsStreamActive(stream) {
-			c.JSON(http.StatusOK, gin.H{"code": 0})
+			c.JSON(http.StatusOK, gin.H{"code": 1})
 			return
 		}
 		if !h.authorizePlay(stream, params["token"], secret) {
-			c.JSON(http.StatusOK, gin.H{"code": 0})
+			c.JSON(http.StatusOK, gin.H{"code": 1})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"code": 0})

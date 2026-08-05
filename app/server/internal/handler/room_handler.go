@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"log"
+
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
@@ -321,14 +323,14 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	// DB 已删除；control 失败只告警，由 KV/房间列表最终一致清理，不再返回误导性 5xx。
 	if h.controlPublisher != nil {
 		if err := h.controlPublisher.PublishControl(cluster.ControlCommand{
 			Command:    cluster.CommandDeleteRoom,
 			DomainUUID: room.DomainUUID,
 			Room:       room.Name,
 		}); err != nil {
-			pkg.HandleError(c, err)
-			return
+			log.Printf("[Room] publish delete control failed id=%d room=%q err=%v", req.ID, room.Name, err)
 		}
 	}
 
