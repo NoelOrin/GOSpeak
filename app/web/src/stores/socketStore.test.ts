@@ -5,6 +5,7 @@ const { mockAdapter, mockTabLock } = vi.hoisted(() => {
 		mockAdapter: {
 			isConnected: vi.fn(() => false),
 			getCurrentUrl: vi.fn(() => ""),
+			getState: vi.fn(() => "new"),
 			connect: vi.fn(),
 			disconnect: vi.fn(),
 			emitFireAndForget: vi.fn(),
@@ -15,6 +16,9 @@ const { mockAdapter, mockTabLock } = vi.hoisted(() => {
 			onConnected: vi.fn<(cb: () => void) => () => void>(() => () => {}),
 			onDisconnected: vi.fn(() => () => {}),
 			onConnectError: vi.fn(() => () => {}),
+			onStateChange: vi.fn(
+				(_cb: (prev: string, next: string) => void) => () => {},
+			),
 		},
 		mockTabLock: {
 			claim: vi.fn(async () => true),
@@ -86,6 +90,10 @@ const onConnectedCb = mockAdapter.onConnected.mock.calls[0]?.[0] as
 	| (() => void)
 	| undefined;
 
+const onStateChangeCb = mockAdapter.onStateChange.mock.calls[0]?.[0] as
+	| ((prev: string, next: string) => void)
+	| undefined;
+
 describe("socketStore worker routing", () => {
 	beforeEach(() => {
 		socketStore.disconnect();
@@ -136,5 +144,15 @@ describe("socketStore worker routing", () => {
 			"room:leave",
 			expect.objectContaining({ room: "lobby", domain_uuid: "domain-a" }),
 		);
+	});
+
+	it("socketState follows adapter state machine", () => {
+		expect(socketStore.socketState()).toBe("new");
+		onStateChangeCb?.("new", "connecting");
+		expect(socketStore.socketState()).toBe("connecting");
+		onStateChangeCb?.("connecting", "open");
+		expect(socketStore.socketState()).toBe("open");
+		onStateChangeCb?.("open", "closing");
+		expect(socketStore.socketState()).toBe("closing");
 	});
 });

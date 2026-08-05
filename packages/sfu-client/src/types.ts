@@ -60,7 +60,7 @@ export interface SFUPublishAudioOptions {
 export interface SignalSocket {
 	isConnected(): boolean;
 	emitAck(event: string, payload?: unknown): Promise<any>;
-	emitFireAndForget(event: string, payload?: unknown): void;
+	emitFireAndForget(event: string, payload?: unknown): boolean;
 	onServerEvent(event: string, cb: (...args: any[]) => void): () => void;
 	onDisconnected(cb: (reason: string) => void): () => void;
 }

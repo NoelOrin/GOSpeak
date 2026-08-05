@@ -42,6 +42,21 @@ describe("wsClient", () => {
 		MockWebSocket.instances = [];
 	});
 
+	it("emitFireAndForget reports whether the event was actually sent", async () => {
+		const { createWSClient } = await import("./wsClient");
+		const client = createWSClient();
+
+		expect(client.emitFireAndForget("room:create", {})).toBe(false);
+
+		client.connect("ws://example.test/ws");
+		const ws = MockWebSocket.instances[0];
+		ws.readyState = MockWebSocket.OPEN;
+		ws.onopen?.();
+		expect(client.emitFireAndForget("room:create", {})).toBe(true);
+
+		client.disconnect();
+	});
+
 	it("refreshes the ws ticket before automatic reconnect", async () => {
 		const { createWSClient } = await import("./wsClient");
 		const refreshTicket = vi.fn().mockResolvedValue("fresh-ticket");
@@ -59,5 +74,52 @@ describe("wsClient", () => {
 		expect(MockWebSocket.instances[1].protocols).toContain("fresh-ticket");
 
 		client.disconnect();
+	});
+
+	it("exposes explicit connection state transitions", async () => {
+		const { createWSClient } = await import("./wsClient");
+		const client = createWSClient();
+		const transitions: Array<[string, string]> = [];
+		client.onStateChange((prev, next) => transitions.push([prev, next]));
+
+		expect(client.getState()).toBe("new");
+
+		client.connect("ws://example.test/ws");
+		expect(client.getState()).toBe("connecting");
+
+		const ws = MockWebSocket.instances[0];
+		ws.onopen?.();
+		expect(client.getState()).toBe("open");
+		expect(transitions).toContainEqual(["new", "connecting"]);
+		expect(transitions).toContainEqual(["connecting", "open"]);
+
+		client.disconnect();
+		expect(client.getState()).toBe("closed");
+		expect(transitions).toContainEqual(["closing", "closed"]);
+	});
+
+	it("allows closed state to reconnect but rejects backward transitions", async () => {
+		const { createWSClient } = await import("./wsClient");
+		const client = createWSClient();
+		const transitions: Array<[string, string]> = [];
+		client.onStateChange((prev, next) => transitions.push([prev, next]));
+
+		client.connect("ws://example.test/ws");
+		const first = MockWebSocket.instances[0];
+		first.onopen?.();
+		first.onclose?.({ reason: "network lost" } as CloseEvent);
+		expect(client.getState()).toBe("closed");
+
+		client.connect("ws://example.test/ws");
+		expect(client.getState()).toBe("connecting");
+		const second = MockWebSocket.instances[1];
+		second.onopen?.();
+		expect(client.getState()).toBe("open");
+
+		client.disconnect();
+		expect(client.getState()).toBe("closed");
+		client.disconnect();
+		expect(client.getState()).toBe("closed");
+		expect(transitions).not.toContainEqual(["closed", "closing"]);
 	});
 });

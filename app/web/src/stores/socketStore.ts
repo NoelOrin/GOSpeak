@@ -5,6 +5,7 @@ import { showToast } from "solid-notifications";
 import { getWSTicket } from "@/api/ws";
 import { preloadSfuClient } from "@/components/room/services/loadSfuClient";
 import { createWSClient } from "@/socket/wsClient";
+import type { WSConnectionState } from "@/socket/wsClient";
 import { EVENTS } from "@/socket/events";
 import { bindServerEvents } from "@/socket/socketEvents";
 import { createProviderReloadHandler } from "@/socket/providerReload";
@@ -52,6 +53,9 @@ export const socketStore = createRoot(() => {
 	const adapter = createWSClient({ refreshTicket: getWSTicket });
 
 	const [connected, setConnected] = createSignal(false);
+	const [socketState, setSocketState] = createSignal<WSConnectionState>(
+		adapter.getState(),
+	);
 	const [rooms, setRooms] = createSignal<RoomInfo[]>([]);
 	const [currentRoom, setCurrentRoom] = createSignal<string | null>(null);
 	const currentDomainUUID = createMemo<string | null>(
@@ -102,6 +106,20 @@ export const socketStore = createRoot(() => {
 
 	// 5. lifecycle callbacks (onConnected/onDisconnected/onConnectError)
 	// 生命周期回调：注册一次，每次 connect/disconnect/connect_error 都会触发
+	adapter.onStateChange((_prev, next) => {
+		setSocketState(next);
+		if (next === "open") {
+			setConnecting(false);
+			setConnected(true);
+		} else if (next === "connecting") {
+			setConnecting(true);
+			setConnected(false);
+		} else {
+			setConnecting(false);
+			setConnected(false);
+		}
+	});
+
 	adapter.onConnected(() => {
 		setConnecting(false);
 		setConnected(true);
@@ -117,6 +135,8 @@ export const socketStore = createRoot(() => {
 	adapter.onDisconnected((reason: string) => {
 		setConnecting(false);
 		setConnected(false);
+		// 被动断线同样清理房间/禁言状态，避免重连窗口显示假在线/假禁言。
+		resetRoomState();
 		console.log("[Socket] disconnected:", reason);
 	});
 
@@ -203,6 +223,15 @@ export const socketStore = createRoot(() => {
 		return connectWithLock(workerUrl);
 	}
 
+	function resetRoomState() {
+		setCurrentRoom(null);
+		setRooms([]);
+		setSelectedRoomInfo(null);
+		setSpeechRestricted(false);
+		setSpeechRestrictionInfo(null);
+		setActiveSFUProvider(undefined);
+	}
+
 	function disconnect() {
 		activityListeners.clear();
 		presenceListeners.clear();
@@ -213,10 +242,7 @@ export const socketStore = createRoot(() => {
 		tabLock.release();
 		setConnecting(false);
 		setConnected(false);
-		setCurrentRoom(null);
-		setSpeechRestricted(false);
-		setSpeechRestrictionInfo(null);
-		setActiveSFUProvider(undefined);
+		resetRoomState();
 	}
 
 	// 7. room APIs (create/join/leave/list/kick/select)
@@ -226,11 +252,14 @@ export const socketStore = createRoot(() => {
 			showToast("请先选择域", { type: "warning" });
 			return;
 		}
-		adapter.emitFireAndForget(EVENTS.ROOM_CREATE, {
+		const sent = adapter.emitFireAndForget(EVENTS.ROOM_CREATE, {
 			room: name,
 			password,
 			domain_uuid: domainUUID,
 		});
+		if (!sent) {
+			showToast("连接未就绪，房间创建请求未发送", { type: "error" });
+		}
 	}
 
 	function signalEmit(
@@ -381,30 +410,39 @@ export const socketStore = createRoot(() => {
 	}
 
 	function kickMember(room: string, targetIdentity: string) {
-		adapter.emitFireAndForget(EVENTS.ROOM_KICK, {
+		const sent = adapter.emitFireAndForget(EVENTS.ROOM_KICK, {
 			room,
 			targetIdentity,
 			domain_uuid: currentDomainUUID() ?? undefined,
 		});
+		if (!sent) {
+			showToast("连接未就绪，踢出请求未发送", { type: "error" });
+		}
 	}
 
 	// 9. mic/speaking emits
 	function emitMicState(room: string, identity: string, isMicMuted: boolean) {
-		adapter.emitFireAndForget(EVENTS.MEMBER_MIC_STATE, {
+		const sent = adapter.emitFireAndForget(EVENTS.MEMBER_MIC_STATE, {
 			room,
 			identity,
 			isMicMuted,
 			domain_uuid: currentDomainUUID() ?? undefined,
 		});
+		if (!sent) {
+			showToast("连接未就绪，麦克风状态未同步", { type: "error" });
+		}
 	}
 
 	function emitSpeaking(room: string, identity: string, speaking: boolean) {
-		adapter.emitFireAndForget(EVENTS.MEMBER_SPEAKING, {
+		const sent = adapter.emitFireAndForget(EVENTS.MEMBER_SPEAKING, {
 			room,
 			identity,
 			speaking,
 			domain_uuid: currentDomainUUID() ?? undefined,
 		});
+		if (!sent) {
+			showToast("连接未就绪，发言状态未同步", { type: "error" });
+		}
 	}
 
 	function selectRoom(room: RoomInfo) {
@@ -438,6 +476,7 @@ export const socketStore = createRoot(() => {
 	return {
 		connected,
 		connecting,
+		socketState,
 		rooms,
 		currentRoom,
 		currentDomainUUID,

@@ -59,8 +59,9 @@ export const chatStore = createRoot(() => {
 		}
 	});
 
-	// Nonces currently waiting for a server ack / created event
-	let pendingNonces = new Set<string>();
+	// Nonces waiting for server ack / created event.
+	// 状态机：pending -> sent/failed；created 事件按 nonce 幂等替换，ACK 丢失也不会重复插入。
+	const pendingNonces = new Map<string, "pending" | "sent" | "failed">();
 
 	// Reactions: message_uuid -> { emoji -> user_id[] }
 	const [reactions, setReactions] = createSignal<
@@ -116,10 +117,7 @@ export const chatStore = createRoot(() => {
 
 	function handleError(data: { client_nonce?: string; error?: string }) {
 		if (data.client_nonce) {
-			setMessages((prev) =>
-				prev.filter((m) => m.client_nonce !== data.client_nonce),
-			);
-			pendingNonces.delete(data.client_nonce);
+			pendingNonces.set(data.client_nonce, "failed");
 		}
 	}
 
@@ -177,7 +175,7 @@ export const chatStore = createRoot(() => {
 		setMessages([]);
 		setHasMore(false);
 		setNextBefore(null);
-		pendingNonces = new Set();
+		pendingNonces.clear();
 	}
 
 	async function loadInitial() {
@@ -238,17 +236,23 @@ export const chatStore = createRoot(() => {
 			client_nonce,
 		};
 
-		pendingNonces.add(client_nonce);
+		pendingNonces.set(client_nonce, "pending");
 		setMessages((prev) => mergeMessages(prev, [pending]));
 
 		// Emit via socket (server expects a JSON string payload)
 		const socket = socketStore.getSocket();
 		if (socket?.isConnected()) {
-			const removePending = () => {
-				setMessages((prev) =>
-					prev.filter((m) => m.client_nonce !== client_nonce),
-				);
-				pendingNonces.delete(client_nonce);
+			const markFailed = () => {
+				pendingNonces.set(client_nonce, "failed");
+				// 保留乐观消息等待可能的 message:created；超时后再清理，避免 ACK 丢失重复插入。
+				setTimeout(() => {
+					if (pendingNonces.get(client_nonce) === "failed") {
+						setMessages((prev) =>
+							prev.filter((m) => m.client_nonce !== client_nonce),
+						);
+						pendingNonces.delete(client_nonce);
+					}
+				}, 15000);
 			};
 			void socket
 				.emitAck(EVENTS.MESSAGE_SEND, {
@@ -260,9 +264,14 @@ export const chatStore = createRoot(() => {
 					client_nonce,
 				})
 				.then((resp: any) => {
-					if (resp?.error) removePending();
+					if (resp?.error) {
+						markFailed();
+						return;
+					}
+					// ACK 成功不代表落库广播已完成；保持 pending/sent 直到 message:created 按 nonce 幂等替换。
+					pendingNonces.set(client_nonce, "sent");
 				})
-				.catch(removePending);
+				.catch(markFailed);
 		}
 	}
 
@@ -358,7 +367,7 @@ export const chatStore = createRoot(() => {
 	>({});
 
 	// Track pending nonces for private messages
-	const pmPendingNonces = new Set<string>();
+	const pmPendingNonces = new Map<string, "pending" | "sent" | "failed">();
 
 	function tempConversationID(identity: string) {
 		return `pm_${identity}`;
@@ -587,7 +596,7 @@ export const chatStore = createRoot(() => {
 			target_identity: targetIdentity,
 			client_nonce: clientNonce,
 		};
-		pmPendingNonces.add(clientNonce);
+		pmPendingNonces.set(clientNonce, "pending");
 		setPmMessages((prev) => {
 			const existing = prev[convID] || [];
 			return { ...prev, [convID]: [...existing, pending] };
@@ -595,15 +604,22 @@ export const chatStore = createRoot(() => {
 
 		const socket = socketStore.getSocket();
 		if (socket?.isConnected()) {
-			const removePending = () => {
-				setPmMessages((prev) => {
-					const existing = prev[convID] || [];
-					return {
-						...prev,
-						[convID]: existing.filter((m) => m.client_nonce !== clientNonce),
-					};
-				});
-				pmPendingNonces.delete(clientNonce);
+			const markFailed = () => {
+				pmPendingNonces.set(clientNonce, "failed");
+				setTimeout(() => {
+					if (pmPendingNonces.get(clientNonce) === "failed") {
+						setPmMessages((prev) => {
+							const existing = prev[convID] || [];
+							return {
+								...prev,
+								[convID]: existing.filter(
+									(m) => m.client_nonce !== clientNonce,
+								),
+							};
+						});
+						pmPendingNonces.delete(clientNonce);
+					}
+				}, 15000);
 			};
 			void socket
 				.emitAck(EVENTS.PRIVATE_SEND, {
@@ -613,17 +629,18 @@ export const chatStore = createRoot(() => {
 				})
 				.then((resp: any) => {
 					if (resp?.error) {
-						removePending();
+						markFailed();
 						return;
 					}
 					const dto = resp as PrivateMessageDTO;
 					if (!dto?.conversation_id) {
-						removePending();
+						markFailed();
 						return;
 					}
+					pmPendingNonces.set(clientNonce, "sent");
 					acceptPrivateMessage(dto);
 				})
-				.catch(removePending);
+				.catch(markFailed);
 		}
 	}
 

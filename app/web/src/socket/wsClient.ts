@@ -7,6 +7,13 @@ interface WSMessage {
 	error?: { code: number; message: string };
 }
 
+export type WSConnectionState =
+	| "new"
+	| "connecting"
+	| "open"
+	| "closing"
+	| "closed";
+
 function tryParse(data: unknown): unknown {
 	if (typeof data !== "string") return data;
 	try {
@@ -60,10 +67,14 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 	connect: (url: string, token?: string) => void;
 	disconnect: () => void;
 	getCurrentUrl: () => string;
+	getState: () => WSConnectionState;
 	offServerEvent: (event: string, cb: (...args: any[]) => void) => void;
 	offAllServerEvents: () => void;
 	onConnected: (cb: () => void) => () => void;
 	onConnectError: (cb: (err: Error) => void) => () => void;
+	onStateChange: (
+		cb: (prevState: WSConnectionState, nextState: WSConnectionState) => void,
+	) => () => void;
 } {
 	let ws: WebSocket | null = null;
 	let msgIdCounter = 0;
@@ -86,6 +97,51 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 	let reconnectAttempts = 0;
 	const refreshTicket = options.refreshTicket;
 
+	let state: WSConnectionState = "new";
+	const stateChangeCbs: Array<
+		(prevState: WSConnectionState, nextState: WSConnectionState) => void
+	> = [];
+
+	function validStateTransition(
+		from: WSConnectionState,
+		to: WSConnectionState,
+	): boolean {
+		switch (from) {
+			case "new":
+				return to === "connecting" || to === "closing" || to === "closed";
+			case "connecting":
+				return to === "open" || to === "closing" || to === "closed";
+			case "open":
+				return to === "closing" || to === "closed";
+			case "closing":
+				return to === "closed";
+			case "closed":
+				return to === "connecting";
+		}
+		return false;
+	}
+
+	function setState(nextState: WSConnectionState) {
+		if (nextState === state || !validStateTransition(state, nextState)) return;
+		const prevState = state;
+		state = nextState;
+		for (const cb of stateChangeCbs) cb(prevState, nextState);
+	}
+
+	function getState(): WSConnectionState {
+		return state;
+	}
+
+	function onStateChange(
+		cb: (prevState: WSConnectionState, nextState: WSConnectionState) => void,
+	): () => void {
+		stateChangeCbs.push(cb);
+		return () => {
+			const idx = stateChangeCbs.indexOf(cb);
+			if (idx >= 0) stateChangeCbs.splice(idx, 1);
+		};
+	}
+
 	function connect(url: string, token?: string) {
 		currentUrl = url;
 		currentToken = token || "";
@@ -96,16 +152,20 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 		}
 		if (ws?.readyState === WebSocket.OPEN) return;
 		if (ws) {
+			setState("closing");
 			ws.onclose = null;
 			ws.close();
 			ws = null;
+			setState("closed");
 		}
+		setState("connecting");
 
 		const protocols = currentToken ? ["gospeak", currentToken] : ["gospeak"];
 		const wsHandle = new WebSocket(resolveWsUrl(url), protocols);
 		ws = wsHandle;
 
 		wsHandle.onopen = () => {
+			setState("open");
 			reconnectAttempts = 0;
 			for (const cb of connectedCbs) cb();
 		};
@@ -141,6 +201,7 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 		};
 
 		wsHandle.onclose = (ev: CloseEvent) => {
+			setState("closed");
 			if (ws === wsHandle) ws = null;
 			for (const cb of disconnectedCbs) cb(ev.reason || "closed");
 			// Clear pending ACKs
@@ -183,6 +244,7 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 	}
 
 	function disconnect() {
+		setState("closing");
 		shouldReconnect = false;
 		if (reconnectTimer) {
 			clearTimeout(reconnectTimer);
@@ -199,17 +261,20 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 			pending.reject(new Error("disconnected"));
 		}
 		pendingAcks.clear();
+		setState("closed");
 	}
 
-	function emitFireAndForget(event: string, payload?: unknown) {
-		if (!ws || ws.readyState !== WebSocket.OPEN) return;
+	function emitFireAndForget(event: string, payload?: unknown): boolean {
+		if (state !== "open" || !ws || ws.readyState !== WebSocket.OPEN)
+			return false;
 		const msg: WSMessage = { event, data: normalizePayload(payload) };
 		ws.send(JSON.stringify(msg));
+		return true;
 	}
 
 	function emitAck(event: string, payload?: unknown): Promise<any> {
 		return new Promise((resolve, reject) => {
-			if (!ws || ws.readyState !== WebSocket.OPEN) {
+			if (state !== "open" || !ws || ws.readyState !== WebSocket.OPEN) {
 				reject(new Error("socket not connected"));
 				return;
 			}
@@ -246,7 +311,7 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 	}
 
 	function isConnected(): boolean {
-		return ws?.readyState === WebSocket.OPEN;
+		return state === "open";
 	}
 
 	function getCurrentUrl(): string {
@@ -281,6 +346,7 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 		connect,
 		disconnect,
 		getCurrentUrl,
+		getState,
 		emitFireAndForget,
 		emitAck,
 		onServerEvent,
@@ -290,5 +356,6 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 		onConnected,
 		onDisconnected,
 		onConnectError,
+		onStateChange,
 	};
 }

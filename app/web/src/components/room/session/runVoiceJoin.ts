@@ -214,7 +214,7 @@ async function executeVoiceJoin(
 					if (signal?.aborted) return;
 					onPhase("ready");
 				})
-				.catch((err) => {
+				.catch(async (err) => {
 					if (
 						signal?.aborted ||
 						err instanceof VoiceJoinAbortError ||
@@ -223,6 +223,9 @@ async function executeVoiceJoin(
 						return;
 					}
 					console.error("[runVoiceJoin] signal join failed after media:", err);
+					onPhase("failed");
+					await client.leaveRoom().catch(() => {});
+					await client.destroy().catch(() => {});
 				});
 			return { client, provider };
 		}
