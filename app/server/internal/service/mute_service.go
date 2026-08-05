@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"time"
+	"sync"
 
 	"gorm.io/gorm"
 
@@ -19,10 +20,22 @@ type MuteChecker interface {
 type MuteService struct {
 	muteRepo *repository.MuteRepository
 	userRepo *repository.UserRepository
+	// onExpired 在临时禁言过期且 DB 记录被删除后触发完整 unmute 流程。
+	onExpired MuteExpiryHandler
+	expiryMu sync.Mutex
+	expiring map[uint]bool
 }
+
+// MuteExpiryHandler 处理临时禁言到期后的业务通知（广播 unmute + SFU 恢复）。
+type MuteExpiryHandler func(userID uint)
 
 func NewMuteService(muteRepo *repository.MuteRepository, userRepo *repository.UserRepository) *MuteService {
 	return &MuteService{muteRepo: muteRepo, userRepo: userRepo}
+}
+
+// SetOnExpired 注入临时禁言过期后的完整解禁回调。
+func (s *MuteService) SetOnExpired(fn MuteExpiryHandler) {
+	s.onExpired = fn
 }
 
 // IsMuted 检查用户是否被禁言
@@ -47,6 +60,8 @@ func (s *MuteService) IsMuted(userID uint) (bool, *model.Mute, error) {
 		if delErr := s.muteRepo.DeleteByUserID(userID); delErr != nil && !errors.Is(delErr, gorm.ErrRecordNotFound) {
 			return false, nil, pkg.NewAppError(pkg.INTERNAL_ERROR)
 		}
+		// 删除成功后走完整 unmute 流程：广播事件 + 恢复 SFU 媒体。
+		s.notifyExpired(userID)
 		return false, nil, nil
 	}
 
@@ -131,6 +146,29 @@ func (s *MuteService) UnmuteUser(userID uint) error {
 	return nil
 }
 
+// notifyExpired 触发过期后的完整 unmute 回调，并防止并发调用重复触发。
+func (s *MuteService) notifyExpired(userID uint) {
+	if userID == 0 || s.onExpired == nil {
+		return
+	}
+	s.expiryMu.Lock()
+	if s.expiring == nil {
+		s.expiring = make(map[uint]bool)
+	}
+	if s.expiring[userID] {
+		s.expiryMu.Unlock()
+		return
+	}
+	s.expiring[userID] = true
+	s.expiryMu.Unlock()
+	defer func() {
+		s.expiryMu.Lock()
+		delete(s.expiring, userID)
+		s.expiryMu.Unlock()
+	}()
+	s.onExpired(userID)
+}
+
 // GetMuteStatus 查询禁言状态
 func (s *MuteService) GetMuteStatus(userID uint) (*model.Mute, error) {
 	muted, mute, err := s.IsMuted(userID)
@@ -145,9 +183,16 @@ func (s *MuteService) GetMuteStatus(userID uint) (*model.Mute, error) {
 
 // ListActiveMutes 获取所有生效禁言
 func (s *MuteService) ListActiveMutes() ([]model.Mute, error) {
+	expired, err := s.muteRepo.ListExpired()
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR)
+	}
 	// 清理过期记录
 	if err := s.muteRepo.DeleteExpired(); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR)
+	}
+	for _, mute := range expired {
+		s.notifyExpired(mute.UserID)
 	}
 	return s.muteRepo.ListActive()
 }

@@ -39,6 +39,13 @@ func (r *MuteRepository) DeleteByUserID(userID uint) error {
 	return nil
 }
 
+// ListExpired 返回所有已过期禁言记录（expires_at <= now 且非永久禁言）
+func (r *MuteRepository) ListExpired() ([]model.Mute, error) {
+	var mutes []model.Mute
+	err := r.db.Where("permanent = ? AND expires_at IS NOT NULL AND expires_at <= ?", false, time.Now()).Find(&mutes).Error
+	return mutes, err
+}
+
 // DeleteExpired 删除所有已过期禁言记录（expires_at <= now 且非永久禁言）
 func (r *MuteRepository) DeleteExpired() error {
 	return r.db.Where("permanent = ? AND expires_at IS NOT NULL AND expires_at <= ?", false, time.Now()).Delete(&model.Mute{}).Error

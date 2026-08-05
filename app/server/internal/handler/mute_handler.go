@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"log"
+
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
@@ -100,6 +102,7 @@ func (h *MuteHandler) CreateMute(c *gin.Context) {
 		h.broadcaster.BroadcastMute(req.UserID, info)
 	}
 
+	// DB 与广播已生效；控制命令失败只告警，避免客户端收到 5xx 却看到状态已变更。
 	if h.controlPublisher != nil {
 		if err := h.controlPublisher.PublishControl(cluster.ControlCommand{
 			Command:  cluster.CommandMute,
@@ -108,8 +111,7 @@ func (h *MuteHandler) CreateMute(c *gin.Context) {
 				"user_id": req.UserID, "permanent": req.Permanent, "duration": req.Duration, "reason": req.Reason,
 			},
 		}); err != nil {
-			pkg.HandleError(c, err)
-			return
+			log.Printf("[Mute] publish control mute failed user=%d err=%v", req.UserID, err)
 		}
 	}
 
@@ -150,8 +152,7 @@ func (h *MuteHandler) CancelMute(c *gin.Context) {
 			Command: cluster.CommandUnmute,
 			Payload: map[string]interface{}{"user_id": req.UserID},
 		}); err != nil {
-			pkg.HandleError(c, err)
-			return
+			log.Printf("[Mute] publish control unmute failed user=%d err=%v", req.UserID, err)
 		}
 	}
 

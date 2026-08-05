@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+// cachedMuteRuleL1TTL 控制 L1 内存回填的过期时间；其他实例重新禁言产生新 ruleID 后，
+// 旧实例 L1 最多再命中一次短窗口，避免 unmute 删错 rule 导致新禁言无法解除。
+const cachedMuteRuleL1TTL = 30 * time.Second
+
 // MuteRuleStore persists provider-side mute rule identifiers across instances.
 // Used by degraded mute backends (e.g. Agora kicking-rule ids) so unmute can
 // delete the same rule on any process.
@@ -142,8 +146,8 @@ func (s *CachedMuteRuleStore) Get(ctx context.Context, key string) (int, error) 
 	if err != nil || id <= 0 {
 		return id, err
 	}
-	// Best-effort L1 fill; TTL unknown on read — keep until explicit delete.
-	_ = s.local.Save(ctx, key, id, 0)
+	// Best-effort L1 fill with short TTL so stale rule IDs expire quickly.
+	_ = s.local.Save(ctx, key, id, cachedMuteRuleL1TTL)
 	return id, nil
 }
 
