@@ -1,5 +1,3 @@
-import type { AxiosResponse } from "axios";
-import type { Result } from "./apiClient";
 import apiClient from "./apiClient";
 import type { BackendUser } from "./auth";
 
@@ -15,7 +13,7 @@ export async function listUsers(
 	excludeBots = true,
 	keyword?: string,
 ): Promise<{ users: BackendUser[]; total: number }> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<UserListResponse>({
 		url: "/api/v1/user/list",
 		data: {
 			page,
@@ -23,11 +21,11 @@ export async function listUsers(
 			exclude_bots: excludeBots,
 			...(keyword?.trim() ? { keyword: keyword.trim() } : {}),
 		},
-	})) as AxiosResponse<Result<UserListResponse>>;
+	});
 
 	return {
-		users: (res as any).data.data?.list || [],
-		total: (res as any).data.data?.total || 0,
+		users: data?.list || [],
+		total: data?.total || 0,
 	};
 }
 
@@ -36,32 +34,32 @@ export async function updateProfile(data: {
 	display_name: string;
 	avatar: string;
 }): Promise<BackendUser> {
-	const res = (await apiClient.post({
+	const profile = await apiClient.post<BackendUser>({
 		url: "/api/v1/user/update-profile",
 		data,
-	})) as AxiosResponse<Result<BackendUser>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("profile data is missing");
-	return (res as any).data.data;
+	if (!profile) throw new Error("profile data is missing");
+	return profile;
 }
 
 export async function fetchUserInfo(identity: string): Promise<BackendUser> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<BackendUser>({
 		url: "/api/v1/user/info",
 		data: { identity },
-	})) as AxiosResponse<Result<BackendUser>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("user not found");
-	return (res as any).data.data;
+	if (!data) throw new Error("user not found");
+	return data;
 }
 
 /** 获取预设头像列表 */
 export async function getPresetAvatars(): Promise<string[]> {
-	const res = (await apiClient.get({
+	const data = await apiClient.get<{ avatars: string[] }>({
 		url: "/api/v1/user/preset-avatars",
-	})) as AxiosResponse<Result<{ avatars: string[] }>>;
+	});
 
-	return (res as any).data.data?.avatars || [];
+	return data?.avatars || [];
 }
 
 export async function updateUserRole(

@@ -9,17 +9,18 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // ProviderConfig 第三方 OAuth 应用的配置项，根据平台填写对应值。
 type ProviderConfig struct {
-	ClientID     string // OAuth App 的 Client ID
-	ClientSecret string // OAuth App 的 Client Secret
-	AuthURL      string // 用户授权页面 URL
-	TokenURL     string // 用 code 兑换 access_token 的端点
-	UserInfoURL  string // 获取用户信息的 API 端点
-	RedirectURL  string // 授权后回调地址
-	Scopes       string // 请求的权限范围，多个用空格分隔
+	ClientID     string       // OAuth App 的 Client ID
+	ClientSecret string       // OAuth App 的 Client Secret
+	AuthURL      string       // 用户授权页面 URL
+	TokenURL     string       // 用 code 兑换 access_token 的端点
+	UserInfoURL  string       // 获取用户信息的 API 端点
+	RedirectURL  string       // 授权后回调地址
+	Scopes       string       // 请求的权限范围，多个用空格分隔
 	FieldMapping FieldMapping // 自建 OAuth 的用户信息字段映射（仅 GenericProvider 使用）
 }
 
@@ -60,31 +61,81 @@ func NewProvider(name string, cfg *ProviderConfig) Provider {
 	}
 }
 
-// httpPostForm 通用 POST application/x-www-form-urlencoded 请求，读取完整响应体。
-func httpPostForm(url string, data url.Values) ([]byte, error) {
-	resp, err := http.PostForm(url, data)
+const (
+	oauthHTTPTimeout = 10 * time.Second
+	maxOAuthBody     = 2 << 20 // 2 MiB
+)
+
+var oauthHTTPClient = &http.Client{Timeout: oauthHTTPTimeout}
+
+// safeOAuthURL 仅允许 http/https 且必须携带 host，防止 SSRF 类出站请求。
+func safeOAuthURL(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("oauth: invalid url: %w", err)
+	}
+	switch u.Scheme {
+	case "https", "http":
+	default:
+		return "", fmt.Errorf("oauth: unsupported scheme %q", u.Scheme)
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("oauth: empty host")
+	}
+	return u.String(), nil
+}
+
+func httpDo(req *http.Request) ([]byte, error) {
+	resp, err := oauthHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
+	return io.ReadAll(io.LimitReader(resp.Body, maxOAuthBody+1))
 }
 
-// httpGet 通用 GET 请求，支持 Bearer Token 鉴权，读取完整响应体。
-func httpGet(url, token string) ([]byte, error) {
-	req, err := http.NewRequest("GET", url, nil)
+// httpPostForm 通用 POST application/x-www-form-urlencoded 请求，限制响应体大小。
+func httpPostForm(rawURL string, data url.Values) ([]byte, error) {
+	safe, err := safeOAuthURL(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodPost, safe, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	body, err := httpDo(req)
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxOAuthBody {
+		return nil, fmt.Errorf("oauth: response body too large")
+	}
+	return body, nil
+}
+
+// httpGet 通用 GET 请求，支持 Bearer Token 鉴权，限制响应体大小。
+func httpGet(rawURL, token string) ([]byte, error) {
+	safe, err := safeOAuthURL(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodGet, safe, nil)
 	if err != nil {
 		return nil, err
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	body, err := httpDo(req)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
+	if len(body) > maxOAuthBody {
+		return nil, fmt.Errorf("oauth: response body too large")
+	}
+	return body, nil
 }
 
 // GitHubProvider GitHub OAuth2 登录实现。

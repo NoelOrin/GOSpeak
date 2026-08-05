@@ -51,6 +51,12 @@ type AuthResponse struct {
 	NeedChangePassword bool       `json:"need_change_password"`
 }
 
+// RefreshResponse refresh 成功后返回的新双 Token。
+type RefreshResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+}
+
 // Login 用户名密码登录：查用户 → bcrypt 比对密码 → 生成 Token 对。
 func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 	user, err := s.userRepo.GetByName(req.Username)
@@ -167,44 +173,78 @@ func (s *AuthService) RefreshAccessForUserUUID(userUUID string) (string, error) 
 }
 
 // RefreshFromToken 解析 refresh_token，校验黑名单/版本/封禁后，按库内最新用户信息签发 access_token。
-func (s *AuthService) RefreshFromToken(refreshToken string) (string, error) {
+// RefreshFromToken 校验并轮换 refresh_token：重放同 family 旧 token 时吊销整族并返回 TOKEN_REVOKED。
+// 成功时返回新的 access_token + 同 family refresh_token。
+func (s *AuthService) RefreshFromToken(refreshToken string) (*RefreshResponse, error) {
 	claims, err := pkg.ParseToken(refreshToken)
 	if err != nil {
-		return "", pkg.NewAppError(pkg.TOKEN_WRONG, "invalid refresh token")
+		return nil, pkg.NewAppError(pkg.TOKEN_WRONG, "invalid refresh token")
 	}
 	if pkg.IsTokenExpired(claims) {
-		return "", pkg.NewAppError(pkg.TOKEN_EXPIRED, "refresh token expired")
+		return nil, pkg.NewAppError(pkg.TOKEN_EXPIRED, "refresh token expired")
 	}
 	if !pkg.IsRefreshToken(claims) {
-		return "", pkg.NewAppError(pkg.TOKEN_WRONG, "invalid refresh token")
+		return nil, pkg.NewAppError(pkg.TOKEN_WRONG, "invalid refresh token")
 	}
 	if redis.IsBlacklisted(claims.ID) {
-		return "", pkg.NewAppError(pkg.TOKEN_REVOKED)
+		return nil, pkg.NewAppError(pkg.TOKEN_REVOKED)
 	}
 	if claims.UserUUID == "" {
-		return "", pkg.NewAppError(pkg.TOKEN_WRONG, "invalid refresh token")
+		return nil, pkg.NewAppError(pkg.TOKEN_WRONG, "invalid refresh token")
 	}
 
 	user, err := s.userRepo.GetByUUID(claims.UserUUID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", pkg.NewAppError(pkg.USER_NOT_FOUND)
+			return nil, pkg.NewAppError(pkg.USER_NOT_FOUND)
 		}
-		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	if user.IsBanned() || model.HasBanRole(user.Role) {
-		return "", pkg.NewAppError(pkg.USER_BANNED)
+		return nil, pkg.NewAppError(pkg.USER_BANNED)
 	}
 	if user.TokenVersion != claims.TokenVersion {
-		return "", pkg.NewAppError(pkg.TOKEN_REVOKED)
+		return nil, pkg.NewAppError(pkg.TOKEN_REVOKED)
+	}
+
+	family := claims.RefreshFamily
+	if family == "" {
+		family, err = pkg.GenerateRefreshFamily()
+		if err != nil {
+			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+		}
+	}
+
+	// family 已用说明旧 token 被重放，吊销整族后拒绝本次刷新
+	used, err := redis.IsRefreshFamilyUsed(family)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "refresh family store unavailable")
+	}
+	if used {
+		_ = redis.RevokeRefreshFamily(family)
+		return nil, pkg.NewAppError(pkg.TOKEN_REVOKED)
+	}
+
+	// 原子抢占 family；失败说明并发刷新或重放，同样吊销整族
+	marked, err := redis.MarkRefreshFamilyUsed(family)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "refresh family store unavailable")
+	}
+	if !marked {
+		_ = redis.RevokeRefreshFamily(family)
+		return nil, pkg.NewAppError(pkg.TOKEN_REVOKED)
 	}
 
 	// 使用库内最新身份，避免 JWT 内旧 role/displayName 续签
-	token, err := pkg.GenerateToken(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion)
+	access, err := pkg.GenerateToken(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion)
 	if err != nil {
-		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	return token, nil
+	nextRefresh, err := pkg.GenerateRefreshTokenWithFamily(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion, family)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return &RefreshResponse{AccessToken: access, RefreshToken: nextRefresh}, nil
 }
 
 // Logout 将 access（及可选 refresh）加入黑名单；黑名单写失败必须上抛，

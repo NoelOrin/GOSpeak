@@ -47,6 +47,32 @@ func getDB() *gorm.DB {
 	return DB
 }
 
+// DBStats 返回连接池统计，供监控与 readiness 使用。
+func DBStats() sql.DBStats {
+	db := getDB()
+	if db == nil {
+		return sql.DBStats{}
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return sql.DBStats{}
+	}
+	return sqlDB.Stats()
+}
+
+// DBPing 探测底层连接池可用性，供健康检查使用。
+func DBPing() error {
+	db := getDB()
+	if db == nil {
+		return fmt.Errorf("db not initialized")
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Ping()
+}
+
 func InitDB(cfg *config.Config) error {
 	if cfg == nil {
 		return fmt.Errorf("config is nil")

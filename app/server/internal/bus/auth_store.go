@@ -165,6 +165,37 @@ func (s *AuthStore) IsBlacklistedErr(jti string) (bool, error) {
 	return true, nil
 }
 
+// MarkRefreshFamilyUsed 用 KV Create 实现 SetNX 语义；TTL 由 auth KV bucket（默认 7d）兜底。
+func (s *AuthStore) MarkRefreshFamilyUsed(family string, _ time.Duration) (bool, error) {
+	if s == nil || family == "" {
+		return false, nil
+	}
+	_, err := s.kv.Create(authKVKey("rf."+family), []byte("1"))
+	if errors.Is(err, nats.ErrKeyExists) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *AuthStore) IsRefreshFamilyUsed(family string) (bool, error) {
+	if s == nil || family == "" {
+		return false, nil
+	}
+	_, ok, err := s.get("rf." + family)
+	return ok, err
+}
+
+// RevokeRefreshFamily 覆盖写入已吊销标记，使同 family 的所有 refresh token 失效。
+func (s *AuthStore) RevokeRefreshFamily(family string) error {
+	if s == nil || family == "" {
+		return nil
+	}
+	return s.put("rf."+family, "revoked")
+}
+
 // signingKeyRecord 将 active key 与创建时间合并为单条 KV 记录，
 // 避免多实例并发轮换时两个 key 写入交错导致验签不一致。
 type signingKeyRecord struct {

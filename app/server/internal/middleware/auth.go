@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"GOSpeak/internal/config"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/redis"
@@ -293,16 +292,46 @@ func BanCheck() gin.HandlerFunc {
 	}
 }
 
-func CORS() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		allowed := "*"
-		if cfg := config.Current(); cfg != nil && cfg.CORSOrigin != "" {
-			allowed = cfg.CORSOrigin
+// CORS 返回基于显式白名单的 CORS 中间件。
+// origins 为逗号拆分后的原始配置项，"*" 表示放行任意来源；
+// 始终设置 Vary: Origin，未命中白名单时不回显 Access-Control-Allow-Origin。
+func CORS(origins []string) gin.HandlerFunc {
+	allowed := make([]string, 0, len(origins))
+	for _, o := range origins {
+		o = strings.TrimSpace(o)
+		if o == "" {
+			continue
 		}
-		c.Header("Access-Control-Allow-Origin", allowed)
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization")
-		c.Header("Access-Control-Max-Age", "86400")
+		allowed = append(allowed, strings.TrimRight(o, "/"))
+	}
+	return func(c *gin.Context) {
+		c.Header("Vary", "Origin")
+
+		origin := strings.TrimRight(strings.TrimSpace(c.Request.Header.Get("Origin")), "/")
+		allowAll := false
+		matched := ""
+		for _, o := range allowed {
+			if o == "*" {
+				allowAll = true
+				break
+			}
+			if origin != "" && strings.EqualFold(o, origin) {
+				matched = o
+				break
+			}
+		}
+
+		if allowAll {
+			c.Header("Access-Control-Allow-Origin", "*")
+		} else if matched != "" {
+			c.Header("Access-Control-Allow-Origin", origin)
+		}
+
+		if matched != "" || allowAll {
+			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization")
+			c.Header("Access-Control-Max-Age", "86400")
+		}
 
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)

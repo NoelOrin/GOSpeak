@@ -147,7 +147,7 @@ func (h *DomainHandler) ListPublic(c *gin.Context) {
 	pkg.Success(c, gin.H{"domains": domains, "total": total})
 }
 
-// MyDomains 返回当前用户加入的 Domain UUID 列表。
+// MyDomains 返回当前用户加入的 Domain 批量详情（含成员数与房间数）。
 func (h *DomainHandler) MyDomains(c *gin.Context) {
 	userUUIDVal, ok := c.Get("user_uuid")
 	if !ok {
@@ -155,12 +155,12 @@ func (h *DomainHandler) MyDomains(c *gin.Context) {
 		return
 	}
 	userUUID, _ := userUUIDVal.(string)
-	uuids, err := h.domainSvc.ListUserDomains(userUUID)
+	domains, err := h.domainSvc.ListUserDomainDetails(userUUID)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
-	pkg.Success(c, gin.H{"domain_uuids": uuids})
+	pkg.Success(c, domains)
 }
 
 type UpdateDomainRequest struct {

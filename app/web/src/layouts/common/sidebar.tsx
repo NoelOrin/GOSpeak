@@ -5,7 +5,7 @@ import Home from "lucide-solid/icons/home";
 import Settings from "lucide-solid/icons/settings";
 import ShieldCheck from "lucide-solid/icons/shield-check";
 import { createResource, For, Show } from "solid-js";
-import { type Domain, getDomain } from "@/api/domain";
+import { type DomainDetail, getMyDomainsDetailed } from "@/api/domain";
 import DomainIcon from "@/components/domain/DomainIcon";
 import OptionSquare from "@/components/common/optionSquare";
 import domainStore from "@/stores/domainStore";
@@ -26,15 +26,11 @@ const Sidebar = (props: SidebarProps) => {
 
 	void loadMyDomains().catch(() => {});
 
-	const [domains] = createResource<Domain[], string[]>(
+	const [domains] = createResource<DomainDetail[], string[]>(
 		() => state.myDomainUUIDs,
-		async (uuids: string[]) => {
-			const results = await Promise.allSettled(uuids.map((u) => getDomain(u)));
-			return results
-				.filter(
-					(r): r is PromiseFulfilledResult<Domain> => r.status === "fulfilled",
-				)
-				.map((r) => r.value);
+		async () => {
+			const rows = await getMyDomainsDetailed();
+			return rows.filter((row) => state.myDomainUUIDs.includes(row.uuid));
 		},
 	);
 

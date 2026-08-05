@@ -90,13 +90,13 @@ func (h *AuthHandler) GetRefreshToken(c *gin.Context) {
 		return
 	}
 
-	newToken, err := h.authService.RefreshFromToken(req.RefreshToken)
+	resp, err := h.authService.RefreshFromToken(req.RefreshToken)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
 
-	pkg.Success(c, gin.H{"access_token": newToken})
+	pkg.Success(c, resp)
 }
 
 // Logout

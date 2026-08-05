@@ -1,7 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"errors"
+	"log"
+	"strings"
 	"testing"
 	"time"
 
@@ -426,5 +429,29 @@ func TestClusterServiceMarkServerAssignmentsDraining(t *testing.T) {
 	}
 	if len(assignments) != 1 || assignments[0].Status != model.ServerAssignmentDraining {
 		t.Fatalf("expected draining assignment, got %+v", assignments)
+	}
+}
+
+func TestReconcile_ReportsErrors(t *testing.T) {
+	svc, db := setupClusterServiceTestDB(t)
+	nodeRepo := repository.NewClusterNodeRepository(db)
+	node := &model.ClusterNode{UUID: "node-w", Name: "w", Status: model.ClusterNodeReady, SFUHealthy: true, MaxServers: 10, MaxRooms: 100}
+	if err := nodeRepo.Create(node); err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	if err := db.Create(&model.Domain{Name: "srv-pending", OwnerUUID: "owner-1"}).Error; err != nil {
+		t.Fatalf("create domain: %v", err)
+	}
+	svc.SetNotifier(&fakeClusterNotifier{err: errors.New("publish failed")})
+
+	var buf bytes.Buffer
+	old := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(old)
+
+	svc.reconcilePendingServers(node.UUID)
+
+	if !strings.Contains(buf.String(), "[cluster] reconcile scale failed server=") {
+		t.Fatalf("expected reconcile scale failure to be logged, got %q", buf.String())
 	}
 }

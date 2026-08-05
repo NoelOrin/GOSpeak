@@ -130,7 +130,11 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 		}
 		if err != nil {
 			if errors.Is(err, pkg.ErrSFUNotSupported) {
-				log.Printf("[Signal] SFU mute unsupported, soft fallback room=%s identity=%s", t.room, t.identity)
+				if muted {
+					log.Printf("[Signal] SFU mute unsupported, soft fallback room=%s identity=%s", t.room, t.identity)
+				} else {
+					log.Printf("[Signal] SFU unmute unsupported, soft unmute room=%s identity=%s", t.room, t.identity)
+				}
 			} else {
 				log.Printf("[Signal] failed SFU mute (soft fallback) room=%s identity=%s err=%v", t.room, t.identity, err)
 			}

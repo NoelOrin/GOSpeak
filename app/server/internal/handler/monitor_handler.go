@@ -192,18 +192,14 @@ func (h *MonitorHandler) collect() healthSnapshot {
 	}
 
 	// DB 连接池
-	if repository.DB != nil {
-		if sqlDB, err := repository.DB.DB(); err == nil {
-			if err := sqlDB.Ping(); err == nil {
-				snap.DBConnected = true
-			}
-			st := sqlDB.Stats()
-			snap.DBInUse = st.InUse
-			snap.DBIdle = st.Idle
-			snap.DBMaxOpen = st.MaxOpenConnections
-			snap.DBWaitCount = st.WaitCount
-			snap.DBWaitDurationMs = st.WaitDuration.Milliseconds()
-		}
+	st := repository.DBStats()
+	snap.DBInUse = st.InUse
+	snap.DBIdle = st.Idle
+	snap.DBMaxOpen = st.MaxOpenConnections
+	snap.DBWaitCount = st.WaitCount
+	snap.DBWaitDurationMs = st.WaitDuration.Milliseconds()
+	if err := repository.DBPing(); err == nil {
+		snap.DBConnected = true
 	}
 
 	// Redis 详细状态

@@ -26,6 +26,7 @@ import (
 	"os"
 	ossignal "os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -43,10 +44,10 @@ const (
 	Prod EnvEnum = "prod"
 )
 
-func StartGin(env EnvEnum) {
+func StartGin(env EnvEnum) error {
 	appEnv := string(env)
 	if appEnv == "" {
-		appEnv = string(Prod)
+		appEnv = string(Dev)
 	}
 	// 进程环境优先；文件仅填充未设置变量
 	config.LoadEnvFiles(appEnv)
@@ -58,7 +59,7 @@ func StartGin(env EnvEnum) {
 
 	// 统一日志初始化（先于其它组件，后续 log/fmt 可逐步迁移）
 	if err := logger.Init(logger.OptionsFrom(cfg.LoggerOptions())); err != nil {
-		panic(fmt.Sprintf("failed to init logger: %v", err))
+		return fmt.Errorf("failed to init logger: %w", err)
 	}
 	logger.SetupGin()
 	logger.WithComponent("Server").WithFields(logger.Fields{
@@ -67,7 +68,7 @@ func StartGin(env EnvEnum) {
 		"provider": cfg.SFUProvider,
 	}).Info("logger ready")
 
-	if env == Prod || env == "" || cfg.IsProduction() {
+	if env == Prod || cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	if cfg.GinMode != "" {
@@ -75,7 +76,7 @@ func StartGin(env EnvEnum) {
 	}
 
 	if err := repository.InitDB(cfg); err != nil {
-		panic(fmt.Sprintf("failed to initialize database: %v", err))
+		return fmt.Errorf("failed to initialize database: %w", err)
 	}
 
 	redis.InitRedis(cfg)
@@ -122,7 +123,7 @@ func StartGin(env EnvEnum) {
 	}
 	permSvc := service.NewPermissionService(permRepo)
 	if err := permSvc.LoadCache(); err != nil {
-		panic(fmt.Sprintf("failed to load permission cache: %v", err))
+		return fmt.Errorf("failed to load permission cache: %w", err)
 	}
 	middleware.SetPermissionChecker(permSvc)
 
@@ -142,7 +143,7 @@ func StartGin(env EnvEnum) {
 	sfuConfigSvc := service.NewSFUConfigService(sfuConfigRepo, cfg)
 	if cfg.IsAgent() {
 		if err := sfuConfigSvc.SyncFromEnv(); err != nil {
-			panic(fmt.Sprintf("failed to sync sfu config from env: %v", err))
+			return fmt.Errorf("failed to sync sfu config from env: %w", err)
 		}
 	}
 	botTokenRepo := repository.NewBotTokenRepository(repository.DB)
@@ -154,12 +155,12 @@ func StartGin(env EnvEnum) {
 	pluginReg := plugin.NewRegistry(pluginHost)
 	// 注册二进制内嵌的基础插件（bot-base 等）
 	if err := builtin.RegisterAll(pluginReg); err != nil {
-		panic(fmt.Sprintf("register builtin plugins: %v", err))
+		return fmt.Errorf("register builtin plugins: %w", err)
 	}
 	logger.WithComponent("Plugin").WithField("embedded", builtin.EmbeddedSummary()).Info("builtin plugins registered")
 	if cfg.IsAgent() {
 		if err := pluginReg.InitAll(); err != nil {
-			panic(fmt.Sprintf("init plugins: %v", err))
+			return fmt.Errorf("init plugins: %w", err)
 		}
 		// 后端启动时同步启动已启用插件（bot-base 内嵌且默认启用）
 		if err := pluginReg.StartEnabled(context.Background()); err != nil {
@@ -176,7 +177,12 @@ func StartGin(env EnvEnum) {
 	var sfuProvider sfu.Provider = factory.NewDynamicProvider(sfuConfigSvc.ResolveConfig)
 
 	r := gin.New()
-	r.Use(logger.GinRecovery(), logger.GinLogger())
+
+	// 只信任本机代理注入的 X-Forwarded-*，避免外部客户端伪造。
+	if err := r.SetTrustedProxies([]string{"127.0.0.1", "::1"}); err != nil {
+		logger.WithComponent("HTTP").Warnf("set trusted proxies failed: %v", err)
+	}
+	r.Use(logger.GinRecovery(), logger.GinLogger(), middleware.CORS(strings.Split(cfg.CORSOrigin, ",")))
 	middleware.SetTokenVersionChecker(authSvc)
 
 	wsFanout := ws.NewFanout()
@@ -191,7 +197,7 @@ func StartGin(env EnvEnum) {
 	if cfg.NATSEmbeddedPort != "" {
 		p, err := strconv.Atoi(cfg.NATSEmbeddedPort)
 		if err != nil {
-			panic(fmt.Sprintf("invalid NATS_EMBEDDED_PORT %q: %v", cfg.NATSEmbeddedPort, err))
+			return fmt.Errorf("invalid NATS_EMBEDDED_PORT %q: %w", cfg.NATSEmbeddedPort, err)
 		}
 		embeddedPort = p
 	}
@@ -204,7 +210,7 @@ func StartGin(env EnvEnum) {
 		Deliverer:      deliverer,
 	})
 	if err != nil {
-		panic(fmt.Sprintf("failed to init event bus: %v", err))
+		return fmt.Errorf("failed to init event bus: %w", err)
 	}
 
 	signalHub := signal.NewHub(roomSvc, muteSvc, userSvc, permSvc)
@@ -310,7 +316,9 @@ func StartGin(env EnvEnum) {
 	}
 	signalHub.SetSFU(sfuProvider)
 	if snr, ok := sfuProvider.(signal.StreamNameResolver); ok {
-		signalHub.SetStreamResolver(snr)
+		if sc, ok2 := sfuProvider.(interface{ SupportsStream() bool }); !ok2 || sc.SupportsStream() {
+			signalHub.SetStreamResolver(snr)
+		}
 	}
 	// 注入 Hub room 聚合视图给 SRS 等无原生 room 维度的 provider（pkg.RoomRegistrySetter）。
 	if rs, ok := sfuProvider.(pkg.RoomRegistrySetter); ok {
@@ -450,7 +458,7 @@ func StartGin(env EnvEnum) {
 		clusterStop, err = startAgentClusterRuntime(cfg, clusterSvc)
 	}
 	if err != nil {
-		panic(fmt.Sprintf("failed to start cluster runtime: %v", err))
+		return fmt.Errorf("failed to start cluster runtime: %w", err)
 	}
 
 	domainH := handler.NewDomainHandler(domainSvc, permSvc)
@@ -565,6 +573,13 @@ func StartGin(env EnvEnum) {
 			logger.WithComponent("HTTP").Errorf("shutdown error: %v", err)
 		}
 
+		// 2) stop membership heartbeat, then close websocket connections
+		signalHub.StopMembershipHeartbeat()
+		if wsUpgrader != nil && wsUpgrader.Fanout() != nil {
+			wsUpgrader.Fanout().CloseAll()
+			logger.WithComponent("WS").Info("websocket connections closed")
+		}
+
 		pluginReg.StopAll(context.Background())
 		logger.WithComponent("Plugin").Info("plugins stopped")
 
@@ -582,16 +597,14 @@ func StartGin(env EnvEnum) {
 			logger.WithComponent("Cluster").Info("agent leader lock released")
 		}
 
-		// 2) stop membership lease heartbeat, then drain signal fanout
-		signalHub.StopMembershipHeartbeat()
-		// 3) drain signal fanout then close socket connections
-		logger.WithComponent("Message").Info("write queue closed")
+		// 3) close event bus last
+		logger.WithComponent("EventBus").Info("closing event bus")
 		closeEventBus()
 		logger.WithComponent("EventBus").Info("closed")
-		// WS connections close when the HTTP server shuts down
 	}()
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.WithComponent("HTTP").Fatalf("listen error: %v", err)
 	}
+	return nil
 }

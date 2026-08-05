@@ -166,6 +166,11 @@ func (s *DomainService) ListUserDomains(userUUID string) ([]string, error) {
 	return s.domainRepo.ListUserDomains(userUUID)
 }
 
+// ListUserDomainDetails 返回用户加入的 Domain 批量详情（含成员数与房间数）。
+func (s *DomainService) ListUserDomainDetails(userUUID string) ([]model.DomainDetail, error) {
+	return s.domainRepo.ListUserDomainDetails(userUUID)
+}
+
 func (s *DomainService) IsMember(domainUUID, userUUID string) bool {
 	_, err := s.domainRepo.GetMember(domainUUID, userUUID)
 	return err == nil

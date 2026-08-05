@@ -105,7 +105,7 @@ function ApiKeyPage() {
 				expires_in: expiry() || undefined,
 			});
 			showToast("BOT 密钥已创建，请妥善保存明文 Key", { type: "success" });
-			setNewPlainKey(res.data?.token || "");
+			setNewPlainKey(res?.token || "");
 			setName("");
 			setSelectedPermissions([]);
 			setExpiry("720h");
@@ -275,7 +275,7 @@ function ApiKeyPage() {
 					fallback={<div class="loading loading-spinner loading-sm m-4" />}
 				>
 					<Show
-						when={(keysData()?.data?.length ?? 0) > 0}
+						when={(keysData()?.length ?? 0) > 0}
 						fallback={
 							<div class="m-4 rounded-xl border border-dashed border-base-300 bg-base-200/20 py-10 text-center text-sm text-base-content/55">
 								暂无 BOT 密钥
@@ -294,7 +294,7 @@ function ApiKeyPage() {
 									</tr>
 								</thead>
 								<tbody>
-									<For each={keysData()?.data ?? []}>
+									<For each={keysData() ?? []}>
 										{(key) => (
 											<tr class={manageTableRowClass}>
 												<td class="font-medium">{key.name}</td>

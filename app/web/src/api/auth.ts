@@ -1,5 +1,3 @@
-import type { AxiosResponse } from "axios";
-import type { Result } from "./apiClient";
 import apiClient from "./apiClient";
 import { requestAccessTokenByRefreshToken } from "./authTransport";
 
@@ -26,13 +24,13 @@ export interface LoginData {
 }
 
 export async function login(req: LoginReq): Promise<LoginData> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<LoginData>({
 		url: "/api/v1/auth/login",
 		data: req,
-	})) as AxiosResponse<Result<LoginData>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("login data is missing");
-	return (res as any).data.data;
+	if (!data) throw new Error("login data is missing");
+	return data;
 }
 
 export async function refreshToken(refreshToken: string): Promise<string> {
@@ -60,13 +58,13 @@ export async function firstChangePassword(
 	newPassword: string,
 	name?: string,
 ): Promise<LoginData> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<LoginData>({
 		url: "/api/v1/auth/first_change_password",
 		data: { new_password: newPassword, name: name || undefined },
-	})) as AxiosResponse<Result<LoginData>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("login data is missing");
-	return (res as any).data.data;
+	if (!data) throw new Error("login data is missing");
+	return data;
 }
 
 export async function resetPassword(
@@ -81,10 +79,10 @@ export async function resetPassword(
 }
 
 export async function getProfile(): Promise<BackendUser> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<BackendUser>({
 		url: "/api/v1/user/profile",
-	})) as AxiosResponse<Result<BackendUser>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("profile data is missing");
-	return (res as any).data.data;
+	if (!data) throw new Error("profile data is missing");
+	return data;
 }

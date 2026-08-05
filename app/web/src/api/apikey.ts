@@ -6,7 +6,6 @@ export const BOT_ALLOWED_PERMISSION_CODES = [
 	"mute:manage",
 ];
 
-import type { Result } from "./apiClient";
 import apiClient from "./apiClient";
 
 export interface BotAPIKey {
@@ -44,18 +43,20 @@ export interface CreateBotKeyResult {
 
 export function createBotKey(
 	input: CreateBotKeyInput,
-): Promise<Result<CreateBotKeyResult>> {
-	return apiClient
-		.post({ url: "/api/v1/bot/create", data: input })
-		.then((r) => r.data);
+): Promise<CreateBotKeyResult> {
+	return apiClient.post<CreateBotKeyResult>({
+		url: "/api/v1/bot/create",
+		data: input,
+	});
 }
 
-export function listBotKeys(): Promise<Result<BotAPIKey[]>> {
-	return apiClient.post({ url: "/api/v1/bot/list" }).then((r) => r.data);
+export function listBotKeys(): Promise<BotAPIKey[]> {
+	return apiClient.post<BotAPIKey[]>({ url: "/api/v1/bot/list" });
 }
 
-export function revokeBotKey(uuid: string): Promise<Result<null>> {
-	return apiClient
-		.post({ url: "/api/v1/bot/revoke", data: { uuid } })
-		.then((r) => r.data);
+export function revokeBotKey(uuid: string): Promise<null> {
+	return apiClient.post<null>({
+		url: "/api/v1/bot/revoke",
+		data: { uuid },
+	});
 }

@@ -231,6 +231,31 @@ func (m *mockBroadcaster) GetClient(clientID string) ws.ClientMessenger {
 	return m.clients[clientID]
 }
 
+// CloseAll 实现 ws.Broadcaster.CloseAll — 快照当前注册客户端后逐个关闭。
+func (m *mockBroadcaster) CloseAll() {
+	targets := make([]ws.ClientMessenger, 0, len(m.clients))
+	for _, c := range m.clients {
+		targets = append(targets, c)
+	}
+	for _, c := range targets {
+		c.Close()
+	}
+}
+
+func TestMockBroadcaster_CloseAll(t *testing.T) {
+	mb := newMockBroadcaster()
+	c1 := newMockClient("c1")
+	c2 := newMockClient("c2")
+	mb.clients[c1.ID()] = c1
+	mb.clients[c2.ID()] = c2
+
+	mb.CloseAll()
+
+	if !c1.isClosed() || !c2.isClosed() {
+		t.Fatal("expected all registered clients to be closed")
+	}
+}
+
 // assertJoined checks if client joined room via the mock broadcaster.
 func assertJoined(t *testing.T, hub *Hub, clientID, room string) {
 	t.Helper()
@@ -672,6 +697,7 @@ func TestHub_OnDisconnect_RemoveFromRoom(t *testing.T) {
 		Identity: "user-2",
 		JoinedAt: time.Now().UnixMilli(),
 	}
+	hub.connSlots["socket-1"] = &connRoomSlots{VoiceRoom: "test-room"}
 
 	conn := newAuthedMockClient("socket-1", "user-1")
 	hub.OnDisconnect(conn)
@@ -699,6 +725,7 @@ func TestHub_OnDisconnect_RemoveEmptyRoom(t *testing.T) {
 		Identity: "user-1",
 		JoinedAt: time.Now().UnixMilli(),
 	}
+	hub.connSlots["socket-1"] = &connRoomSlots{VoiceRoom: "test-room"}
 
 	conn := newAuthedMockClient("socket-1", "user-1")
 	hub.OnDisconnect(conn)
@@ -726,6 +753,7 @@ func TestHub_OnDisconnect_MultipleRooms(t *testing.T) {
 			"socket-2": {ID: "socket-2", Identity: "user-2", JoinedAt: time.Now().UnixMilli()},
 		},
 	}
+	hub.connSlots["socket-1"] = &connRoomSlots{TextRoom: "room-1", VoiceRoom: "room-2"}
 
 	conn := newAuthedMockClient("socket-1", "user-1")
 	hub.OnDisconnect(conn)

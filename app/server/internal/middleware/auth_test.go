@@ -223,3 +223,16 @@ func TestVerifyWSTicket_RejectsNonWSTicket(t *testing.T) {
 		})
 	}
 }
+
+func TestCORS_AddsVary(t *testing.T) {
+	router := gin.New()
+	router.Use(CORS([]string{"https://app.example.com"}))
+	router.GET("/x", func(c *gin.Context) { c.String(200, "ok") })
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/x", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	router.ServeHTTP(rec, req)
+	if rec.Header().Get("Vary") != "Origin" {
+		t.Fatal("expected Vary: Origin")
+	}
+}

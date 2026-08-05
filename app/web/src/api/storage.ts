@@ -1,5 +1,3 @@
-import type { AxiosResponse } from "axios";
-import type { Result } from "./apiClient";
 import apiClient from "./apiClient";
 
 // ===== 类型定义 =====
@@ -49,24 +47,24 @@ export async function presignUpload(params: {
 	file_size: number;
 	category: string;
 }): Promise<PresignResult> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<PresignResult>({
 		url: "/api/v1/storage/presign",
 		data: params,
-	})) as AxiosResponse<Result<PresignResult>>;
+	});
 
-	return (res as any).data.data;
+	return data;
 }
 
 /** 确认 S3 上传完成 */
 export async function confirmUpload(
 	objectKey: string,
 ): Promise<{ public_url: string }> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<{ public_url: string }>({
 		url: "/api/v1/storage/confirm",
 		data: { object_key: objectKey },
-	})) as AxiosResponse<Result<{ public_url: string }>>;
+	});
 
-	return (res as any).data.data;
+	return data;
 }
 
 /** 本地模式中转上传 */
@@ -78,44 +76,44 @@ export async function uploadFile(
 	formData.append("file", file);
 	formData.append("object_key", objectKey);
 
-	const res = (await apiClient.post({
+	const data = await apiClient.post<{ public_url: string }>({
 		url: "/api/v1/storage/upload",
 		data: formData,
 		headers: { "Content-Type": "multipart/form-data" },
-	})) as AxiosResponse<Result<{ public_url: string }>>;
+	});
 
-	return (res as any).data.data;
+	return data;
 }
 
 /** 获取存储配置（管理员） */
 export async function getStorageConfig(): Promise<StorageConfigView> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<StorageConfigView>({
 		url: "/api/v1/storage/config",
-	})) as AxiosResponse<Result<StorageConfigView>>;
+	});
 
-	return (res as any).data.data;
+	return data;
 }
 
 /** 更新存储配置（管理员） */
 export async function updateStorageConfig(
 	config: StorageConfigInput,
 ): Promise<StorageConfigView> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<StorageConfigView>({
 		url: "/api/v1/storage/update-config",
 		data: config,
-	})) as AxiosResponse<Result<StorageConfigView>>;
+	});
 
-	return (res as any).data.data;
+	return data;
 }
 
 /** 测试存储配置连接，不保存配置 */
 export async function testStorageConfig(
 	config: StorageConfigInput,
 ): Promise<{ ok: boolean }> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<{ ok: boolean }>({
 		url: "/api/v1/storage/test-config",
 		data: config,
-	})) as AxiosResponse<Result<{ ok: boolean }>>;
+	});
 
-	return (res as any).data.data ?? { ok: true };
+	return data ?? { ok: true };
 }

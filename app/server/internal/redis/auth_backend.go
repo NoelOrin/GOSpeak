@@ -36,3 +36,11 @@ func AuthBackendName() string {
 	}
 	return secondaryAuth.Backend()
 }
+
+// RefreshFamilyBackend 是可选的 refresh family 状态后端。
+// Redis 未连接时由支持该接口的 AuthBackend（如 NATS KV）提供多实例原子标记。
+type RefreshFamilyBackend interface {
+	MarkRefreshFamilyUsed(family string, ttl time.Duration) (bool, error)
+	IsRefreshFamilyUsed(family string) (bool, error)
+	RevokeRefreshFamily(family string) error
+}

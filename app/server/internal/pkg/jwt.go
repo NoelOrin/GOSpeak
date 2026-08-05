@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"time"
 
+	"encoding/hex"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/oklog/ulid/v2"
 )
@@ -18,13 +20,14 @@ const (
 )
 
 type Claims struct {
-	Username     string   `json:"username"`
-	DisplayName  string   `json:"display_name"`
-	UserUUID     string   `json:"user_uuid"`
-	Role         string   `json:"role"`
-	TokenVersion uint     `json:"token_version"`
-	Permissions  []string `json:"permissions,omitempty"`
-	TokenType    string   `json:"token_type,omitempty"`
+	Username      string   `json:"username"`
+	DisplayName   string   `json:"display_name"`
+	UserUUID      string   `json:"user_uuid"`
+	Role          string   `json:"role"`
+	TokenVersion  uint     `json:"token_version"`
+	RefreshFamily string   `json:"refresh_family,omitempty"`
+	Permissions   []string `json:"permissions,omitempty"`
+	TokenType     string   `json:"token_type,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -82,15 +85,33 @@ func ParseToken(tokenStr string) (*Claims, error) {
 	return nil, lastErr
 }
 
-// GenerateRefreshToken 签发 refresh_token（7d）。tokenVersion 与 access_token 一致。
-func GenerateRefreshToken(username, displayName, userUUID, role string, tokenVersion uint) (string, error) {
+// GenerateRefreshFamily 为一次登录生成不可变 family ID。
+func GenerateRefreshFamily() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// GenerateRefreshTokenWithFamily 签发 refresh_token（7d），并携带指定 family。
+// family 为空时自动生成新 family，用于登录首次签发。
+func GenerateRefreshTokenWithFamily(username, displayName, userUUID, role string, tokenVersion uint, family string) (string, error) {
+	if family == "" {
+		var err error
+		family, err = GenerateRefreshFamily()
+		if err != nil {
+			return "", err
+		}
+	}
 	claims := Claims{
-		Username:     username,
-		DisplayName:  displayName,
-		UserUUID:     userUUID,
-		Role:         role,
-		TokenVersion: tokenVersion,
-		TokenType:    RefreshTokenType,
+		Username:      username,
+		DisplayName:   displayName,
+		UserUUID:      userUUID,
+		Role:          role,
+		TokenVersion:  tokenVersion,
+		RefreshFamily: family,
+		TokenType:     RefreshTokenType,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(RefreshTokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -100,6 +121,11 @@ func GenerateRefreshToken(username, displayName, userUUID, role string, tokenVer
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(redis.GetSigningKey())
+}
+
+// GenerateRefreshToken 签发 refresh_token（7d）。tokenVersion 与 access_token 一致。
+func GenerateRefreshToken(username, displayName, userUUID, role string, tokenVersion uint) (string, error) {
+	return GenerateRefreshTokenWithFamily(username, displayName, userUUID, role, tokenVersion, "")
 }
 
 // GenerateWSTicket 签发短时 WS ticket，只允许通过 Sec-WebSocket-Protocol 传递，避免 JWT 进入 URL。

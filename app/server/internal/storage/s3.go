@@ -139,6 +139,21 @@ func (p *S3Provider) UploadFromReader(key string, reader io.Reader, size int64, 
 	return p.GetPublicURL(key), nil
 }
 
+// HeadObjectSize 通过 HeadObject 查询对象大小（字节）。
+func (p *S3Provider) HeadObjectSize(key string) (int64, error) {
+	out, err := p.client.HeadObject(context.Background(), &s3.HeadObjectInput{
+		Bucket: aws.String(p.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("head object failed: %w", err)
+	}
+	if out.ContentLength == nil {
+		return 0, fmt.Errorf("head object returned no content length")
+	}
+	return *out.ContentLength, nil
+}
+
 // GetPublicURL 拼接公开访问 URL
 func (p *S3Provider) GetPublicURL(key string) string {
 	base := strings.TrimRight(p.publicBaseURL, "/")

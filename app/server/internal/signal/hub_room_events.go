@@ -356,13 +356,20 @@ func (h *Hub) OnMemberSpeaking(c ws.ClientMessenger, data string) {
 
 	// 与 join 一致做禁言检查（fail-closed）：被禁言或检查失败时忽略发言态上报。
 	if h.muteStore != nil {
-		muted, _, muteErr := h.muteStore.IsMutedByIdentity(req.Identity)
-		if muteErr != nil {
-			log.Printf("[signal] OnMemberSpeaking IsMutedByIdentity error: identity=%q err=%v", req.Identity, muteErr)
-			return
-		}
-		if muted {
-			return
+		if muted, ok := h.muteCacheGet(req.Identity); ok {
+			if muted {
+				return
+			}
+		} else {
+			muted, _, muteErr := h.muteStore.IsMutedByIdentity(req.Identity)
+			if muteErr != nil {
+				log.Printf("[signal] OnMemberSpeaking IsMutedByIdentity error: identity=%q err=%v", req.Identity, muteErr)
+				return
+			}
+			h.muteCacheSet(req.Identity, muted)
+			if muted {
+				return
+			}
 		}
 	}
 

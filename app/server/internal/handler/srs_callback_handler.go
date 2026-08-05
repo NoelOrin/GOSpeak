@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"GOSpeak/internal/sfu/providers/srs"
@@ -141,9 +142,13 @@ func parseCallbackParams(param string) map[string]string {
 	if param == "" {
 		return out
 	}
-	for _, kv := range strings.Split(param, "&") {
-		if i := strings.Index(kv, "="); i >= 0 {
-			out[kv[:i]] = kv[i+1:]
+	values, err := url.ParseQuery(param)
+	if err != nil {
+		return out
+	}
+	for k, v := range values {
+		if len(v) > 0 {
+			out[k] = v[0]
 		}
 	}
 	return out

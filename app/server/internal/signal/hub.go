@@ -261,6 +261,33 @@ type Hub struct {
 	membershipHeartbeatStop chan struct{}
 	// kickBans 记录 room+identity 的短时踢出冷却，阻止被踢者立即重连同一房间。
 	kickBans map[string]time.Time
+	// muteCache 缓存 OnMemberSpeaking 的禁言查询结果，避免高频发言态上报打爆 DB。
+	// TTL 5s；禁言/解禁不主动失效缓存，最坏 5s 陈旧窗口（发言指示非安全边界，SFU 层仍强制执行静音）。
+	muteCache map[string]muteCacheEntry
+}
+
+type muteCacheEntry struct {
+	muted   bool
+	expires time.Time
+}
+
+func (h *Hub) muteCacheGet(identity string) (bool, bool) {
+	h.mu.RLock()
+	entry, ok := h.muteCache[identity]
+	h.mu.RUnlock()
+	if !ok || time.Now().After(entry.expires) {
+		return false, false
+	}
+	return entry.muted, true
+}
+
+func (h *Hub) muteCacheSet(identity string, muted bool) {
+	h.mu.Lock()
+	if h.muteCache == nil {
+		h.muteCache = make(map[string]muteCacheEntry)
+	}
+	h.muteCache[identity] = muteCacheEntry{muted: muted, expires: time.Now().Add(5 * time.Second)}
+	h.mu.Unlock()
 }
 
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
@@ -277,6 +304,7 @@ func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permCh
 		connSlots:        make(map[string]*connRoomSlots),
 		clientDomains:    make(map[string]string),
 		kickBans:         make(map[string]time.Time),
+		muteCache:        make(map[string]muteCacheEntry),
 	}
 }
 
@@ -445,7 +473,23 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	h.mu.Lock()
 	domainScope := h.clientDomains[c.ID()]
 	delete(h.clientDomains, c.ID())
-	for roomName, room := range h.rooms {
+	// connSlots 是连接房间槽位的唯一事实来源：按槽位收集房间键，
+	// 只清理该连接登记过的 Text/Voice 房间，不再全量遍历 h.rooms。
+	roomKeys := make([]string, 0, 2)
+	if slots := h.connSlots[c.ID()]; slots != nil {
+		if slots.TextRoom != "" {
+			roomKeys = append(roomKeys, slots.TextRoom)
+		}
+		if slots.VoiceRoom != "" && slots.VoiceRoom != slots.TextRoom {
+			roomKeys = append(roomKeys, slots.VoiceRoom)
+		}
+	}
+	delete(h.connSlots, c.ID())
+	for _, roomName := range roomKeys {
+		room := h.rooms[roomName]
+		if room == nil {
+			continue
+		}
 		if member, ok := room.Members[c.ID()]; ok {
 			identity := member.Identity
 			stream := member.Stream
@@ -470,7 +514,6 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 			cleanups = append(cleanups, disconnectCleanup{roomName, identity, deleted})
 		}
 	}
-	delete(h.connSlots, c.ID())
 	h.mu.Unlock()
 
 	if h.fanout != nil {

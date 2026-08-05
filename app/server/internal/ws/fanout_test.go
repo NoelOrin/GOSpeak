@@ -206,3 +206,44 @@ func TestFanout_ConcurrentAccess(t *testing.T) {
 	<-done
 	// Test passes if no data race (use -race flag)
 }
+
+func newTestClient(id string) *Client {
+	return NewTestClient(id, nil)
+}
+
+func TestBroadcastToRoom_MarshalsOnce(t *testing.T) {
+	f := NewFanout()
+	c1 := newTestClient("c1")
+	c2 := newTestClient("c2")
+	f.Add(c1)
+	f.Add(c2)
+	f.Join("r1", "c1")
+	f.Join("r1", "c2")
+
+	f.BroadcastToRoom("r1", "evt", map[string]interface{}{"k": "v"})
+	if got := atomic.LoadUint64(&f.marshalCount); got != 1 {
+		t.Fatalf("expected single marshal, got %d", got)
+	}
+	select {
+	case <-c1.writeCh:
+	default:
+		t.Fatal("expected c1 to receive broadcast")
+	}
+	select {
+	case <-c2.writeCh:
+	default:
+		t.Fatal("expected c2 to receive broadcast")
+	}
+}
+
+func TestFanout_CloseAll(t *testing.T) {
+	f := NewFanout()
+	c1 := newTestClient("c1")
+	c2 := newTestClient("c2")
+	f.Add(c1)
+	f.Add(c2)
+	f.CloseAll()
+	if atomic.LoadUint64(&c1.closedCount) != 1 || atomic.LoadUint64(&c2.closedCount) != 1 {
+		t.Fatalf("expected both closed, c1=%d c2=%d", c1.closedCount, c2.closedCount)
+	}
+}

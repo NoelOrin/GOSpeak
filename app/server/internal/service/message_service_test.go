@@ -71,6 +71,59 @@ func (q *fakeQueue) reset() {
 	q.err = nil
 }
 
+// testUserRepo records user lookup call counts for enrichAuthorInfo tests.
+type testUserRepo struct {
+	getByNameCalls  int
+	getByNamesCalls int
+	users           map[string]*model.User
+}
+
+func (r *testUserRepo) GetByName(name string) (*model.User, error) {
+	r.getByNameCalls++
+	user, ok := r.users[name]
+	if !ok {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return user, nil
+}
+
+func (r *testUserRepo) GetByNames(names []string) (map[string]*model.User, error) {
+	r.getByNamesCalls++
+	users := make(map[string]*model.User, len(names))
+	for _, name := range names {
+		if user, ok := r.users[name]; ok {
+			users[name] = user
+		}
+	}
+	return users, nil
+}
+
+type userRepoCallCount struct {
+	GetByName  int
+	GetByNames int
+}
+
+func newTestMessageService(t *testing.T) *MessageService {
+	t.Helper()
+	svc := NewMessageService(nil, nil, nil)
+	svc.SetUserRepo(&testUserRepo{
+		users: map[string]*model.User{
+			"alice": {Name: "alice", DisplayName: "Alice"},
+			"bob":   {Name: "bob", DisplayName: "Bob"},
+		},
+	})
+	return svc
+}
+
+func testMessageRepoCallCount(t *testing.T, svc *MessageService) userRepoCallCount {
+	t.Helper()
+	repo, ok := svc.userRepo.(*testUserRepo)
+	if !ok {
+		t.Fatalf("expected *testUserRepo, got %T", svc.userRepo)
+	}
+	return userRepoCallCount{GetByName: repo.getByNameCalls, GetByNames: repo.getByNamesCalls}
+}
+
 // memRoomRepo is an in-memory room store implementing roomByUUID.
 
 type allowAllDomainMembers struct{}
@@ -233,6 +286,20 @@ func assertErrorCode(t *testing.T, err error, code pkg.ErrCode) {
 	}
 	if appErr.Code != code {
 		t.Fatalf("expected error code %d, got %d: %s", code, appErr.Code, appErr.Message)
+	}
+}
+
+// ─── Author Enrichment Tests ───
+
+func TestEnrichAuthorInfo_Batch(t *testing.T) {
+	svc := newTestMessageService(t)
+	items := []MessageDTO{{AuthorID: "alice"}, {AuthorID: "bob"}, {AuthorID: "alice"}}
+	svc.enrichAuthorInfo(items)
+	if items[0].AuthorName == "" || items[1].AuthorName == "" {
+		t.Fatal("expected author names enriched")
+	}
+	if calls := testMessageRepoCallCount(t, svc); calls.GetByName != 0 || calls.GetByNames != 1 {
+		t.Fatalf("expected one batch call, got %+v", calls)
 	}
 }
 

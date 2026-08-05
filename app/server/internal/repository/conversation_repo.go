@@ -5,8 +5,8 @@ import (
 
 	"GOSpeak/internal/model"
 
-	"gorm.io/gorm/clause"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ConversationRepository struct {
@@ -43,6 +43,41 @@ func (r *ConversationRepository) ListByIdentity(identity string, limit int) ([]m
 		Limit(limit).
 		Find(&rows).Error
 	return rows, err
+}
+
+// ListByIdentityCursor returns a cursor-paginated conversation list for the
+// given identity, ordered by most recent activity descending. beforeID is the
+// conversation_id of the previous page's last row; limit is clamped to 1..100.
+func (r *ConversationRepository) ListByIdentityCursor(identity, beforeID string, limit int) ([]model.ConversationParticipant, bool, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	var rows []model.ConversationParticipant
+	q := r.db.
+		Where("identity_a = ? OR identity_b = ?", identity, identity).
+		Order("COALESCE(last_message_at, created_at) DESC, conversation_id DESC")
+	if beforeID != "" {
+		var pivot model.ConversationParticipant
+		if err := r.db.First(&pivot, "conversation_id = ?", beforeID).Error; err != nil {
+			return nil, false, err
+		}
+		pivotAt := pivot.CreatedAt
+		if pivot.LastMessageAt != nil {
+			pivotAt = *pivot.LastMessageAt
+		}
+		q = q.Where(
+			"(COALESCE(last_message_at, created_at), conversation_id) < (?, ?)",
+			pivotAt, beforeID,
+		)
+	}
+	if err := q.Limit(limit + 1).Find(&rows).Error; err != nil {
+		return nil, false, err
+	}
+	hasMore := len(rows) > limit
+	if hasMore {
+		rows = rows[:limit]
+	}
+	return rows, hasMore, nil
 }
 
 // GetByID retrieves a conversation participant row by its primary key.

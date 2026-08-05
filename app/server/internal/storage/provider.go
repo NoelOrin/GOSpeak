@@ -27,4 +27,7 @@ type Provider interface {
 
 	// TestConnection 校验存储后端连接是否可用
 	TestConnection() error
+
+	// HeadObjectSize 获取对象大小（字节），用于上传完成后的服务端复核
+	HeadObjectSize(key string) (int64, error)
 }

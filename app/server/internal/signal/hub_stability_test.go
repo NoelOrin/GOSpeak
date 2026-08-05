@@ -11,10 +11,16 @@ import (
 
 // ─── Mocks for stability tests ───
 
+type muteStoreCalls struct {
+	IsMutedByIdentity int
+	IsMutedBatch      int
+}
+
 type mockMuteStore struct {
 	mu    sync.Mutex
 	muted map[string]bool
 	err   error
+	calls muteStoreCalls
 }
 
 func newMockMuteStore() *mockMuteStore {
@@ -24,6 +30,7 @@ func newMockMuteStore() *mockMuteStore {
 func (m *mockMuteStore) IsMutedByIdentity(identity string) (bool, *model.Mute, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.calls.IsMutedByIdentity++
 	if m.err != nil {
 		return false, nil, m.err
 	}
@@ -33,6 +40,7 @@ func (m *mockMuteStore) IsMutedByIdentity(identity string) (bool, *model.Mute, e
 func (m *mockMuteStore) IsMutedBatch(identities []string) (map[string]bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.calls.IsMutedBatch++
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -55,6 +63,39 @@ func (m *mockMuteStore) setErr(err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.err = err
+}
+
+func newTestHubWithMuteStore(t *testing.T) *Hub {
+	t.Helper()
+	hub := NewHub(nil, newMockMuteStore(), nil, allowAllPermChecker{})
+	hub.fanout = newMockBroadcaster()
+	seedKickRoom(hub, "r1", map[string]string{"alice": "alice"})
+	return hub
+}
+
+func fakeConn(identity string) *mockClient {
+	return newAuthedMockClient(identity, identity)
+}
+
+func (h *Hub) primeMuteCache(identity string, muted bool) error {
+	h.mu.Lock()
+	if h.muteCache == nil {
+		h.muteCache = make(map[string]muteCacheEntry)
+	}
+	h.muteCache[identity] = muteCacheEntry{muted: muted, expires: time.Now().Add(5 * time.Second)}
+	h.mu.Unlock()
+	return nil
+}
+
+func testMuteStoreCallCount(t *testing.T, h *Hub) muteStoreCalls {
+	t.Helper()
+	store, ok := h.muteStore.(*mockMuteStore)
+	if !ok {
+		t.Fatalf("expected *mockMuteStore, got %T", h.muteStore)
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.calls
 }
 
 type blockingUserStore struct {
@@ -100,6 +141,18 @@ func (m *blockingUserStore) GetByUUID(uuid string) (*model.User, error) {
 }
 
 // ─── OnMemberSpeaking mute checks ───
+
+func TestOnMemberSpeaking_UsesMuteCache(t *testing.T) {
+	h := newTestHubWithMuteStore(t)
+	if err := h.primeMuteCache("alice", false); err != nil {
+		t.Fatalf("primeMuteCache: %v", err)
+	}
+	// 桩 muteStore 每次调用都计数；缓存命中后不再走 DB
+	h.OnMemberSpeaking(fakeConn("alice"), `{"room":"r1","identity":"alice","speaking":true}`)
+	if calls := testMuteStoreCallCount(t, h); calls.IsMutedByIdentity != 0 {
+		t.Fatalf("expected cached mute check, got %d DB calls", calls.IsMutedByIdentity)
+	}
+}
 
 func TestHub_OnMemberSpeaking_MutedIgnored(t *testing.T) {
 	mute := newMockMuteStore()

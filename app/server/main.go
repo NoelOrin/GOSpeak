@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"runtime"
 
 	"GOSpeak/cmd"
 	"GOSpeak/internal/logger"
@@ -29,17 +27,14 @@ import (
 // @name                        Authorization
 // @description                 Type "Bearer " followed by your JWT token
 
-func init() {
-	_, file, _, ok := runtime.Caller(0)
-	if ok {
-		dir := filepath.Dir(file)
-		if err := os.Chdir(dir); err != nil {
-			logger.Warnf("failed to chdir to %s: %v", dir, err)
+func main() {
+	// 仅在显式配置 GOSPEAK_WORKDIR 时切换工作目录，避免改变运行环境默认行为。
+	if wd := os.Getenv("GOSPEAK_WORKDIR"); wd != "" {
+		if err := os.Chdir(wd); err != nil {
+			logger.Warnf("failed to chdir to GOSPEAK_WORKDIR %s: %v", wd, err)
 		}
 	}
-}
 
-func main() {
 	// 完整配置驱动初始化在 server 启动时完成；此处仅保证入口可用
 	_ = logger.Init(logger.Options{Level: "info", Format: "text", Output: "stdout"})
 

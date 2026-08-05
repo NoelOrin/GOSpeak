@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -300,9 +301,16 @@ func (p *Plugin) ValidateConfig(raw map[string]any) (map[string]any, error) {
 		}
 	}
 	// re-marshal for stable map
-	nb, _ := json.Marshal(cfg)
+	nb, err := json.Marshal(cfg)
+	if err != nil {
+		log.Printf("[botbase] bad config json: %v", err)
+		return nil, fmt.Errorf("bad config json: %w", err)
+	}
 	m := map[string]any{}
-	_ = json.Unmarshal(nb, &m)
+	if err := json.Unmarshal(nb, &m); err != nil {
+		log.Printf("[botbase] bad config json: %v", err)
+		return nil, fmt.Errorf("bad config json: %w", err)
+	}
 	return encryptConfigSecrets(m)
 }
 
@@ -319,9 +327,16 @@ func (p *Plugin) OnConfigUpdated(cfg map[string]any) error {
 
 func (p *Plugin) applyConfig(m map[string]any) {
 	m = decryptConfigSecrets(m)
-	b, _ := json.Marshal(m)
+	b, err := json.Marshal(m)
+	if err != nil {
+		log.Printf("[botbase] bad config json: %v", err)
+		return
+	}
 	var cfg Config
-	_ = json.Unmarshal(b, &cfg)
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		log.Printf("[botbase] bad config json: %v", err)
+		return
+	}
 	p.mu.Lock()
 	p.cfg = cfg
 	p.mu.Unlock()
@@ -330,9 +345,16 @@ func (p *Plugin) applyConfig(m map[string]any) {
 func (p *Plugin) configMap() map[string]any {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	b, _ := json.Marshal(p.cfg)
+	b, err := json.Marshal(p.cfg)
+	if err != nil {
+		log.Printf("[botbase] bad config json: %v", err)
+		return map[string]any{}
+	}
 	m := map[string]any{}
-	_ = json.Unmarshal(b, &m)
+	if err := json.Unmarshal(b, &m); err != nil {
+		log.Printf("[botbase] bad config json: %v", err)
+		return map[string]any{}
+	}
 	encrypted, _ := encryptConfigSecrets(m)
 	return encrypted
 }

@@ -1,6 +1,4 @@
-import type { AxiosResponse } from "axios";
 import type { MessageDTO, MessageListResult } from "@/types/message";
-import type { Result } from "./apiClient";
 import apiClient from "./apiClient";
 
 export async function listMessages(
@@ -8,24 +6,24 @@ export async function listMessages(
 	before?: string,
 	limit = 100,
 ): Promise<MessageListResult> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<MessageListResult>({
 		url: "/api/v1/room/messages/list",
 		data: { room_uuid, before, limit },
-	})) as AxiosResponse<Result<MessageListResult>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("messages missing");
-	return (res as any).data.data as MessageListResult;
+	if (!data) throw new Error("messages missing");
+	return data;
 }
 
 export async function searchMessages(
 	room_uuid: string,
 	query: string,
 ): Promise<MessageDTO[]> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<{ items: MessageDTO[] }>({
 		url: "/api/v1/room/messages/search",
 		data: { room_uuid, query },
-	})) as AxiosResponse<Result<{ items: MessageDTO[] }>>;
-	return (res as any).data.data?.items ?? [];
+	});
+	return data?.items ?? [];
 }
 
 export async function sendMessage(body: {
@@ -35,13 +33,13 @@ export async function sendMessage(body: {
 	mentions?: string[];
 	client_nonce?: string;
 }): Promise<MessageDTO> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<MessageDTO>({
 		url: "/api/v1/room/messages/send",
 		data: body,
-	})) as AxiosResponse<Result<MessageDTO>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("send failed");
-	return (res as any).data.data as MessageDTO;
+	if (!data) throw new Error("send failed");
+	return data;
 }
 
 export async function editMessage(
@@ -49,13 +47,13 @@ export async function editMessage(
 	message_uuid: string,
 	content: string,
 ): Promise<MessageDTO> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<MessageDTO>({
 		url: "/api/v1/room/messages/edit",
 		data: { room_uuid, message_uuid, content },
-	})) as AxiosResponse<Result<MessageDTO>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("edit failed");
-	return (res as any).data.data as MessageDTO;
+	if (!data) throw new Error("edit failed");
+	return data;
 }
 
 export async function deleteMessage(
@@ -73,13 +71,13 @@ export async function reactMessage(
 	message_uuid: string,
 	emoji: string,
 ): Promise<MessageDTO> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<MessageDTO>({
 		url: "/api/v1/room/messages/react",
 		data: { room_uuid, message_uuid, emoji },
-	})) as AxiosResponse<Result<MessageDTO>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("react failed");
-	return (res as any).data.data as MessageDTO;
+	if (!data) throw new Error("react failed");
+	return data;
 }
 
 export async function unreactMessage(

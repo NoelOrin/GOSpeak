@@ -6,6 +6,7 @@ import (
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/repository"
 	authRoutes "GOSpeak/internal/router/routes/auth"
 	botRoutes "GOSpeak/internal/router/routes/bot"
 	clusterRoutes "GOSpeak/internal/router/routes/cluster"
@@ -69,10 +70,21 @@ type Handlers struct {
 }
 
 func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
-	r.Use(middleware.CORS())
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(200, gin.H{"message": "pong"})
+	})
+
+	r.GET("/readyz", func(c *gin.Context) {
+		if repository.DB == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable"})
+			return
+		}
+		if _, err := repository.DB.DB(); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
 	r.GET("/uploads/*filepath", serveUploads)

@@ -1,6 +1,11 @@
 package ws
 
-import "sync"
+import (
+	"encoding/json"
+	"log"
+	"sync"
+	"sync/atomic"
+)
 
 // Fanout 实现 Broadcaster 接口。
 // 房间名使用复合键（由 signal.roomKey 生成）以支持 Domain 命名空间隔离。
@@ -9,6 +14,8 @@ type Fanout struct {
 	mu      sync.RWMutex
 	rooms   map[string]map[string]*Client // roomKey -> clientID -> *Client
 	clients map[string]*Client            // clientID -> *Client
+	// marshalCount 仅用于测试断言（单次广播仅 marshal 一次）。
+	marshalCount uint64
 }
 
 // compile-time interface check
@@ -85,9 +92,7 @@ func (f *Fanout) BroadcastToRoom(room, event string, data interface{}) {
 		targets = append(targets, c)
 	}
 	f.mu.RUnlock()
-	for _, c := range targets {
-		c.Send(payload)
-	}
+	f.sendAll(targets, payload)
 }
 
 // BroadcastToNamespace 实现 Broadcaster.BroadcastToNamespace。
@@ -99,9 +104,26 @@ func (f *Fanout) BroadcastToNamespace(event string, data interface{}) {
 		all = append(all, c)
 	}
 	f.mu.RUnlock()
-	for _, c := range all {
-		c.Send(payload)
+	f.sendAll(all, payload)
+}
+
+// sendAll 将 payload 序列化一次，再并发发送给所有目标客户端。
+func (f *Fanout) sendAll(targets []*Client, payload interface{}) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("[ws] broadcast marshal error: %v", err)
+		return
 	}
+	atomic.AddUint64(&f.marshalCount, 1)
+	var wg sync.WaitGroup
+	for _, c := range targets {
+		wg.Add(1)
+		go func(c *Client) {
+			defer wg.Done()
+			c.sendRaw(data)
+		}(c)
+	}
+	wg.Wait()
 }
 
 // ForEach 实现 Broadcaster.ForEach。
@@ -133,6 +155,19 @@ func (f *Fanout) GetClient(clientID string) ClientMessenger {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return f.clients[clientID]
+}
+
+// CloseAll 实现 Broadcaster.CloseAll — 快照当前注册客户端后逐个关闭。
+func (f *Fanout) CloseAll() {
+	f.mu.RLock()
+	targets := make([]*Client, 0, len(f.clients))
+	for _, c := range f.clients {
+		targets = append(targets, c)
+	}
+	f.mu.RUnlock()
+	for _, c := range targets {
+		c.Close()
+	}
 }
 
 // DroppedCount 汇总所有已注册客户端的显式降级丢弃消息数，供监控面板使用。

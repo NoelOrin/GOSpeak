@@ -127,7 +127,9 @@ func (m *MediasoupSignal) RegisterWS(register func(event string, fn func(ws.Clie
 			return errorJSON(err), nil
 		}
 		var appDataMap map[string]interface{}
-		_ = json.Unmarshal(req.AppData, &appDataMap)
+		if err := json.Unmarshal(req.AppData, &appDataMap); err != nil {
+			return errorJSON(err), nil
+		}
 		if id, ok := appDataMap["identity"].(string); ok && id != "" {
 			m.recentClose.Delete(req.Room + "\x00" + id)
 		}

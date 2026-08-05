@@ -117,7 +117,8 @@ func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error
 // muted=false is a no-op at media layer (client re-publishes after soft unmute policy).
 func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) error {
 	if !muted {
-		return nil
+		// 媒体层 unmute 是 no-op，返回 ErrSFUNotSupported 让调用方按软语义降级。
+		return pkg.ErrSFUNotSupported
 	}
 	stream := ""
 	if s.registry != nil {

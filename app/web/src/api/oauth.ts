@@ -1,4 +1,3 @@
-import type { Result } from "./apiClient";
 import apiClient from "./apiClient";
 
 export interface OAuthProvider {
@@ -67,45 +66,43 @@ export interface UpdateProviderInput {
 	enabled?: boolean;
 }
 
-export function listProviders(): Promise<Result<OAuthProvider[]>> {
-	return apiClient
-		.get({ url: "/api/v1/oauth/admin/providers" })
-		.then((r) => r.data);
+export function listProviders(): Promise<OAuthProvider[]> {
+	return apiClient.get<OAuthProvider[]>({
+		url: "/api/v1/oauth/admin/providers",
+	});
 }
 
-export function listEnabledProviders(): Promise<Result<EnabledProvider[]>> {
-	return apiClient.get({ url: "/api/v1/oauth/providers" }).then((r) => r.data);
+export function listEnabledProviders(): Promise<EnabledProvider[]> {
+	return apiClient.get<EnabledProvider[]>({ url: "/api/v1/oauth/providers" });
 }
 
 export function createProvider(
 	input: CreateProviderInput,
-): Promise<Result<OAuthProvider>> {
-	return apiClient
-		.post({ url: "/api/v1/oauth/admin/providers", data: input })
-		.then((r) => r.data);
+): Promise<OAuthProvider> {
+	return apiClient.post<OAuthProvider>({
+		url: "/api/v1/oauth/admin/providers",
+		data: input,
+	});
 }
 
 export function updateProvider(
 	input: UpdateProviderInput,
-): Promise<Result<OAuthProvider>> {
-	return apiClient
-		.put({ url: "/api/v1/oauth/admin/providers", data: input })
-		.then((r) => r.data);
+): Promise<OAuthProvider> {
+	return apiClient.put<OAuthProvider>({
+		url: "/api/v1/oauth/admin/providers",
+		data: input,
+	});
 }
 
-export function deleteProvider(id: number): Promise<Result<null>> {
-	return apiClient
-		.delete({ url: `/api/v1/oauth/admin/providers/${id}` })
-		.then((r) => r.data);
+export function deleteProvider(id: number): Promise<null> {
+	return apiClient.delete<null>({
+		url: `/api/v1/oauth/admin/providers/${id}`,
+	});
 }
 
 /** 公开：获取已启用 OAuth 提供商（登录页使用，无需登录）。 */
 export async function getEnabledProviders(): Promise<EnabledProvider[]> {
-	const res = await listEnabledProviders();
-	if (res.code !== 0) {
-		throw new Error(res.msg || "failed to load oauth providers");
-	}
-	return res.data ?? [];
+	return listEnabledProviders();
 }
 
 /** 浏览器跳转 OAuth 授权页；state 由服务端 cookie 生成/校验。 */

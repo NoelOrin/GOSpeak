@@ -83,6 +83,22 @@ func (p *LocalProvider) UploadFromReader(key string, reader io.Reader, size int6
 	return p.GetPublicURL(key), nil
 }
 
+// HeadObjectSize 返回本地文件大小（字节）。
+func (p *LocalProvider) HeadObjectSize(key string) (int64, error) {
+	fullPath, _, err := p.resolvePath(key)
+	if err != nil {
+		return 0, err
+	}
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, fmt.Errorf("object not found: %s", key)
+		}
+		return 0, fmt.Errorf("stat object failed: %w", err)
+	}
+	return info.Size(), nil
+}
+
 // GetPublicURL 拼接公开访问 URL
 func (p *LocalProvider) GetPublicURL(key string) string {
 	if base := strings.TrimRight(p.publicBaseURL, "/"); base != "" {

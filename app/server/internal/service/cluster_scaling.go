@@ -6,6 +6,7 @@ import (
 	"GOSpeak/internal/pkg"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 )
@@ -225,7 +226,9 @@ func (s *ClusterService) reconcilePendingServers(nodeUUID string) {
 			continue
 		}
 		if len(assignments) == 0 {
-			_, _ = s.ScaleServer(domain.UUID, 1, nodeUUID)
+			if _, err := s.ScaleServer(domain.UUID, 1, nodeUUID); err != nil {
+				log.Printf("[cluster] reconcile scale failed server=%s: %v", domain.UUID, err)
+			}
 		}
 	}
 }

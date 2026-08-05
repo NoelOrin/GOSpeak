@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"sync"
 	"testing"
+
+	"GOSpeak/internal/ws"
 )
 
 type stubBridge struct {
@@ -78,8 +80,8 @@ func TestOnParticipantLeft_BroadcastsAndCloses(t *testing.T) {
 
 func TestOnParticipantLeft_DedupsSecondCall(t *testing.T) {
 	var (
-		mu      sync.Mutex
-		bcasts  int
+		mu     sync.Mutex
+		bcasts int
 	)
 	bcast := func(room, event string, data interface{}) {
 		mu.Lock()
@@ -132,5 +134,29 @@ func TestOnParticipantLeft_RejoinClearsDedup(t *testing.T) {
 	defer mu.Unlock()
 	if bcasts != 1 {
 		t.Fatalf("after rejoin-clear, expected 1 broadcast, got %d", bcasts)
+	}
+}
+
+func TestProduce_AppDataError(t *testing.T) {
+	sig := &MediasoupSignal{bridge: &stubBridge{}}
+	var produceHandler func(ws.ClientMessenger, string) (string, error)
+	sig.RegisterWS(func(event string, fn func(ws.ClientMessenger, string) (string, error)) {
+		if event == "sfu:produce" {
+			produceHandler = fn
+		}
+	})
+	if produceHandler == nil {
+		t.Fatal("sfu:produce handler not registered")
+	}
+	resp, err := produceHandler(nil, `{"room":"r1","transportId":"t1","appData":"not-an-object"}`)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	var body map[string]string
+	if err := json.Unmarshal([]byte(resp), &body); err != nil {
+		t.Fatalf("response is not json: %v", err)
+	}
+	if body["error"] == "" {
+		t.Fatalf("expected error response for malformed appData, got %q", resp)
 	}
 }

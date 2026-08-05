@@ -5,7 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"errors"
+
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
 
 	"github.com/glebarez/sqlite"
@@ -22,6 +25,21 @@ func newMuteServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("migrate mute: %v", err)
 	}
 	return db
+}
+
+func TestMuteService_TemporaryMuteRequiresDuration(t *testing.T) {
+	db := newMuteServiceTestDB(t)
+	muteRepo := repository.NewMuteRepository(db)
+	userRepo := repository.NewUserRepository(db)
+	svc := NewMuteService(muteRepo, userRepo)
+
+	for _, duration := range []int64{0, -1} {
+		_, err := svc.MuteUser(1, 42, duration, false, "temp mute")
+		var appErr *pkg.AppError
+		if !errors.As(err, &appErr) || appErr.Code != pkg.INVALID_PARAMS {
+			t.Fatalf("duration=%d: expected INVALID_PARAMS, got %v", duration, err)
+		}
+	}
 }
 
 func TestMuteService_ExpiredTemporaryMuteRunsFullUnmute(t *testing.T) {

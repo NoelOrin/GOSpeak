@@ -135,6 +135,20 @@ func (r *DomainRepository) ListUserDomains(userUUID string) ([]string, error) {
 	return domainUUIDs, err
 }
 
+// ListUserDomainDetails 返回用户加入的 Domain 批量详情（含成员数与房间数），单次查询完成。
+func (r *DomainRepository) ListUserDomainDetails(userUUID string) ([]model.DomainDetail, error) {
+	details := make([]model.DomainDetail, 0)
+	err := r.db.Raw(`
+		SELECT d.id, d.uuid, d.name, d.icon_url, d.description, d.owner_uuid, d.invite_code, d.is_public, d.created_at, d.updated_at,
+		       (SELECT COUNT(*) FROM domain_members m2 WHERE m2.domain_uuid = d.uuid) AS member_count,
+		       (SELECT COUNT(*) FROM room r2 WHERE r2.domain_uuid = d.uuid) AS room_count
+		FROM domains d
+		WHERE EXISTS (SELECT 1 FROM domain_members m WHERE m.domain_uuid = d.uuid AND m.user_uuid = ?)
+		ORDER BY d.created_at DESC
+	`, userUUID).Scan(&details).Error
+	return details, err
+}
+
 func (r *DomainRepository) CountMembers(domainUUID string) (int64, error) {
 	var count int64
 	err := r.db.Model(&model.DomainMember{}).Where("domain_uuid = ?", domainUUID).Count(&count).Error

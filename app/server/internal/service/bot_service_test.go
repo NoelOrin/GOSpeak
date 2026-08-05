@@ -24,3 +24,18 @@ func TestParseExpiryDuration_GoDuration(t *testing.T) {
 		t.Fatalf("expected 720h, got %v", d)
 	}
 }
+
+func TestRandomHex_ReturnsHex(t *testing.T) {
+	got, err := randomHex(16)
+	if err != nil {
+		t.Fatalf("randomHex: %v", err)
+	}
+	if len(got) != 32 {
+		t.Fatalf("expected 32 hex chars for 16 bytes, got %d", len(got))
+	}
+	for _, c := range got {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			t.Fatalf("non-hex char %q in %q", c, got)
+		}
+	}
+}

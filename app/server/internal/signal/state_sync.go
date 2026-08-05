@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"sort"
 	"time"
 
 	"GOSpeak/internal/bus"
@@ -174,6 +175,7 @@ func (h *Hub) syncRoomToStorePlain(key string, now int64, local []bus.MemberReco
 	ctx, cancel := kvTimeoutCtx()
 	prev, err := h.membershipStore.GetRoomMembers(ctx, key)
 	cancel()
+	prevRead := err == nil
 	switch {
 	case err == nil:
 		merged = mergeRemoteMembers(prev.Members, local, h.instanceID, now)
@@ -209,6 +211,10 @@ func (h *Hub) syncRoomToStorePlain(key string, now int64, local []bus.MemberReco
 		log.Printf("[Signal] state store put room %s: %v", key, err)
 		return
 	}
+	if prevRead && membershipRecordsEquivalent(prev.Members, merged) {
+		// 心跳续期：成员组成未变，仅刷新 lease，不广播 peer 状态刷新。
+		return
+	}
 	h.notifyRoomStateChanged(key)
 }
 
@@ -223,6 +229,7 @@ func (h *Hub) syncRoomToStoreWithRevision(rs revisionedMembershipStore, key stri
 			log.Printf("[Signal] state store get room %s: %v", key, err)
 			return
 		}
+		prevRead := err == nil
 
 		merged := mergeRemoteMembers(prev.Members, local, h.instanceID, now)
 		if len(merged) == 0 {
@@ -258,10 +265,43 @@ func (h *Hub) syncRoomToStoreWithRevision(rs revisionedMembershipStore, key stri
 			log.Printf("[Signal] state store put room %s: %v", key, err)
 			return
 		}
-		h.notifyRoomStateChanged(key)
+		if !prevRead || !membershipRecordsEquivalent(prev.Members, merged) {
+			h.notifyRoomStateChanged(key)
+		}
 		return
 	}
 	log.Printf("[Signal] state store sync room %s: revision conflicts exceeded %d attempts", key, maxMembershipSyncAttempts)
+}
+
+// membershipRecordsEquivalent 比较两份成员快照的业务字段是否一致，忽略续期时间戳。
+// 用于心跳续期只写 KV、不触发 peer 状态刷新广播。
+func membershipRecordsEquivalent(a, b []bus.MemberRecord) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	aa := append([]bus.MemberRecord(nil), a...)
+	bb := append([]bus.MemberRecord(nil), b...)
+	sort.Slice(aa, func(i, j int) bool {
+		if aa[i].Identity != aa[j].Identity {
+			return aa[i].Identity < aa[j].Identity
+		}
+		return aa[i].SocketHint < aa[j].SocketHint
+	})
+	sort.Slice(bb, func(i, j int) bool {
+		if bb[i].Identity != bb[j].Identity {
+			return bb[i].Identity < bb[j].Identity
+		}
+		return bb[i].SocketHint < bb[j].SocketHint
+	})
+	for i := range aa {
+		ra, rb := aa[i], bb[i]
+		if ra.Room != rb.Room || ra.Identity != rb.Identity ||
+			ra.SocketHint != rb.SocketHint || ra.InstanceID != rb.InstanceID ||
+			ra.Stream != rb.Stream || ra.MicMuted != rb.MicMuted || ra.Speaking != rb.Speaking {
+			return false
+		}
+	}
+	return true
 }
 
 // mergeRemoteMembers 保留其他实例未过期的成员，丢弃本实例旧记录与冲突 identity。

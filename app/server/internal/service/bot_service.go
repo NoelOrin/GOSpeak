@@ -66,7 +66,10 @@ func (s *BotService) Create(req *CreateBotRequest) (*CreateBotResult, error) {
 		return nil, pkg.NewAppError(pkg.USERNAME_EXISTS, "bot name already exists")
 	}
 
-	randomPwd := randomHex(32)
+	randomPwd, err := randomHex(32)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
 	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(randomPwd), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -211,8 +214,10 @@ func validateBotPermissions(codes []string) error {
 	return nil
 }
 
-func randomHex(length int) string {
+func randomHex(length int) (string, error) {
 	b := make([]byte, length)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }

@@ -213,6 +213,16 @@ func (p *DynamicProvider) Capabilities() sfu.Capabilities {
 	return provider.Capabilities()
 }
 
+// SupportsStream 仅当底层 provider 实现 StreamProvider 时为 true。
+func (p *DynamicProvider) SupportsStream() bool {
+	provider, err := p.current()
+	if err != nil {
+		return false
+	}
+	_, ok := provider.(sfu.StreamProvider)
+	return ok
+}
+
 func (p *DynamicProvider) StreamName(room, identity string) string {
 	provider, err := p.current()
 	if err != nil {
@@ -232,7 +242,7 @@ func (p *DynamicProvider) StreamInfo(room, identity string) (stream, token strin
 	if sp, ok := provider.(sfu.StreamProvider); ok {
 		return sp.StreamInfo(room, identity)
 	}
-	return "", "", nil
+	return "", "", pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "stream not supported")
 }
 
 func (p *DynamicProvider) ClientInfo() map[string]interface{} {

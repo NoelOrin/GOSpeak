@@ -1,5 +1,4 @@
-import type { AxiosResponse } from "axios";
-import apiClient, { type Result } from "./apiClient";
+import apiClient from "./apiClient";
 
 export interface EmailConfigView {
 	enabled: boolean;
@@ -44,32 +43,31 @@ export interface VerifyEmailCodeInput extends SendEmailCodeInput {
 }
 
 export async function getEmailConfig(): Promise<EmailConfigView> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<EmailConfigView>({
 		url: "/api/v1/email/config",
-	})) as AxiosResponse<Result<EmailConfigView>>;
-	if (!(res as any).data.data) throw new Error("email config is missing");
-	return (res as any).data.data;
+	});
+	if (!data) throw new Error("email config is missing");
+	return data;
 }
 
 export async function updateEmailConfig(
 	config: EmailConfigInput,
 ): Promise<EmailConfigView> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<EmailConfigView>({
 		url: "/api/v1/email/update-config",
 		data: config,
-	})) as AxiosResponse<Result<EmailConfigView>>;
-	if (!(res as any).data.data) throw new Error("email config is missing");
-	return (res as any).data.data;
+	});
+	if (!data) throw new Error("email config is missing");
+	return data;
 }
 
 export async function sendEmailCode(
 	input: SendEmailCodeInput,
 ): Promise<SendEmailCodeResult> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<SendEmailCodeResult>({
 		url: "/api/v1/email/send_code",
 		data: input,
-	})) as AxiosResponse<Result<SendEmailCodeResult>>;
-	if (!(res as any).data.data)
-		throw new Error("send email code response is missing");
-	return (res as any).data.data;
+	});
+	if (!data) throw new Error("send email code response is missing");
+	return data;
 }

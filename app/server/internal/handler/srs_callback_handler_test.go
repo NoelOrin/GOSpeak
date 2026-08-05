@@ -247,3 +247,25 @@ func TestAuthorizeSRSPlay_RoomTokenUnknownStream(t *testing.T) {
 		t.Fatal("unknown stream room mapping must not authorize play")
 	}
 }
+
+func TestParseCallbackParams_DecodesQuery(t *testing.T) {
+	got := parseCallbackParams("app=live&token=a%2Bb%2Fc&room=%E4%B8%AD%E6%96%87&dup=1&dup=2")
+	if got["token"] != "a+b/c" {
+		t.Errorf("expected decoded token, got %q", got["token"])
+	}
+	if got["room"] != "中文" {
+		t.Errorf("expected decoded room, got %q", got["room"])
+	}
+	if got["dup"] != "1" {
+		t.Errorf("expected first duplicate value, got %q", got["dup"])
+	}
+}
+
+func TestParseCallbackParams_EmptyOrInvalidReturnsEmpty(t *testing.T) {
+	if got := parseCallbackParams(""); len(got) != 0 {
+		t.Fatalf("expected empty map for empty param, got %v", got)
+	}
+	if got := parseCallbackParams("%zz"); len(got) != 0 {
+		t.Fatalf("expected empty map for invalid query, got %v", got)
+	}
+}

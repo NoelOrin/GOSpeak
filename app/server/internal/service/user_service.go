@@ -3,11 +3,11 @@
 package service
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"GOSpeak/internal/model"
@@ -195,7 +195,13 @@ func (s *UserService) UploadAvatar(uuid, filename, contentType string, size int6
 		return "", nil, pkg.NewAppError(pkg.STORAGE_FILE_TOO_LARGE)
 	}
 
-	contentType = strings.TrimSpace(strings.ToLower(contentType))
+	// 不信任客户端 Content-Type，基于文件头魔数嗅探实际类型。
+	sniff := make([]byte, 512)
+	n, sniffErr := io.ReadFull(reader, sniff)
+	if sniffErr != nil && sniffErr != io.EOF && sniffErr != io.ErrUnexpectedEOF {
+		return "", nil, pkg.NewAppError(pkg.INVALID_PARAMS, "failed to read avatar file")
+	}
+	contentType = pkg.DetectContentType(sniff[:n])
 	allowedTypes := map[string]bool{
 		"image/jpeg": true,
 		"image/png":  true,
@@ -204,6 +210,15 @@ func (s *UserService) UploadAvatar(uuid, filename, contentType string, size int6
 	}
 	if !allowedTypes[contentType] {
 		return "", nil, pkg.NewAppError(pkg.INVALID_PARAMS, "invalid image type, allowed: jpeg, png, gif, webp")
+	}
+
+	// 还原 reader 到文件头，把完整内容交给存储层。
+	if seeker, ok := reader.(io.Seeker); ok {
+		if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+			return "", nil, pkg.NewAppError(pkg.INVALID_PARAMS, "failed to reset avatar reader")
+		}
+	} else {
+		reader = io.MultiReader(bytes.NewReader(sniff[:n]), reader)
 	}
 
 	ext := filepath.Ext(filename)

@@ -96,6 +96,7 @@ type roomByUUID interface {
 // Satisfied by *repository.UserRepository.
 type userByName interface {
 	GetByName(name string) (*model.User, error)
+	GetByNames(names []string) (map[string]*model.User, error)
 }
 
 // MessageService provides text message operations with broadcast-first semantics.
@@ -149,11 +150,13 @@ func (s *MessageService) enrichAuthorInfo(items []MessageDTO) {
 		return
 	}
 	// Fetch users
-	users := make(map[string]*model.User)
+	names := make([]string, 0, len(authorIDs))
 	for id := range authorIDs {
-		if user, err := s.userRepo.GetByName(id); err == nil && user != nil {
-			users[id] = user
-		}
+		names = append(names, id)
+	}
+	var users map[string]*model.User
+	if got, err := s.userRepo.GetByNames(names); err == nil {
+		users = got
 	}
 	// Enrich DTOs
 	for i := range items {

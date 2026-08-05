@@ -52,6 +52,8 @@ type Client struct {
 	closed  chan struct{}
 	// dropped 统计因队列满被显式降级丢弃的消息数（原子计数）。
 	dropped uint64
+	// closedCount 仅用于测试断言（Close 幂等执行次数）。
+	closedCount uint64
 
 	// OnClose 是连接关闭时的回调（由 Upgrader 设置，用于从 Fanout 注销）。
 	OnClose func(clientID string)
@@ -217,6 +219,11 @@ func (c *Client) Send(v interface{}) bool {
 		log.Printf("[ws] marshal error: %v", err)
 		return false
 	}
+	return c.sendRaw(data)
+}
+
+// sendRaw 将已序列化数据写入发送队列；返回 false 表示客户端已断开或队列满。
+func (c *Client) sendRaw(data []byte) bool {
 	t := time.NewTimer(sendQueueTimeout)
 	defer t.Stop()
 	// 先做一次非阻塞检查：Close 后 writeCh 可能仍为空，select 会随机选中写入分支。
@@ -265,5 +272,8 @@ func (c *Client) Close() {
 
 // closeClosed 以幂等方式关闭 closed channel，保证 Close 后 Send 立即返回 false。
 func (c *Client) closeClosed() {
-	c.closeOnce.Do(func() { close(c.closed) })
+	c.closeOnce.Do(func() {
+		atomic.AddUint64(&c.closedCount, 1)
+		close(c.closed)
+	})
 }

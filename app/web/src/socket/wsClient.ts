@@ -1,4 +1,5 @@
 import type { SignalSocket } from "@gospeak/sfu-client/types";
+import type { WSTicketInfo } from "@/api/ws";
 
 interface WSMessage {
 	id?: string;
@@ -59,8 +60,8 @@ function resolveWsUrl(url: string): string {
 }
 
 export interface WSClientOptions {
-	/** 自动重连前重新获取短时 ws ticket，避免复用过期凭证。 */
-	refreshTicket?: () => Promise<string>;
+	/** 自动重连前重新获取短时 ws ticket 与 worker URL，避免复用过期凭证或失效节点。 */
+	refreshTicket?: () => Promise<WSTicketInfo>;
 }
 
 export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
@@ -211,13 +212,13 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 			}
 			pendingAcks.clear();
 
-			// Auto-reconnect with exponential backoff + jitter.
+			// Auto-reconnect with exponential backoff + jitter, capped at 15s.
 			if (shouldReconnect && currentUrl) {
-				const delay = Math.min(3000 * 2 ** reconnectAttempts, 30000);
-				const jitter = Math.floor(Math.random() * 1000);
+				const delay = Math.min(1000 * 2 ** reconnectAttempts, 15000);
+				const jitter = Math.random() * 300;
 				reconnectAttempts += 1;
 				reconnectTimer = setTimeout(() => {
-					void reconnectWithFreshToken();
+					void reconnectWithFreshTicket();
 				}, delay + jitter);
 			}
 		};
@@ -227,11 +228,10 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 		};
 	}
 
-	async function reconnectWithFreshToken() {
-		if (!shouldReconnect || !currentUrl) return;
+	async function refreshTicketSafe(): Promise<WSTicketInfo | null> {
+		if (!refreshTicket) return null;
 		try {
-			const nextToken = refreshTicket ? await refreshTicket() : currentToken;
-			connect(currentUrl, nextToken);
+			return await refreshTicket();
 		} catch (err) {
 			shouldReconnect = false;
 			currentUrl = "";
@@ -240,7 +240,17 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 					err instanceof Error ? err : new Error("failed to refresh ws ticket"),
 				);
 			}
+			return null;
 		}
+	}
+
+	async function reconnectWithFreshTicket() {
+		if (!shouldReconnect || !currentUrl) return;
+		const ticket = await refreshTicketSafe();
+		if (!shouldReconnect) return;
+		const nextUrl = ticket?.url || currentUrl;
+		const nextToken = ticket?.token || currentToken;
+		connect(nextUrl, nextToken);
 	}
 
 	function disconnect() {

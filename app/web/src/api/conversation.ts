@@ -1,5 +1,3 @@
-import type { AxiosResponse } from "axios";
-import type { Result } from "./apiClient";
 import apiClient from "./apiClient";
 
 export interface ConversationDTO {
@@ -35,11 +33,11 @@ export interface PrivateMessageListResult {
 export async function listConversations(
 	limit?: number,
 ): Promise<ConversationDTO[]> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<ConversationDTO[]>({
 		url: "/api/v1/conversation/list",
 		data: { limit: limit || 50 },
-	})) as AxiosResponse<Result<ConversationDTO[]>>;
-	return res.data.data ?? [];
+	});
+	return data ?? [];
 }
 
 export async function getConversationMessages(
@@ -47,15 +45,15 @@ export async function getConversationMessages(
 	before?: string,
 	limit?: number,
 ): Promise<PrivateMessageListResult> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<PrivateMessageListResult>({
 		url: "/api/v1/conversation/messages",
 		data: {
 			conversation_id: conversationID,
 			before: before || "",
 			limit: limit || 50,
 		},
-	})) as AxiosResponse<Result<PrivateMessageListResult>>;
-	return res.data.data ?? { messages: [] };
+	});
+	return data ?? { messages: [] };
 }
 
 export async function markConversationRead(
@@ -72,10 +70,10 @@ export async function sendDirectMessage(body: {
 	content: string;
 	client_nonce?: string;
 }): Promise<PrivateMessageDTO> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<PrivateMessageDTO>({
 		url: "/api/v1/conversation/send",
 		data: body,
-	})) as AxiosResponse<Result<PrivateMessageDTO>>;
-	if (!res.data.data) throw new Error("send failed");
-	return res.data.data;
+	});
+	if (!data) throw new Error("send failed");
+	return data;
 }

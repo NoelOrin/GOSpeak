@@ -204,7 +204,7 @@ function OAuthPage() {
 	};
 
 	const existingNames = () =>
-		new Set((providersData()?.data ?? []).map((p) => p.name));
+		new Set((providersData() ?? []).map((p) => p.name));
 
 	return (
 		<ManagePage>
@@ -294,7 +294,7 @@ function OAuthPage() {
 			{/* 提供商列表 */}
 			<OAuthProviderTable
 				loading={providersData.loading}
-				providers={providersData()?.data ?? []}
+				providers={providersData() ?? []}
 				deletingId={deletingId()}
 				onEdit={openEditForm}
 				onDelete={(p) => void handleDelete(p)}

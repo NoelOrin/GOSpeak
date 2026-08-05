@@ -429,10 +429,22 @@ func TestKickByStreams_UsesNameNotInternalStreamID(t *testing.T) {
 	}
 }
 
-func TestMuteParticipant_UnmuteNoop(t *testing.T) {
-	svc := &Service{client: NewClient("http://127.0.0.1:9")}
-	if err := svc.MuteParticipant("room", "user", "", false); err != nil {
-		t.Fatalf("unmute should be noop success, got %v", err)
+func TestMuteParticipant_UnmuteSoftNoop(t *testing.T) {
+	svc := newSRSTestService(t)
+	if err := svc.MuteParticipant("room", "user", "", false); err != pkg.ErrSFUNotSupported {
+		t.Fatalf("unmute should signal soft no-op, got %v", err)
+	}
+}
+
+func newSRSTestService(t *testing.T) *Service {
+	t.Helper()
+	return &Service{client: NewClient("http://127.0.0.1:9")}
+}
+
+func TestSRS_MuteFalseReturnsSoft(t *testing.T) {
+	svc := newSRSTestService(t)
+	if err := svc.MuteParticipant("r", "u", "", false); err != pkg.ErrSFUNotSupported {
+		t.Fatalf("expected ErrSFUNotSupported for unmute, got %v", err)
 	}
 }
 

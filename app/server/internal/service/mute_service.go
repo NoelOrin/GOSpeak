@@ -103,8 +103,11 @@ func (s *MuteService) IsMutedByUUID(uuid string) (bool, error) {
 }
 
 // MuteUser 禁言用户
-// duration: 禁言秒数（0 = 永久）
+// duration: 禁言秒数（permanent=true 时忽略）
 func (s *MuteService) MuteUser(muterID, userID uint, duration int64, permanent bool, reason string) (*model.Mute, error) {
+	if !permanent && duration <= 0 {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "duration is required for temporary mute")
+	}
 	if userID == 0 {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "user_id is required")
 	}

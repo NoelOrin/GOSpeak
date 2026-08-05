@@ -1,6 +1,4 @@
-import type { AxiosResponse } from "axios";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Result } from "@/api/apiClient";
 
 vi.mock("@/api/apiClient", () => {
 	const mockPost = vi.fn();
@@ -19,16 +17,6 @@ import {
 	undrainClusterNode,
 } from "@/api/cluster";
 
-function mockResult<T>(data: T): AxiosResponse<Result<T>> {
-	return {
-		data: { code: 0, msg: "success", data },
-		status: 200,
-		statusText: "OK",
-		headers: {},
-		config: {} as any,
-	};
-}
-
 describe("clusterApi", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -36,7 +24,7 @@ describe("clusterApi", () => {
 
 	it("listClusterNodes returns node views", async () => {
 		const nodes = [{ node: { name: "node-a", status: "ready" }, labels: {} }];
-		(apiClient.post as any).mockResolvedValue(mockResult({ nodes }));
+		(apiClient.post as any).mockResolvedValue({ nodes });
 		const result = await listClusterNodes();
 		expect(apiClient.post).toHaveBeenCalledWith({
 			url: "/api/v1/cluster/nodes/list",
@@ -52,7 +40,7 @@ describe("clusterApi", () => {
 			offline_nodes: 1,
 			assignments: 1,
 		};
-		(apiClient.post as any).mockResolvedValue(mockResult(stats));
+		(apiClient.post as any).mockResolvedValue(stats);
 		const result = await getClusterStats();
 		expect(apiClient.post).toHaveBeenCalledWith({
 			url: "/api/v1/cluster/stats",
@@ -61,7 +49,7 @@ describe("clusterApi", () => {
 	});
 
 	it("scaleServer sends replicas", async () => {
-		(apiClient.post as any).mockResolvedValue(mockResult({ assignments: [] }));
+		(apiClient.post as any).mockResolvedValue({ assignments: [] });
 		await scaleServer("srv-1", 3);
 		expect(apiClient.post).toHaveBeenCalledWith({
 			url: "/api/v1/cluster/servers/scale",
@@ -70,7 +58,7 @@ describe("clusterApi", () => {
 	});
 
 	it("drain and undrain call node endpoints", async () => {
-		(apiClient.post as any).mockResolvedValue(mockResult(null));
+		(apiClient.post as any).mockResolvedValue(null);
 		await drainClusterNode("node-a");
 		expect(apiClient.post).toHaveBeenCalledWith({
 			url: "/api/v1/cluster/nodes/drain",

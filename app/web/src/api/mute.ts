@@ -1,5 +1,3 @@
-import type { AxiosResponse } from "axios";
-import type { Result } from "./apiClient";
 import apiClient from "./apiClient";
 
 export interface MuteRecord {
@@ -25,13 +23,13 @@ export interface CreateMuteParams {
 export async function createMute(
 	params: CreateMuteParams,
 ): Promise<MuteRecord> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<MuteRecord>({
 		url: "/api/v1/mute/create",
 		data: params,
-	})) as AxiosResponse<Result<MuteRecord>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("mute record is missing");
-	return (res as any).data.data;
+	if (!data) throw new Error("mute record is missing");
+	return data;
 }
 
 export async function cancelMute(userId: number): Promise<void> {
@@ -42,9 +40,9 @@ export async function cancelMute(userId: number): Promise<void> {
 }
 
 export async function listMutes(): Promise<MuteRecord[]> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<MuteRecord[]>({
 		url: "/api/v1/mute/list",
-	})) as AxiosResponse<Result<MuteRecord[]>>;
+	});
 
-	return (res as any).data.data || [];
+	return data || [];
 }

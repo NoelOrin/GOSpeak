@@ -1,5 +1,3 @@
-import type { AxiosResponse } from "axios";
-import type { Result } from "./apiClient";
 import apiClient from "./apiClient";
 
 export interface UserGroup {
@@ -11,21 +9,21 @@ export interface UserGroup {
 }
 
 export async function listUserGroups(): Promise<UserGroup[]> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<{ groups: UserGroup[] }>({
 		url: "/api/v1/user-group/list",
-	})) as AxiosResponse<Result<{ groups: UserGroup[] }>>;
+	});
 
-	return (res as any).data.data?.groups ?? [];
+	return data?.groups ?? [];
 }
 
 export async function createUserGroup(group_name: string): Promise<UserGroup> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<UserGroup>({
 		url: "/api/v1/user-group/create",
 		data: { group_name },
-	})) as AxiosResponse<Result<UserGroup>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("create failed");
-	return (res as any).data.data as UserGroup;
+	if (!data) throw new Error("create failed");
+	return data;
 }
 
 export async function renameUserGroup(

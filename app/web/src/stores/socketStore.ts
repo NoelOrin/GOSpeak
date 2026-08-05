@@ -172,7 +172,7 @@ export const socketStore = createRoot(() => {
 		}
 		try {
 			const ticket = await getWSTicket();
-			adapter.connect(url, ticket);
+			adapter.connect(url, ticket.token);
 			if (!serverEventsBound) {
 				serverEventsBound = true;
 				bindServerEvents(adapter, {

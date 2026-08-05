@@ -84,6 +84,10 @@ func (s *SFUService) GetJoinToken(domainUUID, room, identity, userUUID, password
 		res.ClientInfo = p.ClientInfo()
 	}
 	if p, ok := s.provider.(sfu.StreamProvider); ok {
+		// 动态门面可能实现 StreamProvider 但当前后端不支持流寻址，须按能力门面跳过。
+		if sc, ok2 := s.provider.(interface{ SupportsStream() bool }); ok2 && !sc.SupportsStream() {
+			return res, nil
+		}
 		st, stok, err := p.StreamInfo(sfuRoom, identity)
 		if err != nil {
 			return nil, err

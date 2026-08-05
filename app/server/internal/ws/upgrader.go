@@ -39,6 +39,11 @@ func NewUpgrader(cfg UpgraderConfig) *Upgrader {
 	return &Upgrader{cfg: cfg}
 }
 
+// Fanout 返回 Upgrader 使用的 Broadcaster，供关闭流程统一关闭连接。
+func (u *Upgrader) Fanout() Broadcaster {
+	return u.cfg.Fanout
+}
+
 // extractToken 从 Sec-WebSocket-Protocol 提取短时 WS ticket。
 func extractToken(r *http.Request) (string, bool) {
 	for _, protocol := range strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ",") {

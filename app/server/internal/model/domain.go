@@ -61,6 +61,22 @@ type DomainMemberInfo struct {
 	DisplayName string    `json:"display_name"`
 }
 
+// DomainDetail 我的语音域批量详情视图，附带成员数与房间数。
+type DomainDetail struct {
+	ID          uint      `json:"id"`
+	UUID        string    `json:"uuid"`
+	Name        string    `json:"name"`
+	IconURL     string    `json:"icon_url"`
+	Description string    `json:"description"`
+	OwnerUUID   string    `json:"owner_uuid"`
+	InviteCode  string    `json:"invite_code"`
+	IsPublic    bool      `json:"is_public"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	MemberCount int64     `json:"member_count"`
+	RoomCount   int64     `json:"room_count"`
+}
+
 // generateInviteCode 生成 8 字符随机邀请码。
 func generateInviteCode() string {
 	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"

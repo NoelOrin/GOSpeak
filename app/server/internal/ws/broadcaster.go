@@ -21,4 +21,6 @@ type Broadcaster interface {
 	RoomExists(room string) bool
 	// GetClient 通过 ID 查找客户端。
 	GetClient(clientID string) ClientMessenger
+	// CloseAll 关闭所有已注册客户端。
+	CloseAll()
 }

@@ -368,3 +368,86 @@ func TestDomainHandler_Members_Success(t *testing.T) {
 		t.Fatalf("expected member name OwnerName, got %v", first["name"])
 	}
 }
+
+func TestDomainHandler_MyDomains_BatchDetails(t *testing.T) {
+	db, domainSvc := setupDomainHandlerTestDB(t)
+	router := setupDomainHandlerRouter(t, domainSvc)
+
+	g1 := &model.Domain{Name: "G1", OwnerUUID: "owner-1"}
+	if err := db.Create(g1).Error; err != nil {
+		t.Fatalf("seed domain g1: %v", err)
+	}
+	g2 := &model.Domain{Name: "G2", OwnerUUID: "owner-2"}
+	if err := db.Create(g2).Error; err != nil {
+		t.Fatalf("seed domain g2: %v", err)
+	}
+
+	members := []model.DomainMember{
+		{DomainUUID: g1.UUID, UserUUID: "owner-1", RoleName: "owner"},
+		{DomainUUID: g1.UUID, UserUUID: "member-1", RoleName: "member"},
+		{DomainUUID: g1.UUID, UserUUID: "member-2", RoleName: "member"},
+		{DomainUUID: g2.UUID, UserUUID: "owner-2", RoleName: "owner"},
+		{DomainUUID: g2.UUID, UserUUID: "member-1", RoleName: "member"},
+	}
+	for i := range members {
+		if err := db.Create(&members[i]).Error; err != nil {
+			t.Fatalf("seed member: %v", err)
+		}
+	}
+
+	rooms := []model.Room{
+		{Name: "g1-room-1", DomainUUID: g1.UUID},
+		{Name: "g1-room-2", DomainUUID: g1.UUID},
+		{Name: "g2-room-1", DomainUUID: g2.UUID},
+	}
+	for i := range rooms {
+		if err := db.Create(&rooms[i]).Error; err != nil {
+			t.Fatalf("seed room: %v", err)
+		}
+	}
+
+	w := postDomainJSON(t, router, "/api/v1/domain/my-domains", `{}`, map[string]string{"X-User-UUID": "member-1"})
+	resp := parseDomainResp(t, w.Body.String())
+	if code := intCode(resp["code"]); code != 0 {
+		t.Fatalf("expected code 0, got %d: %s", code, resp["msg"])
+	}
+	rows, ok := resp["data"].([]interface{})
+	if !ok {
+		t.Fatalf("expected data array, got %#v", resp["data"])
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 domain details, got %d", len(rows))
+	}
+
+	byUUID := make(map[string]map[string]interface{}, len(rows))
+	for _, row := range rows {
+		detail, ok := row.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected detail object, got %#v", row)
+		}
+		uuid, _ := detail["uuid"].(string)
+		byUUID[uuid] = detail
+	}
+
+	g1Detail, ok := byUUID[g1.UUID]
+	if !ok {
+		t.Fatalf("expected detail for %s, got %v", g1.UUID, byUUID)
+	}
+	if g1Detail["name"] != "G1" {
+		t.Fatalf("expected g1 name G1, got %v", g1Detail["name"])
+	}
+	if intCode(g1Detail["member_count"]) != 3 {
+		t.Fatalf("expected g1 member_count 3, got %v", g1Detail["member_count"])
+	}
+	if intCode(g1Detail["room_count"]) != 2 {
+		t.Fatalf("expected g1 room_count 2, got %v", g1Detail["room_count"])
+	}
+
+	g2Detail, ok := byUUID[g2.UUID]
+	if !ok {
+		t.Fatalf("expected detail for %s, got %v", g2.UUID, byUUID)
+	}
+	if intCode(g2Detail["member_count"]) != 2 || intCode(g2Detail["room_count"]) != 1 {
+		t.Fatalf("expected g2 member_count 2 room_count 1, got %v/%v", g2Detail["member_count"], g2Detail["room_count"])
+	}
+}

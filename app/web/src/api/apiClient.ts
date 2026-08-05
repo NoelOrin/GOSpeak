@@ -210,13 +210,13 @@ export class APIClient {
 	request<T = any, U = any>(config: AxiosRequestConfig<U>): Promise<T> {
 		return new Promise((resolve, reject) => {
 			this.axiosInstance
-				.request<any, AxiosResponse<Result>>(config)
-				.then((res: AxiosResponse<Result>) => {
+				.request<any, AxiosResponse<Result<T>>>(config)
+				.then((res: AxiosResponse<Result<T>>) => {
 					if (res.data && res.data.code !== 0) {
 						reject(new Error(res.data.msg));
 						return;
 					}
-					resolve(res as unknown as Promise<T>);
+					resolve(res.data?.data as T);
 				})
 				.catch((e: Error | AxiosError) => {
 					reject(e);

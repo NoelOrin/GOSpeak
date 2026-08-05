@@ -93,3 +93,22 @@ func TestDynamicProvider_ProviderNameDefault(t *testing.T) {
 		t.Fatalf("ProviderName = %q, want livekit", got)
 	}
 }
+
+func newDynamicProviderWithConfig(t *testing.T, provider string) *DynamicProvider {
+	t.Helper()
+	cfg := &config.Config{SFUProvider: provider}
+	return NewDynamicProvider(func() (*config.Config, error) {
+		return cfg, nil
+	})
+}
+
+func TestDynamicProvider_SupportsStream(t *testing.T) {
+	p := newDynamicProviderWithConfig(t, "livekit")
+	if p.SupportsStream() {
+		t.Fatal("livekit must not advertise stream support")
+	}
+	p2 := newDynamicProviderWithConfig(t, "srs")
+	if !p2.SupportsStream() {
+		t.Fatal("srs must advertise stream support")
+	}
+}

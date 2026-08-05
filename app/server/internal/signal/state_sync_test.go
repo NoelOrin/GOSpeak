@@ -259,6 +259,140 @@ func TestHub_SyncRoomToStore_DeletesEmpty(t *testing.T) {
 	}
 }
 
+func TestSyncRoomToStore_HeartbeatRenewalDoesNotNotify(t *testing.T) {
+	store := newMemStateStore()
+	hub := NewHub(nil, nil, nil, nil)
+	hub.SetMembershipStore(store, "inst-a")
+	notifier := &captureNotifier{}
+	hub.SetStateNotifier(notifier)
+
+	hub.mu.Lock()
+	hub.rooms["r1"] = &Room{
+		Name:     "r1",
+		Members:  map[string]*MemberInfo{"sock-1": {ID: "sock-1", Identity: "alice"}},
+		MicMuted: map[string]bool{},
+		Speaking: map[string]bool{},
+	}
+	hub.mu.Unlock()
+
+	// 首次同步：写入并通知 peer 刷新。
+	hub.syncRoomToStore("r1")
+	notifier.mu.Lock()
+	got := len(notifier.events)
+	notifier.mu.Unlock()
+	if got != 1 {
+		t.Fatalf("expected 1 notify on first sync, got %d", got)
+	}
+
+	// 心跳续期：成员组成未变，只刷新 lease，不应再次通知。
+	hub.syncRoomToStore("r1")
+	notifier.mu.Lock()
+	got = len(notifier.events)
+	notifier.mu.Unlock()
+	if got != 1 {
+		t.Fatalf("expected no extra notify on heartbeat renewal, got %d", got)
+	}
+
+	// 成员状态变化：必须通知 peer 刷新。
+	hub.mu.Lock()
+	hub.rooms["r1"].Speaking["alice"] = true
+	hub.mu.Unlock()
+	hub.syncRoomToStore("r1")
+	notifier.mu.Lock()
+	got = len(notifier.events)
+	notifier.mu.Unlock()
+	if got != 2 {
+		t.Fatalf("expected notify on membership change, got %d", got)
+	}
+}
+
+// plainMemStateStore 仅实现无 revision 的 membershipStore，覆盖 Redis 等 plain 合并路径。
+type plainMemStateStore struct {
+	mu    sync.Mutex
+	rooms map[string]bus.RoomMembersSnapshot
+}
+
+func newPlainMemStateStore() *plainMemStateStore {
+	return &plainMemStateStore{rooms: make(map[string]bus.RoomMembersSnapshot)}
+}
+
+func (s *plainMemStateStore) PutRoomMembers(ctx context.Context, snap bus.RoomMembersSnapshot) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rooms[snap.Room] = snap
+	return nil
+}
+
+func (s *plainMemStateStore) GetRoomMembers(ctx context.Context, room string) (bus.RoomMembersSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snap, ok := s.rooms[room]
+	if !ok {
+		return bus.RoomMembersSnapshot{}, nats.ErrKeyNotFound
+	}
+	return snap, nil
+}
+
+func (s *plainMemStateStore) DeleteRoomMembers(ctx context.Context, room string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.rooms, room)
+	return nil
+}
+
+func (s *plainMemStateStore) PutStream(ctx context.Context, stream, room, identity string) error {
+	return nil
+}
+func (s *plainMemStateStore) GetStream(ctx context.Context, stream string) (string, string, error) {
+	return "", "", errNotFound
+}
+func (s *plainMemStateStore) DeleteStream(ctx context.Context, stream string) error { return nil }
+func (s *plainMemStateStore) ListRoomNames(ctx context.Context) ([]string, error)   { return nil, nil }
+
+func TestSyncRoomToStorePlain_HeartbeatRenewalDoesNotNotify(t *testing.T) {
+	store := newPlainMemStateStore()
+	hub := NewHub(nil, nil, nil, nil)
+	hub.SetMembershipStore(store, "inst-a")
+	notifier := &captureNotifier{}
+	hub.SetStateNotifier(notifier)
+
+	hub.mu.Lock()
+	hub.rooms["r1"] = &Room{
+		Name:     "r1",
+		Members:  map[string]*MemberInfo{"sock-1": {ID: "sock-1", Identity: "alice"}},
+		MicMuted: map[string]bool{},
+		Speaking: map[string]bool{},
+	}
+	hub.mu.Unlock()
+
+	hub.syncRoomToStore("r1")
+	notifier.mu.Lock()
+	got := len(notifier.events)
+	notifier.mu.Unlock()
+	if got != 1 {
+		t.Fatalf("expected 1 notify on first sync, got %d", got)
+	}
+
+	hub.syncRoomToStore("r1")
+	notifier.mu.Lock()
+	got = len(notifier.events)
+	notifier.mu.Unlock()
+	if got != 1 {
+		t.Fatalf("expected no extra notify on plain heartbeat renewal, got %d", got)
+	}
+
+	hub.mu.Lock()
+	hub.rooms["r1"].Speaking["alice"] = true
+	hub.mu.Unlock()
+	hub.syncRoomToStore("r1")
+	notifier.mu.Lock()
+	got = len(notifier.events)
+	notifier.mu.Unlock()
+	if got != 2 {
+		t.Fatalf("expected notify on plain membership change, got %d", got)
+	}
+}
+
 type captureNotifier struct {
 	mu     sync.Mutex
 	events []string

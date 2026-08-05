@@ -1,5 +1,3 @@
-import type { AxiosResponse } from "axios";
-import type { Result } from "./apiClient";
 import apiClient from "./apiClient";
 
 export type PluginKind = "builtin" | "external";
@@ -48,30 +46,30 @@ export interface ListPluginModelsInput {
 }
 
 export async function listPlugins(): Promise<PluginInfo[]> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<PluginInfo[]>({
 		url: "/api/v1/plugins/list",
-	})) as AxiosResponse<Result<PluginInfo[]>>;
-	return res.data.data ?? [];
+	});
+	return data ?? [];
 }
 
 export async function getPlugin(name: string): Promise<PluginInfo> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<PluginInfo>({
 		url: "/api/v1/plugins/get",
 		data: { name },
-	})) as AxiosResponse<Result<PluginInfo>>;
-	if (!res.data.data) throw new Error("plugin not found");
-	return res.data.data;
+	});
+	if (!data) throw new Error("plugin not found");
+	return data;
 }
 
 export async function updatePlugin(
 	input: UpdatePluginInput,
 ): Promise<PluginInfo> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<PluginInfo>({
 		url: "/api/v1/plugins/update",
 		data: input,
-	})) as AxiosResponse<Result<PluginInfo>>;
-	if (!res.data.data) throw new Error("empty response");
-	return res.data.data;
+	});
+	if (!data) throw new Error("empty response");
+	return data;
 }
 
 /** 通过供应商 Base URL 拉取可用模型列表，供用户选择 */
@@ -79,9 +77,9 @@ export async function listPluginModels(
 	pluginName: string,
 	input: ListPluginModelsInput,
 ): Promise<string[]> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<{ models?: string[] }>({
 		url: `/api/v1/plugins/${encodeURIComponent(pluginName)}/llm/models`,
 		data: input,
-	})) as AxiosResponse<Result<{ models?: string[] }>>;
-	return res.data.data?.models ?? [];
+	});
+	return data?.models ?? [];
 }

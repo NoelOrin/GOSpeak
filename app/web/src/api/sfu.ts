@@ -1,7 +1,5 @@
 import { DEFAULT_SFU_PROVIDER } from "@gospeak/sfu-client";
 import type { SFUProvider } from "@gospeak/sfu-client/types";
-import type { AxiosResponse } from "axios";
-import type { Result } from "./apiClient";
 import apiClient from "./apiClient";
 
 import type { SFUMediaCapabilities } from "./sfuProfiles";
@@ -91,12 +89,12 @@ export interface SFUProvidersListResponse {
 
 /** 获取当前激活 provider 的配置 */
 export async function getSFUConfig(): Promise<SFUConfig> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<SFUConfig>({
 		url: "/api/v1/sfu/config",
-	})) as AxiosResponse<Result<SFUConfig>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("sfu config is missing");
-	return (res as any).data.data;
+	if (!data) throw new Error("sfu config is missing");
+	return data;
 }
 
 /** 获取指定 provider 的配置（新） */
@@ -105,12 +103,12 @@ export async function getSFUConfig(): Promise<SFUConfig> {
 export async function getSFUConfigByProvider(
 	provider: SFUProvider,
 ): Promise<SFUConfig> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<SFUConfig>({
 		url: `/api/v1/sfu/config/${provider}`,
-	})) as AxiosResponse<Result<SFUConfig>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("sfu config is missing");
-	return (res as any).data.data;
+	if (!data) throw new Error("sfu config is missing");
+	return data;
 }
 
 /** 更新指定 provider 的配置并激活为当前（语义不变，但后端已改为 per-provider 行） */
@@ -119,13 +117,13 @@ export async function getSFUConfigByProvider(
 export async function updateSFUConfig(
 	params: UpdateSFUConfigParams,
 ): Promise<SFUConfig> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<SFUConfig>({
 		url: "/api/v1/sfu/update-config",
 		data: params,
-	})) as AxiosResponse<Result<SFUConfig>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("sfu config is missing");
-	return (res as any).data.data;
+	if (!data) throw new Error("sfu config is missing");
+	return data;
 }
 
 /** 切换激活的 provider，不修改配置（新） */
@@ -134,40 +132,39 @@ export async function updateSFUConfig(
 export async function switchSFUProvider(
 	provider: SFUProvider,
 ): Promise<SFUConfig> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<SFUConfig>({
 		url: "/api/v1/sfu/switch-provider",
 		data: { provider },
-	})) as AxiosResponse<Result<SFUConfig>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("sfu config is missing");
-	return (res as any).data.data;
+	if (!data) throw new Error("sfu config is missing");
+	return data;
 }
 
 /** 获取所有已配置 provider 列表 + 当前激活的 provider（新） */
 
 /** 获取所有已配置 provider 列表 + 当前激活的 provider（新） */
 export async function listSFUProviders(): Promise<SFUProvidersListResponse> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<SFUProvidersListResponse>({
 		url: "/api/v1/sfu/providers",
-	})) as AxiosResponse<Result<SFUProvidersListResponse>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("sfu providers list is missing");
-	return (res as any).data.data;
+	if (!data) throw new Error("sfu providers list is missing");
+	return data;
 }
 
 export async function getJoinToken(
 	params: GetJoinTokenParams,
 	signal?: AbortSignal,
 ): Promise<JoinTokenResponse> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<JoinTokenResponse>({
 		url: "/api/v1/signal/token",
 		data: params,
 		signal,
-	})) as AxiosResponse<Result<JoinTokenResponse>>;
+	});
 
-	if (!(res as any).data.data)
-		throw new Error("join token response is missing");
-	return (res as any).data.data;
+	if (!data) throw new Error("join token response is missing");
+	return data;
 }
 
 export function resolveSFUProvider(

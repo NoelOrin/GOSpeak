@@ -211,7 +211,7 @@ func migrateDomainCUID2(db *gorm.DB) error {
 }
 
 func autoMigrate() error {
-	return DB.AutoMigrate(
+	if err := DB.AutoMigrate(
 		&model.Role{},
 		&model.User{},
 		&model.Room{},
@@ -235,7 +235,24 @@ func autoMigrate() error {
 		&model.DomainMember{},
 		&model.ClusterNode{},
 		&model.ServerAssignment{},
-	)
+	); err != nil {
+		return err
+	}
+	return migrateConversationQueryIndexes(DB)
+}
+
+// migrateConversationQueryIndexes 确保会话列表游标查询依赖的表与复合索引存在。
+func migrateConversationQueryIndexes(db *gorm.DB) error {
+	m := db.Migrator()
+	if !m.HasTable("conversation_participants") {
+		if err := m.CreateTable(&model.ConversationParticipant{}); err != nil {
+			return err
+		}
+	}
+	if !m.HasIndex("conversation_participants", "idx_conv_part_identity") {
+		return db.Exec("CREATE INDEX idx_conv_part_identity ON conversation_participants (identity_a, identity_b)").Error
+	}
+	return nil
 }
 
 // migrateRoomPasswords 将存量明文房间密码升级为 bcrypt 哈希。

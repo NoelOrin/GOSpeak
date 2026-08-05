@@ -1,5 +1,3 @@
-import type { AxiosResponse } from "axios";
-import type { Result } from "./apiClient";
 import apiClient from "./apiClient";
 
 export interface CreateRoomReq {
@@ -45,13 +43,13 @@ export interface UpdateRoomReq {
 }
 
 export async function createRoom(req: CreateRoomReq): Promise<RoomRecord> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<RoomRecord>({
 		url: "/api/v1/room/create",
 		data: req,
-	})) as AxiosResponse<Result<RoomRecord>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("room data is missing");
-	return (res as any).data.data;
+	if (!data) throw new Error("room data is missing");
+	return data;
 }
 
 export async function listRooms(
@@ -59,23 +57,23 @@ export async function listRooms(
 	pageSize: number,
 	domainUUID?: string,
 ): Promise<RoomListResult> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<RoomListResult>({
 		url: "/api/v1/room/list",
 		data: { page, page_size: pageSize, domain_uuid: domainUUID },
-	})) as AxiosResponse<Result<RoomListResult>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("room data is missing");
-	return (res as any).data.data;
+	if (!data) throw new Error("room data is missing");
+	return data;
 }
 
 export async function updateRoom(req: UpdateRoomReq): Promise<RoomRecord> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<RoomRecord>({
 		url: "/api/v1/room/update",
 		data: req,
-	})) as AxiosResponse<Result<RoomRecord>>;
+	});
 
-	if (!(res as any).data.data) throw new Error("room data is missing");
-	return (res as any).data.data;
+	if (!data) throw new Error("room data is missing");
+	return data;
 }
 
 export async function deleteRoom(id: number): Promise<void> {

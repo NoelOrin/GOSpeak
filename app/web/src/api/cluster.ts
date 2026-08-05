@@ -1,5 +1,3 @@
-import type { AxiosResponse } from "axios";
-import type { Result } from "./apiClient";
 import apiClient from "./apiClient";
 
 export interface ClusterNodeView {
@@ -23,28 +21,28 @@ export interface ServerAssignment {
 }
 
 export async function listClusterNodes(): Promise<ClusterNodeView[]> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<{ nodes: ClusterNodeView[] }>({
 		url: "/api/v1/cluster/nodes/list",
-	})) as AxiosResponse<Result<{ nodes: ClusterNodeView[] }>>;
-	return (res as any).data.data.nodes;
+	});
+	return data.nodes;
 }
 
 export async function getClusterStats(): Promise<ClusterStats> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<ClusterStats>({
 		url: "/api/v1/cluster/stats",
-	})) as AxiosResponse<Result<ClusterStats>>;
-	return (res as any).data.data;
+	});
+	return data;
 }
 
 export async function scaleServer(
 	serverUuid: string,
 	replicas: number,
 ): Promise<ServerAssignment[]> {
-	const res = (await apiClient.post({
+	const data = await apiClient.post<{ assignments: ServerAssignment[] }>({
 		url: "/api/v1/cluster/servers/scale",
 		data: { server_uuid: serverUuid, replicas },
-	})) as AxiosResponse<Result<{ assignments: ServerAssignment[] }>>;
-	return (res as any).data.data.assignments;
+	});
+	return data.assignments;
 }
 
 export async function drainClusterNode(nodeId: string): Promise<void> {

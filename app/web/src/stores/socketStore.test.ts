@@ -35,7 +35,7 @@ vi.mock("@/socket/wsClient", () => ({
 }));
 
 vi.mock("@/api/ws", () => ({
-	getWSTicket: vi.fn(async () => "ticket"),
+	getWSTicket: vi.fn(async () => ({ token: "ticket" })),
 }));
 
 vi.mock("@/socket/tabLock", () => ({
