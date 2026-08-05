@@ -31,10 +31,17 @@ export async function firstDomainPath(page) {
   return page.evaluate(async () => {
     const token = localStorage.getItem("accessToken");
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    const res = await fetch("/api/v1/domain/my-domains", { headers });
+    const res = await fetch("/api/v1/domain/my-domains", {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: "{}",
+    });
     if (!res.ok) return "";
     const body = await res.json();
-    const uuid = body?.data?.domain_uuids?.[0];
+    const domains = body?.data;
+    const uuid = Array.isArray(domains)
+      ? domains[0]?.uuid
+      : body?.data?.domain_uuids?.[0];
     return uuid ? `/domain/${uuid}` : "";
   });
 }
@@ -92,44 +99,38 @@ export async function openCreateRoomModal(page) {
     .or(page.locator('button:has-text("快速创建房间")'))
     .or(page.locator('button[title*="创建"]'));
   await createBtn.first().click({ timeout: 10000 });
-  await page.getByRole("heading", { name: "新建房间" }).waitFor({
-    state: "visible",
-    timeout: 10000,
-  });
-  await page.getByLabel("房间名称").or(page.getByPlaceholder("例如：产品评审会")).first().waitFor({
-    state: "visible",
-    timeout: 10000,
-  });
+	await page.getByRole("heading", { name: "新建房间" }).waitFor({
+		state: "visible",
+		timeout: 10000,
+	});
+	await page.locator("#field-name").first().waitFor({
+		state: "visible",
+		timeout: 10000,
+	});
 }
 
 export async function createRoom(page, { name, password = "", limit = "12", joinAfterCreate = false }) {
   await openCreateRoomModal(page);
 
   // Actual labels from createRoomModal.tsx
-  const nameInput = page
-    .getByLabel("房间名称")
-    .or(page.getByPlaceholder("例如：产品评审会"))
-    .first();
+  const nameInput = page.locator("#field-name").first();
   await nameInput.fill(name);
 
   if (password) {
-    const passwordInput = page
-      .getByLabel("房间密码")
-      .or(page.getByPlaceholder("选填，留空表示公开房间"))
-      .first();
+    const passwordInput = page.locator("#field-password").first();
     if (await passwordInput.isVisible().catch(() => false)) {
       await passwordInput.fill(password);
     }
   }
 
-  const limitInput = page.getByLabel("人数上限").first();
+  const limitInput = page.locator("#field-limit").first();
   if (await limitInput.isVisible().catch(() => false)) {
     await limitInput.fill(String(limit));
   }
 
   // Default modal joins after create; for suite isolation prefer staying in list mode.
   if (!joinAfterCreate) {
-    const joinToggle = page.getByLabel("创建后进入域页").first();
+    const joinToggle = page.locator("#field-joinAfterCreate").first();
     if (await joinToggle.isVisible().catch(() => false)) {
       const checked = await joinToggle.isChecked().catch(() => true);
       if (checked) await joinToggle.click();
