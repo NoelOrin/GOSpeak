@@ -282,8 +282,6 @@ func (h *Hub) enrichMembers(members []MemberInfo) []MemberInfo {
 }
 
 // getMembers 返回房间成员完整信息；锁内只做快照，锁外补全 IO，避免大房间阻塞全部信令。
-
-// getMembers 返回房间成员完整信息；锁内只做快照，锁外补全 IO，避免大房间阻塞全部信令。
 func (h *Hub) getMembers(roomName string) []MemberInfo {
 	h.mu.RLock()
 	members := h.memberSnapshotLocked(roomName)

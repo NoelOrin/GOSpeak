@@ -21,6 +21,8 @@ type memStateStore struct {
 	metas map[string]bus.RoomMeta
 	strm  map[string][2]string // stream -> [room, identity]
 	revs  map[string]uint64
+	// getRoomMembersCalls records GetRoomMembers invocations for batch regression assertions.
+	getRoomMembersCalls int
 }
 
 func newMemStateStore() *memStateStore {
@@ -62,11 +64,25 @@ func (m *memStateStore) PutRoomMembersRev(ctx context.Context, snap bus.RoomMemb
 func (m *memStateStore) GetRoomMembers(ctx context.Context, room string) (bus.RoomMembersSnapshot, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.getRoomMembersCalls++
 	snap, ok := m.rooms[room]
 	if !ok {
 		return bus.RoomMembersSnapshot{}, errNotFound
 	}
 	return snap, nil
+}
+
+// GetRoomMembersBatch 批量读取多个房间的成员快照，模拟生产 Redis MGet 路径。
+func (m *memStateStore) GetRoomMembersBatch(ctx context.Context, rooms []string) (map[string]bus.RoomMembersSnapshot, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make(map[string]bus.RoomMembersSnapshot, len(rooms))
+	for _, room := range rooms {
+		if snap, ok := m.rooms[room]; ok {
+			out[room] = snap
+		}
+	}
+	return out, nil
 }
 
 func (m *memStateStore) GetRoomMembersRev(ctx context.Context, room string) (bus.RoomMembersSnapshot, uint64, error) {

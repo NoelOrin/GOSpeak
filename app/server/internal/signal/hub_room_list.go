@@ -1,6 +1,7 @@
 package signal
 
 import (
+	"log"
 	"sort"
 
 	"GOSpeak/internal/bus"
@@ -82,6 +83,19 @@ func (h *Hub) getMergedRoomsScoped(domainUUID string, platformOnly bool) []RoomI
 	eg.Wait()
 
 	// 合并：内存活跃数据覆盖 DB 数据，同时保留 DB 字段
+	// 有 KV 时批量读取本地活跃房间的成员快照，避免每个房间一次独立 KV Get（N+1）。
+	var localSnaps map[string]bus.RoomMembersSnapshot
+	var snapErr error
+	if h.membershipStore != nil {
+		localKeys := make([]string, 0, len(memRooms))
+		for name := range memRooms {
+			localKeys = append(localKeys, name)
+		}
+		localSnaps, snapErr = h.localRoomSnapshots(localKeys)
+		if snapErr != nil {
+			log.Printf("[Signal] batch local room snapshots: %v; falling back to local members", snapErr)
+		}
+	}
 	for name, info := range memRooms {
 		roomDomainUUID, _ := splitRoomKey(name)
 		info.DomainUUID = roomDomainUUID
@@ -96,7 +110,7 @@ func (h *Hub) getMergedRoomsScoped(domainUUID string, platformOnly bool) []RoomI
 		}
 		// 有 KV 时补齐其他实例成员，修正 Count；统一补全用户资料/禁言
 		if h.membershipStore != nil {
-			merged := h.GetRoomMembersMerged(name)
+			merged := h.mergeMemberSnapshot(name, localSnaps[name])
 			info.Members = h.enrichMembers(merged)
 			info.Count = len(merged)
 		}
@@ -196,6 +210,26 @@ func (h *Hub) getMergedRoomsScoped(domainUUID string, platformOnly bool) []RoomI
 		return result[i].ID < result[j].ID
 	})
 	return result
+}
+
+// localRoomSnapshots 批量读取本地活跃房间的成员快照；后端支持批量时一次读取，
+// 否则回退逐个 GetRoomMembers（失败项静默跳过，由调用方回退本地成员）。
+func (h *Hub) localRoomSnapshots(localKeys []string) (map[string]bus.RoomMembersSnapshot, error) {
+	if len(localKeys) == 0 || h.membershipStore == nil {
+		return map[string]bus.RoomMembersSnapshot{}, nil
+	}
+	ctx, cancel := kvTimeoutCtx()
+	defer cancel()
+	if batch, ok := h.membershipStore.(bulkRoomMembersReader); ok {
+		return batch.GetRoomMembersBatch(ctx, localKeys)
+	}
+	out := make(map[string]bus.RoomMembersSnapshot, len(localKeys))
+	for _, key := range localKeys {
+		if snap, err := h.membershipStore.GetRoomMembers(ctx, key); err == nil {
+			out[key] = snap
+		}
+	}
+	return out, nil
 }
 
 // ─── 公共方法 ───
