@@ -48,6 +48,7 @@ func (h *OAuthHandler) Login(c *gin.Context) {
 		Path:     "/",
 		MaxAge:   600,
 		HttpOnly: true,
+		Secure:   c.Request.TLS != nil,
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -82,6 +83,7 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   c.Request.TLS != nil,
 		SameSite: http.SameSiteLaxMode,
 	})
 
