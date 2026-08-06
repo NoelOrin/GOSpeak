@@ -11,6 +11,7 @@ export interface UserInfo {
 	display_name: string;
 	avatar: string;
 	role: string;
+	permissions?: string[];
 }
 
 const STORAGE_USER = "user";

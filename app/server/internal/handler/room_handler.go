@@ -2,6 +2,7 @@ package handler
 
 import (
 	"log"
+	"strings"
 
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/middleware"
@@ -126,8 +127,19 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		return
 	}
 	username, _ := usernameVal.(string)
-	domainUUID := domainUUIDFromContext(c)
-	if domainUUID != "" && !middleware.IsDomainMember(domainUUID, currentUserUUID(c)) {
+	domainUUID := strings.TrimSpace(req.DomainUUID)
+	if ctxDomain := domainUUIDFromContext(c); ctxDomain != "" {
+		if domainUUID != "" && domainUUID != ctxDomain {
+			pkg.Fail(c, pkg.FORBIDDEN, "domain_uuid does not match the request context")
+			return
+		}
+		domainUUID = ctxDomain
+	}
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	if !middleware.IsDomainMember(domainUUID, currentUserUUID(c)) {
 		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
 		return
 	}

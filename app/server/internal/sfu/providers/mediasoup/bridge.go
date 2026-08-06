@@ -106,6 +106,18 @@ func (b *BridgeClient) CreateTransport(roomID, identity, direction string) (*Tra
 	return &result, nil
 }
 
+type RestartIceResult struct {
+	IceParameters json.RawMessage `json:"iceParameters"`
+}
+
+func (b *BridgeClient) RestartIce(roomID, transportID string) (json.RawMessage, error) {
+	var result RestartIceResult
+	if err := b.do(http.MethodPost, "/rooms/"+roomID+"/transports/"+transportID+"/restart-ice", bytes.NewReader([]byte("{}")), &result); err != nil {
+		return nil, err
+	}
+	return result.IceParameters, nil
+}
+
 func (b *BridgeClient) ConnectTransport(roomID, transportID string, dtlsParameters json.RawMessage) error {
 	body, err := json.Marshal(map[string]interface{}{"dtlsParameters": dtlsParameters})
 	if err != nil {

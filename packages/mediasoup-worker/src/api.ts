@@ -63,6 +63,17 @@ export function createRouter(worker: MediasoupWorker): ExpressRouter {
 		}
 	});
 
+	router.post("/rooms/:roomId/transports/:transportId/restart-ice", async (req, res) => {
+		const transport = worker.getTransport(req.params.roomId, req.params.transportId);
+		if (!transport) return res.status(404).json({ error: "transport not found" });
+		try {
+			const iceParameters = await transport.restartIce();
+			res.json({ iceParameters });
+		} catch (err) {
+			res.status(500).json({ error: (err as Error).message });
+		}
+	});
+
 	router.post("/rooms/:roomId/produce", async (req, res) => {
 		const { transportId, kind, rtpParameters, appData } = req.body;
 		const transport = worker.getTransport(req.params.roomId, transportId);

@@ -21,6 +21,7 @@ type participantBridge interface {
 	ConnectTransport(roomID, transportID string, dtlsParameters json.RawMessage) error
 	Produce(roomID, transportID, kind string, rtpParameters, appData json.RawMessage) (*ProduceResult, error)
 	Consume(roomID, transportID, producerID string, rtpCapabilities json.RawMessage) (*ConsumeResult, error)
+	RestartIce(roomID, transportID string) (json.RawMessage, error)
 	CloseParticipant(roomID, identity string) ([]string, error)
 }
 
@@ -159,6 +160,21 @@ func (m *MediasoupSignal) RegisterWS(register func(event string, fn func(ws.Clie
 			return errorJSON(err), nil
 		}
 		return marshalJSON(result), nil
+	}))
+
+	register("sfu:restart-ice", safeHandler(func(s ws.ClientMessenger, payload string) (string, error) {
+		var req struct {
+			Room        string `json:"room"`
+			TransportID string `json:"transportId"`
+		}
+		if err := json.Unmarshal([]byte(payload), &req); err != nil || req.Room == "" || req.TransportID == "" {
+			return `{"error":"room and transportId required"}`, nil
+		}
+		iceParameters, err := m.bridge.RestartIce(req.Room, req.TransportID)
+		if err != nil {
+			return errorJSON(err), nil
+		}
+		return marshalJSON(map[string]interface{}{"iceParameters": iceParameters}), nil
 	}))
 
 	register("sfu:close-transport", safeHandler(func(s ws.ClientMessenger, payload string) (string, error) {

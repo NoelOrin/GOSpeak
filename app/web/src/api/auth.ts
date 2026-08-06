@@ -14,6 +14,7 @@ export interface BackendUser {
 	avatar: string;
 	role: string;
 	is_bot?: boolean;
+	permissions?: string[];
 }
 
 export interface LoginData {

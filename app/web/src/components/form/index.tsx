@@ -57,7 +57,7 @@ const FormInput = (props: { field: FormFieldConfig; form: any }) => {
 							required={field.required}
 							class="toggle"
 							onChange={(e) =>
-								form.setFieldValue(field.name, e.target.checked as any)
+								form.setFieldValue(field.name, e.currentTarget.checked)
 							}
 						/>
 					</div>
@@ -73,7 +73,7 @@ const FormInput = (props: { field: FormFieldConfig; form: any }) => {
 							required={field.required}
 							class={clsx("checkbox", field.className)}
 							onChange={(e) =>
-								form.setFieldValue(field.name, e.target.checked as any)
+								form.setFieldValue(field.name, e.currentTarget.checked)
 							}
 						/>
 					</div>
@@ -101,7 +101,7 @@ const FormInput = (props: { field: FormFieldConfig; form: any }) => {
 										required={field.required}
 										class="radio"
 										onChange={(e) =>
-											form.setFieldValue(field.name, e.target.value as any)
+											form.setFieldValue(field.name, e.currentTarget.value)
 										}
 									/>
 									{option.label}
@@ -133,7 +133,7 @@ const FormInput = (props: { field: FormFieldConfig; form: any }) => {
 										field.type === "number"
 											? (e.target as HTMLInputElement).valueAsNumber
 											: (e.target as HTMLInputElement).value;
-									form.setFieldValue(field.name, value as any);
+									form.setFieldValue(field.name, value);
 								}}
 							/>
 						}
@@ -146,7 +146,7 @@ const FormInput = (props: { field: FormFieldConfig; form: any }) => {
 								required={field.required}
 								class={clsx("textarea w-full", field.className)}
 								onInput={(e) =>
-									form.setFieldValue(field.name, e.target.value as any)
+									form.setFieldValue(field.name, e.currentTarget.value)
 								}
 							/>
 						</Match>
@@ -158,7 +158,7 @@ const FormInput = (props: { field: FormFieldConfig; form: any }) => {
 								required={field.required}
 								class={clsx("select w-full", field.className)}
 								onChange={(e) =>
-									form.setFieldValue(field.name, e.target.value as any)
+									form.setFieldValue(field.name, e.currentTarget.value)
 								}
 							>
 								<For each={field.options}>

@@ -95,6 +95,12 @@ function claimPermissions(): string[] | null {
 }
 
 export function hasPermission(code: string): boolean {
+	// 服务端 profile 下发的权限是权威来源；未加载时退回 JWT claims 与本地兜底表。
+	const profilePerms = userStore.user()?.permissions;
+	if (profilePerms && profilePerms.length > 0) {
+		return profilePerms.includes(code);
+	}
+
 	const claims = claimPermissions();
 	if (claims) return claims.includes(code);
 
