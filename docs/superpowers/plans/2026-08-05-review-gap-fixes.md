@@ -1,6 +1,8 @@
 # Review 缺口修复 Implementation Plan（2026-08-05）
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status (2026-08-06):** 全部 Task 已执行落地，Go 全量测试、前端 198 测试、mediasoup worker 测试均通过。
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 修复 GOSpeak 全量 Review 后剩余 80 条未修复 + 26 条部分修复缺口，覆盖 NATS/KV 容错、性能 N+1、安全加固、架构/运维、测试补全、前端杂项六类。
 
@@ -96,7 +98,7 @@
 - Modify: `app/server/internal/bus/nats_bus.go`
 - Test: `app/server/internal/bus/nats_bus_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `app/server/internal/bus/nats_bus_test.go` 追加：
 
@@ -132,12 +134,12 @@ func TestNATSBus_OnMessageEnqueues(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/bus/ -run TestNATSBus_OnMessageEnqueues -v`
 Expected: FAIL（当前 onMessage 同步调用，测试无法编译或断言失败）
 
-- [ ] **Step 3: 实现异步投递**
+- [x] **Step 3: 实现异步投递**
 
 在 `nats_bus.go` 增加有界 worker 队列，`onMessage` 只做反序列化入队：
 
@@ -201,12 +203,12 @@ func (b *NATSBus) startDeliverWorkers() {
 	}
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/bus/ -run TestNATSBus_OnMessageEnqueues -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/bus/nats_bus.go app/server/internal/bus/nats_bus_test.go
@@ -219,7 +221,7 @@ git commit -m "fix(bus): async NATS delivery with bounded worker queue"
 - Modify: `app/server/internal/bus/nats_bus.go`
 - Test: `app/server/internal/bus/nats_bus_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestNATSBus_PublishHonorsContext(t *testing.T) {
@@ -243,12 +245,12 @@ func TestNATSBus_PublishHonorsContext(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/bus/ -run TestNATSBus_PublishHonorsContext -v`
 Expected: FAIL（当前 `_ = ctx`）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 将三个 Publish 方法改为：
 
@@ -283,12 +285,12 @@ func (b *NATSBus) PublishNamespace(ctx context.Context, event string, payload in
 	}
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/bus/ -run 'TestNATSBus_PublishHonorsContext|TestNATSBus' -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/bus/nats_bus.go app/server/internal/bus/nats_bus_test.go
@@ -301,7 +303,7 @@ git commit -m "fix(bus): honor publish ctx and warn on pending overflow"
 - Modify: `app/server/internal/bus/auth_store.go`
 - Test: `app/server/internal/bus/auth_store_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestAuthStore_SetSigningKeyCAS(t *testing.T) {
@@ -327,12 +329,12 @@ func TestAuthStore_IsBlacklistedFailClosed(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/bus/ -run 'TestAuthStore_SetSigningKeyCAS|TestAuthStore_IsBlacklistedFailClosed' -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```go
 var ErrSigningKeyExists = errors.New("signing key already exists")
@@ -384,12 +386,12 @@ func (s *AuthStore) IsBlacklisted(jti string) bool {
 
 同步在 `app/server/internal/redis/auth_backend.go` 的适配层把 `IsBlacklisted` 改为调用 `IsBlacklistedErr` 并返回错误（当前 `redis.AuthBackend` 接口已含 `IsBlacklisted(jti string) bool`，保持 bool 接口但内部记录错误并返回 false 的旧路径仅用于非安全场景；本次以新增 Err 方法为准，调用方 `middleware/auth.go` 在 `redis.IsBlacklisted` 处保持现状）。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/bus/ -run TestAuthStore -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/bus/auth_store.go app/server/internal/bus/auth_store_test.go
@@ -402,7 +404,7 @@ git commit -m "fix(bus): signing key CAS and blacklist fail-closed error path"
 - Modify: `app/server/internal/cluster/leader.go`
 - Test: `app/server/internal/cluster/leader_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestLeaderLock_RenewKeepsLock(t *testing.T) {
@@ -431,12 +433,12 @@ func TestLeaderLock_RenewKeepsLock(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/cluster/ -run TestLeaderLock_RenewKeepsLock -v`
 Expected: FAIL（无 RenewLoop 编译错误）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```go
 // RenewLoop 每 interval 更新锁 TTL；返回 done channel，ctx 取消后退出。
@@ -482,12 +484,12 @@ func (l *NATSLeaderLock) Release(nodeID string) error {
 
 在 `app/server/server/gin.go` 的 agent 启动处启动 `RenewLoop` 并在 `clusterStop` 中调用 `Release(nodeID)`（先确认 `clusterStop` 现有实现位置，把 Release 放在 Stop 之后）。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/cluster/ -run TestLeaderLock -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/cluster/leader.go app/server/internal/cluster/leader_test.go
@@ -506,7 +508,7 @@ git commit -m "fix(cluster): renew leader lock and explicit release"
 - Modify: `app/server/internal/signal/hub_queries.go`
 - Test: `app/server/internal/signal/hub_domain_filter_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `app/server/internal/signal/hub_domain_filter_test.go` 追加（先加批量接口桩）：
 
@@ -525,12 +527,12 @@ func TestEnrichMembers_BatchQueries(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/signal/ -run TestEnrichMembers_BatchQueries -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现批量方法**
+- [x] **Step 3: 实现批量方法**
 
 `app/server/internal/repository/user_repo.go`：
 
@@ -626,12 +628,12 @@ func (h *Hub) enrichMembers(members []MemberInfo) []MemberInfo {
 
 同步扩展 `hub_queries.go` 顶部依赖接口（`userByName` 增加 `GetByNames`；`muteStore` 接口增加 `IsMutedBatch`），并在测试桩中实现。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/signal/ -run TestEnrichMembers -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/repository/user_repo.go app/server/internal/repository/mute_repo.go app/server/internal/signal/hub_queries.go app/server/internal/signal/hub_domain_filter_test.go
@@ -644,7 +646,7 @@ git commit -m "perf(signal): batch enrich members and mute state"
 - Modify: `app/server/internal/signal/hub_room_list.go`
 - Test: `app/server/internal/signal/hub_room_list_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestRoomList_BatchLocalKV(t *testing.T) {
@@ -661,12 +663,12 @@ func TestRoomList_BatchLocalKV(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/signal/ -run TestRoomList_BatchLocalKV -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `hub_room_list.go` 的本地房间合并改为一次批量读取：
 
@@ -694,12 +696,12 @@ func (h *Hub) localRoomSnapshots(localKeys []string) (map[string]bus.RoomMembers
 
 把 `getMergedRooms` 中原本逐本地房间 `GetRoomMembers` 的循环替换为一次 `localRoomSnapshots(localKeys)`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/signal/ -run TestRoomList -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/signal/hub_room_list.go app/server/internal/signal/hub_room_list_test.go
@@ -712,7 +714,7 @@ git commit -m "perf(signal): batch local room membership reads"
 - Modify: `app/server/internal/service/message_service.go`
 - Modify: `app/server/internal/service/message_service_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestEnrichAuthorInfo_Batch(t *testing.T) {
@@ -728,12 +730,12 @@ func TestEnrichAuthorInfo_Batch(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/service/ -run TestEnrichAuthorInfo_Batch -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `message_service.go` 的 `enrichAuthorInfo` 内循环改为：
 
@@ -750,12 +752,12 @@ Expected: FAIL
 
 依赖接口 `userByName` 增加 `GetByNames(names []string) (map[string]*model.User, error)`，`SetUserRepo` 参数类型同步；测试桩实现批量方法。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/service/ -run TestEnrichAuthorInfo -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/service/message_service.go app/server/internal/service/message_service_test.go
@@ -769,7 +771,7 @@ git commit -m "perf(message): batch author enrichment"
 - Modify: `app/server/internal/signal/hub.go`
 - Test: `app/server/internal/signal/hub_stability_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestOnMemberSpeaking_UsesMuteCache(t *testing.T) {
@@ -785,12 +787,12 @@ func TestOnMemberSpeaking_UsesMuteCache(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/signal/ -run TestOnMemberSpeaking_UsesMuteCache -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 在 `Hub` 增加缓存字段与方法：
 
@@ -844,12 +846,12 @@ func (h *Hub) mutedCacheSet(identity string, muted bool) {
 
 `Hub` struct 增加 `muteCache map[string]muteCacheEntry` 字段并在 `NewHub` 初始化。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/signal/ -run TestOnMemberSpeaking -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/signal/hub.go app/server/internal/signal/hub_room_events.go app/server/internal/signal/hub_stability_test.go
@@ -863,7 +865,7 @@ git commit -m "perf(signal): cache mute state for speaking updates"
 - Modify: `app/server/internal/ws/client.go`
 - Test: `app/server/internal/ws/fanout_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestBroadcastToRoom_MarshalsOnce(t *testing.T) {
@@ -882,12 +884,12 @@ func TestBroadcastToRoom_MarshalsOnce(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/ws/ -run TestBroadcastToRoom_MarshalsOnce -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `fanout.go` 增加单次 marshal 的发送辅助：
 
@@ -936,12 +938,12 @@ func (c *Client) sendRaw(data []byte) bool {
 
 `Send(v interface{}) bool` 内部改为 marshal 后调用 `sendRaw`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/ws/ -run 'TestBroadcast|TestClient' -v`
 Expected: PASS（并发发送下测试若依赖顺序，改用计数/等待）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/ws/fanout.go app/server/internal/ws/client.go app/server/internal/ws/fanout_test.go
@@ -955,7 +957,7 @@ git commit -m "perf(ws): marshal once and send broadcast concurrently"
 - Modify: `app/server/internal/repository/conversation_repo.go`
 - Modify: `app/server/internal/repository/user_repo.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestConversationListCursor(t *testing.T) {
@@ -967,12 +969,12 @@ func TestConversationListCursor(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/repository/ -run TestConversationListCursor -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `db_migrations.go` 追加迁移（找到现有 migrate 函数内的建表/索引块后追加）：
 
@@ -1021,12 +1023,12 @@ func (r *ConversationRepository) ListByIdentityCursor(identity, beforeID string,
 	m.CreateIndex(&model.User{}, "idx_users_name", "name")
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/repository/ -run 'TestConversation|TestUser' -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/repository/db_migrations.go app/server/internal/repository/conversation_repo.go app/server/internal/repository/user_repo.go
@@ -1044,7 +1046,7 @@ git commit -m "perf(repo): conversation cursor and user name index"
 - Modify: `app/server/internal/pkg/oauth/generic.go`
 - Test: `app/server/internal/pkg/oauth/oauth_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestHTTPClient_TimeoutAndBodyLimit(t *testing.T) {
@@ -1065,12 +1067,12 @@ func TestHTTPClient_RejectsUnsafeURL(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/pkg/oauth/ -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `oauth.go` 增加共享安全 client 与 URL 校验：
 
@@ -1152,12 +1154,12 @@ func httpGet(rawURL, token string) ([]byte, error) {
 
 `generic.go` 保持调用 `httpPostForm` / `httpGet` 不变（签名一致）。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/pkg/oauth/ -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/pkg/oauth/oauth.go app/server/internal/pkg/oauth/generic.go app/server/internal/pkg/oauth/oauth_test.go
@@ -1172,7 +1174,7 @@ git commit -m "fix(oauth): hardened outbound client with timeout and body limit"
 - Modify: `app/server/internal/handler/auth_handler.go`
 - Test: `app/server/internal/service/auth_service_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestRefreshFromToken_RotatesAndDetectsReuse(t *testing.T) {
@@ -1195,12 +1197,12 @@ func TestRefreshFromToken_RotatesAndDetectsReuse(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/service/ -run TestRefreshFromToken_RotatesAndDetectsReuse -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `pkg/jwt.go` 增加 family 字段：
 
@@ -1254,12 +1256,12 @@ func GenerateRefreshFamily() (string, error) {
 
 `redis` 增加 `IsRefreshFamilyUsed` / `MarkRefreshFamilyUsed` / `RevokeRefreshFamily`（key `refresh:family:<family>`，TTL 7d，NX 语义用 `SetNX`）。`auth_handler.go` 的 `GetRefreshToken` 同步改为返回 `{access_token, refresh_token}`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/service/ -run TestRefreshFromToken -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/pkg/jwt.go app/server/internal/service/auth_service.go app/server/internal/handler/auth_handler.go app/server/internal/service/auth_service_test.go app/server/internal/redis/blacklist.go
@@ -1273,7 +1275,7 @@ git commit -m "feat(auth): rotate refresh tokens with reuse detection"
 - Modify: `app/server/internal/handler/storage_handler.go`
 - Test: `app/server/internal/handler/storage_handler_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestConfirmUpload_Ownership(t *testing.T) {
@@ -1284,12 +1286,12 @@ func TestConfirmUpload_Ownership(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/handler/ -run TestConfirmUpload -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `storage_handler.go` 的 `ConfirmUpload` 增加归属校验：
 
@@ -1327,12 +1329,12 @@ func (p *S3Provider) HeadObjectSize(key string) (int64, error) {
 
 `ConfirmUpload` 在 S3 模式下调用 `HeadObjectSize` 并校验 `<= maxBytes`（maxBytes 由 cfg 计算），失败返回 `STORAGE_FILE_TOO_LARGE` 或 `STORAGE_ERROR`。`storage.Provider` 接口增加 `HeadObjectSize`，`local.go` 返回 `os.Stat` 大小。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/handler/ -run TestConfirmUpload -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/storage/s3.go app/server/internal/storage/local.go app/server/internal/handler/storage_handler.go app/server/internal/handler/storage_handler_test.go
@@ -1346,7 +1348,7 @@ git commit -m "fix(storage): verify confirm ownership and object size"
 - Modify: `app/server/internal/service/user_service.go`
 - Test: `app/server/internal/handler/storage_handler_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestUpload_RejectsHugeBody(t *testing.T) {
@@ -1354,12 +1356,12 @@ func TestUpload_RejectsHugeBody(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/handler/ -run TestUpload_RejectsHugeBody -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `storage_handler.go` 的 `Upload` 开头增加：
 
@@ -1396,12 +1398,12 @@ Expected: FAIL
 
 将 `DetectContentType` 从 handler 迁移到 `app/server/internal/pkg/magic.go`（包内函数 `pkg.DetectContentType`），`storage_handler.go` 与 `user_service.go` 共用。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/handler/ ./internal/service/ -run 'TestUpload_RejectsHugeBody|TestUploadAvatar' -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/handler/storage_handler.go app/server/internal/service/user_service.go app/server/internal/pkg/magic.go app/server/internal/handler/storage_handler_test.go
@@ -1415,7 +1417,7 @@ git commit -m "fix(storage): body limit and avatar magic sniffing"
 - Modify: `app/server/internal/middleware/auth.go`
 - Test: `app/server/internal/middleware/auth_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestCORS_AddsVary(t *testing.T) {
@@ -1432,12 +1434,12 @@ func TestCORS_AddsVary(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/middleware/ -run TestCORS_AddsVary -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `middleware/auth.go`（或现有 CORS 所在文件）改为：
 
@@ -1490,12 +1492,12 @@ func CORS(origins []string) gin.HandlerFunc {
 
 并把现有 CORS 中间件替换为 `middleware.CORS(strings.Split(cfg.CORSOrigin, ","))`。若现有 CORS 在 `gin.go` 内联，移除旧实现避免重复头。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/middleware/ -run TestCORS -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/server/gin.go app/server/internal/middleware/auth.go app/server/internal/middleware/auth_test.go
@@ -1510,7 +1512,7 @@ git commit -m "fix(middleware): origin-aware CORS with Vary and trusted proxies"
 - Modify: `app/server/internal/signal/hub_mute.go`
 - Test: `app/server/internal/sfu/factory/dynamic_provider_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestDynamicProvider_SupportsStream(t *testing.T) {
@@ -1532,12 +1534,12 @@ func TestSRS_MuteFalseReturnsSoft(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/sfu/... -run 'TestDynamicProvider_SupportsStream|TestSRS_MuteFalseReturnsSoft' -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `dynamic_provider.go`：
 
@@ -1568,12 +1570,12 @@ func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) e
 
 `hub_mute.go` 对 unmute 调用 `MuteParticipant(..., false)` 返回 `ErrSFUNotSupported` 时记录 soft 语义而不是 degraded 成功（在现有调用处追加判断：`if err == pkg.ErrSFUNotSupported { log; continue }`）。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/sfu/... -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/sfu/factory/dynamic_provider.go app/server/internal/sfu/providers/srs/provider.go app/server/internal/signal/hub_mute.go app/server/internal/sfu/factory/dynamic_provider_test.go
@@ -1592,7 +1594,7 @@ git commit -m "fix(sfu): expose stream capability and correct soft unmute semant
 - Modify: `app/server/server/gin.go`
 - Test: `app/server/internal/ws/fanout_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestFanout_CloseAll(t *testing.T) {
@@ -1608,12 +1610,12 @@ func TestFanout_CloseAll(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/ws/ -run TestFanout_CloseAll -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `broadcaster.go` 接口增加：
 
@@ -1672,12 +1674,12 @@ func (f *Fanout) CloseAll() {
 func (u *Upgrader) Fanout() Broadcaster { return u.cfg.Fanout }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/ws/ -run TestFanout_CloseAll -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/ws/broadcaster.go app/server/internal/ws/fanout.go app/server/internal/ws/upgrader.go app/server/server/gin.go app/server/internal/ws/fanout_test.go
@@ -1691,7 +1693,7 @@ git commit -m "fix(server): close websocket clients before bus shutdown"
 - Modify: `app/server/cmd/root.go`
 - Modify: `app/server/main.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `cmd/root.go` 无测试文件，先在 `app/server/cmd/root_test.go` 新增：
 
@@ -1705,12 +1707,12 @@ func TestServerCmd_DefaultEnvIsDev(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./cmd/ -run TestServerCmd_DefaultEnvIsDev -v`
 Expected: FAIL（当前默认走 Prod）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `cmd/root.go`：
 
@@ -1744,12 +1746,12 @@ var versionCmd = &cobra.Command{
 
 `gin.go` 的 `StartGin` 改为 `func StartGin(env EnvEnum) error`，把内部 `panic` 改为返回 `error`（至少把 DB/Redis/bus 初始化 panic 点改为 `return fmt.Errorf(...)`）；`main.go` 移除 `init()` 的 `os.Chdir`，改为显式 `os.Chdir` 仅在 `GOSPEAK_WORKDIR` 设置时执行，并调用 `StartGin` 处理 error。Makefile/构建脚本用 `-ldflags "-X main.version=$(VERSION)"` 注入版本。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./cmd/ -v && go build ./...`
 Expected: PASS / BUILD OK
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/cmd/root.go app/server/cmd/root_test.go app/server/main.go app/server/server/gin.go
@@ -1764,7 +1766,7 @@ git commit -m "fix(server): dev default, version injection, and startup error pa
 - Modify: `app/server/internal/repository/db.go`
 - Test: `app/server/internal/router/router_test.go`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestRouter_Readyz(t *testing.T) {
@@ -1778,12 +1780,12 @@ func TestRouter_Readyz(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/router/ -run TestRouter_Readyz -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `repository/db.go` 增加：
 
@@ -1809,12 +1811,12 @@ func DBStats() sql.DBStats {
 	})
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/router/ ./internal/handler/ -run 'TestRouter_Readyz|TestMonitor' -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/router/router.go app/server/internal/handler/monitor_handler.go app/server/internal/repository/db.go app/server/internal/router/router_test.go
@@ -1830,7 +1832,7 @@ git commit -m "feat(server): readiness probe and repository-owned DB stats"
 - Modify: `app/server/internal/service/bot_service.go`
 - Test: `app/server/internal/plugin/builtin/botbase/plugin_test.go` 等
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestBotbase_RejectsBadConfig(t *testing.T) {
@@ -1842,12 +1844,12 @@ func TestBotbase_RejectsBadConfig(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/server && go test ./internal/plugin/... ./internal/service/ ./internal/sfu/providers/mediasoup/ -run 'TestBotbase_RejectsBadConfig|TestReconcile_ReportsErrors|TestProduce_AppDataError' -v`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `botbase/plugin.go` 三处 `_ = json.Unmarshal(...)` 改为：
 
@@ -1877,12 +1879,12 @@ Expected: FAIL
 
 `bot_service.go` 的 `randomHex` 中 `_, _ = rand.Read(...)` 改为检查错误并返回 INTERNAL_ERROR。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/plugin/... ./internal/service/ ./internal/sfu/providers/mediasoup/ -v`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/server/internal/plugin/builtin/botbase/plugin.go app/server/internal/sfu/providers/mediasoup/signal.go app/server/internal/service/cluster_scaling.go app/server/internal/service/bot_service.go
@@ -1899,7 +1901,7 @@ git commit -m "fix: stop swallowing parse and scaling errors"
 - Create: `app/server/internal/service/oauth_service_test.go`
 - Create: `app/server/internal/handler/oauth_handler_test.go`
 
-- [ ] **Step 1: 写测试**
+- [x] **Step 1: 写测试**
 
 `oauth_service_test.go`：
 
@@ -1939,12 +1941,12 @@ func TestOAuthHandler_Callback_BadState(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认通过**
+- [x] **Step 2: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/service/ ./internal/handler/ -run 'TestOAuth' -v`
 Expected: PASS（首次编写后直接通过或按真实签名修正）
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```bash
 git add app/server/internal/service/oauth_service_test.go app/server/internal/handler/oauth_handler_test.go
@@ -1956,7 +1958,7 @@ git commit -m "test(oauth): service and handler coverage"
 **Files:**
 - Modify: `app/server/internal/service/auth_service_test.go`
 
-- [ ] **Step 1: 写表驱动测试**
+- [x] **Step 1: 写表驱动测试**
 
 ```go
 func TestAuthTokenStateMachine(t *testing.T) {
@@ -1982,12 +1984,12 @@ func TestAuthTokenStateMachine(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认通过**
+- [x] **Step 2: 运行测试确认通过**
 
 Run: `cd app/server && go test ./internal/service/ -run TestAuthTokenStateMachine -v`
 Expected: PASS
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```bash
 git add app/server/internal/service/auth_service_test.go
@@ -2002,7 +2004,7 @@ git commit -m "test(auth): token lifecycle and reset matrix"
 - Create: `test/package.json`
 - Create: `test/smoke.test.ts`
 
-- [ ] **Step 1: 修复根测试脚本**
+- [x] **Step 1: 修复根测试脚本**
 
 `app/server/package.json` 的 scripts 增加：
 
@@ -2030,7 +2032,7 @@ git commit -m "test(auth): token lifecycle and reset matrix"
 }
 ```
 
-- [ ] **Step 2: 写 E2E 冒烟测试**
+- [x] **Step 2: 写 E2E 冒烟测试**
 
 `test/smoke.test.ts`：
 
@@ -2047,12 +2049,12 @@ describe("server smoke", () => {
 });
 ```
 
-- [ ] **Step 3: 运行验证**
+- [x] **Step 3: 运行验证**
 
 Run: `pnpm test:server && cd test && pnpm test`
 Expected: PASS（Go 全量测试通过；E2E 需要已启动服务，`GOSPEAK_TEST_URL` 可指向 CI 环境）
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add app/server/package.json package.json test/package.json test/smoke.test.ts
@@ -2069,7 +2071,7 @@ git commit -m "test: restore root server test entry and add e2e smoke"
 - Modify: `app/web/src/api/apiClient.ts`
 - Modify: `app/web/src/api/room.ts` 等使用 `as any` 的模块
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `app/web/src/api/apiClient.spec.ts`：
 
@@ -2086,12 +2088,12 @@ describe("APIClient", () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/web && pnpm exec vitest run src/api/apiClient.spec.ts`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `apiClient.ts` 的 `request` 改为：
 
@@ -2118,12 +2120,12 @@ Expected: FAIL
 const res = await apiClient.post<RoomListResult>({ url: "/api/v1/room/list", data });
 ```
 
-- [ ] **Step 4: 运行测试与类型检查**
+- [x] **Step 4: 运行测试与类型检查**
 
 Run: `cd app/web && pnpm exec vitest run src/api && pnpm exec tsc --noEmit`
 Expected: PASS / NO ERRORS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/web/src/api/apiClient.ts app/web/src/api/room.ts app/web/src/api/apiClient.spec.ts
@@ -2137,7 +2139,7 @@ git commit -m "refactor(web): typed API client unwrap"
 - Modify: `app/web/src/stores/userStore.ts`
 - Modify: `app/server/internal/handler/user_handler.go`
 
-- [ ] **Step 1: 后端 profile 返回权限**
+- [x] **Step 1: 后端 profile 返回权限**
 
 `user_handler.go` 的 `GetProfile` 响应 data 增加 `permissions`（从 permSvc 按 role 解析），并写测试：
 
@@ -2147,7 +2149,7 @@ func TestGetProfile_IncludesPermissions(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 前端改为服务端权威**
+- [x] **Step 2: 前端改为服务端权威**
 
 `permissions.ts` 的 `hasPermission` 改为优先读 `userStore.user()?.permissions`：
 
@@ -2167,12 +2169,12 @@ export function hasPermission(code: string): boolean {
 
 `userStore` 的 `User` 类型增加 `permissions: string[]`，profile 加载后写入。
 
-- [ ] **Step 3: 运行验证**
+- [x] **Step 3: 运行验证**
 
 Run: `cd app/web && pnpm exec vitest run src/utils && pnpm exec tsc --noEmit`
 Expected: PASS / NO ERRORS
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add app/server/internal/handler/user_handler.go app/web/src/utils/permissions.ts app/web/src/stores/userStore.ts
@@ -2186,7 +2188,7 @@ git commit -m "feat(auth): serve role permissions to frontend"
 - Modify: `app/web/src/api/ws.ts`
 - Test: `app/web/src/socket/wsClient.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 it("re-resolves worker URL on reconnect", async () => {
@@ -2198,12 +2200,12 @@ it("re-resolves worker URL on reconnect", async () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd app/web && pnpm exec vitest run src/socket/wsClient.test.ts`
 Expected: FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `wsClient.ts` 的重连分支在 `shouldReconnect && currentUrl` 时，先调用 `refreshTicket()`（`app/web/src/api/ws.ts` 的 `getWSTicket`），用返回值中的 `url`（若无则保持旧值）重连：
 
@@ -2221,12 +2223,12 @@ Expected: FAIL
 
 `app/web/src/api/ws.ts` 的 `getWSTicket` 返回 `{ url, token }`（后端 `/api/v1/signal/ws-ticket` 若未返回 url，则沿用当前）。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd app/web && pnpm exec vitest run src/socket/wsClient.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/web/src/socket/wsClient.ts app/web/src/api/ws.ts app/web/src/socket/wsClient.test.ts
@@ -2240,11 +2242,11 @@ git commit -m "fix(web): re-resolve worker url on reconnect"
 - Modify: `app/web/src/layouts/common/sidebar.tsx`
 - Modify: `app/server/internal/handler/domain_handler.go`
 
-- [ ] **Step 1: 后端 my-domains 批量详情**
+- [x] **Step 1: 后端 my-domains 批量详情**
 
 `domain_handler.go` 的 `MyDomains` 响应改为带 `member_count`、`room_count` 的批量详情（一次 DB 查询），并加测试。
 
-- [ ] **Step 2: 前端一次请求**
+- [x] **Step 2: 前端一次请求**
 
 `app/web/src/api/domain.ts` 增加：
 
@@ -2266,12 +2268,12 @@ export async function getMyDomainsDetailed(): Promise<DomainDetail[]> {
 	);
 ```
 
-- [ ] **Step 3: 运行验证**
+- [x] **Step 3: 运行验证**
 
 Run: `cd app/web && pnpm exec vitest run src/components && pnpm exec tsc --noEmit`
 Expected: PASS / NO ERRORS
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add app/web/src/api/domain.ts app/web/src/layouts/common/sidebar.tsx app/server/internal/handler/domain_handler.go
@@ -2287,7 +2289,7 @@ git commit -m "perf(web): batch my-domains detail for sidebar"
 - Modify: `app/server/internal/handler/srs_callback_handler.go`（URL decode）
 - Modify: `app/server/internal/signal/state_sync.go`（heartbeat 只续期）
 
-- [ ] **Step 1: service 层禁言入参校验**
+- [x] **Step 1: service 层禁言入参校验**
 
 `mute_service.go` 的 `MuteUser` 开头：
 
@@ -2297,7 +2299,7 @@ git commit -m "perf(web): batch my-domains detail for sidebar"
 	}
 ```
 
-- [ ] **Step 2: SRS 回调 URL decode**
+- [x] **Step 2: SRS 回调 URL decode**
 
 `srs_callback_handler.go` 的 `parseCallbackParams` 改为：
 
@@ -2320,7 +2322,7 @@ func parseCallbackParams(param string) map[string]string {
 }
 ```
 
-- [ ] **Step 3: category 白名单**
+- [x] **Step 3: category 白名单**
 
 `storage_handler.go` 的 `PresignUpload` 增加：
 
@@ -2331,20 +2333,20 @@ func parseCallbackParams(param string) map[string]string {
 	}
 ```
 
-- [ ] **Step 4: OnDisconnect 房间索引**
+- [x] **Step 4: OnDisconnect 房间索引**
 
 `hub.go` 维护 `connSlots` 已存在，`OnDisconnect` 用 `h.connSlots[clientID]` 收集房间 key 再清理，避免遍历全部 `h.rooms`；`OnDisconnect` 内先读 `connSlots` 再按索引删除。
 
-- [ ] **Step 5: 心跳只续期不广播**
+- [x] **Step 5: 心跳只续期不广播**
 
 `state_sync.go` 的 `StartMembershipHeartbeat` 每次心跳仅 `syncRoomToStore`（已有），删除心跳路径上的 `notifyRoomStateChanged` 全量广播，改为仅在 `registerRoomMembers`/`syncRoomToStore` 检测到成员变化时通知。
 
-- [ ] **Step 6: 运行验证**
+- [x] **Step 6: 运行验证**
 
 Run: `cd app/server && go test ./internal/service/ ./internal/signal/ ./internal/handler/ -v`
 Expected: PASS
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add app/server/internal/service/mute_service.go app/server/internal/handler/storage_handler.go app/server/internal/handler/srs_callback_handler.go app/server/internal/signal/hub.go app/server/internal/signal/state_sync.go
