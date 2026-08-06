@@ -15,6 +15,7 @@ const MEDIASOUP_EVENTS = {
 	CONNECT_TRANSPORT: "sfu:connect-transport",
 	PRODUCE: "sfu:produce",
 	CONSUME: "sfu:consume",
+	RESTART_ICE: "sfu:restart-ice",
 	PRODUCER_READY: "sfu:producer-ready",
 	PRODUCER_CLOSED: "sfu:producer-closed",
 	CLOSE_TRANSPORT: "sfu:close-transport",
@@ -102,8 +103,9 @@ export class MediaSoupSFUClient implements SFUClient {
 	private isReconnecting = false;
 	private onProducerReadyBound?: (info: any) => void;
 	private onProducerClosedBound?: (info: any) => void;
-	private onSendConnStateChangeBound?: (state: string) => void;
-	private onRecvConnStateChangeBound?: (state: string) => void;
+	private onSendConnStateChangeBound?: () => void;
+	private onRecvConnStateChangeBound?: () => void;
+	private restartingIce = new Set<"send" | "recv">();
 	private activeSpeakerTimer: ReturnType<typeof setInterval> | null = null;
 
 	constructor(private options: SFUClientOptions = {}) {
@@ -185,10 +187,12 @@ export class MediaSoupSFUClient implements SFUClient {
 			this.socket.onDisconnected(() => this.onSocketDisconnectBound?.()),
 		);
 
-		// transport 连接状态：disconnected→reconnecting（等 ICE 自恢复），failed/closed→disconnected，恢复→reconnected
-		// TODO: 后端未实现 restartIce 端点，目前不主动重启 ICE，依赖 WebRtcTransport 默认超时行为
-		const handleConnState = (state: string) => {
+		// transport 连接状态：disconnected→主动 restartIce，failed/closed→disconnected，恢复→reconnected
+		const handleConnState = (direction: "send" | "recv") => {
 			if (!this.hasJoined) return;
+			const transport = direction === "send" ? this.sendTransport : this.recvTransport;
+			if (!transport) return;
+			const state = transport.connectionState;
 			if (state === "failed" || state === "closed") {
 				this.hasJoined = false;
 				this.isReconnecting = false;
@@ -198,6 +202,7 @@ export class MediaSoupSFUClient implements SFUClient {
 			if (state === "disconnected" && !this.isReconnecting) {
 				this.isReconnecting = true;
 				this.onReconnectingCb?.();
+				void this.restartIceFor(direction, transport);
 			} else if (state === "connected" && this.isReconnecting) {
 				const sendUp = this.sendTransport?.connectionState === "connected";
 				const recvUp = this.recvTransport?.connectionState === "connected";
@@ -207,8 +212,8 @@ export class MediaSoupSFUClient implements SFUClient {
 				}
 			}
 		};
-		this.onSendConnStateChangeBound = handleConnState;
-		this.onRecvConnStateChangeBound = handleConnState;
+		this.onSendConnStateChangeBound = () => handleConnState("send");
+		this.onRecvConnStateChangeBound = () => handleConnState("recv");
 		this.sendTransport?.on("connectionstatechange", this.onSendConnStateChangeBound);
 		this.recvTransport?.on("connectionstatechange", this.onRecvConnStateChangeBound);
 		this.activeSpeakerTimer = setInterval(() => {
@@ -228,6 +233,25 @@ export class MediaSoupSFUClient implements SFUClient {
 		}, 500);
 	}
 
+	private async restartIceFor(direction: "send" | "recv", transport: mediasoupTypes.Transport): Promise<void> {
+		if (this.restartingIce.has(direction)) return;
+		this.restartingIce.add(direction);
+		try {
+			const data = await this.sfuEmit(MEDIASOUP_EVENTS.RESTART_ICE, {
+				room: this.roomId,
+				transportId: transport.id,
+			});
+			const iceParameters = data?.iceParameters as mediasoupTypes.IceParameters | undefined;
+			if (iceParameters) {
+				await transport.restartIce({ iceParameters });
+			}
+		} catch {
+			// 保留 mediasoup 默认 ICE 恢复超时作为兜底
+		} finally {
+			this.restartingIce.delete(direction);
+		}
+	}
+
 	async leaveRoom(): Promise<void> {
 		this.hasJoined = false;
 		if (this.activeSpeakerTimer) {
@@ -235,6 +259,7 @@ export class MediaSoupSFUClient implements SFUClient {
 			this.activeSpeakerTimer = null;
 		}
 		this.isReconnecting = false;
+		this.restartingIce.clear();
 		if (this.socket && this.roomId && this.identity) {
 			try {
 				await this.sfuEmit(MEDIASOUP_EVENTS.CLOSE_TRANSPORT, { room: this.roomId, identity: this.identity });
