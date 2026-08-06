@@ -92,7 +92,9 @@ func NewS3Provider(cfg model.StorageConfig) (*S3Provider, error) {
 
 // TestConnection 通过 HeadBucket 校验 endpoint、凭证与 bucket。
 func (p *S3Provider) TestConnection() error {
-	_, err := p.client.HeadBucket(context.Background(), &s3.HeadBucketInput{
+	ctx, cancel := s3Ctx()
+	defer cancel()
+	_, err := p.client.HeadBucket(ctx, &s3.HeadBucketInput{
 		Bucket: aws.String(p.bucket),
 	})
 	if err != nil {
@@ -109,7 +111,9 @@ func (p *S3Provider) PresignUpload(key string, contentType string, maxSize int64
 		ContentType: aws.String(contentType),
 	}
 
-	presignedReq, err := p.presigner.PresignPutObject(context.Background(), putInput, func(opts *s3.PresignOptions) {
+	ctx, cancel := s3Ctx()
+	defer cancel()
+	presignedReq, err := p.presigner.PresignPutObject(ctx, putInput, func(opts *s3.PresignOptions) {
 		opts.Expires = 5 * time.Minute
 	})
 	if err != nil {
@@ -125,7 +129,9 @@ func (p *S3Provider) PresignUpload(key string, contentType string, maxSize int64
 
 // UploadFromReader 通过 S3 PutObject 上传
 func (p *S3Provider) UploadFromReader(key string, reader io.Reader, size int64, contentType string) (string, error) {
-	_, err := p.client.PutObject(context.Background(), &s3.PutObjectInput{
+	ctx, cancel := s3Ctx()
+	defer cancel()
+	_, err := p.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:        aws.String(p.bucket),
 		Key:           aws.String(key),
 		Body:          reader,
@@ -141,7 +147,9 @@ func (p *S3Provider) UploadFromReader(key string, reader io.Reader, size int64, 
 
 // HeadObjectSize 通过 HeadObject 查询对象大小（字节）。
 func (p *S3Provider) HeadObjectSize(key string) (int64, error) {
-	out, err := p.client.HeadObject(context.Background(), &s3.HeadObjectInput{
+	ctx, cancel := s3Ctx()
+	defer cancel()
+	out, err := p.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(p.bucket),
 		Key:    aws.String(key),
 	})
@@ -182,7 +190,9 @@ func (p *S3Provider) GetPublicURL(key string) string {
 
 // Delete 删除 S3 对象
 func (p *S3Provider) Delete(key string) error {
-	_, err := p.client.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+	ctx, cancel := s3Ctx()
+	defer cancel()
+	_, err := p.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(p.bucket),
 		Key:    aws.String(key),
 	})
@@ -190,4 +200,9 @@ func (p *S3Provider) Delete(key string) error {
 		return fmt.Errorf("delete object failed: %w", err)
 	}
 	return nil
+}
+
+// s3Ctx 返回 S3 操作统一使用的显式超时上下文，避免请求悬挂在 AWS SDK 默认超时上。
+func s3Ctx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 5*time.Second)
 }

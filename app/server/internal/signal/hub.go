@@ -259,6 +259,7 @@ type Hub struct {
 	domainChecker           func(domainUUID, userUUID string) bool
 	clientDomains           map[string]string // socketID -> current domain scope (empty = platform)
 	membershipHeartbeatStop chan struct{}
+	membershipHeartbeatDone chan struct{}
 	// kickBans 记录 room+identity 的短时踢出冷却，阻止被踢者立即重连同一房间。
 	kickBans map[string]time.Time
 	// muteCache 缓存 OnMemberSpeaking 的禁言查询结果，避免高频发言态上报打爆 DB。

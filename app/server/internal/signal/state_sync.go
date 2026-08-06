@@ -69,10 +69,13 @@ func (h *Hub) StartMembershipHeartbeat() {
 		return
 	}
 	stop := make(chan struct{})
+	done := make(chan struct{})
 	h.membershipHeartbeatStop = stop
+	h.membershipHeartbeatDone = done
 	h.mu.Unlock()
 
 	go func() {
+		defer close(done)
 		ticker := time.NewTicker(membershipHeartbeatEvery)
 		defer ticker.Stop()
 		for {
@@ -90,10 +93,15 @@ func (h *Hub) StartMembershipHeartbeat() {
 func (h *Hub) StopMembershipHeartbeat() {
 	h.mu.Lock()
 	stop := h.membershipHeartbeatStop
+	done := h.membershipHeartbeatDone
 	h.membershipHeartbeatStop = nil
+	h.membershipHeartbeatDone = nil
 	h.mu.Unlock()
 	if stop != nil {
 		close(stop)
+	}
+	if done != nil {
+		<-done
 	}
 }
 
