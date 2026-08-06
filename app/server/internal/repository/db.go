@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,6 +12,8 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+
+	_ "github.com/tursodatabase/libsql-client-go/libsql"
 
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/model"
@@ -23,6 +26,9 @@ const (
 	SQLite     DatabaseEnum = "SQLite"
 	MySQL      DatabaseEnum = "MySQL"
 )
+
+// libsqlDriverName 是 tursodatabase/libsql-client-go 注册的 database/sql 驱动名。
+const libsqlDriverName = "libsql"
 
 var (
 	dbMu     sync.RWMutex
@@ -179,8 +185,9 @@ func connectPostgreSQL(cfg *config.Config) (*gorm.DB, error) {
 }
 
 func connectSQLite(cfg *config.Config) (*gorm.DB, error) {
-	path := cfg.DBPath
+	// Worker 模式只读本地文件，不走 Turso。
 	if cfg.ClusterRole == model.ClusterRoleWorker {
+		path := cfg.DBPath
 		if path == "" {
 			return nil, fmt.Errorf("DB_PATH is required for worker SQLite mode")
 		}
@@ -194,14 +201,31 @@ func connectSQLite(cfg *config.Config) (*gorm.DB, error) {
 		}
 		return db, nil
 	}
-	if path == "" {
-		if err := os.MkdirAll("db", 0755); err != nil {
-			return nil, fmt.Errorf("failed to create db directory: %w", err)
+
+	// Turso 远程模式（libSQL URL）：远程不支持 WAL/foreign_keys pragma，DSN 原样直通。
+	if cfg.IsTurso() {
+		// 复用 glebarez 的 GORM dialector，仅替换 database/sql 驱动为 libsql。
+		db, err := gorm.Open(&sqlite.Dialector{DriverName: libsqlDriverName, DSN: cfg.EffectiveDSN()}, &gorm.Config{})
+		if err != nil {
+			return nil, err
 		}
-		path = "db/app.db"
-	} else if dir := parentDir(path); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create db directory: %w", err)
+		// Turso 远程延迟高于本地文件，连接池放宽。
+		if err := configureDBPoolForTurso(db); err != nil {
+			return nil, err
+		}
+		return db, nil
+	}
+
+	// 本地模式：DB_PATH 或 DB_DSN（libSQL 文件），自动补 file: 前缀与 pragma。
+	base := cfg.EffectiveDSN()
+	if !strings.HasPrefix(base, "file:") {
+		path := strings.SplitN(base, "?", 2)[0]
+		if path != "" {
+			if dir := parentDir(path); dir != "" && dir != "." {
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					return nil, fmt.Errorf("failed to create db directory: %w", err)
+				}
+			}
 		}
 	}
 	// glebarez/modernc 使用 _pragma=...，旧的 _journal_mode/_busy_timeout 不会生效。
@@ -211,10 +235,7 @@ func connectSQLite(cfg *config.Config) (*gorm.DB, error) {
 	if cfg.DBWAL {
 		journalMode = "WAL"
 	}
-	dsn := fmt.Sprintf(
-		"%s?_pragma=busy_timeout(10000)&_pragma=journal_mode(%s)&_pragma=foreign_keys(1)",
-		path, journalMode,
-	)
+	dsn := sqliteLocalDSN(base, journalMode)
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return nil, err
@@ -245,6 +266,22 @@ func connectSQLite(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("set foreign_keys=ON: %w", err)
 	}
 	return db, nil
+}
+
+// sqliteLocalDSN 组装本地 SQLite/libSQL 文件 DSN。
+// 支持裸路径、file: 前缀以及已带查询参数的 DSN。
+func sqliteLocalDSN(base, journalMode string) string {
+	if !strings.HasPrefix(base, "file:") {
+		base = "file:" + base
+	}
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	return fmt.Sprintf(
+		"%s%s_pragma=busy_timeout(10000)&_pragma=journal_mode(%s)&_pragma=foreign_keys(1)",
+		base, sep, journalMode,
+	)
 }
 
 func connectMySQL(cfg *config.Config) (*gorm.DB, error) {
@@ -328,6 +365,20 @@ func configureDBPool(db *gorm.DB, cfg *config.Config) error {
 		return err
 	}
 	applyDBPool(sqlDB, dbPoolFor(cfg))
+	return nil
+}
+
+// configureDBPoolForTurso 配置 Turso 远程数据库的连接池。
+// Turso 远程延迟高于本地文件，适当放宽连接数与生命周期。
+func configureDBPoolForTurso(db *gorm.DB) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+	sqlDB.SetMaxOpenConns(10)
+	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetConnMaxLifetime(10 * time.Minute)
+	sqlDB.SetConnMaxIdleTime(3 * time.Minute)
 	return nil
 }
 

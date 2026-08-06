@@ -191,10 +191,78 @@ func TestLoadRejectsWorkerWithoutAgentURL(t *testing.T) {
 	}
 }
 
+func TestIsTurso(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  *Config
+		want bool
+	}{
+		{"turso url", &Config{TursoDatabaseURL: "libsql://db.turso.io"}, true},
+		{"turso url and token", &Config{TursoDatabaseURL: "libsql://db.turso.io", TursoAuthToken: "tok"}, true},
+		{"dbdsn libsql url", &Config{DBDSN: "libsql://db.turso.io?authToken=tok"}, true},
+		{"dbdsn local file", &Config{DBDSN: "file:/tmp/app.db"}, false},
+		{"dbpath only", &Config{DBPath: "db/app.db"}, false},
+		{"empty", &Config{}, false},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.IsTurso(); got != tt.want {
+				t.Fatalf("IsTurso() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEffectiveDSNPriority(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  *Config
+		want string
+	}{
+		{
+			name: "turso url plus token",
+			cfg:  &Config{TursoDatabaseURL: "libsql://db.turso.io", TursoAuthToken: "secret"},
+			want: "libsql://db.turso.io?authToken=secret",
+		},
+		{
+			name: "turso url with existing query",
+			cfg:  &Config{TursoDatabaseURL: "libsql://db.turso.io?tls=1", TursoAuthToken: "secret"},
+			want: "libsql://db.turso.io?tls=1&authToken=secret",
+		},
+		{
+			name: "turso token url escaped",
+			cfg:  &Config{TursoDatabaseURL: "libsql://db.turso.io", TursoAuthToken: "a/b+c="},
+			want: "libsql://db.turso.io?authToken=a%2Fb%2Bc%3D",
+		},
+		{
+			name: "turso url no token",
+			cfg:  &Config{TursoDatabaseURL: "libsql://db.turso.io", DBDSN: "file:x", DBPath: "db/app.db"},
+			want: "libsql://db.turso.io",
+		},
+		{
+			name: "dbdsn over dbpath",
+			cfg:  &Config{DBDSN: "file:/tmp/app.db", DBPath: "db/app.db"},
+			want: "file:/tmp/app.db",
+		},
+		{
+			name: "dbpath fallback",
+			cfg:  &Config{DBPath: "db/app.db"},
+			want: "db/app.db",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.EffectiveDSN(); got != tt.want {
+				t.Fatalf("EffectiveDSN() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func clearConfigEnv(t *testing.T) {
 	t.Helper()
 	keys := []string{
-		"APP_ENV", "DB_TYPE", "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_PATH", "DB_DSN", "DB_WAL",
+		"APP_ENV", "DB_TYPE", "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_PATH", "DB_DSN", "DB_WAL", "TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN",
 		"JWT_KEY", "JWT_KEY_TTL", "SFU_PROVIDER", "SERVER_PORT", "STATIC_DIR", "CORS_ORIGIN", "GIN_MODE",
 		"LOG_LEVEL", "LOG_FORMAT", "LOG_OUTPUT", "LOG_FILE", "LOG_CALLER",
 		"REDIS_HOST", "REDIS_PORT", "REDIS_PASSWORD", "REDIS_DB",

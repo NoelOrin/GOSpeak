@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -24,6 +25,11 @@ type Config struct {
 	DBPath     string `env:"DB_PATH" envDefault:"db/app.db"`
 	DBDSN      string `env:"DB_DSN" envDefault:""`
 	DBWAL      bool   `env:"DB_WAL" envDefault:"false"`
+
+	// Turso (libSQL) 远程数据库配置（可选）
+	// 优先级: TURSO_AUTH_TOKEN > DB_DSN?authToken=, TURSO_DATABASE_URL > DB_DSN
+	TursoDatabaseURL string `env:"TURSO_DATABASE_URL" envDefault:""`
+	TursoAuthToken   string `env:"TURSO_AUTH_TOKEN" envDefault:""`
 
 	JWTKey    string `env:"JWT_KEY" envDefault:"default-secret"`
 	JWTKeyTTL string `env:"JWT_KEY_TTL" envDefault:"24h"`
@@ -265,6 +271,31 @@ func (c *Config) IsWorker() bool {
 
 // WSAllowedOriginsList 返回 WebSocket Origin 白名单。
 // 未配置 WS_ALLOWED_ORIGINS 时默认只允许同源握手；配置 "*" 表示允许任意来源。
+// IsTurso returns true when Turso (libSQL) remote database is configured.
+func (c *Config) IsTurso() bool {
+	return c.TursoDatabaseURL != "" || strings.HasPrefix(c.DBDSN, "libsql://")
+}
+
+// EffectiveDSN returns the resolved SQLite/libSQL DSN.
+// Priority: TURSO_DATABASE_URL (+ TURSO_AUTH_TOKEN) > DB_DSN > file:DB_PATH.
+func (c *Config) EffectiveDSN() string {
+	if c.TursoDatabaseURL != "" {
+		dsn := c.TursoDatabaseURL
+		if c.TursoAuthToken != "" {
+			sep := "?"
+			if strings.Contains(dsn, "?") {
+				sep = "&"
+			}
+			dsn += sep + "authToken=" + url.QueryEscape(c.TursoAuthToken)
+		}
+		return dsn
+	}
+	if c.DBDSN != "" {
+		return c.DBDSN
+	}
+	return c.DBPath
+}
+
 func (c *Config) WSAllowedOriginsList() []string {
 	if strings.TrimSpace(c.WSAllowedOrigins) == "" {
 		return nil
