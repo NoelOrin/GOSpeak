@@ -167,7 +167,7 @@ func (s *RoomService) GetByDomainAndName(domainUUID, name string) (*model.Room, 
 	room, err := s.roomRepo.GetByDomainAndName(domainUUID, name)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, ErrRoomNotFound
+			return nil, pkg.ErrNotFound
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}

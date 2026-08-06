@@ -1,5 +1,5 @@
 import type { SignalSocket } from "@gospeak/sfu-client/types";
-import type { WSTicketInfo } from "@/api/ws";
+import type { WSTicketInfo } from "@/protocol/ws";
 
 interface WSMessage {
 	id?: string;

@@ -13,8 +13,13 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Client 全局 Redis 客户端。REDIS_HOST 为空时为 nil，所有使用者需判断。
-var Client *redis.Client
+// client 全局 Redis 客户端。REDIS_HOST 为空时为 nil，所有使用者需判断。
+var client *redis.Client
+
+// Client 返回当前全局 Redis 客户端，未连接时为 nil。外部包只读，不能替换实例。
+func Client() *redis.Client {
+	return client
+}
 
 // InitRedis 根据配置初始化 Redis 连接。
 // REDIS_HOST 为空时跳过连接，不 panic、不报错。
@@ -35,7 +40,7 @@ func InitRedis(cfg *config.Config) {
 	}
 
 	db := cfg.RedisDBIndex()
-	client := redis.NewClient(&redis.Options{
+	c := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%s", host, port),
 		Password: cfg.RedisPassword,
 		DB:       db,
@@ -43,18 +48,19 @@ func InitRedis(cfg *config.Config) {
 
 	pingCtx, cancel := redisTimeoutCtx()
 	defer cancel()
-	if _, err := client.Ping(pingCtx).Result(); err != nil {
+	if _, err := c.Ping(pingCtx).Result(); err != nil {
 		logger.WithComponent("Redis").WithError(err).Warn("connection failed")
 		return
 	}
 
-	Client = client
+	client = c
+	jwtCfg = cfg
 	logger.WithComponent("Redis").Infof("connected: %s:%s db=%d", host, port, db)
 }
 
 // IsConnected 检查 Redis 是否已成功连接。调用方应优先判断此值再执行 Redis 操作。
 func IsConnected() bool {
-	return Client != nil
+	return client != nil
 }
 
 // RedisStats Redis 详细状态，用于监控面板。
@@ -67,9 +73,9 @@ type RedisStats struct {
 	ConnectedClients int64   `json:"connected_clients"`
 }
 
-// GetStats 返回 Redis 详细状态。Client 为 nil 时仅返回 Connected=false。
+// GetStats 返回 Redis 详细状态。client 为 nil 时仅返回 Connected=false。
 func GetStats() RedisStats {
-	if Client == nil {
+	if client == nil {
 		return RedisStats{Connected: false}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -78,15 +84,15 @@ func GetStats() RedisStats {
 	stats := RedisStats{Connected: true}
 
 	start := time.Now()
-	if _, err := Client.Ping(ctx).Result(); err == nil {
+	if _, err := client.Ping(ctx).Result(); err == nil {
 		stats.PingMs = time.Since(start).Milliseconds()
 	}
 
-	if n, err := Client.DBSize(ctx).Result(); err == nil {
+	if n, err := client.DBSize(ctx).Result(); err == nil {
 		stats.DBSize = n
 	}
 
-	if info, err := Client.Info(ctx, "memory", "clients").Result(); err == nil {
+	if info, err := client.Info(ctx, "memory", "clients").Result(); err == nil {
 		m := parseRedisInfo(info)
 		if v, ok := m["used_memory"]; ok {
 			if bytes, err := strconv.ParseInt(v, 10, 64); err == nil {

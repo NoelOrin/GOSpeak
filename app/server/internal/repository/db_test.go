@@ -32,18 +32,19 @@ func TestSQLiteReadOnlyWorkerDB(t *testing.T) {
 		DBPath:      path,
 		ClusterRole: "worker",
 	}
-	if err := InitDB(cfg); err != nil {
+	db, err := InitDB(cfg)
+	if err != nil {
 		t.Fatalf("InitDB worker: %v", err)
 	}
 	t.Cleanup(func() {
-		if DB != nil {
-			if sqlDB, err := DB.DB(); err == nil {
+		if db != nil {
+			if sqlDB, err := db.DB(); err == nil {
 				_ = sqlDB.Close()
 			}
 		}
 	})
 
-	if err := DB.Exec("CREATE TABLE forbidden (id INTEGER)").Error; err == nil {
+	if err := db.Exec("CREATE TABLE forbidden (id INTEGER)").Error; err == nil {
 		t.Fatal("expected read-only SQLite write to fail")
 	}
 }

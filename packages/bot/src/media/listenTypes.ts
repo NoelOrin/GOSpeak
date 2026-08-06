@@ -1,4 +1,7 @@
-export type SFUProviderName = "livekit" | "srs" | "agora" | "cloudflare";
+import type { SFUProvider } from "@gospeak/sfu-client/types";
+
+// 与 web 端共享 SFU provider 枚举，避免两处维护能力矩阵。
+export type SFUProviderName = SFUProvider;
 
 export interface SFUListenJoinParams {
 	room: string;

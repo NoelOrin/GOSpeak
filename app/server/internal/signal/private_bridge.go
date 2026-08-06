@@ -1,14 +1,14 @@
 package signal
 
 import (
-	"GOSpeak/internal/service"
+	"GOSpeak/internal/pkg/message"
 	"GOSpeak/internal/ws"
 )
 
 // conversationSender abstracts private chat operations for the signal layer.
 // Satisfied by *service.ConversationService.
 type conversationSender interface {
-	SendDirect(senderIdentity, targetIdentity, content, clientNonce string) (*service.MessageDTO, error)
+	SendDirect(senderIdentity, targetIdentity, content, clientNonce string) (*message.DTO, error)
 }
 
 // privateSendPayload is the client->server payload for private:send.

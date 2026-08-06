@@ -31,10 +31,10 @@ func BlacklistToken(jti string, remaining time.Duration) error {
 	if jti == "" || remaining <= 0 {
 		return nil
 	}
-	if Client != nil {
+	if client != nil {
 		ctx, cancel := redisTimeoutCtx()
 		defer cancel()
-		return Client.Set(ctx, blacklistPrefix+jti, "1", remaining).Err()
+		return client.Set(ctx, blacklistPrefix+jti, "1", remaining).Err()
 	}
 	if secondaryAuth != nil {
 		return secondaryAuth.BlacklistToken(jti, remaining)
@@ -49,10 +49,10 @@ func IsBlacklistedErr(jti string) (bool, error) {
 	if jti == "" {
 		return false, nil
 	}
-	if Client != nil {
+	if client != nil {
 		ctx, cancel := redisTimeoutCtx()
 		defer cancel()
-		n, err := Client.Exists(ctx, blacklistPrefix+jti).Result()
+		n, err := client.Exists(ctx, blacklistPrefix+jti).Result()
 		if err != nil {
 			return false, err
 		}
@@ -68,7 +68,7 @@ func IsBlacklisted(jti string) bool {
 	if jti == "" {
 		return false
 	}
-	if Client != nil {
+	if client != nil {
 		ok, err := IsBlacklistedErr(jti)
 		if err != nil {
 			logger.WithComponent("Redis").Warnf("IsBlacklisted backend error, treating as not blacklisted (fail-open): %v", err)
@@ -93,10 +93,10 @@ func IsRefreshFamilyUsed(family string) (bool, error) {
 	if family == "" {
 		return false, nil
 	}
-	if Client != nil {
+	if client != nil {
 		ctx, cancel := redisTimeoutCtx()
 		defer cancel()
-		n, err := Client.Exists(ctx, refreshFamilyPrefix+family).Result()
+		n, err := client.Exists(ctx, refreshFamilyPrefix+family).Result()
 		if err != nil {
 			return false, err
 		}
@@ -114,10 +114,10 @@ func MarkRefreshFamilyUsed(family string) (bool, error) {
 	if family == "" {
 		return false, nil
 	}
-	if Client != nil {
+	if client != nil {
 		ctx, cancel := redisTimeoutCtx()
 		defer cancel()
-		return Client.SetNX(ctx, refreshFamilyPrefix+family, "1", refreshFamilyTTL).Result()
+		return client.SetNX(ctx, refreshFamilyPrefix+family, "1", refreshFamilyTTL).Result()
 	}
 	if backend, ok := secondaryAuth.(RefreshFamilyBackend); ok {
 		return backend.MarkRefreshFamilyUsed(family, refreshFamilyTTL)
@@ -130,10 +130,10 @@ func RevokeRefreshFamily(family string) error {
 	if family == "" {
 		return nil
 	}
-	if Client != nil {
+	if client != nil {
 		ctx, cancel := redisTimeoutCtx()
 		defer cancel()
-		return Client.Set(ctx, refreshFamilyPrefix+family, "revoked", refreshFamilyTTL).Err()
+		return client.Set(ctx, refreshFamilyPrefix+family, "revoked", refreshFamilyTTL).Err()
 	}
 	if backend, ok := secondaryAuth.(RefreshFamilyBackend); ok {
 		return backend.RevokeRefreshFamily(family)

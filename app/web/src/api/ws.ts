@@ -1,10 +1,7 @@
 import apiClient from "./apiClient";
+import type { WSTicketInfo } from "@/protocol/ws";
 
-export interface WSTicketInfo {
-	/** Worker 节点地址；后端未返回时由 wsClient 沿用当前连接地址。 */
-	url?: string;
-	token: string;
-}
+export type { WSTicketInfo };
 
 export async function getWSTicket(domainUUID?: string): Promise<WSTicketInfo> {
 	const data = await apiClient.get<{ ticket: string; url?: string }>({

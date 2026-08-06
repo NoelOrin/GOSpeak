@@ -59,6 +59,7 @@
 	},
 	"dependencies": {
 		"@livekit/rtc-node": "^0.13.33",
+		"@gospeak/sfu-client": "workspace:*",
 		"@seepine/edge-tts": "^1.4.1",
 		"mpg123-decoder": "^1.0.3"
 	}

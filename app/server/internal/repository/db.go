@@ -25,16 +25,16 @@ const (
 )
 
 var (
-	dbMu sync.RWMutex
-	DB   *gorm.DB
+	dbMu     sync.RWMutex
+	globalDB *gorm.DB
 )
 
 // setDB atomically writes the global DB handle.
 
 // setDB atomically writes the global DB handle.
-func setDB(db *gorm.DB) {
+func setDB(d *gorm.DB) {
 	dbMu.Lock()
-	DB = db
+	globalDB = d
 	dbMu.Unlock()
 }
 
@@ -44,7 +44,7 @@ func setDB(db *gorm.DB) {
 func getDB() *gorm.DB {
 	dbMu.RLock()
 	defer dbMu.RUnlock()
-	return DB
+	return globalDB
 }
 
 // DBStats 返回连接池统计，供监控与 readiness 使用。
@@ -73,9 +73,9 @@ func DBPing() error {
 	return sqlDB.Ping()
 }
 
-func InitDB(cfg *config.Config) error {
+func InitDB(cfg *config.Config) (*gorm.DB, error) {
 	if cfg == nil {
-		return fmt.Errorf("config is nil")
+		return nil, fmt.Errorf("config is nil")
 	}
 	dbType := DatabaseEnum(cfg.DBType)
 	var err error
@@ -88,7 +88,7 @@ func InitDB(cfg *config.Config) error {
 	case MySQL:
 		db, err = connectMySQL(cfg)
 	default:
-		return fmt.Errorf("unsupported database type: %s", dbType)
+		return nil, fmt.Errorf("unsupported database type: %s", dbType)
 	}
 	if err != nil {
 		panic(fmt.Sprintf("数据库连接失败 [%s]: %v", dbType, err))
@@ -106,42 +106,42 @@ func InitDB(cfg *config.Config) error {
 	// 仅严格 worker 跳过 schema 迁移；默认 all/agent 必须负责建表。
 	if cfg.ClusterRole == model.ClusterRoleWorker {
 		// Worker 数据面不负责 schema 迁移，避免对共享权威库产生写操作。
-		return nil
+		return db, nil
 	}
 
 	if err := migrateOldSFUConfig(db); err != nil {
-		return err
+		return nil, err
 	}
-	if err := migrateStorageConfigSchema(DB); err != nil {
-		return err
+	if err := migrateStorageConfigSchema(db); err != nil {
+		return nil, err
 	}
-	if err := migrateBotTokensSchema(DB); err != nil {
-		return err
+	if err := migrateBotTokensSchema(db); err != nil {
+		return nil, err
 	}
-	if err := migrateEmailVerificationCodesSchema(DB); err != nil {
-		return err
+	if err := migrateEmailVerificationCodesSchema(db); err != nil {
+		return nil, err
 	}
 
 	if err := autoMigrate(); err != nil {
-		return err
+		return nil, err
 	}
 
-	if err := migrateUserSearchIndexes(DB, dbType); err != nil {
-		return err
+	if err := migrateUserSearchIndexes(db, dbType); err != nil {
+		return nil, err
 	}
-	if err := migrateMessageAuthorUUID(DB); err != nil {
-		return err
-	}
-
-	if err := migrateDomainCUID2(DB); err != nil {
-		return err
+	if err := migrateMessageAuthorUUID(db); err != nil {
+		return nil, err
 	}
 
-	if err := migrateRoomPasswords(DB); err != nil {
-		return err
+	if err := migrateDomainCUID2(db); err != nil {
+		return nil, err
 	}
 
-	return nil
+	if err := migrateRoomPasswords(db); err != nil {
+		return nil, err
+	}
+
+	return db, nil
 }
 
 func connectPostgreSQL(cfg *config.Config) (*gorm.DB, error) {

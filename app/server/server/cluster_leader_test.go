@@ -79,7 +79,7 @@ func TestWorkerModeAPIFallback(t *testing.T) {
 	t.Cleanup(func() { config.SetCurrent(nil) })
 
 	r := gin.New()
-	router.SetupRoutes(r, &router.Handlers{})
+	router.SetupRoutes(r, &router.Handlers{Config: &config.Config{ClusterRole: model.ClusterRoleWorker}})
 
 	cases := []struct {
 		name   string

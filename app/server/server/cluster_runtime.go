@@ -3,13 +3,16 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/config"
+	"GOSpeak/internal/handler"
 	"GOSpeak/internal/logger"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
@@ -19,6 +22,7 @@ import (
 	"GOSpeak/internal/signal"
 
 	"github.com/nats-io/nats.go"
+	"gorm.io/gorm"
 )
 
 const agentLeaderAcquireTimeout = 5 * time.Second
@@ -45,10 +49,10 @@ func acquireAgentLeader(ctx context.Context, nc *nats.Conn, prefix, instanceID s
 
 // startDegradedLocalWorkerRuntime 在主锁不可用时把节点作为本地 worker 数据面运行，
 // 不携带 serverRepo，避免心跳触发控制面调度写操作。
-func startDegradedLocalWorkerRuntime(cfg *config.Config, hub *signal.Hub, instanceID string, sfuProvider sfu.Provider) (string, func(), error) {
+func startDegradedLocalWorkerRuntime(db *gorm.DB, cfg *config.Config, hub *signal.Hub, instanceID string, sfuProvider sfu.Provider) (string, func(), error) {
 	workerSvc := service.NewClusterService(
-		repository.NewClusterNodeRepository(repository.DB),
-		repository.NewServerAssignmentRepository(repository.DB),
+		repository.NewClusterNodeRepository(db),
+		repository.NewServerAssignmentRepository(db),
 	)
 	return startLocalClusterRuntime(cfg, workerSvc, hub, instanceID, sfuProvider)
 }
@@ -283,4 +287,74 @@ func workerAdvertiseURL(cfg *config.Config) string {
 		port = "8998"
 	}
 	return "http://" + hostnameOrDefault() + ":" + port
+}
+
+// startClusterRuntimes 选择并启动当前节点的 cluster runtime（leader lock / all / worker / agent）。
+// 返回控制面 handler、清理函数与节点身份，供组合根接线与优雅关闭使用。
+func startClusterRuntimes(cfg *config.Config, db *gorm.DB, natsConn *nats.Conn, instanceID string, clusterSvc *service.ClusterService, hub *signal.Hub, sfuProvider sfu.Provider) (*handler.ClusterHandler, func(), *cluster.NATSLeaderLock, func(), string, bool, error) {
+	var clusterHandler *handler.ClusterHandler
+	var clusterStop func()
+	var agentLeaderLock *cluster.NATSLeaderLock
+	var stopLeaderRenew func()
+	localNodeUUID := ""
+	degradedToWorker := false
+	var err error
+	if cfg.IsAgent() {
+		acquireCtx, cancel := context.WithTimeout(context.Background(), agentLeaderAcquireTimeout)
+		leaderLock, leader, lockErr := acquireAgentLeader(acquireCtx, natsConn, cfg.NATSSubjectPrefix, instanceID)
+		cancel()
+		switch {
+		case lockErr != nil:
+			logger.WithComponent("Cluster").Warnf("agent leader lock unavailable; degraded-to-worker instance=%s role=%s err=%v", instanceID, cfg.ClusterRole, lockErr)
+			degradedToWorker = true
+		case !leader:
+			logger.WithComponent("Cluster").Warnf("agent leader lock held by another instance; degraded-to-worker instance=%s role=%s", instanceID, cfg.ClusterRole)
+			degradedToWorker = true
+		default:
+			agentLeaderLock = leaderLock
+			renewCtx, renewCancel := context.WithCancel(context.Background())
+			renewInterval := cfg.ClusterHeartbeatIntervalDuration() / 2
+			if renewInterval > 2*time.Second {
+				renewInterval = 2 * time.Second
+			}
+			renewDone, renewLost := leaderLock.RenewLoop(renewCtx, instanceID, renewInterval)
+			go func() {
+				select {
+				case <-renewLost:
+					// 锁丢失意味着另一个 Agent 可能已接管：继续保留写面会形成双写，
+					// 直接触发优雅退出，由编排重启并重新竞争。
+					logger.WithComponent("Cluster").Errorf("agent leader lock lost; shutting down to avoid split brain instance=%s", instanceID)
+					_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
+				case <-renewDone:
+				}
+			}()
+			stopLeaderRenew = func() {
+				renewCancel()
+				<-renewDone
+			}
+			logger.WithComponent("Cluster").Infof("agent leader lock acquired instance=%s role=%s", instanceID, cfg.ClusterRole)
+		}
+	}
+	if degradedToWorker {
+		cfg.ClusterRole = model.ClusterRoleWorker
+	}
+	if cfg.IsAgent() {
+		clusterHandler = handler.NewClusterHandler(clusterSvc, cfg)
+	}
+	switch cfg.ClusterRole {
+	case "all":
+		localNodeUUID, clusterStop, err = startLocalClusterRuntime(cfg, clusterSvc, hub, instanceID, sfuProvider)
+	case "worker":
+		if degradedToWorker && (cfg.ClusterAgentURL == "" || cfg.ClusterAgentToken == "") {
+			localNodeUUID, clusterStop, err = startDegradedLocalWorkerRuntime(db, cfg, hub, instanceID, sfuProvider)
+		} else {
+			localNodeUUID, clusterStop, err = startWorkerClusterRuntime(cfg, hub, sfuProvider)
+		}
+	case "agent":
+		clusterStop, err = startAgentClusterRuntime(cfg, clusterSvc)
+	}
+	if err != nil {
+		return nil, nil, nil, nil, "", false, fmt.Errorf("failed to start cluster runtime: %w", err)
+	}
+	return clusterHandler, clusterStop, agentLeaderLock, stopLeaderRenew, localNodeUUID, degradedToWorker, nil
 }

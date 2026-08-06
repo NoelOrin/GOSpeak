@@ -6,6 +6,7 @@ vi.mock("@/stores/socketStore", () => ({
 		getSocket: () => null,
 		currentDomainUUID: () => "fallback-domain",
 	},
+	setPrivateNewHandler: vi.fn(),
 }));
 vi.mock("@/api/message", () => ({
 	listMessages: vi.fn(),

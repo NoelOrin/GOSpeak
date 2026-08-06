@@ -15,6 +15,7 @@ vi.mock("@/stores/socketStore", () => ({
 		currentDomainUUID: () => domainState.currentDomain,
 		getSocket: () => socketMock,
 	},
+	setPrivateNewHandler: vi.fn(),
 }));
 vi.mock("@/api/message", () => ({
 	listMessages: vi.fn(async () => ({ items: [], has_more: false })),

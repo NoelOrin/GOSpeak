@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,31 +14,44 @@ import (
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
 
-	"GOSpeak/internal/bus"
 	"GOSpeak/internal/config"
-	"GOSpeak/internal/metrics"
 	"GOSpeak/internal/pkg"
-	"GOSpeak/internal/redis"
-	"GOSpeak/internal/repository"
 	"GOSpeak/internal/service"
 	gpsignal "GOSpeak/internal/signal"
 )
+
+// InfraStats 抽象 DB/Redis/EventBus 统计来源，handler 不再直接依赖基础设施包。
+type InfraStats interface {
+	DBStats() sql.DBStats
+	DBPing() error
+	RedisConnected() bool
+	RedisPingMs() int64
+	RedisDBSize() int64
+	RedisUsedMemoryMB() float64
+	RedisUsedMemoryPeakMB() float64
+	RedisConnectedClients() int64
+	AuthStoreBackend() string
+	BusMode() string
+	BusConnected() bool
+	BusInstanceID() string
+	BusDroppedPublish() uint64
+}
 
 // MonitorHandler 服务监控 SSE 处理器
 type MonitorHandler struct {
 	startTime  time.Time
 	signalHub  *gpsignal.Hub
-	eventBus   bus.EventBus
+	stats      InfraStats
 	dbPath     string
 	cpuSampler *cpuSampler
 	clusterSvc *service.ClusterService
 }
 
-func NewMonitorHandler(signalHub *gpsignal.Hub, cfg *config.Config, eventBus bus.EventBus, clusterSvc *service.ClusterService) *MonitorHandler {
+func NewMonitorHandler(signalHub *gpsignal.Hub, cfg *config.Config, stats InfraStats, clusterSvc *service.ClusterService) *MonitorHandler {
 	h := &MonitorHandler{
 		startTime:  time.Now(),
 		signalHub:  signalHub,
-		eventBus:   eventBus,
+		stats:      stats,
 		dbPath:     cfg.DBPath,
 		clusterSvc: clusterSvc,
 	}
@@ -68,7 +82,7 @@ func (h *MonitorHandler) HealthStream(c *gin.Context) {
 	c.Writer.Flush()
 
 	// 连接建立立即推送一次，避免前端空窗
-	snap0 := h.collect()
+	snap0 := h.Collect()
 	data0, _ := json.Marshal(snap0)
 	_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", data0)
 	c.Writer.Flush()
@@ -83,7 +97,7 @@ func (h *MonitorHandler) HealthStream(c *gin.Context) {
 		case <-clientGone:
 			return
 		case <-ticker.C:
-			snap := h.collect()
+			snap := h.Collect()
 			data, _ := json.Marshal(snap)
 			if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data); err != nil {
 				return
@@ -93,7 +107,8 @@ func (h *MonitorHandler) HealthStream(c *gin.Context) {
 	}
 }
 
-type healthSnapshot struct {
+// HealthSnapshot 是监控面板与 Prometheus 适配共用的只读快照。
+type HealthSnapshot struct {
 	Timestamp string `json:"timestamp"`
 	Uptime    string `json:"uptime"`
 
@@ -154,12 +169,13 @@ type healthSnapshot struct {
 	ClusterAssignments   int `json:"cluster_assignments"`
 }
 
-func (h *MonitorHandler) collect() healthSnapshot {
+// Collect 返回当前健康快照，供 SSE 与 Prometheus 适配器读取。
+func (h *MonitorHandler) Collect() HealthSnapshot {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
 	now := time.Now()
-	snap := healthSnapshot{
+	snap := HealthSnapshot{
 		Timestamp:     now.Format("15:04:05"),
 		Uptime:        time.Since(h.startTime).Truncate(time.Second).String(),
 		NumGoroutine:  runtime.NumGoroutine(),
@@ -193,38 +209,31 @@ func (h *MonitorHandler) collect() healthSnapshot {
 		snap.WSClientDropped = hs.WSClientDropped
 	}
 
-	// DB 连接池
-	st := repository.DBStats()
-	snap.DBInUse = st.InUse
-	snap.DBIdle = st.Idle
-	snap.DBMaxOpen = st.MaxOpenConnections
-	snap.DBWaitCount = st.WaitCount
-	snap.DBWaitDurationMs = st.WaitDuration.Milliseconds()
-	if err := repository.DBPing(); err == nil {
-		snap.DBConnected = true
-	}
+	// 基础设施统计由组合根注入，handler 不感知具体实现。
+	if h.stats != nil {
+		st := h.stats.DBStats()
+		snap.DBInUse = st.InUse
+		snap.DBIdle = st.Idle
+		snap.DBMaxOpen = st.MaxOpenConnections
+		snap.DBWaitCount = st.WaitCount
+		snap.DBWaitDurationMs = st.WaitDuration.Milliseconds()
+		if h.stats.DBPing() == nil {
+			snap.DBConnected = true
+		}
 
-	// Redis 详细状态
-	rs := redis.GetStats()
-	snap.RedisConnected = rs.Connected
-	snap.RedisPingMs = rs.PingMs
-	snap.RedisDBSize = rs.DBSize
-	snap.RedisUsedMemoryMB = rs.UsedMemoryMB
-	snap.RedisUsedMemoryPeakMB = rs.UsedMemoryPeakMB
-	snap.RedisConnectedClients = rs.ConnectedClients
+		snap.RedisConnected = h.stats.RedisConnected()
+		snap.RedisPingMs = h.stats.RedisPingMs()
+		snap.RedisDBSize = h.stats.RedisDBSize()
+		snap.RedisUsedMemoryMB = h.stats.RedisUsedMemoryMB()
+		snap.RedisUsedMemoryPeakMB = h.stats.RedisUsedMemoryPeakMB()
+		snap.RedisConnectedClients = h.stats.RedisConnectedClients()
 
-	es := bus.GetStats(h.eventBus)
-	snap.EventBusMode = es.Mode
-	snap.EventBusConnected = es.Connected
-	snap.EventBusInstanceID = es.InstanceID
-	snap.EventBusDroppedPublish = es.DroppedPublish
+		snap.EventBusMode = h.stats.BusMode()
+		snap.EventBusConnected = h.stats.BusConnected()
+		snap.EventBusInstanceID = h.stats.BusInstanceID()
+		snap.EventBusDroppedPublish = h.stats.BusDroppedPublish()
 
-	if redis.IsConnected() {
-		snap.AuthStoreBackend = "redis"
-	} else if name := redis.AuthBackendName(); name != "" {
-		snap.AuthStoreBackend = name
-	} else {
-		snap.AuthStoreBackend = "none"
+		snap.AuthStoreBackend = h.stats.AuthStoreBackend()
 	}
 
 	if h.clusterSvc != nil {
@@ -239,40 +248,6 @@ func (h *MonitorHandler) collect() healthSnapshot {
 	}
 
 	return snap
-}
-
-// PrometheusSnapshot 将健康快照转换为 Prometheus 业务指标快照。
-func (h *MonitorHandler) PrometheusSnapshot() metrics.Snapshot {
-	snap := h.collect()
-	return metrics.Snapshot{
-		CPUPercent:             snap.CPUPercent,
-		HubRoomCount:           snap.HubRoomCount,
-		HubParticipantCount:    snap.HubParticipantCount,
-		HubOnlineUserCount:     snap.HubOnlineUserCount,
-		WSClientDropped:        snap.WSClientDropped,
-		DBConnected:            snap.DBConnected,
-		DBInUse:                snap.DBInUse,
-		DBIdle:                 snap.DBIdle,
-		DBMaxOpen:              snap.DBMaxOpen,
-		DBWaitCount:            snap.DBWaitCount,
-		DBWaitDurationMs:       snap.DBWaitDurationMs,
-		RedisConnected:         snap.RedisConnected,
-		RedisPingMs:            snap.RedisPingMs,
-		RedisDBSize:            snap.RedisDBSize,
-		RedisUsedMemoryMB:      snap.RedisUsedMemoryMB,
-		RedisUsedMemoryPeakMB:  snap.RedisUsedMemoryPeakMB,
-		RedisConnectedClients:  snap.RedisConnectedClients,
-		EventBusConnected:      snap.EventBusConnected,
-		EventBusDroppedPublish: snap.EventBusDroppedPublish,
-		ClusterTotalNodes:      snap.ClusterTotalNodes,
-		ClusterReadyNodes:      snap.ClusterReadyNodes,
-		ClusterDrainingNodes:   snap.ClusterDrainingNodes,
-		ClusterOfflineNodes:    snap.ClusterOfflineNodes,
-		ClusterAssignments:     snap.ClusterAssignments,
-		DiskUsedMB:             snap.DiskUsedMB,
-		DiskTotalMB:            snap.DiskTotalMB,
-		DiskPercent:            snap.DiskPercent,
-	}
 }
 
 func roundMB(bytes uint64) float64 {

@@ -9,7 +9,6 @@ import (
 
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/model"
-	"GOSpeak/internal/repository"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -28,16 +27,21 @@ func newTestRouter(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	oldDB := repository.DB
-	repository.DB = db
 	t.Cleanup(func() {
-		repository.DB = oldDB
 		if sqlDB, err := db.DB(); err == nil && sqlDB != nil {
 			_ = sqlDB.Close()
 		}
 	})
 
-	return SetupRoutes(gin.New(), testHandlers())
+	handlers := testHandlers()
+	handlers.ReadyCheck = func() error {
+		if _, err := db.DB(); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	return SetupRoutes(gin.New(), handlers)
 }
 
 func TestRouter_Readyz(t *testing.T) {
@@ -52,10 +56,11 @@ func TestRouter_Readyz(t *testing.T) {
 
 func TestWorkerModeDoesNotRegisterBusinessWrites(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	config.SetCurrent(&config.Config{ClusterRole: model.ClusterRoleWorker})
 
 	r := gin.New()
-	SetupRoutes(r, testHandlers())
+	handlers := testHandlers()
+	handlers.Config = &config.Config{ClusterRole: model.ClusterRoleWorker}
+	SetupRoutes(r, handlers)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/api/v1/room/create", nil)
 	r.ServeHTTP(rec, req)

@@ -6,7 +6,6 @@ import (
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
-	"GOSpeak/internal/repository"
 	authRoutes "GOSpeak/internal/router/routes/auth"
 	botRoutes "GOSpeak/internal/router/routes/bot"
 	clusterRoutes "GOSpeak/internal/router/routes/cluster"
@@ -43,6 +42,10 @@ import (
 )
 
 type Handlers struct {
+	// Config 由组合根注入，路由层不再读取全局 config.Current。
+	Config *config.Config
+	// ReadyCheck 探测 DB 等基础依赖，nil 时 /readyz 返回不可用。
+	ReadyCheck   func() error
 	Auth         *handler.AuthHandler
 	User         *handler.UserHandler
 	Signal       *handler.SignalHandler
@@ -71,30 +74,35 @@ type Handlers struct {
 
 func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 
+	var cfg *config.Config
+	if h != nil {
+		cfg = h.Config
+	}
+
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(200, gin.H{"message": "pong"})
 	})
 
 	r.GET("/readyz", func(c *gin.Context) {
-		if repository.DB == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable"})
-			return
-		}
-		if _, err := repository.DB.DB(); err != nil {
+		if h == nil || h.ReadyCheck == nil || h.ReadyCheck() != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable"})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	r.GET("/uploads/*filepath", serveUploads)
-	serveSPA(r)
+	uploadDir := "uploads"
+	if cfg != nil && cfg.StoragePathPrefix != "" {
+		uploadDir = strings.TrimSuffix(cfg.StoragePathPrefix, "/")
+	}
+	r.GET("/uploads/*filepath", func(c *gin.Context) { serveUploads(c, uploadDir) })
+	serveSPA(r, cfg)
 
 	swaggerRoutes.Register(r)
 
 	api := r.Group("/api/v1")
 	role := ""
-	if cfg := config.Current(); cfg != nil {
+	if cfg != nil {
 		role = cfg.ClusterRole
 	}
 	isWorker := role == "worker"
@@ -169,13 +177,13 @@ func workerModeAPIFallback(c *gin.Context) {
 // serveSPA 托管前端构建产物。
 // 路径优先级：STATIC_DIR > /app/static > ./static > go:embed 内嵌资源。
 // 开发环境前端走 Vite；无外部目录且未嵌入前端时静默跳过。
-func serveSPA(r *gin.Engine) {
+func serveSPA(r *gin.Engine, cfg *config.Config) {
 	var fileServer http.Handler
 	var hasFile func(path string) bool
 	var serveIndex func(c *gin.Context)
 
 	staticDir := ""
-	if cfg := config.Current(); cfg != nil {
+	if cfg != nil {
 		staticDir = cfg.StaticDir
 	}
 	if staticDir == "" {
@@ -225,7 +233,7 @@ func serveSPA(r *gin.Engine) {
 		path := c.Request.URL.Path
 		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws") || strings.HasPrefix(path, "/swagger") {
 			if strings.HasPrefix(path, "/api/") {
-				if cfg := config.Current(); cfg != nil && cfg.ClusterRole == "worker" {
+				if cfg != nil && cfg.ClusterRole == "worker" {
 					workerModeAPIFallback(c)
 					return
 				}
@@ -246,11 +254,7 @@ func serveSPA(r *gin.Engine) {
 }
 
 // serveUploads 以安全响应头提供上传文件，并拒绝路径穿越。
-func serveUploads(c *gin.Context) {
-	uploadDir := "uploads"
-	if cfg := config.Current(); cfg != nil && cfg.StoragePathPrefix != "" {
-		uploadDir = strings.TrimSuffix(cfg.StoragePathPrefix, "/")
-	}
+func serveUploads(c *gin.Context, uploadDir string) {
 	clean := filepath.Clean("/" + strings.TrimPrefix(c.Param("filepath"), "/"))
 	full := filepath.Join(uploadDir, strings.TrimPrefix(clean, "/"))
 	abs, err := filepath.Abs(full)

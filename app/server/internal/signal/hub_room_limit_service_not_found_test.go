@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"GOSpeak/internal/model"
-	"GOSpeak/internal/service"
+	"GOSpeak/internal/pkg"
 )
 
 type serviceNotFoundRoomStore struct {
@@ -12,7 +12,7 @@ type serviceNotFoundRoomStore struct {
 }
 
 func (m *serviceNotFoundRoomStore) GetByDomainAndName(domainUUID, name string) (*model.Room, error) {
-	return nil, service.ErrRoomNotFound
+	return nil, pkg.ErrNotFound
 }
 
 func TestHub_CheckRoomLimit_ServiceNotFoundIsNotDBFailure(t *testing.T) {

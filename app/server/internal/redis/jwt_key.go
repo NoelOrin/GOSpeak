@@ -23,6 +23,9 @@ const (
 // 生产模式下未配置 JWT_KEY 且未连接 Redis 时拒绝启动，避免使用公开的默认密钥签发 token。
 var production bool
 
+// jwtCfg 由 InitRedis 在启动时捕获，密钥相关逻辑不再读取全局 config.Current。
+var jwtCfg *config.Config
+
 // keyMu 串行化签名密钥的读取与轮换，避免并发首启时各自生成并写入不同密钥。
 var keyMu sync.Mutex
 
@@ -37,7 +40,7 @@ func SetProductionMode() {
 func GetSigningKey() []byte {
 	keyMu.Lock()
 	defer keyMu.Unlock()
-	if Client == nil {
+	if client == nil {
 		// 开发态：静态密钥优先，不把随机密钥写进易失 AuthStore。
 		if !production {
 			return staticKey()
@@ -65,21 +68,21 @@ func GetSigningKey() []byte {
 
 	ctx, cancel := redisTimeoutCtx()
 	defer cancel()
-	val, err := Client.Get(ctx, jwtKeyRedisKey).Result()
+	val, err := client.Get(ctx, jwtKeyRedisKey).Result()
 	if err == nil {
 		return []byte(val)
 	}
 
 	// key 不存在（首次启动），创建新密钥
 	newKey := randomKey()
-	if setErr := Client.Set(ctx, jwtKeyRedisKey, newKey, 0).Err(); setErr != nil {
+	if setErr := client.Set(ctx, jwtKeyRedisKey, newKey, 0).Err(); setErr != nil {
 		logger.WithComponent("Redis").WithError(setErr).Warn("failed to store JWT signing key; fallback to static key")
 		return staticKey()
 	}
 	now := time.Now().Unix()
-	Client.Set(ctx, jwtKeyCreatedAtKey, now, 0)
-	Client.SAdd(ctx, jwtHistoryKey, newKey)
-	Client.Expire(ctx, jwtHistoryKey, histTTL)
+	client.Set(ctx, jwtKeyCreatedAtKey, now, 0)
+	client.SAdd(ctx, jwtHistoryKey, newKey)
+	client.Expire(ctx, jwtHistoryKey, histTTL)
 	logger.WithComponent("Redis").Info("JWT signing key created")
 	return []byte(newKey)
 }
@@ -87,7 +90,7 @@ func GetSigningKey() []byte {
 // ShouldRotateKey 检查签名密钥是否需要轮换。
 // 基于 jwt:signing_key:created_at 与当前时间的差值判断。
 func ShouldRotateKey() bool {
-	if Client == nil {
+	if client == nil {
 		// 开发态静态密钥不参与轮换。
 		if !production || secondaryAuth == nil {
 			return false
@@ -101,7 +104,7 @@ func ShouldRotateKey() bool {
 	}
 	ctx, cancel := redisTimeoutCtx()
 	defer cancel()
-	createdAt, err := Client.Get(ctx, jwtKeyCreatedAtKey).Int64()
+	createdAt, err := client.Get(ctx, jwtKeyCreatedAtKey).Int64()
 	if err != nil {
 		return true // 无法读取创建时间，保守触发轮换
 	}
@@ -115,7 +118,7 @@ func ShouldRotateKey() bool {
 func RotateSigningKey() []byte {
 	keyMu.Lock()
 	defer keyMu.Unlock()
-	if Client == nil {
+	if client == nil {
 		// 开发态始终返回静态 JWT_KEY。
 		if !production || secondaryAuth == nil {
 			return staticKey()
@@ -143,28 +146,28 @@ func RotateSigningKey() []byte {
 	defer cancel()
 
 	// 1. 读取旧密钥并备份
-	oldVal, err := Client.Get(ctx, jwtKeyRedisKey).Result()
+	oldVal, err := client.Get(ctx, jwtKeyRedisKey).Result()
 	if err == nil && oldVal != "" {
-		Client.SAdd(ctx, jwtHistoryKey, oldVal)
+		client.SAdd(ctx, jwtHistoryKey, oldVal)
 	}
 
 	// 2. 生成新密钥并写入（不带 TTL）；主键写失败时保留旧密钥，避免本进程与共享存储分叉。
 	newKey := randomKey()
-	if err := Client.Set(ctx, jwtKeyRedisKey, newKey, 0).Err(); err != nil {
+	if err := client.Set(ctx, jwtKeyRedisKey, newKey, 0).Err(); err != nil {
 		logger.WithComponent("Redis").WithError(err).Warn("JWT signing key rotate failed; keep old key")
 		if oldVal != "" {
 			return []byte(oldVal)
 		}
 		return staticKey()
 	}
-	if err := Client.Set(ctx, jwtKeyCreatedAtKey, time.Now().Unix(), 0).Err(); err != nil {
+	if err := client.Set(ctx, jwtKeyCreatedAtKey, time.Now().Unix(), 0).Err(); err != nil {
 		logger.WithComponent("Redis").WithError(err).Warn("JWT signing key rotate createdAt failed")
 	}
 
 	// 3. 新密钥也加入历史集合
-	Client.SAdd(ctx, jwtHistoryKey, newKey)
+	client.SAdd(ctx, jwtHistoryKey, newKey)
 	// 历史保留 7 天，精确覆盖 refresh_token 最大有效期；超出 7 天的密钥对过期 token 已无用
-	Client.Expire(ctx, jwtHistoryKey, histTTL)
+	client.Expire(ctx, jwtHistoryKey, histTTL)
 
 	logger.WithComponent("Redis").Infof("JWT signing key rotated, next rotation in %v", keyTTL())
 	return []byte(newKey)
@@ -173,7 +176,7 @@ func RotateSigningKey() []byte {
 // GetAllSigningKeys 返回当前签名密钥 + 历史密钥集合。
 // 用于 Token 校验时逐一尝试，解决密钥轮换后旧 Token 无法验签的问题。
 func GetAllSigningKeys() [][]byte {
-	if Client == nil {
+	if client == nil {
 		// 开发态仅校验静态密钥，避免读到重启前残留的随机密钥集合。
 		if !production {
 			return [][]byte{staticKey()}
@@ -203,12 +206,12 @@ func GetAllSigningKeys() [][]byte {
 	defer cancel()
 	var keys [][]byte
 
-	active, err := Client.Get(ctx, jwtKeyRedisKey).Result()
+	active, err := client.Get(ctx, jwtKeyRedisKey).Result()
 	if err == nil {
 		keys = append(keys, []byte(active))
 	}
 
-	history, err := Client.SMembers(ctx, jwtHistoryKey).Result()
+	history, err := client.SMembers(ctx, jwtHistoryKey).Result()
 	if err == nil {
 		for _, k := range history {
 			if k != active {
@@ -225,7 +228,7 @@ func GetAllSigningKeys() [][]byte {
 // 生产环境未配置且未连接 Redis 时直接 panic，避免使用公开的默认密钥签发任意角色的合法 token。
 func staticKey() []byte {
 	key := ""
-	if cfg := config.Current(); cfg != nil {
+	if cfg := jwtCfg; cfg != nil {
 		key = cfg.JWTKey
 	}
 	if key == "" || key == "default-secret" {
@@ -244,7 +247,7 @@ func staticKey() []byte {
 func randomKey() string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		if cfg := config.Current(); cfg != nil && cfg.JWTKey != "" {
+		if cfg := jwtCfg; cfg != nil && cfg.JWTKey != "" {
 			return cfg.JWTKey
 		}
 		return "default-secret"
@@ -254,7 +257,7 @@ func randomKey() string {
 
 // keyTTL 解析 JWT_KEY_TTL 环境变量，非法或空值时默认 24 小时。
 func keyTTL() time.Duration {
-	if cfg := config.Current(); cfg != nil {
+	if cfg := jwtCfg; cfg != nil {
 		return cfg.JWTKeyTTLDuration()
 	}
 	return 24 * time.Hour

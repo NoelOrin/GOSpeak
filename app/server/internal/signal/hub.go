@@ -2,9 +2,7 @@ package signal
 
 import (
 	"GOSpeak/internal/model"
-	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -13,130 +11,6 @@ import (
 
 	"GOSpeak/internal/ws"
 )
-
-type Room struct {
-	Name     string
-	Password string
-	Members  map[string]*MemberInfo // socketID -> MemberInfo
-	// ByIdentity 身份索引，O(1) 查成员（本地 fallback 时为 O(1)，不再遍历 Members）。
-	ByIdentity map[string]*MemberInfo // identity -> MemberInfo
-	MicMuted   map[string]bool
-	// Speaking 维护房间内各成员本地发言状态（仅 SRS/Cloudflare 等不 SFU 原生 active speaker 的 provider 上报）。
-	// 与 MicMuted 类似，仅用于日志れ聚广播，不持久化。
-	Speaking  map[string]bool
-	CreatedAt time.Time
-}
-
-// roomSetMember writes both Members (by socketID) and ByIdentity index.
-// Caller must hold h.mu write-lock.
-
-// roomSetMember writes both Members (by socketID) and ByIdentity index.
-// Caller must hold h.mu write-lock.
-func roomSetMember(room *Room, sid, identity string, member *MemberInfo) {
-	room.Members[sid] = member
-	if identity != "" && room.ByIdentity != nil {
-		room.ByIdentity[identity] = member
-	}
-}
-
-// roomDelMember removes from both Members and ByIdentity. Caller must hold write-lock.
-
-// roomDelMember removes from both Members and ByIdentity. Caller must hold write-lock.
-func roomDelMember(room *Room, sid string) {
-	if m, ok := room.Members[sid]; ok {
-		if m.Identity != "" && room.ByIdentity != nil {
-			delete(room.ByIdentity, m.Identity)
-		}
-	}
-	delete(room.Members, sid)
-}
-
-// roomLookupIdentity O(1) identity lookup with index fallback.
-
-// roomLookupIdentity O(1) identity lookup with index fallback.
-func roomLookupIdentity(room *Room, identity string) *MemberInfo {
-	if room.ByIdentity != nil {
-		return room.ByIdentity[identity]
-	}
-	for _, m := range room.Members {
-		if m.Identity == identity {
-			return m
-		}
-	}
-	return nil
-}
-
-// roomInitByIdentity lazy-inits ByIdentity from existing Members.
-
-// roomInitByIdentity lazy-inits ByIdentity from existing Members.
-func roomInitByIdentity(room *Room) {
-	if room.ByIdentity != nil {
-		return
-	}
-	room.ByIdentity = make(map[string]*MemberInfo, len(room.Members))
-	for _, m := range room.Members {
-		if m.Identity != "" {
-			room.ByIdentity[m.Identity] = m
-		}
-	}
-}
-
-// socketServer is replaced by ws.Broadcaster.
-
-// eventBus is the narrow publish surface used by Hub for client fanout.
-// *bus.NATSBus satisfies this without importing the bus package here.
-
-// socketServer is replaced by ws.Broadcaster.
-
-// eventBus is the narrow publish surface used by Hub for client fanout.
-// *bus.NATSBus satisfies this without importing the bus package here.
-type eventBus interface {
-	PublishNamespace(ctx context.Context, event string, payload interface{}) error
-	PublishRoom(ctx context.Context, room, event string, payload interface{}) error
-}
-
-// cleanupPublisher enqueues SFU cleanup jobs (phase-3). Nil = inline goroutine.
-
-// cleanupPublisher enqueues SFU cleanup jobs (phase-3). Nil = inline goroutine.
-type cleanupPublisher interface {
-	PublishSFUCleanup(ctx context.Context, room, identity string, deleteRoom bool) error
-}
-
-// roomKey generates a domain-scoped composite key for room map isolation.
-// Platform-level rooms (no DomainUUID) use a "platform:" prefix for backward compatibility.
-
-// roomKey generates a domain-scoped composite key for room map isolation.
-// Platform-level rooms (no DomainUUID) use a "platform:" prefix for backward compatibility.
-func roomKey(domainUUID, roomName string) string {
-	return pkg.RoomKey(domainUUID, roomName)
-}
-
-// splitRoomKey reverses roomKey to extract domainUUID and roomName.
-
-// splitRoomKey reverses roomKey to extract domainUUID and roomName.
-func splitRoomKey(key string) (domainUUID, roomName string) {
-	return pkg.SplitRoomKey(key)
-}
-
-func roomKeyMatchesDomain(key, domainUUID string) bool {
-	if domainUUID == "" {
-		return true
-	}
-	g, _ := splitRoomKey(key)
-	return g == domainUUID
-}
-
-func domainRoomKey(domainUUID string) string {
-	if domainUUID == "" {
-		return "__platform"
-	}
-	return "__domain:" + domainUUID
-}
-
-func roomKeyIsPlatform(key string) bool {
-	g, _ := splitRoomKey(key)
-	return g == ""
-}
 
 // roomStore abstracts DB room listing for Hub.
 
@@ -200,32 +74,6 @@ type ParticipantCleanupHandler interface {
 	OnParticipantLeft(room, identity string)
 }
 
-type connRoomSlots struct {
-	TextRoom  string
-	VoiceRoom string
-}
-
-// clearConnRoomSlot removes the matching room slot and drops the entry when empty.
-
-// clearConnRoomSlot removes the matching room slot and drops the entry when empty.
-func (h *Hub) clearConnRoomSlot(socketID, key string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	slots := h.connSlots[socketID]
-	if slots == nil {
-		return
-	}
-	if slots.TextRoom == key {
-		slots.TextRoom = ""
-	}
-	if slots.VoiceRoom == key {
-		slots.VoiceRoom = ""
-	}
-	if slots.TextRoom == "" && slots.VoiceRoom == "" {
-		delete(h.connSlots, socketID)
-	}
-}
-
 type Hub struct {
 	fanout           ws.Broadcaster
 	eventBus         eventBus
@@ -267,32 +115,28 @@ type Hub struct {
 	muteCache map[string]muteCacheEntry
 }
 
-type muteCacheEntry struct {
-	muted   bool
-	expires time.Time
+// HubOptions 聚合 Hub 的协作依赖，由组合根在构造时一次传入。
+type HubOptions struct {
+	Fanout             ws.Broadcaster
+	EventBus           eventBus
+	SFUProvider        sfu.Provider
+	StreamResolver     StreamNameResolver
+	MessageSender      messageSender
+	ConversationSender conversationSender
+	DomainChecker      func(domainUUID, userUUID string) bool
+	MembershipStore    membershipStore
+	InstanceID         string
+	StateNotifier      stateNotifier
 }
 
-func (h *Hub) muteCacheGet(identity string) (bool, bool) {
-	h.mu.RLock()
-	entry, ok := h.muteCache[identity]
-	h.mu.RUnlock()
-	if !ok || time.Now().After(entry.expires) {
-		return false, false
-	}
-	return entry.muted, true
-}
-
-func (h *Hub) muteCacheSet(identity string, muted bool) {
-	h.mu.Lock()
-	if h.muteCache == nil {
-		h.muteCache = make(map[string]muteCacheEntry)
-	}
-	h.muteCache[identity] = muteCacheEntry{muted: muted, expires: time.Now().Add(5 * time.Second)}
-	h.mu.Unlock()
-}
-
+// NewHub 保留测试友好的四参构造，生产路径请使用 NewHubWithOptions。
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
-	return &Hub{
+	return NewHubWithOptions(store, mStore, uStore, pChecker, HubOptions{})
+}
+
+// NewHubWithOptions 在构造时注入协作依赖，避免启动期 Set* 后置装配。
+func NewHubWithOptions(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker, opts HubOptions) *Hub {
+	h := &Hub{
 		rooms:            make(map[string]*Room),
 		roomStore:        store,
 		muteStore:        mStore,
@@ -307,6 +151,17 @@ func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permCh
 		kickBans:         make(map[string]time.Time),
 		muteCache:        make(map[string]muteCacheEntry),
 	}
+	h.fanout = opts.Fanout
+	h.eventBus = opts.EventBus
+	h.sfuProvider = opts.SFUProvider
+	h.streamResolver = opts.StreamResolver
+	h.msgSvc = opts.MessageSender
+	h.convSvc = opts.ConversationSender
+	h.domainChecker = opts.DomainChecker
+	h.membershipStore = opts.MembershipStore
+	h.instanceID = opts.InstanceID
+	h.stateNotifier = opts.StateNotifier
+	return h
 }
 
 func (h *Hub) SetFanout(f ws.Broadcaster) {
@@ -447,156 +302,6 @@ func (h *Hub) OnConnect(c ws.ClientMessenger) error {
 	return nil
 }
 
-// disconnectCleanup 记录断连后需要执行的 SFU 清理项。
-type disconnectCleanup struct {
-	room     string
-	identity string
-	deleted  bool
-}
-
-func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
-	type leaveEvent struct {
-		room     string
-		identity string
-		id       string
-	}
-	var cleanups []disconnectCleanup
-	var updatedRooms []string
-	var speakingChanged []string
-	var deletedStreams []string
-	var leaveEvents []leaveEvent
-	// Leave personal room on disconnect
-	if identity := clientIdentity(c); identity != "" {
-		if h.fanout != nil {
-			h.fanout.Leave("__user:"+identity, c.ID())
-		}
-	}
-	h.mu.Lock()
-	domainScope := h.clientDomains[c.ID()]
-	delete(h.clientDomains, c.ID())
-	// connSlots 是连接房间槽位的唯一事实来源：按槽位收集房间键，
-	// 只清理该连接登记过的 Text/Voice 房间，不再全量遍历 h.rooms。
-	roomKeys := make([]string, 0, 2)
-	if slots := h.connSlots[c.ID()]; slots != nil {
-		if slots.TextRoom != "" {
-			roomKeys = append(roomKeys, slots.TextRoom)
-		}
-		if slots.VoiceRoom != "" && slots.VoiceRoom != slots.TextRoom {
-			roomKeys = append(roomKeys, slots.VoiceRoom)
-		}
-	}
-	delete(h.connSlots, c.ID())
-	for _, roomName := range roomKeys {
-		room := h.rooms[roomName]
-		if room == nil {
-			continue
-		}
-		if member, ok := room.Members[c.ID()]; ok {
-			identity := member.Identity
-			stream := member.Stream
-			wasSpeaking := room.Speaking[identity]
-			roomDelMember(room, c.ID())
-			delete(room.Speaking, identity)
-			delete(room.MicMuted, identity)
-			h.unregisterStreamLocked(roomName, identity, stream)
-			if stream != "" {
-				deletedStreams = append(deletedStreams, stream)
-			}
-			if wasSpeaking {
-				speakingChanged = append(speakingChanged, roomName)
-			}
-			leaveEvents = append(leaveEvents, leaveEvent{
-				room:     roomName,
-				identity: identity,
-				id:       c.ID(),
-			})
-			updatedRooms = append(updatedRooms, roomName)
-			deleted := h.deleteRoomIfEmptyLocked(roomName)
-			cleanups = append(cleanups, disconnectCleanup{roomName, identity, deleted})
-		}
-	}
-	h.mu.Unlock()
-
-	if h.fanout != nil {
-		h.fanout.Leave(domainRoomKey(domainScope), c.ID())
-	}
-
-	// 先同步 KV，再发布事件：远端收到 member:left 时读到的一定是已更新的成员快照。
-	for _, name := range updatedRooms {
-		h.syncRoomToStore(name)
-	}
-	for _, stream := range deletedStreams {
-		h.syncStreamDelete(stream)
-	}
-
-	// publish after unlock: avoid holding hub mu across NATS/WebSocket I/O
-	for _, e := range leaveEvents {
-		domainUUID, logicalName := splitRoomKey(e.room)
-		h.publishRoom(e.room, EventMemberLeft, map[string]interface{}{
-			"room":        logicalName,
-			"domain_uuid": domainUUID,
-			"identity":    e.identity,
-			"id":          e.id,
-		})
-	}
-
-	for _, name := range speakingChanged {
-		domainUUID, logicalName := splitRoomKey(name)
-		h.broadcastActiveSpeakers(domainUUID, logicalName)
-	}
-
-	// SFU 清理异步：RemoveParticipant/DeleteRoom 是 HTTP/gRPC 调用，可能慢。
-	// 同步阻塞会拉长 OnDisconnect 持续时间，加剧连接 goroutine
-	// 竞态（连接已 failed 时库 serveRead 状态错乱触发 gorilla panic）。
-	// 丢后台 goroutine，handler 立即返回。
-	if len(cleanups) > 0 {
-		if h.cleanupPub != nil {
-			for _, c := range cleanups {
-				if err := h.cleanupPub.PublishSFUCleanup(context.Background(), c.room, c.identity, c.deleted); err != nil {
-					log.Printf("[Signal] enqueue sfu cleanup: %v; fallback to inline goroutine", err)
-					h.runCleanupsInline([]disconnectCleanup{c})
-				}
-			}
-		} else {
-			h.runCleanupsInline(cleanups)
-		}
-	}
-
-	for _, name := range updatedRooms {
-		h.mu.RLock()
-		_, exists := h.rooms[name]
-		h.mu.RUnlock()
-		if !exists {
-			// 房间已空被删除，广播房间列表更新（含 DB 持久化房间）
-			domainUUID, _ := splitRoomKey(name)
-			h.broadcastRoomList(domainUUID)
-			continue
-		}
-		h.broadcastRoomUpdatedLocal(name)
-	}
-
-	log.Printf("[Signal] client disconnected: %s", c.ID())
-}
-
-// runCleanupsInline 在后台 goroutine 中执行 SFU 清理，
-// 用于 cleanup queue 不可用或入队失败时的兜底路径。
-func (h *Hub) runCleanupsInline(cleanups []disconnectCleanup) {
-	if len(cleanups) == 0 {
-		return
-	}
-	go func(cleanups []disconnectCleanup) {
-		for _, c := range cleanups {
-			h.removeParticipantSafe(c.room, c.identity)
-			if c.deleted {
-				h.deleteRoomSafe(c.room)
-			}
-			if h.participantCleanup != nil {
-				h.participantCleanup.OnParticipantLeft(c.room, c.identity)
-			}
-		}
-	}(cleanups)
-}
-
 // ─── 房间创建 ───
 
 // OnError 兜底处理 WS 层 error（含 OnConnect 返回的 panic error）。
@@ -616,45 +321,4 @@ func (h *Hub) OnError(c ws.ClientMessenger, err error) {
 
 func parseJSON(data string, v interface{}) error {
 	return json.Unmarshal([]byte(data), v)
-}
-
-// kickBanTTL 是被踢者禁止立即重连同一房间的冷却时长。
-const kickBanTTL = 60 * time.Second
-
-// kickBanKey 生成踢出冷却 key（room 复合键 + identity）。
-func kickBanKey(room, identity string) string {
-	return room + "|" + identity
-}
-
-// blockRejoin 记录被踢者短时禁止重连同一房间。
-func (h *Hub) blockRejoin(room, identity string) {
-	if room == "" || identity == "" {
-		return
-	}
-	h.mu.Lock()
-	if h.kickBans == nil {
-		h.kickBans = make(map[string]time.Time)
-	}
-	h.kickBans[kickBanKey(room, identity)] = time.Now().Add(kickBanTTL)
-	h.mu.Unlock()
-}
-
-// isRejoinBlocked 检查被踢者是否仍在冷却窗口内。
-func (h *Hub) isRejoinBlocked(room, identity string) bool {
-	if room == "" || identity == "" {
-		return false
-	}
-	h.mu.RLock()
-	expires, ok := h.kickBans[kickBanKey(room, identity)]
-	h.mu.RUnlock()
-	if !ok {
-		return false
-	}
-	if time.Now().After(expires) {
-		h.mu.Lock()
-		delete(h.kickBans, kickBanKey(room, identity))
-		h.mu.Unlock()
-		return false
-	}
-	return true
 }

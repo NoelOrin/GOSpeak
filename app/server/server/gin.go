@@ -5,11 +5,9 @@ import (
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/handler"
-	"GOSpeak/internal/jobs"
 	"GOSpeak/internal/logger"
 	"GOSpeak/internal/metrics"
 	"GOSpeak/internal/middleware"
-	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/plugin"
 	"GOSpeak/internal/plugin/builtin"
@@ -20,16 +18,15 @@ import (
 	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/sfu/factory"
 	"GOSpeak/internal/signal"
+	"GOSpeak/internal/storage"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
-	ossignal "os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"GOSpeak/internal/ws"
@@ -77,46 +74,49 @@ func StartGin(env EnvEnum) error {
 		gin.SetMode(cfg.GinMode)
 	}
 
-	if err := repository.InitDB(cfg); err != nil {
+	db, err := repository.InitDB(cfg)
+	if err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
 
 	redis.InitRedis(cfg)
 
+	storage.InitCipher(cfg.StorageEncryptKey, cfg.IsProduction())
+
 	if env == Prod || cfg.IsProduction() {
 		redis.SetProductionMode()
 	}
 
-	roleRepo := repository.NewRoleRepository(repository.DB)
+	roleRepo := repository.NewRoleRepository(db)
 	if cfg.IsAgent() {
 		seedRoles(roleRepo)
 	} else {
 		loadRoles(roleRepo)
 	}
 
-	userRepo := repository.NewUserRepository(repository.DB)
+	userRepo := repository.NewUserRepository(db)
 	var adminUUID string
 	if cfg.IsAgent() {
 		adminUUID = seedAdminUser(userRepo)
 	}
-	userGroupRepo := repository.NewUserGroupRepository(repository.DB)
+	userGroupRepo := repository.NewUserGroupRepository(db)
 	if adminUUID != "" {
-		if err := repository.EnsureDefaultDomain(repository.DB, adminUUID); err != nil {
+		if err := repository.EnsureDefaultDomain(db, adminUUID); err != nil {
 			logger.WithComponent("Seed").Warnf("同步默认语音域失败: %v", err)
 		}
 	}
-	roomRepo := repository.NewRoomRepository(repository.DB)
-	oauthProviderRepo := repository.NewOAuthProviderRepository(repository.DB)
-	oauthAccountRepo := repository.NewOAuthAccountRepository(repository.DB)
-	emailConfigRepo := repository.NewEmailConfigRepository(repository.DB)
-	emailVerificationRepo := repository.NewEmailVerificationCodeRepository(repository.DB)
-	permRepo := repository.NewPermissionRepository(repository.DB)
-	muteRepo := repository.NewMuteRepository(repository.DB)
-	messageRepo := repository.NewMessageRepository(repository.DB)
-	conversationRepo := repository.NewConversationRepository(repository.DB)
-	sfuConfigRepo := repository.NewSFUConfigRepository(repository.DB)
-	storageConfigRepo := repository.NewStorageConfigRepository(repository.DB)
-	domainRepo := repository.NewDomainRepository(repository.DB)
+	roomRepo := repository.NewRoomRepository(db)
+	oauthProviderRepo := repository.NewOAuthProviderRepository(db)
+	oauthAccountRepo := repository.NewOAuthAccountRepository(db)
+	emailConfigRepo := repository.NewEmailConfigRepository(db)
+	emailVerificationRepo := repository.NewEmailVerificationCodeRepository(db)
+	permRepo := repository.NewPermissionRepository(db)
+	muteRepo := repository.NewMuteRepository(db)
+	messageRepo := repository.NewMessageRepository(db)
+	conversationRepo := repository.NewConversationRepository(db)
+	sfuConfigRepo := repository.NewSFUConfigRepository(db)
+	storageConfigRepo := repository.NewStorageConfigRepository(db)
+	domainRepo := repository.NewDomainRepository(db)
 	domainSvc := service.NewDomainService(domainRepo)
 
 	// 初始化权限系统
@@ -127,7 +127,6 @@ func StartGin(env EnvEnum) error {
 	if err := permSvc.LoadCache(); err != nil {
 		return fmt.Errorf("failed to load permission cache: %w", err)
 	}
-	middleware.SetPermissionChecker(permSvc)
 
 	roleSvc := service.NewRoleService(roleRepo)
 	emailConfigSvc := service.NewEmailConfigService(emailConfigRepo, cfg)
@@ -148,12 +147,12 @@ func StartGin(env EnvEnum) error {
 			return fmt.Errorf("failed to sync sfu config from env: %w", err)
 		}
 	}
-	botTokenRepo := repository.NewBotTokenRepository(repository.DB)
+	botTokenRepo := repository.NewBotTokenRepository(db)
 	botSvc := service.NewBotService(userRepo, botTokenRepo)
 
 	// 后端插件系统：多组件注册 + 可选 side server
-	pluginConfigRepo := repository.NewPluginConfigRepository(repository.DB)
-	pluginHost := plugin.NewHost(repository.DB, cfg, pluginConfigRepo)
+	pluginConfigRepo := repository.NewPluginConfigRepository(db)
+	pluginHost := plugin.NewHost(db, cfg, pluginConfigRepo)
 	pluginReg := plugin.NewRegistry(pluginHost)
 	// 注册二进制内嵌的基础插件（bot-base 等）
 	if err := builtin.RegisterAll(pluginReg); err != nil {
@@ -185,7 +184,6 @@ func StartGin(env EnvEnum) error {
 		logger.WithComponent("HTTP").Warnf("set trusted proxies failed: %v", err)
 	}
 	r.Use(middleware.RequestID(), logger.GinRecovery(), logger.GinLogger(), middleware.CORS(strings.Split(cfg.CORSOrigin, ",")))
-	middleware.SetTokenVersionChecker(authSvc)
 
 	wsFanout := ws.NewFanout()
 	wsHandler := ws.NewHandlerRegistry()
@@ -215,16 +213,57 @@ func StartGin(env EnvEnum) error {
 		return fmt.Errorf("failed to init event bus: %w", err)
 	}
 
-	signalHub := signal.NewHub(roomSvc, muteSvc, userSvc, permSvc)
-	signalHub.SetEventBus(eventBus)
-	signalHub.SetStateNotifier(eventBus)
 	permSvc.SetEventBus(eventBus)
 	messageSvc.SetEventBus(eventBus)
-	signalHub.SetMessageService(messageSvc)
 	var natsConn *nats.Conn
 	instanceID := eventBus.InstanceID()
 	if nb, ok := eventBus.(*bus.NATSBus); ok {
 		natsConn = nb.Conn()
+	}
+
+	// membership KV: redis → nats → none (STATE_STORE=auto default)
+	var redisClient *goredis.Client
+	if redis.IsConnected() {
+		redisClient = redis.Client()
+	}
+	store, backend, err := bus.ResolveMembershipStore(bus.ResolveMembershipConfig{
+		Mode:   cfg.StateStore,
+		Prefix: cfg.NATSSubjectPrefix,
+		Redis:  redisClient,
+		NATS:   natsConn,
+	})
+	if err != nil {
+		logger.WithComponent("StateStore").Warnf("unavailable mode=%s: %v", cfg.StateStore, err)
+	} else if store != nil {
+		logger.WithComponent("StateStore").Infof("ready backend=%s instance=%s", backend, instanceID)
+	} else {
+		logger.WithComponent("StateStore").Info("backend=none (local membership only)")
+	}
+
+	var streamResolver signal.StreamNameResolver
+	if snr, ok := sfuProvider.(signal.StreamNameResolver); ok {
+		if sc, ok2 := sfuProvider.(interface{ SupportsStream() bool }); !ok2 || sc.SupportsStream() {
+			streamResolver = snr
+		}
+	}
+	conversationSvc := service.NewConversationService(conversationRepo, messageRepo)
+	conversationSvc.SetEventBus(eventBus)
+	signalHub := signal.NewHubWithOptions(roomSvc, muteSvc, userSvc, permSvc, signal.HubOptions{
+		Fanout:             wsFanout,
+		EventBus:           eventBus,
+		SFUProvider:        sfuProvider,
+		StreamResolver:     streamResolver,
+		MessageSender:      messageSvc,
+		ConversationSender: conversationSvc,
+		DomainChecker:      domainSvc.IsMember,
+		MembershipStore:    store,
+		InstanceID:         instanceID,
+		StateNotifier:      eventBus,
+	})
+	if store != nil {
+		signalHub.StartMembershipHeartbeat()
+	}
+	if nb, ok := eventBus.(*bus.NATSBus); ok {
 		nb.SetRemoteHook(func(event string, payload interface{}) {
 			if event == cluster.EventControlCommand {
 				var cmd cluster.ControlCommand
@@ -246,29 +285,6 @@ func StartGin(env EnvEnum) error {
 			}
 			signalHub.HandleRemoteEvent(event, payload)
 		})
-	}
-
-	// membership KV: redis → nats → none (STATE_STORE=auto default)
-	var redisClient *goredis.Client
-	if redis.IsConnected() {
-		redisClient = redis.Client
-	}
-	store, backend, err := bus.ResolveMembershipStore(bus.ResolveMembershipConfig{
-		Mode:   cfg.StateStore,
-		Prefix: cfg.NATSSubjectPrefix,
-		Redis:  redisClient,
-		NATS:   natsConn,
-	})
-	if err != nil {
-		logger.WithComponent("StateStore").Warnf("unavailable mode=%s: %v", cfg.StateStore, err)
-	} else if store != nil {
-		signalHub.SetMembershipStore(store, instanceID)
-		logger.WithComponent("StateStore").Infof("ready backend=%s instance=%s", backend, instanceID)
-	} else {
-		logger.WithComponent("StateStore").Info("backend=none (local membership only)")
-	}
-	if store != nil {
-		signalHub.StartMembershipHeartbeat()
 	}
 
 	// mute rule KV for degraded media mute (Agora kicking-rule ids): redis → nats → memory
@@ -310,12 +326,6 @@ func StartGin(env EnvEnum) error {
 			logger.WithComponent("JobQueue").Warnf("unavailable: %v", err)
 		} else {
 			jobQueue = q
-		}
-	}
-	signalHub.SetSFU(sfuProvider)
-	if snr, ok := sfuProvider.(signal.StreamNameResolver); ok {
-		if sc, ok2 := sfuProvider.(interface{ SupportsStream() bool }); !ok2 || sc.SupportsStream() {
-			signalHub.SetStreamResolver(snr)
 		}
 	}
 	// 注入 Hub room 聚合视图给 SRS 等无原生 room 维度的 provider（pkg.RoomRegistrySetter）。
@@ -366,9 +376,9 @@ func StartGin(env EnvEnum) error {
 	userGroupH := handler.NewUserGroupHandler(userGroupSvc, userSvc)
 	oauthH := handler.NewOAuthHandler(oauthSvc)
 	roleH := handler.NewRoleHandler(roleSvc)
-	clusterSvc := service.NewClusterService(repository.NewClusterNodeRepository(repository.DB), repository.NewServerAssignmentRepository(repository.DB))
+	clusterSvc := service.NewClusterService(repository.NewClusterNodeRepository(db), repository.NewServerAssignmentRepository(db))
 	clusterSvc.SetNotifier(eventBus)
-	clusterSvc.SetServerRepo(repository.NewDomainRepository(repository.DB))
+	clusterSvc.SetServerRepo(repository.NewDomainRepository(db))
 	signalH.SetClusterResolver(func(domainUUID string) (string, error) {
 		_, node, err := clusterSvc.ResolveServer(domainUUID)
 		if err != nil {
@@ -379,8 +389,6 @@ func StartGin(env EnvEnum) error {
 		}
 		return node.AdvertiseURL, nil
 	})
-	middleware.SetDomainChecker(domainSvc.IsMember)
-	signalHub.SetDomainChecker(domainSvc.IsMember)
 	roomH := handler.NewRoomHandler(roomSvc, permSvc, domainSvc)
 	roomH.SetRoomListBroadcaster(signalHub)
 	roomH.SetControlPublisher(clusterSvc)
@@ -400,80 +408,31 @@ func StartGin(env EnvEnum) error {
 			})
 		}
 	})
-	conversationSvc := service.NewConversationService(conversationRepo, messageRepo)
-	conversationSvc.SetEventBus(eventBus)
-	signalHub.SetConversationService(conversationSvc)
 	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc, signalHub)
 	storageH := handler.NewStorageHandler(storageSvc)
 	botH := handler.NewBotHandler(botSvc)
-	middleware.SetBotTokenChecker(botSvc)
 	pluginH := handler.NewPluginHandler(pluginSvc)
+	middleware.Configure(middleware.Dependencies{
+		PermissionChecker:   permSvc,
+		TokenVersionChecker: authSvc,
+		BotTokenChecker:     botSvc,
+		DomainChecker:       domainSvc.IsMember,
+		BlacklistChecker:    redis.IsBlacklistedErr,
+	})
 
 	var clusterHandler *handler.ClusterHandler
 	var clusterStop func()
 	var agentLeaderLock *cluster.NATSLeaderLock
 	var stopLeaderRenew func()
-	var localClusterNodeID string
-	localNodeUUID := ""
-	degradedToWorker := false
-	if cfg.IsAgent() {
-		acquireCtx, cancel := context.WithTimeout(context.Background(), agentLeaderAcquireTimeout)
-		leaderLock, leader, lockErr := acquireAgentLeader(acquireCtx, natsConn, cfg.NATSSubjectPrefix, instanceID)
-		cancel()
-		switch {
-		case lockErr != nil:
-			logger.WithComponent("Cluster").Warnf("agent leader lock unavailable; degraded-to-worker instance=%s role=%s err=%v", instanceID, cfg.ClusterRole, lockErr)
-			degradedToWorker = true
-		case !leader:
-			logger.WithComponent("Cluster").Warnf("agent leader lock held by another instance; degraded-to-worker instance=%s role=%s", instanceID, cfg.ClusterRole)
-			degradedToWorker = true
-		default:
-			agentLeaderLock = leaderLock
-			renewCtx, renewCancel := context.WithCancel(context.Background())
-			renewInterval := cfg.ClusterHeartbeatIntervalDuration() / 2
-			if renewInterval > 2*time.Second {
-				renewInterval = 2 * time.Second
-			}
-			renewDone, renewLost := leaderLock.RenewLoop(renewCtx, instanceID, renewInterval)
-			go func() {
-				select {
-				case <-renewLost:
-					// 锁丢失意味着另一个 Agent 可能已接管：继续保留写面会形成双写，
-					// 直接触发优雅退出，由编排重启并重新竞争。
-					logger.WithComponent("Cluster").Errorf("agent leader lock lost; shutting down to avoid split brain instance=%s", instanceID)
-					_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
-				case <-renewDone:
-				}
-			}()
-			stopLeaderRenew = func() {
-				renewCancel()
-				<-renewDone
-			}
-			logger.WithComponent("Cluster").Infof("agent leader lock acquired instance=%s role=%s", instanceID, cfg.ClusterRole)
-		}
-	}
-	if degradedToWorker {
-		cfg.ClusterRole = model.ClusterRoleWorker
-	}
-	if cfg.IsAgent() {
-		clusterHandler = handler.NewClusterHandler(clusterSvc)
-	}
-	switch cfg.ClusterRole {
-	case "all":
-		localNodeUUID, clusterStop, err = startLocalClusterRuntime(cfg, clusterSvc, signalHub, eventBus.InstanceID(), sfuProvider)
-	case "worker":
-		if degradedToWorker && (cfg.ClusterAgentURL == "" || cfg.ClusterAgentToken == "") {
-			localNodeUUID, clusterStop, err = startDegradedLocalWorkerRuntime(cfg, signalHub, eventBus.InstanceID(), sfuProvider)
-		} else {
-			localNodeUUID, clusterStop, err = startWorkerClusterRuntime(cfg, signalHub, sfuProvider)
-		}
-	case "agent":
-		clusterStop, err = startAgentClusterRuntime(cfg, clusterSvc)
-	}
+	var localNodeUUID string
+	var degradedToWorker bool
+	clusterHandler, clusterStop, agentLeaderLock, stopLeaderRenew, localNodeUUID, degradedToWorker, err = startClusterRuntimes(
+		cfg, db, natsConn, instanceID, clusterSvc, signalHub, sfuProvider,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to start cluster runtime: %w", err)
 	}
-	localClusterNodeID = localNodeUUID
+	localClusterNodeID := localNodeUUID
 
 	startJobConsumers(cfg, jobQueue, eventBus.InstanceID(), signalHub, messageSvc, conversationSvc, clusterSvc, localClusterNodeID)
 
@@ -508,10 +467,10 @@ func StartGin(env EnvEnum) error {
 	}
 	conversationH := handler.NewConversationHandler(conversationSvc)
 
-	monitorH := handler.NewMonitorHandler(signalHub, cfg, eventBus, clusterSvc)
+	monitorH := handler.NewMonitorHandler(signalHub, cfg, newServerInfraStats(eventBus), clusterSvc)
 
 	// Prometheus /metrics：业务指标快照 + HTTP 请求指标，可选用 METRICS_TOKEN 保护。
-	metricsSrv := metrics.New(monitorH.PrometheusSnapshot)
+	metricsSrv := metrics.New(func() metrics.Snapshot { return toMetricsSnapshot(monitorH.Collect()) })
 	r.Use(metricsSrv.Middleware())
 	metricsHandler := metrics.RequireToken(metricsSrv.Handler(), cfg.MetricsToken)
 	r.GET("/metrics", gin.WrapH(metricsHandler))
@@ -539,6 +498,13 @@ func StartGin(env EnvEnum) error {
 	}
 
 	router.SetupRoutes(r, &router.Handlers{
+		Config: cfg,
+		ReadyCheck: func() error {
+			if _, err := db.DB(); err != nil {
+				return err
+			}
+			return nil
+		},
 		Auth:         authH,
 		User:         userH,
 		UserGroup:    userGroupH,
@@ -585,98 +551,20 @@ func StartGin(env EnvEnum) error {
 	}
 
 	// 优雅关闭：监听系统信号，先关 WebSocket 连接再关 HTTP
-	go func() {
-		quit := make(chan os.Signal, 1)
-		ossignal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-		<-quit
-		logger.WithComponent("Server").Info("shutting down...")
-
-		// 1) stop accepting HTTP first so in-flight handlers can still emit signal
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(ctx); err != nil {
-			logger.WithComponent("HTTP").Errorf("shutdown error: %v", err)
-		}
-
-		// 2) stop membership heartbeat, then close websocket connections
-		signalHub.StopMembershipHeartbeat()
-		if wsUpgrader != nil && wsUpgrader.Fanout() != nil {
-			wsUpgrader.Fanout().CloseAll()
-			logger.WithComponent("WS").Info("websocket connections closed")
-		}
-
-		pluginReg.StopAll(context.Background())
-		pluginReg.StopAll(ctx)
-		logger.WithComponent("Plugin").Info("plugins stopped")
-
-		if clusterStop != nil {
-			clusterStop()
-			logger.WithComponent("Cluster").Info("cluster runtime stopped")
-		}
-		if stopLeaderRenew != nil {
-			stopLeaderRenew()
-		}
-		if agentLeaderLock != nil {
-			if err := agentLeaderLock.Release(instanceID); err != nil {
-				logger.WithComponent("Cluster").Warnf("release agent leader lock failed: %v", err)
-			}
-			logger.WithComponent("Cluster").Info("agent leader lock released")
-		}
-
-		// 3) close event bus last
-		redis.StopKeyRotationLoop()
-		logger.WithComponent("EventBus").Info("closing event bus")
-		closeEventBus()
-		logger.WithComponent("EventBus").Info("closed")
-	}()
+	go runGracefulShutdown(shutdownDeps{
+		srv:             srv,
+		signalHub:       signalHub,
+		wsUpgrader:      wsUpgrader,
+		pluginReg:       pluginReg,
+		clusterStop:     clusterStop,
+		stopLeaderRenew: stopLeaderRenew,
+		agentLeaderLock: agentLeaderLock,
+		instanceID:      instanceID,
+		closeEventBus:   closeEventBus,
+	})
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.WithComponent("HTTP").Fatalf("listen error: %v", err)
 	}
 	return nil
-}
-
-func startJobConsumers(cfg *config.Config, q *bus.JobQueue, instanceID string, hub *signal.Hub, messageSvc *service.MessageService, conversationSvc *service.ConversationService, clusterSvc *service.ClusterService, localNodeID string) {
-	if q == nil {
-		return
-	}
-	hub.SetCleanupPublisher(q)
-	messageSvc.SetJobQueue(q)
-	messageSvc.SetSyncWriteAllowed(cfg.IsAgent())
-	conversationSvc.SetJobQueue(q)
-	conversationSvc.SetSyncWriteAllowed(cfg.IsAgent())
-	clusterSvc.SetControlQueue(q)
-
-	handler := func(job bus.JobEnvelope) error {
-		if job.Type == "cluster.control" {
-			var cmd cluster.ControlCommand
-			if err := json.Unmarshal(job.Payload, &cmd); err != nil {
-				return err
-			}
-			if cmd.NodeID != "" && cmd.NodeID != localNodeID {
-				// 定向命令不属于本节点：确认跳过，避免无限重投。
-				return nil
-			}
-		}
-		return jobs.Handle(job, hub, hub, messageSvc, conversationSvc, hub)
-	}
-
-	switch {
-	case q.RoleAware() && cfg.ClusterRole == model.ClusterRoleWorker:
-		if _, err := q.ConsumeRuntime(instanceID, handler); err != nil {
-			logger.WithComponent("JobQueue").Errorf("runtime consumer failed: %v", err)
-			return
-		}
-	case q.RoleAware() && cfg.ClusterRole == model.ClusterRoleAgent:
-		if _, err := q.ConsumeChat(instanceID, handler); err != nil {
-			logger.WithComponent("JobQueue").Errorf("chat consumer failed: %v", err)
-			return
-		}
-	default:
-		if _, err := q.Consume(instanceID, handler); err != nil {
-			logger.WithComponent("JobQueue").Errorf("consumer failed: %v", err)
-			return
-		}
-	}
-	logger.WithComponent("JobQueue").Infof("consumer started instance=%s role=%s", instanceID, cfg.ClusterRole)
 }

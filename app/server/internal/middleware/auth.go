@@ -3,7 +3,6 @@ package middleware
 import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
-	"GOSpeak/internal/redis"
 	"net/http"
 	"strings"
 	"sync"
@@ -27,11 +26,39 @@ type botTokenChecker interface {
 	IsBotTokenValid(userUUID string) (bool, error)
 }
 
-var (
-	permChecker       permissionChecker
-	tokenVersionCheck tokenVersionChecker
-	botTokenCheck     botTokenChecker
-)
+// BlacklistChecker 校验 token 是否已吊销，nil 时按未黑名单放行（与未连接 Redis 的 fail-open 语义一致）。
+type BlacklistChecker func(key string) (bool, error)
+
+// Dependencies 聚合 HTTP/WS 鉴权所需的业务实现，由组合根一次注入。
+type Dependencies struct {
+	PermissionChecker   permissionChecker
+	TokenVersionChecker tokenVersionChecker
+	BotTokenChecker     botTokenChecker
+	DomainChecker       func(domainUUID, userUUID string) bool
+	BlacklistChecker    BlacklistChecker
+}
+
+// Auth 持有不可变依赖快照，生产路径由 Configure 一次注入。
+type Auth struct {
+	deps Dependencies
+}
+
+var authMu sync.RWMutex
+
+var defaultAuth = &Auth{}
+
+// Configure 原子替换默认鉴权依赖，生产启动时调用一次。
+func Configure(deps Dependencies) {
+	authMu.Lock()
+	defaultAuth = &Auth{deps: deps}
+	authMu.Unlock()
+}
+
+func currentAuth() *Auth {
+	authMu.RLock()
+	defer authMu.RUnlock()
+	return defaultAuth
+}
 
 // tokenVersionCacheTTL 缩短 DB 抖动对每个请求的影响；改密/换角色后最多延迟一个 TTL 生效。
 const tokenVersionCacheTTL = 500 * time.Millisecond
@@ -48,17 +75,23 @@ var tokenVersionCache = struct {
 
 // SetPermissionChecker 注入权限查询实现（启动时调用）。
 func SetPermissionChecker(c permissionChecker) {
-	permChecker = c
+	authMu.Lock()
+	defaultAuth.deps.PermissionChecker = c
+	authMu.Unlock()
 }
 
 // SetTokenVersionChecker 注入 token 版本查询实现（启动时调用）。
 func SetTokenVersionChecker(tvc tokenVersionChecker) {
-	tokenVersionCheck = tvc
+	authMu.Lock()
+	defaultAuth.deps.TokenVersionChecker = tvc
+	authMu.Unlock()
 }
 
 // SetBotTokenChecker 注入 Bot token 吊销/过期校验实现（启动时调用）。
 func SetBotTokenChecker(btc botTokenChecker) {
-	botTokenCheck = btc
+	authMu.Lock()
+	defaultAuth.deps.BotTokenChecker = btc
+	authMu.Unlock()
 }
 
 // VerifyToken 校验 HTTP 可用的 access/bot token。
@@ -75,10 +108,12 @@ func VerifyWSTicket(tokenStr string) (*pkg.Claims, pkg.ErrCode) {
 	if pkg.WSTicketExpired(claims) {
 		return nil, pkg.TOKEN_EXPIRED
 	}
-	if revoked, err := redis.IsBlacklistedErr("ws:" + claims.UserUUID); err != nil {
-		return nil, pkg.INTERNAL_ERROR
-	} else if revoked {
-		return nil, pkg.TOKEN_REVOKED
+	if checker := currentAuth().deps.BlacklistChecker; checker != nil {
+		if revoked, err := checker("ws:" + claims.UserUUID); err != nil {
+			return nil, pkg.INTERNAL_ERROR
+		} else if revoked {
+			return nil, pkg.TOKEN_REVOKED
+		}
 	}
 	return claims, pkg.SUCCESS
 }
@@ -97,12 +132,15 @@ func verifyToken(tokenStr string, allowedTypes ...string) (*pkg.Claims, pkg.ErrC
 	if pkg.IsTokenExpired(claims) {
 		return nil, pkg.TOKEN_EXPIRED
 	}
-	if revoked, err := redis.IsBlacklistedErr(claims.ID); err != nil {
-		return nil, pkg.INTERNAL_ERROR
-	} else if revoked {
-		return nil, pkg.TOKEN_REVOKED
+	a := currentAuth()
+	if checker := a.deps.BlacklistChecker; checker != nil {
+		if revoked, err := checker(claims.ID); err != nil {
+			return nil, pkg.INTERNAL_ERROR
+		} else if revoked {
+			return nil, pkg.TOKEN_REVOKED
+		}
 	}
-	if tokenVersionCheck != nil && claims.UserUUID != "" {
+	if a.deps.TokenVersionChecker != nil && claims.UserUUID != "" {
 		currentVersion, err := cachedTokenVersion(claims.UserUUID)
 		if err != nil {
 			return nil, pkg.INTERNAL_ERROR
@@ -112,8 +150,8 @@ func verifyToken(tokenStr string, allowedTypes ...string) (*pkg.Claims, pkg.ErrC
 		}
 	}
 	// Bot token 除 TokenVersion 外还必须通过 DB Revoked/ExpiresAt 校验。
-	if claims.TokenType == pkg.BotTokenType && botTokenCheck != nil {
-		valid, err := botTokenCheck.IsBotTokenValid(claims.UserUUID)
+	if claims.TokenType == pkg.BotTokenType && a.deps.BotTokenChecker != nil {
+		valid, err := a.deps.BotTokenChecker.IsBotTokenValid(claims.UserUUID)
 		if err != nil {
 			return nil, pkg.INTERNAL_ERROR
 		}
@@ -213,7 +251,7 @@ func permissionGranted(c *gin.Context, permCode string) bool {
 	}
 	role, _ := c.Get("role")
 	roleStr, _ := role.(string)
-	return PermissionGranted(claims, roleStr, permCode, permChecker)
+	return PermissionGranted(claims, roleStr, permCode, currentAuth().deps.PermissionChecker)
 }
 
 // PermissionGranted 统一权限判定：
@@ -356,7 +394,7 @@ func cachedTokenVersion(userUUID string) (uint, error) {
 	}
 	tokenVersionCache.Unlock()
 
-	version, err := tokenVersionCheck.GetTokenVersionByUUID(userUUID)
+	version, err := currentAuth().deps.TokenVersionChecker.GetTokenVersionByUUID(userUUID)
 	if err != nil {
 		return 0, err
 	}

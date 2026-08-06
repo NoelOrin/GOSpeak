@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-
-	"gorm.io/gorm"
 )
 
 // ─── 公共方法 ───
@@ -85,7 +83,7 @@ func (h *Hub) CheckRoomLimit(domainUUID, roomName string) (bool, uint, int, erro
 	switch {
 	case err == nil && dbRoom != nil:
 		limit = dbRoom.Limit
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, pkg.ErrNotFound):
 		// 临时房间：继续用共享元数据兜底，not-found 不是错误。
 	default:
 		// DB 故障时 fail-closed：调用方不得按“无限制”放行。

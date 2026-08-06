@@ -185,6 +185,9 @@ importers:
 
   packages/bot:
     dependencies:
+      '@gospeak/sfu-client':
+        specifier: workspace:*
+        version: link:../sfu-client
       '@livekit/rtc-node':
         specifier: ^0.13.33
         version: 0.13.33

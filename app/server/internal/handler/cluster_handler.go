@@ -15,9 +15,10 @@ import (
 // ClusterHandler 提供集群控制面 HTTP API。
 type ClusterHandler struct {
 	clusterSvc *service.ClusterService
+	cfg        *config.Config
 }
 
-func NewClusterHandler(clusterSvc *service.ClusterService) *ClusterHandler {
+func NewClusterHandler(clusterSvc *service.ClusterService, cfg *config.Config) *ClusterHandler {
 	return &ClusterHandler{clusterSvc: clusterSvc}
 }
 
@@ -128,8 +129,8 @@ func (h *ClusterHandler) Undrain(c *gin.Context) {
 		return
 	}
 	timeout := time.Duration(0)
-	if cfg := config.Current(); cfg != nil {
-		timeout = cfg.ClusterHeartbeatTimeoutDuration()
+	if h.cfg != nil {
+		timeout = h.cfg.ClusterHeartbeatTimeoutDuration()
 	}
 	if err := h.clusterSvc.UndrainNode(req.NodeID, timeout); err != nil {
 		pkg.HandleError(c, err)

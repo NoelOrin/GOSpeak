@@ -5,7 +5,6 @@ import (
 	"log"
 
 	"GOSpeak/internal/bus"
-	"GOSpeak/internal/signal"
 
 	"GOSpeak/internal/cluster"
 )
@@ -31,39 +30,49 @@ type ClusterCommandExecutor interface {
 	HandleClusterCommand(cmd cluster.ControlCommand) error
 }
 
+// Deps aggregates the job-side capabilities in one struct so callers do not
+// pass the same Hub three times with positional parameters.
+type Deps struct {
+	Hub     StreamRegistrar
+	Cleaner SFUCleaner
+	Chat    ChatPersister
+	Private PrivateChatPersister
+	Control ClusterCommandExecutor
+}
+
 // Handle dispatches a JobEnvelope to the appropriate handler.
-func Handle(job bus.JobEnvelope, hub StreamRegistrar, cleaner SFUCleaner, chat ChatPersister, private PrivateChatPersister, control ClusterCommandExecutor) error {
+func Handle(job bus.JobEnvelope, deps Deps) error {
 	switch job.Type {
 	case "srs":
-		return handleSRS(job.Payload, hub)
+		return handleSRS(job.Payload, deps.Hub)
 	case "livekit":
-		return handleLiveKit(job.Payload, cleaner)
+		return handleLiveKit(job.Payload, deps.Cleaner)
 	case "sfu_cleanup":
-		return handleCleanup(job.Payload, cleaner)
+		return handleCleanup(job.Payload, deps.Cleaner)
 	case "chat.persist":
-		if chat == nil {
+		if deps.Chat == nil {
 			return nil
 		}
-		return chat.PersistFromJob(job.Payload)
+		return deps.Chat.PersistFromJob(job.Payload)
 	case "chat.mutate":
-		if chat == nil {
+		if deps.Chat == nil {
 			return nil
 		}
-		return chat.MutateFromJob(job.Payload)
+		return deps.Chat.MutateFromJob(job.Payload)
 	case "chat.private.persist":
-		if private == nil {
+		if deps.Private == nil {
 			return nil
 		}
-		return private.PersistPrivateFromJob(job.Payload)
+		return deps.Private.PersistPrivateFromJob(job.Payload)
 	case "cluster.control":
-		if control == nil {
+		if deps.Control == nil {
 			return nil
 		}
 		var cmd cluster.ControlCommand
 		if err := json.Unmarshal(job.Payload, &cmd); err != nil {
 			return err
 		}
-		return control.HandleClusterCommand(cmd)
+		return deps.Control.HandleClusterCommand(cmd)
 	default:
 		log.Printf("[Jobs] ignore unknown type=%s", job.Type)
 		return nil
@@ -133,6 +142,3 @@ func handleCleanup(raw json.RawMessage, cleaner SFUCleaner) error {
 	cleaner.CleanupParticipant(p.Room, p.Identity, p.DeleteRoom)
 	return nil
 }
-
-// Ensure signal.Hub can be used without import cycle helpers elsewhere.
-var _ StreamRegistrar = (*signal.Hub)(nil)

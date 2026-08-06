@@ -1,5 +1,10 @@
 package pkg
 
+import "errors"
+
+// ErrNotFound 是跨层通用的“资源不存在”哨兵错误，避免上层依赖 ORM 具体错误。
+var ErrNotFound = errors.New("resource not found")
+
 // ErrCode 业务状态码
 // 0         = 成功
 // 1xxx      = 认证相关错误

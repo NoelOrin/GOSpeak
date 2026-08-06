@@ -77,19 +77,20 @@ func (s *stubAuthBackend) HistoryKeys() []string { return append([]string(nil), 
 func (s *stubAuthBackend) Backend() string       { return "stub" }
 
 func TestGetSigningKey_DevUsesStaticEvenWithAuthBackend(t *testing.T) {
-	prevClient := Client
+	prevClient := client
 	prevAuth := secondaryAuth
 	prevProd := production
+	prevJwtCfg := jwtCfg
 	t.Cleanup(func() {
-		Client = prevClient
+		client = prevClient
 		secondaryAuth = prevAuth
 		production = prevProd
-		config.SetCurrent(nil)
+		jwtCfg = prevJwtCfg
 	})
 
-	Client = nil
+	client = nil
 	production = false
-	config.SetCurrent(&config.Config{JWTKey: "dev-static-key", JWTKeyTTL: "24h"})
+	jwtCfg = &config.Config{JWTKey: "dev-static-key", JWTKeyTTL: "24h"}
 
 	backend := &stubAuthBackend{key: "random-from-nats"}
 	SetAuthBackend(backend)
@@ -116,17 +117,17 @@ func TestGetSigningKey_DevUsesStaticEvenWithAuthBackend(t *testing.T) {
 }
 
 func TestGetSigningKey_ProdUsesAuthBackend(t *testing.T) {
-	prevClient := Client
+	prevClient := client
 	prevAuth := secondaryAuth
 	prevProd := production
 	t.Cleanup(func() {
-		Client = prevClient
+		client = prevClient
 		secondaryAuth = prevAuth
 		production = prevProd
 		config.SetCurrent(nil)
 	})
 
-	Client = nil
+	client = nil
 	production = true
 	config.SetCurrent(&config.Config{JWTKey: "prod-static-fallback", JWTKeyTTL: "24h"})
 
@@ -140,17 +141,17 @@ func TestGetSigningKey_ProdUsesAuthBackend(t *testing.T) {
 }
 
 func TestGetSigningKey_ProdFirstStartReReadsWinner(t *testing.T) {
-	prevClient := Client
+	prevClient := client
 	prevAuth := secondaryAuth
 	prevProd := production
 	t.Cleanup(func() {
-		Client = prevClient
+		client = prevClient
 		secondaryAuth = prevAuth
 		production = prevProd
 		config.SetCurrent(nil)
 	})
 
-	Client = nil
+	client = nil
 	production = true
 	config.SetCurrent(&config.Config{JWTKey: "prod-static-fallback", JWTKeyTTL: "24h"})
 
@@ -167,17 +168,17 @@ func TestGetSigningKey_ProdFirstStartReReadsWinner(t *testing.T) {
 }
 
 func TestRotateSigningKey_UsesUpdateSigningKey(t *testing.T) {
-	prevClient := Client
+	prevClient := client
 	prevAuth := secondaryAuth
 	prevProd := production
 	t.Cleanup(func() {
-		Client = prevClient
+		client = prevClient
 		secondaryAuth = prevAuth
 		production = prevProd
 		config.SetCurrent(nil)
 	})
 
-	Client = nil
+	client = nil
 	production = true
 	config.SetCurrent(&config.Config{JWTKey: "prod-static-fallback", JWTKeyTTL: "24h"})
 
@@ -197,11 +198,11 @@ func TestRotateSigningKey_UsesUpdateSigningKey(t *testing.T) {
 }
 
 func TestGetSigningKey_ConcurrentFirstUseCreatesOneKey(t *testing.T) {
-	prevClient := Client
+	prevClient := client
 	prevAuth := secondaryAuth
 	prevProd := production
 	t.Cleanup(func() {
-		Client = prevClient
+		client = prevClient
 		secondaryAuth = prevAuth
 		production = prevProd
 		config.SetCurrent(nil)
@@ -212,7 +213,7 @@ func TestGetSigningKey_ConcurrentFirstUseCreatesOneKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(mr.Close)
-	Client = goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
+	client = goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
 	production = true
 	config.SetCurrent(&config.Config{JWTKeyTTL: "24h"})
 
@@ -248,17 +249,17 @@ func TestGetSigningKey_ConcurrentFirstUseCreatesOneKey(t *testing.T) {
 }
 
 func TestRotateSigningKey_KeepsOldKeyOnUpdateFailure(t *testing.T) {
-	prevClient := Client
+	prevClient := client
 	prevAuth := secondaryAuth
 	prevProd := production
 	t.Cleanup(func() {
-		Client = prevClient
+		client = prevClient
 		secondaryAuth = prevAuth
 		production = prevProd
 		config.SetCurrent(nil)
 	})
 
-	Client = nil
+	client = nil
 	production = true
 	config.SetCurrent(&config.Config{JWTKey: "prod-static-fallback", JWTKeyTTL: "24h"})
 
@@ -281,14 +282,14 @@ func TestRotateSigningKey_KeepsOldKeyOnUpdateFailure(t *testing.T) {
 }
 
 func TestIsBlacklisted_SecondaryBackendErrorIsFailOpen(t *testing.T) {
-	prevClient := Client
+	prevClient := client
 	prevAuth := secondaryAuth
 	t.Cleanup(func() {
-		Client = prevClient
+		client = prevClient
 		secondaryAuth = prevAuth
 	})
 
-	Client = nil
+	client = nil
 	backend := &stubAuthBackend{blacklistErr: errors.New("kv down")}
 	SetAuthBackend(backend)
 

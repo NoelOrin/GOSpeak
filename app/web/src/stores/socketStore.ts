@@ -11,10 +11,18 @@ import { bindServerEvents } from "@/socket/socketEvents";
 import { createProviderReloadHandler } from "@/socket/providerReload";
 import { upsertRoomMembersFromAck } from "@/socket/roomState";
 import { createTabLock } from "@/socket/tabLock";
-import { chatStore } from "@/stores/chatStore";
+import type { PrivateMessageDTO } from "@/protocol/conversation";
+import { setSpeakingIdentities } from "@/handler_audio/speakingStore";
 import userStore from "@/stores/userStore";
 import domainStore from "@/stores/domainStore";
 
+// 私聊事件通过 chatStore 注册回调消费，避免两个 store 模块互相 import 形成环依赖。
+let privateNewHandler: ((dto: PrivateMessageDTO) => void) | null = null;
+export function setPrivateNewHandler(
+	handler: (dto: PrivateMessageDTO) => void,
+) {
+	privateNewHandler = handler;
+}
 export { EVENTS } from "@/socket/events";
 
 // 2. tabLock / providerReload helpers
@@ -194,7 +202,8 @@ export const socketStore = createRoot(() => {
 						for (const listener of kickedListeners) listener();
 					},
 					handleProviderChanged,
-					handlePrivateNew: (dto) => chatStore.handlePrivateNew(dto),
+					handlePrivateNew: (dto) => privateNewHandler?.(dto),
+					setSpeakingIdentities,
 					currentUserName: () => userStore.user()?.name ?? "",
 					currentUserID: () => userStore.user()?.id,
 				});

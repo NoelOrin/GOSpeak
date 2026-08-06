@@ -1,14 +1,12 @@
 package signal
 
 import (
-	"fmt"
-
-	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
 	message "GOSpeak/internal/pkg/message"
 	"GOSpeak/internal/ws"
+	"fmt"
 )
 
 // messageSender abstracts message operations for the signal layer.
@@ -99,7 +97,7 @@ func (h *Hub) checkMessagePerm(c ws.ClientMessenger) string {
 			role = user.Role
 		}
 	}
-	if !middleware.PermissionGranted(claims, role, permcode.PermMessageSend, h.permChecker) {
+	if !permissionGranted(claims, role, permcode.PermMessageSend, h.permChecker) {
 		return `{"error":"permission denied"}`
 	}
 	return ""

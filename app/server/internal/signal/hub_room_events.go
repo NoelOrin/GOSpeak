@@ -1,7 +1,6 @@
 package signal
 
 import (
-	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/ws"
 	"log"
@@ -167,7 +166,7 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 		}
 		role = callerUser.Role
 	}
-	if !middleware.PermissionGranted(claims, role, permcode.PermSignalKick, h.permChecker) {
+	if !permissionGranted(claims, role, permcode.PermSignalKick, h.permChecker) {
 		return
 	}
 

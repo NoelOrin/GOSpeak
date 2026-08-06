@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"sync"
 
 	"GOSpeak/internal/pkg"
 
@@ -13,23 +12,17 @@ import (
 
 // domainChecker 在启动时通过 SetDomainChecker 注入，由 DomainService.IsMember 实现。
 // 使用 RWMutex 保护，避免并发测试与生产请求之间的 data race。
-var (
-	domainCheckerMu sync.RWMutex
-	domainChecker   func(domainUUID, userUUID string) bool
-)
 
 // SetDomainChecker 注入 Domain 成员校验函数。
 func SetDomainChecker(checker func(domainUUID, userUUID string) bool) {
-	domainCheckerMu.Lock()
-	defer domainCheckerMu.Unlock()
-	domainChecker = checker
+	authMu.Lock()
+	defaultAuth.deps.DomainChecker = checker
+	authMu.Unlock()
 }
 
 // getDomainChecker 返回当前的 Domain 成员校验函数（并发安全）。
 func getDomainChecker() func(domainUUID, userUUID string) bool {
-	domainCheckerMu.RLock()
-	defer domainCheckerMu.RUnlock()
-	return domainChecker
+	return currentAuth().deps.DomainChecker
 }
 
 // IsDomainMember 返回当前注入的 Domain 成员校验结果。未提供 domain_uuid 时放行；未接线 checker 时拒绝。

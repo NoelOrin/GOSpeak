@@ -235,7 +235,7 @@ func migrateDomainCUID2(db *gorm.DB) error {
 }
 
 func autoMigrate() error {
-	if err := DB.AutoMigrate(
+	if err := getDB().AutoMigrate(
 		&model.Role{},
 		&model.User{},
 		&model.Room{},
@@ -262,7 +262,7 @@ func autoMigrate() error {
 	); err != nil {
 		return err
 	}
-	return migrateConversationQueryIndexes(DB)
+	return migrateConversationQueryIndexes(getDB())
 }
 
 // migrateConversationQueryIndexes 确保会话列表游标查询依赖的表与复合索引存在。

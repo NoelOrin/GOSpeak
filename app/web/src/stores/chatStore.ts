@@ -10,6 +10,7 @@ import { listMessages } from "@/api/message";
 import { EVENTS } from "@/socket/events";
 import { socketStore } from "@/stores/socketStore";
 import userStore from "@/stores/userStore";
+import { setPrivateNewHandler } from "@/stores/socketStore";
 import type { MessageDTO } from "@/types/message";
 import { chatCache } from "@/utils/idb-cache";
 
@@ -684,6 +685,8 @@ export const chatStore = createRoot(() => {
 			// Best-effort
 		}
 	}
+
+	setPrivateNewHandler(handlePrivateNew);
 
 	return {
 		textRoom,

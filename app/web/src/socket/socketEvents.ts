@@ -1,8 +1,7 @@
 import type { SFUProvider } from "@gospeak/sfu-client/types";
 import type { Setter } from "solid-js";
 import { showToast } from "solid-notifications";
-import type { PrivateMessageDTO } from "@/api/conversation";
-import { setSpeakingIdentities } from "@/handler_audio/speakingStore";
+import type { PrivateMessageDTO } from "@/protocol/conversation";
 import { EVENTS } from "@/socket/events";
 import {
 	addCreatedRoom,
@@ -39,6 +38,7 @@ export interface SocketEventDeps {
 	setConnected: Setter<boolean>;
 	setSpeechRestricted: Setter<boolean>;
 	setSpeechRestrictionInfo: Setter<SpeechRestrictionInfo | null>;
+	setSpeakingIdentities: Setter<string[]>;
 	currentRoom: () => string | null;
 	currentDomainUUID: () => string | null;
 	emitActivity: (event: ActivityEvent) => void;
@@ -226,7 +226,7 @@ export function bindServerEvents(
 					(event.domain_uuid || "") !== (deps.currentDomainUUID() || ""))
 			)
 				return;
-			setSpeakingIdentities(event?.identities ?? []);
+			deps.setSpeakingIdentities(event?.identities ?? []);
 		},
 	);
 

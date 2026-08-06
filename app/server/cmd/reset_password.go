@@ -26,11 +26,12 @@ var resetPasswordCmd = &cobra.Command{
 			panic(fmt.Sprintf("load config: %v", err))
 		}
 
-		if err := repository.InitDB(cfg); err != nil {
+		db, err := repository.InitDB(cfg)
+		if err != nil {
 			panic(fmt.Sprintf("init db: %v", err))
 		}
 
-		userRepo := repository.NewUserRepository(repository.DB)
+		userRepo := repository.NewUserRepository(db)
 		user, err := userRepo.GetByName(username)
 		if err != nil {
 			panic(fmt.Sprintf("user %q not found: %v", username, err))
