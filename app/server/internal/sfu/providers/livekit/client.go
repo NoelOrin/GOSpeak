@@ -72,7 +72,9 @@ func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
 	if s.client == nil {
 		return nil, pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
 	}
-	resp, err := s.client.ListRooms(context.Background(), &livekit.ListRoomsRequest{})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, err := s.client.ListRooms(ctx, &livekit.ListRoomsRequest{})
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.SFU_ERROR, err.Error())
 	}

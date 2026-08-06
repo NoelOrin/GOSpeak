@@ -24,12 +24,13 @@ type InitConfig struct {
 }
 
 // Stats 供监控面板与测试。
+// FallbackFromExternal 不对外暴露：外部 NATS 探测失败是硬失败，
+// 该字段在真实初始化路径上永远为 false，保留只会造成监控误读。
 type Stats struct {
-	Mode                 string `json:"mode"`
-	Connected            bool   `json:"connected"`
-	InstanceID           string `json:"instance_id"`
-	FallbackFromExternal bool   `json:"fallback_from_external"`
-	DroppedPublish       uint64 `json:"dropped_publish"`
+	Mode           string `json:"mode"`
+	Connected      bool   `json:"connected"`
+	InstanceID     string `json:"instance_id"`
+	DroppedPublish uint64 `json:"dropped_publish"`
 }
 
 // Init 创建 EventBus。
@@ -122,7 +123,6 @@ func GetStats(b EventBus) Stats {
 		InstanceID: b.InstanceID(),
 	}
 	if nb, ok := b.(*NATSBus); ok {
-		st.FallbackFromExternal = nb.fallbackFromExternal
 		st.DroppedPublish = nb.DroppedPublishCount()
 	}
 	return st

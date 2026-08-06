@@ -559,3 +559,72 @@ func TestLivekitWebhook_InvalidJSON(t *testing.T) {
 		t.Fatalf("expected INVALID_PARAMS, got %d", resp.Code)
 	}
 }
+
+// ─── GetWSTicket Tests ───
+
+func setupWSTicketRouter(resolver func(domainUUID string) (string, error)) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	h := NewSignalHandler(service.NewSFUService(&mockSFU{}, nil))
+	h.SetClusterResolver(resolver)
+	r.Use(func(c *gin.Context) {
+		c.Set("claims", &pkg.Claims{
+			Username: "user-1", DisplayName: "User 1", UserUUID: "u-1",
+			Role: "user", TokenVersion: 1,
+		})
+		c.Next()
+	})
+	r.GET("/ws-ticket", h.GetWSTicket)
+	return r
+}
+
+func TestGetWSTicket_ReturnsWorkerURLForDomain(t *testing.T) {
+	r := setupWSTicketRouter(func(domainUUID string) (string, error) {
+		if domainUUID != "domain-1" {
+			t.Fatalf("unexpected domain uuid %q", domainUUID)
+		}
+		return "https://entry.example/ws?worker=worker-1", nil
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/ws-ticket?domain_uuid=domain-1", nil)
+	r.ServeHTTP(w, req)
+
+	resp := parseResp(t, w.Body.String())
+	if resp.Code != pkg.SUCCESS {
+		t.Fatalf("expected code 0, got %d", resp.Code)
+	}
+	data, ok := resp.Data.(map[string]interface{})
+	if !ok {
+		t.Fatal("data is not a map")
+	}
+	if data["url"] != "https://entry.example/ws?worker=worker-1" {
+		t.Fatalf("expected worker url, got %v", data["url"])
+	}
+	if data["ticket"] == "" {
+		t.Fatal("expected ws ticket")
+	}
+}
+
+func TestGetWSTicket_SkipsURLWithoutDomain(t *testing.T) {
+	r := setupWSTicketRouter(func(domainUUID string) (string, error) {
+		t.Fatalf("resolver should not be called, got %q", domainUUID)
+		return "", nil
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/ws-ticket", nil)
+	r.ServeHTTP(w, req)
+
+	resp := parseResp(t, w.Body.String())
+	if resp.Code != pkg.SUCCESS {
+		t.Fatalf("expected code 0, got %d", resp.Code)
+	}
+	data, ok := resp.Data.(map[string]interface{})
+	if !ok {
+		t.Fatal("data is not a map")
+	}
+	if _, exists := data["url"]; exists {
+		t.Fatalf("url should not be returned without domain, got %v", data["url"])
+	}
+}

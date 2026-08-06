@@ -73,6 +73,30 @@ FROM storage_configs`).Error; err != nil {
 	return nil
 }
 
+// migrateUserSearchIndexes 为 PostgreSQL 用户搜索列创建 trigram GIN 索引，
+// 避免 List keyword 的 %kw% 模糊查询全表扫描；SQLite/MySQL 不做变更。
+func migrateUserSearchIndexes(db *gorm.DB, dbType DatabaseEnum) error {
+	if dbType != PostgreSQL {
+		return nil
+	}
+	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS pg_trgm").Error; err != nil {
+		return fmt.Errorf("create pg_trgm extension: %w", err)
+	}
+	for _, idx := range []struct{ name, column string }{
+		{"idx_users_name_trgm", "name"},
+		{"idx_users_display_name_trgm", "display_name"},
+		{"idx_users_email_trgm", "email"},
+	} {
+		if db.Migrator().HasIndex("users", idx.name) {
+			continue
+		}
+		if err := db.Exec(fmt.Sprintf("CREATE INDEX %s ON users USING gin (%s gin_trgm_ops)", idx.name, idx.column)).Error; err != nil {
+			return fmt.Errorf("create %s: %w", idx.name, err)
+		}
+	}
+	return nil
+}
+
 // migrateOldSFUConfig handles migration from the old single-row sfu_configs
 // table (id as PK) to the new per-provider schema (provider as PK).
 // Detection uses PRAGMA table_info (SQLite) to check the primary key column.

@@ -34,7 +34,7 @@ func TestStartLocalClusterRuntime_DeregistersOnStopOnly(t *testing.T) {
 		ClusterMaxRooms:          100,
 	}
 
-	nodeID, stop, err := startLocalClusterRuntime(cfg, clusterSvc, nil, "inst-1")
+	nodeID, stop, err := startLocalClusterRuntime(cfg, clusterSvc, nil, "inst-1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

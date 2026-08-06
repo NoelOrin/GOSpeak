@@ -56,6 +56,8 @@ func (r *ClusterNodeRepository) MarkOfflineBefore(before time.Time) error {
 			model.ClusterNodePending,
 			model.ClusterNodeReady,
 			model.ClusterNodeBusy,
+			model.ClusterNodeDraining,
+			model.ClusterNodeUnhealthy,
 		}).
 		Update("status", model.ClusterNodeOffline).Error
 }

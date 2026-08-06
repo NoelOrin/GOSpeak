@@ -38,18 +38,18 @@ type Config struct {
 	AgoraCustomerID     string `env:"AGORA_CUSTOMER_ID" envDefault:""`
 	AgoraCustomerSecret string `env:"AGORA_CUSTOMER_SECRET" envDefault:""`
 	// MediaSoup/Daily 已禁用保留：实现文件仍在仓库，但 SFU_PROVIDER 不再接受。
-	MediaSoupBridgeURL  string `env:"MEDIASOUP_BRIDGE_URL" envDefault:"http://localhost:3012"`
-	MediaSoupHost       string `env:"MEDIASOUP_HOST" envDefault:"localhost:3012"`
-	SRSHost             string `env:"SRS_HOST" envDefault:"localhost"`
-	SRSApiPort          string `env:"SRS_API_PORT" envDefault:"1985"`
-	SRSWHIPURL          string `env:"SRS_WHIP_URL" envDefault:"/rtc/v1/whip/"`
-	SRSSecret           string `env:"SRS_SECRET" envDefault:""`
-	SRSPublicHost       string `env:"SRS_PUBLIC_HOST" envDefault:""`
-	DailyAPIKey         string `env:"DAILY_API_KEY" envDefault:""`
-	DailyDomain         string `env:"DAILY_DOMAIN" envDefault:""`
-	CFAppID             string `env:"CF_APP_ID" envDefault:""`
-	CFAppSecret         string `env:"CF_APP_SECRET" envDefault:""`
-	CFStunURL           string `env:"CF_STUN_URL" envDefault:"stun.cloudflare.com:3478"`
+	MediaSoupBridgeURL string `env:"MEDIASOUP_BRIDGE_URL" envDefault:"http://localhost:3012"`
+	MediaSoupHost      string `env:"MEDIASOUP_HOST" envDefault:"localhost:3012"`
+	SRSHost            string `env:"SRS_HOST" envDefault:"localhost"`
+	SRSApiPort         string `env:"SRS_API_PORT" envDefault:"1985"`
+	SRSWHIPURL         string `env:"SRS_WHIP_URL" envDefault:"/rtc/v1/whip/"`
+	SRSSecret          string `env:"SRS_SECRET" envDefault:""`
+	SRSPublicHost      string `env:"SRS_PUBLIC_HOST" envDefault:""`
+	DailyAPIKey        string `env:"DAILY_API_KEY" envDefault:""`
+	DailyDomain        string `env:"DAILY_DOMAIN" envDefault:""`
+	CFAppID            string `env:"CF_APP_ID" envDefault:""`
+	CFAppSecret        string `env:"CF_APP_SECRET" envDefault:""`
+	CFStunURL          string `env:"CF_STUN_URL" envDefault:"stun.cloudflare.com:3478"`
 
 	ServerPort       string `env:"SERVER_PORT" envDefault:"8998"`
 	StaticDir        string `env:"STATIC_DIR" envDefault:""`
@@ -91,6 +91,8 @@ type Config struct {
 	ClusterMaxServers        int    `env:"CLUSTER_MAX_SERVERS" envDefault:"100"`
 	ClusterMaxRooms          int    `env:"CLUSTER_MAX_ROOMS" envDefault:"1000"`
 	ClusterLabels            string `env:"CLUSTER_LABELS" envDefault:""`
+	ClusterEntryURL          string `env:"CLUSTER_ENTRY_URL" envDefault:""`
+	MetricsToken             string `env:"METRICS_TOKEN" envDefault:""`
 
 	EmailEnabled      bool   `env:"EMAIL_ENABLED" envDefault:"false"`
 	SMTPHost          string `env:"SMTP_HOST" envDefault:""`
@@ -298,6 +300,8 @@ func (c *Config) normalize() {
 	c.ClusterHeartbeatInterval = strings.TrimSpace(c.ClusterHeartbeatInterval)
 	c.ClusterHeartbeatTimeout = strings.TrimSpace(c.ClusterHeartbeatTimeout)
 	c.ClusterLabels = strings.TrimSpace(c.ClusterLabels)
+	c.ClusterEntryURL = strings.TrimSpace(c.ClusterEntryURL)
+	c.MetricsToken = strings.TrimSpace(c.MetricsToken)
 	if c.DBPath == "" {
 		c.DBPath = "db/app.db"
 	}
@@ -392,6 +396,9 @@ func (c *Config) Validate() error {
 	}
 	if c.ClusterRole == "worker" && strings.TrimSpace(c.ClusterAgentToken) == "" {
 		errs = append(errs, "CLUSTER_AGENT_TOKEN is required when GOSPEAK_ROLE=worker")
+	}
+	if c.ClusterRole == "worker" && strings.TrimSpace(c.ClusterAdvertiseURL) == "" {
+		errs = append(errs, "CLUSTER_ADVERTISE_URL is required when GOSPEAK_ROLE=worker")
 	}
 	if c.ClusterMaxServers < 1 {
 		errs = append(errs, "CLUSTER_MAX_SERVERS must be >= 1")

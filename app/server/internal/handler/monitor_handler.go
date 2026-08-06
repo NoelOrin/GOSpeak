@@ -15,6 +15,7 @@ import (
 
 	"GOSpeak/internal/bus"
 	"GOSpeak/internal/config"
+	"GOSpeak/internal/metrics"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/redis"
 	"GOSpeak/internal/repository"
@@ -137,19 +138,20 @@ type healthSnapshot struct {
 	RedisConnectedClients int64   `json:"redis_connected_clients"`
 
 	// EventBus
-	EventBusMode                 string `json:"eventbus_mode"`
-	EventBusConnected            bool   `json:"eventbus_connected"`
-	EventBusInstanceID           string `json:"eventbus_instance_id"`
-	EventBusFallbackFromExternal bool   `json:"eventbus_fallback_from_external"`
-	EventBusDroppedPublish       uint64 `json:"eventbus_dropped_publish"`
+	EventBusMode           string `json:"eventbus_mode"`
+	EventBusConnected      bool   `json:"eventbus_connected"`
+	EventBusInstanceID     string `json:"eventbus_instance_id"`
+	EventBusDroppedPublish uint64 `json:"eventbus_dropped_publish"`
 
 	// Shared multi-instance backends
 	AuthStoreBackend string `json:"auth_store_backend"`
 
 	// Cluster
-	ClusterTotalNodes  int `json:"cluster_total_nodes"`
-	ClusterReadyNodes  int `json:"cluster_ready_nodes"`
-	ClusterAssignments int `json:"cluster_assignments"`
+	ClusterTotalNodes    int `json:"cluster_total_nodes"`
+	ClusterDrainingNodes int `json:"cluster_draining_nodes"`
+	ClusterOfflineNodes  int `json:"cluster_offline_nodes"`
+	ClusterReadyNodes    int `json:"cluster_ready_nodes"`
+	ClusterAssignments   int `json:"cluster_assignments"`
 }
 
 func (h *MonitorHandler) collect() healthSnapshot {
@@ -215,7 +217,6 @@ func (h *MonitorHandler) collect() healthSnapshot {
 	snap.EventBusMode = es.Mode
 	snap.EventBusConnected = es.Connected
 	snap.EventBusInstanceID = es.InstanceID
-	snap.EventBusFallbackFromExternal = es.FallbackFromExternal
 	snap.EventBusDroppedPublish = es.DroppedPublish
 
 	if redis.IsConnected() {
@@ -231,11 +232,47 @@ func (h *MonitorHandler) collect() healthSnapshot {
 		if err == nil {
 			snap.ClusterTotalNodes = stats.TotalNodes
 			snap.ClusterReadyNodes = stats.ReadyNodes
+			snap.ClusterDrainingNodes = stats.DrainingNodes
+			snap.ClusterOfflineNodes = stats.OfflineNodes
 			snap.ClusterAssignments = stats.Assignments
 		}
 	}
 
 	return snap
+}
+
+// PrometheusSnapshot 将健康快照转换为 Prometheus 业务指标快照。
+func (h *MonitorHandler) PrometheusSnapshot() metrics.Snapshot {
+	snap := h.collect()
+	return metrics.Snapshot{
+		CPUPercent:             snap.CPUPercent,
+		HubRoomCount:           snap.HubRoomCount,
+		HubParticipantCount:    snap.HubParticipantCount,
+		HubOnlineUserCount:     snap.HubOnlineUserCount,
+		WSClientDropped:        snap.WSClientDropped,
+		DBConnected:            snap.DBConnected,
+		DBInUse:                snap.DBInUse,
+		DBIdle:                 snap.DBIdle,
+		DBMaxOpen:              snap.DBMaxOpen,
+		DBWaitCount:            snap.DBWaitCount,
+		DBWaitDurationMs:       snap.DBWaitDurationMs,
+		RedisConnected:         snap.RedisConnected,
+		RedisPingMs:            snap.RedisPingMs,
+		RedisDBSize:            snap.RedisDBSize,
+		RedisUsedMemoryMB:      snap.RedisUsedMemoryMB,
+		RedisUsedMemoryPeakMB:  snap.RedisUsedMemoryPeakMB,
+		RedisConnectedClients:  snap.RedisConnectedClients,
+		EventBusConnected:      snap.EventBusConnected,
+		EventBusDroppedPublish: snap.EventBusDroppedPublish,
+		ClusterTotalNodes:      snap.ClusterTotalNodes,
+		ClusterReadyNodes:      snap.ClusterReadyNodes,
+		ClusterDrainingNodes:   snap.ClusterDrainingNodes,
+		ClusterOfflineNodes:    snap.ClusterOfflineNodes,
+		ClusterAssignments:     snap.ClusterAssignments,
+		DiskUsedMB:             snap.DiskUsedMB,
+		DiskTotalMB:            snap.DiskTotalMB,
+		DiskPercent:            snap.DiskPercent,
+	}
 }
 
 func roundMB(bytes uint64) float64 {

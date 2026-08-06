@@ -223,3 +223,66 @@ func TestConversationService_SendDirect_PersistsWhenPublishFails(t *testing.T) {
 		t.Fatalf("persisted messages = %d, want 1", count)
 	}
 }
+
+func TestConversationService_SendDirect_EnqueuesPersistJob(t *testing.T) {
+	svc, db := setupConversationServiceTestDB(t)
+	queue := &fakeQueue{}
+	svc.SetJobQueue(queue)
+
+	dto, err := svc.SendDirect("alice", "bob", "job hello", "nonce-1")
+	if err != nil {
+		t.Fatalf("SendDirect: %v", err)
+	}
+	if len(queue.jobs) != 1 {
+		t.Fatalf("expected 1 persist job, got %d", len(queue.jobs))
+	}
+	job := queue.jobs[0]
+	if job.Type != "chat.private.persist" {
+		t.Fatalf("expected chat.private.persist, got %s", job.Type)
+	}
+
+	var count int64
+	if err := db.Model(&model.Message{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("message must not be written before job consumption, count=%d", count)
+	}
+
+	if err := svc.PersistPrivateFromJob(job.Payload); err != nil {
+		t.Fatalf("PersistPrivateFromJob: %v", err)
+	}
+	var msg model.Message
+	if err := db.First(&msg, "uuid = ?", dto.UUID).Error; err != nil {
+		t.Fatalf("message not persisted: %v", err)
+	}
+	var cp model.ConversationParticipant
+	if err := db.First(&cp, "conversation_id = ?", dto.ConversationID).Error; err != nil {
+		t.Fatalf("conversation not upserted: %v", err)
+	}
+	if cp.UnreadCountB != 1 {
+		t.Fatalf("receiver unread = %d, want 1", cp.UnreadCountB)
+	}
+
+	// Idempotent replay must not duplicate the message.
+	if err := svc.PersistPrivateFromJob(job.Payload); err != nil {
+		t.Fatalf("PersistPrivateFromJob replay: %v", err)
+	}
+	if err := db.Model(&model.Message{}).Where("uuid = ?", dto.UUID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("replayed private job duplicated message, count=%d", count)
+	}
+}
+
+func TestConversationService_SendDirect_RejectsSyncWriteOnDataPlane(t *testing.T) {
+	svc, _ := setupConversationServiceTestDB(t)
+	queue := &fakeQueue{err: errors.New("nats unavailable")}
+	svc.SetJobQueue(queue)
+	svc.SetSyncWriteAllowed(false)
+
+	if _, err := svc.SendDirect("alice", "bob", "no fallback", ""); err == nil {
+		t.Fatal("expected data-plane sync-write rejection")
+	}
+}

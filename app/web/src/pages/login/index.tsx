@@ -1,6 +1,13 @@
 import { createForm } from "@tanstack/solid-form";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/solid-router";
-import { createResource, createSignal, For, onMount, Show } from "solid-js";
+import {
+	createResource,
+	createSignal,
+	For,
+	onCleanup,
+	onMount,
+	Show,
+} from "solid-js";
 import { showToast } from "solid-notifications";
 import {
 	firstChangePassword as firstChangePasswordApi,
@@ -49,6 +56,52 @@ function LoginPage() {
 	const [oauthProviders] = createResource(getEnabledProviders);
 	const [oauthLoading, setOauthLoading] = createSignal(false);
 
+	function completeOAuthLogin(accessToken: string, refreshToken: string) {
+		if (!accessToken || !refreshToken) {
+			showToast("OAuth 登录失败：缺少 token", { type: "error" });
+			return;
+		}
+		void (async () => {
+			setOauthLoading(true);
+			try {
+				// 先写入 access token，供 getProfile 鉴权
+				await userStore.login(
+					{
+						id: 0,
+						uuid: "",
+						name: "",
+						display_name: "",
+						avatar: "",
+						role: "user",
+					},
+					accessToken,
+					refreshToken,
+				);
+				const profile = await getProfile();
+				await userStore.login(profile, accessToken, refreshToken);
+				navigate({ to: resolveLoginRedirect() });
+			} catch (e: any) {
+				await userStore.clearAuth();
+				if (e?.response?.data?.code === 1015) {
+					setBanned(true);
+				}
+			} finally {
+				setOauthLoading(false);
+			}
+		})();
+	}
+
+	function handleOAuthMessage(event: MessageEvent) {
+		if (event.origin !== window.location.origin) return;
+		const data = event.data as {
+			type?: string;
+			access_token?: string;
+			refresh_token?: string;
+		} | null;
+		if (!data || data.type !== "gospeak-oauth") return;
+		completeOAuthLogin(data.access_token || "", data.refresh_token || "");
+	}
+
 	onMount(() => {
 		const params = new URLSearchParams(window.location.search);
 		const oauthParams = new URLSearchParams(window.location.hash.slice(1));
@@ -65,44 +118,19 @@ function LoginPage() {
 			return;
 		}
 
-		// OAuth 回调：后端把 token 带回登录页，完成会话落地后进首页。
+		// 兼容旧 fragment 回调；新后端通过同源 postMessage 单次交付 token。
 		if (oauthParams.get("oauth") === "1") {
 			const accessToken = oauthParams.get("access_token") || "";
 			const refreshToken = oauthParams.get("refresh_token") || "";
 			window.history.replaceState({}, "", "/login");
-			if (!accessToken || !refreshToken) {
-				showToast("OAuth 登录失败：缺少 token", { type: "error" });
-				return;
-			}
-			void (async () => {
-				setOauthLoading(true);
-				try {
-					// 先写入 access token，供 getProfile 鉴权
-					await userStore.login(
-						{
-							id: 0,
-							uuid: "",
-							name: "",
-							display_name: "",
-							avatar: "",
-							role: "user",
-						},
-						accessToken,
-						refreshToken,
-					);
-					const profile = await getProfile();
-					await userStore.login(profile, accessToken, refreshToken);
-					navigate({ to: resolveLoginRedirect() });
-				} catch (e: any) {
-					await userStore.clearAuth();
-					if (e?.response?.data?.code === 1015) {
-						setBanned(true);
-					}
-				} finally {
-					setOauthLoading(false);
-				}
-			})();
+			completeOAuthLogin(accessToken, refreshToken);
 		}
+
+		window.addEventListener("message", handleOAuthMessage);
+	});
+
+	onCleanup(() => {
+		window.removeEventListener("message", handleOAuthMessage);
 	});
 	const [showChangeModal, setShowChangeModal] = createSignal(false);
 
@@ -214,7 +242,18 @@ function LoginPage() {
 											aria-label={`使用 ${label} 登录`}
 											disabled={oauthLoading()}
 											onClick={() => {
-												window.location.href = getOAuthLoginURL(p.name);
+												setOauthLoading(true);
+												const win = window.open(
+													getOAuthLoginURL(p.name),
+													"gospeak-oauth",
+													"popup,width=560,height=640",
+												);
+												if (!win) {
+													setOauthLoading(false);
+													showToast("请允许弹窗后重试 OAuth 登录", {
+														type: "error",
+													});
+												}
 											}}
 										>
 											<ProviderIcon

@@ -22,8 +22,10 @@ func (r *MuteRepository) Create(mute *model.Mute) error {
 
 // GetByUserID 查询用户当前禁言记录
 func (r *MuteRepository) GetByUserID(userID uint) (*model.Mute, error) {
+	ctx, cancel := repoTimeoutCtx()
+	defer cancel()
 	var mute model.Mute
-	err := r.db.Where("user_id = ?", userID).First(&mute).Error
+	err := r.db.WithContext(ctx).Where("user_id = ?", userID).First(&mute).Error
 	return &mute, err
 }
 
@@ -32,11 +34,13 @@ func (r *MuteRepository) IsMutedBatch(identities []string) (map[string]bool, err
 	if len(identities) == 0 {
 		return map[string]bool{}, nil
 	}
+	ctx, cancel := repoTimeoutCtx()
+	defer cancel()
 	now := time.Now()
 	var rows []struct {
 		Identity string
 	}
-	err := r.db.Table("mutes").
+	err := r.db.WithContext(ctx).Table("mutes").
 		Joins("JOIN users ON users.id = mutes.user_id").
 		Select("users.name AS identity").
 		Where("users.name IN ? AND (mutes.permanent = ? OR mutes.expires_at > ?)", identities, true, now).

@@ -30,9 +30,6 @@ func TestInit_EmptyURL_StartsEmbedded(t *testing.T) {
 	if b.InstanceID() == "" {
 		t.Fatal("empty instance id")
 	}
-	if GetStats(b).FallbackFromExternal {
-		t.Fatal("FallbackFromExternal should be false")
-	}
 }
 
 func TestInit_ExternalURL_Available_UsesExternalNoEmbed(t *testing.T) {
@@ -58,9 +55,6 @@ func TestInit_ExternalURL_Available_UsesExternalNoEmbed(t *testing.T) {
 	}
 	if !b.IsConnected() {
 		t.Fatal("expected connected")
-	}
-	if GetStats(b).FallbackFromExternal {
-		t.Fatal("FallbackFromExternal should be false")
 	}
 }
 

@@ -2,13 +2,13 @@ package plugin
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 
 	"GOSpeak/internal/config"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
-	"gorm.io/gorm"
 )
 
 // Kind 插件类型
@@ -72,7 +72,7 @@ type SideServer interface {
 // Host 插件宿主能力
 type Host interface {
 	Logger(component string) *logrus.Entry
-	DB() *gorm.DB
+	DB() HostDB
 	AppConfig() *config.Config
 	// RegisterHTTP 在主 API 下挂载插件路由：/api/v1/plugins/:name/*
 	RegisterHTTP(fn func(r *gin.RouterGroup))
@@ -81,6 +81,12 @@ type Host interface {
 	// LoadConfig / SaveConfig 读写插件持久化配置
 	LoadConfig(pluginName string) (enabled bool, cfg map[string]any, err error)
 	SaveConfig(pluginName string, enabled bool, cfg map[string]any) error
+}
+
+// HostDB 是插件可用的受限数据库能力，不暴露 *gorm.DB 与任意表访问。
+type HostDB interface {
+	Ping() error
+	Stats() sql.DBStats
 }
 
 // Info 管理端列表项

@@ -22,7 +22,7 @@ func (h *Hub) OnDomainDelete(domainUUID string) {
 	var sfuRooms []string
 	var roomKeys []string
 	var deletedStreams []string
-	var closedClients []ws.ClientMessenger
+	var memberSIDs []string
 	h.mu.Lock()
 	for key, room := range h.rooms {
 		if !strings.HasPrefix(key, prefix) {
@@ -30,7 +30,8 @@ func (h *Hub) OnDomainDelete(domainUUID string) {
 		}
 		// 收集 SFU 房间名（复合 key 与 token/媒体层一致）
 		sfuRooms = append(sfuRooms, key)
-		// 断开所有成员
+		// 断开所有成员：锁内只收集 socket ID，fanout/Close 全部移到锁外，
+		// 避免 h.mu -> fanout.mu 锁序与正常路径相反。
 		for sid := range room.Members {
 			if m := room.Members[sid]; m != nil {
 				h.unregisterStreamLocked(key, m.Identity, m.Stream)
@@ -39,14 +40,7 @@ func (h *Hub) OnDomainDelete(domainUUID string) {
 				}
 			}
 			delete(h.connSlots, sid)
-			if client := h.fanout.GetClient(sid); client != nil {
-				// Fanout.GetClient 对已删除 key 会返回带类型的 nil 指针；该 socket 已断开，跳过避免误 Close。
-				if typed, ok := client.(*ws.Client); ok && typed == nil {
-					continue
-				}
-				closedClients = append(closedClients, client)
-			}
-			h.fanout.Remove(sid)
+			memberSIDs = append(memberSIDs, sid)
 		}
 		delete(h.rooms, key)
 		roomKeys = append(roomKeys, key)
@@ -54,8 +48,17 @@ func (h *Hub) OnDomainDelete(domainUUID string) {
 	h.mu.Unlock()
 
 	// 在锁外关闭成员连接，避免 Close 阻塞拖住所有信令。
-	closed := make(map[string]struct{}, len(closedClients))
-	for _, client := range closedClients {
+	closed := make(map[string]struct{}, len(memberSIDs))
+	for _, sid := range memberSIDs {
+		client := h.fanout.GetClient(sid)
+		h.fanout.Remove(sid)
+		if client == nil {
+			continue
+		}
+		// Fanout.GetClient 对已删除 key 会返回带类型的 nil 指针；该 socket 已断开，跳过避免误 Close。
+		if typed, ok := client.(*ws.Client); ok && typed == nil {
+			continue
+		}
 		if _, ok := closed[client.ID()]; ok {
 			continue
 		}

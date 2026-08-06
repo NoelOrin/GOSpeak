@@ -2,9 +2,10 @@ package handler
 
 import (
 	"strings"
+	"time"
 
 	"GOSpeak/internal/cluster"
-	"GOSpeak/internal/model"
+	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
 
@@ -40,19 +41,11 @@ func (h *ClusterHandler) Register(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	node := model.ClusterNode{
-		UUID:         req.UUID,
-		Name:         req.Name,
-		Host:         req.Host,
-		AdvertiseURL: req.AdvertiseURL,
-		Role:         req.Role,
-		Status:       req.Status,
-		SFUProvider:  req.SFUProvider,
-		MaxServers:   req.MaxServers,
-		MaxRooms:     req.MaxRooms,
-	}
-	node.SetLabels(req.Labels)
-	saved, err := h.clusterSvc.RegisterNode(node)
+	saved, err := h.clusterSvc.RegisterNodeParams(
+		req.UUID, req.Name, req.Host, req.AdvertiseURL,
+		req.Role, req.Status, req.SFUProvider,
+		req.MaxServers, req.MaxRooms, req.Labels,
+	)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -134,7 +127,11 @@ func (h *ClusterHandler) Undrain(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	if err := h.clusterSvc.UndrainNode(req.NodeID); err != nil {
+	timeout := time.Duration(0)
+	if cfg := config.Current(); cfg != nil {
+		timeout = cfg.ClusterHeartbeatTimeoutDuration()
+	}
+	if err := h.clusterSvc.UndrainNode(req.NodeID, timeout); err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
@@ -183,6 +180,58 @@ func (h *ClusterHandler) Scale(c *gin.Context) {
 		return
 	}
 	pkg.Success(c, gin.H{"assignments": assignments})
+}
+
+type ServerUUIDRequest struct {
+	ServerUUID string `json:"server_uuid" binding:"required"`
+}
+
+type AutoScaleServerRequest struct {
+	ServerUUID string `json:"server_uuid" binding:"required"`
+	Replicas   int    `json:"replicas" binding:"required"`
+}
+
+// ListAssignments 返回 Server 当前实例分配。
+func (h *ClusterHandler) ListAssignments(c *gin.Context) {
+	var req ServerUUIDRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	assignments, err := h.clusterSvc.ListAssignments(req.ServerUUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"assignments": assignments})
+}
+
+// DrainServer 将 Server 全部副本标记为 draining，配合灰度下线。
+func (h *ClusterHandler) DrainServer(c *gin.Context) {
+	var req ServerUUIDRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	if err := h.clusterSvc.MarkServerAssignmentsDraining(req.ServerUUID); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, nil)
+}
+
+// AutoScaleServer 按目标副本数扩缩 Server；无可用节点时不动作。
+func (h *ClusterHandler) AutoScaleServer(c *gin.Context) {
+	var req AutoScaleServerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	if err := h.clusterSvc.AutoScale(req.ServerUUID, req.Replicas); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, nil)
 }
 
 type ResolveServerRequest struct {

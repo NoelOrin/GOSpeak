@@ -171,11 +171,33 @@ func TestFanout_Remove_CleansRooms(t *testing.T) {
 	f.Join("room-2", "c1")
 
 	rooms := f.Remove("c1")
-	if len(rooms) == 0 {
-		t.Fatal("expected rooms to be returned after remove")
+	if len(rooms) != 0 {
+		t.Fatalf("empty rooms should not be returned, got %v", rooms)
 	}
 	if f.RoomExists("room-1") || f.RoomExists("room-2") {
 		t.Fatal("expected both rooms to be cleaned up")
+	}
+}
+
+func TestFanout_Remove_ReturnsOnlyNonEmptyRooms(t *testing.T) {
+	f := NewFanout()
+	c1 := NewTestClient("c1", nil)
+	c2 := NewTestClient("c2", nil)
+	f.Add(c1)
+	f.Add(c2)
+	f.Join("room-a", "c1")
+	f.Join("room-a", "c2")
+	f.Join("room-b", "c1")
+
+	rooms := f.Remove("c1")
+	if len(rooms) != 1 || rooms[0] != "room-a" {
+		t.Fatalf("expected only non-empty room-a, got %v", rooms)
+	}
+	if f.RoomExists("room-b") {
+		t.Fatal("room-b should be cleaned up")
+	}
+	if !f.RoomExists("room-a") {
+		t.Fatal("room-a should still exist with c2")
 	}
 }
 

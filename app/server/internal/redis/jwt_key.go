@@ -4,14 +4,13 @@
 package redis
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
 	"sync"
 	"time"
 
 	"GOSpeak/internal/config"
+	"GOSpeak/internal/logger"
 )
 
 const (
@@ -55,7 +54,7 @@ func GetSigningKey() []byte {
 				if val, ok, err2 := secondaryAuth.GetSigningKey(); err2 == nil && ok && val != "" {
 					return []byte(val)
 				}
-				fmt.Printf("[AuthKV] failed to store JWT signing key: %v\n", err)
+				logger.WithComponent("AuthKV").WithError(err).Warn("failed to store JWT signing key")
 				return staticKey()
 			}
 			_ = secondaryAuth.AddHistoryKey(newKey)
@@ -64,7 +63,8 @@ func GetSigningKey() []byte {
 		return staticKey()
 	}
 
-	ctx := context.Background()
+	ctx, cancel := redisTimeoutCtx()
+	defer cancel()
 	val, err := Client.Get(ctx, jwtKeyRedisKey).Result()
 	if err == nil {
 		return []byte(val)
@@ -73,14 +73,14 @@ func GetSigningKey() []byte {
 	// key 不存在（首次启动），创建新密钥
 	newKey := randomKey()
 	if setErr := Client.Set(ctx, jwtKeyRedisKey, newKey, 0).Err(); setErr != nil {
-		fmt.Printf("[Redis] failed to store JWT signing key: %v; fallback to static key\n", setErr)
+		logger.WithComponent("Redis").WithError(setErr).Warn("failed to store JWT signing key; fallback to static key")
 		return staticKey()
 	}
 	now := time.Now().Unix()
 	Client.Set(ctx, jwtKeyCreatedAtKey, now, 0)
 	Client.SAdd(ctx, jwtHistoryKey, newKey)
 	Client.Expire(ctx, jwtHistoryKey, histTTL)
-	fmt.Printf("[Redis] JWT signing key created\n")
+	logger.WithComponent("Redis").Info("JWT signing key created")
 	return []byte(newKey)
 }
 
@@ -99,7 +99,8 @@ func ShouldRotateKey() bool {
 		ttl := int64(keyTTL().Seconds())
 		return time.Now().Unix()-createdAt >= ttl
 	}
-	ctx := context.Background()
+	ctx, cancel := redisTimeoutCtx()
+	defer cancel()
 	createdAt, err := Client.Get(ctx, jwtKeyCreatedAtKey).Int64()
 	if err != nil {
 		return true // 无法读取创建时间，保守触发轮换
@@ -127,18 +128,19 @@ func RotateSigningKey() []byte {
 		newKey := randomKey()
 		now := time.Now().Unix()
 		if err := secondaryAuth.UpdateSigningKey(newKey, now); err != nil {
-			fmt.Printf("[AuthKV] JWT signing key rotate failed: %v; keep old key\n", err)
+			logger.WithComponent("AuthKV").WithError(err).Warn("JWT signing key rotate failed; keep old key")
 			if old != "" {
 				return []byte(old)
 			}
 			return staticKey()
 		}
 		_ = secondaryAuth.AddHistoryKey(newKey)
-		fmt.Printf("[AuthKV] JWT signing key rotated, next rotation in %v\n", keyTTL())
+		logger.WithComponent("AuthKV").Infof("JWT signing key rotated, next rotation in %v", keyTTL())
 		return []byte(newKey)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := redisTimeoutCtx()
+	defer cancel()
 
 	// 1. 读取旧密钥并备份
 	oldVal, err := Client.Get(ctx, jwtKeyRedisKey).Result()
@@ -149,14 +151,14 @@ func RotateSigningKey() []byte {
 	// 2. 生成新密钥并写入（不带 TTL）；主键写失败时保留旧密钥，避免本进程与共享存储分叉。
 	newKey := randomKey()
 	if err := Client.Set(ctx, jwtKeyRedisKey, newKey, 0).Err(); err != nil {
-		fmt.Printf("[Redis] JWT signing key rotate failed: %v; keep old key\n", err)
+		logger.WithComponent("Redis").WithError(err).Warn("JWT signing key rotate failed; keep old key")
 		if oldVal != "" {
 			return []byte(oldVal)
 		}
 		return staticKey()
 	}
 	if err := Client.Set(ctx, jwtKeyCreatedAtKey, time.Now().Unix(), 0).Err(); err != nil {
-		fmt.Printf("[Redis] JWT signing key rotate createdAt failed: %v\n", err)
+		logger.WithComponent("Redis").WithError(err).Warn("JWT signing key rotate createdAt failed")
 	}
 
 	// 3. 新密钥也加入历史集合
@@ -164,7 +166,7 @@ func RotateSigningKey() []byte {
 	// 历史保留 7 天，精确覆盖 refresh_token 最大有效期；超出 7 天的密钥对过期 token 已无用
 	Client.Expire(ctx, jwtHistoryKey, histTTL)
 
-	fmt.Printf("[Redis] JWT signing key rotated, next rotation in %v\n", keyTTL())
+	logger.WithComponent("Redis").Infof("JWT signing key rotated, next rotation in %v", keyTTL())
 	return []byte(newKey)
 }
 
@@ -197,7 +199,8 @@ func GetAllSigningKeys() [][]byte {
 		return [][]byte{staticKey()}
 	}
 
-	ctx := context.Background()
+	ctx, cancel := redisTimeoutCtx()
+	defer cancel()
 	var keys [][]byte
 
 	active, err := Client.Get(ctx, jwtKeyRedisKey).Result()
@@ -260,14 +263,45 @@ func keyTTL() time.Duration {
 // histTTL 历史密钥集合的保留时长，对齐 refresh_token 的 7 天最大有效期。
 const histTTL = 7 * 24 * time.Hour
 
-// KeyRotationLoop 后台定时检查密钥是否需要轮换。
+// rotationStopMu 保护轮换 goroutine 的启停，供优雅关闭使用。
+var (
+	rotationStopMu sync.Mutex
+	rotationStopCh chan struct{}
+)
+
+// StartKeyRotationLoop 后台定时检查密钥是否需要轮换。
 // 每分钟检查一次，到达 JWT_KEY_TTL 时主动执行 RotateSigningKey。
-func KeyRotationLoop() {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-	for range ticker.C {
-		if ShouldRotateKey() {
-			RotateSigningKey()
-		}
+func StartKeyRotationLoop() {
+	rotationStopMu.Lock()
+	defer rotationStopMu.Unlock()
+	if rotationStopCh != nil {
+		return
 	}
+	ch := make(chan struct{})
+	rotationStopCh = ch
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ch:
+				return
+			case <-ticker.C:
+				if ShouldRotateKey() {
+					RotateSigningKey()
+				}
+			}
+		}
+	}()
+}
+
+// StopKeyRotationLoop 停止轮换 goroutine，供优雅关闭流程调用。
+func StopKeyRotationLoop() {
+	rotationStopMu.Lock()
+	defer rotationStopMu.Unlock()
+	if rotationStopCh == nil {
+		return
+	}
+	close(rotationStopCh)
+	rotationStopCh = nil
 }

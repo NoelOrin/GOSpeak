@@ -51,6 +51,9 @@ func (r *HandlerRegistry) Dispatch(c ClientMessenger, msg Message) {
 	entry, ok := r.handlers[msg.Event]
 	if !ok {
 		log.Printf("[ws] unknown event: %s from client=%s", msg.Event, c.ID())
+		if msg.ID != "" {
+			c.SendErrorACK(msg.ID, msg.Event, int(pkg.INVALID_PARAMS), "unknown event")
+		}
 		return
 	}
 

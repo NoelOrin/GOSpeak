@@ -6,6 +6,8 @@ import (
 
 	"GOSpeak/internal/bus"
 	"GOSpeak/internal/signal"
+
+	"GOSpeak/internal/cluster"
 )
 
 // StreamRegistrar is implemented by signal.Hub for SRS stream registry.
@@ -19,8 +21,18 @@ type SFUCleaner interface {
 	CleanupParticipant(room, identity string, deleteRoom bool)
 }
 
+// PrivateChatPersister persists private messages from durable jobs.
+type PrivateChatPersister interface {
+	PersistPrivateFromJob(payload []byte) error
+}
+
+// ClusterCommandExecutor runs a control-plane command on the local instance.
+type ClusterCommandExecutor interface {
+	HandleClusterCommand(cmd cluster.ControlCommand) error
+}
+
 // Handle dispatches a JobEnvelope to the appropriate handler.
-func Handle(job bus.JobEnvelope, hub StreamRegistrar, cleaner SFUCleaner, chat ChatPersister) error {
+func Handle(job bus.JobEnvelope, hub StreamRegistrar, cleaner SFUCleaner, chat ChatPersister, private PrivateChatPersister, control ClusterCommandExecutor) error {
 	switch job.Type {
 	case "srs":
 		return handleSRS(job.Payload, hub)
@@ -38,6 +50,20 @@ func Handle(job bus.JobEnvelope, hub StreamRegistrar, cleaner SFUCleaner, chat C
 			return nil
 		}
 		return chat.MutateFromJob(job.Payload)
+	case "chat.private.persist":
+		if private == nil {
+			return nil
+		}
+		return private.PersistPrivateFromJob(job.Payload)
+	case "cluster.control":
+		if control == nil {
+			return nil
+		}
+		var cmd cluster.ControlCommand
+		if err := json.Unmarshal(job.Payload, &cmd); err != nil {
+			return err
+		}
+		return control.HandleClusterCommand(cmd)
 	default:
 		log.Printf("[Jobs] ignore unknown type=%s", job.Type)
 		return nil

@@ -3,6 +3,7 @@ package handler
 import (
 	"strings"
 
+	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
 
@@ -11,11 +12,12 @@ import (
 
 type UserHandler struct {
 	userService *service.UserService
+	permSvc     *service.PermissionService
 }
 
-func NewUserHandler(userService *service.UserService, _ ...*service.StorageService) *UserHandler {
+func NewUserHandler(userService *service.UserService, permSvc *service.PermissionService, _ ...*service.StorageService) *UserHandler {
 	// storage 已注入 UserService；保留可选参数兼容旧 DI 调用
-	return &UserHandler{userService: userService}
+	return &UserHandler{userService: userService, permSvc: permSvc}
 }
 
 var presetAvatarPaths = []string{
@@ -68,6 +70,12 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
+	if h.permSvc != nil {
+		user.Permissions = h.permSvc.GetRolePermissions(user.Role)
+	}
+	if len(user.Permissions) == 0 {
+		user.Permissions = model.DefaultRolePermissions[user.Role]
+	}
 	pkg.Success(c, user)
 }
 

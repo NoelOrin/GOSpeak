@@ -2,9 +2,11 @@ package service
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"log"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -194,7 +196,7 @@ func TestClusterService_DrainAndUndrain(t *testing.T) {
 	if nodes[0].Status != model.ClusterNodeDraining {
 		t.Fatalf("expected draining, got %q", nodes[0].Status)
 	}
-	if err := svc.UndrainNode(node.UUID); err != nil {
+	if err := svc.UndrainNode(node.UUID, 5*time.Second); err != nil {
 		t.Fatalf("UndrainNode: %v", err)
 	}
 	nodes, err = svc.ListNodes()
@@ -453,5 +455,149 @@ func TestReconcile_ReportsErrors(t *testing.T) {
 
 	if !strings.Contains(buf.String(), "[cluster] reconcile scale failed server=") {
 		t.Fatalf("expected reconcile scale failure to be logged, got %q", buf.String())
+	}
+}
+
+func TestClusterServicePublishControlUsesControlQueue(t *testing.T) {
+	svc, _ := setupClusterServiceTestDB(t)
+	queue := &fakeQueue{}
+	svc.SetControlQueue(queue)
+	err := svc.PublishControl(cluster.ControlCommand{Command: cluster.CommandKick, Room: "lobby", Identity: "alice"})
+	if err != nil {
+		t.Fatalf("PublishControl: %v", err)
+	}
+	if len(queue.jobs) != 1 {
+		t.Fatalf("expected 1 queued control job, got %d", len(queue.jobs))
+	}
+	job := queue.jobs[0]
+	if job.Type != "cluster.control" {
+		t.Fatalf("expected cluster.control job, got %s", job.Type)
+	}
+	var cmd cluster.ControlCommand
+	if err := json.Unmarshal(job.Payload, &cmd); err != nil {
+		t.Fatalf("unmarshal control payload: %v", err)
+	}
+	if cmd.Command != cluster.CommandKick || cmd.Room != "lobby" || cmd.Identity != "alice" {
+		t.Fatalf("unexpected control payload: %+v", cmd)
+	}
+}
+
+func TestClusterServiceUndrainRejectsStaleNode(t *testing.T) {
+	svc, db := setupClusterServiceTestDB(t)
+	nodeRepo := repository.NewClusterNodeRepository(db)
+	node := &model.ClusterNode{
+		UUID: "node-stale", Name: "stale", Status: model.ClusterNodeDraining,
+		SFUHealthy: true, MaxServers: 10, MaxRooms: 100,
+		LastSeenAt: time.Now().Add(-time.Minute),
+	}
+	if err := nodeRepo.Create(node); err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	if err := svc.UndrainNode(node.UUID, 10*time.Second); err == nil {
+		t.Fatal("expected stale undrain rejection")
+	}
+}
+
+func TestClusterServiceHeartbeatMarksUnhealthy(t *testing.T) {
+	svc, _ := setupClusterServiceTestDB(t)
+	node, err := svc.RegisterNode(model.ClusterNode{
+		UUID: "node-unhealthy-hb", Name: "uh", Role: model.ClusterRoleWorker,
+		MaxServers: 10, MaxRooms: 100,
+	})
+	if err != nil {
+		t.Fatalf("RegisterNode: %v", err)
+	}
+	healthy := false
+	updated, err := svc.Heartbeat(node.UUID, cluster.HeartbeatReport{
+		NodeID: node.UUID, Status: model.ClusterNodeReady, SFUHealthy: &healthy,
+	})
+	if err != nil {
+		t.Fatalf("Heartbeat: %v", err)
+	}
+	if updated.Status != model.ClusterNodeUnhealthy {
+		t.Fatalf("expected unhealthy, got %q", updated.Status)
+	}
+}
+
+func TestClusterServiceReapOfflineCoversDrainingAndUnhealthy(t *testing.T) {
+	svc, db := setupClusterServiceTestDB(t)
+	nodeRepo := repository.NewClusterNodeRepository(db)
+	for _, status := range []string{model.ClusterNodeDraining, model.ClusterNodeUnhealthy} {
+		node := &model.ClusterNode{
+			UUID: "node-" + status, Name: status, Status: status,
+			SFUHealthy: true, MaxServers: 10, MaxRooms: 100,
+			LastSeenAt: time.Now().Add(-time.Minute),
+		}
+		if err := nodeRepo.Create(node); err != nil {
+			t.Fatalf("create node %s: %v", status, err)
+		}
+	}
+	if err := svc.ReapOffline(10 * time.Second); err != nil {
+		t.Fatalf("ReapOffline: %v", err)
+	}
+	for _, status := range []string{model.ClusterNodeDraining, model.ClusterNodeUnhealthy} {
+		node, err := nodeRepo.GetByUUID("node-" + status)
+		if err != nil {
+			t.Fatalf("GetByUUID %s: %v", status, err)
+		}
+		if node.Status != model.ClusterNodeOffline {
+			t.Fatalf("expected node-%s offline, got %q", status, node.Status)
+		}
+	}
+}
+
+func TestClusterServiceConcurrentScaleKeepsSingleReplica(t *testing.T) {
+	svc, db := setupClusterServiceTestDB(t)
+	nodeRepo := repository.NewClusterNodeRepository(db)
+	nodes := []model.ClusterNode{
+		{UUID: "node-a", Name: "a", Status: model.ClusterNodeReady, SFUHealthy: true, MaxServers: 10, MaxRooms: 100},
+		{UUID: "node-b", Name: "b", Status: model.ClusterNodeReady, SFUHealthy: true, MaxServers: 10, MaxRooms: 100},
+		{UUID: "node-c", Name: "c", Status: model.ClusterNodeReady, SFUHealthy: true, MaxServers: 10, MaxRooms: 100},
+	}
+	for i := range nodes {
+		if err := nodeRepo.Create(&nodes[i]); err != nil {
+			t.Fatalf("create node %d: %v", i, err)
+		}
+	}
+	preferred := []string{"node-a", "node-b", "node-c"}
+	var wg sync.WaitGroup
+	for i := 0; i < 18; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _ = svc.ScaleServer("srv-concurrent", 1, preferred[i%len(preferred)])
+		}(i)
+	}
+	wg.Wait()
+	assignments, err := svc.ListAssignments("srv-concurrent")
+	if err != nil {
+		t.Fatalf("ListAssignments: %v", err)
+	}
+	if len(assignments) != 1 {
+		t.Fatalf("expected exactly 1 replica, got %+v", assignments)
+	}
+}
+
+func TestClusterServiceReconcileAllDoesNotReapStaleReadyNode(t *testing.T) {
+	svc, db := setupClusterServiceTestDB(t)
+	nodeRepo := repository.NewClusterNodeRepository(db)
+	node := &model.ClusterNode{
+		UUID: "node-stale-ready", Name: "stale-ready", Status: model.ClusterNodeReady,
+		SFUHealthy: true, MaxServers: 10, MaxRooms: 100,
+		LastSeenAt: time.Now().Add(-time.Hour),
+	}
+	if err := nodeRepo.Create(node); err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	// Agent 重启场景：ReconcileAll 不得把心跳过期但尚未重新上报的在线节点标离线。
+	if err := svc.ReconcileAll(10 * time.Second); err != nil {
+		t.Fatalf("ReconcileAll: %v", err)
+	}
+	got, err := nodeRepo.GetByUUID(node.UUID)
+	if err != nil {
+		t.Fatalf("GetByUUID: %v", err)
+	}
+	if got.Status != model.ClusterNodeReady {
+		t.Fatalf("ReconcileAll must not reap nodes; got %q", got.Status)
 	}
 }

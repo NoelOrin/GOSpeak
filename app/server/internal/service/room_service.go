@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
@@ -25,6 +26,52 @@ type RoomService struct {
 
 func NewRoomService(roomRepo *repository.RoomRepository) *RoomService {
 	return &RoomService{roomRepo: roomRepo}
+}
+
+// RoomDTO 是房间对外 API 的传输对象，避免持久层 model 直接泄漏到接口。
+type RoomDTO struct {
+	ID            uint      `json:"id"`
+	UUID          string    `json:"uuid"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	Limit         uint      `json:"limit"`
+	AudioOnly     bool      `json:"audio_only"`
+	AllowAudience bool      `json:"allow_audience"`
+	Type          string    `json:"type"`
+	CreatedBy     string    `json:"created_by"`
+	DomainUUID    string    `json:"domain_uuid"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// RoomToDTO 转换单个房间模型为 API DTO。
+func RoomToDTO(room *model.Room) RoomDTO {
+	if room == nil {
+		return RoomDTO{}
+	}
+	return RoomDTO{
+		ID:            room.ID,
+		UUID:          room.UUID,
+		Name:          room.Name,
+		Description:   room.Description,
+		Limit:         room.Limit,
+		AudioOnly:     room.AudioOnly,
+		AllowAudience: room.AllowAudience,
+		Type:          room.Type,
+		CreatedBy:     room.CreatedBy,
+		DomainUUID:    room.DomainUUID,
+		CreatedAt:     room.CreatedAt,
+		UpdatedAt:     room.UpdatedAt,
+	}
+}
+
+// RoomsToDTOs 批量转换房间列表为 API DTO。
+func RoomsToDTOs(rooms []model.Room) []RoomDTO {
+	out := make([]RoomDTO, 0, len(rooms))
+	for i := range rooms {
+		out = append(out, RoomToDTO(&rooms[i]))
+	}
+	return out
 }
 
 // Create 创建房间，并保证同一 Domain 内房间名唯一。

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"context"
@@ -26,10 +27,12 @@ var (
 
 // ClusterService 是 Agent 控制面的节点与 Server 分配服务。
 type ClusterService struct {
-	nodeRepo   *repository.ClusterNodeRepository
-	assignRepo *repository.ServerAssignmentRepository
-	notifier   ClusterNotifier
-	serverRepo *repository.DomainRepository
+	mu           sync.RWMutex
+	nodeRepo     *repository.ClusterNodeRepository
+	assignRepo   *repository.ServerAssignmentRepository
+	notifier     ClusterNotifier
+	serverRepo   *repository.DomainRepository
+	controlQueue MessageJobQueue
 }
 
 func NewClusterService(
@@ -58,6 +61,11 @@ func (s *ClusterService) SetNotifier(n ClusterNotifier) {
 // SetServerRepo 注入 Domain 仓库，用于节点上线后补调度未分配的 Server。
 func (s *ClusterService) SetServerRepo(repo *repository.DomainRepository) {
 	s.serverRepo = repo
+}
+
+// SetControlQueue injects the durable JetStream queue used for control commands.
+func (s *ClusterService) SetControlQueue(q MessageJobQueue) {
+	s.controlQueue = q
 }
 
 // EnsureLocalNode 在 all/agent 模式下注册当前进程对应的本地节点。
@@ -121,6 +129,23 @@ func (s *ClusterService) EnsureLocalNode(cfg *config.Config, instanceID string) 
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	return node, nil
+}
+
+// RegisterNodeParams 将 HTTP 请求参数映射为节点模型，handler 不再直接构造持久层实体。
+func (s *ClusterService) RegisterNodeParams(uuid, name, host, advertiseURL, role, status, sfuProvider string, maxServers, maxRooms int, labels map[string]string) (*model.ClusterNode, error) {
+	node := model.ClusterNode{
+		UUID:         uuid,
+		Name:         name,
+		Host:         host,
+		AdvertiseURL: advertiseURL,
+		Role:         role,
+		Status:       status,
+		SFUProvider:  sfuProvider,
+		MaxServers:   maxServers,
+		MaxRooms:     maxRooms,
+	}
+	node.SetLabels(labels)
+	return s.RegisterNode(node)
 }
 
 // RegisterNode 创建或更新 Worker 节点。
@@ -205,6 +230,8 @@ func (s *ClusterService) Heartbeat(nodeID string, report cluster.HeartbeatReport
 	// draining 由控制面操作驱动，不能被心跳覆盖。
 	if node.Status == model.ClusterNodeDraining {
 		status = model.ClusterNodeDraining
+	} else if report.SFUHealthy != nil && !*report.SFUHealthy {
+		status = model.ClusterNodeUnhealthy
 	}
 	node.Status = status
 	if report.AdvertiseURL != "" {
@@ -285,13 +312,20 @@ func (s *ClusterService) DrainNode(nodeID string) error {
 // UndrainNode 恢复节点为 ready，允许继续调度。
 
 // UndrainNode 恢复节点为 ready，允许继续调度。
-func (s *ClusterService) UndrainNode(nodeID string) error {
+// 节点必须仍在心跳窗口内且 SFU 健康，避免把失联节点直接放回调度池。
+func (s *ClusterService) UndrainNode(nodeID string, timeout time.Duration) error {
 	node, err := s.nodeRepo.GetByUUID(nodeID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return ErrClusterNodeNotFound
 		}
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if timeout > 0 && time.Since(node.LastSeenAt) > timeout {
+		return pkg.NewAppError(pkg.FORBIDDEN, "node heartbeat is stale; cannot undrain")
+	}
+	if !node.SFUHealthy {
+		return pkg.NewAppError(pkg.FORBIDDEN, "node SFU is unhealthy; cannot undrain")
 	}
 	node.Status = model.ClusterNodeReady
 	if err := s.nodeRepo.Update(node); err != nil {

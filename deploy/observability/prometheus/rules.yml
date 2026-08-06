@@ -1,0 +1,74 @@
+groups:
+  - name: gospeak
+    rules:
+      - alert: GOSpeakProcessDown
+        expr: gospeak_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "GOSpeak process is down"
+          description: "{{ $labels.instance }} 已连续 2 分钟无指标"
+
+      - alert: GOSpeakHigh5xxRate
+        expr: sum(rate(gospeak_http_requests_total{status=~"5.."}[5m])) by (instance) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GOSpeak 5xx rate is high"
+          description: "{{ $labels.instance }} 5xx 请求速率超过 0.05/s"
+
+      - alert: GOSpeakHighLatency
+        expr: histogram_quantile(0.99, sum(rate(gospeak_http_request_duration_seconds_bucket[5m])) by (le, instance)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GOSpeak p99 latency high"
+          description: "{{ $labels.instance }} p99 延迟超过 2s"
+
+      - alert: GOSpeakEventBusDown
+        expr: gospeak_eventbus_connected == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Event bus disconnected"
+          description: "{{ $labels.instance }} NATS 事件总线不可用"
+
+      - alert: GOSpeakRedisDown
+        expr: gospeak_redis_connected == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis unavailable"
+          description: "{{ $labels.instance }} Redis 不可用"
+
+      - alert: GOSpeakDBDown
+        expr: gospeak_db_connected == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database unavailable"
+          description: "{{ $labels.instance }} 数据库不可用"
+
+      - alert: GOSpeakOfflineClusterNodes
+        expr: gospeak_cluster_offline_nodes > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Offline cluster node"
+          description: "当前 {{ $value }} 个节点离线"
+
+      - alert: GOSpeakHighDiskUsage
+        expr: gospeak_disk_percent > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk usage high"
+          description: "{{ $labels.instance }} 磁盘使用率 {{ $value }}%"

@@ -14,10 +14,12 @@ type protoClient struct {
 	errAcks []interface{}
 }
 
-func (c *protoClient) ID() string                                    { return c.id }
-func (c *protoClient) Claims() *pkg.Claims                            { return c.claims }
-func (c *protoClient) Send(v interface{}) bool                        { c.acks = append(c.acks, v); return true }
-func (c *protoClient) SendACK(id, event string, data interface{})     { c.acks = append(c.acks, map[string]interface{}{"id": id, "event": event, "data": data}) }
+func (c *protoClient) ID() string              { return c.id }
+func (c *protoClient) Claims() *pkg.Claims     { return c.claims }
+func (c *protoClient) Send(v interface{}) bool { c.acks = append(c.acks, v); return true }
+func (c *protoClient) SendACK(id, event string, data interface{}) {
+	c.acks = append(c.acks, map[string]interface{}{"id": id, "event": event, "data": data})
+}
 func (c *protoClient) SendErrorACK(id, event string, code int, msg string) {
 	c.errAcks = append(c.errAcks, map[string]interface{}{"id": id, "event": event, "code": code, "message": msg})
 }
@@ -87,8 +89,11 @@ func TestProtocol_Dispatch_UnknownEvent(t *testing.T) {
 		ID: "req-1", Event: "unknown:event", Data: []byte(`{}`),
 	})
 
-	if len(pc.acks) > 0 || len(pc.errAcks) > 0 {
-		t.Fatal("expected no response for unknown event")
+	if len(pc.acks) > 0 {
+		t.Fatal("expected no success ACK for unknown event")
+	}
+	if len(pc.errAcks) != 1 {
+		t.Fatalf("expected one error ACK for unknown event, got %d", len(pc.errAcks))
 	}
 }
 

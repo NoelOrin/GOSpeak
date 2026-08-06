@@ -7,6 +7,7 @@ import (
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/jobs"
 	"GOSpeak/internal/logger"
+	"GOSpeak/internal/metrics"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
@@ -23,6 +24,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	ossignal "os/signal"
 	"strconv"
@@ -182,7 +184,7 @@ func StartGin(env EnvEnum) error {
 	if err := r.SetTrustedProxies([]string{"127.0.0.1", "::1"}); err != nil {
 		logger.WithComponent("HTTP").Warnf("set trusted proxies failed: %v", err)
 	}
-	r.Use(logger.GinRecovery(), logger.GinLogger(), middleware.CORS(strings.Split(cfg.CORSOrigin, ",")))
+	r.Use(middleware.RequestID(), logger.GinRecovery(), logger.GinLogger(), middleware.CORS(strings.Split(cfg.CORSOrigin, ",")))
 	middleware.SetTokenVersionChecker(authSvc)
 
 	wsFanout := ws.NewFanout()
@@ -227,9 +229,14 @@ func StartGin(env EnvEnum) error {
 			if event == cluster.EventControlCommand {
 				var cmd cluster.ControlCommand
 				raw, _ := json.Marshal(payload)
-				_ = json.Unmarshal(raw, &cmd)
+				if err := json.Unmarshal(raw, &cmd); err != nil {
+					logger.WithComponent("Cluster").Warnf("decode control command failed: %v", err)
+					return
+				}
 				if cmd.NodeID == "" || cmd.NodeID == instanceID {
-					_ = signalHub.HandleClusterCommand(cmd)
+					if err := signalHub.HandleClusterCommand(cmd); err != nil {
+						logger.WithComponent("Cluster").Warnf("handle cluster command failed: %v", err)
+					}
 				}
 				return
 			}
@@ -303,15 +310,6 @@ func StartGin(env EnvEnum) error {
 			logger.WithComponent("JobQueue").Warnf("unavailable: %v", err)
 		} else {
 			jobQueue = q
-			signalHub.SetCleanupPublisher(q)
-			messageSvc.SetJobQueue(q)
-			if _, err := q.Consume(nb.InstanceID(), func(job bus.JobEnvelope) error {
-				return jobs.Handle(job, signalHub, signalHub, messageSvc)
-			}); err != nil {
-				logger.WithComponent("JobQueue").Errorf("consume failed: %v", err)
-			} else {
-				logger.WithComponent("JobQueue").Infof("consumer started instance=%s", nb.InstanceID())
-			}
 		}
 	}
 	signalHub.SetSFU(sfuProvider)
@@ -364,7 +362,7 @@ func StartGin(env EnvEnum) error {
 	authH := handler.NewAuthHandler(authSvc)
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)
 	emailConfigH := handler.NewEmailConfigHandler(emailConfigSvc)
-	userH := handler.NewUserHandler(userSvc, storageSvc)
+	userH := handler.NewUserHandler(userSvc, permSvc, storageSvc)
 	userGroupH := handler.NewUserGroupHandler(userGroupSvc, userSvc)
 	oauthH := handler.NewOAuthHandler(oauthSvc)
 	roleH := handler.NewRoleHandler(roleSvc)
@@ -375,6 +373,9 @@ func StartGin(env EnvEnum) error {
 		_, node, err := clusterSvc.ResolveServer(domainUUID)
 		if err != nil {
 			return "", err
+		}
+		if entry := strings.TrimSpace(cfg.ClusterEntryURL); entry != "" {
+			return strings.TrimRight(entry, "/") + "/ws?worker=" + url.QueryEscape(node.UUID), nil
 		}
 		return node.AdvertiseURL, nil
 	})
@@ -412,6 +413,7 @@ func StartGin(env EnvEnum) error {
 	var clusterStop func()
 	var agentLeaderLock *cluster.NATSLeaderLock
 	var stopLeaderRenew func()
+	var localClusterNodeID string
 	localNodeUUID := ""
 	degradedToWorker := false
 	if cfg.IsAgent() {
@@ -432,7 +434,17 @@ func StartGin(env EnvEnum) error {
 			if renewInterval > 2*time.Second {
 				renewInterval = 2 * time.Second
 			}
-			renewDone := leaderLock.RenewLoop(renewCtx, instanceID, renewInterval)
+			renewDone, renewLost := leaderLock.RenewLoop(renewCtx, instanceID, renewInterval)
+			go func() {
+				select {
+				case <-renewLost:
+					// 锁丢失意味着另一个 Agent 可能已接管：继续保留写面会形成双写，
+					// 直接触发优雅退出，由编排重启并重新竞争。
+					logger.WithComponent("Cluster").Errorf("agent leader lock lost; shutting down to avoid split brain instance=%s", instanceID)
+					_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
+				case <-renewDone:
+				}
+			}()
 			stopLeaderRenew = func() {
 				renewCancel()
 				<-renewDone
@@ -448,12 +460,12 @@ func StartGin(env EnvEnum) error {
 	}
 	switch cfg.ClusterRole {
 	case "all":
-		localNodeUUID, clusterStop, err = startLocalClusterRuntime(cfg, clusterSvc, signalHub, eventBus.InstanceID())
+		localNodeUUID, clusterStop, err = startLocalClusterRuntime(cfg, clusterSvc, signalHub, eventBus.InstanceID(), sfuProvider)
 	case "worker":
 		if degradedToWorker && (cfg.ClusterAgentURL == "" || cfg.ClusterAgentToken == "") {
-			localNodeUUID, clusterStop, err = startDegradedLocalWorkerRuntime(cfg, signalHub, eventBus.InstanceID())
+			localNodeUUID, clusterStop, err = startDegradedLocalWorkerRuntime(cfg, signalHub, eventBus.InstanceID(), sfuProvider)
 		} else {
-			clusterStop, err = startWorkerClusterRuntime(cfg, signalHub)
+			localNodeUUID, clusterStop, err = startWorkerClusterRuntime(cfg, signalHub, sfuProvider)
 		}
 	case "agent":
 		clusterStop, err = startAgentClusterRuntime(cfg, clusterSvc)
@@ -461,6 +473,9 @@ func StartGin(env EnvEnum) error {
 	if err != nil {
 		return fmt.Errorf("failed to start cluster runtime: %w", err)
 	}
+	localClusterNodeID = localNodeUUID
+
+	startJobConsumers(cfg, jobQueue, eventBus.InstanceID(), signalHub, messageSvc, conversationSvc, clusterSvc, localClusterNodeID)
 
 	domainH := handler.NewDomainHandler(domainSvc, permSvc)
 	domainH.SetControlPublisher(clusterSvc)
@@ -495,8 +510,14 @@ func StartGin(env EnvEnum) error {
 
 	monitorH := handler.NewMonitorHandler(signalHub, cfg, eventBus, clusterSvc)
 
+	// Prometheus /metrics：业务指标快照 + HTTP 请求指标，可选用 METRICS_TOKEN 保护。
+	metricsSrv := metrics.New(monitorH.PrometheusSnapshot)
+	r.Use(metricsSrv.Middleware())
+	metricsHandler := metrics.RequireToken(metricsSrv.Handler(), cfg.MetricsToken)
+	r.GET("/metrics", gin.WrapH(metricsHandler))
+
 	// 启动签名密钥轮换检查
-	go redis.KeyRotationLoop()
+	redis.StartKeyRotationLoop()
 
 	// WS 升级路由（JWT 鉴权由 Upgrader 内部完成）
 	var wsUpgrader *ws.Upgrader
@@ -506,7 +527,10 @@ func StartGin(env EnvEnum) error {
 			Handler:        wsHandler,
 			AllowedOrigins: wsAllowedOrigins(cfg),
 			OnConnect: func(c *ws.Client) {
-				_ = signalHub.OnConnect(c)
+				if err := signalHub.OnConnect(c); err != nil {
+					logger.WithComponent("WS").Warnf("on connect failed: %v", err)
+					c.Close()
+				}
 			},
 			OnDisconnect: func(c *ws.Client) {
 				signalHub.OnDisconnect(c)
@@ -582,6 +606,7 @@ func StartGin(env EnvEnum) error {
 		}
 
 		pluginReg.StopAll(context.Background())
+		pluginReg.StopAll(ctx)
 		logger.WithComponent("Plugin").Info("plugins stopped")
 
 		if clusterStop != nil {
@@ -599,6 +624,7 @@ func StartGin(env EnvEnum) error {
 		}
 
 		// 3) close event bus last
+		redis.StopKeyRotationLoop()
 		logger.WithComponent("EventBus").Info("closing event bus")
 		closeEventBus()
 		logger.WithComponent("EventBus").Info("closed")
@@ -608,4 +634,49 @@ func StartGin(env EnvEnum) error {
 		logger.WithComponent("HTTP").Fatalf("listen error: %v", err)
 	}
 	return nil
+}
+
+func startJobConsumers(cfg *config.Config, q *bus.JobQueue, instanceID string, hub *signal.Hub, messageSvc *service.MessageService, conversationSvc *service.ConversationService, clusterSvc *service.ClusterService, localNodeID string) {
+	if q == nil {
+		return
+	}
+	hub.SetCleanupPublisher(q)
+	messageSvc.SetJobQueue(q)
+	messageSvc.SetSyncWriteAllowed(cfg.IsAgent())
+	conversationSvc.SetJobQueue(q)
+	conversationSvc.SetSyncWriteAllowed(cfg.IsAgent())
+	clusterSvc.SetControlQueue(q)
+
+	handler := func(job bus.JobEnvelope) error {
+		if job.Type == "cluster.control" {
+			var cmd cluster.ControlCommand
+			if err := json.Unmarshal(job.Payload, &cmd); err != nil {
+				return err
+			}
+			if cmd.NodeID != "" && cmd.NodeID != localNodeID {
+				// 定向命令不属于本节点：确认跳过，避免无限重投。
+				return nil
+			}
+		}
+		return jobs.Handle(job, hub, hub, messageSvc, conversationSvc, hub)
+	}
+
+	switch {
+	case q.RoleAware() && cfg.ClusterRole == model.ClusterRoleWorker:
+		if _, err := q.ConsumeRuntime(instanceID, handler); err != nil {
+			logger.WithComponent("JobQueue").Errorf("runtime consumer failed: %v", err)
+			return
+		}
+	case q.RoleAware() && cfg.ClusterRole == model.ClusterRoleAgent:
+		if _, err := q.ConsumeChat(instanceID, handler); err != nil {
+			logger.WithComponent("JobQueue").Errorf("chat consumer failed: %v", err)
+			return
+		}
+	default:
+		if _, err := q.Consume(instanceID, handler); err != nil {
+			logger.WithComponent("JobQueue").Errorf("consumer failed: %v", err)
+			return
+		}
+	}
+	logger.WithComponent("JobQueue").Infof("consumer started instance=%s role=%s", instanceID, cfg.ClusterRole)
 }

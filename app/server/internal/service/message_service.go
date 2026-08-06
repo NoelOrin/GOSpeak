@@ -13,6 +13,7 @@ import (
 	"GOSpeak/internal/bus"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
+	message "GOSpeak/internal/pkg/message"
 	"GOSpeak/internal/repository"
 
 	"github.com/google/uuid"
@@ -20,42 +21,9 @@ import (
 
 const MaxMessageRunes = 2000
 
-// MessageDTO is the public data transfer object for messages.
-// Used for both broadcast payloads and API responses.
-
-// MessageDTO is the public data transfer object for messages.
-// Used for both broadcast payloads and API responses.
-type MessageDTO struct {
-	UUID           string     `json:"uuid"`
-	RoomUUID       string     `json:"room_uuid"`
-	AuthorID       string     `json:"author_id"`
-	AuthorUUID     string     `json:"author_uuid"`
-	AuthorName     string     `json:"author_name"`
-	AuthorAvatar   string     `json:"author_avatar"`
-	Content        string     `json:"content"`
-	ReplyTo        string     `json:"reply_to,omitempty"`
-	Mentions       []string   `json:"mentions,omitempty"`
-	EditedAt       *time.Time `json:"edited_at,omitempty"`
-	Deleted        bool       `json:"deleted"`
-	CreatedAt      time.Time  `json:"created_at"`
-	ClientNonce    string     `json:"client_nonce,omitempty"`
-	ConversationID string     `json:"conversation_id,omitempty"`
-	TargetIdentity string     `json:"target_identity,omitempty"`
-}
-
-// Narrow interfaces for testability.
-
-// MessageActor separates the display/author identity from the stable user UUID.
-// Domain membership must be checked with UserUUID; AuthorID stays the username.
-
-// Narrow interfaces for testability.
-
-// MessageActor separates the display/author identity from the stable user UUID.
-// Domain membership must be checked with UserUUID; AuthorID stays the username.
-type MessageActor struct {
-	Identity string
-	UserUUID string
-}
+// MessageDTO 与 MessageActor 下沉到 internal/pkg/message，signal 层不再反向依赖 service。
+type MessageDTO = message.DTO
+type MessageActor = message.Actor
 
 // DomainMemberChecker verifies a user belongs to a room's owning domain.
 
@@ -103,12 +71,13 @@ type userByName interface {
 
 // MessageService provides text message operations with broadcast-first semantics.
 type MessageService struct {
-	msgRepo       *repository.MessageRepository
-	roomRepo      roomByUUID
-	domainChecker DomainMemberChecker
-	userRepo      userByName
-	bus           MessageEventBus
-	queue         MessageJobQueue
+	msgRepo          *repository.MessageRepository
+	roomRepo         roomByUUID
+	domainChecker    DomainMemberChecker
+	userRepo         userByName
+	bus              MessageEventBus
+	queue            MessageJobQueue
+	syncWriteAllowed bool
 }
 
 // NewMessageService creates a MessageService.
@@ -117,10 +86,17 @@ type MessageService struct {
 // Room repo is required; bus and queue are optional (set via setters).
 func NewMessageService(msgRepo *repository.MessageRepository, roomRepo roomByUUID, domainChecker DomainMemberChecker) *MessageService {
 	return &MessageService{
-		msgRepo:       msgRepo,
-		roomRepo:      roomRepo,
-		domainChecker: domainChecker,
+		msgRepo:          msgRepo,
+		roomRepo:         roomRepo,
+		domainChecker:    domainChecker,
+		syncWriteAllowed: true,
 	}
+}
+
+// SetSyncWriteAllowed controls whether queue-unavailable fallbacks may write
+// the database synchronously. Worker data-plane instances must disable this.
+func (s *MessageService) SetSyncWriteAllowed(allowed bool) {
+	s.syncWriteAllowed = allowed
 }
 
 // SetEventBus sets the event bus for broadcasting to online clients.
@@ -256,6 +232,9 @@ func (s *MessageService) Send(roomUUID string, actor MessageActor, content, repl
 	// 1) broadcast first；广播失败时立即同步落库，避免消息仅存在于易失广播面。
 	if s.bus != nil {
 		if err := s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:created", dto); err != nil {
+			if !s.syncWriteAllowed {
+				return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "message persistence unavailable on data-plane instance")
+			}
 			if perr := s.persistMessageSync(msgUUID, roomUUID, actor.Identity, actor.UserUUID, content, replyTo, mentions, now); perr != nil {
 				return nil, perr
 			}
@@ -286,6 +265,9 @@ func (s *MessageService) Send(roomUUID string, actor MessageActor, content, repl
 		}
 	}
 	if !enqueued {
+		if !s.syncWriteAllowed {
+			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "message persistence unavailable on data-plane instance")
+		}
 		if err := s.persistMessageSync(msgUUID, roomUUID, actor.Identity, actor.UserUUID, content, replyTo, mentions, now); err != nil {
 			return nil, err
 		}

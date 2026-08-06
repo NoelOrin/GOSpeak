@@ -126,6 +126,9 @@ func InitDB(cfg *config.Config) error {
 		return err
 	}
 
+	if err := migrateUserSearchIndexes(DB, dbType); err != nil {
+		return err
+	}
 	if err := migrateMessageAuthorUUID(DB); err != nil {
 		return err
 	}

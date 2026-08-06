@@ -138,7 +138,7 @@ func TestLeaderLock_RenewKeepsLock(t *testing.T) {
 		t.Fatalf("TryAcquire: ok=%v err=%v", ok, err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	done := lock.RenewLoop(ctx, "node-a", 100*time.Millisecond)
+	done, _ := lock.RenewLoop(ctx, "node-a", 100*time.Millisecond)
 	defer func() { cancel(); <-done }()
 
 	time.Sleep(300 * time.Millisecond)
@@ -148,5 +148,52 @@ func TestLeaderLock_RenewKeepsLock(t *testing.T) {
 	}
 	if ok2 {
 		t.Fatal("node-b must not acquire while node-a renews")
+	}
+}
+
+func TestLeaderLock_RenewReportsLost(t *testing.T) {
+	js := newTestJetStream(t)
+	lock, err := OpenLeaderLock(js, "test")
+	if err != nil {
+		t.Fatalf("OpenLeaderLock: %v", err)
+	}
+	ok, err := lock.TryAcquire(context.Background(), "node-a")
+	if err != nil || !ok {
+		t.Fatalf("TryAcquire node-a: ok=%v err=%v", ok, err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done, _ := lock.RenewLoop(ctx, "node-a", 50*time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	<-done
+
+	// 等 TTL 过期后让 node-b 抢占，再恢复 node-a 的续租循环检测丢失。
+	lockB, err := OpenLeaderLock(js, "test")
+	if err != nil {
+		t.Fatalf("OpenLeaderLock B: %v", err)
+	}
+	deadline := time.Now().Add(8 * time.Second)
+	for {
+		okB, err := lockB.TryAcquire(context.Background(), "node-b")
+		if err != nil {
+			t.Fatalf("TryAcquire node-b: %v", err)
+		}
+		if okB {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("node-b never acquired after TTL")
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	done2, lost := lock.RenewLoop(ctx2, "node-a", 50*time.Millisecond)
+	defer func() { cancel2(); <-done2 }()
+	select {
+	case <-lost:
+	case <-time.After(3 * time.Second):
+		t.Fatal("lost channel not reported after lock was taken over")
 	}
 }

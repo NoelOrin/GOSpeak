@@ -7,18 +7,18 @@ import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
-	"GOSpeak/internal/service"
+	message "GOSpeak/internal/pkg/message"
 	"GOSpeak/internal/ws"
 )
 
 // messageSender abstracts message operations for the signal layer.
 // Satisfied by *service.MessageService.
 type messageSender interface {
-	Send(roomUUID string, actor service.MessageActor, content, replyTo, clientNonce string, mentions []string) (*service.MessageDTO, error)
-	Edit(roomUUID, messageUUID string, actor service.MessageActor, content string) (*service.MessageDTO, error)
-	Delete(roomUUID, messageUUID string, actor service.MessageActor, canDeleteOthers bool) error
-	React(roomUUID, messageUUID string, actor service.MessageActor, emoji string) error
-	Unreact(roomUUID, messageUUID string, actor service.MessageActor, emoji string) error
+	Send(roomUUID string, actor message.Actor, content, replyTo, clientNonce string, mentions []string) (*message.DTO, error)
+	Edit(roomUUID, messageUUID string, actor message.Actor, content string) (*message.DTO, error)
+	Delete(roomUUID, messageUUID string, actor message.Actor, canDeleteOthers bool) error
+	React(roomUUID, messageUUID string, actor message.Actor, emoji string) error
+	Unreact(roomUUID, messageUUID string, actor message.Actor, emoji string) error
 }
 
 // messageSendPayload is the client->server payload for message:send.
@@ -105,12 +105,12 @@ func (h *Hub) checkMessagePerm(c ws.ClientMessenger) string {
 	return ""
 }
 
-func messageActorFromConn(c ws.ClientMessenger) (service.MessageActor, bool) {
+func messageActorFromConn(c ws.ClientMessenger) (message.Actor, bool) {
 	identity := clientIdentity(c)
 	if identity == "" || c == nil || c.Claims() == nil || c.Claims().UserUUID == "" {
-		return service.MessageActor{}, false
+		return message.Actor{}, false
 	}
-	return service.MessageActor{Identity: identity, UserUUID: c.Claims().UserUUID}, true
+	return message.Actor{Identity: identity, UserUUID: c.Claims().UserUUID}, true
 }
 
 // messageErrAck 将服务层错误按 pkg.HandleError 语义脱敏后返回给 WS 客户端，

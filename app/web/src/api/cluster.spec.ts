@@ -10,9 +10,12 @@ vi.mock("@/api/apiClient", () => {
 
 import apiClient from "@/api/apiClient";
 import {
+	autoScaleServer,
 	drainClusterNode,
+	drainServerAssignments,
 	getClusterStats,
 	listClusterNodes,
+	listServerAssignments,
 	scaleServer,
 	undrainClusterNode,
 } from "@/api/cluster";
@@ -54,6 +57,39 @@ describe("clusterApi", () => {
 		expect(apiClient.post).toHaveBeenCalledWith({
 			url: "/api/v1/cluster/servers/scale",
 			data: { server_uuid: "srv-1", replicas: 3 },
+		});
+	});
+
+	it("lists server assignments", async () => {
+		(apiClient.post as any).mockResolvedValue({
+			assignments: [
+				{
+					id: 1,
+					server_uuid: "srv-1",
+					node_uuid: "node-a",
+					status: "assigned",
+				},
+			],
+		});
+		const result = await listServerAssignments("srv-1");
+		expect(apiClient.post).toHaveBeenCalledWith({
+			url: "/api/v1/cluster/servers/list",
+			data: { server_uuid: "srv-1" },
+		});
+		expect(result).toHaveLength(1);
+	});
+
+	it("drains and autoscales server assignments", async () => {
+		(apiClient.post as any).mockResolvedValue(null);
+		await drainServerAssignments("srv-1");
+		expect(apiClient.post).toHaveBeenCalledWith({
+			url: "/api/v1/cluster/servers/drain",
+			data: { server_uuid: "srv-1" },
+		});
+		await autoScaleServer("srv-1", 2);
+		expect(apiClient.post).toHaveBeenCalledWith({
+			url: "/api/v1/cluster/servers/autoscale",
+			data: { server_uuid: "srv-1", replicas: 2 },
 		});
 	});
 

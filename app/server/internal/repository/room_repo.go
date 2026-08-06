@@ -36,8 +36,10 @@ func (r *RoomRepository) GetByUUID(uuid string) (*model.Room, error) {
 }
 
 func (r *RoomRepository) GetByName(name string) (*model.Room, error) {
+	ctx, cancel := repoTimeoutCtx()
+	defer cancel()
 	var room model.Room
-	err := r.db.Where("name = ?", name).First(&room).Error
+	err := r.db.WithContext(ctx).Where("name = ?", name).First(&room).Error
 	if err != nil {
 		return nil, err
 	}
@@ -46,8 +48,10 @@ func (r *RoomRepository) GetByName(name string) (*model.Room, error) {
 
 // GetByDomainAndName 按域和房间名精确查询，避免同名房间跨域串用。
 func (r *RoomRepository) GetByDomainAndName(domainUUID, name string) (*model.Room, error) {
+	ctx, cancel := repoTimeoutCtx()
+	defer cancel()
 	var room model.Room
-	q := r.db.Where("name = ?", name)
+	q := r.db.WithContext(ctx).Where("name = ?", name)
 	if domainUUID == "" {
 		q = q.Where("domain_uuid = ?", "")
 	} else {

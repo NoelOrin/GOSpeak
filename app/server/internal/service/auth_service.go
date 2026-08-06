@@ -186,7 +186,9 @@ func (s *AuthService) RefreshFromToken(refreshToken string) (*RefreshResponse, e
 	if !pkg.IsRefreshToken(claims) {
 		return nil, pkg.NewAppError(pkg.TOKEN_WRONG, "invalid refresh token")
 	}
-	if redis.IsBlacklisted(claims.ID) {
+	if revoked, err := redis.IsBlacklistedErr(claims.ID); err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "blacklist store unavailable")
+	} else if revoked {
 		return nil, pkg.NewAppError(pkg.TOKEN_REVOKED)
 	}
 	if claims.UserUUID == "" {

@@ -128,7 +128,14 @@ func (h *SignalHandler) GetWSTicket(c *gin.Context) {
 		pkg.Fail(c, pkg.INTERNAL_ERROR)
 		return
 	}
-	pkg.Success(c, gin.H{"ticket": ticket})
+	data := gin.H{"ticket": ticket}
+	// 断线重连时按当前域名重新解析 Worker，避免粘在已失效节点上。
+	if domainUUID := strings.TrimSpace(c.Query("domain_uuid")); domainUUID != "" && h.clusterResolver != nil {
+		if workerURL, resolveErr := h.clusterResolver(domainUUID); resolveErr == nil && workerURL != "" {
+			data["url"] = workerURL
+		}
+	}
+	pkg.Success(c, data)
 }
 
 // JoinRoomRequest 加入房间请求

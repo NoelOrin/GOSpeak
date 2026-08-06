@@ -78,8 +78,15 @@ func TestHandlerRegistry_Dispatch_UnknownEvent(t *testing.T) {
 
 	r.Dispatch(tc, Message{ID: "req-1", Event: "unknown:event", Data: []byte(`{}`)})
 
-	if len(tc.emitted) != 0 {
-		t.Fatal("expected no response for unknown event")
+	if len(tc.emitted) != 1 {
+		t.Fatalf("expected error ACK for unknown event, got %d", len(tc.emitted))
+	}
+	e, ok := tc.emitted[0].(errAck)
+	if !ok {
+		t.Fatalf("expected errAck, got %T", tc.emitted[0])
+	}
+	if e.id != "req-1" || e.event != "unknown:event" || e.code != int(pkg.INVALID_PARAMS) {
+		t.Fatalf("error ack fields: %+v", e)
 	}
 }
 
@@ -161,7 +168,10 @@ func TestHandlerRegistry_Dispatch_EmptyEvent(t *testing.T) {
 
 	r.Dispatch(tc, Message{ID: "req-1", Event: "", Data: []byte(`{}`)})
 
-	if len(tc.emitted) != 0 {
-		t.Fatal("expected no response for empty event")
+	if len(tc.emitted) != 1 {
+		t.Fatalf("expected error ACK for empty event, got %d", len(tc.emitted))
+	}
+	if _, ok := tc.emitted[0].(errAck); !ok {
+		t.Fatalf("expected errAck, got %T", tc.emitted[0])
 	}
 }

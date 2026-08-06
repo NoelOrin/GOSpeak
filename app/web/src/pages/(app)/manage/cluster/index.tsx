@@ -5,12 +5,16 @@ import Save from "lucide-solid/icons/save";
 import { createResource, createSignal, For, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import {
+	autoScaleServer,
 	drainClusterNode,
+	drainServerAssignments,
 	getClusterStats,
 	listClusterNodes,
+	listServerAssignments,
 	scaleServer,
 	undrainClusterNode,
 	type ClusterNodeView,
+	type ServerAssignment,
 } from "@/api/cluster";
 import {
 	ManageHeader,
@@ -63,6 +67,7 @@ function ClusterPage() {
 	const [stats, { refetch: refetchStats }] = createResource(getClusterStats);
 	const [serverUUID, setServerUUID] = createSignal("");
 	const [replicas, setReplicas] = createSignal(1);
+	const [assignments, setAssignments] = createSignal<ServerAssignment[]>([]);
 	const [busy, setBusy] = createSignal(false);
 	const canManage = () => hasPermission("cluster:manage");
 
@@ -108,6 +113,61 @@ function ClusterPage() {
 		try {
 			await scaleServer(uuid, replicas());
 			showToast("副本数已调整", { type: "success" });
+			refresh();
+		} catch {
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	const handleListAssignments = async () => {
+		const uuid = serverUUID().trim();
+		if (!uuid) {
+			showToast("请输入 Server UUID", { type: "warning" });
+			return;
+		}
+		if (busy()) return;
+		setBusy(true);
+		try {
+			const rows = await listServerAssignments(uuid);
+			setAssignments(rows);
+			showToast(`共 ${rows.length} 个实例分配`, { type: "success" });
+		} catch {
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	const handleDrainServer = async () => {
+		const uuid = serverUUID().trim();
+		if (!uuid) {
+			showToast("请输入 Server UUID", { type: "warning" });
+			return;
+		}
+		if (busy()) return;
+		setBusy(true);
+		try {
+			await drainServerAssignments(uuid);
+			showToast("Server 副本已进入排空", { type: "success" });
+			setAssignments([]);
+			refresh();
+		} catch {
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	const handleAutoScale = async () => {
+		const uuid = serverUUID().trim();
+		if (!uuid) {
+			showToast("请输入 Server UUID", { type: "warning" });
+			return;
+		}
+		if (busy()) return;
+		setBusy(true);
+		try {
+			await autoScaleServer(uuid, replicas());
+			showToast("自动扩缩已完成", { type: "success" });
 			refresh();
 		} catch {
 		} finally {
@@ -265,7 +325,51 @@ function ClusterPage() {
 							<Save size={16} />
 							应用
 						</button>
+						<button
+							class="btn btn-ghost btn-sm"
+							onClick={() => void handleListAssignments()}
+						>
+							查看分配
+						</button>
+						<button
+							class="btn btn-ghost btn-sm"
+							onClick={() => void handleDrainServer()}
+						>
+							排空副本
+						</button>
+						<button
+							class="btn btn-ghost btn-sm"
+							onClick={() => void handleAutoScale()}
+						>
+							自动扩缩
+						</button>
 					</div>
+					<Show when={assignments().length > 0}>
+						<div class="mt-4 overflow-x-auto">
+							<table class="table table-sm">
+								<thead>
+									<tr>
+										<th>Server UUID</th>
+										<th>节点</th>
+										<th>状态</th>
+									</tr>
+								</thead>
+								<tbody>
+									<For each={assignments()}>
+										{(assignment) => (
+											<tr>
+												<td class="text-xs">{assignment.server_uuid}</td>
+												<td class="text-xs">{assignment.node_uuid}</td>
+												<td>
+													<StatusBadge status={assignment.status} />
+												</td>
+											</tr>
+										)}
+									</For>
+								</tbody>
+							</table>
+						</div>
+					</Show>
 				</ManageSection>
 			</Show>
 		</ManagePage>

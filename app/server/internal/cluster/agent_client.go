@@ -4,12 +4,26 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 )
+
+// ErrClusterNodeNotFound is returned when the Agent no longer knows the node.
+// The worker must re-register before heartbeats can succeed again.
+var ErrClusterNodeNotFound = errors.New("cluster node not found")
+
+type agentHTTPError struct {
+	status int
+	body   string
+}
+
+func (e *agentHTTPError) Error() string {
+	return fmt.Sprintf("agent client status=%d body=%s", e.status, strings.TrimSpace(e.body))
+}
 
 // AgentClient 是 Worker 侧访问 Agent 控制面 HTTP API 的轻量客户端。
 type AgentClient struct {
@@ -46,7 +60,42 @@ func (c *AgentClient) Deregister(ctx context.Context, nodeID string) error {
 	})
 }
 
+// do retries transient network/5xx/429 failures with short backoff.
 func (c *AgentClient) do(ctx context.Context, path string, payload interface{}) error {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			delay := time.Duration(500*(1<<attempt)) * time.Millisecond // 1s, 2s
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+		err := c.doOnce(ctx, path, payload)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !retryableAgentError(err) {
+			return err
+		}
+	}
+	return lastErr
+}
+
+func retryableAgentError(err error) bool {
+	if errors.Is(err, ErrClusterNodeNotFound) {
+		return false
+	}
+	var httpErr *agentHTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.status == http.StatusTooManyRequests || httpErr.status >= http.StatusInternalServerError
+	}
+	return true
+}
+
+func (c *AgentClient) doOnce(ctx context.Context, path string, payload interface{}) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("agent client marshal %s: %w", path, err)
@@ -71,7 +120,7 @@ func (c *AgentClient) do(ctx context.Context, path string, payload interface{}) 
 		return fmt.Errorf("agent client read %s: %w", path, err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("agent client %s status=%d body=%s", path, resp.StatusCode, strings.TrimSpace(string(raw)))
+		return &agentHTTPError{status: resp.StatusCode, body: string(raw)}
 	}
 
 	var envelope struct {
@@ -82,6 +131,9 @@ func (c *AgentClient) do(ctx context.Context, path string, payload interface{}) 
 		return fmt.Errorf("agent client parse %s: %w", path, err)
 	}
 	if envelope.Code != 0 {
+		if envelope.Code == 3001 {
+			return ErrClusterNodeNotFound
+		}
 		return fmt.Errorf("agent client %s code=%d msg=%s", path, envelope.Code, envelope.Msg)
 	}
 	return nil

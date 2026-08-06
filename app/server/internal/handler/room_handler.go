@@ -2,7 +2,6 @@ package handler
 
 import (
 	"log"
-	"strings"
 
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/middleware"
@@ -14,38 +13,41 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RoomListBroadcaster 通知信号层刷新指定 Domain 的房间列表广播。
-type RoomListBroadcaster interface {
-	BroadcastRoomList(domainUUID string)
-}
-
 type RoomHandler struct {
 	roomSvc             *service.RoomService
 	permSvc             *service.PermissionService
 	domainSvc           *service.DomainService
 	controlPublisher    ControlPublisher
-	roomListBroadcaster RoomListBroadcaster
+	roomListBroadcaster roomListBroadcaster
 }
 
 func NewRoomHandler(roomSvc *service.RoomService, permSvc *service.PermissionService, domainSvc *service.DomainService) *RoomHandler {
 	return &RoomHandler{roomSvc: roomSvc, permSvc: permSvc, domainSvc: domainSvc}
 }
 
-// SetRoomListBroadcaster 注入信号层房间列表广播器。
-func (h *RoomHandler) SetRoomListBroadcaster(b RoomListBroadcaster) {
+// SetControlPublisher 注入集群控制命令发布器。
+func (h *RoomHandler) SetControlPublisher(p ControlPublisher) {
+	h.controlPublisher = p
+}
+
+// roomListBroadcaster 注入信号层的房间列表广播器（Hub.BroadcastRoomList）。
+type roomListBroadcaster interface {
+	BroadcastRoomList(domainUUID string)
+}
+
+// SetRoomListBroadcaster 注入 Hub.BroadcastRoomList，供 Create/Update 触发房间列表广播。
+func (h *RoomHandler) SetRoomListBroadcaster(b roomListBroadcaster) {
 	h.roomListBroadcaster = b
 }
 
+// notifyRoomList 触发信号层房间列表广播（房间变更后通知所有在线客户端）。
 func (h *RoomHandler) notifyRoomList(domainUUID string) {
 	if h.roomListBroadcaster != nil {
 		h.roomListBroadcaster.BroadcastRoomList(domainUUID)
 	}
 }
 
-// SetControlPublisher 注入集群控制命令发布器。
-func (h *RoomHandler) SetControlPublisher(p ControlPublisher) {
-	h.controlPublisher = p
-}
+
 
 func currentUserUUID(c *gin.Context) string {
 	if v, ok := c.Get("user_uuid"); ok {
@@ -124,16 +126,8 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		return
 	}
 	username, _ := usernameVal.(string)
-	domainUUID := strings.TrimSpace(req.DomainUUID)
-	if domainUUID == "" {
-		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
-		return
-	}
-	if contextDomainUUID := domainUUIDFromContext(c); contextDomainUUID != "" && contextDomainUUID != domainUUID {
-		pkg.Fail(c, pkg.FORBIDDEN, "domain_uuid mismatch")
-		return
-	}
-	if !middleware.IsDomainMember(domainUUID, currentUserUUID(c)) {
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID != "" && !middleware.IsDomainMember(domainUUID, currentUserUUID(c)) {
 		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
 		return
 	}
@@ -156,9 +150,11 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		return
 	}
 
-	h.notifyRoomList(domainUUID)
+	if h.roomListBroadcaster != nil {
+		h.roomListBroadcaster.BroadcastRoomList(domainUUID)
+	}
 
-	pkg.Success(c, room)
+	pkg.Success(c, service.RoomToDTO(room))
 }
 
 // Get
@@ -191,7 +187,7 @@ func (h *RoomHandler) Get(c *gin.Context) {
 		return
 	}
 
-	pkg.Success(c, room)
+	pkg.Success(c, service.RoomToDTO(room))
 }
 
 // List
@@ -238,7 +234,7 @@ func (h *RoomHandler) List(c *gin.Context) {
 	}
 
 	pkg.Success(c, gin.H{
-		"rooms": rooms,
+		"rooms": service.RoomsToDTOs(rooms),
 		"total": total,
 		"page":  req.Page,
 		"size":  req.PageSize,
@@ -308,9 +304,7 @@ func (h *RoomHandler) Update(c *gin.Context) {
 		return
 	}
 
-	h.notifyRoomList(room.DomainUUID)
-
-	pkg.Success(c, room)
+	pkg.Success(c, service.RoomToDTO(room))
 }
 
 // Delete
@@ -353,6 +347,10 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	if h.roomListBroadcaster != nil {
+		h.roomListBroadcaster.BroadcastRoomList(room.DomainUUID)
+	}
+
 	// DB 已删除；control 失败只告警，由 KV/房间列表最终一致清理，不再返回误导性 5xx。
 	if h.controlPublisher != nil {
 		if err := h.controlPublisher.PublishControl(cluster.ControlCommand{
@@ -363,8 +361,6 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 			log.Printf("[Room] publish delete control failed id=%d room=%q err=%v", req.ID, room.Name, err)
 		}
 	}
-
-	h.notifyRoomList(room.DomainUUID)
 
 	pkg.Success(c, nil)
 }

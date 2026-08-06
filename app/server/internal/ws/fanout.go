@@ -37,6 +37,7 @@ func (f *Fanout) Add(c *Client) {
 }
 
 // Remove 实现 Broadcaster.Remove — 注销客户端并清理空房间。
+// 返回值语义：client 离开后仍保留成员的房间；被清空的房间不会出现在返回列表中。
 func (f *Fanout) Remove(clientID string) []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -47,10 +48,11 @@ func (f *Fanout) Remove(clientID string) []string {
 	for room, members := range f.rooms {
 		if _, ok := members[clientID]; ok {
 			delete(members, clientID)
+			if len(members) == 0 {
+				delete(f.rooms, room)
+				continue
+			}
 			rooms = append(rooms, room)
-		}
-		if len(members) == 0 {
-			delete(f.rooms, room)
 		}
 	}
 	return rooms

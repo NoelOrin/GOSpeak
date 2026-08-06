@@ -38,8 +38,10 @@ func (r *UserRepository) GetByUUID(uuid string) (*model.User, error) {
 }
 
 func (r *UserRepository) GetByName(name string) (*model.User, error) {
+	ctx, cancel := repoTimeoutCtx()
+	defer cancel()
 	var user model.User
-	err := r.db.Where("name = ?", name).First(&user).Error
+	err := r.db.WithContext(ctx).Where("name = ?", name).First(&user).Error
 	if err != nil {
 		return nil, err
 	}
@@ -50,8 +52,10 @@ func (r *UserRepository) GetByNames(names []string) (map[string]*model.User, err
 	if len(names) == 0 {
 		return map[string]*model.User{}, nil
 	}
+	ctx, cancel := repoTimeoutCtx()
+	defer cancel()
 	var users []model.User
-	if err := r.db.Where("name IN ?", names).Find(&users).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("name IN ?", names).Find(&users).Error; err != nil {
 		return nil, err
 	}
 	out := make(map[string]*model.User, len(users))

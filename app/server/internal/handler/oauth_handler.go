@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -100,12 +101,39 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 		return
 	}
 
-	// 浏览器回调：把 token 交给登录页完成会话落地，避免 API JSON 卡在新页面。
-	q := make(url.Values)
-	q.Set("oauth", "1")
-	q.Set("access_token", resp.Token)
-	q.Set("refresh_token", resp.RefreshToken)
-	c.Redirect(http.StatusFound, "/login#"+q.Encode())
+	// 浏览器回调：通过同源 postMessage 把 token 单次交给登录页 opener，
+	// 避免 access/refresh token 出现在 URL fragment、浏览器历史或代理日志。
+	payload, _ := json.Marshal(map[string]string{
+		"access_token":  resp.Token,
+		"refresh_token": resp.RefreshToken,
+	})
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'")
+	_, _ = c.Writer.Write([]byte(oauthBridgeHTML(payload)))
+}
+
+// oauthBridgeHTML 返回 OAuth 回调落地页：同源窗口通过 postMessage 单次交付 token。
+func oauthBridgeHTML(payload []byte) string {
+	return `<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>GOSpeak 登录</title>
+<body>
+<script>
+(function () {
+  var data = ` + string(payload) + `;
+  if (window.opener && window.opener !== window) {
+    try {
+      window.opener.postMessage({type: "gospeak-oauth", access_token: data.access_token, refresh_token: data.refresh_token}, window.location.origin);
+    } catch (e) {}
+    window.close();
+    return;
+  }
+  document.body.textContent = "登录成功，请关闭本窗口返回 GOSpeak。";
+})();
+</script>
+</body>
+</html>`
 }
 
 func redirectOAuthError(c *gin.Context, msg string) {

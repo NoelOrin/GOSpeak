@@ -57,6 +57,30 @@ describe("wsClient", () => {
 		client.disconnect();
 	});
 
+	it("keeps worker query when connecting through the cluster entry", async () => {
+		const { createWSClient } = await import("./wsClient");
+		const client = createWSClient();
+
+		client.connect("https://voice.example.com/ws?worker=worker-1", "ticket");
+		expect(MockWebSocket.instances[0].url).toBe(
+			"wss://voice.example.com/ws?worker=worker-1",
+		);
+
+		client.disconnect();
+	});
+
+	it("appends /ws while preserving existing query params", async () => {
+		const { createWSClient } = await import("./wsClient");
+		const client = createWSClient();
+
+		client.connect("https://voice.example.com?worker=worker-2", "ticket");
+		expect(MockWebSocket.instances[0].url).toBe(
+			"wss://voice.example.com/ws?worker=worker-2",
+		);
+
+		client.disconnect();
+	});
+
 	it("refreshes the ws ticket before automatic reconnect", async () => {
 		const { createWSClient } = await import("./wsClient");
 		const refreshTicket = vi.fn().mockResolvedValue({ token: "fresh-ticket" });

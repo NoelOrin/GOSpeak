@@ -94,6 +94,9 @@ func (s *MessageService) Edit(roomUUID, messageUUID string, actor MessageActor, 
 		}
 	}
 	if !enqueued {
+		if !s.syncWriteAllowed {
+			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "message persistence unavailable on data-plane instance")
+		}
 		if err := s.msgRepo.UpdateContent(messageUUID, content, now); err != nil {
 			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 		}
@@ -161,6 +164,9 @@ func (s *MessageService) Delete(roomUUID, messageUUID string, actor MessageActor
 		}
 	}
 	if !enqueued {
+		if !s.syncWriteAllowed {
+			return pkg.NewAppError(pkg.INTERNAL_ERROR, "message persistence unavailable on data-plane instance")
+		}
 		if err := s.msgRepo.SoftDelete(messageUUID); err != nil {
 			return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 		}
@@ -221,6 +227,9 @@ func (s *MessageService) React(roomUUID, messageUUID string, actor MessageActor,
 		}
 	}
 	if !enqueued {
+		if !s.syncWriteAllowed {
+			return pkg.NewAppError(pkg.INTERNAL_ERROR, "message persistence unavailable on data-plane instance")
+		}
 		if err := s.msgRepo.AddReaction(&model.MessageReaction{
 			MessageUUID: messageUUID,
 			UserID:      actor.Identity,
@@ -285,6 +294,9 @@ func (s *MessageService) Unreact(roomUUID, messageUUID string, actor MessageActo
 		}
 	}
 	if !enqueued {
+		if !s.syncWriteAllowed {
+			return pkg.NewAppError(pkg.INTERNAL_ERROR, "message persistence unavailable on data-plane instance")
+		}
 		if err := s.msgRepo.RemoveReaction(messageUUID, actor.Identity, emoji); err != nil {
 			return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 		}

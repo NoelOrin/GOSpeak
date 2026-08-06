@@ -51,12 +51,16 @@ function resolveWsUrl(url: string): string {
 	} else {
 		base = base.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
 	}
-	const trimmed = base.replace(/\/+$/, "");
-	if (/\/socket\.io$/i.test(trimmed)) {
-		return trimmed.replace(/\/socket\.io$/i, "/ws");
+	const parsed = new URL(base);
+	let path = parsed.pathname.replace(/\/+$/, "");
+	if (/\/socket\.io$/i.test(path)) {
+		path = path.replace(/\/socket\.io$/i, "");
 	}
-	if (trimmed.endsWith("/ws")) return trimmed;
-	return `${trimmed}/ws`;
+	if (!path.endsWith("/ws")) {
+		path = `${path}/ws`;
+	}
+	parsed.pathname = path;
+	return parsed.toString();
 }
 
 export interface WSClientOptions {

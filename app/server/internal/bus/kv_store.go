@@ -119,8 +119,39 @@ func openOrCreateKV(js nats.JetStreamContext, bucket string) (nats.KeyValue, err
 	})
 }
 
+// kvDo 将不支持 ctx 的旧版 NATS KV 操作包到 goroutine，调用方按 ctx 超时返回。
+// 底层 NATS 请求仍由库内请求超时兜底，不会永久泄漏 goroutine。
+func kvDo(ctx context.Context, fn func() error) error {
+	done := make(chan error, 1)
+	go func() { done <- fn() }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// kvEntry 与 kvDo 相同，但返回 KeyValueEntry。
+func kvEntry(ctx context.Context, fn func() (nats.KeyValueEntry, error)) (nats.KeyValueEntry, error) {
+	type result struct {
+		entry nats.KeyValueEntry
+		err   error
+	}
+	done := make(chan result, 1)
+	go func() {
+		e, err := fn()
+		done <- result{entry: e, err: err}
+	}()
+	select {
+	case r := <-done:
+		return r.entry, r.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 func (s *StateStore) PutRoomMembers(ctx context.Context, snap RoomMembersSnapshot) error {
-	_ = ctx
 	if snap.Members == nil {
 		snap.Members = []MemberRecord{}
 	}
@@ -128,13 +159,16 @@ func (s *StateStore) PutRoomMembers(ctx context.Context, snap RoomMembersSnapsho
 	if err != nil {
 		return err
 	}
-	_, err = s.mem.Put("room."+sanitizeKey(snap.Room), b)
-	return err
+	return kvDo(ctx, func() error {
+		_, err := s.mem.Put("room."+sanitizeKey(snap.Room), b)
+		return err
+	})
 }
 
 func (s *StateStore) GetRoomMembers(ctx context.Context, room string) (RoomMembersSnapshot, error) {
-	_ = ctx
-	entry, err := s.mem.Get("room." + sanitizeKey(room))
+	entry, err := kvEntry(ctx, func() (nats.KeyValueEntry, error) {
+		return s.mem.Get("room." + sanitizeKey(room))
+	})
 	if err != nil {
 		return RoomMembersSnapshot{}, err
 	}
@@ -150,8 +184,9 @@ func (s *StateStore) GetRoomMembers(ctx context.Context, room string) (RoomMembe
 
 // GetRoomMembersRev 返回 membership 快照及其 NATS KV revision，供乐观锁合并使用。
 func (s *StateStore) GetRoomMembersRev(ctx context.Context, room string) (RoomMembersSnapshot, uint64, error) {
-	_ = ctx
-	entry, err := s.mem.Get("room." + sanitizeKey(room))
+	entry, err := kvEntry(ctx, func() (nats.KeyValueEntry, error) {
+		return s.mem.Get("room." + sanitizeKey(room))
+	})
 	if err != nil {
 		return RoomMembersSnapshot{}, 0, err
 	}
@@ -166,13 +201,13 @@ func (s *StateStore) GetRoomMembersRev(ctx context.Context, room string) (RoomMe
 }
 
 func (s *StateStore) DeleteRoomMembers(ctx context.Context, room string) error {
-	_ = ctx
-	return s.mem.Delete("room." + sanitizeKey(room))
+	return kvDo(ctx, func() error {
+		return s.mem.Delete("room." + sanitizeKey(room))
+	})
 }
 
 // PutRoomMembersRev 使用 NATS KV revision 乐观写入：rev=0 表示仅创建，非零表示期望的当前 revision。
 func (s *StateStore) PutRoomMembersRev(ctx context.Context, snap RoomMembersSnapshot, rev uint64) error {
-	_ = ctx
 	if snap.Members == nil {
 		snap.Members = []MemberRecord{}
 	}
@@ -181,25 +216,27 @@ func (s *StateStore) PutRoomMembersRev(ctx context.Context, snap RoomMembersSnap
 		return err
 	}
 	key := "room." + sanitizeKey(snap.Room)
-	if rev == 0 {
-		_, err = s.mem.Create(key, b)
-	} else {
-		_, err = s.mem.Update(key, b, rev)
-	}
-	return err
+	return kvDo(ctx, func() error {
+		if rev == 0 {
+			_, err := s.mem.Create(key, b)
+			return err
+		}
+		_, err := s.mem.Update(key, b, rev)
+		return err
+	})
 }
 
 // DeleteRoomMembersRev 仅在最新 revision 匹配时删除 membership 记录。
 func (s *StateStore) DeleteRoomMembersRev(ctx context.Context, room string, rev uint64) error {
-	_ = ctx
 	if rev == 0 {
 		return nil
 	}
-	return s.mem.Delete("room."+sanitizeKey(room), nats.LastRevision(rev))
+	return kvDo(ctx, func() error {
+		return s.mem.Delete("room."+sanitizeKey(room), nats.LastRevision(rev))
+	})
 }
 
 func (s *StateStore) PutStream(ctx context.Context, stream, room, identity string) error {
-	_ = ctx
 	b, err := json.Marshal(map[string]string{
 		"room":     room,
 		"identity": identity,
@@ -207,13 +244,16 @@ func (s *StateStore) PutStream(ctx context.Context, stream, room, identity strin
 	if err != nil {
 		return err
 	}
-	_, err = s.strm.Put("stream."+sanitizeKey(stream), b)
-	return err
+	return kvDo(ctx, func() error {
+		_, err := s.strm.Put("stream."+sanitizeKey(stream), b)
+		return err
+	})
 }
 
 func (s *StateStore) GetStream(ctx context.Context, stream string) (room, identity string, err error) {
-	_ = ctx
-	entry, err := s.strm.Get("stream." + sanitizeKey(stream))
+	entry, err := kvEntry(ctx, func() (nats.KeyValueEntry, error) {
+		return s.strm.Get("stream." + sanitizeKey(stream))
+	})
 	if err != nil {
 		return "", "", err
 	}
@@ -225,23 +265,26 @@ func (s *StateStore) GetStream(ctx context.Context, stream string) (room, identi
 }
 
 func (s *StateStore) DeleteStream(ctx context.Context, stream string) error {
-	_ = ctx
-	return s.strm.Delete("stream." + sanitizeKey(stream))
+	return kvDo(ctx, func() error {
+		return s.strm.Delete("stream." + sanitizeKey(stream))
+	})
 }
 
 func (s *StateStore) PutRoomMeta(ctx context.Context, room string, meta RoomMeta) error {
-	_ = ctx
 	b, err := json.Marshal(meta)
 	if err != nil {
 		return err
 	}
-	_, err = s.mem.Put("meta."+sanitizeKey(room), b)
-	return err
+	return kvDo(ctx, func() error {
+		_, err := s.mem.Put("meta."+sanitizeKey(room), b)
+		return err
+	})
 }
 
 func (s *StateStore) GetRoomMeta(ctx context.Context, room string) (RoomMeta, error) {
-	_ = ctx
-	entry, err := s.mem.Get("meta." + sanitizeKey(room))
+	entry, err := kvEntry(ctx, func() (nats.KeyValueEntry, error) {
+		return s.mem.Get("meta." + sanitizeKey(room))
+	})
 	if err != nil {
 		return RoomMeta{}, err
 	}
@@ -253,16 +296,20 @@ func (s *StateStore) GetRoomMeta(ctx context.Context, room string) (RoomMeta, er
 }
 
 func (s *StateStore) DeleteRoomMeta(ctx context.Context, room string) error {
-	_ = ctx
-	return s.mem.Delete("meta." + sanitizeKey(room))
+	return kvDo(ctx, func() error {
+		return s.mem.Delete("meta." + sanitizeKey(room))
+	})
 }
 
 // ListRoomNames returns room names currently present in membership KV,
 // including rooms that only have shared metadata (remote temporary rooms).
 func (s *StateStore) ListRoomNames(ctx context.Context) ([]string, error) {
-	_ = ctx
-	keys, err := s.mem.Keys()
-	if err != nil {
+	var keys []string
+	if err := kvDo(ctx, func() error {
+		var err error
+		keys, err = s.mem.Keys()
+		return err
+	}); err != nil {
 		// empty bucket surfaces as ErrNoKeysFound on some nats versions
 		if err == nats.ErrNoKeysFound {
 			return nil, nil

@@ -520,6 +520,14 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 		h.fanout.Leave(domainRoomKey(domainScope), c.ID())
 	}
 
+	// 先同步 KV，再发布事件：远端收到 member:left 时读到的一定是已更新的成员快照。
+	for _, name := range updatedRooms {
+		h.syncRoomToStore(name)
+	}
+	for _, stream := range deletedStreams {
+		h.syncStreamDelete(stream)
+	}
+
 	// publish after unlock: avoid holding hub mu across NATS/WebSocket I/O
 	for _, e := range leaveEvents {
 		domainUUID, logicalName := splitRoomKey(e.room)
@@ -529,13 +537,6 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 			"identity":    e.identity,
 			"id":          e.id,
 		})
-	}
-
-	for _, name := range updatedRooms {
-		h.syncRoomToStore(name)
-	}
-	for _, stream := range deletedStreams {
-		h.syncStreamDelete(stream)
 	}
 
 	for _, name := range speakingChanged {

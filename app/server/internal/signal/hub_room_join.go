@@ -383,56 +383,15 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 		})
 	}
 	h.mu.Unlock()
-	if regErr := h.registerRoomMembers(newKey, regLocal, int(limit), identity); regErr != nil {
-		h.fanout.Leave(newKey, c.ID())
-		switch {
-		case errors.Is(regErr, errDuplicateRemoteIdentity):
-			return marshalAck(map[string]interface{}{
-				"error":    "duplicate connection not allowed",
-				"room":     req.Room,
-				"identity": identity,
-			})
-		case errors.Is(regErr, errRoomLimitExceeded):
-			return marshalAck(map[string]interface{}{"error": "room is full", "limit": limit, "count": count})
-		default:
-			log.Printf("[Signal] sfu join registration failed room=%s identity=%s: %v", req.Room, identity, regErr)
-			return marshalAck(map[string]interface{}{"error": "room join failed"})
-		}
-	}
-
-	// 提交本地状态前重新加锁校验：KV 注册期间可能有其他 socket 完成同身份加入。
+	// 本地预提交（锁内）后再写 KV：即使进程在 KV 写后崩溃，远端也能通过本地
+	// 提交后的广播看到成员，避免“KV 有成员但本地未提交”的幽灵窗口。
+	// 旧房间清理推迟到 KV 成功之后，KV 失败时新房间回滚、旧房间保持原状。
+	var previousVoiceRoom string
 	h.mu.Lock()
-	if h.duplicateIdentityLocked(newKey, identity, c.ID()) {
-		h.mu.Unlock()
-		// 回滚已写入 KV 的本实例记录，避免残留成员。
-		h.syncRoomToStore(newKey)
-		h.fanout.Leave(newKey, c.ID())
-		return marshalAck(map[string]interface{}{
-			"error":    "duplicate connection not allowed",
-			"room":     req.Room,
-			"identity": identity,
-		})
-	}
-
-	// 提交本地状态：先清理旧房间成员，再写入新房间
-	for _, old := range oldCleanups {
-		oldRoom, ok := h.rooms[old.key]
-		if !ok {
-			continue
-		}
-		if _, ok := oldRoom.Members[c.ID()]; ok {
-			delete(oldRoom.Speaking, old.identity)
-			delete(oldRoom.MicMuted, old.identity)
-			h.unregisterStreamLocked(old.key, old.identity, old.stream)
-		}
-		roomDelMember(oldRoom, c.ID())
-		old.roomDeleted = h.deleteRoomIfEmptyLocked(old.key)
-		if h.fanout != nil {
-			h.fanout.Leave(old.key, c.ID())
-		}
-	}
 	slots := h.connSlots[c.ID()]
-	if slots == nil {
+	if slots != nil {
+		previousVoiceRoom = slots.VoiceRoom
+	} else {
 		slots = &connRoomSlots{}
 		h.connSlots[c.ID()] = slots
 	}
@@ -456,6 +415,60 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	roomSetMember(room, c.ID(), identity, member)
 	h.registerStreamLocked(newKey, identity, req.Stream)
 	memberList := h.memberSnapshotLocked(newKey)
+	h.mu.Unlock()
+
+	if regErr := h.registerRoomMembers(newKey, regLocal, int(limit), identity); regErr != nil {
+		h.fanout.Leave(newKey, c.ID())
+		h.mu.Lock()
+		h.rollbackLocalJoinLocked(newKey, c.ID(), identity, req.Stream, previousVoiceRoom)
+		h.mu.Unlock()
+		switch {
+		case errors.Is(regErr, errDuplicateRemoteIdentity):
+			return marshalAck(map[string]interface{}{
+				"error":    "duplicate connection not allowed",
+				"room":     req.Room,
+				"identity": identity,
+			})
+		case errors.Is(regErr, errRoomLimitExceeded):
+			return marshalAck(map[string]interface{}{"error": "room is full", "limit": limit, "count": count})
+		default:
+			log.Printf("[Signal] sfu join registration failed room=%s identity=%s: %v", req.Room, identity, regErr)
+			return marshalAck(map[string]interface{}{"error": "room join failed"})
+		}
+	}
+
+	// KV 注册期间可能有其他 socket 完成同身份加入，锁内再次校验并回滚。
+	h.mu.Lock()
+	if h.duplicateIdentityLocked(newKey, identity, c.ID()) {
+		h.rollbackLocalJoinLocked(newKey, c.ID(), identity, req.Stream, previousVoiceRoom)
+		h.mu.Unlock()
+		// 回滚已写入 KV 的本实例记录，避免残留成员。
+		h.syncRoomToStore(newKey)
+		h.fanout.Leave(newKey, c.ID())
+		return marshalAck(map[string]interface{}{
+			"error":    "duplicate connection not allowed",
+			"room":     req.Room,
+			"identity": identity,
+		})
+	}
+
+	// KV 成功后再清理旧房间成员，失败路径不会触碰旧房状态。
+	for _, old := range oldCleanups {
+		oldRoom, ok := h.rooms[old.key]
+		if !ok {
+			continue
+		}
+		if _, ok := oldRoom.Members[c.ID()]; ok {
+			delete(oldRoom.Speaking, old.identity)
+			delete(oldRoom.MicMuted, old.identity)
+			h.unregisterStreamLocked(old.key, old.identity, old.stream)
+		}
+		roomDelMember(oldRoom, c.ID())
+		old.roomDeleted = h.deleteRoomIfEmptyLocked(old.key)
+		if h.fanout != nil {
+			h.fanout.Leave(old.key, c.ID())
+		}
+	}
 	h.mu.Unlock()
 
 	for _, old := range oldCleanups {
@@ -535,3 +548,22 @@ func marshalAck(v interface{}) (string, error) {
 }
 
 // ─── 离开房间 ───
+
+// rollbackLocalJoinLocked 回滚 OnRoomJoinSFU 的本地预提交状态；调用方须持有 h.mu。
+func (h *Hub) rollbackLocalJoinLocked(newKey, clientID, identity, stream, prevVoiceRoom string) {
+	if room, ok := h.rooms[newKey]; ok {
+		roomDelMember(room, clientID)
+		delete(room.Speaking, identity)
+		delete(room.MicMuted, identity)
+		h.unregisterStreamLocked(newKey, identity, stream)
+		if len(room.Members) == 0 {
+			delete(h.rooms, newKey)
+		}
+	}
+	if slots := h.connSlots[clientID]; slots != nil {
+		slots.VoiceRoom = prevVoiceRoom
+		if prevVoiceRoom == "" && slots.TextRoom == "" {
+			delete(h.connSlots, clientID)
+		}
+	}
+}

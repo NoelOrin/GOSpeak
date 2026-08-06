@@ -33,15 +33,19 @@ type JobQueueConfig struct {
 
 // JobQueue publishes and consumes jobs on {prefix}.jobs.>
 type JobQueue struct {
-	nc     *nats.Conn
-	js     nats.JetStreamContext
-	prefix string
-	own    bool
-	mu     sync.Mutex
-	subs   []*nats.Subscription
+	nc        *nats.Conn
+	js        nats.JetStreamContext
+	prefix    string
+	own       bool
+	roleAware bool
+	mu        sync.Mutex
+	subs      []*nats.Subscription
 }
 
 // OpenJobQueue ensures stream {prefix}_jobs and returns a queue handle.
+// New streams use LimitsPolicy so role-aware consumers can split chat
+// persistence (Agent) from runtime jobs (Worker). Legacy WorkQueue streams
+// keep the previous all-instance behavior.
 func OpenJobQueue(cfg JobQueueConfig) (*JobQueue, error) {
 	if cfg.Prefix == "" {
 		cfg.Prefix = "gospeak"
@@ -70,12 +74,12 @@ func OpenJobQueue(cfg JobQueueConfig) (*JobQueue, error) {
 	}
 	stream := cfg.Prefix + "_jobs"
 	subject := cfg.Prefix + ".jobs.>"
-	_, err = js.StreamInfo(stream)
+	info, err := js.StreamInfo(stream)
 	if err != nil {
 		_, err = js.AddStream(&nats.StreamConfig{
 			Name:      stream,
 			Subjects:  []string{subject},
-			Retention: nats.WorkQueuePolicy,
+			Retention: nats.LimitsPolicy,
 			Storage:   nats.FileStorage,
 			MaxAge:    24 * time.Hour,
 		})
@@ -86,7 +90,18 @@ func OpenJobQueue(cfg JobQueueConfig) (*JobQueue, error) {
 			return nil, fmt.Errorf("job queue stream: %w", err)
 		}
 	}
-	return &JobQueue{nc: nc, js: js, prefix: cfg.Prefix, own: own}, nil
+	roleAware := true
+	if info != nil && info.Config.Retention != nats.LimitsPolicy {
+		// 旧版 WorkQueue stream 只允许一个 consumer；保持全实例消费兼容，
+		// 新部署使用 LimitsPolicy 后可启用 chat/runtime 角色分流。
+		roleAware = false
+	}
+	return &JobQueue{nc: nc, js: js, prefix: cfg.Prefix, own: own, roleAware: roleAware}, nil
+}
+
+// RoleAware reports whether the underlying stream supports role-based consumers.
+func (q *JobQueue) RoleAware() bool {
+	return q.roleAware
 }
 
 func (q *JobQueue) subjectFor(jobType string) string {
@@ -148,6 +163,41 @@ func (q *JobQueue) PublishSFUCleanup(ctx context.Context, room, identity string,
 	})
 }
 
+// ConsumeChat consumes durable chat persistence jobs. Only Agent/all instances
+// should subscribe so user data writes stay on the control plane.
+func (q *JobQueue) ConsumeChat(durable string, handler JobHandler) (*nats.Subscription, error) {
+	if !q.roleAware {
+		return nil, fmt.Errorf("job queue stream is not role-aware; use Consume")
+	}
+	return q.consumeFiltered(q.prefix+".jobs.chat.>", q.prefix+"-chat-workers", q.prefix+"-chat-worker", handler)
+}
+
+// ConsumeRuntime consumes runtime jobs (SRS/LiveKit/SFU cleanup/control commands)
+// that must run on data-plane instances.
+func (q *JobQueue) ConsumeRuntime(durable string, handler JobHandler) ([]*nats.Subscription, error) {
+	if !q.roleAware {
+		return nil, fmt.Errorf("job queue stream is not role-aware; use Consume")
+	}
+	subjects := []string{
+		q.prefix + ".jobs.srs",
+		q.prefix + ".jobs.livekit",
+		q.prefix + ".jobs.sfu_cleanup",
+		q.prefix + ".jobs.cluster.control",
+	}
+	var subs []*nats.Subscription
+	for i, subject := range subjects {
+		sub, err := q.consumeFiltered(subject, q.prefix+"-runtime-workers", fmt.Sprintf("%s-runtime-%d", q.prefix, i), handler)
+		if err != nil {
+			for _, s := range subs {
+				_ = s.Unsubscribe()
+			}
+			return nil, err
+		}
+		subs = append(subs, sub)
+	}
+	return subs, nil
+}
+
 // Consume starts a durable push consumer for all jobs (queue group = workers).
 // handler errors Nak; success Ack.
 func sanitizeDurable(s string) string {
@@ -169,14 +219,19 @@ func sanitizeDurable(s string) string {
 }
 
 func (q *JobQueue) Consume(durable string, handler JobHandler) (*nats.Subscription, error) {
-	// WorkQueue stream: only one consumer definition is allowed. All instances
-	// share one durable + queue group; NATS load-balances deliveries.
+	// All instances share one durable + queue group; NATS load-balances deliveries.
 	_ = durable
 	durableName := sanitizeDurable(q.prefix + "-worker")
 	queueGroup := sanitizeDurable(q.prefix + "-workers")
+	return q.consumeFiltered(q.prefix+".jobs.>", queueGroup, durableName, handler)
+}
+
+func (q *JobQueue) consumeFiltered(subject, queueGroup, durable string, handler JobHandler) (*nats.Subscription, error) {
+	durableName := sanitizeDurable(durable)
+	group := sanitizeDurable(queueGroup)
 	sub, err := q.js.QueueSubscribe(
-		q.prefix+".jobs.>",
-		queueGroup,
+		subject,
+		group,
 		func(msg *nats.Msg) {
 			var job JobEnvelope
 			if err := json.Unmarshal(msg.Data, &job); err != nil {

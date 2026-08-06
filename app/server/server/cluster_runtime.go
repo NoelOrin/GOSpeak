@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -11,8 +12,10 @@ import (
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/logger"
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
 	"GOSpeak/internal/service"
+	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/signal"
 
 	"github.com/nats-io/nats.go"
@@ -42,15 +45,15 @@ func acquireAgentLeader(ctx context.Context, nc *nats.Conn, prefix, instanceID s
 
 // startDegradedLocalWorkerRuntime 在主锁不可用时把节点作为本地 worker 数据面运行，
 // 不携带 serverRepo，避免心跳触发控制面调度写操作。
-func startDegradedLocalWorkerRuntime(cfg *config.Config, hub *signal.Hub, instanceID string) (string, func(), error) {
+func startDegradedLocalWorkerRuntime(cfg *config.Config, hub *signal.Hub, instanceID string, sfuProvider sfu.Provider) (string, func(), error) {
 	workerSvc := service.NewClusterService(
 		repository.NewClusterNodeRepository(repository.DB),
 		repository.NewServerAssignmentRepository(repository.DB),
 	)
-	return startLocalClusterRuntime(cfg, workerSvc, hub, instanceID)
+	return startLocalClusterRuntime(cfg, workerSvc, hub, instanceID, sfuProvider)
 }
 
-func startLocalClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterService, hub *signal.Hub, instanceID string) (string, func(), error) {
+func startLocalClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterService, hub *signal.Hub, instanceID string, sfuProvider sfu.Provider) (string, func(), error) {
 	node, err := clusterSvc.EnsureLocalNode(cfg, instanceID)
 	if err != nil {
 		return "", func() {}, err
@@ -61,7 +64,7 @@ func startLocalClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterSer
 	interval := cfg.ClusterHeartbeatIntervalDuration()
 	timeout := cfg.ClusterHeartbeatTimeoutDuration()
 
-	report := collectClusterReport(cfg, node.UUID, hub)
+	report := collectClusterReport(cfg, node.UUID, hub, probeSFUHealth(context.Background(), sfuProvider))
 	if _, err := clusterSvc.Heartbeat(node.UUID, report); err != nil {
 		logger.WithComponent("Cluster").Warnf("local node initial heartbeat failed: %v", err)
 	}
@@ -76,7 +79,7 @@ func startLocalClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterSer
 				return
 			case <-ticker.C:
 			}
-			report := collectClusterReport(cfg, node.UUID, hub)
+			report := collectClusterReport(cfg, node.UUID, hub, probeSFUHealth(ctx, sfuProvider))
 			if _, err := clusterSvc.Heartbeat(node.UUID, report); err != nil {
 				logger.WithComponent("Cluster").Warnf("local node heartbeat failed: %v", err)
 			}
@@ -148,7 +151,7 @@ func startAgentClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterSer
 	return stop, nil
 }
 
-func startWorkerClusterRuntime(cfg *config.Config, hub *signal.Hub) (func(), error) {
+func startWorkerClusterRuntime(cfg *config.Config, hub *signal.Hub, sfuProvider sfu.Provider) (string, func(), error) {
 	nodeID := strings.TrimSpace(cfg.ClusterNodeID)
 	if nodeID == "" {
 		host, _ := os.Hostname()
@@ -190,9 +193,13 @@ func startWorkerClusterRuntime(cfg *config.Config, hub *signal.Hub) (func(), err
 				registered = true
 				logger.WithComponent("Cluster").Infof("worker registered node=%s", nodeID)
 			}
-			report := collectClusterReport(cfg, nodeID, hub)
+			report := collectClusterReport(cfg, nodeID, hub, probeSFUHealth(ctx, sfuProvider))
 			if err := client.Heartbeat(ctx, report); err != nil {
 				logger.WithComponent("Cluster").Warnf("worker heartbeat failed: %v", err)
+				if errors.Is(err, cluster.ErrClusterNodeNotFound) {
+					// Agent 侧节点记录丢失（重建/清理）：回到注册流程。
+					registered = false
+				}
 			}
 		}
 	}()
@@ -200,16 +207,16 @@ func startWorkerClusterRuntime(cfg *config.Config, hub *signal.Hub) (func(), err
 	stop := func() {
 		cancel()
 		<-done
-		deregCtx, deregCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		deregCtx, deregCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer deregCancel()
 		if err := client.Deregister(deregCtx, nodeID); err != nil {
 			logger.WithComponent("Cluster").Debugf("worker deregister failed: %v", err)
 		}
 	}
-	return stop, nil
+	return nodeID, stop, nil
 }
 
-func collectClusterReport(cfg *config.Config, nodeID string, hub *signal.Hub) cluster.HeartbeatReport {
+func collectClusterReport(cfg *config.Config, nodeID string, hub *signal.Hub, sfuHealthy bool) cluster.HeartbeatReport {
 	rooms := 0
 	connections := 0
 	if hub != nil {
@@ -225,7 +232,9 @@ func collectClusterReport(cfg *config.Config, nodeID string, hub *signal.Hub) cl
 	if load >= 80 {
 		status = model.ClusterNodeBusy
 	}
-	healthy := true
+	if !sfuHealthy {
+		status = model.ClusterNodeUnhealthy
+	}
 	return cluster.HeartbeatReport{
 		NodeID:       nodeID,
 		Status:       status,
@@ -233,8 +242,19 @@ func collectClusterReport(cfg *config.Config, nodeID string, hub *signal.Hub) cl
 		Rooms:        rooms,
 		Connections:  connections,
 		LoadPercent:  load,
-		SFUHealthy:   &healthy,
+		SFUHealthy:   &sfuHealthy,
 	}
+}
+
+// probeSFUHealth does a lightweight provider probe. Providers without a
+// real-time management list (ErrSFUNotSupported) are treated as healthy.
+// Provider clients are expected to bound their own call latency.
+func probeSFUHealth(_ context.Context, provider sfu.Provider) bool {
+	if provider == nil {
+		return true
+	}
+	_, err := provider.ListRooms()
+	return err == nil || errors.Is(err, pkg.ErrSFUNotSupported)
 }
 
 func hostnameOrDefault() string {

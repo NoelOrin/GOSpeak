@@ -14,6 +14,12 @@ import (
 // ScaleServer 调整 Server（Domain）的实例副本数。
 // preferredNode 通常传本地 all 节点 UUID，让单机模式优先把 Server 分配回本节点。
 func (s *ClusterService) ScaleServer(serverUUID string, replicas int, preferredNode string) ([]model.ServerAssignment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.scaleServerLocked(serverUUID, replicas, preferredNode)
+}
+
+func (s *ClusterService) scaleServerLocked(serverUUID string, replicas int, preferredNode string) ([]model.ServerAssignment, error) {
 	if strings.TrimSpace(serverUUID) == "" {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "server_uuid is required")
 	}
@@ -109,6 +115,8 @@ func (s *ClusterService) EnsureServer(serverUUID string, replicas int, preferred
 
 // DeleteServer 删除 Server 的全部实例分配。
 func (s *ClusterService) DeleteServer(serverUUID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := s.assignRepo.RemoveAll(serverUUID); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -142,6 +150,8 @@ func (s *ClusterService) AutoScale(serverUUID string, targetReplicas int) error 
 
 // MarkServerAssignmentsDraining 标记 Server 全部副本为 draining，配合灰度下线。
 func (s *ClusterService) MarkServerAssignmentsDraining(serverUUID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	assignments, err := s.assignRepo.ListByServer(serverUUID)
 	if err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -159,6 +169,8 @@ func (s *ClusterService) MarkServerAssignmentsDraining(serverUUID string) error 
 }
 
 func (s *ClusterService) ListAssignments(serverUUID string) ([]model.ServerAssignment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	assignments, err := s.assignRepo.ListByServer(serverUUID)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -169,6 +181,8 @@ func (s *ClusterService) ListAssignments(serverUUID string) ([]model.ServerAssig
 // PublishControl 发布 NATS 控制命令，由目标 Worker 执行本地信令操作。
 
 func (s *ClusterService) ResolveServer(serverUUID string) (*model.ServerAssignment, *model.ClusterNode, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	assignments, err := s.assignRepo.ListByServer(serverUUID)
 	if err != nil {
 		return nil, nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -209,6 +223,8 @@ func (s *ClusterService) ResolveServer(serverUUID string) (*model.ServerAssignme
 
 // reconcilePendingServers 在节点心跳后尝试把未分配 Server 调度到该节点。
 func (s *ClusterService) reconcilePendingServers(nodeUUID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.serverRepo == nil {
 		return
 	}
@@ -226,7 +242,7 @@ func (s *ClusterService) reconcilePendingServers(nodeUUID string) {
 			continue
 		}
 		if len(assignments) == 0 {
-			if _, err := s.ScaleServer(domain.UUID, 1, nodeUUID); err != nil {
+			if _, err := s.scaleServerLocked(domain.UUID, 1, nodeUUID); err != nil {
 				log.Printf("[cluster] reconcile scale failed server=%s: %v", domain.UUID, err)
 			}
 		}

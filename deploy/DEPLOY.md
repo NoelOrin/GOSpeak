@@ -69,22 +69,44 @@ docker compose --profile livekit --profile redis --profile app up -d --build
 docker compose --profile postgres --profile redis --profile srs --profile app up -d --build
 ```
 
-### 3.4 Agent + Worker 集群
+### 3.4 Agent + Worker 集群（统一入口 + 多 Worker）
 
 ```bash
 # 需要一个 admin JWT 作为 worker→agent 控制面鉴权 token
 export CLUSTER_AGENT_TOKEN=<admin-jwt>
-# 必填：浏览器可达的 Worker HTTP(S) 地址，例如 https://ws.example.com
+# 必填：浏览器可达的 Worker HTTP(S) 地址；统一入口模式下可都填同一个公网地址
 export CLUSTER_WORKER_ADVERTISE_URL=https://ws.example.com
+export CLUSTER_WORKER1_ADVERTISE_URL=https://ws.example.com
+export CLUSTER_WORKER2_ADVERTISE_URL=https://ws.example.com
+# 可选：统一入口（Agent 会返回 https://<entry>/ws?worker=<node-id>）
+export CLUSTER_ENTRY_URL=https://ws.example.com
 docker compose -f deploy/docker-compose.yml --profile cluster up -d --build
 ```
 
-- 多 Worker 时通过 `CLUSTER_WORKER_NODE_ID` 为每个副本设置不同节点 ID（如 `worker-1` / `worker-2`）。
-- `CLUSTER_WORKER_ADVERTISE_URL` 是集群模式必填项，未设置会启动失败；必须填浏览器可访问的公网/局域网 HTTP(S) 地址，**不能**填容器服务名（如 `http://gospeak-worker:8998`），前端会把它转换为 `wss://.../ws` 再连接。
-- 默认 `deploy/nginx-cluster.conf` 只支持单 Worker：`/ws` 固定代理 `gospeak-worker:8998`，多副本时所有 WebSocket 都会打到 `worker-1`，不能当作多 Worker 负载均衡。
-- 多 Worker 部署建议让浏览器直连每个 Worker 的 `CLUSTER_WORKER_ADVERTISE_URL`（Agent 返回的 `workerUrl` 已指向对应节点）；若必须统一走 nginx，需要按 Worker 节点增加独立上游/路径路由，不能原样复用该配置文件。
+- Compose 内置 `gospeak-worker`（默认节点 `worker-default`）、`gospeak-worker-1`、`gospeak-worker-2` 三个数据面节点；`nginx-cluster` 是统一入口。
+- `CLUSTER_ENTRY_URL` 设置后，Agent 返回的 `workerUrl` 形如 `https://ws.example.com/ws?worker=worker-1`，nginx 按 `?worker=` 路由到对应 Worker，实现“域名 → Worker”的应用层粘性会话。未设置时保持旧行为：直接返回节点 `AdvertiseURL`，浏览器直连。
+- `CLUSTER_WORKER_ADVERTISE_URL` / `CLUSTER_WORKER1_ADVERTISE_URL` / `CLUSTER_WORKER2_ADVERTISE_URL` 必须填浏览器可达的 HTTP(S) 地址，**不能**填容器服务名；统一入口模式下三者可填同一个入口地址。
+- `CLUSTER_WORKER_NODE_ID` 自定义默认 Worker 节点 ID；`worker-1` / `worker-2` 固定由 `gospeak-worker-1` / `gospeak-worker-2` 服务使用。
+- 新增 Worker 时需同步扩展 `deploy/nginx-cluster.conf` 的 `map $arg_worker` 与 `upstream`；不要用 round-robin 转发 `/ws`，否则同一域名房间会被拆到不同节点。
+- 消息持久化与控制命令走 JetStream JobQueue（`{prefix}_jobs`）。新部署自动创建 `LimitsPolicy` 流并启用角色分流：`chat.*` 任务仅由 Agent 消费，`srs` / `livekit` / `sfu_cleanup` / `cluster.control` 由 Worker 消费；控制命令因此具备持久化与重试，Worker 离线期间不会丢失。
+- 旧版 `WorkQueuePolicy` 流只允许单个 consumer，会保持全实例消费的兼容模式（Worker 仍可能参与聊天落库）。要启用严格角色隔离，请升级后重建 `{prefix}_jobs` 流。
 
-### 3.5 仅依赖 (本地 pnpm 开发)
+### 3.5 可观测栈（Prometheus + Grafana + Alertmanager + Loki）
+
+```bash
+# 先保证 gospeak 应用容器已运行，再启用 observability profile
+docker compose -f deploy/docker-compose.yml --profile observability up -d
+```
+
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000`（默认 `admin/admin`，预置 GOSpeak Overview Dashboard 与 Prometheus/Loki 数据源）
+- Alertmanager: `http://localhost:9093`
+- Loki: `http://localhost:3100`
+- Promtail 自动采集所有 Docker 容器 stdout 日志并推送到 Loki。
+- 应用暴露 `GET /metrics`；设置 `METRICS_TOKEN` 后需要 `Authorization: Bearer <token>`，生产环境建议同时用防火墙/反代限制访问。
+- 告警规则见 `deploy/observability/prometheus/rules.yml`，通知接收器在 `deploy/observability/alertmanager/alertmanager.yml` 配置。
+
+### 3.6 仅依赖 (本地 pnpm 开发)
 
 ```bash
 # 旧 dev 依赖栈仍可用 example 文件; 推荐改用 profiles:
@@ -105,6 +127,10 @@ pnpm dev:web
 | 5432 | postgres | DB |
 | 6379 | redis | 缓存/JWT |
 | 9000/9001 | minio | 对象存储 |
+| 9090 | prometheus | 指标采集 |
+| 9093 | alertmanager | 告警 |
+| 3000 | grafana | 可视化 |
+| 3100 | loki | 日志存储 |
 
 ## 5. 环境变量关键项
 
@@ -116,6 +142,8 @@ pnpm dev:web
 | `SRS_SECRET` | stream/room token HMAC, 必填 |
 | `SRS_CANDIDATE` | compose 级 ICE 公网/可达 IP |
 | `STATIC_DIR` | SPA 目录, 镜像默认 `/app/static` |
+| `CLUSTER_ENTRY_URL` | 集群统一入口，例如 `https://ws.example.com`；设置后按 `?worker=` 路由 |
+| `METRICS_TOKEN` | 可选，/metrics 的 Bearer token；留空表示不鉴权 |
 
 ## 6. 验证
 

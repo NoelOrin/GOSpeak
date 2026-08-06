@@ -24,6 +24,8 @@ type User struct {
 	Password      string    `json:"-"`
 	Role          string    `gorm:"default:user" json:"role"`
 	Status        string    `gorm:"size:16;default:active;index" json:"status"`
+	// Permissions 由 profile 等接口按角色动态下发，不落库。
+	Permissions   []string  `gorm:"-" json:"permissions,omitempty"`
 	TokenVersion  uint      `gorm:"default:0" json:"token_version"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`

@@ -75,7 +75,9 @@ func VerifyWSTicket(tokenStr string) (*pkg.Claims, pkg.ErrCode) {
 	if pkg.WSTicketExpired(claims) {
 		return nil, pkg.TOKEN_EXPIRED
 	}
-	if redis.IsBlacklisted("ws:" + claims.UserUUID) {
+	if revoked, err := redis.IsBlacklistedErr("ws:" + claims.UserUUID); err != nil {
+		return nil, pkg.INTERNAL_ERROR
+	} else if revoked {
 		return nil, pkg.TOKEN_REVOKED
 	}
 	return claims, pkg.SUCCESS
@@ -95,7 +97,9 @@ func verifyToken(tokenStr string, allowedTypes ...string) (*pkg.Claims, pkg.ErrC
 	if pkg.IsTokenExpired(claims) {
 		return nil, pkg.TOKEN_EXPIRED
 	}
-	if redis.IsBlacklisted(claims.ID) {
+	if revoked, err := redis.IsBlacklistedErr(claims.ID); err != nil {
+		return nil, pkg.INTERNAL_ERROR
+	} else if revoked {
 		return nil, pkg.TOKEN_REVOKED
 	}
 	if tokenVersionCheck != nil && claims.UserUUID != "" {

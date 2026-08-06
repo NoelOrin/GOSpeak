@@ -590,6 +590,23 @@ func TestMessageService_Send_NoBusNoQueue(t *testing.T) {
 	}
 }
 
+func TestMessageService_Send_RejectsSyncWriteOnDataPlane(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+	svc.SetEventBus(bus)
+	svc.SetJobQueue(queue)
+	svc.SetSyncWriteAllowed(false)
+	queue.err = errors.New("nats unavailable")
+
+	_, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Worker must not write", "", "", nil)
+	if err == nil {
+		t.Fatal("expected data-plane sync-write rejection")
+	}
+	if len(bus.calls) != 1 {
+		t.Fatalf("expected broadcast to still happen, got %d calls", len(bus.calls))
+	}
+}
+
 // ─── Edit Tests ───
 
 func TestMessageService_Edit_Success(t *testing.T) {

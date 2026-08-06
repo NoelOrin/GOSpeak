@@ -38,6 +38,10 @@ func (s *stubBridge) Consume(roomID, transportID, producerID string, rtpCapabili
 	return nil, nil
 }
 
+func (s *stubBridge) RestartIce(roomID, transportID string) (json.RawMessage, error) {
+	return json.RawMessage(`{}`), nil
+}
+
 func (s *stubBridge) CloseParticipant(room, identity string) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

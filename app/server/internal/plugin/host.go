@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -72,7 +73,33 @@ func (h *HostImpl) Logger(component string) *logrus.Entry {
 	return logger.WithComponent("Plugin/" + component)
 }
 
-func (h *HostImpl) DB() *gorm.DB { return h.db }
+// DB 返回受限数据库句柄，只允许插件探测连通性与连接池状态。
+func (h *HostImpl) DB() HostDB {
+	if h.db == nil {
+		return nil
+	}
+	return &hostDB{db: h.db}
+}
+
+type hostDB struct {
+	db *gorm.DB
+}
+
+func (d *hostDB) Ping() error {
+	sqlDB, err := d.db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Ping()
+}
+
+func (d *hostDB) Stats() sql.DBStats {
+	sqlDB, err := d.db.DB()
+	if err != nil {
+		return sql.DBStats{}
+	}
+	return sqlDB.Stats()
+}
 
 func (h *HostImpl) AppConfig() *config.Config { return h.cfg }
 

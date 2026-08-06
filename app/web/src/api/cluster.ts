@@ -45,6 +45,35 @@ export async function scaleServer(
 	return data.assignments;
 }
 
+export async function listServerAssignments(
+	serverUuid: string,
+): Promise<ServerAssignment[]> {
+	const data = await apiClient.post<{ assignments: ServerAssignment[] }>({
+		url: "/api/v1/cluster/servers/list",
+		data: { server_uuid: serverUuid },
+	});
+	return data.assignments;
+}
+
+export async function drainServerAssignments(
+	serverUuid: string,
+): Promise<void> {
+	await apiClient.post({
+		url: "/api/v1/cluster/servers/drain",
+		data: { server_uuid: serverUuid },
+	});
+}
+
+export async function autoScaleServer(
+	serverUuid: string,
+	replicas: number,
+): Promise<void> {
+	await apiClient.post({
+		url: "/api/v1/cluster/servers/autoscale",
+		data: { server_uuid: serverUuid, replicas },
+	});
+}
+
 export async function drainClusterNode(nodeId: string): Promise<void> {
 	await apiClient.post({
 		url: "/api/v1/cluster/nodes/drain",

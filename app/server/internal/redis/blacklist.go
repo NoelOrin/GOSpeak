@@ -4,9 +4,10 @@ package redis
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
+
+	"GOSpeak/internal/logger"
 )
 
 // blacklistPrefix 黑名单 key 前缀，完整 key: jwt:blacklist:<jti>
@@ -31,7 +32,8 @@ func BlacklistToken(jti string, remaining time.Duration) error {
 		return nil
 	}
 	if Client != nil {
-		ctx := context.Background()
+		ctx, cancel := redisTimeoutCtx()
+		defer cancel()
 		return Client.Set(ctx, blacklistPrefix+jti, "1", remaining).Err()
 	}
 	if secondaryAuth != nil {
@@ -43,19 +45,41 @@ func BlacklistToken(jti string, remaining time.Duration) error {
 // IsBlacklisted 检查 JTI 是否已被注销。
 // 存储不可用或读取出错时按“未黑名单”处理，是可用性优先的 fail-open 策略；
 // 安全敏感调用方应使用可返回错误的 AuthBackend.IsBlacklistedErr 自行决定策略。
+func IsBlacklistedErr(jti string) (bool, error) {
+	if jti == "" {
+		return false, nil
+	}
+	if Client != nil {
+		ctx, cancel := redisTimeoutCtx()
+		defer cancel()
+		n, err := Client.Exists(ctx, blacklistPrefix+jti).Result()
+		if err != nil {
+			return false, err
+		}
+		return n > 0, nil
+	}
+	if secondaryAuth != nil {
+		return secondaryAuth.IsBlacklistedErr(jti)
+	}
+	return false, nil
+}
+
 func IsBlacklisted(jti string) bool {
 	if jti == "" {
 		return false
 	}
 	if Client != nil {
-		ctx := context.Background()
-		n, err := Client.Exists(ctx, blacklistPrefix+jti).Result()
-		return err == nil && n > 0
+		ok, err := IsBlacklistedErr(jti)
+		if err != nil {
+			logger.WithComponent("Redis").Warnf("IsBlacklisted backend error, treating as not blacklisted (fail-open): %v", err)
+			return false
+		}
+		return ok
 	}
 	if secondaryAuth != nil {
 		ok, err := secondaryAuth.IsBlacklistedErr(jti)
 		if err != nil {
-			fmt.Printf("[AuthKV] IsBlacklisted backend error, treating as not blacklisted (fail-open): %v\n", err)
+			logger.WithComponent("AuthKV").Warnf("IsBlacklisted backend error, treating as not blacklisted (fail-open): %v", err)
 			return false
 		}
 		return ok
@@ -70,7 +94,8 @@ func IsRefreshFamilyUsed(family string) (bool, error) {
 		return false, nil
 	}
 	if Client != nil {
-		ctx := context.Background()
+		ctx, cancel := redisTimeoutCtx()
+		defer cancel()
 		n, err := Client.Exists(ctx, refreshFamilyPrefix+family).Result()
 		if err != nil {
 			return false, err
@@ -90,7 +115,8 @@ func MarkRefreshFamilyUsed(family string) (bool, error) {
 		return false, nil
 	}
 	if Client != nil {
-		ctx := context.Background()
+		ctx, cancel := redisTimeoutCtx()
+		defer cancel()
 		return Client.SetNX(ctx, refreshFamilyPrefix+family, "1", refreshFamilyTTL).Result()
 	}
 	if backend, ok := secondaryAuth.(RefreshFamilyBackend); ok {
@@ -105,7 +131,8 @@ func RevokeRefreshFamily(family string) error {
 		return nil
 	}
 	if Client != nil {
-		ctx := context.Background()
+		ctx, cancel := redisTimeoutCtx()
+		defer cancel()
 		return Client.Set(ctx, refreshFamilyPrefix+family, "revoked", refreshFamilyTTL).Err()
 	}
 	if backend, ok := secondaryAuth.(RefreshFamilyBackend); ok {
@@ -145,4 +172,9 @@ func revokeMemoryRefreshFamily(family string) {
 	memoryRefreshFamilies.Lock()
 	defer memoryRefreshFamilies.Unlock()
 	memoryRefreshFamilies.m[family] = time.Now().Add(refreshFamilyTTL)
+}
+
+// redisTimeoutCtx 返回统一的 Redis 操作超时上下文，避免依赖 go-redis 默认超时。
+func redisTimeoutCtx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 2*time.Second)
 }

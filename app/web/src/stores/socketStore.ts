@@ -50,7 +50,9 @@ import type {
 
 export const socketStore = createRoot(() => {
 	// 3. adapter + signals
-	const adapter = createWSClient({ refreshTicket: getWSTicket });
+	const adapter = createWSClient({
+		refreshTicket: () => getWSTicket(currentDomainUUID() ?? undefined),
+	});
 
 	const [connected, setConnected] = createSignal(false);
 	const [socketState, setSocketState] = createSignal<WSConnectionState>(
@@ -171,7 +173,7 @@ export const socketStore = createRoot(() => {
 			adapter.disconnect();
 		}
 		try {
-			const ticket = await getWSTicket();
+			const ticket = await getWSTicket(currentDomainUUID() ?? undefined);
 			adapter.connect(url, ticket.token);
 			if (!serverEventsBound) {
 				serverEventsBound = true;

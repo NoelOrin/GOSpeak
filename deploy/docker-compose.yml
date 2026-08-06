@@ -137,12 +137,84 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-gospeak}
       CLUSTER_AGENT_URL: ${CLUSTER_AGENT_URL:-http://gospeak-agent:9000}
       CLUSTER_AGENT_TOKEN: ${CLUSTER_AGENT_TOKEN:-}
-      CLUSTER_NODE_ID: ${CLUSTER_WORKER_NODE_ID:-worker-1}
+      CLUSTER_NODE_ID: ${CLUSTER_WORKER_NODE_ID:-worker-default}
       CLUSTER_ADVERTISE_URL: ${CLUSTER_WORKER_ADVERTISE_URL:?CLUSTER_WORKER_ADVERTISE_URL is required for cluster mode}
       NATS_URL: ${NATS_URL:-nats://nats:4222}
       STATE_STORE: ${STATE_STORE:-nats}
     ports:
       - "${GOSPEAK_WORKER_PORT:-8998}:8998"
+    volumes:
+      - gospeak-db:/app/db
+      - gospeak-logs:/app/logs
+      - gospeak-uploads:/app/uploads
+    depends_on:
+      gospeak-agent:
+        condition: service_started
+      nats:
+        condition: service_healthy
+        required: false
+
+  gospeak-worker-1:
+    <<: *restart
+    profiles: ["cluster"]
+    image: gospeak:latest
+    container_name: gospeak-worker-1
+    env_file:
+      - ${GOSPEAK_ENV_FILE:-./env/app.srs.env}
+    environment:
+      GOSPEAK_ROLE: worker
+      SERVER_PORT: "8998"
+      STATIC_DIR: /app/static
+      DB_PATH: ${DB_PATH:-/app/db/app.db}
+      DB_TYPE: ${DB_TYPE:-PostgresSQL}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-gospeak}
+      DB_PASSWORD: ${DB_PASSWORD:-gospeak}
+      CLUSTER_AGENT_URL: ${CLUSTER_AGENT_URL:-http://gospeak-agent:9000}
+      CLUSTER_AGENT_TOKEN: ${CLUSTER_AGENT_TOKEN:-}
+      CLUSTER_NODE_ID: worker-1
+      CLUSTER_ADVERTISE_URL: ${CLUSTER_WORKER1_ADVERTISE_URL:?CLUSTER_WORKER1_ADVERTISE_URL is required for cluster mode}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      STATE_STORE: ${STATE_STORE:-nats}
+    ports:
+      - "${GOSPEAK_WORKER1_PORT:-18998}:8998"
+    volumes:
+      - gospeak-db:/app/db
+      - gospeak-logs:/app/logs
+      - gospeak-uploads:/app/uploads
+    depends_on:
+      gospeak-agent:
+        condition: service_started
+      nats:
+        condition: service_healthy
+        required: false
+
+  gospeak-worker-2:
+    <<: *restart
+    profiles: ["cluster"]
+    image: gospeak:latest
+    container_name: gospeak-worker-2
+    env_file:
+      - ${GOSPEAK_ENV_FILE:-./env/app.srs.env}
+    environment:
+      GOSPEAK_ROLE: worker
+      SERVER_PORT: "8998"
+      STATIC_DIR: /app/static
+      DB_PATH: ${DB_PATH:-/app/db/app.db}
+      DB_TYPE: ${DB_TYPE:-PostgresSQL}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-gospeak}
+      DB_PASSWORD: ${DB_PASSWORD:-gospeak}
+      CLUSTER_AGENT_URL: ${CLUSTER_AGENT_URL:-http://gospeak-agent:9000}
+      CLUSTER_AGENT_TOKEN: ${CLUSTER_AGENT_TOKEN:-}
+      CLUSTER_NODE_ID: worker-2
+      CLUSTER_ADVERTISE_URL: ${CLUSTER_WORKER2_ADVERTISE_URL:?CLUSTER_WORKER2_ADVERTISE_URL is required for cluster mode}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      STATE_STORE: ${STATE_STORE:-nats}
+    ports:
+      - "${GOSPEAK_WORKER2_PORT:-18999}:8998"
     volumes:
       - gospeak-db:/app/db
       - gospeak-logs:/app/logs
@@ -167,6 +239,10 @@ services:
       gospeak-agent:
         condition: service_started
       gospeak-worker:
+        condition: service_started
+      gospeak-worker-1:
+        condition: service_started
+      gospeak-worker-2:
         condition: service_started
 
   # ── Nginx 入口 (SRS 模式推荐) ─────────────────────────────────────────
@@ -302,6 +378,88 @@ services:
       - minio-data:/data
     command: server /data --console-address ":9001"
 
+  # ── Observability (Prometheus / Grafana / Alertmanager / Loki) ───────
+  prometheus:
+    <<: *restart
+    profiles: ["observability"]
+    image: prom/prometheus:v3.2.1
+    container_name: gospeak-prometheus
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/rules.yml:/etc/prometheus/rules.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  alertmanager:
+    <<: *restart
+    profiles: ["observability"]
+    image: prom/alertmanager:v0.28.1
+    container_name: gospeak-alertmanager
+    volumes:
+      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+
+  grafana:
+    <<: *restart
+    profiles: ["observability"]
+    image: grafana/grafana:11.5.2
+    container_name: gospeak-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+
+  loki:
+    <<: *restart
+    profiles: ["observability"]
+    image: grafana/loki:3.4.2
+    container_name: gospeak-loki
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    command:
+      - -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+
+  promtail:
+    <<: *restart
+    profiles: ["observability"]
+    image: grafana/promtail:3.4.2
+    container_name: gospeak-promtail
+    volumes:
+      - ./observability/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command:
+      - -config.file=/etc/promtail/config.yml
+    depends_on:
+      loki:
+        condition: service_started
+
 volumes:
   gospeak-db:
   gospeak-logs:
@@ -309,3 +467,6 @@ volumes:
   redis-data:
   postgres-data:
   minio-data:
+  prometheus-data:
+  grafana-data:
+  loki-data:

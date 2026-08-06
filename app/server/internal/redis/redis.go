@@ -3,6 +3,7 @@ package redis
 
 import (
 	"GOSpeak/internal/config"
+	"GOSpeak/internal/logger"
 	"context"
 	"fmt"
 	"strconv"
@@ -19,12 +20,12 @@ var Client *redis.Client
 // REDIS_HOST 为空时跳过连接，不 panic、不报错。
 func InitRedis(cfg *config.Config) {
 	if cfg == nil {
-		fmt.Println("[Redis] config is nil, skipping Redis connection")
+		logger.WithComponent("Redis").Warn("config is nil, skipping Redis connection")
 		return
 	}
 	host := cfg.RedisHost
 	if host == "" {
-		fmt.Println("[Redis] REDIS_HOST not set, skipping Redis connection")
+		logger.WithComponent("Redis").Info("REDIS_HOST not set, skipping Redis connection")
 		return
 	}
 
@@ -40,13 +41,15 @@ func InitRedis(cfg *config.Config) {
 		DB:       db,
 	})
 
-	if _, err := client.Ping(context.Background()).Result(); err != nil {
-		fmt.Printf("[Redis] connection failed: %v\n", err)
+	pingCtx, cancel := redisTimeoutCtx()
+	defer cancel()
+	if _, err := client.Ping(pingCtx).Result(); err != nil {
+		logger.WithComponent("Redis").WithError(err).Warn("connection failed")
 		return
 	}
 
 	Client = client
-	fmt.Printf("[Redis] connected: %s:%s db=%d\n", host, port, db)
+	logger.WithComponent("Redis").Infof("connected: %s:%s db=%d", host, port, db)
 }
 
 // IsConnected 检查 Redis 是否已成功连接。调用方应优先判断此值再执行 Redis 操作。
