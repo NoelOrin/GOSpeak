@@ -385,3 +385,56 @@ func TestRoomHandler_Delete_RequiresManagePermission(t *testing.T) {
 		}
 	})
 }
+
+func TestRoomHandler_Delete_AllowsDomainRolePermission(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	middleware.SetDomainChecker(func(domainUUID, userUUID string) bool { return true })
+	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Room{}, &model.Domain{}, &model.DomainMember{}, &model.DomainRole{}, &model.DomainRolePermission{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	g := &model.Domain{Name: "Test", OwnerUUID: "owner-1"}
+	if err := db.Create(g).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, g.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{DomainUUID: g.UUID, UserUUID: "moderator-1", RoleName: "moderator"}).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+	if err := repository.NewDomainRoleRepository(db).CreateRoleWithPermissions(
+		&model.DomainRole{DomainUUID: g.UUID, Name: "moderator"},
+		[]string{model.PermRoomDelete},
+	); err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	room := model.Room{Name: "lobby", DomainUUID: g.UUID, CreatedBy: "someone-else"}
+	if err := db.Create(&room).Error; err != nil {
+		t.Fatalf("seed room: %v", err)
+	}
+
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("username", "moderator-1")
+		c.Set("user_uuid", "moderator-1")
+		c.Set("role", "user")
+		c.Next()
+	})
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+	r.POST("/api/v1/room/delete", h.Delete)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/delete", strings.NewReader(`{"id":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body %s", w.Code, w.Body.String())
+	}
+}

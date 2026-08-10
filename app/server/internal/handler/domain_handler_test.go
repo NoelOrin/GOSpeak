@@ -82,6 +82,12 @@ func setupDomainHandlerRouter(t *testing.T, domainSvc *service.DomainService) *g
 	rg.POST("/update", h.Update)
 	rg.POST("/delete", h.Delete)
 	rg.POST("/members", h.Members)
+	rg.POST("/roles/list", h.ListRoles)
+	rg.POST("/roles/create", h.CreateRole)
+	rg.POST("/roles/update", h.UpdateRole)
+	rg.POST("/roles/delete", h.DeleteRole)
+	rg.POST("/members/update-role", h.UpdateMemberRole)
+	rg.POST("/my-permissions", h.MyPermissions)
 
 	return r
 }
@@ -450,5 +456,142 @@ func TestDomainHandler_MyDomains_BatchDetails(t *testing.T) {
 	}
 	if intCode(g2Detail["member_count"]) != 2 || intCode(g2Detail["room_count"]) != 1 {
 		t.Fatalf("expected g2 member_count 2 room_count 1, got %v/%v", g2Detail["member_count"], g2Detail["room_count"])
+	}
+}
+
+func TestDomainHandler_RoleManagement_OwnerSuccess(t *testing.T) {
+	db, domainSvc := setupDomainHandlerTestDB(t)
+	domain := &model.Domain{Name: "Role API", OwnerUUID: "owner-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{
+		DomainUUID: domain.UUID, UserUUID: "member-1", RoleName: model.DomainRoleMember,
+	}).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+	router := setupDomainHandlerRouter(t, domainSvc)
+
+	resp := postDomainJSON(t, router, "/api/v1/domain/roles/list",
+		`{"domain_uuid":"`+domain.UUID+`"}`,
+		map[string]string{"X-User-UUID": "owner-1"})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("list roles: got %d, body %s", resp.Code, resp.Body.String())
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["code"].(float64) != 0 {
+		t.Fatalf("expected code 0, got %v", body["code"])
+	}
+
+	resp = postDomainJSON(t, router, "/api/v1/domain/roles/create",
+		`{"domain_uuid":"`+domain.UUID+`","name":"moderator","permissions":["room:read"]}`,
+		map[string]string{"X-User-UUID": "owner-1"})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("create role: got %d, body %s", resp.Code, resp.Body.String())
+	}
+
+	resp = postDomainJSON(t, router, "/api/v1/domain/members/update-role",
+		`{"domain_uuid":"`+domain.UUID+`","user_uuid":"member-1","role_name":"moderator"}`,
+		map[string]string{"X-User-UUID": "owner-1"})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("update member role: got %d, body %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestDomainHandler_RoleManagement_NonManagerForbidden(t *testing.T) {
+	db, domainSvc := setupDomainHandlerTestDB(t)
+	domain := &model.Domain{Name: "Role Denied", OwnerUUID: "owner-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{
+		DomainUUID: domain.UUID, UserUUID: "member-1", RoleName: model.DomainRoleMember,
+	}).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+	router := setupDomainHandlerRouter(t, domainSvc)
+
+	resp := postDomainJSON(t, router, "/api/v1/domain/roles/create",
+		`{"domain_uuid":"`+domain.UUID+`","name":"hacker","permissions":[]}`,
+		map[string]string{"X-User-UUID": "member-1"})
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("unexpected http status %d, body %s", resp.Code, resp.Body.String())
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["code"].(float64) != 1013 {
+		t.Fatalf("expected FORBIDDEN 1013, got %v", body["code"])
+	}
+}
+
+func TestDomainHandler_MyPermissions(t *testing.T) {
+	db, domainSvc := setupDomainHandlerTestDB(t)
+	domain := &model.Domain{Name: "My Perms", OwnerUUID: "owner-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{
+		DomainUUID: domain.UUID, UserUUID: "owner-1", RoleName: model.DomainRoleOwner,
+	}).Error; err != nil {
+		t.Fatalf("seed owner member: %v", err)
+	}
+	router := setupDomainHandlerRouter(t, domainSvc)
+
+	resp := postDomainJSON(t, router, "/api/v1/domain/my-permissions",
+		`{"domain_uuid":"`+domain.UUID+`"}`,
+		map[string]string{"X-User-UUID": "owner-1"})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("my permissions: got %d, body %s", resp.Code, resp.Body.String())
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["code"].(float64) != 0 {
+		t.Fatalf("expected code 0, got %v", body["code"])
+	}
+}
+
+func TestDomainHandler_Update_AllowsDomainRolePermission(t *testing.T) {
+	db, domainSvc := setupDomainHandlerTestDB(t)
+	domain := &model.Domain{Name: "Update Role", OwnerUUID: "owner-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{
+		DomainUUID: domain.UUID, UserUUID: "manager-1", RoleName: "manager",
+	}).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+	if err := repository.NewDomainRoleRepository(db).CreateRoleWithPermissions(
+		&model.DomainRole{DomainUUID: domain.UUID, Name: "manager"},
+		[]string{model.PermDomainManage},
+	); err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	router := setupDomainHandlerRouter(t, domainSvc)
+
+	resp := postDomainJSON(t, router, "/api/v1/domain/update",
+		`{"domain_uuid":"`+domain.UUID+`","name":"Renamed"}`,
+		map[string]string{"X-User-UUID": "manager-1"})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body %s", resp.Code, resp.Body.String())
 	}
 }

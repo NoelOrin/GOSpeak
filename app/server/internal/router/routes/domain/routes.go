@@ -21,4 +21,10 @@ func Register(r *gin.RouterGroup, h *handler.DomainHandler) {
 	r.POST("/leave", middleware.RequireDomainMember(), h.Leave)
 	r.POST("/kick", middleware.RequireDomainMember(), h.Kick)
 	r.POST("/members", middleware.RequireDomainMember(), h.Members)
+	r.POST("/roles/list", middleware.RequireDomainMember(), h.ListRoles)
+	r.POST("/roles/create", middleware.RequireDomainMember(), h.CreateRole)
+	r.POST("/roles/update", middleware.RequireDomainMember(), h.UpdateRole)
+	r.POST("/roles/delete", middleware.RequireDomainMember(), h.DeleteRole)
+	r.POST("/members/update-role", middleware.RequireDomainMember(), h.UpdateMemberRole)
+	r.POST("/my-permissions", middleware.RequireDomainMember(), h.MyPermissions)
 }

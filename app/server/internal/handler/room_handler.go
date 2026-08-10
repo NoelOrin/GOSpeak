@@ -48,8 +48,6 @@ func (h *RoomHandler) notifyRoomList(domainUUID string) {
 	}
 }
 
-
-
 func currentUserUUID(c *gin.Context) string {
 	if v, ok := c.Get("user_uuid"); ok {
 		if s, ok := v.(string); ok && s != "" {
@@ -81,7 +79,7 @@ func (h *RoomHandler) canManageRoom(c *gin.Context, room *model.Room, perm strin
 		return true
 	}
 	if room.DomainUUID != "" && h.domainSvc != nil &&
-		h.domainSvc.HasDomainRole(room.DomainUUID, currentUserUUID(c), service.DomainRoleAdmin) {
+		h.domainSvc.HasDomainPermission(room.DomainUUID, currentUserUUID(c), perm) {
 		return true
 	}
 	return room.CreatedBy == usernameStr

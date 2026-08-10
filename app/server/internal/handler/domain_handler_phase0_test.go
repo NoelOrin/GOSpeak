@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/repository"
 )
 
 func TestDomainHandler_Update_NonOwnerForbidden(t *testing.T) {
@@ -70,6 +71,9 @@ func TestDomainHandler_Kick_AdminSuccess(t *testing.T) {
 	g := &model.Domain{Name: "Test", OwnerUUID: "owner-1"}
 	if err := db.Create(g).Error; err != nil {
 		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, g.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
 	}
 	db.Create(&model.DomainMember{DomainUUID: g.UUID, UserUUID: "admin-1", RoleName: "admin"})
 	db.Create(&model.DomainMember{DomainUUID: g.UUID, UserUUID: "member-2", RoleName: "member"})

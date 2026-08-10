@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"GOSpeak/internal/cluster"
+	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
@@ -193,7 +194,9 @@ func (h *DomainHandler) Update(c *gin.Context) {
 		return
 	}
 	userUUID, _ := userUUIDVal.(string)
-	if !h.hasPermission(c, permcode.PermDomainManage) && !h.domainSvc.IsOwner(domainUUID, userUUID) {
+	if !h.hasPermission(c, permcode.PermDomainManage) &&
+		!h.domainSvc.IsOwner(domainUUID, userUUID) &&
+		!h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainManage) {
 		pkg.Fail(c, pkg.FORBIDDEN, "not domain owner or missing permission")
 		return
 	}
@@ -356,7 +359,7 @@ func (h *DomainHandler) Kick(c *gin.Context) {
 	}
 	userUUID, _ := userUUIDVal.(string)
 	permOK := h.hasPermission(c, permcode.PermDomainKick)
-	roleOK := h.domainSvc.HasDomainRole(domainUUID, userUUID, service.DomainRoleAdmin)
+	roleOK := h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainKick)
 	if !permOK && !roleOK {
 		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain role or permission")
 		return
@@ -397,4 +400,178 @@ func (h *DomainHandler) Members(c *gin.Context) {
 		return
 	}
 	pkg.Success(c, gin.H{"members": members})
+}
+
+type DomainRoleListRequest struct {
+}
+
+type CreateDomainRoleRequest struct {
+	Name        string   `json:"name" binding:"required"`
+	Permissions []string `json:"permissions"`
+}
+
+type UpdateDomainRoleRequest struct {
+	RoleName    string   `json:"role_name" binding:"required"`
+	Permissions []string `json:"permissions"`
+}
+
+type DeleteDomainRoleRequest struct {
+	RoleName string `json:"role_name" binding:"required"`
+}
+
+type UpdateMemberRoleRequest struct {
+	UserUUID string `json:"user_uuid" binding:"required"`
+	RoleName string `json:"role_name" binding:"required"`
+}
+
+func (h *DomainHandler) canManageDomainRoles(c *gin.Context, domainUUID, userUUID string) bool {
+	if h.domainSvc.IsOwner(domainUUID, userUUID) {
+		return true
+	}
+	if h.hasPermission(c, permcode.PermDomainRoleManage) {
+		return true
+	}
+	return h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainRoleManage)
+}
+
+func (h *DomainHandler) ListRoles(c *gin.Context) {
+	domainUUID := domainUUIDFromContext(c)
+	userUUID := currentUserUUID(c)
+	if domainUUID == "" || userUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	if !h.canManageDomainRoles(c, domainUUID, userUUID) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain role permission")
+		return
+	}
+	roles, err := h.domainSvc.ListDomainRoles(domainUUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	views := make([]gin.H, 0, len(roles))
+	for _, role := range roles {
+		codes, err := h.domainSvc.GetDomainRolePermissions(domainUUID, role.Name)
+		if err != nil {
+			pkg.HandleError(c, err)
+			return
+		}
+		views = append(views, gin.H{
+			"name":        role.Name,
+			"is_system":   role.IsSystem,
+			"permissions": codes,
+		})
+	}
+	pkg.Success(c, gin.H{
+		"roles":      views,
+		"assignable": model.AssignableDomainPermissions,
+	})
+}
+
+func (h *DomainHandler) CreateRole(c *gin.Context) {
+	var req CreateDomainRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	domainUUID := domainUUIDFromContext(c)
+	userUUID := currentUserUUID(c)
+	if domainUUID == "" || userUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	if !h.canManageDomainRoles(c, domainUUID, userUUID) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain role permission")
+		return
+	}
+	if err := h.domainSvc.CreateDomainRole(domainUUID, req.Name, req.Permissions); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, nil)
+}
+
+func (h *DomainHandler) UpdateRole(c *gin.Context) {
+	var req UpdateDomainRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	domainUUID := domainUUIDFromContext(c)
+	userUUID := currentUserUUID(c)
+	if domainUUID == "" || userUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	if !h.canManageDomainRoles(c, domainUUID, userUUID) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain role permission")
+		return
+	}
+	if err := h.domainSvc.UpdateDomainRolePermissions(domainUUID, req.RoleName, req.Permissions); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, nil)
+}
+
+func (h *DomainHandler) DeleteRole(c *gin.Context) {
+	var req DeleteDomainRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	domainUUID := domainUUIDFromContext(c)
+	userUUID := currentUserUUID(c)
+	if domainUUID == "" || userUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	if !h.canManageDomainRoles(c, domainUUID, userUUID) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain role permission")
+		return
+	}
+	if err := h.domainSvc.DeleteDomainRole(domainUUID, req.RoleName); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, nil)
+}
+
+func (h *DomainHandler) UpdateMemberRole(c *gin.Context) {
+	var req UpdateMemberRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	domainUUID := domainUUIDFromContext(c)
+	userUUID := currentUserUUID(c)
+	if domainUUID == "" || userUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	if !h.canManageDomainRoles(c, domainUUID, userUUID) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain role permission")
+		return
+	}
+	if err := h.domainSvc.SetMemberRole(domainUUID, userUUID, req.UserUUID, req.RoleName); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, nil)
+}
+
+func (h *DomainHandler) MyPermissions(c *gin.Context) {
+	domainUUID := domainUUIDFromContext(c)
+	userUUID := currentUserUUID(c)
+	if domainUUID == "" || userUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	roleName, codes, err := h.domainSvc.MyDomainPermissions(domainUUID, userUUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"role_name": roleName, "permissions": codes})
 }
