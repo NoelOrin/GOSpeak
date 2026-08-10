@@ -40,9 +40,6 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.0.6
         version: 4.3.1(rolldown-vite@7.3.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@25.9.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.22.4))
-      '@tanstack/router-plugin':
-        specifier: ^1.133.21
-        version: 1.168.18(esbuild@0.27.7)(rolldown-vite@7.3.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@25.9.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.22.4))(rolldown@1.1.4)(rollup@4.62.2)(vite-plugin-solid@2.11.12(rolldown-vite@7.3.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@25.9.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.22.4))(solid-js@1.9.13))
       '@tanstack/solid-form':
         specifier: ^1.27.6
         version: 1.33.0(solid-js@1.9.13)
@@ -131,15 +128,15 @@ importers:
         specifier: ^4.2.1
         version: 4.4.3
     devDependencies:
-      '@commitlint/cli':
-        specifier: ^17.7.2
-        version: 17.8.1
       '@tanstack/devtools-vite':
         specifier: ^0.3.11
         version: 0.3.12(rolldown-vite@7.3.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@25.9.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.22.4))
       '@tanstack/router-cli':
         specifier: ^1.141.2
         version: 1.167.17
+      '@tanstack/router-plugin':
+        specifier: ^1.141.1
+        version: 1.168.18(esbuild@0.27.7)(rolldown-vite@7.3.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@25.9.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.22.4))(rolldown@1.1.4)(rollup@4.62.2)(vite-plugin-solid@2.11.12(rolldown-vite@7.3.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@25.9.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.22.4))(solid-js@1.9.13))
       '@types/color':
         specifier: ^3.0.4
         version: 3.0.7
