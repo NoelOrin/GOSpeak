@@ -4,6 +4,7 @@
 - 范围：GOSpeak monorepo（Go 后端、SolidJS 前端、packages、deploy）
 - 方式：4 路并行扫描（Go 死代码、前端 TS 死代码、孤立模块/包、依赖与仓库冗余）
 - 结论：本次仅产出清单，未修改任何代码
+- 处理状态：2026-08-10 已清理重复依赖、被 git 跟踪的冗余产物与过时文档；R/Y 级死代码待产品确认。
 
 ## 扫描方法
 
@@ -107,20 +108,20 @@ MediaSoup 前后端三端实现全部标注“已禁用保留”，但代码、�
 
 注意：`daisyui` 经 CSS `@plugin "daisyui"` 使用，不属于未使用依赖；`@types/node`、`typescript`、`esbuild`、`jsdom`、`playwright` 为工具链依赖，不算冗余。
 
-### 重复依赖
+### 重复依赖（已处理）
 
 - `@tanstack/router-plugin` 同时存在于 `app/web` 的 `dependencies`（1.133.21）和 `devDependencies`（1.141.1）；
 - `@commitlint/cli` 在根 `package.json` 与 `app/web/package.json` 重复。
 
-### 被 git 跟踪的冗余产物
+### 被 git 跟踪的冗余产物（已处理）
 
 - `app/web/pnpm-lock.yaml`：与根 pnpm workspace 重复的独立 lockfile；
 - `app/docs/.vitepress/cache/`：约 2.8MB VitePress 构建缓存；
 - `findings.json`、`test-results/.last-run.json`：review/测试产物。
 
-### 文档过时
+### 文档过时（已处理）
 
-- AGENTS.md 及若干架构文档仍写 `app/sfu-client` 路径，实际只有 `packages/sfu-client`。
+- AGENTS.md 目录树已移除 `app/sfu-client`，统一为 `packages/sfu-client`；README 与 app/docs 架构文档均已使用 `packages/sfu-client`。
 
 ## 已排除项
 
