@@ -88,23 +88,12 @@ func StartGin(env EnvEnum) error {
 	}
 
 	roleRepo := repository.NewRoleRepository(db)
-	if cfg.IsAgent() {
-		seedRoles(roleRepo)
-	} else {
+	if !cfg.IsAgent() {
 		loadRoles(roleRepo)
 	}
 
 	userRepo := repository.NewUserRepository(db)
-	var adminUUID string
-	if cfg.IsAgent() {
-		adminUUID = seedAdminUser(userRepo)
-	}
 	userGroupRepo := repository.NewUserGroupRepository(db)
-	if adminUUID != "" {
-		if err := repository.EnsureDefaultDomain(db, adminUUID); err != nil {
-			logger.WithComponent("Seed").Warnf("同步默认语音域失败: %v", err)
-		}
-	}
 	roomRepo := repository.NewRoomRepository(db)
 	oauthProviderRepo := repository.NewOAuthProviderRepository(db)
 	oauthAccountRepo := repository.NewOAuthAccountRepository(db)
@@ -117,16 +106,10 @@ func StartGin(env EnvEnum) error {
 	sfuConfigRepo := repository.NewSFUConfigRepository(db)
 	storageConfigRepo := repository.NewStorageConfigRepository(db)
 	domainRepo := repository.NewDomainRepository(db)
-	domainSvc := service.NewDomainService(domainRepo)
+	domainRoleRepo := repository.NewDomainRoleRepository(db)
+	domainSvc := service.NewDomainService(domainRepo, domainRoleRepo)
 
-	// 初始化权限系统
-	if cfg.IsAgent() {
-		seedPermissions(permRepo)
-	}
 	permSvc := service.NewPermissionService(permRepo)
-	if err := permSvc.LoadCache(); err != nil {
-		return fmt.Errorf("failed to load permission cache: %w", err)
-	}
 
 	roleSvc := service.NewRoleService(roleRepo)
 	emailConfigSvc := service.NewEmailConfigService(emailConfigRepo, cfg)
@@ -142,11 +125,6 @@ func StartGin(env EnvEnum) error {
 	messageSvc.SetUserRepo(userRepo)
 	muteSvc := service.NewMuteService(muteRepo, userRepo)
 	sfuConfigSvc := service.NewSFUConfigService(sfuConfigRepo, cfg)
-	if cfg.IsAgent() {
-		if err := sfuConfigSvc.SyncFromEnv(); err != nil {
-			return fmt.Errorf("failed to sync sfu config from env: %w", err)
-		}
-	}
 	botTokenRepo := repository.NewBotTokenRepository(db)
 	botSvc := service.NewBotService(userRepo, botTokenRepo)
 
@@ -159,22 +137,6 @@ func StartGin(env EnvEnum) error {
 		return fmt.Errorf("register builtin plugins: %w", err)
 	}
 	logger.WithComponent("Plugin").WithField("embedded", builtin.EmbeddedSummary()).Info("builtin plugins registered")
-	if cfg.IsAgent() {
-		if err := pluginReg.InitAll(); err != nil {
-			return fmt.Errorf("init plugins: %w", err)
-		}
-		// 后端启动时同步启动已启用插件（bot-base 内嵌且默认启用）
-		if err := pluginReg.StartEnabled(context.Background()); err != nil {
-			logger.WithComponent("Plugin").Warnf("start plugins: %v", err)
-		}
-	}
-	pluginSvc := service.NewPluginService(pluginReg)
-	for _, info := range pluginSvc.List() {
-		logger.WithComponent("Plugin").Infof(
-			"plugin=%s enabled=%v status=%s side_servers=%d",
-			info.Name, info.Enabled, info.Status, len(info.SideServers),
-		)
-	}
 	var sfuProvider sfu.Provider = factory.NewDynamicProvider(sfuConfigSvc.ResolveConfig)
 
 	r := gin.New()
@@ -214,6 +176,8 @@ func StartGin(env EnvEnum) error {
 	}
 
 	permSvc.SetEventBus(eventBus)
+	domainSvc.SetEventBus(eventBus)
+	muteSvc.SetEventBus(eventBus)
 	messageSvc.SetEventBus(eventBus)
 	var natsConn *nats.Conn
 	instanceID := eventBus.InstanceID()
@@ -281,6 +245,14 @@ func StartGin(env EnvEnum) error {
 			}
 			if event == service.EventPermissionsInvalidated {
 				permSvc.OnRemoteInvalidate(payload)
+				return
+			}
+			if event == service.EventDomainMembershipChanged {
+				domainSvc.OnRemoteInvalidate(payload)
+				return
+			}
+			if event == service.EventMuteChanged {
+				muteSvc.OnRemoteInvalidate(payload)
 				return
 			}
 			signalHub.HandleRemoteEvent(event, payload)
@@ -379,8 +351,21 @@ func StartGin(env EnvEnum) error {
 	clusterSvc := service.NewClusterService(repository.NewClusterNodeRepository(db), repository.NewServerAssignmentRepository(db))
 	clusterSvc.SetNotifier(eventBus)
 	clusterSvc.SetServerRepo(repository.NewDomainRepository(db))
+	if rs, ok := store.(service.RoomMetaReader); ok {
+		clusterSvc.SetRoomMetaStore(rs)
+	}
 	signalH.SetClusterResolver(func(domainUUID string) (string, error) {
 		_, node, err := clusterSvc.ResolveServer(domainUUID)
+		if err != nil {
+			return "", err
+		}
+		if entry := strings.TrimSpace(cfg.ClusterEntryURL); entry != "" {
+			return strings.TrimRight(entry, "/") + "/ws?worker=" + url.QueryEscape(node.UUID), nil
+		}
+		return node.AdvertiseURL, nil
+	})
+	signalH.SetRoomResolver(func(domainUUID, room string) (string, error) {
+		_, node, err := clusterSvc.ResolveRoom(domainUUID, room)
 		if err != nil {
 			return "", err
 		}
@@ -411,7 +396,6 @@ func StartGin(env EnvEnum) error {
 	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc, signalHub)
 	storageH := handler.NewStorageHandler(storageSvc)
 	botH := handler.NewBotHandler(botSvc)
-	pluginH := handler.NewPluginHandler(pluginSvc)
 	middleware.Configure(middleware.Dependencies{
 		PermissionChecker:   permSvc,
 		TokenVersionChecker: authSvc,
@@ -424,14 +408,34 @@ func StartGin(env EnvEnum) error {
 	var clusterStop func()
 	var agentLeaderLock *cluster.NATSLeaderLock
 	var stopLeaderRenew func()
+	var leaderFence *service.LeaderFenceService
 	var localNodeUUID string
 	var degradedToWorker bool
-	clusterHandler, clusterStop, agentLeaderLock, stopLeaderRenew, localNodeUUID, degradedToWorker, err = startClusterRuntimes(
+	clusterHandler, clusterStop, agentLeaderLock, stopLeaderRenew, leaderFence, localNodeUUID, degradedToWorker, err = startClusterRuntimes(
 		cfg, db, natsConn, instanceID, clusterSvc, signalHub, sfuProvider,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to start cluster runtime: %w", err)
 	}
+	// Agent 主锁抢到后才允许控制面 seed/插件写库；备机降级为 Worker 只读路径。
+	if leaderFence != nil {
+		if err := bootstrapAgentControlPlane(db, roleRepo, userRepo, permRepo, sfuConfigSvc, pluginReg, permSvc); err != nil {
+			return fmt.Errorf("bootstrap agent control plane: %w", err)
+		}
+	} else {
+		loadRoles(roleRepo)
+		if err := permSvc.LoadCache(); err != nil {
+			return fmt.Errorf("failed to load permission cache: %w", err)
+		}
+	}
+	pluginSvc := service.NewPluginService(pluginReg)
+	for _, info := range pluginSvc.List() {
+		logger.WithComponent("Plugin").Infof(
+			"plugin=%s enabled=%v status=%s side_servers=%d",
+			info.Name, info.Enabled, info.Status, len(info.SideServers),
+		)
+	}
+	pluginH := handler.NewPluginHandler(pluginSvc)
 	localClusterNodeID := localNodeUUID
 
 	startJobConsumers(cfg, jobQueue, eventBus.InstanceID(), signalHub, messageSvc, conversationSvc, clusterSvc, localClusterNodeID)
@@ -467,7 +471,7 @@ func StartGin(env EnvEnum) error {
 	}
 	conversationH := handler.NewConversationHandler(conversationSvc)
 
-	monitorH := handler.NewMonitorHandler(signalHub, cfg, newServerInfraStats(eventBus), clusterSvc)
+	monitorH := handler.NewMonitorHandler(signalHub, cfg, newServerInfraStats(eventBus, cfg), clusterSvc)
 
 	// Prometheus /metrics：业务指标快照 + HTTP 请求指标，可选用 METRICS_TOKEN 保护。
 	metricsSrv := metrics.New(func() metrics.Snapshot { return toMetricsSnapshot(monitorH.Collect()) })
@@ -499,6 +503,12 @@ func StartGin(env EnvEnum) error {
 
 	router.SetupRoutes(r, &router.Handlers{
 		Config: cfg,
+		FenceCheck: func() error {
+			if leaderFence == nil {
+				return nil
+			}
+			return leaderFence.Verify()
+		},
 		ReadyCheck: func() error {
 			if _, err := db.DB(); err != nil {
 				return err
@@ -559,6 +569,7 @@ func StartGin(env EnvEnum) error {
 		clusterStop:     clusterStop,
 		stopLeaderRenew: stopLeaderRenew,
 		agentLeaderLock: agentLeaderLock,
+		leaderFence:     leaderFence,
 		instanceID:      instanceID,
 		closeEventBus:   closeEventBus,
 	})

@@ -25,11 +25,12 @@ func setupDomainHandlerTestDB(t *testing.T) (*gorm.DB, *service.DomainService) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Domain{}, &model.DomainMember{}, &model.Room{}, &model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.Domain{}, &model.DomainMember{}, &model.Room{}, &model.User{}, &model.DomainRole{}, &model.DomainRolePermission{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	domainRepo := repository.NewDomainRepository(db)
-	domainSvc := service.NewDomainService(domainRepo)
+	domainRoleRepo := repository.NewDomainRoleRepository(db)
+	domainSvc := service.NewDomainService(domainRepo, domainRoleRepo)
 	return db, domainSvc
 }
 

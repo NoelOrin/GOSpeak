@@ -17,11 +17,12 @@ func setupDomainServiceTestDB(t *testing.T) (*DomainService, *gorm.DB) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Domain{}, &model.DomainMember{}, &model.Room{}); err != nil {
+	if err := db.AutoMigrate(&model.Domain{}, &model.DomainMember{}, &model.Room{}, &model.DomainRole{}, &model.DomainRolePermission{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	repo := repository.NewDomainRepository(db)
-	svc := NewDomainService(repo)
+	roleRepo := repository.NewDomainRoleRepository(db)
+	svc := NewDomainService(repo, roleRepo)
 	return svc, db
 }
 
@@ -267,6 +268,29 @@ func TestDomainService_HasDomainRole(t *testing.T) {
 	}
 }
 
+func TestDomainService_IsMemberUsesCacheUntilInvalidated(t *testing.T) {
+	svc, db := setupDomainServiceTestDB(t)
+	g := seedDomainOwner(t, db, "Test", "owner-1")
+
+	if !svc.IsMember(g.UUID, "owner-1") {
+		t.Fatal("owner should be a member")
+	}
+
+	repo := repository.NewDomainRepository(db)
+	if err := repo.RemoveMember(g.UUID, "owner-1"); err != nil {
+		t.Fatalf("remove member: %v", err)
+	}
+
+	if !svc.IsMember(g.UUID, "owner-1") {
+		t.Fatal("expected cached membership to remain true")
+	}
+
+	svc.invalidateMembership(g.UUID, "owner-1", false)
+	if svc.IsMember(g.UUID, "owner-1") {
+		t.Fatal("expected invalidated membership to become false")
+	}
+}
+
 func checkAppErrCode(t *testing.T, err error, code pkg.ErrCode) {
 	t.Helper()
 	if err == nil {
@@ -278,5 +302,102 @@ func checkAppErrCode(t *testing.T, err error, code pkg.ErrCode) {
 	}
 	if ae.Code != code {
 		t.Fatalf("expected code=%d, got code=%d (msg=%q)", code, ae.Code, ae.Message)
+	}
+}
+
+func TestDomainService_HasDomainPermission(t *testing.T) {
+	svc, db := setupDomainServiceTestDB(t)
+	domain := &model.Domain{Name: "Perm", OwnerUUID: "owner-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{
+		DomainUUID: domain.UUID, UserUUID: "owner-1", RoleName: model.DomainRoleOwner,
+	}).Error; err != nil {
+		t.Fatalf("seed owner member: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{
+		DomainUUID: domain.UUID, UserUUID: "admin-1", RoleName: model.DomainRoleAdmin,
+	}).Error; err != nil {
+		t.Fatalf("seed admin member: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{
+		DomainUUID: domain.UUID, UserUUID: "member-1", RoleName: model.DomainRoleMember,
+	}).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+	if !svc.HasDomainPermission(domain.UUID, "owner-1", model.PermRoomDelete) {
+		t.Error("owner must have room:delete")
+	}
+	if !svc.HasDomainPermission(domain.UUID, "admin-1", model.PermDomainKick) {
+		t.Error("admin must have domain:kick by default")
+	}
+	if svc.HasDomainPermission(domain.UUID, "member-1", model.PermRoomDelete) {
+		t.Error("member must not have room:delete without explicit grant")
+	}
+}
+
+func TestDomainService_CreateAndDeleteCustomRole(t *testing.T) {
+	svc, db := setupDomainServiceTestDB(t)
+	domain := &model.Domain{Name: "Custom", OwnerUUID: "owner-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := svc.CreateDomainRole(domain.UUID, "moderator", []string{model.PermRoomRead}); err != nil {
+		t.Fatalf("CreateDomainRole: %v", err)
+	}
+	codes, err := svc.GetDomainRolePermissions(domain.UUID, "moderator")
+	if err != nil {
+		t.Fatalf("GetDomainRolePermissions: %v", err)
+	}
+	if len(codes) != 1 {
+		t.Fatalf("expected 1 permission, got %v", codes)
+	}
+	if err := svc.CreateDomainRole(domain.UUID, "admin", nil); err == nil {
+		t.Fatal("must reject creating system role name")
+	}
+	if err := svc.DeleteDomainRole(domain.UUID, "admin"); err == nil {
+		t.Fatal("must reject deleting system role")
+	}
+	if err := svc.DeleteDomainRole(domain.UUID, "moderator"); err != nil {
+		t.Fatalf("DeleteDomainRole: %v", err)
+	}
+}
+
+func TestDomainService_SetMemberRole(t *testing.T) {
+	svc, db := setupDomainServiceTestDB(t)
+	domain := &model.Domain{Name: "Members", OwnerUUID: "owner-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{
+		DomainUUID: domain.UUID, UserUUID: "u-2", RoleName: model.DomainRoleMember,
+	}).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+	if err := svc.SetMemberRole(domain.UUID, "owner-1", "u-2", model.DomainRoleAdmin); err != nil {
+		t.Fatalf("SetMemberRole: %v", err)
+	}
+	member, err := repository.NewDomainRepository(db).GetMember(domain.UUID, "u-2")
+	if err != nil {
+		t.Fatalf("GetMember: %v", err)
+	}
+	if member.RoleName != model.DomainRoleAdmin {
+		t.Fatalf("expected admin, got %s", member.RoleName)
+	}
+	if err := svc.SetMemberRole(domain.UUID, "u-2", "u-2", model.DomainRoleGuest); err == nil {
+		t.Fatal("must reject changing own role")
+	}
+	if err := svc.SetMemberRole(domain.UUID, "owner-1", "u-2", model.DomainRoleOwner); err == nil {
+		t.Fatal("must reject assigning owner role")
 	}
 }

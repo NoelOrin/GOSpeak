@@ -302,7 +302,7 @@ func TestRoomHandler_Delete_RequiresManagePermission(t *testing.T) {
 		if err != nil {
 			t.Fatalf("open sqlite: %v", err)
 		}
-		if err := db.AutoMigrate(&model.Room{}, &model.Domain{}, &model.DomainMember{}); err != nil {
+		if err := db.AutoMigrate(&model.Room{}, &model.Domain{}, &model.DomainMember{}, &model.DomainRole{}, &model.DomainRolePermission{}); err != nil {
 			t.Fatalf("migrate: %v", err)
 		}
 		g := &model.Domain{Name: "Test", OwnerUUID: "owner-1"}
@@ -316,7 +316,11 @@ func TestRoomHandler_Delete_RequiresManagePermission(t *testing.T) {
 		if err := db.Create(&room).Error; err != nil {
 			t.Fatalf("seed room: %v", err)
 		}
-		domainSvc := service.NewDomainService(repository.NewDomainRepository(db))
+		domainRoleRepo := repository.NewDomainRoleRepository(db)
+		domainSvc := service.NewDomainService(repository.NewDomainRepository(db), domainRoleRepo)
+		if err := repository.SeedDefaultDomainRoles(db, g.UUID); err != nil {
+			t.Fatalf("seed roles: %v", err)
+		}
 		r := gin.New()
 		r.Use(func(c *gin.Context) {
 			c.Set("username", requesterUUID)
