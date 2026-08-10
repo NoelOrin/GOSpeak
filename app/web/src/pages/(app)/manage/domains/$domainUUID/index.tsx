@@ -10,8 +10,17 @@ import {
 	untrack,
 } from "solid-js";
 import { showToast } from "solid-notifications";
-import type { DomainMember } from "@/api/domain";
-import { kickDomainMember, updateDomain } from "@/api/domain";
+import {
+	type DomainMember,
+	type DomainRole,
+	createDomainRole,
+	deleteDomainRole,
+	kickDomainMember,
+	listDomainRoles,
+	updateDomain,
+	updateDomainMemberRole,
+	updateDomainRolePermissions,
+} from "@/api/domain";
 import { deleteRoom, listRooms, type RoomRecord } from "@/api/room";
 import ConfirmModal from "@/components/common/ConfirmModal";
 import DomainMemberTable, {
@@ -26,9 +35,11 @@ import {
 } from "@/components/manage/ManageShell";
 import CreateRoomModal from "@/components/modal/createRoomModal";
 import { DomainSettingsForm } from "./components/DomainSettingsForm";
+import DomainRolePanel from "./components/DomainRolePanel";
 import EditRoomModal from "@/components/modal/editRoomModal";
 import domainStore from "@/stores/domainStore";
 import userStore from "@/stores/userStore";
+import { hasDomainPermission } from "@/utils/domainPermissions";
 import { hasAnyPermission, hasPermission } from "@/utils/permissions";
 
 export const Route = createFileRoute("/(app)/manage/domains/$domainUUID/")({
@@ -64,7 +75,7 @@ function apiErrorMessage(error: unknown) {
 
 function RouteComponent() {
 	const params = Route.useParams();
-	const { state, setCurrentDomain, loadMembers, updateCachedDomain } =
+	const { state, setCurrentDomain, loadMembers, loadMyPermissions, updateCachedDomain } =
 		domainStore;
 	const uuid = () => params().domainUUID;
 	const currentUser = () => userStore.user();
@@ -76,6 +87,79 @@ function RouteComponent() {
 		() => state.memberLoading[uuid()] ?? !state.memberCache[uuid()],
 	);
 	const memberError = createMemo(() => state.memberErrors[uuid()] ?? "");
+	const [domainRoles, setDomainRoles] = createSignal<DomainRole[]>([]);
+	const [assignableCodes, setAssignableCodes] = createSignal<string[]>([]);
+	const [rolesLoading, setRolesLoading] = createSignal(true);
+	const [rolesError, setRolesError] = createSignal("");
+	const [rolesSaving, setRolesSaving] = createSignal(false);
+
+	async function fetchRoles() {
+		setRolesLoading(true);
+		setRolesError("");
+		try {
+			const data = await listDomainRoles(uuid());
+			setDomainRoles(data.roles);
+			setAssignableCodes(data.assignable);
+		} catch (error) {
+			setRolesError(apiErrorMessage(error));
+		} finally {
+			setRolesLoading(false);
+		}
+	}
+
+	async function handleCreateRole(name: string, permissions: string[]) {
+		setRolesSaving(true);
+		setRolesError("");
+		try {
+			await createDomainRole(uuid(), name, permissions);
+			showToast("角色已创建", { type: "success" });
+			await fetchRoles();
+		} catch (error) {
+			setRolesError(apiErrorMessage(error));
+		} finally {
+			setRolesSaving(false);
+		}
+	}
+
+	async function handleUpdateRole(roleName: string, permissions: string[]) {
+		setRolesSaving(true);
+		setRolesError("");
+		try {
+			await updateDomainRolePermissions(uuid(), roleName, permissions);
+			showToast("权限已保存", { type: "success" });
+			await fetchRoles();
+			await loadMyPermissions(uuid());
+		} catch (error) {
+			setRolesError(apiErrorMessage(error));
+		} finally {
+			setRolesSaving(false);
+		}
+	}
+
+	async function handleDeleteRole(roleName: string) {
+		setRolesSaving(true);
+		setRolesError("");
+		try {
+			await deleteDomainRole(uuid(), roleName);
+			showToast("角色已删除", { type: "success" });
+			await fetchRoles();
+		} catch (error) {
+			setRolesError(apiErrorMessage(error));
+		} finally {
+			setRolesSaving(false);
+		}
+	}
+
+	async function handleMemberRoleChange(userUUID: string, roleName: string) {
+		try {
+			await updateDomainMemberRole(uuid(), userUUID, roleName);
+			await loadMembers(uuid());
+			showToast("成员角色已更新", { type: "success" });
+		} catch (error) {
+			const message = apiErrorMessage(error);
+			showToast(message, { type: "error" });
+		}
+	}
 
 	const currentRole = createMemo(
 		() =>
@@ -87,11 +171,23 @@ function RouteComponent() {
 	);
 	const canManage = createMemo(
 		() =>
-			isOwner() || currentRole() === "admin" || hasPermission("domain:manage"),
+			isOwner() ||
+			currentRole() === "admin" ||
+			hasPermission("domain:manage") ||
+			hasDomainPermission(uuid(), "domain:manage"),
 	);
 	const canKick = createMemo(
 		() =>
-			isOwner() || currentRole() === "admin" || hasPermission("domain:kick"),
+			isOwner() ||
+			currentRole() === "admin" ||
+			hasPermission("domain:kick") ||
+			hasDomainPermission(uuid(), "domain:kick"),
+	);
+	const canManageRoles = createMemo(
+		() =>
+			isOwner() ||
+			hasPermission("domain:role:manage") ||
+			hasDomainPermission(uuid(), "domain:role:manage"),
 	);
 
 	const ROOM_PAGE_SIZE = 10;
@@ -112,7 +208,9 @@ function RouteComponent() {
 		() =>
 			isOwner() ||
 			currentRole() === "admin" ||
-			hasAnyPermission("room:update", "room:delete"),
+			hasAnyPermission("room:update", "room:delete") ||
+			hasDomainPermission(uuid(), "room:update") ||
+			hasDomainPermission(uuid(), "room:delete"),
 	);
 	let createRoomDialogRef!: HTMLDialogElement;
 	const [createRoomDomain, setCreateRoomDomain] = createSignal("");
@@ -207,6 +305,8 @@ function RouteComponent() {
 		untrack(() => {
 			resetRooms();
 			void fetchRooms(1);
+			void fetchRoles();
+			void loadMyPermissions(currentUUID).catch(() => {});
 		});
 	});
 
@@ -387,11 +487,46 @@ function RouteComponent() {
 									(memberLoading() || kicking()) && members().length > 0
 								}
 								error={memberError()}
+								roles={domainRoles().map((role) => role.name)}
+								canChangeRole={canManageRoles()}
+								onChangeRole={(userUUID, roleName) =>
+									void handleMemberRoleChange(userUUID, roleName)
+								}
 								onRefresh={() => void loadMembers(uuid()).catch(() => {})}
 								onKick={requestKick}
 							/>
 						</ManageSection>
 					</div>
+
+					<Show when={canManageRoles()}>
+						<ManageSection
+							title="角色与权限"
+							description="配置域内角色的独立权限"
+							padded={false}
+							class="min-w-0"
+							actions={
+								<button
+									type="button"
+									class="btn btn-ghost btn-xs"
+									disabled={rolesLoading()}
+									onClick={() => void fetchRoles()}
+								>
+									刷新
+								</button>
+							}
+						>
+							<DomainRolePanel
+								roles={domainRoles()}
+								assignable={assignableCodes()}
+								loading={rolesLoading()}
+								saving={rolesSaving()}
+								error={rolesError()}
+								onCreate={handleCreateRole}
+								onUpdate={handleUpdateRole}
+								onDelete={handleDeleteRole}
+							/>
+						</ManageSection>
+					</Show>
 
 					<ManageSection
 						title="房间管理"

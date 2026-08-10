@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DomainMember } from "@/api/domain";
 import {
+	canChangeMemberRole,
 	canKickMember,
 	executeKickMember,
 	getKickAction,
@@ -146,5 +147,28 @@ describe("Domain manage form validation", () => {
 
 	it("accepts a valid domain name", () => {
 		expect(validateDomainForm("  My Domain  ")).toEqual({});
+	});
+});
+
+describe("DomainMemberTable role select logic", () => {
+	it("allows changing role for other non-owner members", () => {
+		expect(
+			canChangeMemberRole(member, "u-owner", "u-admin", true, ["admin", "member", "guest"]),
+		).toBe(true);
+	});
+
+	it("hides role select for owner, self, or missing permission", () => {
+		expect(
+			canChangeMemberRole(owner, "u-owner", "u-admin", true, ["admin"]),
+		).toBe(false);
+		expect(
+			canChangeMemberRole(member, "u-owner", "u-member", true, ["admin"]),
+		).toBe(false);
+		expect(
+			canChangeMemberRole(member, "u-owner", "u-admin", false, ["admin"]),
+		).toBe(false);
+		expect(
+			canChangeMemberRole(member, "u-owner", "u-admin", true, []),
+		).toBe(false);
 	});
 });

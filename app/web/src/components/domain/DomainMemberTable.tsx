@@ -13,6 +13,9 @@ export interface DomainMemberTableProps {
 	loading?: boolean;
 	refreshing?: boolean;
 	error?: string | null;
+	roles?: string[];
+	canChangeRole?: boolean;
+	onChangeRole?: (userUUID: string, roleName: string) => void;
 	onRefresh?: () => void;
 	onKick: (userUUID: string) => void;
 }
@@ -42,6 +45,22 @@ export function roleLabel(role: string) {
 		default:
 			return "成员";
 	}
+}
+
+export function canChangeMemberRole(
+	member: Pick<DomainMember, "user_uuid" | "role_name">,
+	ownerUUID: string | undefined,
+	currentUserUUID: string | undefined,
+	canChangeRole: boolean,
+	roles?: string[],
+): boolean {
+	return (
+		canChangeRole &&
+		!!roles?.length &&
+		member.user_uuid !== ownerUUID &&
+		member.user_uuid !== currentUserUUID &&
+		member.role_name !== "owner"
+	);
 }
 
 export function memberDisplayName(member: DomainMember) {
@@ -194,9 +213,36 @@ const DomainMemberTable: Component<DomainMemberTableProps> = (props) => {
 											</div>
 										</td>
 										<td>
-											<span class="badge badge-ghost badge-sm">
-												{roleLabel(member.role_name)}
-											</span>
+											<Show
+												when={canChangeMemberRole(
+													member,
+													props.ownerUUID,
+													props.currentUserUUID,
+													props.canChangeRole ?? false,
+													props.roles,
+												)}
+												fallback={
+													<span class="badge badge-ghost badge-sm">
+														{roleLabel(member.role_name)}
+													</span>
+												}
+											>
+												<select
+													class="select select-bordered select-xs"
+													value={member.role_name}
+													aria-label={`角色 ${memberDisplayName(member)}`}
+													onChange={(e) =>
+														props.onChangeRole?.(
+															member.user_uuid,
+															e.currentTarget.value,
+														)
+													}
+												>
+													<For each={props.roles}>
+														{(role) => <option value={role}>{role}</option>}
+													</For>
+												</select>
+											</Show>
 										</td>
 										<td class="text-xs text-base-content/60 whitespace-nowrap">
 											{formatDate(member.joined_at)}
