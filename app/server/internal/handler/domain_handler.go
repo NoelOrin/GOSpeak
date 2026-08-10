@@ -194,9 +194,9 @@ func (h *DomainHandler) Update(c *gin.Context) {
 		return
 	}
 	userUUID, _ := userUUIDVal.(string)
-	if !h.hasPermission(c, permcode.PermDomainManage) &&
+	if !h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainManage) &&
 		!h.domainSvc.IsOwner(domainUUID, userUUID) &&
-		!h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainManage) {
+		!h.hasPermission(c, permcode.PermDomainManage) {
 		pkg.Fail(c, pkg.FORBIDDEN, "not domain owner or missing permission")
 		return
 	}
@@ -358,8 +358,8 @@ func (h *DomainHandler) Kick(c *gin.Context) {
 		return
 	}
 	userUUID, _ := userUUIDVal.(string)
-	permOK := h.hasPermission(c, permcode.PermDomainKick)
 	roleOK := h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainKick)
+	permOK := h.hasPermission(c, permcode.PermDomainKick)
 	if !permOK && !roleOK {
 		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain role or permission")
 		return
@@ -428,10 +428,10 @@ func (h *DomainHandler) canManageDomainRoles(c *gin.Context, domainUUID, userUUI
 	if h.domainSvc.IsOwner(domainUUID, userUUID) {
 		return true
 	}
-	if h.hasPermission(c, permcode.PermDomainRoleManage) {
+	if h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainRoleManage) {
 		return true
 	}
-	return h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainRoleManage)
+	return h.hasPermission(c, permcode.PermDomainRoleManage)
 }
 
 func (h *DomainHandler) ListRoles(c *gin.Context) {

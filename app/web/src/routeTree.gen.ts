@@ -22,7 +22,6 @@ import { Route as appChatIndexRouteImport } from './pages/(app)/chat/index'
 import { Route as appManageUsersIndexRouteImport } from './pages/(app)/manage/users/index'
 import { Route as appManageStorageIndexRouteImport } from './pages/(app)/manage/storage/index'
 import { Route as appManageSfuIndexRouteImport } from './pages/(app)/manage/sfu/index'
-import { Route as appManagePermissionIndexRouteImport } from './pages/(app)/manage/permission/index'
 import { Route as appManageOauthIndexRouteImport } from './pages/(app)/manage/oauth/index'
 import { Route as appManageMuteIndexRouteImport } from './pages/(app)/manage/mute/index'
 import { Route as appManageMonitorIndexRouteImport } from './pages/(app)/manage/monitor/index'
@@ -100,12 +99,6 @@ const appManageSfuIndexRoute = appManageSfuIndexRouteImport.update({
   path: '/sfu/',
   getParentRoute: () => appManageRouteRoute,
 } as any)
-const appManagePermissionIndexRoute =
-  appManagePermissionIndexRouteImport.update({
-    id: '/permission/',
-    path: '/permission/',
-    getParentRoute: () => appManageRouteRoute,
-  } as any)
 const appManageOauthIndexRoute = appManageOauthIndexRouteImport.update({
   id: '/oauth/',
   path: '/oauth/',
@@ -190,7 +183,6 @@ export interface FileRoutesByFullPath {
   '/manage/monitor/': typeof appManageMonitorIndexRoute
   '/manage/mute/': typeof appManageMuteIndexRoute
   '/manage/oauth/': typeof appManageOauthIndexRoute
-  '/manage/permission/': typeof appManagePermissionIndexRoute
   '/manage/sfu/': typeof appManageSfuIndexRoute
   '/manage/storage/': typeof appManageStorageIndexRoute
   '/manage/users/': typeof appManageUsersIndexRoute
@@ -216,7 +208,6 @@ export interface FileRoutesByTo {
   '/manage/monitor': typeof appManageMonitorIndexRoute
   '/manage/mute': typeof appManageMuteIndexRoute
   '/manage/oauth': typeof appManageOauthIndexRoute
-  '/manage/permission': typeof appManagePermissionIndexRoute
   '/manage/sfu': typeof appManageSfuIndexRoute
   '/manage/storage': typeof appManageStorageIndexRoute
   '/manage/users': typeof appManageUsersIndexRoute
@@ -245,7 +236,6 @@ export interface FileRoutesById {
   '/(app)/manage/monitor/': typeof appManageMonitorIndexRoute
   '/(app)/manage/mute/': typeof appManageMuteIndexRoute
   '/(app)/manage/oauth/': typeof appManageOauthIndexRoute
-  '/(app)/manage/permission/': typeof appManagePermissionIndexRoute
   '/(app)/manage/sfu/': typeof appManageSfuIndexRoute
   '/(app)/manage/storage/': typeof appManageStorageIndexRoute
   '/(app)/manage/users/': typeof appManageUsersIndexRoute
@@ -274,7 +264,6 @@ export interface FileRouteTypes {
     | '/manage/monitor/'
     | '/manage/mute/'
     | '/manage/oauth/'
-    | '/manage/permission/'
     | '/manage/sfu/'
     | '/manage/storage/'
     | '/manage/users/'
@@ -300,7 +289,6 @@ export interface FileRouteTypes {
     | '/manage/monitor'
     | '/manage/mute'
     | '/manage/oauth'
-    | '/manage/permission'
     | '/manage/sfu'
     | '/manage/storage'
     | '/manage/users'
@@ -328,7 +316,6 @@ export interface FileRouteTypes {
     | '/(app)/manage/monitor/'
     | '/(app)/manage/mute/'
     | '/(app)/manage/oauth/'
-    | '/(app)/manage/permission/'
     | '/(app)/manage/sfu/'
     | '/(app)/manage/storage/'
     | '/(app)/manage/users/'
@@ -434,13 +421,6 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof appManageSfuIndexRouteImport
       parentRoute: typeof appManageRouteRoute
     }
-    '/(app)/manage/permission/': {
-      id: '/(app)/manage/permission/'
-      path: '/permission'
-      fullPath: '/manage/permission/'
-      preLoaderRoute: typeof appManagePermissionIndexRouteImport
-      parentRoute: typeof appManageRouteRoute
-    }
     '/(app)/manage/oauth/': {
       id: '/(app)/manage/oauth/'
       path: '/oauth'
@@ -539,7 +519,6 @@ interface appManageRouteRouteChildren {
   appManageMonitorIndexRoute: typeof appManageMonitorIndexRoute
   appManageMuteIndexRoute: typeof appManageMuteIndexRoute
   appManageOauthIndexRoute: typeof appManageOauthIndexRoute
-  appManagePermissionIndexRoute: typeof appManagePermissionIndexRoute
   appManageSfuIndexRoute: typeof appManageSfuIndexRoute
   appManageStorageIndexRoute: typeof appManageStorageIndexRoute
   appManageUsersIndexRoute: typeof appManageUsersIndexRoute
@@ -557,7 +536,6 @@ const appManageRouteRouteChildren: appManageRouteRouteChildren = {
   appManageMonitorIndexRoute: appManageMonitorIndexRoute,
   appManageMuteIndexRoute: appManageMuteIndexRoute,
   appManageOauthIndexRoute: appManageOauthIndexRoute,
-  appManagePermissionIndexRoute: appManagePermissionIndexRoute,
   appManageSfuIndexRoute: appManageSfuIndexRoute,
   appManageStorageIndexRoute: appManageStorageIndexRoute,
   appManageUsersIndexRoute: appManageUsersIndexRoute,

@@ -9,7 +9,6 @@ import LogIn from "lucide-solid/icons/log-in";
 import Mail from "lucide-solid/icons/mail";
 import Network from "lucide-solid/icons/network";
 import ServerCog from "lucide-solid/icons/server-cog";
-import ShieldCheck from "lucide-solid/icons/shield-check";
 import Users from "lucide-solid/icons/users";
 import { createMemo, For } from "solid-js";
 import { hasPermission } from "@/utils/permissions";
@@ -17,7 +16,6 @@ import { hasPermission } from "@/utils/permissions";
 type ManagePath =
 	| "domains"
 	| "cluster"
-	| "permission"
 	| "sfu"
 	| "users"
 	| "mute"
@@ -34,7 +32,6 @@ type ManageTab = {
 	to:
 		| "/manage/domains"
 		| "/manage/cluster"
-		| "/manage/permission"
 		| "/manage/sfu"
 		| "/manage/users"
 		| "/manage/mute"
@@ -73,13 +70,6 @@ const MANAGE_TABS: ManageTab[] = [
 		label: "用户管理",
 		icon: Users,
 		permissions: ["user:read"],
-	},
-	{
-		path: "permission",
-		to: "/manage/permission",
-		label: "权限",
-		icon: ShieldCheck,
-		permissions: ["role:manage", "role:read"],
 	},
 	// 风控
 	{

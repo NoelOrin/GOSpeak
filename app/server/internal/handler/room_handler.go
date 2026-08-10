@@ -75,11 +75,11 @@ func domainUUIDFromContext(c *gin.Context) string {
 func (h *RoomHandler) canManageRoom(c *gin.Context, room *model.Room, perm string) bool {
 	username, _ := c.Get("username")
 	usernameStr, _ := username.(string)
-	if h.permSvc != nil && h.permSvc.HasPermission(roleFromContext(c), perm) {
-		return true
-	}
 	if room.DomainUUID != "" && h.domainSvc != nil &&
 		h.domainSvc.HasDomainPermission(room.DomainUUID, currentUserUUID(c), perm) {
+		return true
+	}
+	if h.permSvc != nil && h.permSvc.HasPermission(roleFromContext(c), perm) {
 		return true
 	}
 	return room.CreatedBy == usernameStr

@@ -340,6 +340,91 @@ func TestDomainService_HasDomainPermission(t *testing.T) {
 	}
 }
 
+func TestDomainService_AdminHasAllAssignablePermissions(t *testing.T) {
+	svc, db := setupDomainServiceTestDB(t)
+	domain := &model.Domain{Name: "Admin Perms", OwnerUUID: "owner-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{
+		DomainUUID: domain.UUID, UserUUID: "admin-1", RoleName: model.DomainRoleAdmin,
+	}).Error; err != nil {
+		t.Fatalf("seed admin member: %v", err)
+	}
+
+	// 模拟存量库 admin 权限行缺失/不完整，admin 仍应默认拥有全部可分配域权限。
+	if err := db.Where("domain_uuid = ? AND role_name = ?", domain.UUID, model.DomainRoleAdmin).
+		Delete(&model.DomainRolePermission{}).Error; err != nil {
+		t.Fatalf("clear admin rows: %v", err)
+	}
+
+	got, err := svc.GetDomainRolePermissions(domain.UUID, model.DomainRoleAdmin)
+	if err != nil {
+		t.Fatalf("GetDomainRolePermissions: %v", err)
+	}
+	if len(got) != len(model.AssignableDomainPermissions) {
+		t.Fatalf("admin permissions = %d, want %d", len(got), len(model.AssignableDomainPermissions))
+	}
+	for _, code := range model.AssignableDomainPermissions {
+		if !svc.HasDomainPermission(domain.UUID, "admin-1", code) {
+			t.Errorf("admin must have %q by default", code)
+		}
+	}
+}
+
+func TestDomainService_AdminAndOwnerPermissionsAreFixed(t *testing.T) {
+	svc, db := setupDomainServiceTestDB(t)
+	domain := &model.Domain{Name: "Fixed", OwnerUUID: "owner-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+
+	for _, roleName := range []string{model.DomainRoleOwner, model.DomainRoleAdmin} {
+		if err := svc.UpdateDomainRolePermissions(domain.UUID, roleName, []string{model.PermRoomRead}); err == nil {
+			t.Errorf("UpdateDomainRolePermissions(%q) must be forbidden", roleName)
+		} else if ae, ok := err.(*pkg.AppError); !ok || ae.Code != pkg.FORBIDDEN {
+			t.Errorf("UpdateDomainRolePermissions(%q) expected FORBIDDEN, got %v", roleName, err)
+		}
+	}
+}
+
+func TestDomainService_ListDomainRoles_IsolatedPerDomain(t *testing.T) {
+	svc, db := setupDomainServiceTestDB(t)
+	domainA := &model.Domain{Name: "A", OwnerUUID: "owner-1"}
+	domainB := &model.Domain{Name: "B", OwnerUUID: "owner-1"}
+	if err := db.Create(domainA).Error; err != nil {
+		t.Fatalf("seed domain A: %v", err)
+	}
+	if err := db.Create(domainB).Error; err != nil {
+		t.Fatalf("seed domain B: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domainA.UUID); err != nil {
+		t.Fatalf("seed roles A: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domainB.UUID); err != nil {
+		t.Fatalf("seed roles B: %v", err)
+	}
+	if err := svc.CreateDomainRole(domainA.UUID, "moderator", []string{model.PermRoomRead}); err != nil {
+		t.Fatalf("create custom role in A: %v", err)
+	}
+
+	rolesB, err := svc.ListDomainRoles(domainB.UUID)
+	if err != nil {
+		t.Fatalf("ListDomainRoles(B): %v", err)
+	}
+	for _, role := range rolesB {
+		if role.Name == "moderator" {
+			t.Fatal("domain B must not see domain A's custom role")
+		}
+	}
+}
+
 func TestDomainService_CreateAndDeleteCustomRole(t *testing.T) {
 	svc, db := setupDomainServiceTestDB(t)
 	domain := &model.Domain{Name: "Custom", OwnerUUID: "owner-1"}

@@ -352,7 +352,7 @@ func (s *DomainService) HasDomainPermission(domainUUID, userUUID, permCode strin
 	if err != nil {
 		return false
 	}
-	if member.RoleName == model.DomainRoleOwner {
+	if member.RoleName == model.DomainRoleOwner || member.RoleName == model.DomainRoleAdmin {
 		_, ok := model.AssignableDomainPermissionsSet()[permCode]
 		return ok
 	}
@@ -373,7 +373,7 @@ func (s *DomainService) ListDomainRoles(domainUUID string) ([]model.DomainRole, 
 }
 
 func (s *DomainService) GetDomainRolePermissions(domainUUID, roleName string) ([]string, error) {
-	if roleName == model.DomainRoleOwner {
+	if roleName == model.DomainRoleOwner || roleName == model.DomainRoleAdmin {
 		return append([]string(nil), model.AssignableDomainPermissions...), nil
 	}
 	if _, err := s.roleRepo.GetRole(domainUUID, roleName); err != nil {
@@ -412,8 +412,8 @@ func (s *DomainService) CreateDomainRole(domainUUID, name string, permissions []
 }
 
 func (s *DomainService) UpdateDomainRolePermissions(domainUUID, roleName string, permissions []string) error {
-	if roleName == model.DomainRoleOwner {
-		return pkg.NewAppError(pkg.FORBIDDEN, "cannot modify owner role")
+	if roleName == model.DomainRoleOwner || roleName == model.DomainRoleAdmin {
+		return pkg.NewAppError(pkg.FORBIDDEN, "cannot modify fixed system role permissions")
 	}
 	if _, err := s.roleRepo.GetRole(domainUUID, roleName); err != nil {
 		if err == gorm.ErrRecordNotFound {

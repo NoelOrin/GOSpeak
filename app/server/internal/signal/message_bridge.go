@@ -40,18 +40,18 @@ type messageMutatePayload struct {
 }
 
 // resolveMessageRoom looks up a DB room by name, validates the conn slot,
-// and returns (roomUUID, roomType) or an ack error string.
-func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, roomName, domainUUID string) (roomUUID, roomType string, ackErr string) {
+// and returns (roomUUID, roomType, roomDomainUUID) or an ack error string.
+func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, roomName, domainUUID string) (roomUUID, roomType, roomDomainUUID string, ackErr string) {
 	identity := clientIdentity(c)
 	if identity == "" {
-		return "", "", `{"error":"unauthorized"}`
+		return "", "", "", `{"error":"unauthorized"}`
 	}
 	if c == nil || c.Claims() == nil || c.Claims().UserUUID == "" {
-		return "", "", `{"error":"unauthorized"}`
+		return "", "", "", `{"error":"unauthorized"}`
 	}
 
 	if h.roomStore == nil {
-		return "", "", `{"error":"room store unavailable"}`
+		return "", "", "", `{"error":"room store unavailable"}`
 	}
 	var dbRoom *model.Room
 	var err error
@@ -61,10 +61,14 @@ func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, roomName, domainUUID stri
 		dbRoom, err = h.roomStore.GetByName(roomName)
 	}
 	if err != nil || dbRoom == nil {
-		return "", "", fmt.Sprintf(`{"error":"room not found: %s"}`, roomName)
+		return "", "", "", fmt.Sprintf(`{"error":"room not found: %s"}`, roomName)
 	}
 	roomUUID = dbRoom.UUID
 	roomType = model.NormalizeRoomType(dbRoom.Type)
+	roomDomainUUID = dbRoom.DomainUUID
+	if domainUUID == "" && roomDomainUUID != "" {
+		domainUUID = roomDomainUUID
+	}
 
 	// Validate conn slot: must have joined this room
 	h.mu.RLock()
@@ -79,10 +83,10 @@ func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, roomName, domainUUID stri
 	}
 	h.mu.RUnlock()
 	if !allowed {
-		return "", "", fmt.Sprintf(`{"error":"not in room: %s"}`, roomName)
+		return "", "", "", fmt.Sprintf(`{"error":"not in room: %s"}`, roomName)
 	}
 
-	return roomUUID, roomType, ""
+	return roomUUID, roomType, roomDomainUUID, ""
 }
 
 // checkMessagePerm returns an ack error string if the connection lacks message:send.
@@ -137,7 +141,7 @@ func (h *Hub) OnMessageSend(c ws.ClientMessenger, data string) (string, error) {
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
+	roomUUID, _, _, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
 	if ackErr != "" {
 		return ackErr, nil
 	}
@@ -167,7 +171,7 @@ func (h *Hub) OnMessageEdit(c ws.ClientMessenger, data string) (string, error) {
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
+	roomUUID, _, _, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
 	if ackErr != "" {
 		return ackErr, nil
 	}
@@ -197,18 +201,19 @@ func (h *Hub) OnMessageDelete(c ws.ClientMessenger, data string) (string, error)
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
+	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
 	if ackErr != "" {
 		return ackErr, nil
 	}
 
-	// canDeleteOthers: global permission first, then domain-scoped permission
+	// canDeleteOthers: domain-scoped permission first, then global permission
 	canDeleteOthers := false
 	if claims := c.Claims(); claims != nil {
-		if h.permChecker != nil && h.permChecker.HasPermission(claims.Role, permcode.PermMessageDeleteOthers) {
-			canDeleteOthers = true
-		} else if h.domainPermChecker != nil && req.DomainUUID != "" && claims.UserUUID != "" {
-			canDeleteOthers = h.domainPermChecker(req.DomainUUID, claims.UserUUID, permcode.PermMessageDeleteOthers)
+		if h.domainPermChecker != nil && roomDomainUUID != "" && claims.UserUUID != "" {
+			canDeleteOthers = h.domainPermChecker(roomDomainUUID, claims.UserUUID, permcode.PermMessageDeleteOthers)
+		}
+		if !canDeleteOthers && h.permChecker != nil {
+			canDeleteOthers = h.permChecker.HasPermission(claims.Role, permcode.PermMessageDeleteOthers)
 		}
 	}
 
@@ -237,7 +242,7 @@ func (h *Hub) OnMessageReact(c ws.ClientMessenger, data string) (string, error) 
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
+	roomUUID, _, _, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
 	if ackErr != "" {
 		return ackErr, nil
 	}
@@ -267,7 +272,7 @@ func (h *Hub) OnMessageUnreact(c ws.ClientMessenger, data string) (string, error
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
+	roomUUID, _, _, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
 	if ackErr != "" {
 		return ackErr, nil
 	}

@@ -195,11 +195,14 @@ func (h *MessageHandler) Delete(c *gin.Context) {
 		return
 	}
 	roleStr, _ := roleVal.(string)
-	canDeleteOthers := h.permSvc != nil && h.permSvc.HasPermission(roleStr, permcode.PermMessageDeleteOthers)
-	if !canDeleteOthers && h.roomSvc != nil && h.domainSvc != nil {
+	canDeleteOthers := false
+	if h.roomSvc != nil && h.domainSvc != nil {
 		if room, roomErr := h.roomSvc.GetByUUID(req.RoomUUID); roomErr == nil && room != nil && room.DomainUUID != "" {
 			canDeleteOthers = h.domainSvc.HasDomainPermission(room.DomainUUID, currentUserUUID(c), permcode.PermMessageDeleteOthers)
 		}
+	}
+	if !canDeleteOthers {
+		canDeleteOthers = h.permSvc != nil && h.permSvc.HasPermission(roleStr, permcode.PermMessageDeleteOthers)
 	}
 	if err := h.msgSvc.Delete(req.RoomUUID, req.MessageUUID, actor, canDeleteOthers); err != nil {
 		pkg.HandleError(c, err)

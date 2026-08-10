@@ -5,7 +5,6 @@ import { hasManageAccess } from "@/utils/permissions";
 const MANAGE_PATHS = [
 	"domains",
 	"cluster",
-	"permission",
 	"sfu",
 	"users",
 	"mute",

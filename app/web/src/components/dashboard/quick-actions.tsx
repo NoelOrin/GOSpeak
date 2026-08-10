@@ -2,12 +2,10 @@ import { useNavigate } from "@tanstack/solid-router";
 import ArrowRight from "lucide-solid/icons/arrow-right";
 import CirclePlus from "lucide-solid/icons/circle-plus";
 import Radio from "lucide-solid/icons/radio";
-import ShieldCheck from "lucide-solid/icons/shield-check";
-import { createMemo, createSignal } from "solid-js";
+import { createSignal } from "solid-js";
 import { showToast } from "solid-notifications";
 import CreateRoomModal from "@/components/modal/createRoomModal";
 import { socketStore } from "@/stores/socketStore";
-import { hasPermission } from "@/utils/permissions";
 
 interface QuickActionsProps {
 	compact?: boolean;
@@ -15,7 +13,6 @@ interface QuickActionsProps {
 
 const QuickActions = (props: QuickActionsProps) => {
 	const navigate = useNavigate();
-	const canManage = createMemo(() => hasPermission("role:manage"));
 	let createRoomModalRef!: HTMLDialogElement;
 	const [createRoomDomain, setCreateRoomDomain] = createSignal("");
 
@@ -123,21 +120,6 @@ const QuickActions = (props: QuickActionsProps) => {
 						</div>
 						<ArrowRight size={20} class="shrink-0" />
 					</button>
-					{canManage() ? (
-						<button
-							type="button"
-							class={`btn min-w-0 justify-between overflow-hidden rounded-lg border-0 bg-base-200 px-4 text-left normal-case hover:bg-base-300 ${props.compact ? "h-18" : "h-24"}`}
-							onClick={() => navigate({ to: "/manage/permission" })}
-						>
-							<div class="min-w-0 flex-1">
-								<div class="truncate font-medium">权限管理</div>
-								<div class="mt-1 truncate text-xs text-base-content/60">
-									进入权限与禁言管理页面
-								</div>
-							</div>
-							<ShieldCheck size={20} class="shrink-0" />
-						</button>
-					) : null}
 				</div>
 			</section>
 			<CreateRoomModal

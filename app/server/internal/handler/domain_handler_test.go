@@ -35,12 +35,15 @@ func setupDomainHandlerTestDB(t *testing.T) (*gorm.DB, *service.DomainService) {
 }
 
 func setupDomainHandlerRouter(t *testing.T, domainSvc *service.DomainService) *gin.Engine {
+	return setupDomainHandlerRouterWithPermSvc(t, domainSvc, nil)
+}
+
+func setupDomainHandlerRouterWithPermSvc(t *testing.T, domainSvc *service.DomainService, permSvc *service.PermissionService) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 
-	// permSvc can be nil for tests that don't use permissions
-	h := NewDomainHandler(domainSvc, nil)
+	h := NewDomainHandler(domainSvc, permSvc)
 
 	// Mock JWT auth middleware: inject context keys matching production JWTAuth()
 	r.Use(func(c *gin.Context) {
@@ -593,5 +596,72 @@ func TestDomainHandler_Update_AllowsDomainRolePermission(t *testing.T) {
 		map[string]string{"X-User-UUID": "manager-1"})
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestDomainHandler_Update_AllowsGlobalPermissionFallback(t *testing.T) {
+	db, domainSvc := setupDomainHandlerTestDB(t)
+	domain := &model.Domain{Name: "Global Fallback", OwnerUUID: "owner-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{
+		DomainUUID: domain.UUID, UserUUID: "member-1", RoleName: model.DomainRoleMember,
+	}).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+
+	permRepo := repository.NewPermissionRepository(db)
+	if err := db.AutoMigrate(&model.Permission{}, &model.RolePermission{}); err != nil {
+		t.Fatalf("migrate permissions: %v", err)
+	}
+	for _, perm := range model.DefaultPermissions {
+		if err := permRepo.CreateIfNotExists(&perm); err != nil {
+			t.Fatalf("seed permission %s: %v", perm.Code, err)
+		}
+	}
+	if err := permRepo.SeedRolePermissionsIfEmpty("platform-admin", []string{model.PermDomainManage}); err != nil {
+		t.Fatalf("seed role permission: %v", err)
+	}
+	permSvc := service.NewPermissionService(permRepo)
+	if err := permSvc.LoadCache(); err != nil {
+		t.Fatalf("load permission cache: %v", err)
+	}
+
+	router := setupDomainHandlerRouterWithPermSvc(t, domainSvc, permSvc)
+	resp := postDomainJSON(t, router, "/api/v1/domain/update",
+		`{"domain_uuid":"`+domain.UUID+`","name":"Renamed"}`,
+		map[string]string{"X-User-UUID": "member-1", "X-User-Role": "platform-admin"})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestDomainHandler_RoleManagement_AdminPermissionsAreFixed(t *testing.T) {
+	db, domainSvc := setupDomainHandlerTestDB(t)
+	domain := &model.Domain{Name: "Fixed Roles", OwnerUUID: "owner-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{
+		DomainUUID: domain.UUID, UserUUID: "owner-1", RoleName: model.DomainRoleOwner,
+	}).Error; err != nil {
+		t.Fatalf("seed owner: %v", err)
+	}
+	router := setupDomainHandlerRouter(t, domainSvc)
+
+	for _, roleName := range []string{model.DomainRoleAdmin, model.DomainRoleOwner} {
+		resp := postDomainJSON(t, router, "/api/v1/domain/roles/update",
+			`{"domain_uuid":"`+domain.UUID+`","role_name":"`+roleName+`","permissions":["room:read"]}`,
+			map[string]string{"X-User-UUID": "owner-1"})
+		if resp.Code != http.StatusForbidden {
+			t.Fatalf("update %s: expected 403, got %d body %s", roleName, resp.Code, resp.Body.String())
+		}
 	}
 }

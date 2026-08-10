@@ -15,7 +15,9 @@ export default function DomainRolePanel(props: {
 	onDelete: (roleName: string) => Promise<void>;
 }) {
 	const [selected, setSelected] = createSignal<string>("");
-	const [selectedCodes, setSelectedCodes] = createSignal<Set<string>>(new Set());
+	const [selectedCodes, setSelectedCodes] = createSignal<Set<string>>(
+		new Set(),
+	);
 	const [newRoleName, setNewRoleName] = createSignal("");
 
 	const selectRole = (role: DomainRole) => {
@@ -29,6 +31,8 @@ export default function DomainRolePanel(props: {
 		else next.delete(code);
 		setSelectedCodes(next);
 	};
+
+	const isFixedRole = () => selected() === "owner" || selected() === "admin";
 
 	const save = async () => {
 		const name = selected();
@@ -71,7 +75,10 @@ export default function DomainRolePanel(props: {
 							class="btn btn-primary btn-sm"
 							disabled={!newRoleName().trim() || props.saving}
 							onClick={() => {
-								void props.onCreate(newRoleName().trim(), Array.from(selectedCodes()));
+								void props.onCreate(
+									newRoleName().trim(),
+									Array.from(selectedCodes()),
+								);
 								setNewRoleName("");
 							}}
 						>
@@ -81,11 +88,20 @@ export default function DomainRolePanel(props: {
 					</div>
 				</div>
 				<div class="min-w-0">
-					<Show when={selected()} fallback={<p class="text-sm text-base-content/50">选择角色进行权限配置</p>}>
+					<Show
+						when={selected()}
+						fallback={
+							<p class="text-sm text-base-content/50">选择角色进行权限配置</p>
+						}
+					>
 						<div class="mb-3 flex flex-wrap items-center justify-between gap-2">
 							<h3 class="font-semibold">{selected()}</h3>
 							<div class="flex gap-2">
-								<Show when={!props.roles.find((r) => r.name === selected())?.is_system}>
+								<Show
+									when={
+										!props.roles.find((r) => r.name === selected())?.is_system
+									}
+								>
 									<button
 										type="button"
 										class="btn btn-outline btn-error btn-sm"
@@ -99,7 +115,7 @@ export default function DomainRolePanel(props: {
 								<button
 									type="button"
 									class="btn btn-primary btn-sm"
-									disabled={props.saving || selected() === "owner"}
+									disabled={props.saving || isFixedRole()}
 									onClick={() => void save()}
 								>
 									<Save size={14} />
@@ -115,7 +131,7 @@ export default function DomainRolePanel(props: {
 											type="checkbox"
 											class="checkbox checkbox-sm mt-0.5"
 											checked={selectedCodes().has(code)}
-											disabled={selected() === "owner"}
+											disabled={isFixedRole()}
 											onChange={(e) => toggle(code, e.currentTarget.checked)}
 										/>
 										<span class="break-all font-mono text-xs">{code}</span>
