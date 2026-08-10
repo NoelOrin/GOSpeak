@@ -14,7 +14,6 @@
   "dependencies": {
     "@gospeak/sfu-client": "workspace:*",
     "@tailwindcss/vite": "^4.0.6",
-    "@tanstack/router-plugin": "^1.133.21",
     "@tanstack/solid-form": "^1.27.6",
     "@tanstack/solid-query": "^5.90.15",
     "@tanstack/solid-query-devtools": "^5.91.1",
@@ -46,7 +45,6 @@
     "zod": "^4.2.1"
   },
   "devDependencies": {
-    "@commitlint/cli": "^17.7.2",
     "@tanstack/devtools-vite": "^0.3.11",
     "@tanstack/router-cli": "^1.141.2",
     "@tanstack/router-plugin": "^1.141.1",

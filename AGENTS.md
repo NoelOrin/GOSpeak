@@ -21,8 +21,7 @@ GOSpeak 是一个自托管的**游戏语音平台**，类似自部署版 Discord
 GOSpeak/
 ├── app/
 │   ├── server/          # Go 后端 (Gin + GORM + multi-provider SFU abstraction)
-│   ├── web/             # SolidJS 前端 (TypeScript + Vite + TanStack Router)
-│   └── sfu-client/      # 前端多 SFU 客户端抽象包
+│   └── web/             # SolidJS 前端 (TypeScript + Vite + TanStack Router)
 ├── packages/
 │   ├── bot/             # Bot 运行时与插件框架
 │   ├── mediasoup-worker/ # MediaSoup Worker 独立进程

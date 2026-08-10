@@ -26,6 +26,12 @@ dist-ssr
 .wrangler
 *.tsbuildinfo
 
+# 子包独立 lockfile（根 workspace 统一管理）
+app/web/pnpm-lock.yaml
+
+# VitePress 构建缓存
+app/docs/.vitepress/cache/
+
 # TanStack Router 自动生成
 app/web/src/routeTree.gen.ts
 
@@ -80,6 +86,13 @@ go.work.sum
 # ========================
 agent_test_logs/*
 !agent_test_logs/AGENTS.md
+
+# Playwright/Vitest 运行产物
+test-results/
+.last-run.json
+
+# review 产物
+findings.json
 
 # 存储 handler 测试产生的上传文件
 app/server/internal/handler/uploads/
