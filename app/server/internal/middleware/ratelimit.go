@@ -15,7 +15,7 @@ type rateBucket struct {
 	reset time.Time
 }
 
-// rateLimiter 是进程内固定窗口限流器；多实例部署时应由前置网关或 Redis 补充全局策略。
+// rateLimiter 是进程内固定窗口限流器；多实例部署时应由前置网关补充全局策略。
 type rateLimiter struct {
 	mu      sync.Mutex
 	buckets map[string]*rateBucket

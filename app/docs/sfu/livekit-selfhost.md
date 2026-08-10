@@ -20,9 +20,6 @@ rtc:
 keys:
   API7ar5gCTyVkfY: xtpW2PGUKPugyVzEvX4OaPaHtNGm5bRUmrIXe6NMIqb
 
-redis:
-  address: redis:6379
-
 turn:
   enabled: true
   udp_port: 3478
@@ -42,17 +39,14 @@ livekit:
   volumes:
     - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
   command: --config /etc/livekit.yaml
-  depends_on:
-    redis:
-      condition: service_healthy
 ```
 
 ### 启动
 
 ```bash
-# 完整栈：LiveKit + Redis + GOSpeak 应用
+# 完整栈：LiveKit + GOSpeak 应用
 docker compose -f deploy/docker-compose.yml \
-  --profile livekit --profile redis --profile app up -d --build
+  --profile livekit --profile app up -d --build
 ```
 
 ## 使用 Docker 官方镜像
@@ -112,7 +106,7 @@ LIVEKIT_SECRET=xtpW2PGUKPugyVzEvX4OaPaHtNGm5bRUmrIXe6NMIqb
 ## 生产注意事项
 
 1. **密钥安全**：生产环境修改默认 API Key/Secret
-2. **Redis 依赖**：LiveKit 必须依赖 Redis，GOSpeak 的 `--profile livekit` 会自动拉起
+2. **Redis 依赖**：GOSpeak 应用不依赖 Redis；LiveKit 单节点无需 Redis。多节点 LiveKit 集群如需共享状态，请按 LiveKit 文档自行配置
 3. **Webhook**：LiveKit 支持事件回调，GOSpeak 通过 `POST /api/v1/signal/webhook` 接收
 4. **TURN**：部署在 NAT 后时，开启 TURN 中继（`turn.enabled: true`）帮助 ICE 连通
 5. **TLS**：生产环境为 LiveKit 配置 TLS 证书，或通过 Nginx 反代 `7880` 端口

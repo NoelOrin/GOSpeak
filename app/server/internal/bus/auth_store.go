@@ -10,16 +10,21 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+
+	"GOSpeak/internal/authstate"
 )
 
-// AuthStore is multi-instance JWT auth state (blacklist + signing keys) backed by NATS KV.
-// Used when Redis is unavailable so multi-instance still shares logout/key rotation state.
+// AuthStore is multi-instance JWT auth state (blacklist + signing keys) backed
+// by NATS JetStream KV so multi-instance deployments share logout and key
+// rotation state.
 type AuthStore struct {
 	kv  nats.KeyValue
 	nc  *nats.Conn
 	own bool
 	mu  sync.Mutex
 }
+
+var _ authstate.Backend = (*AuthStore)(nil)
 
 type AuthStoreConfig struct {
 	URL    string
@@ -134,7 +139,7 @@ func (s *AuthStore) BlacklistToken(jti string, remaining time.Duration) error {
 	return s.put("bl."+jti, strconv.FormatInt(exp, 10))
 }
 
-// IsBlacklisted 吞掉底层错误按未黑名单返回，保持与 redis.IsBlacklisted 一致的 fail-open 语义；
+// IsBlacklisted 吞掉底层错误按未黑名单返回，保持与 authstate.IsBlacklisted 一致的 fail-open 语义；
 // 安全敏感场景请使用 IsBlacklistedErr。
 func (s *AuthStore) IsBlacklisted(jti string) bool {
 	ok, _ := s.IsBlacklistedErr(jti)
@@ -142,7 +147,7 @@ func (s *AuthStore) IsBlacklisted(jti string) bool {
 }
 
 // IsBlacklistedErr 把底层错误上抛，供安全敏感调用方自行决定 fail-open/fail-closed；
-// redis.IsBlacklisted 仍保持 fail-open，不改变现有行为。
+// authstate.IsBlacklisted 仍保持 fail-open，不改变现有行为。
 func (s *AuthStore) IsBlacklistedErr(jti string) (bool, error) {
 	if jti == "" {
 		return false, nil

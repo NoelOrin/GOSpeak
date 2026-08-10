@@ -145,11 +145,6 @@
           "legendFormat": "db"
         },
         {
-          "refId": "B",
-          "expr": "max(gospeak_redis_connected)",
-          "legendFormat": "redis"
-        },
-        {
           "refId": "C",
           "expr": "max(gospeak_eventbus_connected)",
           "legendFormat": "eventbus"

@@ -27,8 +27,8 @@
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘                        │
 │                                                                                 │
 │  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐              │
-│  │     Redis       │    │    Database     │    │     OAuth       │              │
-│  │   (Optional)    │    │  (SQLite/PG/My) │    │  (GitHub/GG/QQ) │              │
+│  │    NATS KV      │    │    Database     │    │     OAuth       │              │
+│  │   (Shared)      │    │  (SQLite/PG/My) │    │  (GitHub/GG/QQ) │              │
 │  └─────────────────┘    └─────────────────┘    └─────────────────┘              │
 │                                                                                 │
 └─────────────────────────────────────────────────────────────────────────────────┘
@@ -52,7 +52,7 @@ GOSpeak/
 │   │   │   ├── sfu/         # SFU 抽象层
 │   │   │   ├── livekit/     # LiveKit SFU 实现
 │   │   │   ├── signal/      # WebSocket 信令 Hub
-│   │   │   ├── redis/       # Redis 客户端 (可选)
+│   │   │   ├── authstate/   # JWT 认证状态 (NATS KV)
 │   │   │   └── pkg/         # 共享工具 (errors, response, jwt, oauth)
 │   │   ├── test/            # API 集成测试 (Node.js)
 │   │   └── db/              # SQLite 数据库存储
@@ -147,7 +147,7 @@ Tech Stack:
 │  │                                                                         │   │
 │  │    Request → Router → Middleware → Handler → Service → Repository → DB │   │
 │  │               (JWT+RBAC)    ↓         ↓         ↓                      │   │
-│  │                         OAuth      SFU       Redis                      │   │
+│  │                         OAuth      SFU       AuthState                 │   │
 │  │                     (standalone) (provider)(optional)                   │   │
 │  │                                     ↓                                   │   │
 │  │                                 Signal/WS                               │   │
@@ -197,7 +197,7 @@ Tech Stack:
 │  │  │ (WebSocket)  │  │  Interface   │  │   (SDK)      │                  │   │
 │  │  └──────────────┘  └──────────────┘  └──────────────┘                  │   │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                  │   │
-│  │  │    Redis     │  │   Config     │  │   OAuth      │                  │   │
+│  │  │  AuthState   │  │   Config     │  │   OAuth      │                  │   │
 │  │  │  (Optional)  │  │  (Env Vars)  │  │  Providers   │                  │   │
 │  │  └──────────────┘  └──────────────┘  └──────────────┘                  │   │
 │  └─────────────────────────────────────────────────────────────────────────┘   │
@@ -208,7 +208,7 @@ Tech Stack:
 - Language: Go 1.22+
 - HTTP: Gin
 - Database: GORM (SQLite/PostgreSQL/MySQL)
-- Cache: Redis (可选 - JWT 黑名单/会话)
+- Shared state: NATS JetStream KV (黑名单、密钥轮换、房间状态)
 - Real-time: WebSocket (nhooyr.io/websocket)
 - WebRTC: LiveKit Server SDK
 - Auth: JWT + OAuth2
@@ -263,8 +263,8 @@ Tech Stack:
 │       │                                    ├─── GORM ──► Database              │
 │       │                                    │     (SQLite/PG/MySQL)             │
 │       │                                    │                                    │
-│       │                                    └─── Redis ──► Cache (Optional)     │
-│       │                                          (JWT Blacklist/Key Rotation)  │
+│       │                                    └─── NATS KV ──► Shared State      │
+│       │                                          (Blacklist/Key Rotation)      │
 │       │                                                                         │
 │       ├─── WebSocket (WebSocket) ─────► Go Server (Signal Hub)                 │
 │       │                                    │                                    │
@@ -300,10 +300,10 @@ Tech Stack:
 │  ┌─────────────────────────────────────────────────────────────────────────┐   │
 │  │                        SFU Backend (任选其一)                            │   │
 │  │                                                                         │   │
-│  │  LiveKit: ┌──────────────────┐     ┌──────────────────┐                 │   │
-│  │           │  livekit-server  │◄────│   livekit-redis   │                 │   │
-│  │           │  :7880 (HTTP)    │     │     :6379         │                 │   │
-│  │           │  :7881 (WebRTC)  │     └──────────────────┘                 │   │
+│  │  LiveKit: ┌──────────────────┐                                          │   │
+│  │           │  livekit-server  │                                          │   │
+│  │           │  :7880 (HTTP)    │                                          │   │
+│  │           │  :7881 (WebRTC)  │                                          │   │
 │  │           └──────────────────┘                                          │   │
 │  │                                                                         │   │
 │  │  SRS:     ┌──────────────────┐                                          │   │
@@ -330,8 +330,8 @@ Tech Stack:
 │  ┌─────────────────────────────────────────────────────────────────────────┐   │
 │  │                        Optional Services                                 │   │
 │  │  ┌──────────────────┐     ┌──────────────────┐                          │   │
-│  │  │   Redis          │     │   PostgreSQL     │                          │   │
-│  │  │   :6379          │     │   :5432           │                          │   │
+│  │  │   NATS           │     │   PostgreSQL     │                          │   │
+│  │  │  (embedded)      │     │   :5432           │                          │   │
 │  │  └──────────────────┘     └──────────────────┘                          │   │
 │  └─────────────────────────────────────────────────────────────────────────┘   │
 │                                                                                 │
@@ -463,7 +463,7 @@ WS Endpoint: /ws
 | **HTTP 框架** | Gin | REST API |
 | **ORM** | GORM | 数据库操作 |
 | **数据库** | SQLite / PostgreSQL / MySQL | 数据持久化 |
-| **缓存** | Redis (可选) | JWT 黑名单/密钥轮换 |
+| **跨实例状态** | NATS JetStream KV | 黑名单/密钥轮换/房间状态 |
 | **认证** | JWT + OAuth2 (GitHub/Google/QQ) | 用户认证 |
 | **构建工具** | Vite | 前端打包 |
 | **包管理** | pnpm | Monorepo 管理 |
@@ -473,7 +473,7 @@ WS Endpoint: /ws
 
 1. **分层架构**: Handler → Service → Repository，单向依赖
 2. **SFU 抽象**: 多 SFU 后端可插拔，通过 Provider 接口统一
-3. **可选依赖**: Redis 可选，无 Redis 时优雅降级
+3. **可选依赖**: NATS 内嵌/外部可选，状态共享优雅降级
 4. **渐进式数据库**: SQLite 开箱即用 → PostgreSQL/MySQL 可扩展
 5. **统一响应**: 所有 API 使用相同 JSON 格式
 6. **错误处理**: Service 层返回 `*AppError`，Handler 层统一响应
@@ -490,6 +490,5 @@ GOSpeak 在进程内通过 EventBus 做信令 fanout：
 内部事件使用 `PublishInternal`（subject `{prefix}.internal`），例如权限缓存失效 `cache:permissions-invalidated`，不经 WebSocket Deliverer。
 
 房间人数视图：membership JetStream KV 为跨实例真相源；本机 join/leave 写 KV 后 `PublishInternal(state:room-changed)`，对端 `ApplyRemoteRoomState` 从 KV 合并并本地广播 `room:updated`/`room:list:result`。Socket 连接与踢人控制仍在本机 Hub。
-
 
 

@@ -38,7 +38,7 @@
 `POST /api/v1/auth/first_change_password`（JWT）— `{ "new_password": "..." }`
 
 ### 登出
-`POST /api/v1/auth/logout`（JWT）— 将 JTI 写入 Redis 黑名单
+`POST /api/v1/auth/logout`（JWT）— 将 JTI 写入共享黑名单
 
 ### 重置密码
 `POST /api/v1/auth/reset_password`（公开）

@@ -11,7 +11,7 @@ import (
 )
 
 // roomMetaStore 是 membershipStore 可选实现的扩展接口：
-// Redis/NATS 后端提供跨实例房间元数据，测试 double 不实现时静默降级。
+// 共享 KV 后端提供跨实例房间元数据，测试 double 不实现时静默降级。
 type roomMetaStore interface {
 	PutRoomMeta(ctx context.Context, room string, meta bus.RoomMeta) error
 	GetRoomMeta(ctx context.Context, room string) (bus.RoomMeta, error)

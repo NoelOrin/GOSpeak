@@ -33,9 +33,9 @@ func (c *Config) Validate() error {
 	}
 
 	switch c.StateStore {
-	case "auto", "redis", "nats", "none":
+	case "auto", "nats", "none":
 	default:
-		errs = append(errs, fmt.Sprintf("STATE_STORE %q unsupported (auto|redis|nats|none)", c.StateStore))
+		errs = append(errs, fmt.Sprintf("STATE_STORE %q unsupported (auto|nats|none)", c.StateStore))
 	}
 
 	switch c.ClusterRole {
@@ -142,10 +142,6 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	if _, err := strconv.Atoi(strings.TrimSpace(c.RedisDB)); err != nil {
-		errs = append(errs, fmt.Sprintf("REDIS_DB %q invalid", c.RedisDB))
-	}
-
 	if c.EmailEnabled && strings.TrimSpace(c.EmailCodeSecret) == "" {
 		errs = append(errs, "EMAIL_CODE_SECRET is required when EMAIL_ENABLED=true")
 	}
@@ -155,11 +151,11 @@ func (c *Config) Validate() error {
 		errs = append(errs, "STORAGE_ENCRYPT_KEY is required in production")
 	}
 
-	// 生产无 Redis 时必须有显式 JWT_KEY，避免运行时回退到公开默认密钥。
-	if c.IsProduction() && strings.TrimSpace(c.RedisHost) == "" {
+	// 生产必须有显式 JWT_KEY，避免运行时回退到公开默认密钥。
+	if c.IsProduction() {
 		key := strings.TrimSpace(c.JWTKey)
 		if key == "" || key == "default-secret" {
-			errs = append(errs, "JWT_KEY is required in production when REDIS_HOST is empty")
+			errs = append(errs, "JWT_KEY is required in production")
 		}
 	}
 

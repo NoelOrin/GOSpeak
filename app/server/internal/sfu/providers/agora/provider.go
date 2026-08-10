@@ -21,7 +21,7 @@ type Service struct {
 	customerID     string
 	customerSecret string
 
-	// muteRules is multi-instance rule id cache (memory / redis / nats KV).
+	// muteRules is multi-instance rule id cache (memory / nats KV).
 	muteRules sfu.MuteRuleStore
 	rest      *RESTClient
 }
@@ -38,7 +38,7 @@ func NewService(cfg *config.Config) *Service {
 	}
 }
 
-// SetMuteRuleStore injects shared mute-rule cache (redis/nats preferred).
+// SetMuteRuleStore injects shared mute-rule cache (nats preferred).
 func (s *Service) SetMuteRuleStore(store sfu.MuteRuleStore) {
 	if s == nil {
 		return

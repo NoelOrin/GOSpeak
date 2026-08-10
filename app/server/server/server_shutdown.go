@@ -8,10 +8,10 @@ import (
 	"syscall"
 	"time"
 
+	"GOSpeak/internal/authstate"
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/logger"
 	"GOSpeak/internal/plugin"
-	"GOSpeak/internal/redis"
 	"GOSpeak/internal/service"
 	"GOSpeak/internal/signal"
 	"GOSpeak/internal/ws"
@@ -72,7 +72,7 @@ func runGracefulShutdown(deps shutdownDeps) {
 	}
 
 	// 3) close event bus last
-	redis.StopKeyRotationLoop()
+	authstate.StopKeyRotationLoop()
 	logger.WithComponent("EventBus").Info("closing event bus")
 	deps.closeEventBus()
 	logger.WithComponent("EventBus").Info("closed")

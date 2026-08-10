@@ -7,16 +7,15 @@
 #   # SRS + SQLite 最小生产栈
 #   docker compose -f deploy/docker-compose.yml --profile srs --profile app up -d --build
 #
-#   # LiveKit + Redis + SQLite
+#   # LiveKit + SQLite
 #   docker compose -f deploy/docker-compose.yml --profile livekit --profile app up -d --build
 #
-#   # PostgreSQL + Redis + SRS + App + Coturn
-#   docker compose -f deploy/docker-compose.yml --profile postgres --profile redis --profile srs --profile app up -d --build
+#   # PostgreSQL + SRS + App + Coturn
+#   docker compose -f deploy/docker-compose.yml --profile postgres --profile srs --profile app up -d --build
 #
 # profiles:
 #   app       应用镜像 (Go + 前端静态)
 #   postgres  PostgreSQL
-#   redis     应用/LiveKit Redis
 #   srs       SRS + Nginx 反代
 #   livekit   LiveKit
 #   minio     MinIO
@@ -50,9 +49,6 @@ services:
       - gospeak-logs:/app/logs
       - gospeak-uploads:/app/uploads
     depends_on:
-      redis:
-        condition: service_healthy
-        required: false
       postgres:
         condition: service_healthy
         required: false
@@ -330,9 +326,6 @@ services:
     volumes:
       - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
     command: --config /etc/livekit.yaml
-    depends_on:
-      redis:
-        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
   # MediaSoup worker 已禁用保留：实现/镜像配置仍在，默认不启用。
@@ -357,26 +350,10 @@ services:
   #   extra_hosts:
   #     - "host.docker.internal:host-gateway"
 
-  # ── Redis ─────────────────────────────────────────────────────────────
-  redis:
-    <<: *restart
-    profiles: ["redis", "livekit", "postgres-redis"]
-    image: redis:7-alpine
-    container_name: gospeak-redis
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
   # ── PostgreSQL ────────────────────────────────────────────────────────
   postgres:
     <<: *restart
-    profiles: ["postgres", "postgres-redis", "cluster"]
+    profiles: ["postgres", "cluster"]
     image: postgres:16-alpine
     container_name: gospeak-postgres
     ports:
@@ -495,7 +472,6 @@ volumes:
   gospeak-db:
   gospeak-logs:
   gospeak-uploads:
-  redis-data:
   postgres-data:
   minio-data:
   prometheus-data:

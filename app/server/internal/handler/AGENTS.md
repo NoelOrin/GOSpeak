@@ -6,7 +6,7 @@ HTTP 请求处理层，负责接收请求、参数校验、调用 service 层并
 
 | 文件 | 职责 |
 |------|------|
-| auth_handler.go | 登录、注册、刷新 Token、登出（JTI 写入 Redis 黑名单）、改密、首次改密、重置密码 |
+| auth_handler.go | 登录、注册、刷新 Token、登出（JTI 写入共享黑名单）、改密、首次改密、重置密码 |
 | user_handler.go | 资料、按名查询、更新资料、上传头像、列表、详情、删除、更新角色 |
 | signal_handler.go | 加入 Token、信令消息、房间列表、参与者列表、Webhook |
 | oauth_handler.go | 第三方登录跳转、回调、启用提供商列表、提供商管理 CRUD |

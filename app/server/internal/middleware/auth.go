@@ -26,7 +26,7 @@ type botTokenChecker interface {
 	IsBotTokenValid(userUUID string) (bool, error)
 }
 
-// BlacklistChecker 校验 token 是否已吊销，nil 时按未黑名单放行（与未连接 Redis 的 fail-open 语义一致）。
+// BlacklistChecker 校验 token 是否已吊销，nil 时按未黑名单放行（fail-open 语义）。
 type BlacklistChecker func(key string) (bool, error)
 
 // Dependencies 聚合 HTTP/WS 鉴权所需的业务实现，由组合根一次注入。

@@ -9,7 +9,6 @@ GOSpeak 提供 `deploy/docker-compose.yml` 统一编排，通过 **profile** 按
 | `app` | GOSpeak 应用 | 必须。Go 后端 + 前端静态 |
 | `srs` | SRS + Nginx | SRS 自建方案 |
 | `livekit` | LiveKit | LiveKit 自建方案 |
-| `redis` | Redis | JWT 密钥轮换 + Token 黑名单 |
 | `postgres` | PostgreSQL | 生产级数据库 |
 | `minio` | MinIO 对象存储 | S3 兼容存储 |
 
@@ -40,7 +39,7 @@ curl -s http://localhost:1985/api/v1/versions  # SRS 运行
 | `:80` | Nginx | 公网入口（API + SPA + WebSocket + WHIP）|
 | `:8000/udp+tcp` | SRS | WebRTC 媒体直连 |
 
-### 第二档 — LiveKit + Redis + App
+### 第二档 — LiveKit + App
 
 适用：需要完整功能（踢人、禁言、Webhook）的场景。
 
@@ -50,7 +49,7 @@ cp env/app.livekit.env.example env/app.livekit.env
 # 编辑 app.livekit.env：改 JWT_KEY
 export GOSPEAK_ENV_FILE=./env/app.livekit.env
 
-docker compose --profile livekit --profile redis --profile app up -d --build
+docker compose --profile livekit --profile app up -d --build
 ```
 
 暴露端口：
@@ -60,7 +59,7 @@ docker compose --profile livekit --profile redis --profile app up -d --build
 | `:7881-7882` | LiveKit | WebRTC 媒体 |
 | `:3478/udp` | LiveKit | TURN 中继 |
 
-### 第三档 — PostgreSQL + Redis + SRS
+### 第三档 — PostgreSQL + SRS
 
 适用：需要持久化数据库，多于 50 并发用户。
 
@@ -72,9 +71,8 @@ cd deploy
 # DB_PORT=5432
 # DB_USER=gospeak
 # DB_PASSWORD=gospeak
-# REDIS_HOST=redis
 
-docker compose --profile postgres --profile redis --profile srs --profile app up -d --build
+docker compose --profile postgres --profile srs --profile app up -d --build
 ```
 
 ### 第四档 — 全量栈
@@ -84,7 +82,6 @@ docker compose --profile postgres --profile redis --profile srs --profile app up
 ```bash
 docker compose \
   --profile postgres \
-  --profile redis \
   --profile srs \
   --profile minio \
   --profile app \

@@ -14,7 +14,7 @@
 
 gospeak ──HTTP──► srs:1985 | livekit:7880 | cloudflare API
 gospeak ──DB────► sqlite volume | postgres
-gospeak ──Redis─► redis (可选)
+gospeak ──State─► nats (embedded/external, 可选)
 ```
 
 ## 2. 发布前 Checklist
@@ -50,23 +50,22 @@ curl -s http://localhost:1985/api/v1/versions
 访问: `http://localhost`  
 媒体 candidate: `.env` 里 `SRS_CANDIDATE`
 
-### 3.2 LiveKit + Redis + App
+### 3.2 LiveKit + App
 
 ```bash
 cd deploy
 cp env/app.livekit.env.example env/app.livekit.env
 export GOSPEAK_ENV_FILE=./env/app.livekit.env
-docker compose --profile livekit --profile redis --profile app up -d --build
+docker compose --profile livekit --profile app up -d --build
 ```
 
-### 3.3 PostgreSQL + Redis + SRS
+### 3.3 PostgreSQL + SRS
 
 ```bash
 # env 里设:
 # DB_TYPE=PostgresSQL DB_HOST=postgres DB_PORT=5432 DB_USER=gospeak DB_PASSWORD=...
-# REDIS_HOST=redis
 
-docker compose --profile postgres --profile redis --profile srs --profile app up -d --build
+docker compose --profile postgres --profile srs --profile app up -d --build
 ```
 
 ### 3.4 Agent + Worker 集群（统一入口 + 多 Worker）
@@ -125,7 +124,6 @@ pnpm dev:web
 | 8000/udp+tcp | srs | WebRTC 媒体 |
 | 7880-7882 | livekit | LiveKit 控制/媒体 |
 | 5432 | postgres | DB |
-| 6379 | redis | 缓存/JWT |
 | 9000/9001 | minio | 对象存储 |
 | 9090 | prometheus | 指标采集 |
 | 9093 | alertmanager | 告警 |
@@ -243,8 +241,7 @@ docker compose -f deploy/docker-compose.yml --profile srs --profile app down
 - **外部**：`NATS_URL` 非空时先探测可用性（`NATS_CONNECT_TIMEOUT`，默认 2s）。
   - 探测成功 → 连外部，不启内嵌（`eventbus_mode=external`）
   - 探测失败 → **启动失败并 panic**，不回退内嵌
-- **阶段二（状态共享）**：房间 membership/stream 存储优先级 **`STATE_STORE=auto` → redis → nats → none**。
-  - `redis`：已有 Redis 时优先（`REDIS_HOST`），NATS 只做事件总线。
+- **阶段二（状态共享）**：房间 membership/stream 存储优先级 **`STATE_STORE=auto` → nats → none**。
   - `nats`：JetStream KV（`{prefix}_membership` / `{prefix}_stream`）；外部 NATS 需 `-js`。
   - `none`：仅本机内存。
   成员变更仍经 `state:room-changed` 内部事件通知对端从存储重算列表。 成员变更后发布内部事件 `state:room-changed`，对端从 KV 重算并**本机**推送 `room:updated` / `room:list:result`（不再跨实例直接 fanout 带人数快照）。

@@ -15,7 +15,7 @@ GOSpeak 是一个自托管的**游戏语音平台**，类似自部署版 Discord
 - Domain（语音服务器）多租户隔离
 - 文字房间消息（房间消息 + 私聊）
 - 插件系统（内置 Bot + 外部插件）
-- 多实例部署（NATS 事件总线 + Redis 状态共享）
+- 多实例部署（NATS 事件总线 + JetStream KV 状态共享）
 
 ```
 GOSpeak/
@@ -46,7 +46,7 @@ app/server/
 ├── server/
 │   └── gin.go              # DI container, initializes all layers
 ├── internal/
-│   ├── config/             # Config reading from env (DB, Redis, SFU, JWT, NATS, Storage)
+│   ├── config/             # Config reading from env (DB, SFU, JWT, NATS, Storage)
 │   ├── model/              # Data models (GORM entities)
 │   ├── repository/         # DAO layer, direct DB access
 │   ├── service/            # Business logic layer
@@ -85,7 +85,7 @@ app/server/
 │   │   ├── mute_rule_store.go   # Agora kicking-rule + 降级 mute cache
 │   │   ├── auth_store.go   # JWT blacklist + signing key rotation
 │   │   └── factory.go      # Init() resolves embedded/external
-│   ├── redis/              # Optional Redis client (blacklist, JWT key rotation)
+│   ├── authstate/          # JWT auth state (blacklist, key rotation; NATS KV/memory)
 │   ├── logger/             # Unified logrus wrapper (level/format/output + gin middleware)
 │   ├── plugin/             # Plugin system (registry, host, builtin)
 │   │   ├── types.go        # Plugin/Host/Meta/Configurable interfaces
@@ -112,7 +112,7 @@ app/server/
 ```
 Request → Router → Middleware → Handler → Service → Repository → DB
                   (JWT+RBAC)      ↓         ↓         ↓
-                               OAuth       SFU      Redis
+                               OAuth       SFU      AuthState
                             (standalone) (provider) (optional)
                                           ↓
                                        Signal/WS
@@ -391,7 +391,7 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `JWT_KEY` | `default-secret` | HMAC signing key (change in production) |
-| `JWT_KEY_TTL` | `24h` | Signing-key rotation interval (Redis only) |
+| `JWT_KEY_TTL` | `24h` | Signing-key rotation interval (NATS KV) |
 
 ### SFU Provider
 
@@ -421,16 +421,7 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | `NATS_USER` / `NATS_PASSWORD` / `NATS_TOKEN` | — | Auth credentials |
 | `NATS_CREDS_FILE` | — | NATS JWT creds file |
 | `NATS_TLS` | `false` | Enable TLS |
-| `STATE_STORE` | `auto` | `auto` → redis → nats → graceful degradation |
-
-### Redis (optional)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REDIS_HOST` | — | Leave empty to skip Redis (graceful degradation) |
-| `REDIS_PORT` | `6379` | Redis port |
-| `REDIS_PASSWORD` | — | Redis password |
-| `REDIS_DB` | `0` | Redis DB index |
+| `STATE_STORE` | `auto` | `auto` → nats → graceful degradation |
 
 ### Email / SMTP (optional)
 
@@ -561,30 +552,19 @@ type Capabilities struct {
 
 ---
 
-## Redis Module (Optional)
+## AuthState Module
 
-Standalone package at `internal/redis/`. Provides optional Redis support — gracefully degrades when `REDIS_HOST` is not set.
-
-### Key files
-
-| File | Role |
-|------|------|
-| `redis.go` | Client init, `InitRedis()`, `IsConnected()` |
-| `blacklist.go` | JWT token blacklist (logout invalidation) |
-| `jwt_key.go` | JWT signing key rotation via Redis TTL |
-| `auth_backend.go` | AuthStore adapter for Redis |
+Package `internal/authstate/` manages JWT auth state (blacklist, refresh-family replay protection, signing-key rotation) without Redis. Multi-instance state is stored in NATS JetStream KV (`bus.AuthStore`); single-process fallback is in-memory or static `JWT_KEY`.
 
 ### Token Blacklist
 
-Logout adds the token's JTI to Redis with TTL = remaining token lifetime. Middleware checks blacklist before granting access via `redis.IsBlacklisted(jti)`.
-
-When Redis is not connected, blacklist operations are no-ops (best-effort strategy).
+Logout marks the token's JTI revoked with TTL = remaining token lifetime. Middleware checks blacklist via `authstate.IsBlacklistedErr(jti)`. Without a shared backend, blacklist writes are no-ops (best-effort strategy).
 
 ### JWT Key Rotation
 
-`redis.GetOrRotateSigningKey()` returns the current signing key:
-- **Redis connected**: key stored in Redis with configurable TTL (`JWT_KEY_TTL`, default 24h). TTL expiry triggers automatic rotation.
-- **Redis not connected**: falls back to static `JWT_KEY` env var (default `"default-secret"`).
+`authstate.GetSigningKey()` returns the current signing key:
+- **NATS KV available**: key stored in the shared auth bucket; `JWT_KEY_TTL` (default 24h) triggers automatic rotation.
+- **No shared backend**: falls back to static `JWT_KEY` env var (default `"default-secret"`); production requires an explicit `JWT_KEY`.
 
 ---
 
@@ -597,9 +577,9 @@ Multi-instance event bus and shared state at `internal/bus/`. Provides cross-ins
 | Capability | Backend | Purpose |
 |------------|---------|---------|
 | EventBus | NATS (embedded/external) | WebSocket cross-instance fanout (room/namespace) + internal events |
-| MembershipStore | redis → NATS KV → none | Room member / stream mapping sharing |
-| MuteRuleStore | redis → NATS KV → memory | Agora kicking-rule id and degraded mute cache |
-| AuthStore | redis (preferred) / NATS KV | JWT blacklist + signing key rotation |
+| MembershipStore | NATS KV → none | Room member / stream mapping sharing |
+| MuteRuleStore | NATS KV → memory | Agora kicking-rule id and degraded mute cache |
+| AuthStore | NATS KV | JWT blacklist + signing key rotation |
 | JobQueue | NATS JetStream | SFU cleanup and async tasks |
 
 ### Init API
@@ -619,9 +599,9 @@ defer cleanup()
 
 ### Resolution Order
 
-- `STATE_STORE=auto`: redis → nats → graceful degradation
+- `STATE_STORE=auto`: nats → graceful degradation
 - `MuteRule`: final fallback is in-memory (never blocks startup)
-- `Auth`: redis first; NATS KV second; static `JWT_KEY` last
+- `Auth`: NATS KV first; static `JWT_KEY` last
 
 ### WSDeliverer
 

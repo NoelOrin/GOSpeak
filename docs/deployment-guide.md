@@ -20,7 +20,7 @@ GOSpeak 实时音视频平台的部署文档。覆盖本地开发、Docker 部�
 | Docker Compose | v2 | 多服务编排 |
 
 可选:
-- Redis 7 — Token 黑名单、JWT 密钥轮换（缺失则优雅降级）
+- NATS（可选）— 跨实例状态、Token 黑名单、JWT 密钥轮换（默认内嵌）
 - PostgreSQL / MySQL — 生产数据库（默认 SQLite）
 
 ---
@@ -39,7 +39,7 @@ pnpm install
 docker compose -f deploy/docker-compose.example.yml up -d
 ```
 
-默认启动: LiveKit + Redis + MinIO。SRS 见文件内注释启用。
+默认启动: LiveKit + MinIO。SRS 见文件内注释启用。
 
 ### 2.3 启动后端
 
@@ -92,17 +92,15 @@ pnpm start:dev
 | `DB_PASSWORD` | DB 密码 | `***` |
 | `DB_PATH` | SQLite 文件路径 | `db/gospeak.db` |
 
-### 3.2 Redis（可选）
+### 3.2 NATS / 跨实例状态（可选）
 
-留空 `REDIS_HOST` 则跳过 Redis 连接，JWT 用静态密钥。
+`NATS_URL` 留空时进程内嵌 NATS；JWT 黑名单和密钥轮换默认经 NATS JetStream KV 共享，不可用时降级为进程内状态 + 静态密钥。
 
 | 变量 | 说明 | 示例 |
 |------|------|------|
-| `REDIS_HOST` | Redis 主机，空则禁用 | `localhost` |
-| `REDIS_PORT` | 端口 | `6379` |
-| `REDIS_PASSWORD` | 密码 | `""` |
-| `REDIS_DB` | DB 编号 | `0` |
-| `JWT_KEY_TTL` | JWT 密钥轮换周期，需 Redis | `24h` |
+| `NATS_URL` | 外部 NATS 地址，空则内嵌 | `nats://nats:4222` |
+| `STATE_STORE` | `auto` / `nats` / `none` | `nats` |
+| `JWT_KEY_TTL` | JWT 密钥轮换周期，经 NATS KV 共享 | `24h` |
 
 ### 3.3 SFU Provider
 
@@ -146,20 +144,15 @@ pnpm start:dev
 
 | 档 | 命令 | 应用 `.env` 关键项 |
 |----|------|---------------------|
-| A 单 SQLite | `docker compose -f deploy/docker-compose.example.yml up -d` | `DB_TYPE=SQLite`, `REDIS_HOST=""` |
-| B 单 PostgreSQL | `docker compose -f deploy/docker-compose.example.yml --profile postgres up -d` | `DB_TYPE=PostgresSQL`, `DB_HOST=postgres`, `REDIS_HOST=""` |
-| C PG + Redis | `docker compose -f deploy/docker-compose.example.yml --profile postgres-redis up -d` | `DB_TYPE=PostgresSQL`, `DB_HOST=postgres`, `REDIS_HOST=redis` |
+| A 单 SQLite | `docker compose -f deploy/docker-compose.example.yml up -d` | `DB_TYPE=SQLite` |
+| B 单 PostgreSQL | `docker compose -f deploy/docker-compose.example.yml --profile postgres up -d` | `DB_TYPE=PostgresSQL`, `DB_HOST=postgres` |
+| C PostgreSQL + NATS | `docker compose -f deploy/docker-compose.yml --profile postgres --profile app up -d --build` | `DB_TYPE=PostgresSQL`, `STATE_STORE=nats` |
 
 - **A 档**：零外部 DB，SQLite 内嵌，最小起步
 - **B 档**：单一 PostgreSQL，中等规模
-- **C 档**：PostgreSQL + 应用 Redis，启用 JWT 轮换与 Token 黑名单，生产推荐
+- **C 档**：PostgreSQL + NATS JetStream KV，启用 JWT 轮换、Token 黑名单与跨实例房间状态，生产推荐。
 
-### 应用层 Redis 复用规则
-
-- **用 LiveKit 时**（默认）→ LiveKit 自身需要 Redis 服务（下方 `redis`），C 档应用直接复用，设 `REDIS_HOST=redis`。不另起独立 Redis。
-- **不用 LiveKit**（纯 SRS）又要应用 Redis → `docker compose -f deploy/docker-compose.example.yml --profile redis up -d` 起独立 `app-redis`，设 `REDIS_HOST=app-redis`（端口 6380，避让本机 6379）。
-
-PG/Redis 默认凭证见 compose 文件，生产必改。
+多副本部署必须使用同一个外部 `NATS_URL`，且 NATS 需开启 JetStream（`-js`）。
 
 ### 4.1.1 SFU Provider 切换
 
@@ -196,10 +189,10 @@ docker run -d \
 
 ### 5.1 发布清单 Checklist
 
-- [ ] `.env.prod` 已配置真实密钥（LiveKit、DB、Redis、Storage）
+- [ ] `.env.prod` 已配置真实密钥（LiveKit、DB、NATS、Storage）
 - [ ] `STORAGE_ENCRYPT_KEY` 已设（64 位 hex）
 - [ ] `DB_TYPE` 生产环境用 PostgreSQL/MySQL，非 SQLite
-- [ ] `REDIS_HOST` 已设（启用 JWT 轮换）
+- [ ] 多实例部署已配置外部 `NATS_URL` 与 `STATE_STORE=nats`
 - [ ] 端口防火墙开放: 8998 (应用) + SFU WebRTC UDP/TCP
 - [ ] HTTPS 终结已配置（见 Nginx 反代）
 - [ ] 数据库备份策略已就位
@@ -263,7 +256,7 @@ docker logs -f gospeak
 - **SQLite:** 备份 `app/server/db/*.db` 文件
 - **PostgreSQL:** `pg_dump`
 - **MinIO:** 桶同步至异地
-- **Redis:** RDB 快照（AOF 可选）
+- **NATS:** JetStream stream/KV bucket 数据备份（如多副本需要）
 
 ### 6.4 升级
 
@@ -282,7 +275,7 @@ docker run -d ... gospeak:latest  # 同 5.2 step 4
 |------|------|
 | 前端无音视频 | 检查 `SFU_PROVIDER` + LiveKit/SRS 服务状态 + WebRTC UDP 端口开放 |
 | 信令连不上 | 检查 WebSocket WebSocket 升级，Nginx 配置 |
-| JWT 无法刷新 | 检查 Redis 连接（`REDIS_HOST`） |
+| JWT 无法刷新 | 检查 NATS 连接（`NATS_URL`）与共享 auth KV |
 | 上传失败 | 检查 `STORAGE_TYPE` + MinIO/S3 凭证 + `STORAGE_ENCRYPT_KEY` |
 | DB 连接失败 | `DB_TYPE` 不匹配，PostgreSQL/MySQL 需 `DB_HOST` 等填全 |
 

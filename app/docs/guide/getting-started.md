@@ -55,8 +55,8 @@ LIVEKIT_SECRET="your-api-secret"
 # SRS 模式：启动 SRS 和 MinIO（可选）
 docker compose -f deploy/docker-compose.yml --profile srs up -d
 
-# 或 LiveKit 模式：启动 LiveKit + Redis
-docker compose -f deploy/docker-compose.yml --profile livekit --profile redis up -d
+# 或 LiveKit 模式：启动 LiveKit
+docker compose -f deploy/docker-compose.yml --profile livekit up -d
 ```
 
 > 如果宿主机已有 SRS / LiveKit 实例，可跳过此步，直接配置环境变量指向它即可。
@@ -101,7 +101,7 @@ GOSpeak/
 │   │   │   ├── signal/      # WebSocket 信令 Hub
 │   │   │   ├── jobs/        # 异步任务
 │   │   │   ├── storage/     # 对象存储抽象
-│   │   │   ├── redis/       # 可选 Redis 客户端
+│   │   │   ├── authstate/   # JWT 认证状态 (NATS KV)
 │   │   │   ├── permcode/    # 权限码常量
 │   │   │   ├── plugin/      # 插件系统
 │   │   │   └── pkg/         # 工具包 (JWT, OAuth, errors)

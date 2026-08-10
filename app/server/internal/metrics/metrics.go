@@ -31,13 +31,6 @@ type Snapshot struct {
 	DBReplicaLagThresholdMs int64
 	DBReplicaLagDegraded    bool
 
-	RedisConnected        bool
-	RedisPingMs           int64
-	RedisDBSize           int64
-	RedisUsedMemoryMB     float64
-	RedisUsedMemoryPeakMB float64
-	RedisConnectedClients int64
-
 	EventBusConnected      bool
 	EventBusDroppedPublish uint64
 
@@ -59,36 +52,30 @@ type Server struct {
 	requestsTotal   *prometheus.CounterVec
 	requestDuration *prometheus.HistogramVec
 
-	up                       prometheus.Gauge
-	wsRooms                  prometheus.Gauge
-	wsParticipants           prometheus.Gauge
-	wsOnlineUsers            prometheus.Gauge
-	wsClientDropped          prometheus.Gauge
-	dbConnected              prometheus.Gauge
-	dbConnectionsInUse       prometheus.Gauge
-	dbConnectionsIdle        prometheus.Gauge
-	dbConnectionsMax         prometheus.Gauge
-	dbWaitCount              prometheus.Gauge
-	dbWaitDurationSeconds    prometheus.Gauge
-	dbReplicaLagSeconds      prometheus.Gauge
-	dbReplicaLagDegraded     prometheus.Gauge
-	redisConnected           prometheus.Gauge
-	redisPingMs              prometheus.Gauge
-	redisDBSize              prometheus.Gauge
-	redisUsedMemoryBytes     prometheus.Gauge
-	redisUsedMemoryPeakBytes prometheus.Gauge
-	redisConnectedClients    prometheus.Gauge
-	eventbusConnected        prometheus.Gauge
-	eventbusDroppedPublish   prometheus.Gauge
-	clusterNodes             prometheus.Gauge
-	clusterReadyNodes        prometheus.Gauge
-	clusterDrainingNodes     prometheus.Gauge
-	clusterOfflineNodes      prometheus.Gauge
-	clusterAssignments       prometheus.Gauge
-	diskUsedBytes            prometheus.Gauge
-	diskTotalBytes           prometheus.Gauge
-	diskPercent              prometheus.Gauge
-	cpuPercent               prometheus.Gauge
+	up                     prometheus.Gauge
+	wsRooms                prometheus.Gauge
+	wsParticipants         prometheus.Gauge
+	wsOnlineUsers          prometheus.Gauge
+	wsClientDropped        prometheus.Gauge
+	dbConnected            prometheus.Gauge
+	dbConnectionsInUse     prometheus.Gauge
+	dbConnectionsIdle      prometheus.Gauge
+	dbConnectionsMax       prometheus.Gauge
+	dbWaitCount            prometheus.Gauge
+	dbWaitDurationSeconds  prometheus.Gauge
+	dbReplicaLagSeconds    prometheus.Gauge
+	dbReplicaLagDegraded   prometheus.Gauge
+	eventbusConnected      prometheus.Gauge
+	eventbusDroppedPublish prometheus.Gauge
+	clusterNodes           prometheus.Gauge
+	clusterReadyNodes      prometheus.Gauge
+	clusterDrainingNodes   prometheus.Gauge
+	clusterOfflineNodes    prometheus.Gauge
+	clusterAssignments     prometheus.Gauge
+	diskUsedBytes          prometheus.Gauge
+	diskTotalBytes         prometheus.Gauge
+	diskPercent            prometheus.Gauge
+	cpuPercent             prometheus.Gauge
 }
 
 // New 创建指标服务。snapshot 为空时业务 gauge 保持 0。
@@ -157,30 +144,6 @@ func New(snapshot func() Snapshot) *Server {
 			Name: "gospeak_db_replica_degraded",
 			Help: "1 when read replica lag exceeds the configured threshold.",
 		}),
-		redisConnected: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "gospeak_redis_connected",
-			Help: "1 when Redis is connected.",
-		}),
-		redisPingMs: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "gospeak_redis_ping_ms",
-			Help: "Redis ping latency in milliseconds.",
-		}),
-		redisDBSize: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "gospeak_redis_db_size",
-			Help: "Redis database key count.",
-		}),
-		redisUsedMemoryBytes: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "gospeak_redis_used_memory_bytes",
-			Help: "Redis used memory in bytes.",
-		}),
-		redisUsedMemoryPeakBytes: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "gospeak_redis_used_memory_peak_bytes",
-			Help: "Redis peak used memory in bytes.",
-		}),
-		redisConnectedClients: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "gospeak_redis_connected_clients",
-			Help: "Redis connected clients.",
-		}),
 		eventbusConnected: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "gospeak_eventbus_connected",
 			Help: "1 when the NATS event bus is connected.",
@@ -245,12 +208,6 @@ func New(snapshot func() Snapshot) *Server {
 		s.dbWaitDurationSeconds,
 		s.dbReplicaLagSeconds,
 		s.dbReplicaLagDegraded,
-		s.redisConnected,
-		s.redisPingMs,
-		s.redisDBSize,
-		s.redisUsedMemoryBytes,
-		s.redisUsedMemoryPeakBytes,
-		s.redisConnectedClients,
 		s.eventbusConnected,
 		s.eventbusDroppedPublish,
 		s.clusterNodes,
@@ -334,17 +291,6 @@ func (s *Server) refresh() {
 	} else {
 		s.dbReplicaLagDegraded.Set(0)
 	}
-
-	if snap.RedisConnected {
-		s.redisConnected.Set(1)
-	} else {
-		s.redisConnected.Set(0)
-	}
-	s.redisPingMs.Set(float64(snap.RedisPingMs))
-	s.redisDBSize.Set(float64(snap.RedisDBSize))
-	s.redisUsedMemoryBytes.Set(snap.RedisUsedMemoryMB * 1024 * 1024)
-	s.redisUsedMemoryPeakBytes.Set(snap.RedisUsedMemoryPeakMB * 1024 * 1024)
-	s.redisConnectedClients.Set(float64(snap.RedisConnectedClients))
 
 	if snap.EventBusConnected {
 		s.eventbusConnected.Set(1)

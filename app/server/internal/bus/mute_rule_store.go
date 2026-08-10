@@ -11,92 +11,9 @@ import (
 	"GOSpeak/internal/sfu"
 
 	"github.com/nats-io/nats.go"
-	goredis "github.com/redis/go-redis/v9"
 )
 
 const defaultMuteRuleTTL = 24 * time.Hour
-
-// RedisMuteRuleStore stores Agora (etc.) mute rule ids in Redis with per-key TTL.
-type RedisMuteRuleStore struct {
-	rdb    *goredis.Client
-	prefix string
-}
-
-type RedisMuteRuleStoreConfig struct {
-	Client *goredis.Client
-	Prefix string
-}
-
-func OpenRedisMuteRuleStore(cfg RedisMuteRuleStoreConfig) (*RedisMuteRuleStore, error) {
-	if cfg.Client == nil {
-		return nil, fmt.Errorf("redis mute rule store: nil client")
-	}
-	if cfg.Prefix == "" {
-		cfg.Prefix = "gospeak"
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := cfg.Client.Ping(ctx).Err(); err != nil {
-		return nil, fmt.Errorf("redis mute rule store ping: %w", err)
-	}
-	return &RedisMuteRuleStore{rdb: cfg.Client, prefix: cfg.Prefix}, nil
-}
-
-func (s *RedisMuteRuleStore) Backend() string { return "redis" }
-
-func (s *RedisMuteRuleStore) key(k string) string {
-	return s.prefix + ":sfu:mute_rule:" + sanitizeKey(k)
-}
-
-func (s *RedisMuteRuleStore) Save(ctx context.Context, key string, ruleID int, ttl time.Duration) error {
-	if s == nil || key == "" || ruleID <= 0 {
-		return nil
-	}
-	if ttl <= 0 {
-		ttl = defaultMuteRuleTTL
-	}
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-	}
-	return s.rdb.Set(ctx, s.key(key), strconv.Itoa(ruleID), ttl).Err()
-}
-
-func (s *RedisMuteRuleStore) Get(ctx context.Context, key string) (int, error) {
-	if s == nil || key == "" {
-		return 0, nil
-	}
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-	}
-	val, err := s.rdb.Get(ctx, s.key(key)).Result()
-	if err == goredis.Nil {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	id, err := strconv.Atoi(val)
-	if err != nil {
-		return 0, nil
-	}
-	return id, nil
-}
-
-func (s *RedisMuteRuleStore) Delete(ctx context.Context, key string) error {
-	if s == nil || key == "" {
-		return nil
-	}
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-	}
-	return s.rdb.Del(ctx, s.key(key)).Err()
-}
 
 // NATSMuteRuleStore stores mute rule ids in JetStream KV.
 // Bucket TTL is coarse (default 24h); per-key shorter TTL is not available on
@@ -224,18 +141,17 @@ func (s *NATSMuteRuleStore) Delete(_ context.Context, key string) error {
 }
 
 // ResolveMuteRuleConfig selects mute-rule backend.
-// Mode: auto|redis|nats|memory (default auto).
-// auto preference: redis → nats → memory.
+// Mode: auto|nats|memory (default auto).
+// auto preference: nats → memory.
 // Always returns a non-nil store (at least memory).
 type ResolveMuteRuleConfig struct {
 	Mode   string
 	Prefix string
-	Redis  *goredis.Client
 	NATS   *nats.Conn
 }
 
 // ResolveMuteRuleStore opens shared mute-rule store with degradation.
-// Result is always non-nil: CachedMuteRuleStore over redis/nats, or pure memory.
+// Result is always non-nil: CachedMuteRuleStore over nats, or pure memory.
 func ResolveMuteRuleStore(cfg ResolveMuteRuleConfig) (sfu.MuteRuleStore, string) {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
@@ -246,15 +162,6 @@ func ResolveMuteRuleStore(cfg ResolveMuteRuleConfig) (sfu.MuteRuleStore, string)
 		prefix = "gospeak"
 	}
 
-	tryRedis := func() (sfu.MuteRuleStore, error) {
-		if cfg.Redis == nil {
-			return nil, fmt.Errorf("redis client not connected")
-		}
-		return OpenRedisMuteRuleStore(RedisMuteRuleStoreConfig{
-			Client: cfg.Redis,
-			Prefix: prefix,
-		})
-	}
 	tryNATS := func() (sfu.MuteRuleStore, error) {
 		if cfg.NATS == nil {
 			return nil, fmt.Errorf("nats connection not available")
@@ -272,13 +179,6 @@ func ResolveMuteRuleStore(cfg ResolveMuteRuleConfig) (sfu.MuteRuleStore, string)
 	switch mode {
 	case "memory", "none":
 		return sfu.NewMemoryMuteRuleStore(), "memory"
-	case "redis":
-		if st, err := tryRedis(); err == nil {
-			return wrap(st), "redis"
-		} else {
-			log.Printf("[MuteRuleStore] redis unavailable: %v; fallback memory", err)
-			return sfu.NewMemoryMuteRuleStore(), "memory"
-		}
 	case "nats":
 		if st, err := tryNATS(); err == nil {
 			return wrap(st), "nats"
@@ -287,11 +187,6 @@ func ResolveMuteRuleStore(cfg ResolveMuteRuleConfig) (sfu.MuteRuleStore, string)
 			return sfu.NewMemoryMuteRuleStore(), "memory"
 		}
 	case "auto":
-		if st, err := tryRedis(); err == nil {
-			return wrap(st), "redis"
-		} else {
-			log.Printf("[MuteRuleStore] redis unavailable: %v; try nats", err)
-		}
 		if st, err := tryNATS(); err == nil {
 			return wrap(st), "nats"
 		} else {
@@ -306,6 +201,5 @@ func ResolveMuteRuleStore(cfg ResolveMuteRuleConfig) (sfu.MuteRuleStore, string)
 
 // Ensure interface compliance.
 var (
-	_ sfu.MuteRuleStore = (*RedisMuteRuleStore)(nil)
 	_ sfu.MuteRuleStore = (*NATSMuteRuleStore)(nil)
 )

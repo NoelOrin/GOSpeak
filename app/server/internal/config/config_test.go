@@ -88,12 +88,12 @@ func TestLoadAcceptsProductionWithStorageEncryptKey(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsProductionWithoutJWTKeyWhenNoRedis(t *testing.T) {
+func TestLoadRejectsProductionWithoutJWTKey(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("STORAGE_ENCRYPT_KEY", strings.Repeat("ab", 32))
 	if _, err := Load(); err == nil {
-		t.Fatal("expected production JWT_KEY error when REDIS_HOST is empty")
+		t.Fatal("expected production JWT_KEY error")
 	}
 }
 
@@ -309,7 +309,6 @@ func clearConfigEnv(t *testing.T) {
 		"APP_ENV", "DB_TYPE", "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_PATH", "DB_DSN", "DB_WAL", "TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN",
 		"JWT_KEY", "JWT_KEY_TTL", "SFU_PROVIDER", "SERVER_PORT", "STATIC_DIR", "CORS_ORIGIN", "GIN_MODE",
 		"LOG_LEVEL", "LOG_FORMAT", "LOG_OUTPUT", "LOG_FILE", "LOG_CALLER",
-		"REDIS_HOST", "REDIS_PORT", "REDIS_PASSWORD", "REDIS_DB",
 		"NATS_URL", "NATS_SUBJECT_PREFIX", "NATS_NAME", "NATS_CONNECT_TIMEOUT", "NATS_EMBEDDED_PORT", "STATE_STORE",
 		"GOSPEAK_ROLE", "CLUSTER_NODE_ID", "CLUSTER_ADVERTISE_URL", "CLUSTER_AGENT_URL", "CLUSTER_AGENT_TOKEN",
 		"CLUSTER_HEARTBEAT_INTERVAL", "CLUSTER_HEARTBEAT_TIMEOUT", "CLUSTER_MAX_SERVERS", "CLUSTER_MAX_ROOMS", "CLUSTER_LABELS",

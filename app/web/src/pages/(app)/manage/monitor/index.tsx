@@ -7,7 +7,6 @@ import Database from "lucide-solid/icons/database";
 import HardDrive from "lucide-solid/icons/hard-drive";
 import Hash from "lucide-solid/icons/hash";
 import MemoryStick from "lucide-solid/icons/memory-stick";
-import Radio from "lucide-solid/icons/radio";
 import Server from "lucide-solid/icons/server";
 import Users from "lucide-solid/icons/users";
 import XCircle from "lucide-solid/icons/x-circle";
@@ -41,12 +40,6 @@ interface HealthSnapshot {
 	db_max_open: number;
 	db_wait_count: number;
 	db_wait_duration_ms: number;
-	redis_connected: boolean;
-	redis_ping_ms: number;
-	redis_db_size: number;
-	redis_used_memory_mb: number;
-	redis_used_memory_peak_mb: number;
-	redis_connected_clients: number;
 }
 
 export const Route = createFileRoute("/(app)/manage/monitor/")({
@@ -302,63 +295,6 @@ function MonitorPage() {
 					value={
 						snap()?.db_wait_duration_ms != null
 							? `${snap()?.db_wait_duration_ms} ms`
-							: "—"
-					}
-				/>
-			</div>
-
-			{/* Redis */}
-			<SectionTitle>Redis</SectionTitle>
-			<div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-				<MetricCard
-					icon={<Radio size={16} />}
-					label="Redis"
-					value={null}
-					badge={
-						<StatusBadge
-							ok={!!snap()?.redis_connected}
-							label={snap()?.redis_connected ? "连接" : "未配置"}
-						/>
-					}
-				/>
-				<MetricCard
-					icon={<Clock size={16} />}
-					label="Ping 延迟"
-					value={
-						snap()?.redis_ping_ms != null ? `${snap()?.redis_ping_ms} ms` : "—"
-					}
-				/>
-				<MetricCard
-					icon={<Hash size={16} />}
-					label="Key 总数"
-					value={
-						snap()?.redis_db_size != null ? String(snap()?.redis_db_size) : "—"
-					}
-				/>
-				<MetricCard
-					icon={<MemoryStick size={16} />}
-					label="内存占用"
-					value={
-						snap()?.redis_used_memory_mb != null
-							? `${snap()?.redis_used_memory_mb} MB`
-							: "—"
-					}
-				/>
-				<MetricCard
-					icon={<MemoryStick size={16} />}
-					label="内存峰值"
-					value={
-						snap()?.redis_used_memory_peak_mb != null
-							? `${snap()?.redis_used_memory_peak_mb} MB`
-							: "—"
-					}
-				/>
-				<MetricCard
-					icon={<Users size={16} />}
-					label="客户端连接"
-					value={
-						snap()?.redis_connected_clients != null
-							? String(snap()?.redis_connected_clients)
 							: "—"
 					}
 				/>

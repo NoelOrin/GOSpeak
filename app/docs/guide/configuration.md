@@ -52,23 +52,22 @@
 | `AGORA_CUSTOMER_SECRET` | — | Agora 客户密钥 |
 
 
-## Redis（可选）
+## NATS / 跨实例状态
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `REDIS_HOST` | — | Redis 主机（留空则不连接）|
-| `REDIS_PORT` | `6379` | Redis 端口 |
-| `REDIS_PASSWORD` | — | Redis 密码 |
-| `REDIS_DB` | `0` | Redis DB 编号 |
+| `NATS_URL` | — | 外部 NATS 地址；空则进程内嵌 |
+| `STATE_STORE` | `auto` | 状态存储：`auto` / `nats` / `none` |
+| `NATS_SUBJECT_PREFIX` | `gospeak` | NATS subject / KV bucket 前缀 |
 
-Redis 未连接时，黑名单操作和 JWT 密钥轮换会优雅降级为无操作 / 静态密钥。
+NATS KV 不可用时，黑名单/密钥轮换降级为进程内状态 + 静态密钥。
 
 ## JWT 认证
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `JWT_KEY` | `default-secret` | JWT 签名密钥（生产环境**必须修改**）|
-| `JWT_KEY_TTL` | `24h` | JWT 密钥轮换周期（需要 Redis）|
+| `JWT_KEY_TTL` | `24h` | JWT 密钥轮换周期（经 NATS KV 共享）|
 
 ## 邮箱验证（可选）
 
@@ -126,7 +125,7 @@ DB_PASSWORD="gospeak"
 # 可选移除 SQLite DB_PATH
 ```
 
-### C 档 — PostgreSQL + Redis
+### C 档 — PostgreSQL + NATS KV 状态共享
 
 ```env
 DB_TYPE="PostgresSQL"
@@ -134,8 +133,7 @@ DB_HOST="postgres"
 DB_PORT="5432"
 DB_USER="gospeak"
 DB_PASSWORD="gospeak"
-REDIS_HOST="redis"
-REDIS_PORT="6379"
+STATE_STORE="nats"
 JWT_KEY_TTL="24h"
 ```
 
@@ -146,5 +144,5 @@ JWT_KEY_TTL="24h"
 | 文件 | 说明 |
 |------|------|
 | `deploy/env/app.srs.env` | SRS 模式（含 SRS 特有配置）|
-| `deploy/env/app.livekit.env` | LiveKit 模式（含 Redis 配置）|
+| `deploy/env/app.livekit.env` | LiveKit 模式（含 LiveKit 配置）|
 | `deploy/.env` | Compose 级变量（端口、candidate 等）|

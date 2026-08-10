@@ -37,15 +37,6 @@ groups:
           summary: "Event bus disconnected"
           description: "{{ $labels.instance }} NATS 事件总线不可用"
 
-      - alert: GOSpeakRedisDown
-        expr: gospeak_redis_connected == 0
-        for: 2m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Redis unavailable"
-          description: "{{ $labels.instance }} Redis 不可用"
-
       - alert: GOSpeakDBDown
         expr: gospeak_db_connected == 0
         for: 1m

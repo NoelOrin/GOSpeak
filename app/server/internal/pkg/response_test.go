@@ -28,6 +28,7 @@ func performHandleError(err error) (int, Response) {
 }
 
 func TestHandleError_HidesInternalDetails(t *testing.T) {
+	t.Parallel()
 	code, resp := performHandleError(NewAppError(INTERNAL_ERROR, "sql: connection refused"))
 	if code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", code)
@@ -41,6 +42,7 @@ func TestHandleError_HidesInternalDetails(t *testing.T) {
 }
 
 func TestHandleError_KeepsBusinessMessage(t *testing.T) {
+	t.Parallel()
 	code, resp := performHandleError(NewAppError(INVALID_PARAMS, "provider is required"))
 	if code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", code)
@@ -51,6 +53,7 @@ func TestHandleError_KeepsBusinessMessage(t *testing.T) {
 }
 
 func TestHandleError_PlainErrorUsesDefault(t *testing.T) {
+	t.Parallel()
 	code, resp := performHandleError(errors.New("boom"))
 	if code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", code)
@@ -61,6 +64,7 @@ func TestHandleError_PlainErrorUsesDefault(t *testing.T) {
 }
 
 func TestHandleError_LoginErrorsUse401(t *testing.T) {
+	t.Parallel()
 	for _, code := range []ErrCode{USER_NOT_FOUND, INVALID_PASSWORD} {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
@@ -73,6 +77,7 @@ func TestHandleError_LoginErrorsUse401(t *testing.T) {
 }
 
 func TestHandleError_RegisterErrorsUse400(t *testing.T) {
+	t.Parallel()
 	for _, code := range []ErrCode{USERNAME_EXISTS, EMAIL_ALREADY_EXISTS} {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)

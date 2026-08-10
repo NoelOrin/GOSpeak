@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/nats-io/nats.go"
-	goredis "github.com/redis/go-redis/v9"
 )
 
 // MembershipStore is the shared room membership / stream map backend.
@@ -21,25 +20,19 @@ type MembershipStore interface {
 	GetStream(ctx context.Context, stream string) (room, identity string, err error)
 	DeleteStream(ctx context.Context, stream string) error
 	ListRoomNames(ctx context.Context) ([]string, error)
-	Backend() string // "redis" | "nats"
+	Backend() string // "nats" | "none"
 	Close() error
 }
 
 // Ensure implementations satisfy the interface.
-var (
-	_ MembershipStore = (*StateStore)(nil)
-	_ MembershipStore = (*RedisStateStore)(nil)
-)
+var _ MembershipStore = (*StateStore)(nil)
 
 // ResolveMembershipConfig selects membership backend.
-// Mode: auto|redis|nats|none (default auto).
-// auto preference: redis → nats → none.
+// Mode: auto|nats|none (default auto).
+// auto preference: nats → none.
 type ResolveMembershipConfig struct {
 	Mode   string
 	Prefix string
-
-	// Redis client; nil/disabled skips redis backend.
-	Redis *goredis.Client
 
 	// NATS connection for JetStream KV; nil skips nats backend.
 	NATS *nats.Conn
@@ -47,7 +40,7 @@ type ResolveMembershipConfig struct {
 
 // ResolveMembershipStore opens membership store by mode with degradation.
 // Returns (nil, "none", nil) when no backend is available or mode=none.
-// Forced mode (redis/nats) returns error if that backend cannot be opened.
+// Forced mode (nats) returns error if that backend cannot be opened.
 func ResolveMembershipStore(cfg ResolveMembershipConfig) (MembershipStore, string, error) {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
@@ -58,15 +51,6 @@ func ResolveMembershipStore(cfg ResolveMembershipConfig) (MembershipStore, strin
 		prefix = "gospeak"
 	}
 
-	tryRedis := func() (MembershipStore, error) {
-		if cfg.Redis == nil {
-			return nil, fmt.Errorf("redis client not connected")
-		}
-		return OpenRedisStateStore(RedisStateStoreConfig{
-			Client: cfg.Redis,
-			Prefix: prefix,
-		})
-	}
 	tryNATS := func() (MembershipStore, error) {
 		if cfg.NATS == nil {
 			return nil, fmt.Errorf("nats connection not available")
@@ -80,12 +64,6 @@ func ResolveMembershipStore(cfg ResolveMembershipConfig) (MembershipStore, strin
 	switch mode {
 	case "none":
 		return nil, "none", nil
-	case "redis":
-		st, err := tryRedis()
-		if err != nil {
-			return nil, "none", fmt.Errorf("state store redis: %w", err)
-		}
-		return st, "redis", nil
 	case "nats":
 		st, err := tryNATS()
 		if err != nil {
@@ -93,11 +71,6 @@ func ResolveMembershipStore(cfg ResolveMembershipConfig) (MembershipStore, strin
 		}
 		return st, "nats", nil
 	case "auto":
-		if st, err := tryRedis(); err == nil {
-			return st, "redis", nil
-		} else {
-			log.Printf("[StateStore] redis unavailable: %v; try nats", err)
-		}
 		if st, err := tryNATS(); err == nil {
 			return st, "nats", nil
 		} else {
@@ -105,7 +78,7 @@ func ResolveMembershipStore(cfg ResolveMembershipConfig) (MembershipStore, strin
 		}
 		return nil, "none", nil
 	default:
-		return nil, "none", fmt.Errorf("state store: unknown mode %q (want auto|redis|nats|none)", mode)
+		return nil, "none", fmt.Errorf("state store: unknown mode %q (want auto|nats|none)", mode)
 	}
 }
 
@@ -118,8 +91,8 @@ func IsMembershipNotFound(err error) bool {
 	if errors.Is(err, nats.ErrKeyNotFound) || errors.Is(err, nats.ErrKeyDeleted) {
 		return true
 	}
-	return errors.Is(err, goredis.Nil)
+	return false
 }
 
-// ErrMembershipConflict 表示 Redis CAS 版本不匹配，调用方应重试合并。
+// ErrMembershipConflict 表示共享状态 CAS 版本不匹配，调用方应重试合并。
 var ErrMembershipConflict = errors.New("membership version mismatch")

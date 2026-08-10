@@ -15,7 +15,7 @@ GOSpeak 是基于 WebRTC 的实时音视频沟通平台。pnpm monorepo：Go 后
 | 信令 | WebSocket (GOSpeak/internal/ws) |
 | SFU | LiveKit(主) / SRS / Agora / Cloudflare — 抽象层动态解析 |
 | DB | SQLite(默认) / PostgreSQL / MySQL — GORM 自动迁移 |
-| 缓存 | Redis(可选，缺失优雅降级) — JWT 轮换 + Token 黑名单 |
+| 跨实例状态 | NATS KV — JWT 轮换 + Token 黑名单 |
 | 存储 | local / S3(MinIO/R2) |
 | 认证 | JWT + OAuth2(GitHub/Google/QQ) |
 | 工具链 | pnpm 10 · Turbo · Biome(lint/format) · Vitest(待用) · Lefthook · commitlint |
@@ -41,7 +41,7 @@ packages/
 │   │   ├── sfu/             # SFU Provider 抽象 + 工厂 + DynamicProvider
 │   │   ├── livekit/         # LiveKit 实现
 │   │   ├── signal/          # WebSocket 信令 Hub (14 事件)
-│   │   ├── redis/           # 可选 Redis (黑名单/JWT轮换)
+│   │   ├── authstate/       # JWT 黑名单/密钥轮换 (NATS KV)
 │   │   └── pkg/             # errors/response/jwt + oauth 抽象
 │   ├── docs/                # swagger.yaml/json
 │   └── test/                # Node.js API 集成测试
@@ -58,7 +58,7 @@ docs/                # design + plans + specs
 ```
 Request → Router → Middleware(JWT+RBAC) → Handler → Service → Repository → DB
                                                     ↓         ↓
-                                                   SFU      Redis(可选)
+                                                   SFU      AuthState
                                                     ↓
                                                  Signal/WS
 ```
@@ -73,7 +73,7 @@ Request → Router → Middleware(JWT+RBAC) → Handler → Service → Reposito
 # 安装
 pnpm install
 
-# 启依赖服务 (LiveKit + Redis + MinIO 默认)
+# 启依赖服务 (LiveKit + MinIO 默认)
 docker compose -f deploy/docker-compose.example.yml up -d
 
 # 开发 (同时启后端+前端)
@@ -117,7 +117,7 @@ pnpm format          # biome format -r
 关键项:
 - `SFU_PROVIDER` = `livekit` | `srs` | `agora` | `cloudflare`
 - `DB_TYPE` = `SQLite` | `PostgresSQL` | `MYSQL`
-- `REDIS_HOST` 空 → 跳过 Redis，JWT 用静态密钥
+- `NATS_URL` 空 → 内嵌 NATS；JWT 黑名单/密钥轮换走 NATS KV
 - `STORAGE_ENCRYPT_KEY` 生产必设 (64 位 hex)
 
 文件: `.env.dev` / `.env.prod`（`app/server/` 下）

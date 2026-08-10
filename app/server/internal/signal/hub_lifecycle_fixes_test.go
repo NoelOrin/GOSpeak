@@ -60,7 +60,7 @@ func (f *failingGetStore) DeleteStream(ctx context.Context, stream string) error
 func (f *failingGetStore) ListRoomNames(ctx context.Context) ([]string, error) { return nil, nil }
 
 func TestSyncRoomToStorePlain_ReadErrorDoesNotClobber(t *testing.T) {
-	store := newFailingGetStore(errors.New("redis unavailable"))
+	store := newFailingGetStore(errors.New("state store unavailable"))
 	hub := NewHub(nil, nil, nil, nil)
 	hub.SetMembershipStore(store, "inst-a")
 

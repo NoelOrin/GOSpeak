@@ -7,9 +7,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"GOSpeak/internal/authstate"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
-	"GOSpeak/internal/redis"
 	"GOSpeak/internal/repository"
 
 	"golang.org/x/crypto/bcrypt"
@@ -202,7 +202,7 @@ func (s *AuthService) RefreshFromToken(refreshToken string) (*RefreshResponse, e
 	if !pkg.IsRefreshToken(claims) {
 		return nil, pkg.NewAppError(pkg.TOKEN_WRONG, "invalid refresh token")
 	}
-	if revoked, err := redis.IsBlacklistedErr(claims.ID); err != nil {
+	if revoked, err := authstate.IsBlacklistedErr(claims.ID); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "blacklist store unavailable")
 	} else if revoked {
 		return nil, pkg.NewAppError(pkg.TOKEN_REVOKED)
@@ -234,22 +234,22 @@ func (s *AuthService) RefreshFromToken(refreshToken string) (*RefreshResponse, e
 	}
 
 	// family 已用说明旧 token 被重放，吊销整族后拒绝本次刷新
-	used, err := redis.IsRefreshFamilyUsed(family)
+	used, err := authstate.IsRefreshFamilyUsed(family)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "refresh family store unavailable")
 	}
 	if used {
-		_ = redis.RevokeRefreshFamily(family)
+		_ = authstate.RevokeRefreshFamily(family)
 		return nil, pkg.NewAppError(pkg.TOKEN_REVOKED)
 	}
 
 	// 原子抢占 family；失败说明并发刷新或重放，同样吊销整族
-	marked, err := redis.MarkRefreshFamilyUsed(family)
+	marked, err := authstate.MarkRefreshFamilyUsed(family)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "refresh family store unavailable")
 	}
 	if !marked {
-		_ = redis.RevokeRefreshFamily(family)
+		_ = authstate.RevokeRefreshFamily(family)
 		return nil, pkg.NewAppError(pkg.TOKEN_REVOKED)
 	}
 
@@ -266,7 +266,7 @@ func (s *AuthService) RefreshFromToken(refreshToken string) (*RefreshResponse, e
 }
 
 // Logout 将 access（及可选 refresh）加入黑名单；黑名单写失败必须上抛，
-// 避免 Redis/NATS 瞬时故障时登出静默“成功”而 token 仍有效。
+// 避免共享存储瞬时故障时登出静默“成功”而 token 仍有效。
 func (s *AuthService) Logout(accessClaims *pkg.Claims, refreshToken string) error {
 	if accessClaims == nil {
 		return nil
@@ -414,7 +414,7 @@ func (s *AuthService) BlacklistToken(claims *pkg.Claims) error {
 	if remaining <= 0 {
 		return nil
 	}
-	return redis.BlacklistToken(claims.ID, remaining)
+	return authstate.BlacklistToken(claims.ID, remaining)
 }
 
 // GetTokenVersionByUUID 查询用户的当前 TokenVersion，供中间件校验 token 版本。

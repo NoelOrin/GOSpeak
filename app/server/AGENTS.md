@@ -26,10 +26,10 @@ server/
 │   │       ├── agora/    # Agora 实现
 │   │       ├── srs/      # SRS 实现（WHIP/WHEP）
 │   │       └── cloudflare/ # Cloudflare Realtime 实现
-│   ├── bus/              # 多实例事件总线（NATS/Redis）
+│   ├── bus/              # 多实例事件总线与共享状态（NATS）
 │   ├── permcode/         # 权限码常量
 │   ├── signal/           # WebSocket 信令中心
-│   ├── redis/            # 可选 Redis（黑名单、JWT 密钥轮换）
+│   ├── authstate/        # JWT 认证状态（黑名单、密钥轮换，NATS KV/内存降级）
 │   └── pkg/              # 公共工具（错误码、JWT、响应、OAuth、permcode）
 ├── docs/                 # Swagger 文档
 ├── ../web/               # Web 前端（SolidJS + Vite + TanStack Router）
@@ -59,7 +59,6 @@ go run main.go server -e dev   # 开发模式
 | CF_APP_ID / CF_APP_SECRET / CF_STUN_URL | — / — / `stun.cloudflare.com:3478` | Cloudflare 凭据 |
 | DB_TYPE | `SQLite` | `SQLite` / `PostgresSQL` / `MYSQL` |
 | DB_WAL | `false` | SQLite WAL 模式开关（并发读建议开启）|
-| REDIS_HOST | — | Redis 主机（留空则不连接）|
 | JWT_KEY | `default-secret` | JWT 签名密钥（生产必须修改）|
 | EMAIL_ENABLED | `false` | 启用邮箱验证 |
 | STORAGE_TYPE | `local` | `local` / `s3` |
@@ -73,12 +72,12 @@ main.go → cmd/ → server/gin.go
                    ├── internal/repository/ → SQLite/PostgreSQL/MySQL
                    ├── internal/sfu/        → SFU provider 抽象 / 动态分发
                    │   └── providers/       → livekit|agora|srs|cloudflare
-                   ├── internal/bus/        → 多实例事件总线（NATS/Redis/fanout）
+                   ├── internal/bus/        → 多实例事件总线（NATS/fanout）
                    ├── internal/service/    → 业务逻辑层
                    ├── internal/handler/    → HTTP 处理层
                    ├── internal/router/     → 路由注册（含 domain/conversation/message/plugin）
                    ├── internal/signal/     → WebSocket 信令
-                   └── internal/redis/      → 可选黑名单 / 密钥轮换
+                   └── internal/authstate/  → 黑名单 / 密钥轮换（NATS KV）
 ```
 
 ## 禁言语义

@@ -32,7 +32,7 @@
 
 ## LiveKit 需要 Redis 吗？
 
-是的。LiveKit 本身依赖 Redis 做房间状态管理。Docker Compose 中 `--profile livekit` 会自动拉起 `redis` 服务。
+GOSpeak 应用已剥离 Redis。LiveKit 单节点不需要 Redis；多节点 LiveKit 集群如需状态共享，可自行按 LiveKit 文档配置 Redis，不再由 GOSpeak 部署清单管理。
 
 ## 如何切换 SFU 后端？
 

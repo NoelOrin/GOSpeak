@@ -18,7 +18,7 @@ const cachedMuteRuleL1TTL = 30 * time.Second
 //   - Save stores ruleID with best-effort TTL (backend may coarsen TTL).
 //   - Get returns 0 when missing / backend unavailable (callers treat as miss).
 //   - Delete is idempotent.
-//   - Backend() reports "memory" | "redis" | "nats".
+//   - Backend() reports "memory" | "nats".
 type MuteRuleStore interface {
 	Save(ctx context.Context, key string, ruleID int, ttl time.Duration) error
 	Get(ctx context.Context, key string) (int, error)
@@ -92,7 +92,7 @@ func (s *MemoryMuteRuleStore) Delete(_ context.Context, key string) error {
 	return nil
 }
 
-// CachedMuteRuleStore is L1 memory + shared L2 (redis/nats).
+// CachedMuteRuleStore is L1 memory + shared L2 (nats).
 // Write-through on Save/Delete; Get fills L1 from L2 on miss.
 type CachedMuteRuleStore struct {
 	local  *MemoryMuteRuleStore

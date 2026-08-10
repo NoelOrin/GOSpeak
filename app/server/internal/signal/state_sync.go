@@ -177,7 +177,7 @@ func (h *Hub) localRoomMembers(key string, now int64) []bus.MemberRecord {
 	return local
 }
 
-// syncRoomToStorePlain 保留非 NATS 后端（如 Redis）的无 CAS 合并行为。
+// syncRoomToStorePlain 保留无 revision 后端的无 CAS 合并行为。
 func (h *Hub) syncRoomToStorePlain(key string, now int64, local []bus.MemberRecord) {
 	merged := local
 	ctx, cancel := kvTimeoutCtx()

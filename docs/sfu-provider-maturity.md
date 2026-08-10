@@ -45,7 +45,7 @@
 |----------|------|----------|
 | LiveKit | `internal/sfu/providers/livekit/` | 唯一全 ✅；`MuteParticipant` 支持按 trackSid 精确静音或按 identity 批量静音；`ProviderName()` = `livekit` |
 | SRS | `internal/sfu/providers/srs/` | WHIP/WHEP；`List*` 经 `RoomRegistry` 聚合真实房间；`StreamProvider`/`ClientInfoProvider`；`GenerateToken` 签发 stream token |
-| Agora | `internal/sfu/providers/agora/` | Token/列举可用；mute/kick 走 kicking-rule（degraded）；rule id 经 MuteRuleStore 跨实例缓存（redis→nats KV→memory）；`GenerateAdminToken` 空串；`ClientInfo` 暴露 `appId` |
+| Agora | `internal/sfu/providers/agora/` | Token/列举可用；mute/kick 走 kicking-rule（degraded）；rule id 经 MuteRuleStore 跨实例缓存（nats KV→memory）；`GenerateAdminToken` 空串；`ClientInfo` 暴露 `appId` |
 | Cloudflare | `internal/sfu/providers/cloudflare/` | 无原生 room/token；`GenerateToken` 建 session 返回 JSON 配置；`List*` 仅内存；`StreamProvider`/`ClientInfoProvider` |
 
 ### 5. 前端 SFU 客户端（`packages/sfu-client`）

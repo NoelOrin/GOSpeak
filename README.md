@@ -38,7 +38,7 @@
 | 🔄 多 SFU 切换 | LiveKit / SRS / Agora / Cloudflare 运行时切换 |
 | 🔐 房间权限 | 密码保护、创建者/管理员踢人、角色权限体系 |
 | 🔌 多认证方式 | JWT + OAuth2（GitHub / Google / QQ）|
-| 🗄️ 渐进式数据库 | 单文件 SQLite → PostgreSQL → PostgreSQL + Redis |
+| 🗄️ 渐进式数据库 | 单文件 SQLite → PostgreSQL → MySQL |
 
 ---
 
@@ -75,7 +75,7 @@ pnpm install
 cp app/server/.env.example app/server/.env
 # 编辑 app/server/.env，填入 LiveKit 凭证（见下方配置说明）
 
-# 4. 启动依赖服务（LiveKit / Redis / MinIO）
+# 4. 启动依赖服务（LiveKit / MinIO）
 docker compose -f deploy/docker-compose.example.yml up -d
 
 # 5. 启动开发服务（后端 air 热重载 + 前端 vite）
@@ -128,8 +128,6 @@ docker compose -f deploy/docker-compose.example.yml up -d
 # B. PostgreSQL
 docker compose -f deploy/docker-compose.example.yml --profile postgres up -d
 
-# C. PostgreSQL + Redis — JWT 密钥轮换 + Token 黑名单
-docker compose -f deploy/docker-compose.example.yml --profile postgres-redis up -d
 ```
 
 对应 `.env` 配置：
@@ -141,9 +139,6 @@ DB_TYPE="SQLite"
 # B 档
 DB_TYPE="PostgresSQL"  DB_HOST=postgres  DB_PORT=5432  DB_USER=gospeak  DB_PASSWORD=gospeak
 
-# C 档
-DB_TYPE="PostgresSQL"  DB_HOST=postgres  DB_PORT=5432  DB_USER=gospeak  DB_PASSWORD=gospeak
-REDIS_HOST=redis
 ```
 
 ### Docker 生产部署（前端已内嵌）
@@ -211,7 +206,7 @@ AGORA_APP_CERTIFICATE="xxx"
 | 前端 | SolidJS + TypeScript + Vite + TanStack Router + Tailwind v4 |
 | SFU | LiveKit（主）/ SRS / Agora / Cloudflare |
 | 数据库 | SQLite / PostgreSQL / MySQL |
-| 缓存 | Redis（可选，缺失优雅降级）|
+| 跨实例状态 | NATS JetStream KV（黑名单、密钥轮换、房间状态）|
 | 存储 | Local / S3（MinIO / R2）|
 | 认证 | JWT + OAuth2（GitHub / Google / QQ）|
 

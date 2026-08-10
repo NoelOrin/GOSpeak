@@ -18,7 +18,7 @@ type RoomMetaReader interface {
 	GetRoomMeta(ctx context.Context, room string) (bus.RoomMeta, error)
 }
 
-// SetRoomMetaStore 注入共享房间元数据后端（Redis/NATS KV）。
+// SetRoomMetaStore 注入共享房间元数据后端（NATS KV）。
 func (s *ClusterService) SetRoomMetaStore(store RoomMetaReader) {
 	s.mu.Lock()
 	s.roomMetaStore = store

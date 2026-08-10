@@ -20,19 +20,13 @@ import (
 	gpsignal "GOSpeak/internal/signal"
 )
 
-// InfraStats 抽象 DB/Redis/EventBus 统计来源，handler 不再直接依赖基础设施包。
+// InfraStats 抽象 DB/EventBus 统计来源，handler 不再直接依赖基础设施包。
 type InfraStats interface {
 	DBStats() sql.DBStats
 	DBPing() error
 	DBReplicaLagMs() int64
 	DBReplicaLagThresholdMs() int64
 	DBReplicaLagDegraded() bool
-	RedisConnected() bool
-	RedisPingMs() int64
-	RedisDBSize() int64
-	RedisUsedMemoryMB() float64
-	RedisUsedMemoryPeakMB() float64
-	RedisConnectedClients() int64
 	AuthStoreBackend() string
 	BusMode() string
 	BusConnected() bool
@@ -151,14 +145,6 @@ type HealthSnapshot struct {
 	DBReplicaLagThresholdMs int64 `json:"db_replica_lag_threshold_ms"`
 	DBReplicaLagDegraded    bool  `json:"db_replica_lag_degraded"`
 
-	// Redis
-	RedisConnected        bool    `json:"redis_connected"`
-	RedisPingMs           int64   `json:"redis_ping_ms"`
-	RedisDBSize           int64   `json:"redis_db_size"`
-	RedisUsedMemoryMB     float64 `json:"redis_used_memory_mb"`
-	RedisUsedMemoryPeakMB float64 `json:"redis_used_memory_peak_mb"`
-	RedisConnectedClients int64   `json:"redis_connected_clients"`
-
 	// EventBus
 	EventBusMode           string `json:"eventbus_mode"`
 	EventBusConnected      bool   `json:"eventbus_connected"`
@@ -230,13 +216,6 @@ func (h *MonitorHandler) Collect() HealthSnapshot {
 		snap.DBReplicaLagMs = h.stats.DBReplicaLagMs()
 		snap.DBReplicaLagThresholdMs = h.stats.DBReplicaLagThresholdMs()
 		snap.DBReplicaLagDegraded = h.stats.DBReplicaLagDegraded()
-
-		snap.RedisConnected = h.stats.RedisConnected()
-		snap.RedisPingMs = h.stats.RedisPingMs()
-		snap.RedisDBSize = h.stats.RedisDBSize()
-		snap.RedisUsedMemoryMB = h.stats.RedisUsedMemoryMB()
-		snap.RedisUsedMemoryPeakMB = h.stats.RedisUsedMemoryPeakMB()
-		snap.RedisConnectedClients = h.stats.RedisConnectedClients()
 
 		snap.EventBusMode = h.stats.BusMode()
 		snap.EventBusConnected = h.stats.BusConnected()

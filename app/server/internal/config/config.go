@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -84,7 +83,7 @@ type Config struct {
 	RefreshCookieName string `env:"REFRESH_COOKIE_NAME" envDefault:"gospeak_refresh_token"`
 	CookieDomain      string `env:"COOKIE_DOMAIN" envDefault:""`
 	CookiePath        string `env:"COOKIE_PATH" envDefault:"/"`
-	CookieSecure      string `env:"COOKIE_SECURE" envDefault:"auto"` // auto|true|false
+	CookieSecure      string `env:"COOKIE_SECURE" envDefault:"auto"`  // auto|true|false
 	CookieSameSite    string `env:"COOKIE_SAMESITE" envDefault:"lax"` // lax|strict|none
 
 	// 日志
@@ -93,11 +92,6 @@ type Config struct {
 	LogOutput string `env:"LOG_OUTPUT" envDefault:""` // stdout|stderr|file|both；默认 stdout
 	LogFile   string `env:"LOG_FILE" envDefault:""`   // file/both 时路径，默认 logs/app.log
 	LogCaller bool   `env:"LOG_CALLER" envDefault:"false"`
-
-	RedisHost     string `env:"REDIS_HOST" envDefault:""`
-	RedisPort     string `env:"REDIS_PORT" envDefault:"6379"`
-	RedisPassword string `env:"REDIS_PASSWORD" envDefault:""`
-	RedisDB       string `env:"REDIS_DB" envDefault:"0"`
 
 	NATSURL            string `env:"NATS_URL" envDefault:""`
 	NATSSubjectPrefix  string `env:"NATS_SUBJECT_PREFIX" envDefault:"gospeak"`
@@ -250,15 +244,6 @@ func (c *Config) JWTKeyTTLDuration() time.Duration {
 		return 24 * time.Hour
 	}
 	return d
-}
-
-// RedisDBIndex 解析 Redis DB 序号。
-func (c *Config) RedisDBIndex() int {
-	n, err := strconv.Atoi(strings.TrimSpace(c.RedisDB))
-	if err != nil {
-		return 0
-	}
-	return n
 }
 
 // NATSConnectTimeoutDuration 解析 NATS 连接超时。

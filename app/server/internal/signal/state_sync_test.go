@@ -72,7 +72,7 @@ func (m *memStateStore) GetRoomMembers(ctx context.Context, room string) (bus.Ro
 	return snap, nil
 }
 
-// GetRoomMembersBatch 批量读取多个房间的成员快照，模拟生产 Redis MGet 路径。
+// GetRoomMembersBatch 批量读取多个房间的成员快照，模拟生产批量读取路径。
 func (m *memStateStore) GetRoomMembersBatch(ctx context.Context, rooms []string) (map[string]bus.RoomMembersSnapshot, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -328,7 +328,7 @@ func TestSyncRoomToStore_HeartbeatRenewalDoesNotNotify(t *testing.T) {
 	}
 }
 
-// plainMemStateStore 仅实现无 revision 的 membershipStore，覆盖 Redis 等 plain 合并路径。
+// plainMemStateStore 仅实现无 revision 的 membershipStore，覆盖 plain 合并路径。
 type plainMemStateStore struct {
 	mu    sync.Mutex
 	rooms map[string]bus.RoomMembersSnapshot

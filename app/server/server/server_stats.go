@@ -1,17 +1,17 @@
 package server
 
 import (
+	"GOSpeak/internal/authstate"
 	"GOSpeak/internal/bus"
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/metrics"
-	"GOSpeak/internal/redis"
 	"GOSpeak/internal/repository"
 	"database/sql"
 	"time"
 )
 
-// serverInfraStats 将 repository/redis/bus 的统计能力适配为 handler.InfraStats，
+// serverInfraStats 将 repository/bus 的统计能力适配为 handler.InfraStats，
 // 使 HTTP handler 不直接依赖基础设施包。
 type serverInfraStats struct {
 	eventBus     bus.EventBus
@@ -49,27 +49,8 @@ func (s serverInfraStats) DBReplicaLagDegraded() bool {
 	return lag > s.lagThreshold
 }
 
-func (s serverInfraStats) RedisConnected() bool { return redis.IsConnected() }
-func (s serverInfraStats) RedisPingMs() int64 {
-	return redis.GetStats().PingMs
-}
-func (s serverInfraStats) RedisDBSize() int64 {
-	return redis.GetStats().DBSize
-}
-func (s serverInfraStats) RedisUsedMemoryMB() float64 {
-	return redis.GetStats().UsedMemoryMB
-}
-func (s serverInfraStats) RedisUsedMemoryPeakMB() float64 {
-	return redis.GetStats().UsedMemoryPeakMB
-}
-func (s serverInfraStats) RedisConnectedClients() int64 {
-	return redis.GetStats().ConnectedClients
-}
 func (s serverInfraStats) AuthStoreBackend() string {
-	if redis.IsConnected() {
-		return "redis"
-	}
-	if name := redis.AuthBackendName(); name != "" {
+	if name := authstate.BackendName(); name != "" {
 		return name
 	}
 	return "none"
@@ -104,12 +85,6 @@ func toMetricsSnapshot(snap handler.HealthSnapshot) metrics.Snapshot {
 		DBReplicaLagMs:          snap.DBReplicaLagMs,
 		DBReplicaLagThresholdMs: snap.DBReplicaLagThresholdMs,
 		DBReplicaLagDegraded:    snap.DBReplicaLagDegraded,
-		RedisConnected:          snap.RedisConnected,
-		RedisPingMs:             snap.RedisPingMs,
-		RedisDBSize:             snap.RedisDBSize,
-		RedisUsedMemoryMB:       snap.RedisUsedMemoryMB,
-		RedisUsedMemoryPeakMB:   snap.RedisUsedMemoryPeakMB,
-		RedisConnectedClients:   snap.RedisConnectedClients,
 		EventBusConnected:       snap.EventBusConnected,
 		EventBusDroppedPublish:  snap.EventBusDroppedPublish,
 		ClusterTotalNodes:       snap.ClusterTotalNodes,

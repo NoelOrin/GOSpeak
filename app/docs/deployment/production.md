@@ -6,7 +6,7 @@
 - [ ] **设置公网地址**：`SRS_CANDIDATE` 设为公网 IP（SRS 模式）
 - [ ] **配置 HTTPS**：Nginx 配置 TLS 证书
 - [ ] **选择数据库**：生产环境推荐 PostgreSQL
-- [ ] **开启 Redis**：启用 Token 黑名单和密钥轮换
+- [ ] **配置状态共享**：多实例设 `STATE_STORE=nats` + 外部 `NATS_URL`
 - [ ] **防火墙放行**：开放必要端口
 - [ ] **配置备份**：数据库定时备份
 
@@ -21,7 +21,6 @@
 | 7880-7882 | LiveKit | ✅ 视情况 | 控制/媒体 |
 | 3478/udp | LiveKit TURN | ✅ 视情况 | TURN 中继 |
 | 5432 | PostgreSQL | ❌ 不暴露 | 数据库 |
-| 6379 | Redis | ❌ 不暴露 | 缓存 |
 | 9000/9001 | MinIO | ❌ 按需 | 对象存储 |
 
 ## HTTPS 配置

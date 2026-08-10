@@ -44,7 +44,7 @@
 | **后端** | Go + Gin | REST API |
 | **ORM** | GORM | 数据库操作 |
 | **数据库** | SQLite / PostgreSQL / MySQL | 持久化 |
-| **缓存** | Redis（可选）| JWT 黑名单/密钥轮换 |
+| **跨实例状态** | NATS JetStream KV | 黑名单/密钥轮换/房间状态 |
 | **构建** | Vite | 前端打包 |
 | **包管理** | pnpm | Monorepo |
 | **容器化** | Docker Compose | 部署编排 |
@@ -66,7 +66,7 @@
 - **Service** → 业务逻辑，调用 Repository 和 SFU
 - **Repository** → 纯数据访问，返回 GORM errors
 - **SFU Provider** → 通过接口抽象，运行时动态解析
-- **Redis** → 可选，优雅降级，用于黑名单和密钥轮换
+- **NATS KV** → 可选，优雅降级，用于黑名单、密钥轮换和房间状态
 
 ## 目录结构
 
@@ -89,7 +89,7 @@ app/
 │   │   ├── bus/         # 内存事件总线
 │   │   ├── jobs/        # 异步任务 (消息持久化等)
 │   │   ├── storage/     # 对象存储抽象
-│   │   ├── redis/       # Redis 客户端
+│   │   ├── authstate/   # JWT 认证状态 (NATS KV)
 │   │   ├── permcode/    # 权限码常量
 │   │   ├── plugin/      # 插件系统
 │   │   ├── logger/      # 日志

@@ -9,7 +9,7 @@ GOSpeak 支持从本地开发到生产环境的**渐进式部署**方案，根�
     │
     ├─ 换 PostgreSQL → 更高并发
     │
-    ├─ 加 Redis → JWT 黑名单 + 密钥轮换
+    ├─ 加外部 NATS → 跨实例状态共享 + JWT 黑名单/密钥轮换
     │
     ├─ 加 MinIO → S3 对象存储
     │
@@ -38,7 +38,7 @@ Nginx :80/:443（可选）
 
 GOSpeak (Go)
     ├── DB: SQLite/PG
-    ├── Redis (可选): JWT黑名单、密钥轮换
+    ├── NATS KV (可选): JWT黑名单、密钥轮换、房间状态
     └── SFU: LiveKit/SRS/Agora/Cloudflare
 
 浏览器 ──WebRTC──► SFU 媒体端口（直连）
@@ -48,5 +48,5 @@ GOSpeak (Go)
 
 - [Docker Compose 部署](/deployment/docker-compose) — 完整编排方案
 - [生产部署](/deployment/production) — 生产环境 Checklist
-- [数据库演进](/deployment/database) — 从 SQLite 到 PostgreSQL + Redis
+- [数据库演进](/deployment/database) — 从 SQLite 到 PostgreSQL
 - [Nginx 配置](/deployment/nginx) — 反代与 HTTPS 配置

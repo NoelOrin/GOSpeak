@@ -1,6 +1,6 @@
 # 数据库演进
 
-GOSpeak 支持**渐进式数据库**方案：从零配置的 SQLite 到生产级的 PostgreSQL + Redis。
+GOSpeak 支持**渐进式数据库**方案：从零配置的 SQLite 到生产级的 PostgreSQL / MySQL。
 
 ## 三档演进
 
@@ -9,7 +9,7 @@ A 档: SQLite ────────────── 开箱即用、零外�
     │
 B 档: PostgreSQL ────────── 更高并发、支持多写
     │
-C 档: PostgreSQL + Redis ── 完整功能：Token 黑名单 + 密钥轮换
+C 档: PostgreSQL + NATS KV ── Token 黑名单 + 密钥轮换 + 跨实例状态
 ```
 
 ## A 档 — SQLite
@@ -79,9 +79,9 @@ sqlite3 db/app.db .dump > backup.sql
 psql -U gospeak -d gospeak < cleaned_backup.sql
 ```
 
-## C 档 — PostgreSQL + Redis
+## C 档 — PostgreSQL + 多实例状态共享（NATS KV）
 
-**适用**：需要 Token 黑名单和 JWT 密钥轮换的生产环境。
+**适用**：需要 Token 黑名单、JWT 密钥轮换和跨实例房间状态的生产环境。
 
 ```env
 DB_TYPE="PostgresSQL"
@@ -90,20 +90,20 @@ DB_PORT="5432"
 DB_USER="gospeak"
 DB_PASSWORD="gospeak"
 
-REDIS_HOST="redis"
-REDIS_PORT="6379"
+STATE_STORE="nats"
 JWT_KEY_TTL="24h"            # 密钥轮换周期
 ```
 
-### Redis 带来的功能
+### NATS KV 带来的功能
 
 | 功能 | 说明 |
 |------|------|
 | Token 黑名单 | 登出后将 JWT 加入黑名单（TTL=剩余有效期）|
 | JWT 密钥轮换 | 周期性更换签名密钥，旧 Token 自动失效 |
-| Graceful Degradation | Redis 不可用时所有操作降级为 no-op |
+| 跨实例房间状态 | 成员/stream 映射经 JetStream KV 多实例共享 |
+| Graceful Degradation | 未配置 NATS 时降级为进程内状态 + 静态密钥 |
 
-> 当 `REDIS_HOST` 留空时，Token 黑名单和密钥轮换功能**优雅降级**为静态密钥模式。
+> 未配置外部 NATS 时，内嵌 NATS 自动启动；多副本部署请使用同一个外部 `NATS_URL`。
 
 ## 数据库类型对比
 

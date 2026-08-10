@@ -1368,6 +1368,18 @@ git commit -m "test(message): assert persistence-unavailable error on data plane
 | OAuth 自动建号不可控 | 新增 `OAUTH_AUTO_CREATE_USER`（默认 true，可关闭） | `app/server/internal/config/config.go`、`app/server/internal/service/oauth_service.go`、`app/server/server/gin.go` |
 | Bot TTS 队列残留 | speak 完成后从 `_speakQueues` 清理（保留串行语义） | `packages/bot/src/runtime/botRunner.ts` |
 
+### 已修复（第九批，2026-08-10）
+
+| 项 | 修复 | 文件 |
+|----|------|------|
+| Redis 成员快照 TTL 固定 | `RedisStateStoreConfig.TTL` 可配置，默认保持 24h | `app/server/internal/bus/redis_store.go` |
+
+### 已修复（第十批，2026-08-10）
+
+| 项 | 修复 | 文件 |
+|----|------|------|
+| 独立测试串行 | `pkg/response_test` 启用 `t.Parallel` | `app/server/internal/pkg/response_test.go` |
+
 ### 已核实无需改动（第三批补充）
 
 - `storage_service` 密钥已通过 `ToPublicStorageConfig` 脱敏（AccessKey/SecretKey 不回显），无需改动。
@@ -1402,6 +1414,20 @@ git commit -m "test(message): assert persistence-unavailable error on data plane
 ### 已核实无需改动（第八批补充）
 
 - `wsClient.disconnect()` 已清除 `reconnectTimer`、置 `shouldReconnect=false` 并移除 `onclose`，重连竞态已有防护。
+
+### 已核实无需改动（第九批补充）
+
+- 前端 token 刷新已由 `authTransport.refreshSession` 的 `pendingRefresh` 单例 promise 去重，并发 401 共享一次刷新。
+- `SFUService.GetJoinToken` 先做 Domain 成员检查再进密码/限流，非成员对不存在房间同样返回 `not a member`，无法通过错误差异枚举房间。
+
+### 已核实无需改动（第十批补充 / 收尾）
+
+- Job 队列已通过 `ConsumeChat`（Agent）与 `ConsumeRuntime`（Worker）做角色分流，`TargetNodeID` 按专属 subject 投递，无双消费者重复处理问题。
+- `PutStream` 是 stream → (room, identity) 点映射，覆盖语义合理，无需成员快照式的 CAS 版本。
+- `domain_service` 成员缓存窗口（30s TTL + NATS 失效兜底）与 `hub_disconnect`「解锁后 I/O」均为有意设计，代码有注释说明。
+- 前端自定义角色零权限：后端 profile 下发的权限是权威来源，前端兜底表仅服务端未加载时使用，属设计。
+- `cluster/leader` 5s TTL 锁与 `hub_mute` 逐房间 SFU 调用为架构决策，暂不调整。
+- 其余 `t.Parallel` 扩展受全局 checker/共享内存 DB 约束，不适合盲目并行。
 
 ### 待处理候选（下一批）
 

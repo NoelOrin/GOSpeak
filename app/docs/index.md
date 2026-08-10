@@ -31,7 +31,7 @@ features:
     details: 运行时切换 LiveKit / SRS / Agora / Cloudflare，不修改代码。自建或云服务任选。
   - icon: 🗄️
     title: 渐进式数据库
-    details: SQLite 开箱即用零配置，可按需升级到 PostgreSQL + Redis，无供应商锁定。
+    details: SQLite 开箱即用零配置，可按需升级到 PostgreSQL / MySQL，无供应商锁定。
   - icon: 🔐
     title: 多认证方式
     details: JWT + OAuth2 三端登录（GitHub / Google / QQ）。内置 RBAC 权限控制。

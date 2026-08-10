@@ -1,7 +1,7 @@
 package pkg
 
 import (
-	"GOSpeak/internal/redis"
+	"GOSpeak/internal/authstate"
 	"crypto/rand"
 	"time"
 
@@ -53,12 +53,12 @@ func GenerateToken(username, displayName, userUUID, role string, tokenVersion ui
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(redis.GetSigningKey())
+	return token.SignedString(authstate.GetSigningKey())
 }
 
 // ParseToken 解析并校验 JWT Token，依次尝试当前密钥和历史密钥。
 func ParseToken(tokenStr string) (*Claims, error) {
-	keys := redis.GetAllSigningKeys()
+	keys := authstate.GetAllSigningKeys()
 	if len(keys) == 0 {
 		return nil, jwt.ErrSignatureInvalid
 	}
@@ -113,7 +113,7 @@ func GenerateRefreshTokenWithFamily(username, displayName, userUUID, role string
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(redis.GetSigningKey())
+	return token.SignedString(authstate.GetSigningKey())
 }
 
 // GenerateRefreshToken 签发 refresh_token（7d）。tokenVersion 与 access_token 一致。
@@ -160,5 +160,5 @@ func GenerateBotToken(username, displayName, userUUID, role string, tokenVersion
 		claims.RegisteredClaims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(24 * time.Hour))
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(redis.GetSigningKey())
+	return token.SignedString(authstate.GetSigningKey())
 }

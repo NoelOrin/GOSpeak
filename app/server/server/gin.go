@@ -1,6 +1,7 @@
 package server
 
 import (
+	"GOSpeak/internal/authstate"
 	"GOSpeak/internal/bus"
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/config"
@@ -11,7 +12,6 @@ import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/plugin"
 	"GOSpeak/internal/plugin/builtin"
-	"GOSpeak/internal/redis"
 	"GOSpeak/internal/repository"
 	"GOSpeak/internal/router"
 	"GOSpeak/internal/service"
@@ -32,7 +32,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/nats-io/nats.go"
-	goredis "github.com/redis/go-redis/v9"
 )
 
 type EnvEnum string
@@ -54,6 +53,7 @@ func StartGin(env EnvEnum) error {
 	}
 
 	cfg := config.MustLoad()
+	authstate.Configure(cfg)
 
 	// 统一日志初始化（先于其它组件，后续 log/fmt 可逐步迁移）
 	if err := logger.Init(logger.OptionsFrom(cfg.LoggerOptions())); err != nil {
@@ -78,12 +78,10 @@ func StartGin(env EnvEnum) error {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
 
-	redis.InitRedis(cfg)
-
 	storage.InitCipher(cfg.StorageEncryptKey, cfg.IsProduction())
 
 	if env == Prod || cfg.IsProduction() {
-		redis.SetProductionMode()
+		authstate.SetProductionMode()
 	}
 
 	roleRepo := repository.NewRoleRepository(db)
@@ -185,15 +183,10 @@ func StartGin(env EnvEnum) error {
 		natsConn = nb.Conn()
 	}
 
-	// membership KV: redis → nats → none (STATE_STORE=auto default)
-	var redisClient *goredis.Client
-	if redis.IsConnected() {
-		redisClient = redis.Client()
-	}
+	// membership KV: nats → none (STATE_STORE=auto default)
 	store, backend, err := bus.ResolveMembershipStore(bus.ResolveMembershipConfig{
 		Mode:   cfg.StateStore,
 		Prefix: cfg.NATSSubjectPrefix,
-		Redis:  redisClient,
 		NATS:   natsConn,
 	})
 	if err != nil {
@@ -260,11 +253,10 @@ func StartGin(env EnvEnum) error {
 		})
 	}
 
-	// mute rule KV for degraded media mute (Agora kicking-rule ids): redis → nats → memory
+	// mute rule KV for degraded media mute (Agora kicking-rule ids): nats → memory
 	muteRuleStore, muteRuleBackend := bus.ResolveMuteRuleStore(bus.ResolveMuteRuleConfig{
 		Mode:   cfg.StateStore,
 		Prefix: cfg.NATSSubjectPrefix,
-		Redis:  redisClient,
 		NATS:   natsConn,
 	})
 	if dp, ok := sfuProvider.(*factory.DynamicProvider); ok {
@@ -272,19 +264,17 @@ func StartGin(env EnvEnum) error {
 	}
 	logger.WithComponent("MuteRuleStore").Infof("ready backend=%s", muteRuleBackend)
 
-	// JWT blacklist + signing key: Redis preferred; otherwise NATS KV so multi-instance logout still works.
-	if !redis.IsConnected() && natsConn != nil {
+	// JWT blacklist + signing key: NATS KV so multi-instance logout still works.
+	if natsConn != nil {
 		if authStore, err := bus.OpenAuthStore(bus.AuthStoreConfig{
 			Prefix: cfg.NATSSubjectPrefix,
 			NC:     natsConn,
 		}); err != nil {
 			logger.WithComponent("AuthStore").Warnf("nats unavailable: %v", err)
 		} else {
-			redis.SetAuthBackend(authStore)
+			authstate.SetBackend(authStore)
 			logger.WithComponent("AuthStore").Infof("ready backend=%s", authStore.Backend())
 		}
-	} else if redis.IsConnected() {
-		logger.WithComponent("AuthStore").Info("ready backend=redis")
 	} else {
 		logger.WithComponent("AuthStore").Info("backend=none (static JWT_KEY / no multi-instance blacklist)")
 	}
@@ -405,7 +395,7 @@ func StartGin(env EnvEnum) error {
 		TokenVersionChecker: authSvc,
 		BotTokenChecker:     botSvc,
 		DomainChecker:       domainSvc.IsMember,
-		BlacklistChecker:    redis.IsBlacklistedErr,
+		BlacklistChecker:    authstate.IsBlacklistedErr,
 		AuthCookieName:      cfg.AccessCookieName,
 	})
 
@@ -485,7 +475,7 @@ func StartGin(env EnvEnum) error {
 	r.GET("/metrics", gin.WrapH(metricsHandler))
 
 	// 启动签名密钥轮换检查
-	redis.StartKeyRotationLoop()
+	authstate.StartKeyRotationLoop()
 
 	// WS 升级路由（JWT 鉴权由 Upgrader 内部完成）
 	var wsUpgrader *ws.Upgrader

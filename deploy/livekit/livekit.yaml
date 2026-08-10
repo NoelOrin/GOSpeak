@@ -16,9 +16,6 @@ rtc:
 keys:
   API7ar5gCTyVkfY: xtpW2PGUKPugyVzEvX4OaPaHtNGm5bRUmrIXe6NMIqb
 
-redis:
-  address: redis:6379
-
 turn:
   enabled: true
   udp_port: 3478

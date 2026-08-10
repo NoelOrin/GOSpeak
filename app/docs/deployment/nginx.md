@@ -158,7 +158,7 @@ server {
 
 ```bash
 # 直接暴露 GOSpeak :8998，LiveKit 在 :7880
-docker compose --profile livekit --profile redis --profile app up -d
+docker compose --profile livekit --profile app up -d
 ```
 
 前端代码中 `LIVEKIT_HOST` 指向 LiveKit 地址，不走 Nginx 反代。

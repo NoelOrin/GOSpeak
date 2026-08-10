@@ -96,7 +96,7 @@ func (h *Hub) mergeMemberSnapshot(key string, snap bus.RoomMembersSnapshot) []Me
 }
 
 // bulkRoomMembersReader 是 membershipStore 可选实现的批量读取扩展，
-// Redis 后端用 MGet 消除房间列表的 N+1 查询。
+// 消除房间列表的 N+1 查询。
 type bulkRoomMembersReader interface {
 	GetRoomMembersBatch(ctx context.Context, rooms []string) (map[string]bus.RoomMembersSnapshot, error)
 }

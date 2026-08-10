@@ -69,9 +69,6 @@ func (c *Config) normalize() {
 	if c.DBReadHost == "" {
 		c.DBReadHost = c.DBHost
 	}
-	if c.RedisPort == "" {
-		c.RedisPort = "6379"
-	}
 	if c.JWTKeyTTL == "" {
 		c.JWTKeyTTL = "24h"
 	}
