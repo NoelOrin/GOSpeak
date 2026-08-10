@@ -15,7 +15,7 @@ func newDomainTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Domain{}, &model.DomainMember{}, &model.Room{}, &model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.Domain{}, &model.DomainMember{}, &model.Room{}, &model.User{}, &model.DomainRole{}, &model.DomainRolePermission{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db
@@ -378,5 +378,27 @@ func TestDomainRepo_Delete_CleansMembersAndRooms(t *testing.T) {
 	db.Model(&model.Room{}).Where("domain_uuid = ?", domain.UUID).Count(&count)
 	if count != 0 {
 		t.Fatalf("expected rooms removed, count=%d", count)
+	}
+}
+
+func TestCreateWithOwner_SeedsDefaultDomainRoles(t *testing.T) {
+	db := newDomainTestDB(t)
+	if err := db.AutoMigrate(&model.DomainRole{}, &model.DomainRolePermission{}); err != nil {
+		t.Fatalf("migrate roles: %v", err)
+	}
+	repo := NewDomainRepository(db)
+	domain := &model.Domain{Name: "Roles", OwnerUUID: "owner-1"}
+	owner := &model.DomainMember{DomainUUID: "", UserUUID: "owner-1", RoleName: model.DomainRoleOwner}
+	if err := repo.CreateWithOwner(domain, owner); err != nil {
+		t.Fatalf("CreateWithOwner: %v", err)
+	}
+
+	roleRepo := NewDomainRoleRepository(db)
+	roles, err := roleRepo.ListRoles(domain.UUID)
+	if err != nil {
+		t.Fatalf("ListRoles: %v", err)
+	}
+	if len(roles) != 4 {
+		t.Fatalf("expected 4 seeded roles, got %d", len(roles))
 	}
 }

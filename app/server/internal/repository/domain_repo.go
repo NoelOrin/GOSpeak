@@ -28,7 +28,10 @@ func (r *DomainRepository) CreateWithOwner(domain *model.Domain, owner *model.Do
 		if owner != nil && owner.DomainUUID == "" {
 			owner.DomainUUID = domain.UUID
 		}
-		return tx.Create(owner).Error
+		if err := tx.Create(owner).Error; err != nil {
+			return err
+		}
+		return SeedDefaultDomainRoles(tx, domain.UUID)
 	})
 }
 

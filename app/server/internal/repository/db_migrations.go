@@ -257,8 +257,11 @@ func autoMigrate() error {
 		&model.MessageMention{},
 		&model.Domain{},
 		&model.DomainMember{},
+		&model.DomainRole{},
+		&model.DomainRolePermission{},
 		&model.ClusterNode{},
 		&model.ServerAssignment{},
+		&model.ClusterLeaderFence{},
 	); err != nil {
 		return err
 	}
@@ -379,5 +382,8 @@ func migrateDefaultDomain(db *gorm.DB, ownerUUID string) error {
 		}
 	}
 
+	if err := SeedDefaultDomainRoles(db, defaultDomain.UUID); err != nil {
+		return fmt.Errorf("seed default domain roles: %w", err)
+	}
 	return nil
 }
