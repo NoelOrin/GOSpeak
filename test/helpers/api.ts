@@ -152,6 +152,43 @@ export async function createDomain(token: string, name: string): Promise<{ uuid:
   return assertSuccess(result);
 }
 
+export async function listDomainRoles(
+  token: string,
+  domainUUID: string,
+): Promise<{ roles: Array<{ name: string; is_system: boolean; permissions: string[] }>; assignable: string[] }> {
+  const result = await api(`/api/v1/domain/roles/list`, {
+    token,
+    body: { domain_uuid: domainUUID },
+  });
+  return assertSuccess(result);
+}
+
+export async function createDomainRole(
+  token: string,
+  domainUUID: string,
+  name: string,
+  permissions: string[],
+): Promise<unknown> {
+  const result = await api(`/api/v1/domain/roles/create`, {
+    token,
+    body: { domain_uuid: domainUUID, name, permissions },
+  });
+  return assertSuccess(result);
+}
+
+export async function updateDomainMemberRole(
+  token: string,
+  domainUUID: string,
+  userUUID: string,
+  roleName: string,
+): Promise<unknown> {
+  const result = await api(`/api/v1/domain/members/update-role`, {
+    token,
+    body: { domain_uuid: domainUUID, user_uuid: userUUID, role_name: roleName },
+  });
+  return assertSuccess(result);
+}
+
 export async function joinDomain(token: string, inviteCode: string): Promise<{ uuid: string }> {
   const result = await api<{ uuid: string }>("/api/v1/domain/join", {
     token,

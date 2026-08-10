@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { api, assertSuccess, createDomain, joinDomain, registerUser, unique } from "../helpers";
+import {
+  api,
+  assertSuccess,
+  createDomain,
+  createDomainRole,
+  joinDomain,
+  listDomainRoles,
+  registerUser,
+  unique,
+  updateDomainMemberRole,
+} from "../helpers";
 
 describe("domain module", () => {
   it("creates and reads a domain as its owner", async () => {
@@ -90,5 +100,28 @@ describe("domain module", () => {
       token: owner.access_token,
     });
     expect(mine.data?.some((item) => item.uuid === domain.uuid)).toBe(true);
+  });
+
+  it("creates per-domain role and assigns member", async () => {
+    const owner = await registerUser("domain_role_owner");
+    const created = await api<{ uuid: string }>("/api/v1/domain/create", {
+      token: owner.access_token,
+      body: { name: unique("role_domain"), is_public: false },
+    });
+    const domain = assertSuccess(created);
+
+    const roles = await listDomainRoles(owner.access_token, domain.uuid);
+    expect(roles.roles.some((r) => r.name === "owner")).toBe(true);
+    expect(roles.assignable).toContain("room:read");
+
+    const member = await registerUser("domain_role_member");
+    await joinDomain(member.access_token, domain.invite_code);
+    await createDomainRole(owner.access_token, domain.uuid, "moderator", ["room:read", "message:delete_others"]);
+    await updateDomainMemberRole(owner.access_token, domain.uuid, member.user.uuid, "moderator");
+
+    const after = await listDomainRoles(owner.access_token, domain.uuid);
+    expect(after.roles.find((r) => r.name === "moderator")?.permissions).toEqual(
+      expect.arrayContaining(["room:read", "message:delete_others"]),
+    );
   });
 });
