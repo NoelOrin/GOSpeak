@@ -119,6 +119,7 @@ func StartGin(env EnvEnum) error {
 	userSvc := service.NewUserService(userRepo, storageSvc)
 	userGroupSvc := service.NewUserGroupService(userGroupRepo)
 	oauthSvc := service.NewOAuthService(oauthProviderRepo, oauthAccountRepo, userRepo)
+	oauthSvc.SetAutoCreateUser(cfg.OAuthAutoCreateUser)
 	roomSvc := service.NewRoomService(roomRepo)
 	messageSvc := service.NewMessageService(messageRepo, roomRepo, domainSvc)
 	messageSvc.SetUserRepo(userRepo)
@@ -325,6 +326,8 @@ func StartGin(env EnvEnum) error {
 	cfMediaSvc := service.NewCloudflareMediaService(sfuConfigSvc.ResolveConfig)
 	if dp, ok := sfuProvider.(*factory.DynamicProvider); ok {
 		cfMediaSvc.SetSessionOwnerLookup(dp.SessionOwner)
+		cfMediaSvc.SetSessionDomainLookup(dp.SessionDomain)
+		cfMediaSvc.SetDomainMemberChecker(domainSvc.IsMember)
 	}
 	cfH := handler.NewCloudflareHandler(cfMediaSvc)
 	srsCallbackH := handler.NewSRSCallbackHandlerWithResolver(signalHub, func() string {
@@ -341,12 +344,13 @@ func StartGin(env EnvEnum) error {
 		srsCallbackH.SetJobs(jobQueue)
 	}
 
-	authH := handler.NewAuthHandler(authSvc)
+	authCookieCfg := handler.NewAuthCookieConfig(cfg)
+	authH := handler.NewAuthHandler(authSvc, authCookieCfg)
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)
 	emailConfigH := handler.NewEmailConfigHandler(emailConfigSvc)
 	userH := handler.NewUserHandler(userSvc, permSvc, storageSvc)
 	userGroupH := handler.NewUserGroupHandler(userGroupSvc, userSvc)
-	oauthH := handler.NewOAuthHandler(oauthSvc)
+	oauthH := handler.NewOAuthHandler(oauthSvc, authCookieCfg)
 	roleH := handler.NewRoleHandler(roleSvc)
 	clusterSvc := service.NewClusterService(repository.NewClusterNodeRepository(db), repository.NewServerAssignmentRepository(db))
 	clusterSvc.SetNotifier(eventBus)
@@ -402,6 +406,7 @@ func StartGin(env EnvEnum) error {
 		BotTokenChecker:     botSvc,
 		DomainChecker:       domainSvc.IsMember,
 		BlacklistChecker:    redis.IsBlacklistedErr,
+		AuthCookieName:      cfg.AccessCookieName,
 	})
 
 	var clusterHandler *handler.ClusterHandler
@@ -489,6 +494,7 @@ func StartGin(env EnvEnum) error {
 			Fanout:         wsFanout,
 			Handler:        wsHandler,
 			AllowedOrigins: wsAllowedOrigins(cfg),
+			AuthCookieName: cfg.AccessCookieName,
 			OnConnect: func(c *ws.Client) {
 				if err := signalHub.OnConnect(c); err != nil {
 					logger.WithComponent("WS").Warnf("on connect failed: %v", err)

@@ -1,8 +1,11 @@
 package service
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
+	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu/providers/cloudflare"
 )
 
@@ -64,6 +67,43 @@ func TestCloudflareMediaService_Operations_NonOwnerForbidden(t *testing.T) {
 
 	if client.addTracksCalled || client.renegotiateCalled || client.closeTracksCalled || client.deleteSessionCalled {
 		t.Fatal("media client must not be called for non-owner")
+	}
+}
+
+func TestCloudflareMediaService_RejectsNonDomainMember(t *testing.T) {
+	svc := NewCloudflareMediaService(nil)
+	svc.clientFactory = func() (cloudflareMediaClient, error) {
+		return &fakeCloudflareMediaClient{}, nil
+	}
+	svc.sessionOwner = func(sessionID string) (string, bool) {
+		return "uuid-alice", true
+	}
+	svc.sessionDomain = func(sessionID string) (string, bool) {
+		return "dom-1", true
+	}
+	svc.domainMember = func(domainUUID, userUUID string) bool {
+		return userUUID == "uuid-member"
+	}
+	_, err := svc.AddTracks("sess-1", "uuid-alice", &cloudflare.TrackRequest{})
+	if err == nil {
+		t.Fatal("expected FORBIDDEN for non-domain-member owner")
+	}
+	assertForbidden(t, err)
+}
+
+func TestCloudflareMediaService_RejectsOversizedSessionID(t *testing.T) {
+	svc := NewCloudflareMediaService(nil)
+	svc.clientFactory = func() (cloudflareMediaClient, error) {
+		return &fakeCloudflareMediaClient{}, nil
+	}
+	svc.sessionOwner = func(sessionID string) (string, bool) {
+		return "uuid-owner", true
+	}
+	longID := strings.Repeat("s", 129)
+	_, err := svc.AddTracks(longID, "uuid-owner", &cloudflare.TrackRequest{})
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.INVALID_PARAMS {
+		t.Fatalf("want INVALID_PARAMS, got %v", err)
 	}
 }
 

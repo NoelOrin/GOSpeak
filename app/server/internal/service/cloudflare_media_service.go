@@ -22,6 +22,8 @@ type CloudflareMediaService struct {
 	resolve       func() (*config.Config, error)
 	clientFactory func() (cloudflareMediaClient, error)
 	sessionOwner  func(sessionID string) (string, bool)
+	sessionDomain func(sessionID string) (string, bool)
+	domainMember  func(domainUUID, userUUID string) bool
 }
 
 func NewCloudflareMediaService(resolve func() (*config.Config, error)) *CloudflareMediaService {
@@ -33,6 +35,16 @@ func NewCloudflareMediaService(resolve func() (*config.Config, error)) *Cloudfla
 // SetSessionOwnerLookup injects sessionID → ownerUUID lookup for IDOR protection.
 func (s *CloudflareMediaService) SetSessionOwnerLookup(lookup func(sessionID string) (string, bool)) {
 	s.sessionOwner = lookup
+}
+
+// SetSessionDomainLookup 注入 sessionID → domainUUID 查询。
+func (s *CloudflareMediaService) SetSessionDomainLookup(lookup func(sessionID string) (string, bool)) {
+	s.sessionDomain = lookup
+}
+
+// SetDomainMemberChecker 注入 Domain 成员校验函数。
+func (s *CloudflareMediaService) SetDomainMemberChecker(checker func(domainUUID, userUUID string) bool) {
+	s.domainMember = checker
 }
 
 func (s *CloudflareMediaService) defaultClient() (cloudflareMediaClient, error) {
@@ -56,6 +68,17 @@ func (s *CloudflareMediaService) client() (cloudflareMediaClient, error) {
 	return s.clientFactory()
 }
 
+// validateSessionID 校验 Cloudflare session 标识：非空且长度受限。
+func validateSessionID(sessionID string) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return pkg.NewAppError(pkg.INVALID_PARAMS, "sessionId is required")
+	}
+	if len(sessionID) > 128 {
+		return pkg.NewAppError(pkg.INVALID_PARAMS, "sessionId is too long")
+	}
+	return nil
+}
+
 func (s *CloudflareMediaService) authorizeSession(sessionID, userUUID string) error {
 	if strings.TrimSpace(userUUID) == "" {
 		return pkg.NewAppError(pkg.FORBIDDEN, "session owner is required")
@@ -67,12 +90,19 @@ func (s *CloudflareMediaService) authorizeSession(sessionID, userUUID string) er
 	if !ok || owner != userUUID {
 		return pkg.NewAppError(pkg.FORBIDDEN, "not the session owner")
 	}
+	if s.sessionDomain != nil && s.domainMember != nil {
+		if domainUUID, ok := s.sessionDomain(sessionID); ok && domainUUID != "" {
+			if !s.domainMember(domainUUID, userUUID) {
+				return pkg.NewAppError(pkg.FORBIDDEN, "not a member of the session domain")
+			}
+		}
+	}
 	return nil
 }
 
 func (s *CloudflareMediaService) AddTracks(sessionID, userUUID string, req *cloudflare.TrackRequest) (*cloudflare.TracksResponse, error) {
-	if strings.TrimSpace(sessionID) == "" {
-		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "sessionId is required")
+	if err := validateSessionID(sessionID); err != nil {
+		return nil, err
 	}
 	if err := s.authorizeSession(sessionID, userUUID); err != nil {
 		return nil, err
@@ -89,8 +119,8 @@ func (s *CloudflareMediaService) AddTracks(sessionID, userUUID string, req *clou
 }
 
 func (s *CloudflareMediaService) Renegotiate(sessionID, userUUID string, req *cloudflare.RenegotiateRequest) error {
-	if strings.TrimSpace(sessionID) == "" {
-		return pkg.NewAppError(pkg.INVALID_PARAMS, "sessionId is required")
+	if err := validateSessionID(sessionID); err != nil {
+		return err
 	}
 	if req == nil || req.SessionDescription.SDP == "" {
 		return pkg.NewAppError(pkg.INVALID_PARAMS, "sessionDescription is required")
@@ -109,8 +139,8 @@ func (s *CloudflareMediaService) Renegotiate(sessionID, userUUID string, req *cl
 }
 
 func (s *CloudflareMediaService) CloseTracks(sessionID, userUUID string, req *cloudflare.CloseTrackRequest) (*cloudflare.CloseTrackResponse, error) {
-	if strings.TrimSpace(sessionID) == "" {
-		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "sessionId is required")
+	if err := validateSessionID(sessionID); err != nil {
+		return nil, err
 	}
 	if err := s.authorizeSession(sessionID, userUUID); err != nil {
 		return nil, err
@@ -127,8 +157,8 @@ func (s *CloudflareMediaService) CloseTracks(sessionID, userUUID string, req *cl
 }
 
 func (s *CloudflareMediaService) DeleteSession(sessionID, userUUID string) error {
-	if strings.TrimSpace(sessionID) == "" {
-		return pkg.NewAppError(pkg.INVALID_PARAMS, "sessionId is required")
+	if err := validateSessionID(sessionID); err != nil {
+		return err
 	}
 	if err := s.authorizeSession(sessionID, userUUID); err != nil {
 		return err

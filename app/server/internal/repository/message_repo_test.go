@@ -59,3 +59,25 @@ func TestMessageRepo_ListBefore(t *testing.T) {
 	}
 	_ = hasMore2
 }
+
+func TestEnsureMentions_Idempotent(t *testing.T) {
+	db := setupMsgDB(t)
+	repo := NewMessageRepository(db)
+	rows := []model.MessageMention{
+		{MessageUUID: "m1", UserID: "u1"},
+		{MessageUUID: "m1", UserID: "u2"},
+	}
+	if err := repo.EnsureMentions(rows); err != nil {
+		t.Fatalf("first ensure: %v", err)
+	}
+	if err := repo.EnsureMentions(rows); err != nil {
+		t.Fatalf("second ensure: %v", err)
+	}
+	var count int64
+	if err := db.Model(&model.MessageMention{}).Where("message_uuid = ?", "m1").Count(&count).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 mentions after idempotent insert, got %d", count)
+	}
+}

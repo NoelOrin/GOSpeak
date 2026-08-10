@@ -63,6 +63,9 @@ export function createDomainStore() {
 			if (version === myDomainsVersion) {
 				setState("myDomainUUIDs", uuids);
 			}
+		} catch (error) {
+			console.error("loadMyDomains failed:", error);
+			throw error;
 		} finally {
 			myDomainsPending -= 1;
 			if (myDomainsPending === 0) {

@@ -36,6 +36,7 @@ type Dependencies struct {
 	BotTokenChecker     botTokenChecker
 	DomainChecker       func(domainUUID, userUUID string) bool
 	BlacklistChecker    BlacklistChecker
+	AuthCookieName      string
 }
 
 // Auth 持有不可变依赖快照，生产路径由 Configure 一次注入。
@@ -97,25 +98,6 @@ func SetBotTokenChecker(btc botTokenChecker) {
 // VerifyToken 校验 HTTP 可用的 access/bot token。
 func VerifyToken(tokenStr string) (*pkg.Claims, pkg.ErrCode) {
 	return verifyToken(tokenStr, pkg.AccessTokenType, pkg.BotTokenType)
-}
-
-// VerifyWSTicket 校验 WebSocket 短时 ticket。
-func VerifyWSTicket(tokenStr string) (*pkg.Claims, pkg.ErrCode) {
-	claims, code := verifyToken(tokenStr, pkg.WSTicketType)
-	if code != pkg.SUCCESS {
-		return nil, code
-	}
-	if pkg.WSTicketExpired(claims) {
-		return nil, pkg.TOKEN_EXPIRED
-	}
-	if checker := currentAuth().deps.BlacklistChecker; checker != nil {
-		if revoked, err := checker("ws:" + claims.UserUUID); err != nil {
-			return nil, pkg.INTERNAL_ERROR
-		} else if revoked {
-			return nil, pkg.TOKEN_REVOKED
-		}
-	}
-	return claims, pkg.SUCCESS
 }
 
 func verifyToken(tokenStr string, allowedTypes ...string) (*pkg.Claims, pkg.ErrCode) {
@@ -188,7 +170,11 @@ func JWTAuth() gin.HandlerFunc {
 		tokenHeader := c.Request.Header.Get("Authorization")
 		// EventSource 无法自定义 Header，允许 HttpOnly cookie 作为统一鉴权兜底。
 		if tokenHeader == "" {
-			if cookie, err := c.Request.Cookie("gospeak_token"); err == nil {
+			name := currentAuth().deps.AuthCookieName
+			if name == "" {
+				name = "gospeak_token"
+			}
+			if cookie, err := c.Request.Cookie(name); err == nil {
 				tokenHeader = cookie.Value
 			}
 		}
@@ -373,6 +359,10 @@ func CORS(origins []string) gin.HandlerFunc {
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization")
 			c.Header("Access-Control-Max-Age", "86400")
+		}
+		// Cookie 鉴权需要显式携带凭据；通配来源与 credentials 互斥，只对白名单来源开启。
+		if matched != "" {
+			c.Header("Access-Control-Allow-Credentials", "true")
 		}
 
 		if c.Request.Method == http.MethodOptions {

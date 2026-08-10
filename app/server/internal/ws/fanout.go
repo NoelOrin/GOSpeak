@@ -7,6 +7,9 @@ import (
 	"sync/atomic"
 )
 
+// broadcastWorkers 限制单次广播的并发发送 goroutine 数，避免大房间每消息 N goroutine。
+const broadcastWorkers = 8
+
 // Fanout 实现 Broadcaster 接口。
 // 房间名使用复合键（由 signal.roomKey 生成）以支持 Domain 命名空间隔离。
 // 线程安全，读写分离（广播时只加 RLock）。
@@ -117,14 +120,36 @@ func (f *Fanout) sendAll(targets []*Client, payload interface{}) {
 		return
 	}
 	atomic.AddUint64(&f.marshalCount, 1)
-	var wg sync.WaitGroup
-	for _, c := range targets {
-		wg.Add(1)
-		go func(c *Client) {
-			defer wg.Done()
-			c.sendRaw(data)
-		}(c)
+	if len(targets) == 0 {
+		return
 	}
+	if len(targets) <= broadcastWorkers {
+		var wg sync.WaitGroup
+		for _, c := range targets {
+			wg.Add(1)
+			go func(c *Client) {
+				defer wg.Done()
+				c.sendRaw(data)
+			}(c)
+		}
+		wg.Wait()
+		return
+	}
+	jobs := make(chan *Client)
+	var wg sync.WaitGroup
+	for i := 0; i < broadcastWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for c := range jobs {
+				c.sendRaw(data)
+			}
+		}()
+	}
+	for _, c := range targets {
+		jobs <- c
+	}
+	close(jobs)
 	wg.Wait()
 }
 

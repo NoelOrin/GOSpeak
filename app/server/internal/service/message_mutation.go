@@ -37,6 +37,9 @@ func (s *MessageService) Edit(roomUUID, messageUUID string, actor MessageActor, 
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.NOT_FOUND, "message not found")
 	}
+	if msg.DeletedAt.Valid {
+		return nil, pkg.NewAppError(pkg.NOT_FOUND, "message not found")
+	}
 	if msg.RoomUUID != roomUUID {
 		return nil, pkg.NewAppError(pkg.NOT_FOUND, "message not found")
 	}

@@ -5,41 +5,39 @@ vi.mock("./apiClient", () => ({
 }));
 
 import apiClient from "./apiClient";
-import { getWSTicket } from "./ws";
+import { getWSEndpoint } from "./ws";
 
-describe("getWSTicket", () => {
+describe("getWSEndpoint", () => {
 	beforeEach(() => {
 		vi.mocked(apiClient.get).mockReset();
 	});
 
 	it("passes domain_uuid for worker-aware reconnect", async () => {
 		vi.mocked(apiClient.get).mockResolvedValue({
-			ticket: "ticket-1",
 			url: "https://entry.example/ws?worker=worker-1",
 		});
 
-		const result = await getWSTicket("domain-a");
+		const result = await getWSEndpoint("domain-a");
 
 		expect(apiClient.get).toHaveBeenCalledWith(
 			expect.objectContaining({
-				url: "/api/v1/signal/ws-ticket",
+				url: "/api/v1/signal/ws-endpoint",
 				params: { domain_uuid: "domain-a" },
 			}),
 		);
 		expect(result).toEqual({
-			token: "ticket-1",
 			url: "https://entry.example/ws?worker=worker-1",
 		});
 	});
 
 	it("omits params when no domain is active", async () => {
-		vi.mocked(apiClient.get).mockResolvedValue({ ticket: "ticket-1" });
+		vi.mocked(apiClient.get).mockResolvedValue({});
 
-		const result = await getWSTicket();
+		const result = await getWSEndpoint();
 
 		expect(apiClient.get).toHaveBeenCalledWith(
 			expect.objectContaining({
-				url: "/api/v1/signal/ws-ticket",
+				url: "/api/v1/signal/ws-endpoint",
 				params: undefined,
 			}),
 		);

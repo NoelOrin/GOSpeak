@@ -1,5 +1,4 @@
 import apiClient from "./apiClient";
-import { requestAccessTokenByRefreshToken } from "./authTransport";
 
 export interface LoginReq {
 	username: string;
@@ -18,8 +17,6 @@ export interface BackendUser {
 }
 
 export interface LoginData {
-	access_token: string;
-	refresh_token: string;
 	user: BackendUser;
 	need_change_password: boolean;
 }
@@ -34,14 +31,9 @@ export async function login(req: LoginReq): Promise<LoginData> {
 	return data;
 }
 
-export async function refreshToken(refreshToken: string): Promise<string> {
-	return requestAccessTokenByRefreshToken(refreshToken);
-}
-
-export async function logout(refreshToken?: string): Promise<void> {
+export async function logout(): Promise<void> {
 	await apiClient.post({
 		url: "/api/v1/auth/logout",
-		data: { refresh_token: refreshToken || "" },
 	});
 }
 

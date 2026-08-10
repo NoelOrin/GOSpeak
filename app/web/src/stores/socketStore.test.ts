@@ -35,7 +35,7 @@ vi.mock("@/socket/wsClient", () => ({
 }));
 
 vi.mock("@/api/ws", () => ({
-	getWSTicket: vi.fn(async () => ({ token: "ticket" })),
+	getWSEndpoint: vi.fn(async () => ({})),
 }));
 
 vi.mock("@/socket/tabLock", () => ({
@@ -71,7 +71,7 @@ vi.mock("@/stores/chatStore", () => ({
 
 vi.mock("@/stores/userStore", () => ({
 	default: {
-		accessToken: () => "token",
+		isLoggedIn: () => true,
 		user: () => ({ id: "1", name: "alice" }),
 	},
 }));
@@ -107,10 +107,7 @@ describe("socketStore worker routing", () => {
 		const url = await socketStore.connectToWorker("wss://worker-a.example");
 
 		expect(url).toBe("wss://worker-a.example");
-		expect(mockAdapter.connect).toHaveBeenCalledWith(
-			"wss://worker-a.example",
-			"ticket",
-		);
+		expect(mockAdapter.connect).toHaveBeenCalledWith("wss://worker-a.example");
 		expect(mockTabLock.claim).toHaveBeenCalledTimes(1);
 		expect(mockAdapter.onServerEvent.mock.calls.length).toBeGreaterThan(0);
 	});

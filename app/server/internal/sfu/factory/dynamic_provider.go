@@ -19,6 +19,10 @@ type sessionOwnerLookup interface {
 	SessionOwner(sessionID string) (string, bool)
 }
 
+type sessionDomainLookup interface {
+	SessionDomain(sessionID string) (string, bool)
+}
+
 type DynamicProvider struct {
 	resolve           ConfigResolver
 	mu                sync.RWMutex
@@ -104,6 +108,18 @@ func (p *DynamicProvider) SessionOwner(sessionID string) (string, bool) {
 	}
 	if lp, ok := provider.(sessionOwnerLookup); ok {
 		return lp.SessionOwner(sessionID)
+	}
+	return "", false
+}
+
+// SessionDomain 返回 provider session 所属 Domain（受支持时）。
+func (p *DynamicProvider) SessionDomain(sessionID string) (string, bool) {
+	provider, err := p.current()
+	if err != nil {
+		return "", false
+	}
+	if lp, ok := provider.(sessionDomainLookup); ok {
+		return lp.SessionDomain(sessionID)
 	}
 	return "", false
 }

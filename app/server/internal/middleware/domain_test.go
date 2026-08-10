@@ -237,3 +237,23 @@ func TestIsDomainMember_DelegatesToChecker(t *testing.T) {
 		t.Fatal("expected member to be allowed")
 	}
 }
+
+func TestRequireDomainMember_OversizedBodyRejected(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("user_uuid", "uuid-user")
+		c.Next()
+	})
+	r.POST("/test", RequireDomainMember(), func(c *gin.Context) {
+		c.Status(200)
+	})
+	body := strings.Repeat("a", maxDomainBodyBytes+1)
+	req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}

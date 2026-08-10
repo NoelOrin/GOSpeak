@@ -13,7 +13,6 @@ import Users from "lucide-solid/icons/users";
 import XCircle from "lucide-solid/icons/x-circle";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { ManageHeader, ManagePage } from "@/components/manage/ManageShell";
-import userStore from "@/stores/userStore";
 import { hasPermission } from "@/utils/permissions";
 
 interface HealthSnapshot {
@@ -83,12 +82,11 @@ function MonitorPage() {
 	let abortController: AbortController | null = null;
 
 	onMount(() => {
-		const token = userStore.accessToken();
 		abortController = new AbortController();
 		void (async () => {
 			try {
 				const res = await fetch("/api/v1/system/stream", {
-					headers: { Authorization: `Bearer ${token}` },
+					credentials: "include",
 					signal: abortController?.signal,
 				});
 				if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);

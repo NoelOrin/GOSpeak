@@ -15,7 +15,7 @@ func RegisterProtected(r *gin.RouterGroup, h *handler.SignalHandler, cf *handler
 	r.GET("/rooms", h.ListRooms)
 	r.GET("/participants", h.ListParticipants)
 	r.POST("/token", h.GetJoinToken)
-	r.GET("/ws-ticket", h.GetWSTicket)
+	r.GET("/ws-endpoint", h.GetWSEndpoint)
 	if cf != nil {
 		r.POST("/cloudflare/sessions/:sessionId/tracks/new", cf.AddTracks)
 		r.PUT("/cloudflare/sessions/:sessionId/renegotiate", cf.Renegotiate)

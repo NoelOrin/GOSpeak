@@ -19,6 +19,8 @@ import (
 //go:embed templates/verification_code.html
 var verificationCodeHTMLTmpl string
 
+var verificationCodeTmpl = template.Must(template.New("verification_code").Parse(verificationCodeHTMLTmpl))
+
 var sceneLabels = map[string]string{
 	"register":       "注册账号",
 	"reset_password": "重置密码",
@@ -82,13 +84,8 @@ func (s *EmailService) SendVerificationCode(email, scene, code string) error {
 		Year:       time.Now().Year(),
 	}
 
-	tmpl, err := template.New("verification_code").Parse(verificationCodeHTMLTmpl)
-	if err != nil {
-		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-
 	htmlBuf := &bytes.Buffer{}
-	if err := tmpl.Execute(htmlBuf, tmplData); err != nil {
+	if err := verificationCodeTmpl.Execute(htmlBuf, tmplData); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 

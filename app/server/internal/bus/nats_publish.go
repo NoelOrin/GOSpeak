@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 )
 
 func (b *NATSBus) publish(ctx context.Context, subject string, env Envelope) error {
@@ -66,6 +67,11 @@ func (b *NATSBus) enqueuePending(subject string, env Envelope) {
 		return
 	}
 	b.pending = append(b.pending, pendingEnvelope{subject: subject, env: env})
+	if b.wal != nil {
+		if err := b.wal.Append(subject, env); err != nil {
+			log.Printf("[EventBus] wal append failed, keeping in memory only: %v", err)
+		}
+	}
 }
 
 // flushPending 在重连后重放断线期间缓存的事件。重放失败不再入队，
@@ -80,9 +86,24 @@ func (b *NATSBus) flushPending() {
 		if err != nil {
 			continue
 		}
-		if err := b.nc.Publish(p.subject, data); err != nil {
+		var publishErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			if err := b.nc.Publish(p.subject, data); err == nil {
+				publishErr = nil
+				break
+			} else {
+				publishErr = err
+				time.Sleep(200 * time.Millisecond)
+			}
+		}
+		if publishErr != nil {
 			b.droppedPublish.Add(1)
-			log.Printf("[EventBus] pending publish replay failed: %s %s: %v", p.env.Scope, p.env.Event, err)
+			log.Printf("[EventBus] pending publish replay failed: %s %s: %v", p.env.Scope, p.env.Event, publishErr)
+		}
+	}
+	if b.wal != nil {
+		if err := b.wal.Truncate(); err != nil {
+			log.Printf("[EventBus] wal truncate failed: %v", err)
 		}
 	}
 }

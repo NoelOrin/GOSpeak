@@ -13,6 +13,17 @@ import (
 	nhooyrws "nhooyr.io/websocket"
 )
 
+func wsDialOptionsWithCookie(token string) *nhooyrws.DialOptions {
+	return &nhooyrws.DialOptions{
+		Subprotocols: []string{"gospeak"},
+		HTTPHeader: http.Header{
+			"Cookie": {accessCookieName + "=" + token},
+		},
+	}
+}
+
+const accessCookieName = "gospeak_token"
+
 func TestNewConnID_UniquePerConnection(t *testing.T) {
 	first := newConnID("uuid-1", "user-1")
 	second := newConnID("uuid-1", "user-1")
@@ -30,9 +41,9 @@ func TestNewConnID_UniquePerConnection(t *testing.T) {
 // TestUpgrader_E2E_Lifecycle verifies the full ws.Client lifecycle through Upgrader:
 // upgrade → auth → fanout.Add → OnConnect → read loop → disconnect → fanout.Remove.
 func TestUpgrader_E2E_Lifecycle(t *testing.T) {
-	token, err := pkg.GenerateWSTicket("e2e-user", "E2E User", "e2e-uuid", "user", 1)
+	token, err := pkg.GenerateToken("e2e-user", "E2E User", "e2e-uuid", "user", 1)
 	if err != nil {
-		t.Fatalf("GenerateWSTicket: %v", err)
+		t.Fatalf("GenerateToken: %v", err)
 	}
 
 	connected := make(chan *Client, 1)
@@ -72,9 +83,7 @@ func TestUpgrader_E2E_Lifecycle(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, resp, err := nhooyrws.Dial(ctx, wsURL, &nhooyrws.DialOptions{
-		Subprotocols: []string{"gospeak", token},
-	})
+	conn, resp, err := nhooyrws.Dial(ctx, wsURL, wsDialOptionsWithCookie(token))
 	if err != nil {
 		t.Fatalf("Dial: %v (status=%d)", err, resp.StatusCode)
 	}
@@ -173,9 +182,9 @@ func TestUpgrader_E2E_Unauthenticated(t *testing.T) {
 // TestUpgrader_E2E_OnConnectPanicClosesClient verifies an accepted connection is
 // explicitly closed when OnConnect panics before the read loop starts.
 func TestUpgrader_E2E_OnConnectPanicClosesClient(t *testing.T) {
-	token, err := pkg.GenerateWSTicket("e2e-user", "E2E User", "e2e-uuid", "user", 1)
+	token, err := pkg.GenerateToken("e2e-user", "E2E User", "e2e-uuid", "user", 1)
 	if err != nil {
-		t.Fatalf("GenerateWSTicket: %v", err)
+		t.Fatalf("GenerateToken: %v", err)
 	}
 
 	connected := make(chan *Client, 1)
@@ -196,9 +205,7 @@ func TestUpgrader_E2E_OnConnectPanicClosesClient(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, _, err := nhooyrws.Dial(ctx, "ws://"+server.Listener.Addr().String()+"/ws", &nhooyrws.DialOptions{
-		Subprotocols: []string{"gospeak", token},
-	})
+	conn, _, err := nhooyrws.Dial(ctx, "ws://"+server.Listener.Addr().String()+"/ws", wsDialOptionsWithCookie(token))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -225,9 +232,9 @@ func TestUpgrader_E2E_OnConnectPanicClosesClient(t *testing.T) {
 // TestUpgrader_E2E_LargeMessageWithin64K verifies a message between nhooyr's default
 // 32KB limit and the configured 64KB limit is accepted and does not kill the loop.
 func TestUpgrader_E2E_LargeMessageWithin64K(t *testing.T) {
-	token, err := pkg.GenerateWSTicket("e2e-user", "E2E User", "e2e-uuid", "user", 1)
+	token, err := pkg.GenerateToken("e2e-user", "E2E User", "e2e-uuid", "user", 1)
 	if err != nil {
-		t.Fatalf("GenerateWSTicket: %v", err)
+		t.Fatalf("GenerateToken: %v", err)
 	}
 
 	handler := NewHandlerRegistry()
@@ -248,9 +255,7 @@ func TestUpgrader_E2E_LargeMessageWithin64K(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, _, err := nhooyrws.Dial(ctx, "ws://"+server.Listener.Addr().String()+"/ws", &nhooyrws.DialOptions{
-		Subprotocols: []string{"gospeak", token},
-	})
+	conn, _, err := nhooyrws.Dial(ctx, "ws://"+server.Listener.Addr().String()+"/ws", wsDialOptionsWithCookie(token))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}

@@ -101,8 +101,8 @@ jobs:
       - name: Test
         working-directory: app/server
         env:
-          CGO_ENABLED: 0
-        run: go test ./... -v -count=1
+          CGO_ENABLED: 1
+        run: go test ./... -race -v -count=1
 
   # ── Frontend Web: Build ──────────────────────────────────────────────
   build-web:

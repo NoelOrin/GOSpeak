@@ -62,51 +62,68 @@ const loadPersistedState = async (): Promise<SelfVoiceChatState> => {
 
 const [store, setStore] = createStore<SelfVoiceChatState>(initialState);
 
-void loadPersistedState().then((state) => {
-	setStore({
-		...state,
-		otherMemberState: normalizeOtherMemberState(state.otherMemberState),
+// 用户是否已主动修改过状态；若持久化加载完成前用户已操作，不再用旧值覆盖。
+let userModified = false;
+
+function markModified<T extends (...args: any[]) => unknown>(fn: T): T {
+	return ((...args: any[]) => {
+		userModified = true;
+		return fn(...args);
+	}) as T;
+}
+
+void loadPersistedState()
+	.then((state) => {
+		if (userModified) return;
+		setStore({
+			...state,
+			otherMemberState: normalizeOtherMemberState(state.otherMemberState),
+		});
+	})
+	.catch((error) => {
+		console.error("Failed to load persisted voice chat state:", error);
 	});
-});
 
 const voiceChatActions = {
 	// 设置音频输入是否静音
-	setIsInputMute(isMute: boolean) {
+	setIsInputMute: markModified((isMute: boolean) => {
 		setStore("isInputMute", isMute);
-	},
+	}),
 	// 设置音频输出是否静音
-	setIsOutMute(isOutMute: boolean) {
+	setIsOutMute: markModified((isOutMute: boolean) => {
 		setStore("isOutMute", isOutMute);
-	},
+	}),
 	// 设置视频输出是否静音
-	setIsVideoMute(isVideoMute: boolean) {
+	setIsVideoMute: markModified((isVideoMute: boolean) => {
 		setStore("isVideoMute", isVideoMute);
-	},
+	}),
 
 	// 设置音频输入音量
-	setInputVolume(inputVolume: number) {
+	setInputVolume: markModified((inputVolume: number) => {
 		setStore("inputVolume", inputVolume);
-	},
+	}),
 	// 设置音频输出音量
-	setOutputVolume(outputVolume: number) {
+	setOutputVolume: markModified((outputVolume: number) => {
 		setStore("outputVolume", outputVolume);
-	},
+	}),
 	// 设置视频输出音量
-	setVideoVolume(videoVolume: number) {
+	setVideoVolume: markModified((videoVolume: number) => {
 		setStore("videoVolume", videoVolume);
-	},
-	setMemberOutputVolume(identity: string, outputVolume: number) {
-		setStore("otherMemberState", identity, {
-			outputVolume,
-			isMute: store.otherMemberState[identity]?.isMute ?? false,
-		});
-	},
-	setMemberMute(identity: string, isMute: boolean) {
+	}),
+	setMemberOutputVolume: markModified(
+		(identity: string, outputVolume: number) => {
+			setStore("otherMemberState", identity, {
+				outputVolume,
+				isMute: store.otherMemberState[identity]?.isMute ?? false,
+			});
+		},
+	),
+	setMemberMute: markModified((identity: string, isMute: boolean) => {
 		setStore("otherMemberState", identity, {
 			outputVolume: store.otherMemberState[identity]?.outputVolume ?? 100,
 			isMute,
 		});
-	},
+	}),
 	memberState(identity: string): MemberVoiceChatState {
 		return (
 			store.otherMemberState[identity] || {

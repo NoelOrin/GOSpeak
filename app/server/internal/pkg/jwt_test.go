@@ -33,24 +33,6 @@ func TestTokenTypesAreDistinct(t *testing.T) {
 		t.Fatal("refresh token must be accepted as refresh token")
 	}
 
-	ticket, err := GenerateWSTicket("alice", "Alice", "uuid-alice", "user", 1)
-	if err != nil {
-		t.Fatalf("GenerateWSTicket: %v", err)
-	}
-	ticketClaims, err := ParseToken(ticket)
-	if err != nil {
-		t.Fatalf("parse ws ticket: %v", err)
-	}
-	if ticketClaims.TokenType != WSTicketType {
-		t.Fatalf("expected ws ticket type %q, got %q", WSTicketType, ticketClaims.TokenType)
-	}
-	if !IsWSTicket(ticketClaims) {
-		t.Fatal("ws ticket must be recognized by IsWSTicket")
-	}
-	if IsRefreshToken(ticketClaims) {
-		t.Fatal("ws ticket must not be accepted as refresh token")
-	}
-
 	bot, err := GenerateBotToken("bot", "Bot", "uuid-bot", "bot", 1, []string{"signal:kick"}, false)
 	if err != nil {
 		t.Fatalf("GenerateBotToken: %v", err)

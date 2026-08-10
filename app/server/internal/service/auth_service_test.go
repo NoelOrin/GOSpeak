@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"testing"
 
 	"GOSpeak/internal/config"
@@ -62,6 +63,37 @@ func createUser(t *testing.T, svc *AuthService, name, password string, version u
 	return user
 }
 
+func TestAuthService_Login_UnknownUserGenericMessage(t *testing.T) {
+	svc := newTestAuthService(t)
+	_, err := svc.Login(&LoginRequest{Username: "nobody", Password: "x"})
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("want AppError, got %v", err)
+	}
+	if appErr.Code != pkg.USER_NOT_FOUND || appErr.Message != "invalid credentials" {
+		t.Fatalf("got code=%d msg=%q, want USER_NOT_FOUND + generic message", appErr.Code, appErr.Message)
+	}
+}
+
+func TestAuthService_ChangePassword_RejectsShortPassword(t *testing.T) {
+	svc := newTestAuthService(t)
+	user := createUser(t, svc, "alice", "old-pass", 1)
+	err := svc.ChangePassword(user.Name, "old-pass", "short")
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.INVALID_PARAMS {
+		t.Fatalf("want INVALID_PARAMS, got %v", err)
+	}
+}
+
+func TestAuthService_Register_RejectsShortPassword(t *testing.T) {
+	svc := newTestAuthService(t)
+	_, err := svc.Register(&RegisterRequest{Username: "bob", Password: "short"})
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.INVALID_PARAMS {
+		t.Fatalf("want INVALID_PARAMS, got %v", err)
+	}
+}
+
 func newTestAuthServiceWithEmail(t *testing.T) *AuthService {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -101,16 +133,6 @@ func TestAuthService_RefreshFromToken_RejectsNonRefreshTokens(t *testing.T) {
 	}
 	if _, err := svc.RefreshFromToken(access); err == nil {
 		t.Fatal("access token must not be usable as refresh token")
-	} else {
-		checkAppErrCode(t, err, pkg.TOKEN_WRONG)
-	}
-
-	ticket, err := pkg.GenerateWSTicket("alice", "Alice", "uuid-alice", "user", 1)
-	if err != nil {
-		t.Fatalf("GenerateWSTicket: %v", err)
-	}
-	if _, err := svc.RefreshFromToken(ticket); err == nil {
-		t.Fatal("ws ticket must not be usable as refresh token")
 	} else {
 		checkAppErrCode(t, err, pkg.TOKEN_WRONG)
 	}

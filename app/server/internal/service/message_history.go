@@ -8,7 +8,7 @@ import (
 // ListHistory returns paginated message history for a room, newest first.
 // limit is clamped to [50, 200]; default 100.
 // Returns items (ASC, oldest-first), hasMore, nextBefore cursor, error.
-func (s *MessageService) ListHistory(roomUUID string, actor MessageActor, before string, limit int) (items []MessageDTO, hasMore bool, nextBefore string, err error) {
+func (s *MessageService) ListHistory(roomUUID string, actor MessageActor, before string, limit int, password string) (items []MessageDTO, hasMore bool, nextBefore string, err error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -26,7 +26,7 @@ func (s *MessageService) ListHistory(roomUUID string, actor MessageActor, before
 	if model.NormalizeRoomType(room.Type) != model.RoomTypeText {
 		return nil, false, "", pkg.NewAppError(pkg.FORBIDDEN, "not a text room")
 	}
-	if err := s.requireDomainMembership(room, actor); err != nil {
+	if err := s.requireRoomAccess(room, actor, password); err != nil {
 		return nil, false, "", err
 	}
 
@@ -67,7 +67,7 @@ func (s *MessageService) ListHistory(roomUUID string, actor MessageActor, before
 // Search 返回文本房间内匹配 content 的最新消息，用于全文搜索 UI。
 
 // Search 返回文本房间内匹配 content 的最新消息，用于全文搜索 UI。
-func (s *MessageService) Search(roomUUID string, actor MessageActor, query string) ([]MessageDTO, error) {
+func (s *MessageService) Search(roomUUID string, actor MessageActor, query, password string) ([]MessageDTO, error) {
 	room, err := s.roomRepo.GetByUUID(roomUUID)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.NOT_FOUND, "room not found")
@@ -75,7 +75,7 @@ func (s *MessageService) Search(roomUUID string, actor MessageActor, query strin
 	if model.NormalizeRoomType(room.Type) != model.RoomTypeText {
 		return nil, pkg.NewAppError(pkg.FORBIDDEN, "not a text room")
 	}
-	if err := s.requireDomainMembership(room, actor); err != nil {
+	if err := s.requireRoomAccess(room, actor, password); err != nil {
 		return nil, err
 	}
 	rows, err := s.msgRepo.Search(roomUUID, query, 100)
@@ -99,6 +99,24 @@ func (s *MessageService) Search(roomUUID string, actor MessageActor, query strin
 	s.enrichMentions(items)
 	s.enrichAuthorInfo(items)
 	return items, nil
+}
+
+// requireRoomAccess 校验房间访问权：Domain 房间走成员校验；
+// 平台级私密房间要求调用者提供正确密码（创建者免密）。
+func (s *MessageService) requireRoomAccess(room *model.Room, actor MessageActor, password string) error {
+	if room.DomainUUID != "" {
+		return s.requireDomainMembership(room, actor)
+	}
+	if room.Password == "" {
+		return nil
+	}
+	if actor.UserUUID != "" && room.CreatedBy == actor.Identity {
+		return nil
+	}
+	if pkg.VerifyPassword(room.Password, password) {
+		return nil
+	}
+	return pkg.NewAppError(pkg.FORBIDDEN, "room password required")
 }
 
 // enrichMentions 批量回填消息 DTO 的 mentions。

@@ -46,8 +46,10 @@ func errToHTTPStatus(code ErrCode) int {
 		return http.StatusOK
 	case TOKEN_NOT_EXIST, TOKEN_WRONG, TOKEN_EXPIRED, TOKEN_REVOKED:
 		return http.StatusUnauthorized
-	case INVALID_PASSWORD, USER_NOT_FOUND, USERNAME_EXISTS, EMAIL_ALREADY_EXISTS:
-		// 登录/注册业务错误：避免与 token 鉴权 401 混淆
+	case INVALID_PASSWORD, USER_NOT_FOUND:
+		// 登录失败统一 401，避免通过状态码枚举用户名
+		return http.StatusUnauthorized
+	case USERNAME_EXISTS, EMAIL_ALREADY_EXISTS:
 		return http.StatusBadRequest
 	case FORBIDDEN, USER_BANNED, USER_MUTED, PASSWORD_RESET_DISABLED:
 		return http.StatusForbidden

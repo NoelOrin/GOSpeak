@@ -11,7 +11,6 @@ import {
 import { showToast } from "solid-notifications";
 import {
 	firstChangePassword as firstChangePasswordApi,
-	getProfile,
 	login as loginApi,
 } from "@/api/auth";
 import { getEnabledProviders, getOAuthLoginURL } from "@/api/oauth";
@@ -23,12 +22,6 @@ import ForgotPasswordModal from "./components/ForgotPasswordModal";
 
 export const Route = createFileRoute("/login/")({
 	beforeLoad: async () => {
-		if (
-			typeof window !== "undefined" &&
-			new URLSearchParams(window.location.hash.slice(1)).get("oauth") === "1"
-		) {
-			return;
-		}
 		// 已有会话或 access 过期但仍可无感刷新时，直接进首页
 		const ok = await userStore.ensureSession();
 		if (ok) {
@@ -56,33 +49,22 @@ function LoginPage() {
 	const [oauthProviders] = createResource(getEnabledProviders);
 	const [oauthLoading, setOauthLoading] = createSignal(false);
 
-	function completeOAuthLogin(accessToken: string, refreshToken: string) {
-		if (!accessToken || !refreshToken) {
-			showToast("OAuth 登录失败：缺少 token", { type: "error" });
-			return;
-		}
+	function completeOAuthLogin() {
 		void (async () => {
 			setOauthLoading(true);
 			try {
-				// 先写入 access token，供 getProfile 鉴权
-				await userStore.login(
-					{
-						id: 0,
-						uuid: "",
-						name: "",
-						display_name: "",
-						avatar: "",
-						role: "user",
-					},
-					accessToken,
-					refreshToken,
-				);
-				const profile = await getProfile();
-				await userStore.login(profile, accessToken, refreshToken);
+				// token 已由服务端写入 HttpOnly Cookie，这里只确认会话并拉取 profile。
+				const ok = await userStore.ensureSession();
+				if (!ok) {
+					showToast("OAuth 登录失败：未能建立会话", { type: "error" });
+					return;
+				}
 				navigate({ to: resolveLoginRedirect() });
-			} catch (e: any) {
+			} catch (e) {
 				await userStore.clearAuth();
-				if (e?.response?.data?.code === 1015) {
+				const code = (e as { response?: { data?: { code?: number } } })
+					?.response?.data?.code;
+				if (code === 1015) {
 					setBanned(true);
 				}
 			} finally {
@@ -95,16 +77,14 @@ function LoginPage() {
 		if (event.origin !== window.location.origin) return;
 		const data = event.data as {
 			type?: string;
-			access_token?: string;
-			refresh_token?: string;
+			ok?: boolean;
 		} | null;
 		if (!data || data.type !== "gospeak-oauth") return;
-		completeOAuthLogin(data.access_token || "", data.refresh_token || "");
+		if (data.ok) completeOAuthLogin();
 	}
 
 	onMount(() => {
 		const params = new URLSearchParams(window.location.search);
-		const oauthParams = new URLSearchParams(window.location.hash.slice(1));
 		if (params.get("banned") === "1") {
 			setBanned(true);
 			window.history.replaceState({}, "", "/login");
@@ -116,14 +96,6 @@ function LoginPage() {
 			showToast(oauthError, { type: "error" });
 			window.history.replaceState({}, "", "/login");
 			return;
-		}
-
-		// 兼容旧 fragment 回调；新后端通过同源 postMessage 单次交付 token。
-		if (oauthParams.get("oauth") === "1") {
-			const accessToken = oauthParams.get("access_token") || "";
-			const refreshToken = oauthParams.get("refresh_token") || "";
-			window.history.replaceState({}, "", "/login");
-			completeOAuthLogin(accessToken, refreshToken);
 		}
 
 		window.addEventListener("message", handleOAuthMessage);
@@ -163,15 +135,11 @@ function LoginPage() {
 			try {
 				const data = await loginApi(value);
 				if (data.need_change_password) {
-					await userStore.login(
-						data.user,
-						data.access_token,
-						data.refresh_token,
-					);
+					await userStore.login(data.user);
 					openChangeModal();
 					return;
 				}
-				await userStore.login(data.user, data.access_token, data.refresh_token);
+				await userStore.login(data.user);
 				navigate({ to: resolveLoginRedirect() });
 			} catch (e: any) {
 				if (e?.response?.data?.code === 1015) {
@@ -324,11 +292,7 @@ function LoginPage() {
 				onClose={closeChangeModal}
 				onSubmit={async ({ newPassword, name }) => {
 					const result = await firstChangePasswordApi(newPassword ?? "", name);
-					await userStore.login(
-						result.user,
-						result.access_token,
-						result.refresh_token,
-					);
+					await userStore.login(result.user);
 					closeChangeModal();
 					navigate({ to: resolveLoginRedirect() });
 				}}

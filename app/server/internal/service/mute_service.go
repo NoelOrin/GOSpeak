@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 
@@ -22,6 +23,9 @@ const (
 	// muteCacheTTL 控制 Worker 禁言判定的最大缓存窗口；禁言/解禁会主动失效。
 	muteCacheTTL = 5 * time.Second
 )
+
+// maxMuteReasonRunes 禁言原因最大长度。
+const maxMuteReasonRunes = 500
 
 type muteCacheEntry struct {
 	muted    bool
@@ -273,6 +277,9 @@ func (s *MuteService) MuteUser(muterID, userID uint, duration int64, permanent b
 	}
 	if userID == 0 {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "user_id is required")
+	}
+	if utf8.RuneCountInString(reason) > maxMuteReasonRunes {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "reason is too long")
 	}
 	target, err := s.userRepo.GetByID(userID)
 	if err != nil {

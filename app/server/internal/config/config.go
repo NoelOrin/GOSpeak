@@ -70,11 +70,22 @@ type Config struct {
 	CFAppSecret        string `env:"CF_APP_SECRET" envDefault:""`
 	CFStunURL          string `env:"CF_STUN_URL" envDefault:"stun.cloudflare.com:3478"`
 
+	// OAuthAutoCreateUser 控制 OAuth 回调时自动创建未绑定用户；关闭后仅允许已绑定账号登录。
+	OAuthAutoCreateUser bool `env:"OAUTH_AUTO_CREATE_USER" envDefault:"true"`
+
 	ServerPort       string `env:"SERVER_PORT" envDefault:"8998"`
 	StaticDir        string `env:"STATIC_DIR" envDefault:""`
 	CORSOrigin       string `env:"CORS_ORIGIN" envDefault:"*"`
 	GinMode          string `env:"GIN_MODE" envDefault:""`
 	WSAllowedOrigins string `env:"WS_ALLOWED_ORIGINS" envDefault:""`
+
+	// 鉴权 Cookie 配置：access/refresh token 均以 HttpOnly Cookie 承载。
+	AccessCookieName  string `env:"ACCESS_COOKIE_NAME" envDefault:"gospeak_token"`
+	RefreshCookieName string `env:"REFRESH_COOKIE_NAME" envDefault:"gospeak_refresh_token"`
+	CookieDomain      string `env:"COOKIE_DOMAIN" envDefault:""`
+	CookiePath        string `env:"COOKIE_PATH" envDefault:"/"`
+	CookieSecure      string `env:"COOKIE_SECURE" envDefault:"auto"` // auto|true|false
+	CookieSameSite    string `env:"COOKIE_SAMESITE" envDefault:"lax"` // lax|strict|none
 
 	// 日志
 	LogLevel  string `env:"LOG_LEVEL" envDefault:""`  // trace|debug|info|warn|error；空则 dev=debug / prod=info

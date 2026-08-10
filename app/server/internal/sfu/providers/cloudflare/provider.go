@@ -231,6 +231,21 @@ func (s *Service) SessionOwner(sessionID string) (string, bool) {
 	return "", false
 }
 
+// SessionDomain 返回 session 所属 Domain UUID；room 是 domainUUID:roomName 复合键。
+func (s *Service) SessionDomain(sessionID string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for room, members := range s.sessions {
+		for _, meta := range members {
+			if meta.sessionID == sessionID {
+				domainUUID, _ := pkg.SplitRoomKey(room)
+				return domainUUID, true
+			}
+		}
+	}
+	return "", false
+}
+
 func (s *Service) ClientInfo() map[string]interface{} {
 	return map[string]interface{}{
 		"appId":   s.appID,

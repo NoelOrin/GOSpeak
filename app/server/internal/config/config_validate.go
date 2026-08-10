@@ -68,6 +68,29 @@ func (c *Config) Validate() error {
 		errs = append(errs, fmt.Sprintf("STORAGE_TYPE %q unsupported (local|s3)", c.StorageType))
 	}
 
+	if c.AccessCookieName == "" {
+		errs = append(errs, "ACCESS_COOKIE_NAME is required")
+	}
+	if c.RefreshCookieName == "" {
+		errs = append(errs, "REFRESH_COOKIE_NAME is required")
+	}
+	if c.AccessCookieName == c.RefreshCookieName {
+		errs = append(errs, "ACCESS_COOKIE_NAME and REFRESH_COOKIE_NAME must differ")
+	}
+	if c.CookiePath == "" || !strings.HasPrefix(c.CookiePath, "/") {
+		errs = append(errs, "COOKIE_PATH must start with /")
+	}
+	switch c.CookieSecure {
+	case "auto", "true", "false":
+	default:
+		errs = append(errs, fmt.Sprintf("COOKIE_SECURE %q unsupported (auto|true|false)", c.CookieSecure))
+	}
+	switch c.CookieSameSite {
+	case "lax", "strict", "none":
+	default:
+		errs = append(errs, fmt.Sprintf("COOKIE_SAMESITE %q unsupported (lax|strict|none)", c.CookieSameSite))
+	}
+
 	if port, err := strconv.Atoi(c.ServerPort); err != nil || port < 1 || port > 65535 {
 		errs = append(errs, fmt.Sprintf("SERVER_PORT %q invalid", c.ServerPort))
 	}

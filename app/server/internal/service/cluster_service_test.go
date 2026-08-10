@@ -15,6 +15,7 @@ import (
 	"GOSpeak/internal/bus"
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
 
 	"github.com/glebarez/sqlite"
@@ -175,6 +176,23 @@ func TestClusterService_ScaleServer(t *testing.T) {
 	}
 	if len(assignments) != 0 {
 		t.Fatalf("expected assignments deleted, got %d", len(assignments))
+	}
+}
+
+func TestClusterService_ScaleServer_InsufficientNodes(t *testing.T) {
+	svc, db := setupClusterServiceTestDB(t)
+	nodeRepo := repository.NewClusterNodeRepository(db)
+	if err := nodeRepo.Create(&model.ClusterNode{
+		UUID: "node-a", Name: "a", Status: model.ClusterNodeReady, SFUHealthy: true,
+		MaxServers: 10, MaxRooms: 100, LoadPercent: 10,
+	}); err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+
+	_, err := svc.ScaleServer("srv-1", 2, "node-a")
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.INTERNAL_ERROR {
+		t.Fatalf("expected INTERNAL_ERROR for insufficient nodes, got %v", err)
 	}
 }
 

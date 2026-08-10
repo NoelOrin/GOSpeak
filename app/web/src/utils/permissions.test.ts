@@ -5,7 +5,19 @@ vi.mock("idb-keyval", () => ({
 	set: vi.fn(async () => {}),
 	del: vi.fn(async () => {}),
 }));
-import { rolePermissions } from "./permissions";
+
+vi.mock("@/stores/userStore", () => ({
+	default: {
+		user: () => ({ role: "ban", permissions: ["room:create", "user:read"] }),
+	},
+}));
+
+import {
+	decodeBase64Url,
+	hasManageAccess,
+	hasPermission,
+	rolePermissions,
+} from "./permissions";
 
 const domainPermissions = [
 	"domain:create",
@@ -56,5 +68,37 @@ describe("rolePermissions", () => {
 	it("user has message permissions", () => {
 		expect(rolePermissions.user).toContain("message:send");
 		expect(rolePermissions.user).toContain("message:read");
+	});
+});
+
+describe("decodeBase64Url", () => {
+	it("decodes base64url payload containing URL-safe characters", () => {
+		const payload = JSON.stringify({
+			sub: "user",
+			role: "admin",
+			permissions: ["room:create"],
+		});
+		const b64 = btoa(payload)
+			.replace(/\+/g, "-")
+			.replace(/\//g, "_")
+			.replace(/=+$/, "");
+		expect(decodeBase64Url(b64)).toBe(payload);
+	});
+
+	it("decodes unicode payload", () => {
+		const payload = JSON.stringify({ name: "管理员" });
+		const b64 = btoa(unescape(encodeURIComponent(payload)))
+			.replace(/\+/g, "-")
+			.replace(/\//g, "_")
+			.replace(/=+$/, "");
+		expect(decodeBase64Url(b64)).toBe(payload);
+	});
+});
+
+describe("banned user", () => {
+	it("has no permissions even when role permissions or claims exist", () => {
+		expect(hasPermission("room:create")).toBe(false);
+		expect(hasPermission("user:read")).toBe(false);
+		expect(hasManageAccess()).toBe(false);
 	});
 });

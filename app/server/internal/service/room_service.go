@@ -20,12 +20,26 @@ var ErrRoomNotFound = pkg.NewAppErrorWithCause(pkg.NOT_FOUND, gorm.ErrRecordNotF
 
 // RoomService 房间服务，提供房间的增删改查能力。
 type RoomService struct {
-	roomRepo *repository.RoomRepository
-	mu       sync.Mutex
+	roomRepo    *repository.RoomRepository
+	mu          sync.Mutex
+	domainLocks map[string]*sync.Mutex
 }
 
 func NewRoomService(roomRepo *repository.RoomRepository) *RoomService {
-	return &RoomService{roomRepo: roomRepo}
+	return &RoomService{roomRepo: roomRepo, domainLocks: make(map[string]*sync.Mutex)}
+}
+
+// lockDomain 返回按 domain 分片的互斥锁：同一 Domain 串行，不同 Domain 并行。
+func (s *RoomService) lockDomain(domainUUID string) func() {
+	s.mu.Lock()
+	lock, ok := s.domainLocks[domainUUID]
+	if !ok {
+		lock = &sync.Mutex{}
+		s.domainLocks[domainUUID] = lock
+	}
+	s.mu.Unlock()
+	lock.Lock()
+	return lock.Unlock
 }
 
 // RoomDTO 是房间对外 API 的传输对象，避免持久层 model 直接泄漏到接口。
@@ -79,8 +93,8 @@ func (s *RoomService) Create(room *model.Room) error {
 	if strings.TrimSpace(room.DomainUUID) == "" {
 		return pkg.NewAppError(pkg.INVALID_PARAMS, "domain_uuid is required")
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock := s.lockDomain(room.DomainUUID)
+	defer unlock()
 
 	_, err := s.roomRepo.GetByDomainAndName(room.DomainUUID, room.Name)
 	if err == nil {

@@ -1,14 +1,15 @@
 import apiClient from "./apiClient";
-import type { WSTicketInfo } from "@/protocol/ws";
+import type { WSEndpointInfo } from "@/protocol/ws";
 
-export type { WSTicketInfo };
+export type { WSEndpointInfo };
 
-export async function getWSTicket(domainUUID?: string): Promise<WSTicketInfo> {
-	const data = await apiClient.get<{ ticket: string; url?: string }>({
-		url: "/api/v1/signal/ws-ticket",
+/** 解析 WS Worker 节点地址；握手鉴权由 HttpOnly access cookie 自动携带。 */
+export async function getWSEndpoint(
+	domainUUID?: string,
+): Promise<WSEndpointInfo> {
+	const data = await apiClient.get<{ url?: string }>({
+		url: "/api/v1/signal/ws-endpoint",
 		params: domainUUID ? { domain_uuid: domainUUID } : undefined,
 	});
-	const ticket = data?.ticket;
-	if (!ticket) throw new Error("ws ticket is missing");
-	return { url: data.url || undefined, token: ticket };
+	return { url: data?.url || undefined };
 }

@@ -5,8 +5,7 @@ import axios, {
 	type AxiosResponse,
 } from "axios";
 import { showToast } from "solid-notifications";
-import { getAPIClientAuth } from "@/api/apiClientAuth";
-import { requestAccessTokenByRefreshToken } from "@/api/authTransport";
+import { refreshSession } from "@/api/authTransport";
 
 export interface Result<T = any> {
 	code: number;
@@ -21,56 +20,13 @@ const FORCE_LOGOUT_CODES = new Set([1015]);
 // 禁言提示但不登出的错误码
 const MUTE_ERROR_CODES = new Set([1016]);
 
-// 刷新状态管理
-let isRefreshing = false;
-let refreshSubscribers: Array<{
-	resolve: (token: string) => void;
-	reject: (error: unknown) => void;
-}> = [];
-
-function subscribeTokenRefresh(
-	resolve: (token: string) => void,
-	reject: (error: unknown) => void,
-) {
-	refreshSubscribers.push({ resolve, reject });
-}
-
-function onTokenRefreshed(newToken: string) {
-	const list = refreshSubscribers;
-	refreshSubscribers = [];
-	list.forEach(({ resolve }) => {
-		resolve(newToken);
-	});
-}
-
-function onTokenRefreshFailed(error: unknown) {
-	const list = refreshSubscribers;
-	refreshSubscribers = [];
-	list.forEach(({ reject }) => {
-		reject(error);
-	});
-}
-
 const createInstance = (baseURL?: string) => {
 	const axiosInstance = axios.create({
 		baseURL: baseURL,
 		timeout: 50000,
+		withCredentials: true,
 		headers: { "Content-Type": "application/json;charset=utf-8" },
 	});
-
-	// 请求拦截
-	axiosInstance.interceptors.request.use(
-		(config) => {
-			const token = getAPIClientAuth().getAccessToken();
-			if (token) {
-				config.headers.Authorization = `Bearer ${token}`;
-			}
-			return config;
-		},
-		(error) => {
-			return Promise.reject(error);
-		},
-	);
 
 	// 响应拦截 — 统一处理接口错误 toast，组件不再重复处理
 	axiosInstance.interceptors.response.use(
@@ -86,7 +42,6 @@ const createInstance = (baseURL?: string) => {
 			if (error.code === "ERR_CANCELED" || error.name === "CanceledError") {
 				return Promise.reject(error);
 			}
-			const auth = getAPIClientAuth();
 			const originalRequest = error.config as AxiosRequestConfig & {
 				_retry?: boolean;
 			};
@@ -96,7 +51,6 @@ const createInstance = (baseURL?: string) => {
 				error.response?.data?.code &&
 				FORCE_LOGOUT_CODES.has(error.response.data.code)
 			) {
-				await auth.clearAuth();
 				window.location.href = "/login?banned=1";
 				return Promise.reject(error);
 			}
@@ -117,52 +71,17 @@ const createInstance = (baseURL?: string) => {
 				error.response?.data?.code &&
 				TOKEN_ERROR_CODES.has(error.response.data.code)
 			) {
-				if (auth.waitAuthHydrated) {
-					await auth.waitAuthHydrated();
-				}
-
-				const refreshToken = auth.getRefreshToken();
-				if (!originalRequest._retry && refreshToken) {
-					if (isRefreshing) {
-						return new Promise((resolve, reject) => {
-							subscribeTokenRefresh(
-								(newToken) => {
-									if (originalRequest.headers) {
-										originalRequest.headers.Authorization = `Bearer ${newToken}`;
-									}
-									resolve(axiosInstance(originalRequest));
-								},
-								(refreshError) => {
-									reject(refreshError);
-								},
-							);
-						});
-					}
-
-					isRefreshing = true;
+				if (!originalRequest._retry) {
 					originalRequest._retry = true;
-
 					try {
-						const newToken =
-							await requestAccessTokenByRefreshToken(refreshToken);
-						await auth.updateAccessToken(newToken);
-						onTokenRefreshed(newToken);
-
-						if (originalRequest.headers) {
-							originalRequest.headers.Authorization = `Bearer ${newToken}`;
-						}
+						await refreshSession();
 						return axiosInstance(originalRequest);
-					} catch (refreshError) {
-						onTokenRefreshFailed(refreshError);
-						await auth.clearAuth();
+					} catch {
 						window.location.href = "/login";
 						return Promise.reject(error);
-					} finally {
-						isRefreshing = false;
 					}
 				}
 
-				await auth.clearAuth();
 				window.location.href = "/login";
 				return Promise.reject(error);
 			}

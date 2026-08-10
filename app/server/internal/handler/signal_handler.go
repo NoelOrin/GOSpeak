@@ -110,15 +110,15 @@ func verifyLiveKitSignature(header string, body []byte, secret string, now time.
 	return subtle.ConstantTimeCompare(sig, mac.Sum(nil)) == 1
 }
 
-// GetWSTicket
-// @Summary      获取 WebSocket 短时 ticket
-// @Description  签发只用于 WS 握手的短时 ticket，避免 JWT 出现在 URL query 和访问日志中
+// GetWSEndpoint
+// @Summary      获取 WebSocket 连接地址
+// @Description  按域解析 Worker 节点地址；WS 鉴权统一使用 HttpOnly access cookie
 // @Tags         信令
 // @Produce      json
 // @Security     BearerAuth
 // @Success      200  {object}  pkg.Response
-// @Router       /signal/ws-ticket [get]
-func (h *SignalHandler) GetWSTicket(c *gin.Context) {
+// @Router       /signal/ws-endpoint [get]
+func (h *SignalHandler) GetWSEndpoint(c *gin.Context) {
 	claimsVal, ok := c.Get("claims")
 	if !ok {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
@@ -129,12 +129,7 @@ func (h *SignalHandler) GetWSTicket(c *gin.Context) {
 		pkg.Fail(c, pkg.TOKEN_WRONG)
 		return
 	}
-	ticket, err := pkg.GenerateWSTicket(claims.Username, claims.DisplayName, claims.UserUUID, claims.Role, claims.TokenVersion)
-	if err != nil {
-		pkg.Fail(c, pkg.INTERNAL_ERROR)
-		return
-	}
-	data := gin.H{"ticket": ticket}
+	data := gin.H{}
 	// 断线重连时按当前域名重新解析 Worker，避免粘在已失效节点上。
 	if domainUUID := strings.TrimSpace(c.Query("domain_uuid")); domainUUID != "" && h.clusterResolver != nil {
 		if workerURL, resolveErr := h.clusterResolver(domainUUID); resolveErr == nil && workerURL != "" {

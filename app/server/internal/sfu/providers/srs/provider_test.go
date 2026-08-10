@@ -172,11 +172,11 @@ func TestListRooms_WithRegistry_NilReturnsEmpty(t *testing.T) {
 
 func TestListRooms_NoRegistry_ReturnsError(t *testing.T) {
 	s := newServiceWithURL("http://srs.example")
-	// registry 为 nil：拒绝返回语义错误的 stream 名（/api/v1/streams 返 stream 非 room），返配置错误
 
 	_, err := s.ListRooms()
-	if err == nil {
-		t.Fatal("expected error when registry not configured, got nil")
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.SFU_NOT_CONFIGURED {
+		t.Fatalf("expected SFU_NOT_CONFIGURED, got %v", err)
 	}
 }
 

@@ -2,7 +2,7 @@
 import type { SFUProvider } from "@gospeak/sfu-client/types";
 import { createEffect, createMemo, createRoot, createSignal } from "solid-js";
 import { showToast } from "solid-notifications";
-import { getWSTicket } from "@/api/ws";
+import { getWSEndpoint } from "@/api/ws";
 import { preloadSfuClient } from "@/components/room/services/loadSfuClient";
 import { createWSClient } from "@/socket/wsClient";
 import type { WSConnectionState } from "@/socket/wsClient";
@@ -59,7 +59,7 @@ import type {
 export const socketStore = createRoot(() => {
 	// 3. adapter + signals
 	const adapter = createWSClient({
-		refreshTicket: () => getWSTicket(currentDomainUUID() ?? undefined),
+		refreshEndpoint: () => getWSEndpoint(currentDomainUUID() ?? undefined),
 	});
 
 	const [connected, setConnected] = createSignal(false);
@@ -205,8 +205,7 @@ export const socketStore = createRoot(() => {
 			adapter.disconnect();
 		}
 		try {
-			const ticket = await getWSTicket(currentDomainUUID() ?? undefined);
-			adapter.connect(url, ticket.token);
+			adapter.connect(url);
 			if (!serverEventsBound) {
 				serverEventsBound = true;
 				bindServerEvents(adapter, {
@@ -236,7 +235,7 @@ export const socketStore = createRoot(() => {
 		} catch (err) {
 			setConnecting(false);
 			showToast(
-				`获取连接凭证失败: ${err instanceof Error ? err.message : String(err)}`,
+				`获取连接地址失败: ${err instanceof Error ? err.message : String(err)}`,
 				{ type: "error" },
 			);
 			throw err;
@@ -245,8 +244,7 @@ export const socketStore = createRoot(() => {
 
 	function connect() {
 		if (adapter.isConnected() || connecting()) return;
-		const token = userStore.accessToken();
-		if (!token) {
+		if (!userStore.isLoggedIn()) {
 			showToast("请先登录", { type: "warning" });
 			return;
 		}
@@ -305,7 +303,7 @@ export const socketStore = createRoot(() => {
 	}
 
 	createEffect(() => {
-		if (!userStore.accessToken()) disconnect();
+		if (!userStore.isLoggedIn()) disconnect();
 	});
 
 	function clearCurrentRoom() {

@@ -63,7 +63,7 @@ func (s *Service) GenerateAdminToken() (string, error) {
 
 func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
 	if s.registry == nil {
-		return nil, pkg.NewAppError(pkg.SFU_ERROR, "srs room registry not configured")
+		return nil, pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "srs room registry not configured")
 	}
 	rooms := s.registry.Rooms()
 	out := make([]sfu.RoomSummary, 0, len(rooms))

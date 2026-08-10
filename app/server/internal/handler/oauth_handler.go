@@ -19,10 +19,14 @@ const oauthStateCookie = "gospeak_oauth_state"
 
 type OAuthHandler struct {
 	oauthService *service.OAuthService
+	cookie       *AuthCookieConfig
 }
 
-func NewOAuthHandler(oauthService *service.OAuthService) *OAuthHandler {
-	return &OAuthHandler{oauthService: oauthService}
+func NewOAuthHandler(oauthService *service.OAuthService, cookie *AuthCookieConfig) *OAuthHandler {
+	if cookie == nil {
+		cookie = defaultAuthCookieConfig()
+	}
+	return &OAuthHandler{oauthService: oauthService, cookie: cookie}
 }
 
 func (h *OAuthHandler) Login(c *gin.Context) {
@@ -33,22 +37,20 @@ func (h *OAuthHandler) Login(c *gin.Context) {
 	}
 
 	// 服务端生成高熵 state，写入 HttpOnly cookie，callback 强制校验，防 OAuth Login CSRF。
-	state := c.Query("state")
-	if state == "" {
-		generated, err := randomState(16)
-		if err != nil {
-			redirectOAuthError(c, "failed to generate oauth state")
-			return
-		}
-		state = generated
+	// 不信任客户端传入的 state：统一服务端生成，避免预置固定 state。
+	generated, err := randomState(16)
+	if err != nil {
+		redirectOAuthError(c, "failed to generate oauth state")
+		return
 	}
+	state := generated
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     oauthStateCookie,
 		Value:    state,
 		Path:     "/",
 		MaxAge:   600,
 		HttpOnly: true,
-		Secure:   c.Request.TLS != nil,
+		Secure:   h.cookie.secure(c.Request),
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -83,7 +85,7 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   c.Request.TLS != nil,
+		Secure:   h.cookie.secure(c.Request),
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -103,12 +105,11 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 		return
 	}
 
-	// 浏览器回调：通过同源 postMessage 把 token 单次交给登录页 opener，
-	// 避免 access/refresh token 出现在 URL fragment、浏览器历史或代理日志。
-	payload, _ := json.Marshal(map[string]string{
-		"access_token":  resp.Token,
-		"refresh_token": resp.RefreshToken,
-	})
+	h.cookie.Set(c, resp.Token, resp.RefreshToken)
+
+	// 浏览器回调：token 已写入 HttpOnly Cookie，同源 postMessage 只通知 opener 成功，
+	// 避免 token 出现在 URL fragment、浏览器历史、代理日志或跨窗口消息中。
+	payload, _ := json.Marshal(map[string]bool{"ok": true})
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'")
 	_, _ = c.Writer.Write([]byte(oauthBridgeHTML(payload)))
@@ -126,7 +127,7 @@ func oauthBridgeHTML(payload []byte) string {
   var data = ` + string(payload) + `;
   if (window.opener && window.opener !== window) {
     try {
-      window.opener.postMessage({type: "gospeak-oauth", access_token: data.access_token, refresh_token: data.refresh_token}, window.location.origin);
+      window.opener.postMessage({type: "gospeak-oauth", ok: data.ok === true}, window.location.origin);
     } catch (e) {}
     window.close();
     return;

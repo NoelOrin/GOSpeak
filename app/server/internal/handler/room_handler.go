@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+	"io"
 	"log"
 	"strings"
 
@@ -216,7 +218,10 @@ func (h *RoomHandler) List(c *gin.Context) {
 		PageSize int    `json:"page_size"`
 		Type     string `json:"type"`
 	}
-	_ = c.ShouldBindJSON(&req)
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
 	if req.Page <= 0 {
 		req.Page = 1
 	}

@@ -68,6 +68,19 @@ func TestService_GenerateToken(t *testing.T) {
 	}
 }
 
+func TestService_SessionDomain(t *testing.T) {
+	svc := NewService(&config.Config{CFAppID: "app", CFAppSecret: "secret"})
+	svc.putSession("dom-1:room-a", "alice", "session-1", 1, "uuid-alice")
+
+	domain, ok := svc.SessionDomain("session-1")
+	if !ok || domain != "dom-1" {
+		t.Fatalf("SessionDomain = %q, %v; want dom-1, true", domain, ok)
+	}
+	if _, ok := svc.SessionDomain("unknown-session"); ok {
+		t.Fatal("expected unknown session to have no domain")
+	}
+}
+
 func TestService_GenerateTokenForUser_StoresOwner(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/apps/test-app/sessions/new" && r.Method == http.MethodPost {

@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net/http"
 
 	"GOSpeak/internal/pkg"
 
 	"github.com/gin-gonic/gin"
 )
+
+// maxDomainBodyBytes 限制 body 读取大小：中间件只需 domain_uuid 字段，超限直接拒绝。
+const maxDomainBodyBytes = 1 << 20 // 1 MiB
 
 // domainChecker 在启动时通过 SetDomainChecker 注入，由 DomainService.IsMember 实现。
 // 使用 RWMutex 保护，避免并发测试与生产请求之间的 data race。
@@ -47,12 +51,18 @@ func RequireDomainMemberIfProvided() gin.HandlerFunc {
 			domainUUID = c.Query("domain_uuid")
 		}
 		if domainUUID == "" {
-			var body struct {
-				DomainUUID string `json:"domain_uuid"`
-			}
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxDomainBodyBytes)
 			raw, readErr := io.ReadAll(c.Request.Body)
 			c.Request.Body = io.NopCloser(bytes.NewReader(raw))
-			if readErr == nil && len(raw) > 0 {
+			if readErr != nil {
+				pkg.Fail(c, pkg.INVALID_PARAMS, "request body too large")
+				c.Abort()
+				return
+			}
+			if len(raw) > 0 {
+				var body struct {
+					DomainUUID string `json:"domain_uuid"`
+				}
 				if err := json.Unmarshal(raw, &body); err == nil {
 					domainUUID = body.DomainUUID
 				}
@@ -96,12 +106,18 @@ func RequireDomainMember() gin.HandlerFunc {
 			domainUUID = c.Query("domain_uuid")
 		}
 		if domainUUID == "" {
-			var body struct {
-				DomainUUID string `json:"domain_uuid"`
-			}
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxDomainBodyBytes)
 			raw, readErr := io.ReadAll(c.Request.Body)
 			c.Request.Body = io.NopCloser(bytes.NewReader(raw))
-			if readErr == nil && len(raw) > 0 {
+			if readErr != nil {
+				pkg.Fail(c, pkg.INVALID_PARAMS, "request body too large")
+				c.Abort()
+				return
+			}
+			if len(raw) > 0 {
+				var body struct {
+					DomainUUID string `json:"domain_uuid"`
+				}
 				if err := json.Unmarshal(raw, &body); err == nil {
 					domainUUID = body.DomainUUID
 				}

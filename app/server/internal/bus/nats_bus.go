@@ -29,6 +29,8 @@ type NATSBusConfig struct {
 	// RemoteHook 在 peer 消息投递到本地 Deliverer 之后调用（不含自身回环）。
 	// 用于 Hub 等需要同步处理控制事件（如 sfu:provider-changed）的场景。
 	RemoteHook func(event string, payload interface{})
+	// WALPath 非空时启用断线事件磁盘持久化；为空保持纯内存行为（默认）。
+	WALPath string
 }
 
 // NATSBus 基于 NATS 的 EventBus 实现。
@@ -55,6 +57,8 @@ type NATSBus struct {
 	done   chan struct{}
 
 	droppedPublish atomic.Uint64 // 发布/投递路径上的损失/告警事件计数（断线、取消、队列满、重放失败）
+
+	wal *pendingWAL
 
 	deliverMu sync.Mutex // 保护 deliverCh 入队与 Close 关闭
 	pendingMu sync.Mutex
@@ -106,6 +110,17 @@ func NewNATSBus(cfg NATSBusConfig) (*NATSBus, error) {
 		url:                  cfg.URL,
 		fallbackFromExternal: cfg.FallbackFromExternal,
 		done:                 make(chan struct{}),
+	}
+	if cfg.WALPath != "" {
+		wal, err := newPendingWAL(cfg.WALPath)
+		if err != nil {
+			return nil, fmt.Errorf("open pending wal: %w", err)
+		}
+		b.wal = wal
+		if recovered, err := wal.ReadAll(); err == nil && len(recovered) > 0 {
+			b.pending = recovered
+			log.Printf("[EventBus] recovered %d pending events from WAL", len(recovered))
+		}
 	}
 	if cfg.Deliverer != nil {
 		b.deliverer.Store(cfg.Deliverer)
@@ -226,6 +241,9 @@ func (b *NATSBus) Close() error {
 	}
 	if b.nc != nil {
 		b.nc.Close()
+	}
+	if b.wal != nil {
+		_ = b.wal.Close()
 	}
 	b.deliverMu.Lock()
 	if b.deliverCh != nil {

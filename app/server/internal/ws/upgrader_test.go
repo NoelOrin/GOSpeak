@@ -8,72 +8,53 @@ import (
 	"GOSpeak/internal/pkg"
 )
 
-func TestExtractToken_Subprotocol(t *testing.T) {
+func TestAccessTokenFromCookie(t *testing.T) {
+	upgrader := NewUpgrader(UpgraderConfig{})
 	r := httptest.NewRequest("GET", "/ws", nil)
-	r.Header.Set("Sec-WebSocket-Protocol", "gospeak, ws-ticket-123")
+	r.AddCookie(&http.Cookie{Name: "gospeak_token", Value: "access-token-123"})
 
-	token, fromSubprotocol := extractToken(r)
-	if token != "ws-ticket-123" || !fromSubprotocol {
-		t.Fatalf("expected subprotocol ticket, got token=%q fromSubprotocol=%v", token, fromSubprotocol)
+	if got := upgrader.accessTokenFromCookie(r); got != "access-token-123" {
+		t.Fatalf("expected cookie access token, got %q", got)
 	}
 }
 
-func TestExtractToken_HeaderRejected(t *testing.T) {
+func TestAccessTokenFromCookie_CustomName(t *testing.T) {
+	upgrader := NewUpgrader(UpgraderConfig{AuthCookieName: "gospeak_auth"})
 	r := httptest.NewRequest("GET", "/ws", nil)
-	r.Header.Set("Authorization", "Bearer test-token-123")
+	r.AddCookie(&http.Cookie{Name: "gospeak_auth", Value: "access-token-456"})
 
-	token, fromSubprotocol := extractToken(r)
-	if token != "" || fromSubprotocol {
-		t.Fatalf("expected header token rejected, got token=%q fromSubprotocol=%v", token, fromSubprotocol)
+	if got := upgrader.accessTokenFromCookie(r); got != "access-token-456" {
+		t.Fatalf("expected custom cookie access token, got %q", got)
 	}
 }
 
-func TestExtractToken_CookieRejected(t *testing.T) {
+func TestAccessTokenFromCookie_Empty(t *testing.T) {
+	upgrader := NewUpgrader(UpgraderConfig{})
 	r := httptest.NewRequest("GET", "/ws", nil)
-	r.AddCookie(&http.Cookie{Name: "gospeak_token", Value: "cookie-token-456"})
 
-	token, fromSubprotocol := extractToken(r)
-	if token != "" || fromSubprotocol {
-		t.Fatalf("expected cookie token rejected, got token=%q fromSubprotocol=%v", token, fromSubprotocol)
+	if got := upgrader.accessTokenFromCookie(r); got != "" {
+		t.Fatalf("expected empty token, got %q", got)
 	}
 }
 
-func TestExtractToken_QueryRejected(t *testing.T) {
-	r := httptest.NewRequest("GET", "/ws?token=query-token-789", nil)
+func TestAccessTokenFromCookie_RefreshCookieIgnored(t *testing.T) {
+	upgrader := NewUpgrader(UpgraderConfig{})
+	r := httptest.NewRequest("GET", "/ws", nil)
+	r.AddCookie(&http.Cookie{Name: "gospeak_refresh_token", Value: "refresh-token"})
 
-	token, _ := extractToken(r)
-	if token != "" {
-		t.Fatalf("query token must not be accepted, got %q", token)
+	if got := upgrader.accessTokenFromCookie(r); got != "" {
+		t.Fatalf("refresh cookie must not be used for WS auth, got %q", got)
 	}
 }
 
-func TestExtractToken_Empty(t *testing.T) {
-	r := httptest.NewRequest("GET", "/ws", nil)
+func TestUpgrader_ServeHTTP_RejectsMissingCookie(t *testing.T) {
+	upgrader := NewUpgrader(UpgraderConfig{})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 
-	token, _ := extractToken(r)
-	if token != "" {
-		t.Fatalf("expected empty token, got %q", token)
-	}
-}
-
-func TestExtractToken_PlainHeaderRejected(t *testing.T) {
-	r := httptest.NewRequest("GET", "/ws", nil)
-	r.Header.Set("Authorization", "raw-token-no-bearer")
-
-	token, _ := extractToken(r)
-	if token != "" {
-		t.Fatalf("expected plain header token rejected, got %q", token)
-	}
-}
-
-func TestExtractToken_BearerAndCookieRejected(t *testing.T) {
-	r := httptest.NewRequest("GET", "/ws", nil)
-	r.Header.Set("Authorization", "Bearer header-token")
-	r.AddCookie(&http.Cookie{Name: "gospeak_token", Value: "cookie-token"})
-
-	token, _ := extractToken(r)
-	if token != "" {
-		t.Fatalf("expected header/cookie tokens rejected, got %q", token)
+	upgrader.ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without cookie, got %d", w.Code)
 	}
 }
 
@@ -94,23 +75,6 @@ func TestUpgrader_ServeHTTP_RejectsHeaderAccessToken(t *testing.T) {
 	}
 }
 
-func TestUpgrader_ServeHTTP_RejectsCookieAccessToken(t *testing.T) {
-	access, err := pkg.GenerateToken("alice", "Alice", "uuid-alice", "user", 1)
-	if err != nil {
-		t.Fatalf("GenerateToken: %v", err)
-	}
-
-	upgrader := NewUpgrader(UpgraderConfig{})
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
-	r.AddCookie(&http.Cookie{Name: "gospeak_token", Value: access})
-
-	upgrader.ServeHTTP(w, r)
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401 for cookie access token, got %d", w.Code)
-	}
-}
-
 func TestUpgrader_ServeHTTP_RejectsSubprotocolAccessToken(t *testing.T) {
 	access, err := pkg.GenerateToken("alice", "Alice", "uuid-alice", "user", 1)
 	if err != nil {
@@ -125,5 +89,39 @@ func TestUpgrader_ServeHTTP_RejectsSubprotocolAccessToken(t *testing.T) {
 	upgrader.ServeHTTP(w, r)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 for subprotocol access token, got %d", w.Code)
+	}
+}
+
+func TestUpgrader_ServeHTTP_RejectsRefreshTokenCookie(t *testing.T) {
+	refresh, err := pkg.GenerateRefreshToken("alice", "Alice", "uuid-alice", "user", 1)
+	if err != nil {
+		t.Fatalf("GenerateRefreshToken: %v", err)
+	}
+
+	upgrader := NewUpgrader(UpgraderConfig{})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.AddCookie(&http.Cookie{Name: "gospeak_token", Value: refresh})
+
+	upgrader.ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for refresh token cookie, got %d", w.Code)
+	}
+}
+
+func TestUpgrader_ServeHTTP_RejectsBotTokenCookie(t *testing.T) {
+	bot, err := pkg.GenerateBotToken("bot", "Bot", "uuid-bot", "bot", 1, []string{"signal:kick"}, false)
+	if err != nil {
+		t.Fatalf("GenerateBotToken: %v", err)
+	}
+
+	upgrader := NewUpgrader(UpgraderConfig{})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.AddCookie(&http.Cookie{Name: "gospeak_token", Value: bot})
+
+	upgrader.ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for bot token cookie, got %d", w.Code)
 	}
 }

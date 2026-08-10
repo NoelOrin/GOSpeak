@@ -2,10 +2,29 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"GOSpeak/internal/model"
 	"gorm.io/gorm"
 )
+
+func TestRoomService_LockDomainIsScoped(t *testing.T) {
+	svc := NewRoomService(nil)
+	unlockA := svc.lockDomain("dom-a")
+
+	done := make(chan struct{})
+	go func() {
+		unlockB := svc.lockDomain("dom-b")
+		unlockB()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("different domains share the same lock")
+	}
+	unlockA()
+}
 
 // ─── Approach: Test via exported methods with a modified Create pattern ───
 

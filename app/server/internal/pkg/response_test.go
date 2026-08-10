@@ -59,3 +59,27 @@ func TestHandleError_PlainErrorUsesDefault(t *testing.T) {
 		t.Fatalf("msg = %q, want default internal message", resp.Msg)
 	}
 }
+
+func TestHandleError_LoginErrorsUse401(t *testing.T) {
+	for _, code := range []ErrCode{USER_NOT_FOUND, INVALID_PASSWORD} {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/login", nil)
+		HandleError(c, NewAppError(code, "invalid credentials"))
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("code %d status = %d, want 401", code, w.Code)
+		}
+	}
+}
+
+func TestHandleError_RegisterErrorsUse400(t *testing.T) {
+	for _, code := range []ErrCode{USERNAME_EXISTS, EMAIL_ALREADY_EXISTS} {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/register", nil)
+		HandleError(c, NewAppError(code, "duplicate"))
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("code %d status = %d, want 400", code, w.Code)
+		}
+	}
+}

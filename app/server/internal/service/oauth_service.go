@@ -58,9 +58,10 @@ type UpdateOAuthProviderRequest struct {
 
 // OAuthService 第三方登录服务，协调三个 repository 完成 OAuth 流程。
 type OAuthService struct {
-	providerRepo *repository.OAuthProviderRepository
-	accountRepo  *repository.OAuthAccountRepository
-	userRepo     *repository.UserRepository
+	providerRepo   *repository.OAuthProviderRepository
+	accountRepo    *repository.OAuthAccountRepository
+	userRepo       *repository.UserRepository
+	autoCreateUser bool
 }
 
 func NewOAuthService(
@@ -69,10 +70,16 @@ func NewOAuthService(
 	userRepo *repository.UserRepository,
 ) *OAuthService {
 	return &OAuthService{
-		providerRepo: providerRepo,
-		accountRepo:  accountRepo,
-		userRepo:     userRepo,
+		providerRepo:   providerRepo,
+		accountRepo:    accountRepo,
+		userRepo:       userRepo,
+		autoCreateUser: true,
 	}
+}
+
+// SetAutoCreateUser 控制未绑定 OAuth 账号是否自动创建新用户（默认 true，保持兼容）。
+func (s *OAuthService) SetAutoCreateUser(enabled bool) {
+	s.autoCreateUser = enabled
 }
 
 // providerConfigFromModel 将 DB 模型转为 oauth.ProviderConfig（含 FieldMapping）。
@@ -177,6 +184,9 @@ func (s *OAuthService) HandleCallback(providerName, code string) (*AuthResponse,
 
 	if existingUser != nil {
 		username = fmt.Sprintf("%s_%s", username, uuid.New().String()[:8])
+	}
+	if !s.autoCreateUser {
+		return nil, pkg.NewAppError(pkg.FORBIDDEN, "oauth account is not linked to a user")
 	}
 
 	user := &model.User{

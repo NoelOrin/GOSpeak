@@ -35,6 +35,9 @@ interface SpeakerBuffer {
 	sending: Promise<void> | null;
 }
 
+// idleBufferTTLMs 超过该时长无新帧的 speaker 缓冲会被清理，防止长期静音连接泄漏内存。
+const idleBufferTTLMs = 30_000;
+
 /**
  * Real speech pipeline for OpenAI-compatible `/audio/transcriptions` APIs.
  *
@@ -73,6 +76,10 @@ export class OpenAICompatibleSpeechPipeline implements SpeechPipeline {
 		const key = `${frame.room}:${frame.identity}`;
 		const now = frame.timestamp || Date.now();
 		let state = this.buffers.get(key);
+		if (state && now - state.lastAt >= idleBufferTTLMs) {
+			this.buffers.delete(key);
+			state = undefined;
+		}
 		if (!state) {
 			state = {
 				room: frame.room,

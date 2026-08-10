@@ -33,7 +33,7 @@ func newTestOAuthHandler(t *testing.T) *OAuthHandler {
 	if err := providerRepo.Create(&model.OAuthProvider{Name: "github", Enabled: true}); err != nil {
 		t.Fatalf("seed oauth provider: %v", err)
 	}
-	return NewOAuthHandler(svc)
+	return NewOAuthHandler(svc, defaultAuthCookieConfig())
 }
 
 func TestOAuthHandler_Callback_BadState(t *testing.T) {
@@ -51,5 +51,32 @@ func TestOAuthHandler_Callback_BadState(t *testing.T) {
 	}
 	if !strings.Contains(rec.Header().Get("Location"), "oauth_error") {
 		t.Fatalf("expected oauth_error redirect, got %q", rec.Header().Get("Location"))
+	}
+}
+
+func TestOAuthHandler_Login_IgnoresClientState(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := newTestOAuthHandler(t)
+
+	router := gin.New()
+	router.GET("/login/:provider", h.Login)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/login/github?state=attacker-state", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302", rec.Code)
+	}
+	var stateCookie string
+	for _, ck := range rec.Result().Cookies() {
+		if ck.Name == oauthStateCookie {
+			stateCookie = ck.Value
+		}
+	}
+	if stateCookie == "" {
+		t.Fatal("expected oauth state cookie")
+	}
+	if stateCookie == "attacker-state" {
+		t.Fatal("handler must not trust client-provided state")
 	}
 }

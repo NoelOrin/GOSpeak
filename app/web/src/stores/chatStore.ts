@@ -1,4 +1,5 @@
 import { createEffect, createRoot, createSignal } from "solid-js";
+import { showToast } from "solid-notifications";
 import {
 	type ConversationDTO,
 	getConversationMessages,
@@ -119,6 +120,11 @@ export const chatStore = createRoot(() => {
 	function handleError(data: { client_nonce?: string; error?: string }) {
 		if (data.client_nonce) {
 			pendingNonces.set(data.client_nonce, "failed");
+		}
+		if (data.error) {
+			showToast(data.error, { type: "error" });
+		} else if (data.client_nonce) {
+			showToast("消息发送失败", { type: "error" });
 		}
 	}
 

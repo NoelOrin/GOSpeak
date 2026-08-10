@@ -11,10 +11,14 @@ import (
 
 type AuthHandler struct {
 	authService *service.AuthService
+	cookie      *AuthCookieConfig
 }
 
-func NewAuthHandler(authService *service.AuthService) *AuthHandler {
-	return &AuthHandler{authService: authService}
+func NewAuthHandler(authService *service.AuthService, cookie *AuthCookieConfig) *AuthHandler {
+	if cookie == nil {
+		cookie = defaultAuthCookieConfig()
+	}
+	return &AuthHandler{authService: authService, cookie: cookie}
 }
 
 // Login
@@ -39,6 +43,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	h.cookie.Set(c, resp.Token, resp.RefreshToken)
 	pkg.Success(c, resp)
 }
 
@@ -58,7 +63,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	if strings.HasPrefix(req.Username, "bot_") {
+	if strings.HasPrefix(strings.ToLower(req.Username), "bot_") {
 		pkg.Fail(c, pkg.USERNAME_EXISTS, "username prefix 'bot_' is reserved")
 		return
 	}
@@ -69,6 +74,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	h.cookie.Set(c, resp.Token, resp.RefreshToken)
 	pkg.Success(c, resp)
 }
 
@@ -83,10 +89,18 @@ func (h *AuthHandler) Register(c *gin.Context) {
 // @Router       /auth/refresh_token [post]
 func (h *AuthHandler) GetRefreshToken(c *gin.Context) {
 	var req struct {
-		RefreshToken string `json:"refresh_token" binding:"required"`
+		RefreshToken string `json:"refresh_token"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+	_ = c.ShouldBindJSON(&req)
+
+	// 浏览器侧 refresh token 由 HttpOnly Cookie 承载；body 参数仅保留给非浏览器客户端。
+	if req.RefreshToken == "" {
+		if cookie, err := c.Request.Cookie(h.cookie.RefreshName); err == nil && cookie.Value != "" {
+			req.RefreshToken = cookie.Value
+		}
+	}
+	if req.RefreshToken == "" {
+		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return
 	}
 
@@ -96,6 +110,7 @@ func (h *AuthHandler) GetRefreshToken(c *gin.Context) {
 		return
 	}
 
+	h.cookie.Set(c, resp.AccessToken, resp.RefreshToken)
 	pkg.Success(c, resp)
 }
 
@@ -112,6 +127,9 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	if v, ok := c.Get("claims"); ok {
 		accessClaims, _ = v.(*pkg.Claims)
 	}
+
+	// 无论服务端黑名单是否成功，浏览器侧 Cookie 都立即失效。
+	h.cookie.Clear(c)
 
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
@@ -148,6 +166,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
+	h.cookie.Set(c, token, "")
 	pkg.Success(c, gin.H{"access_token": token})
 }
 
@@ -219,6 +238,7 @@ func (h *AuthHandler) FirstChangePassword(c *gin.Context) {
 		return
 	}
 
+	h.cookie.Set(c, resp.Token, resp.RefreshToken)
 	pkg.Success(c, resp)
 }
 

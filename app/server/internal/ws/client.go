@@ -156,7 +156,9 @@ func (c *Client) StartReadLoop(handler func(ClientMessenger, Message)) {
 			return
 		}
 		if len(msgBytes) > readLimit {
-			continue
+			log.Printf("[ws] client=%s message exceeds read limit, closing", c.id)
+			c.Close()
+			return
 		}
 		var msg Message
 		if err := json.Unmarshal(msgBytes, &msg); err != nil {

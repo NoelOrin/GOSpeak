@@ -3,7 +3,9 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
@@ -17,6 +19,17 @@ import (
 // DefaultAdminPassword 初始管理员默认密码（admin / admin123）。
 // seedAdminUser 与 Login/FirstChangePassword 的 need_change_password 检测共用此常量。
 const DefaultAdminPassword = "admin123"
+
+// minPasswordLength 新密码最短长度。
+const minPasswordLength = 8
+
+// validateNewPassword 校验新密码强度；当前仅约束最小长度。
+func validateNewPassword(password string) error {
+	if utf8.RuneCountInString(password) < minPasswordLength {
+		return pkg.NewAppError(pkg.INVALID_PARAMS, fmt.Sprintf("password must be at least %d characters", minPasswordLength))
+	}
+	return nil
+}
 
 // AuthService 认证服务，处理登录、注册和 Token 刷新。
 type AuthService struct {
@@ -62,13 +75,13 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 	user, err := s.userRepo.GetByName(req.Username)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, pkg.NewAppError(pkg.USER_NOT_FOUND, "user not found")
+			return nil, pkg.NewAppError(pkg.USER_NOT_FOUND, "invalid credentials")
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		return nil, pkg.NewAppError(pkg.INVALID_PASSWORD)
+		return nil, pkg.NewAppError(pkg.INVALID_PASSWORD, "invalid credentials")
 	}
 
 	if user.IsBanned() || model.HasBanRole(user.Role) {
@@ -114,6 +127,9 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 		if err := s.emailVerificationService.VerifyRegisterEmail(req.Email, req.EmailCode); err != nil {
 			return nil, err
 		}
+	}
+	if err := validateNewPassword(req.Password); err != nil {
+		return nil, err
 	}
 
 	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
@@ -258,12 +274,6 @@ func (s *AuthService) Logout(accessClaims *pkg.Claims, refreshToken string) erro
 	if err := s.BlacklistToken(accessClaims); err != nil {
 		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "blacklist access token failed")
 	}
-	// 按 user 维度吊销短时 WS ticket，登出后已签发的 45s ticket 不再可建连。
-	if accessClaims.UserUUID != "" {
-		if err := redis.BlacklistToken("ws:"+accessClaims.UserUUID, pkg.WSTicketTTL); err != nil {
-			return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "blacklist ws ticket failed")
-		}
-	}
 	if refreshToken != "" {
 		if refreshClaims, err := pkg.ParseToken(refreshToken); err == nil {
 			if err := s.BlacklistToken(refreshClaims); err != nil {
@@ -286,6 +296,9 @@ func (s *AuthService) ChangePassword(username, oldPassword, newPassword string) 
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(oldPassword)); err != nil {
 		return pkg.NewAppError(pkg.INVALID_PASSWORD)
+	}
+	if err := validateNewPassword(newPassword); err != nil {
+		return err
 	}
 
 	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
@@ -317,6 +330,9 @@ func (s *AuthService) FirstChangePassword(username, newPassword string, name *st
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(DefaultAdminPassword)); err != nil {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "当前密码非默认密码，请使用普通改密接口")
+	}
+	if err := validateNewPassword(newPassword); err != nil {
+		return nil, err
 	}
 
 	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
@@ -363,6 +379,9 @@ func (s *AuthService) ResetPassword(email, code, newPassword string) error {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, "email verification service is not initialized")
 	}
 	if err := s.emailVerificationService.VerifyResetPasswordCode(email, code); err != nil {
+		return err
+	}
+	if err := validateNewPassword(newPassword); err != nil {
 		return err
 	}
 

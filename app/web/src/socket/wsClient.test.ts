@@ -61,7 +61,7 @@ describe("wsClient", () => {
 		const { createWSClient } = await import("./wsClient");
 		const client = createWSClient();
 
-		client.connect("https://voice.example.com/ws?worker=worker-1", "ticket");
+		client.connect("https://voice.example.com/ws?worker=worker-1");
 		expect(MockWebSocket.instances[0].url).toBe(
 			"wss://voice.example.com/ws?worker=worker-1",
 		);
@@ -73,7 +73,7 @@ describe("wsClient", () => {
 		const { createWSClient } = await import("./wsClient");
 		const client = createWSClient();
 
-		client.connect("https://voice.example.com?worker=worker-2", "ticket");
+		client.connect("https://voice.example.com?worker=worker-2");
 		expect(MockWebSocket.instances[0].url).toBe(
 			"wss://voice.example.com/ws?worker=worker-2",
 		);
@@ -81,34 +81,33 @@ describe("wsClient", () => {
 		client.disconnect();
 	});
 
-	it("refreshes the ws ticket before automatic reconnect", async () => {
+	it("re-resolves the ws endpoint before automatic reconnect", async () => {
 		const { createWSClient } = await import("./wsClient");
-		const refreshTicket = vi.fn().mockResolvedValue({ token: "fresh-ticket" });
-		const client = createWSClient({ refreshTicket });
+		const refreshEndpoint = vi.fn().mockResolvedValue({});
+		const client = createWSClient({ refreshEndpoint });
 
-		client.connect("ws://example.test/ws", "stale-ticket");
+		client.connect("ws://example.test/ws");
 		expect(MockWebSocket.instances).toHaveLength(1);
 		const first = MockWebSocket.instances[0];
 		first.onclose?.({ reason: "network lost" } as CloseEvent);
 
 		await vi.advanceTimersByTimeAsync(4000);
 
-		expect(refreshTicket).toHaveBeenCalledTimes(1);
+		expect(refreshEndpoint).toHaveBeenCalledTimes(1);
 		expect(MockWebSocket.instances).toHaveLength(2);
-		expect(MockWebSocket.instances[1].protocols).toContain("fresh-ticket");
+		expect(MockWebSocket.instances[1].protocols).toEqual(["gospeak"]);
 
 		client.disconnect();
 	});
 
 	it("re-resolves worker URL on reconnect", async () => {
 		const { createWSClient } = await import("./wsClient");
-		const refreshTicket = vi.fn().mockResolvedValue({
+		const refreshEndpoint = vi.fn().mockResolvedValue({
 			url: "wss://new-worker/ws",
-			token: "fresh-ticket",
 		});
-		const client = createWSClient({ refreshTicket });
+		const client = createWSClient({ refreshEndpoint });
 
-		client.connect("wss://old-worker/ws", "stale-ticket");
+		client.connect("wss://old-worker/ws");
 		expect(MockWebSocket.instances[0].url).toBe("wss://old-worker/ws");
 		MockWebSocket.instances[0].onclose?.({
 			reason: "worker changed",
@@ -116,7 +115,7 @@ describe("wsClient", () => {
 
 		await vi.advanceTimersByTimeAsync(4000);
 
-		expect(refreshTicket).toHaveBeenCalledTimes(1);
+		expect(refreshEndpoint).toHaveBeenCalledTimes(1);
 		expect(MockWebSocket.instances).toHaveLength(2);
 		expect(MockWebSocket.instances[1].url).toBe("wss://new-worker/ws");
 		expect(client.getCurrentUrl()).not.toContain("old-worker");

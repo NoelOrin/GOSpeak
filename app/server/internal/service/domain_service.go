@@ -76,6 +76,7 @@ func parseInvalidationPayload(payload interface{}) (string, string) {
 		userUUID, _ := p["user_uuid"].(string)
 		return domainUUID, userUUID
 	}
+	log.Printf("[Domain] invalid membership invalidation payload type: %T", payload)
 	return "", ""
 }
 

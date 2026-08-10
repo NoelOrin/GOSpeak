@@ -1,5 +1,5 @@
 import type { SignalSocket } from "@gospeak/sfu-client/types";
-import type { WSTicketInfo } from "@/protocol/ws";
+import type { WSEndpointInfo } from "@/protocol/ws";
 
 interface WSMessage {
 	id?: string;
@@ -64,12 +64,12 @@ function resolveWsUrl(url: string): string {
 }
 
 export interface WSClientOptions {
-	/** 自动重连前重新获取短时 ws ticket 与 worker URL，避免复用过期凭证或失效节点。 */
-	refreshTicket?: () => Promise<WSTicketInfo>;
+	/** 自动重连前重新解析 worker URL，避免粘在失效节点上；鉴权走 HttpOnly cookie。 */
+	refreshEndpoint?: () => Promise<WSEndpointInfo>;
 }
 
 export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
-	connect: (url: string, token?: string) => void;
+	connect: (url: string) => void;
 	disconnect: () => void;
 	getCurrentUrl: () => string;
 	getState: () => WSConnectionState;
@@ -97,10 +97,9 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 	const connectErrorCbs: Array<(err: Error) => void> = [];
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	let currentUrl = "";
-	let currentToken = "";
 	let shouldReconnect = true;
 	let reconnectAttempts = 0;
-	const refreshTicket = options.refreshTicket;
+	const refreshEndpoint = options.refreshEndpoint;
 
 	let state: WSConnectionState = "new";
 	const stateChangeCbs: Array<
@@ -147,9 +146,8 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 		};
 	}
 
-	function connect(url: string, token?: string) {
+	function connect(url: string) {
 		currentUrl = url;
-		currentToken = token || "";
 		shouldReconnect = true;
 		if (reconnectTimer) {
 			clearTimeout(reconnectTimer);
@@ -165,8 +163,7 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 		}
 		setState("connecting");
 
-		const protocols = currentToken ? ["gospeak", currentToken] : ["gospeak"];
-		const wsHandle = new WebSocket(resolveWsUrl(url), protocols);
+		const wsHandle = new WebSocket(resolveWsUrl(url), ["gospeak"]);
 		ws = wsHandle;
 
 		wsHandle.onopen = () => {
@@ -222,7 +219,7 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 				const jitter = Math.random() * 300;
 				reconnectAttempts += 1;
 				reconnectTimer = setTimeout(() => {
-					void reconnectWithFreshTicket();
+					void reconnectWithEndpoint();
 				}, delay + jitter);
 			}
 		};
@@ -232,29 +229,30 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 		};
 	}
 
-	async function refreshTicketSafe(): Promise<WSTicketInfo | null> {
-		if (!refreshTicket) return null;
+	async function refreshEndpointSafe(): Promise<WSEndpointInfo | null> {
+		if (!refreshEndpoint) return null;
 		try {
-			return await refreshTicket();
+			return await refreshEndpoint();
 		} catch (err) {
 			shouldReconnect = false;
 			currentUrl = "";
 			for (const cb of connectErrorCbs) {
 				cb(
-					err instanceof Error ? err : new Error("failed to refresh ws ticket"),
+					err instanceof Error
+						? err
+						: new Error("failed to resolve ws endpoint"),
 				);
 			}
 			return null;
 		}
 	}
 
-	async function reconnectWithFreshTicket() {
+	async function reconnectWithEndpoint() {
 		if (!shouldReconnect || !currentUrl) return;
-		const ticket = await refreshTicketSafe();
+		const endpoint = await refreshEndpointSafe();
 		if (!shouldReconnect) return;
-		const nextUrl = ticket?.url || currentUrl;
-		const nextToken = ticket?.token || currentToken;
-		connect(nextUrl, nextToken);
+		const nextUrl = endpoint?.url || currentUrl;
+		connect(nextUrl);
 	}
 
 	function disconnect() {

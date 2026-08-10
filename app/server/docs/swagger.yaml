@@ -19,6 +19,7 @@ definitions:
       type:
         type: string
     required:
+    - domain_uuid
     - name
     type: object
   handler.JoinRoomRequest:
@@ -122,7 +123,14 @@ definitions:
         type: boolean
       name:
         type: string
+      permissions:
+        description: Permissions 由 profile 等接口按角色动态下发，不落库。
+        items:
+          type: string
+        type: array
       role:
+        type: string
+      status:
         type: string
       token_version:
         type: integer
@@ -1349,9 +1357,9 @@ paths:
       summary: 接收 LiveKit Webhook 事件
       tags:
       - 信令
-  /signal/ws-ticket:
+  /signal/ws-endpoint:
     get:
-      description: 签发只用于 WS 握手的短时 ticket，避免 JWT 出现在 URL query 和访问日志中
+      description: 按域解析 Worker 节点地址；WS 鉴权统一使用 HttpOnly access cookie
       produces:
       - application/json
       responses:
@@ -1361,7 +1369,7 @@ paths:
             $ref: '#/definitions/pkg.Response'
       security:
       - BearerAuth: []
-      summary: 获取 WebSocket 短时 ticket
+      summary: 获取 WebSocket 连接地址
       tags:
       - 信令
   /storage/config:
@@ -1454,6 +1462,30 @@ paths:
       summary: 获取预签名上传 URL
       tags:
       - 存储
+  /storage/test-config:
+    post:
+      consumes:
+      - application/json
+      description: 使用提交的配置测试连接，不保存配置
+      parameters:
+      - description: 配置请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateStorageConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 测试存储连接
+      tags:
+      - 存储
   /storage/update-config:
     post:
       consumes:
@@ -1506,6 +1538,104 @@ paths:
       summary: 本地模式中转上传
       tags:
       - 存储
+  /user-group/create:
+    post:
+      consumes:
+      - application/json
+      description: 为当前用户创建一个命名分组
+      parameters:
+      - description: 分组名
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            group_name:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建用户分组
+      tags:
+      - 用户分组
+  /user-group/delete:
+    post:
+      consumes:
+      - application/json
+      description: 删除当前用户的一个分组
+      parameters:
+      - description: 分组 ID
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            id:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除用户分组
+      tags:
+      - 用户分组
+  /user-group/list:
+    post:
+      description: 获取当前登录用户创建的用户分组列表
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取当前用户分组
+      tags:
+      - 用户分组
+  /user-group/update:
+    post:
+      consumes:
+      - application/json
+      description: 重命名当前用户的一个分组
+      parameters:
+      - description: 分组 ID 和新名称
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            group_name:
+              type: string
+            id:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 重命名用户分组
+      tags:
+      - 用户分组
   /user/delete:
     post:
       consumes:
@@ -1614,6 +1744,21 @@ paths:
       security:
       - BearerAuth: []
       summary: 获取用户列表
+      tags:
+      - 用户
+  /user/preset-avatars:
+    get:
+      description: 获取个人资料页可选的本地预设头像 URL
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取预设头像列表
       tags:
       - 用户
   /user/profile:

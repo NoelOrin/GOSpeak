@@ -22,6 +22,12 @@ func (c *Config) normalize() {
 	}
 	c.WSAllowedOrigins = strings.TrimSpace(c.WSAllowedOrigins)
 	c.ClusterRole = strings.ToLower(strings.TrimSpace(c.ClusterRole))
+	c.AccessCookieName = strings.TrimSpace(c.AccessCookieName)
+	c.RefreshCookieName = strings.TrimSpace(c.RefreshCookieName)
+	c.CookieDomain = strings.TrimSpace(c.CookieDomain)
+	c.CookiePath = strings.TrimSpace(c.CookiePath)
+	c.CookieSecure = strings.ToLower(strings.TrimSpace(c.CookieSecure))
+	c.CookieSameSite = strings.ToLower(strings.TrimSpace(c.CookieSameSite))
 	c.ClusterNodeID = strings.TrimSpace(c.ClusterNodeID)
 	c.ClusterAdvertiseURL = strings.TrimSpace(c.ClusterAdvertiseURL)
 	c.ClusterAgentURL = strings.TrimSpace(c.ClusterAgentURL)
@@ -86,6 +92,21 @@ func (c *Config) normalize() {
 	}
 	if c.ClusterRole == "" {
 		c.ClusterRole = "all"
+	}
+	if c.AccessCookieName == "" {
+		c.AccessCookieName = "gospeak_token"
+	}
+	if c.RefreshCookieName == "" {
+		c.RefreshCookieName = "gospeak_refresh_token"
+	}
+	if c.CookiePath == "" {
+		c.CookiePath = "/"
+	}
+	if c.CookieSecure == "" {
+		c.CookieSecure = "auto"
+	}
+	if c.CookieSameSite == "" {
+		c.CookieSameSite = "lax"
 	}
 	if c.ClusterHeartbeatInterval == "" {
 		c.ClusterHeartbeatInterval = "5s"

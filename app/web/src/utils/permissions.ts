@@ -1,5 +1,14 @@
 import userStore from "@/stores/userStore";
 
+/** 解码 JWT base64url payload；兼容 UTF-8 与 URL-safe 字符集。 */
+export function decodeBase64Url(input: string): string {
+	const base64 = input.replace(/-/g, "+").replace(/_/g, "/");
+	const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+	const raw = atob(padded);
+	const bytes = Uint8Array.from(raw, (ch) => ch.charCodeAt(0));
+	return new TextDecoder().decode(bytes);
+}
+
 /** 与后端 model.DefaultRolePermissions 保持同步（前端兜底；DB 动态权限以服务端为准）。 */
 const rolePermissions: Record<string, string[]> = {
 	admin: [
@@ -70,43 +79,24 @@ export const MANAGE_ENTRY_PERMISSIONS = [
 	"oauth:manage",
 ] as const;
 
-function decodeJWTPayload<T = Record<string, unknown>>(
-	token: string,
-): T | null {
-	try {
-		const payload = token.split(".")[1];
-		if (!payload) return null;
-		return JSON.parse(atob(payload)) as T;
-	} catch {
-		return null;
-	}
-}
-
-/** Bot / 细粒度 token：claims.permissions 非空时优先，与后端 PermissionGranted 口径一致。 */
-function claimPermissions(): string[] | null {
-	const token = userStore.accessToken();
-	if (!token) return null;
-	const payload = decodeJWTPayload<{ permissions?: unknown }>(token);
-	const perms = payload?.permissions;
-	if (!Array.isArray(perms) || perms.length === 0) return null;
-	return perms.filter(
-		(p): p is string => typeof p === "string" && p.length > 0,
-	);
-}
-
 export function hasPermission(code: string): boolean {
-	// 服务端 profile 下发的权限是权威来源；未加载时退回 JWT claims 与本地兜底表。
+	// 被封禁用户一律无权限，即使旧 token 仍携带 permissions claims。
+	if (isBannedUser()) return false;
+
+	// access token 已移入 HttpOnly Cookie，前端无法解码 claims；
+	// 服务端 profile 下发的权限是权威来源，未加载时退回本地兜底表。
 	const profilePerms = userStore.user()?.permissions;
 	if (profilePerms && profilePerms.length > 0) {
 		return profilePerms.includes(code);
 	}
 
-	const claims = claimPermissions();
-	if (claims) return claims.includes(code);
-
 	const role = userStore.user()?.role;
 	if (!role) return false;
 	return rolePermissions[role]?.includes(code) ?? false;
+}
+
+function isBannedUser(): boolean {
+	return userStore.user()?.role === "ban";
 }
 
 export function hasAnyPermission(...codes: string[]): boolean {

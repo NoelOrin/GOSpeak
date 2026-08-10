@@ -23,6 +23,8 @@ type UpgraderConfig struct {
 	// AllowedOrigins 是握手阶段允许的 Origin 白名单。
 	// 为空时默认只允许与请求 Host 同源；包含 "*" 表示允许任意来源。
 	AllowedOrigins []string
+	// AuthCookieName 是承载 access token 的 HttpOnly Cookie 名；为空时使用 gospeak_token。
+	AuthCookieName string
 	// OnConnect 在连接建立后、读取循环开始前调用（Hub 用于设置 OnClose）。
 	OnConnect func(c *Client)
 	// OnDisconnect 在连接关闭并注销 Fanout 后调用（Hub 用于清理房间状态）。
@@ -44,15 +46,16 @@ func (u *Upgrader) Fanout() Broadcaster {
 	return u.cfg.Fanout
 }
 
-// extractToken 从 Sec-WebSocket-Protocol 提取短时 WS ticket。
-func extractToken(r *http.Request) (string, bool) {
-	for _, protocol := range strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ",") {
-		protocol = strings.TrimSpace(protocol)
-		if protocol != "" && protocol != "gospeak" {
-			return protocol, true
-		}
+// accessTokenFromCookie 从 HttpOnly access cookie 读取 JWT。
+func (u *Upgrader) accessTokenFromCookie(r *http.Request) string {
+	name := u.cfg.AuthCookieName
+	if name == "" {
+		name = "gospeak_token"
 	}
-	return "", false
+	if cookie, err := r.Cookie(name); err == nil && cookie.Value != "" {
+		return cookie.Value
+	}
+	return ""
 }
 
 // originAllowed 校验 WS 握手 Origin。Gin CORS 不覆盖 WS 升级，因此必须在这里独立校验。
@@ -100,14 +103,14 @@ func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokenStr, fromSubprotocol := extractToken(r)
-	if tokenStr == "" || !fromSubprotocol {
+	tokenStr := u.accessTokenFromCookie(r)
+	if tokenStr == "" {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
-	claims, code := middleware.VerifyWSTicket(tokenStr)
-	if code != pkg.SUCCESS {
+	claims, code := middleware.VerifyToken(tokenStr)
+	if code != pkg.SUCCESS || claims == nil || claims.TokenType != pkg.AccessTokenType {
 		log.Printf("[ws] upgrade rejected: code=%s client=%s", code.String(), r.RemoteAddr)
 		w.WriteHeader(http.StatusUnauthorized)
 		return

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type MessageRepository struct {
@@ -29,12 +30,13 @@ func (r *MessageRepository) CreateMentions(mentions []model.MessageMention) erro
 
 // EnsureMentions 幂等写入 @提及关系，job 重放/兜底并发时不产生重复行。
 func (r *MessageRepository) EnsureMentions(mentions []model.MessageMention) error {
-	for i := range mentions {
-		if err := r.db.Where("message_uuid = ? AND user_id = ?", mentions[i].MessageUUID, mentions[i].UserID).FirstOrCreate(&mentions[i]).Error; err != nil {
-			return err
-		}
+	if len(mentions) == 0 {
+		return nil
 	}
-	return nil
+	for i := range mentions {
+		mentions[i].ID = 0
+	}
+	return r.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&mentions).Error
 }
 
 func (r *MessageRepository) GetByUUID(uuid string) (*model.Message, error) {

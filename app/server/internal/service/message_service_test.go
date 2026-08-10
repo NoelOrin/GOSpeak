@@ -337,12 +337,12 @@ func TestMessageService_RejectsNonDomainMemberForAllEndpoints(t *testing.T) {
 	assertErrorCode(t, reactErr, pkg.FORBIDDEN)
 	unreactErr := svc.Unreact(textUUID, msg.UUID, testActorWithUUID("eve", "uuid-eve"), "+1")
 	assertErrorCode(t, unreactErr, pkg.FORBIDDEN)
-	_, _, _, listErr := svc.ListHistory(textUUID, testActorWithUUID("eve", "uuid-eve"), "", 50)
+	_, _, _, listErr := svc.ListHistory(textUUID, testActorWithUUID("eve", "uuid-eve"), "", 50, "")
 	assertErrorCode(t, listErr, pkg.FORBIDDEN)
-	_, searchErr := svc.Search(textUUID, testActorWithUUID("eve", "uuid-eve"), "owned")
+	_, searchErr := svc.Search(textUUID, testActorWithUUID("eve", "uuid-eve"), "owned", "")
 	assertErrorCode(t, searchErr, pkg.FORBIDDEN)
 
-	if _, _, _, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 50); err != nil {
+	if _, _, _, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 50, ""); err != nil {
 		t.Fatalf("member history should succeed: %v", err)
 	}
 }
@@ -500,6 +500,15 @@ func TestMessageService_Send_EmptyContent(t *testing.T) {
 
 	_, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "   ", "", "", nil)
 	assertErrorCode(t, err, pkg.INVALID_PARAMS)
+}
+
+func TestMessageService_Send_RejectsEmptyActor(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+	_, err := svc.Send(textUUID, MessageActor{}, "hello", "", "", nil)
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.TOKEN_WRONG {
+		t.Fatalf("want TOKEN_WRONG, got %v", err)
+	}
 }
 
 func TestMessageService_Send_TooLongContent(t *testing.T) {
@@ -685,7 +694,7 @@ func TestMessageService_EditDelete_UsesAuthorUUIDAfterRename(t *testing.T) {
 	assertErrorCode(t, err, pkg.FORBIDDEN)
 
 	// 历史查询应带回稳定 UUID。
-	items, _, _, err := svc.ListHistory(textUUID, renamed, "", 50)
+	items, _, _, err := svc.ListHistory(textUUID, renamed, "", 50, "")
 	assertNoError(t, err)
 	if len(items) != 1 || items[0].AuthorUUID != "uuid-alice" {
 		t.Fatalf("expected history author_uuid uuid-alice, got %+v", items)
@@ -701,6 +710,19 @@ func TestMessageService_Edit_NotFound(t *testing.T) {
 
 	_, err := svc.Edit("room-uuid", "nonexistent-uuid", testActorWithUUID("alice", "uuid-alice"), "Content")
 	assertErrorCode(t, err, pkg.NOT_FOUND)
+}
+
+func TestMessageService_Edit_DeletedMessage(t *testing.T) {
+	svc, _, _, _, textUUID := setupMessageServiceTest(t)
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "original", "", "", nil)
+	assertNoError(t, err)
+	assertNoError(t, svc.Delete(textUUID, dto.UUID, testActorWithUUID("alice", "uuid-alice"), false))
+
+	_, err = svc.Edit(textUUID, dto.UUID, testActorWithUUID("alice", "uuid-alice"), "edited")
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.NOT_FOUND {
+		t.Fatalf("want NOT_FOUND, got %v", err)
+	}
 }
 
 func TestMessageService_Edit_QueueFallback(t *testing.T) {
@@ -954,7 +976,7 @@ func TestMessageService_Unreact_QueueFallback(t *testing.T) {
 func TestMessageService_ListHistory_Empty(t *testing.T) {
 	svc, _, _, _, textUUID := setupMessageServiceTest(t)
 
-	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 50)
+	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 50, "")
 	assertNoError(t, err)
 
 	if len(items) != 0 {
@@ -979,7 +1001,7 @@ func TestMessageService_ListHistory_ReturnsMessages(t *testing.T) {
 	msg3, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "Third", "", "", nil)
 	assertNoError(t, err)
 
-	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 100)
+	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 100, "")
 	assertNoError(t, err)
 
 	// Items should be in ASC order (oldest first)
@@ -1011,7 +1033,7 @@ func TestMessageService_ListHistory_ClampLimit(t *testing.T) {
 	}
 
 	// limit = 0 defaults to 100
-	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 0)
+	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 0, "")
 	assertNoError(t, err)
 	if len(items) != 60 {
 		t.Errorf("expected 60 items with default limit, got %d", len(items))
@@ -1024,7 +1046,7 @@ func TestMessageService_ListHistory_ClampLimit(t *testing.T) {
 	}
 
 	// limit < 50 should clamp to 50
-	items, hasMore, nextBefore, err = svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 10)
+	items, hasMore, nextBefore, err = svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 10, "")
 	assertNoError(t, err)
 	if len(items) != 50 {
 		t.Errorf("expected 50 items (clamped from 10), got %d", len(items))
@@ -1047,7 +1069,7 @@ func TestMessageService_ListHistory_LimitCap(t *testing.T) {
 	}
 
 	// limit > 200 should clamp to 200
-	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 1000)
+	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 1000, "")
 	assertNoError(t, err)
 	if len(items) != 200 {
 		t.Errorf("expected 200 items (capped from 1000), got %d", len(items))
@@ -1072,7 +1094,7 @@ func TestMessageService_ListHistory_Pagination(t *testing.T) {
 	}
 
 	// First page: get 50 messages (limit clamped to 50 minimum)
-	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 50)
+	items, hasMore, nextBefore, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), "", 50, "")
 	assertNoError(t, err)
 	if len(items) != 50 {
 		t.Fatalf("expected 50 items on page 1, got %d", len(items))
@@ -1085,7 +1107,7 @@ func TestMessageService_ListHistory_Pagination(t *testing.T) {
 	}
 
 	// Second page: pass nextBefore
-	items2, hasMore2, nextBefore2, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), nextBefore, 50)
+	items2, hasMore2, nextBefore2, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), nextBefore, 50, "")
 	assertNoError(t, err)
 	if len(items2) != 50 {
 		t.Fatalf("expected 50 items on page 2, got %d", len(items2))
@@ -1095,7 +1117,7 @@ func TestMessageService_ListHistory_Pagination(t *testing.T) {
 	}
 
 	// Third page: should get remaining 20
-	items3, hasMore3, nextBefore3, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), nextBefore2, 50)
+	items3, hasMore3, nextBefore3, err := svc.ListHistory(textUUID, testActorWithUUID("alice", "uuid-alice"), nextBefore2, 50, "")
 	assertNoError(t, err)
 	if len(items3) != 20 {
 		t.Fatalf("expected 20 items on page 3, got %d", len(items3))
@@ -1321,7 +1343,7 @@ func TestMessageService_Search(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := svc.Search(textUUID, testActorWithUUID("alice", "uuid-alice"), "needle")
+	items, err := svc.Search(textUUID, testActorWithUUID("alice", "uuid-alice"), "needle", "")
 	assertNoError(t, err)
 	if len(items) != 2 {
 		t.Fatalf("expected 2 search results, got %d", len(items))
@@ -1331,7 +1353,7 @@ func TestMessageService_Search(t *testing.T) {
 func TestMessageService_Search_RejectsVoiceRoom(t *testing.T) {
 	svc, _, _, roomRepo, _ := setupMessageServiceTest(t)
 	voiceUUID := mustFindVoiceUUID(roomRepo)
-	_, err := svc.Search(voiceUUID, testActorWithUUID("alice", "uuid-alice"), "needle")
+	_, err := svc.Search(voiceUUID, testActorWithUUID("alice", "uuid-alice"), "needle", "")
 	assertErrorCode(t, err, pkg.FORBIDDEN)
 }
 
@@ -1556,5 +1578,47 @@ func TestMessageService_MutateFromJob_DeleteUpsertsMissingMessage(t *testing.T) 
 
 	if _, err := svc.msgRepo.GetByUUID(msgUUID); err == nil {
 		t.Fatal("expected upserted message to be soft-deleted")
+	}
+}
+
+func TestMessageService_ListHistory_PlatformPasswordRoomRejectsWrongPassword(t *testing.T) {
+	svc, _, _, roomRepo, _ := setupMessageServiceTest(t)
+	roomUUID := uuid.New().String()
+	hashed, _ := pkg.HashPassword("secret")
+	roomRepo.mu.Lock()
+	roomRepo.rooms[roomUUID] = &model.Room{
+		UUID:       roomUUID,
+		Name:       "private-text",
+		Type:       model.RoomTypeText,
+		DomainUUID: "",
+		Password:   hashed,
+	}
+	roomRepo.mu.Unlock()
+
+	actor := MessageActor{Identity: "bob", UserUUID: "uuid-bob"}
+	_, _, _, err := svc.ListHistory(roomUUID, actor, "", 100, "wrong")
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.FORBIDDEN {
+		t.Fatalf("want FORBIDDEN, got %v", err)
+	}
+}
+
+func TestMessageService_ListHistory_PlatformPasswordRoomAllowsCorrectPassword(t *testing.T) {
+	svc, _, _, roomRepo, _ := setupMessageServiceTest(t)
+	roomUUID := uuid.New().String()
+	hashed, _ := pkg.HashPassword("secret")
+	roomRepo.mu.Lock()
+	roomRepo.rooms[roomUUID] = &model.Room{
+		UUID:       roomUUID,
+		Name:       "private-text",
+		Type:       model.RoomTypeText,
+		DomainUUID: "",
+		Password:   hashed,
+	}
+	roomRepo.mu.Unlock()
+
+	actor := MessageActor{Identity: "bob", UserUUID: "uuid-bob"}
+	if _, _, _, err := svc.ListHistory(roomUUID, actor, "", 100, "secret"); err != nil {
+		t.Fatalf("want nil, got %v", err)
 	}
 }

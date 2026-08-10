@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"time"
+
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/permcode"
@@ -9,7 +11,7 @@ import (
 )
 
 func Register(r *gin.RouterGroup, h *handler.DomainHandler) {
-	r.POST("/create", middleware.RequirePermission(permcode.PermDomainCreate), h.Create)
+	r.POST("/create", middleware.RateLimit(10, time.Minute), middleware.RequirePermission(permcode.PermDomainCreate), h.Create)
 	r.POST("/get", middleware.RequireDomainMember(), h.Get)
 	r.POST("/list", middleware.RequirePermission(permcode.PermDomainRead), h.List)
 	r.POST("/list-public", h.ListPublic)

@@ -88,6 +88,9 @@ func (s *ClusterService) scaleServerLocked(serverUUID string, replicas int, pref
 
 	if len(current) < replicas {
 		selected := cluster.ChooseNodesWithRequirement(nodes, current, replicas-len(current), []string{preferredNode}, requirement)
+		if len(selected) < replicas-len(current) {
+			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "insufficient schedulable nodes")
+		}
 		for _, nodeUUID := range selected {
 			if err := s.assignRepo.Ensure(serverUUID, nodeUUID); err != nil {
 				return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())

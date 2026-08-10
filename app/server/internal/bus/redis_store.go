@@ -16,12 +16,15 @@ const redisStateTTL = 24 * time.Hour
 type RedisStateStore struct {
 	rdb    *goredis.Client
 	prefix string
+	ttl    time.Duration
 }
 
 // RedisStateStoreConfig opens a Redis-backed membership store.
 type RedisStateStoreConfig struct {
 	Client *goredis.Client
 	Prefix string
+	// TTL 覆盖成员/流/房间元数据键的默认过期时间；零值使用 redisStateTTL（24h）。
+	TTL time.Duration
 }
 
 // OpenRedisStateStore validates redis connectivity and returns a store.
@@ -37,7 +40,11 @@ func OpenRedisStateStore(cfg RedisStateStoreConfig) (*RedisStateStore, error) {
 	if err := cfg.Client.Ping(ctx).Err(); err != nil {
 		return nil, fmt.Errorf("redis state store ping: %w", err)
 	}
-	return &RedisStateStore{rdb: cfg.Client, prefix: cfg.Prefix}, nil
+	ttl := cfg.TTL
+	if ttl <= 0 {
+		ttl = redisStateTTL
+	}
+	return &RedisStateStore{rdb: cfg.Client, prefix: cfg.Prefix, ttl: ttl}, nil
 }
 
 func (s *RedisStateStore) Backend() string { return "redis" }
@@ -124,9 +131,9 @@ func (s *RedisStateStore) PutRoomMembers(ctx context.Context, snap RoomMembersSn
 		return err
 	}
 	pipe := s.rdb.TxPipeline()
-	pipe.Set(ctx, s.roomKey(snap.Room), b, redisStateTTL)
+	pipe.Set(ctx, s.roomKey(snap.Room), b, s.ttl)
 	pipe.SAdd(ctx, s.roomsSetKey(), snap.Room)
-	pipe.Expire(ctx, s.roomsSetKey(), redisStateTTL)
+	pipe.Expire(ctx, s.roomsSetKey(), s.ttl)
 	_, err = pipe.Exec(ctx)
 	return err
 }
@@ -199,7 +206,7 @@ func (s *RedisStateStore) PutRoomMembersRev(ctx context.Context, snap RoomMember
 	}
 	_, err = s.rdb.Eval(ctx, redisMembershipCASScript,
 		[]string{s.roomKey(snap.Room), s.roomsSetKey()},
-		rev, string(b), int64(redisStateTTL.Seconds()), snap.Room).Result()
+		rev, string(b), int64(s.ttl.Seconds()), snap.Room).Result()
 	if err != nil {
 		if strings.Contains(err.Error(), "membership version mismatch") {
 			return ErrMembershipConflict
@@ -241,7 +248,7 @@ func (s *RedisStateStore) PutStream(ctx context.Context, stream, room, identity 
 	if err != nil {
 		return err
 	}
-	return s.rdb.Set(ctx, s.streamKey(stream), b, redisStateTTL).Err()
+	return s.rdb.Set(ctx, s.streamKey(stream), b, s.ttl).Err()
 }
 
 func (s *RedisStateStore) GetStream(ctx context.Context, stream string) (room, identity string, err error) {
@@ -270,9 +277,9 @@ func (s *RedisStateStore) PutRoomMeta(ctx context.Context, room string, meta Roo
 		return err
 	}
 	pipe := s.rdb.TxPipeline()
-	pipe.Set(ctx, s.roomMetaKey(room), b, redisStateTTL)
+	pipe.Set(ctx, s.roomMetaKey(room), b, s.ttl)
 	pipe.SAdd(ctx, s.roomsSetKey(), room)
-	pipe.Expire(ctx, s.roomsSetKey(), redisStateTTL)
+	pipe.Expire(ctx, s.roomsSetKey(), s.ttl)
 	_, err = pipe.Exec(ctx)
 	return err
 }

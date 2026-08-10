@@ -47,6 +47,7 @@ func (h *MessageHandler) List(c *gin.Context) {
 		RoomUUID string `json:"room_uuid" binding:"required"`
 		Before   string `json:"before"`
 		Limit    int    `json:"limit"`
+		Password string `json:"password"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
@@ -57,7 +58,7 @@ func (h *MessageHandler) List(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
-	items, hasMore, nextBefore, err := h.msgSvc.ListHistory(req.RoomUUID, actor, req.Before, req.Limit)
+	items, hasMore, nextBefore, err := h.msgSvc.ListHistory(req.RoomUUID, actor, req.Before, req.Limit, req.Password)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -80,6 +81,7 @@ func (h *MessageHandler) Search(c *gin.Context) {
 	var req struct {
 		RoomUUID string `json:"room_uuid" binding:"required"`
 		Query    string `json:"query" binding:"required"`
+		Password string `json:"password"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
@@ -90,7 +92,7 @@ func (h *MessageHandler) Search(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
-	items, err := h.msgSvc.Search(req.RoomUUID, actor, req.Query)
+	items, err := h.msgSvc.Search(req.RoomUUID, actor, req.Query, req.Password)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return

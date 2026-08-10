@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -457,5 +458,46 @@ func TestNATSBus_PendingOverflowCounts(t *testing.T) {
 	}
 	if len(b.pending) != maxPendingPublish {
 		t.Fatalf("expected pending capped at %d, got %d", maxPendingPublish, len(b.pending))
+	}
+}
+
+func TestNATSBus_PendingWALRecoveredOnRestart(t *testing.T) {
+	url := natsTestURL(t)
+	walPath := filepath.Join(t.TempDir(), "pending.wal")
+	b, err := NewNATSBus(NATSBusConfig{
+		InstanceID:    "instance-1",
+		SubjectPrefix: "gospeak",
+		URL:           url,
+		Name:          "instance-1",
+		Mode:          "external",
+		WALPath:       walPath,
+	})
+	if err != nil {
+		t.Fatalf("new bus: %v", err)
+	}
+	b.enqueuePending("gospeak.signal.room.r1", Envelope{
+		V: 1, InstanceID: "instance-1", Scope: "room", Room: "r1", Event: "kick", TS: 1,
+	})
+	if err := b.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	b2, err := NewNATSBus(NATSBusConfig{
+		InstanceID:    "instance-2",
+		SubjectPrefix: "gospeak",
+		URL:           url,
+		Name:          "instance-2",
+		Mode:          "external",
+		WALPath:       walPath,
+	})
+	if err != nil {
+		t.Fatalf("reopen bus: %v", err)
+	}
+	defer b2.Close()
+	b2.pendingMu.Lock()
+	recovered := len(b2.pending)
+	b2.pendingMu.Unlock()
+	if recovered != 1 {
+		t.Fatalf("recovered %d pending, want 1", recovered)
 	}
 }

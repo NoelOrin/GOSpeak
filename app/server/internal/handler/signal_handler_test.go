@@ -596,9 +596,9 @@ func TestLivekitWebhook_InvalidJSON(t *testing.T) {
 	}
 }
 
-// ─── GetWSTicket Tests ───
+// ─── GetWSEndpoint Tests ───
 
-func setupWSTicketRouter(resolver func(domainUUID string) (string, error)) *gin.Engine {
+func setupWSEndpointRouter(resolver func(domainUUID string) (string, error)) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	h := NewSignalHandler(service.NewSFUService(&mockSFU{}, nil))
@@ -610,12 +610,12 @@ func setupWSTicketRouter(resolver func(domainUUID string) (string, error)) *gin.
 		})
 		c.Next()
 	})
-	r.GET("/ws-ticket", h.GetWSTicket)
+	r.GET("/ws-endpoint", h.GetWSEndpoint)
 	return r
 }
 
-func TestGetWSTicket_ReturnsWorkerURLForDomain(t *testing.T) {
-	r := setupWSTicketRouter(func(domainUUID string) (string, error) {
+func TestGetWSEndpoint_ReturnsWorkerURLForDomain(t *testing.T) {
+	r := setupWSEndpointRouter(func(domainUUID string) (string, error) {
 		if domainUUID != "domain-1" {
 			t.Fatalf("unexpected domain uuid %q", domainUUID)
 		}
@@ -623,7 +623,7 @@ func TestGetWSTicket_ReturnsWorkerURLForDomain(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/ws-ticket?domain_uuid=domain-1", nil)
+	req := httptest.NewRequest("GET", "/ws-endpoint?domain_uuid=domain-1", nil)
 	r.ServeHTTP(w, req)
 
 	resp := parseResp(t, w.Body.String())
@@ -637,19 +637,16 @@ func TestGetWSTicket_ReturnsWorkerURLForDomain(t *testing.T) {
 	if data["url"] != "https://entry.example/ws?worker=worker-1" {
 		t.Fatalf("expected worker url, got %v", data["url"])
 	}
-	if data["ticket"] == "" {
-		t.Fatal("expected ws ticket")
-	}
 }
 
-func TestGetWSTicket_SkipsURLWithoutDomain(t *testing.T) {
-	r := setupWSTicketRouter(func(domainUUID string) (string, error) {
+func TestGetWSEndpoint_SkipsURLWithoutDomain(t *testing.T) {
+	r := setupWSEndpointRouter(func(domainUUID string) (string, error) {
 		t.Fatalf("resolver should not be called, got %q", domainUUID)
 		return "", nil
 	})
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/ws-ticket", nil)
+	req := httptest.NewRequest("GET", "/ws-endpoint", nil)
 	r.ServeHTTP(w, req)
 
 	resp := parseResp(t, w.Body.String())

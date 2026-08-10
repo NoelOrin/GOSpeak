@@ -83,6 +83,27 @@ func TestFanout_BroadcastToNamespace(t *testing.T) {
 	}
 }
 
+func TestFanout_BroadcastManyClients(t *testing.T) {
+	f := NewFanout()
+	const n = 20
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("c%d", i)
+		c := NewTestClient(id, nil)
+		f.Add(c)
+		f.Join("room-x", id)
+	}
+
+	f.BroadcastToRoom("room-x", "event:test", "hello")
+
+	for i := 0; i < n; i++ {
+		select {
+		case <-f.clients[fmt.Sprintf("c%d", i)].writeCh:
+		default:
+			t.Fatalf("expected client c%d to receive broadcast", i)
+		}
+	}
+}
+
 func TestFanout_ForEach(t *testing.T) {
 	f := NewFanout()
 	for i := 0; i < 3; i++ {

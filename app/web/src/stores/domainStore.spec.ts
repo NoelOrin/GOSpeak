@@ -453,3 +453,15 @@ describe("domainStore permissions", () => {
 		]);
 	});
 });
+
+it("logs and resets loading when loadMyDomains rejects", async () => {
+	const store = createDomainStore();
+	myDomainsMock.mockRejectedValue(new Error("network"));
+	const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+	await expect(store.loadMyDomains()).rejects.toThrow("network");
+
+	expect(store.state.loading).toBe(false);
+	expect(errorSpy).toHaveBeenCalled();
+	errorSpy.mockRestore();
+});

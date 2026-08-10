@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"errors"
+	"strings"
 
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
@@ -39,6 +40,19 @@ func TestMuteService_TemporaryMuteRequiresDuration(t *testing.T) {
 		if !errors.As(err, &appErr) || appErr.Code != pkg.INVALID_PARAMS {
 			t.Fatalf("duration=%d: expected INVALID_PARAMS, got %v", duration, err)
 		}
+	}
+}
+
+func TestMuteService_RejectsLongReason(t *testing.T) {
+	db := newMuteServiceTestDB(t)
+	muteRepo := repository.NewMuteRepository(db)
+	userRepo := repository.NewUserRepository(db)
+	svc := NewMuteService(muteRepo, userRepo)
+
+	_, err := svc.MuteUser(1, 42, 0, true, strings.Repeat("x", 501))
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.INVALID_PARAMS {
+		t.Fatalf("expected INVALID_PARAMS, got %v", err)
 	}
 }
 

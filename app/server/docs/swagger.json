@@ -1679,21 +1679,21 @@
                 }
             }
         },
-        "/signal/ws-ticket": {
+        "/signal/ws-endpoint": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "签发只用于 WS 握手的短时 ticket，避免 JWT 出现在 URL query 和访问日志中",
+                "description": "按域解析 Worker 节点地址；WS 鉴权统一使用 HttpOnly access cookie",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "信令"
                 ],
-                "summary": "获取 WebSocket 短时 ticket",
+                "summary": "获取 WebSocket 连接地址",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1851,6 +1851,45 @@
                 }
             }
         },
+        "/storage/test-config": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "使用提交的配置测试连接，不保存配置",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "存储"
+                ],
+                "summary": "测试存储连接",
+                "parameters": [
+                    {
+                        "description": "配置请求",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.UpdateStorageConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/storage/update-config": {
             "post": {
                 "security": [
@@ -1922,6 +1961,166 @@
                         "name": "object_key",
                         "in": "formData",
                         "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/user-group/create": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "为当前用户创建一个命名分组",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户分组"
+                ],
+                "summary": "创建用户分组",
+                "parameters": [
+                    {
+                        "description": "分组名",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "group_name": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/user-group/delete": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除当前用户的一个分组",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户分组"
+                ],
+                "summary": "删除用户分组",
+                "parameters": [
+                    {
+                        "description": "分组 ID",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/user-group/list": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取当前登录用户创建的用户分组列表",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户分组"
+                ],
+                "summary": "获取当前用户分组",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/user-group/update": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "重命名当前用户的一个分组",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户分组"
+                ],
+                "summary": "重命名用户分组",
+                "parameters": [
+                    {
+                        "description": "分组 ID 和新名称",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "group_name": {
+                                    "type": "string"
+                                },
+                                "id": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
                     }
                 ],
                 "responses": {
@@ -2113,6 +2312,31 @@
                 }
             }
         },
+        "/user/preset-avatars": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取个人资料页可选的本地预设头像 URL",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户"
+                ],
+                "summary": "获取预设头像列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/user/profile": {
             "post": {
                 "security": [
@@ -2266,6 +2490,7 @@
         "handler.CreateRoomRequest": {
             "type": "object",
             "required": [
+                "domain_uuid",
                 "name"
             ],
             "properties": {
@@ -2444,7 +2669,17 @@
                 "name": {
                     "type": "string"
                 },
+                "permissions": {
+                    "description": "Permissions 由 profile 等接口按角色动态下发，不落库。",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "role": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 },
                 "token_version": {

@@ -321,7 +321,17 @@ export class BotRunner {
 				}
 			});
 		this._speakQueues.set(roomId, next);
+		void next.then(
+			() => this.finishSpeakQueue(roomId, next),
+			() => this.finishSpeakQueue(roomId, next),
+		);
 		await next;
+	}
+
+	private finishSpeakQueue(roomId: string, next: Promise<void>): void {
+		if (this._speakQueues.get(roomId) === next) {
+			this._speakQueues.delete(roomId);
+		}
 	}
 
 	async publishPcm(

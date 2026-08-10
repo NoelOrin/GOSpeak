@@ -1,20 +1,22 @@
-import type { AxiosResponse } from "axios";
 import axios from "axios";
-import type { Result } from "./apiClient";
 
 const rawAxios = axios.create({
 	timeout: 50000,
+	withCredentials: true,
 	headers: { "Content-Type": "application/json;charset=utf-8" },
 });
 
-export async function requestAccessTokenByRefreshToken(
-	refreshToken: string,
-): Promise<string> {
-	const res = (await rawAxios.post("/api/v1/auth/refresh_token", {
-		refresh_token: refreshToken,
-	})) as AxiosResponse<Result<{ access_token: string }>>;
+let pendingRefresh: Promise<void> | null = null;
 
-	const token = res.data.data?.access_token;
-	if (!token) throw new Error("access_token is missing");
-	return token;
+/** 由 HttpOnly refresh cookie 静默续期 access token，浏览器侧无需持有任何 token。 */
+export async function refreshSession(): Promise<void> {
+	if (!pendingRefresh) {
+		pendingRefresh = rawAxios
+			.post("/api/v1/auth/refresh_token")
+			.then(() => undefined)
+			.finally(() => {
+				pendingRefresh = null;
+			});
+	}
+	await pendingRefresh;
 }

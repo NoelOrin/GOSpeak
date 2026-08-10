@@ -196,6 +196,9 @@ func (s *MessageService) Send(roomUUID string, actor MessageActor, content, repl
 	if utf8.RuneCountInString(content) > MaxMessageRunes {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "content too long")
 	}
+	if strings.TrimSpace(actor.Identity) == "" || strings.TrimSpace(actor.UserUUID) == "" {
+		return nil, pkg.NewAppError(pkg.TOKEN_WRONG, "identity and user_uuid are required")
+	}
 
 	room, err := s.roomRepo.GetByUUID(roomUUID)
 	if err != nil {
