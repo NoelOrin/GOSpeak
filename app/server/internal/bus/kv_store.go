@@ -42,6 +42,8 @@ type RoomMeta struct {
 	Limit       uint   `json:"limit,omitempty"`
 	Description string `json:"description,omitempty"`
 	CreatedAtMS int64  `json:"created_at_ms,omitempty"`
+	// OwnerNodeID 是当前持有该房间的 Worker 节点；用于房间级路由。
+	OwnerNodeID string `json:"owner_node_id,omitempty"`
 }
 
 // StateStoreConfig opens JetStream KV buckets for membership/stream state.

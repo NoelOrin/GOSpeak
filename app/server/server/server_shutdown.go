@@ -12,6 +12,7 @@ import (
 	"GOSpeak/internal/logger"
 	"GOSpeak/internal/plugin"
 	"GOSpeak/internal/redis"
+	"GOSpeak/internal/service"
 	"GOSpeak/internal/signal"
 	"GOSpeak/internal/ws"
 )
@@ -24,6 +25,7 @@ type shutdownDeps struct {
 	clusterStop     func()
 	stopLeaderRenew func()
 	agentLeaderLock *cluster.NATSLeaderLock
+	leaderFence     *service.LeaderFenceService
 	instanceID      string
 	closeEventBus   func()
 }
@@ -58,6 +60,9 @@ func runGracefulShutdown(deps shutdownDeps) {
 	}
 	if deps.stopLeaderRenew != nil {
 		deps.stopLeaderRenew()
+	}
+	if deps.leaderFence != nil {
+		deps.leaderFence.Deactivate()
 	}
 	if deps.agentLeaderLock != nil {
 		if err := deps.agentLeaderLock.Release(deps.instanceID); err != nil {

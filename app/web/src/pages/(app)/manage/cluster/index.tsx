@@ -226,6 +226,7 @@ function ClusterPage() {
 									<th>地址</th>
 									<th>SFU</th>
 									<th>负载</th>
+									<th>从库延迟</th>
 									<th>实例</th>
 									<th class="text-right">操作</th>
 								</tr>
@@ -253,6 +254,21 @@ function ClusterPage() {
 												{nodeValue(view, "rooms")} 房 /{" "}
 												{nodeValue(view, "connections")} 连接 /{" "}
 												{nodeValue(view, "load_percent")}%
+											</td>
+											<td class="text-xs">
+												<Show
+													when={
+														nodeValue(view, "db_replica_lag_degraded") ===
+														"true"
+													}
+													fallback={
+														<span>
+															{nodeValue(view, "db_replica_lag_ms")}ms
+														</span>
+													}
+												>
+													<span class="badge badge-sm badge-warning">降级</span>
+												</Show>
 											</td>
 											<td class="text-xs">
 												{nodeValue(view, "serving_servers")}

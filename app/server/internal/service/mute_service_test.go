@@ -99,3 +99,28 @@ func TestMuteService_ExpiredTemporaryMuteRunsFullUnmute(t *testing.T) {
 		t.Fatalf("expected no duplicate callback, got %d", got)
 	}
 }
+
+func TestMuteService_CacheHitAvoidsUserLookup(t *testing.T) {
+	db := newMuteServiceTestDB(t)
+	muteRepo := repository.NewMuteRepository(db)
+	userRepo := repository.NewUserRepository(db)
+	svc := NewMuteService(muteRepo, userRepo)
+
+	permanent := true
+	svc.cacheMute(42, "alice", true, &model.Mute{UserID: 42, Permanent: permanent})
+	muted, mute, err := svc.IsMutedByIdentity("alice")
+	if err != nil {
+		t.Fatalf("IsMutedByIdentity: %v", err)
+	}
+	if !muted || mute == nil || !mute.Permanent {
+		t.Fatalf("expected cached permanent mute, got muted=%v mute=%+v", muted, mute)
+	}
+
+	svc.invalidateMute(42, "alice", false)
+	if _, ok := svc.byIdentity["alice"]; ok {
+		t.Fatal("expected identity cache entry to be removed")
+	}
+	if _, ok := svc.byUserID[42]; ok {
+		t.Fatal("expected user id cache entry to be removed")
+	}
+}

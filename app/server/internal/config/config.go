@@ -26,6 +26,19 @@ type Config struct {
 	DBDSN      string `env:"DB_DSN" envDefault:""`
 	DBWAL      bool   `env:"DB_WAL" envDefault:"false"`
 
+	// 只读副本（Worker 数据面）配置。DB_READ_DSN 优先；其余字段在
+	// DB_READ_DSN 为空时回退到主库对应字段，便于共享同一套部署变量。
+	DBReadDSN      string `env:"DB_READ_DSN" envDefault:""`
+	DBReadHost     string `env:"DB_READ_HOST" envDefault:""`
+	DBReadPort     string `env:"DB_READ_PORT" envDefault:""`
+	DBReadUser     string `env:"DB_READ_USER" envDefault:""`
+	DBReadPassword string `env:"DB_READ_PASSWORD" envDefault:""`
+	DBReadDBName   string `env:"DB_READ_DBNAME" envDefault:""`
+	DBReadOnly     bool   `env:"DB_READ_ONLY" envDefault:"true"`
+
+	// DBReplicaLagThreshold 超过该延迟视为 Worker 只读副本降级。
+	DBReplicaLagThreshold string `env:"DB_REPLICA_LAG_THRESHOLD" envDefault:"5s"`
+
 	// Turso (libSQL) 远程数据库配置（可选）
 	// 优先级: TURSO_AUTH_TOKEN > DB_DSN?authToken=, TURSO_DATABASE_URL > DB_DSN
 	TursoDatabaseURL string `env:"TURSO_DATABASE_URL" envDefault:""`
@@ -92,6 +105,7 @@ type Config struct {
 	ClusterAdvertiseURL      string `env:"CLUSTER_ADVERTISE_URL" envDefault:""`
 	ClusterAgentURL          string `env:"CLUSTER_AGENT_URL" envDefault:""`
 	ClusterAgentToken        string `env:"CLUSTER_AGENT_TOKEN" envDefault:""`
+	ClusterNodeSecret        string `env:"CLUSTER_NODE_SECRET" envDefault:""`
 	ClusterHeartbeatInterval string `env:"CLUSTER_HEARTBEAT_INTERVAL" envDefault:"5s"`
 	ClusterHeartbeatTimeout  string `env:"CLUSTER_HEARTBEAT_TIMEOUT" envDefault:"30s"`
 	ClusterMaxServers        int    `env:"CLUSTER_MAX_SERVERS" envDefault:"100"`
@@ -257,6 +271,21 @@ func (c *Config) ClusterHeartbeatTimeoutDuration() time.Duration {
 		return 30 * time.Second
 	}
 	return d
+}
+
+// ReplicaLagThresholdDuration 解析只读副本延迟阈值；非法时回退 5s。
+func (c *Config) ReplicaLagThresholdDuration() time.Duration {
+	d, err := time.ParseDuration(strings.TrimSpace(c.DBReplicaLagThreshold))
+	if err != nil || d <= 0 {
+		return 5 * time.Second
+	}
+	return d
+}
+
+// UsesReadReplica 返回是否显式配置了只读副本连接。
+func (c *Config) UsesReadReplica() bool {
+	return c.DBReadDSN != "" || c.DBReadHost != "" || c.DBReadPort != "" ||
+		c.DBReadUser != "" || c.DBReadPassword != "" || c.DBReadDBName != ""
 }
 
 // IsAgent 返回当前进程是否承担 Agent 控制面职责。

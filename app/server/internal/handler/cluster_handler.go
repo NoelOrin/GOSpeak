@@ -33,6 +33,7 @@ type RegisterNodeRequest struct {
 	MaxServers   int               `json:"max_servers"`
 	MaxRooms     int               `json:"max_rooms"`
 	Labels       map[string]string `json:"labels"`
+	NodeSecret   string            `json:"node_secret"`
 }
 
 // Register 注册或更新节点。
@@ -45,7 +46,7 @@ func (h *ClusterHandler) Register(c *gin.Context) {
 	saved, err := h.clusterSvc.RegisterNodeParams(
 		req.UUID, req.Name, req.Host, req.AdvertiseURL,
 		req.Role, req.Status, req.SFUProvider,
-		req.MaxServers, req.MaxRooms, req.Labels,
+		req.MaxServers, req.MaxRooms, req.Labels, req.NodeSecret,
 	)
 	if err != nil {
 		pkg.HandleError(c, err)
@@ -164,8 +165,10 @@ func (h *ClusterHandler) Stats(c *gin.Context) {
 }
 
 type ScaleServerRequest struct {
-	ServerUUID string `json:"server_uuid" binding:"required"`
-	Replicas   int    `json:"replicas" binding:"required"`
+	ServerUUID  string            `json:"server_uuid" binding:"required"`
+	Replicas    int               `json:"replicas" binding:"required"`
+	SFUProvider string            `json:"sfu_provider"`
+	Labels      map[string]string `json:"labels"`
 }
 
 // Scale 调整 Server 实例组副本数。
@@ -175,7 +178,10 @@ func (h *ClusterHandler) Scale(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	assignments, err := h.clusterSvc.ScaleServer(req.ServerUUID, req.Replicas, "")
+	assignments, err := h.clusterSvc.ScaleServerWithRequirement(req.ServerUUID, req.Replicas, "", cluster.NodeRequirement{
+		SFUProvider: req.SFUProvider,
+		Labels:      req.Labels,
+	})
 	if err != nil {
 		pkg.HandleError(c, err)
 		return

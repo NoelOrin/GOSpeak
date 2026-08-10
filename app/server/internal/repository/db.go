@@ -27,12 +27,19 @@ const (
 	MySQL      DatabaseEnum = "MySQL"
 )
 
+// DB 连接角色：writer 用于 Agent 控制面，reader 用于 Worker 只读数据面。
+const (
+	DBWriteRole = "writer"
+	DBReadRole  = "reader"
+)
+
 // libsqlDriverName 是 tursodatabase/libsql-client-go 注册的 database/sql 驱动名。
 const libsqlDriverName = "libsql"
 
 var (
-	dbMu     sync.RWMutex
-	globalDB *gorm.DB
+	dbMu         sync.RWMutex
+	globalDB     *gorm.DB
+	globalDBType DatabaseEnum
 )
 
 // setDB atomically writes the global DB handle.
@@ -79,20 +86,96 @@ func DBPing() error {
 	return sqlDB.Ping()
 }
 
+// ReplicaLag 返回当前连接数据库的复制延迟。
+// PostgreSQL 使用 pg_last_xact_replay_timestamp，MySQL 使用 SHOW REPLICA STATUS，
+// SQLite 单机模式无复制延迟。主库/非副本返回 0。
+func ReplicaLag() (time.Duration, error) {
+	db := getDB()
+	if db == nil {
+		return 0, fmt.Errorf("db not initialized")
+	}
+	switch globalDBType {
+	case PostgreSQL:
+		var lagSeconds float64
+		if err := db.Raw("SELECT COALESCE(EXTRACT(EPOCH FROM (clock_timestamp() - pg_last_xact_replay_timestamp())), 0)").Scan(&lagSeconds).Error; err != nil {
+			return 0, err
+		}
+		return time.Duration(lagSeconds * float64(time.Second)), nil
+	case MySQL:
+		return mysqlReplicaLag(db)
+	default:
+		return 0, nil
+	}
+}
+
+func mysqlReplicaLag(db *gorm.DB) (time.Duration, error) {
+	rows, err := db.Raw("SHOW REPLICA STATUS").Rows()
+	if err != nil {
+		rows, err = db.Raw("SHOW SLAVE STATUS").Rows()
+		if err != nil {
+			return 0, err
+		}
+	}
+	defer rows.Close()
+	cols, err := rows.Columns()
+	if err != nil {
+		return 0, err
+	}
+	if !rows.Next() {
+		return 0, nil
+	}
+	values := make([]interface{}, len(cols))
+	ptrs := make([]interface{}, len(cols))
+	for i := range values {
+		ptrs[i] = &values[i]
+	}
+	if err := rows.Scan(ptrs...); err != nil {
+		return 0, err
+	}
+	for i, col := range cols {
+		if col != "Seconds_Behind_Source" && col != "Seconds_Behind_Master" {
+			continue
+		}
+		switch v := values[i].(type) {
+		case nil:
+			return 0, nil
+		case int64:
+			return time.Duration(v) * time.Second, nil
+		case float64:
+			return time.Duration(v * float64(time.Second)), nil
+		case []byte:
+			var secs int64
+			if _, err := fmt.Sscanf(string(v), "%d", &secs); err == nil {
+				return time.Duration(secs) * time.Second, nil
+			}
+			return 0, nil
+		}
+	}
+	return 0, nil
+}
+
+func dbRoleFor(cfg *config.Config) string {
+	if cfg != nil && cfg.ClusterRole == model.ClusterRoleWorker {
+		return DBReadRole
+	}
+	return DBWriteRole
+}
+
 func InitDB(cfg *config.Config) (*gorm.DB, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
 	dbType := DatabaseEnum(cfg.DBType)
+	role := dbRoleFor(cfg)
 	var err error
 	var db *gorm.DB
 	switch dbType {
 	case PostgreSQL:
-		db, err = connectPostgreSQL(cfg)
+		db, err = connectPostgreSQL(cfg, role)
 	case SQLite:
-		db, err = connectSQLite(cfg)
+		db, err = connectSQLite(cfg, role)
 	case MySQL:
-		db, err = connectMySQL(cfg)
+		db, err = connectMySQL(cfg, role)
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", dbType)
 	}
@@ -100,6 +183,7 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 		panic(fmt.Sprintf("数据库连接失败 [%s]: %v", dbType, err))
 	}
 	setDB(db)
+	globalDBType = dbType
 
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -150,29 +234,10 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 	return db, nil
 }
 
-func connectPostgreSQL(cfg *config.Config) (*gorm.DB, error) {
-	dsn := cfg.DBDSN
-	if dsn == "" {
-		user := cfg.DBUser
-		if user == "" {
-			user = "postgres"
-		}
-		password := cfg.DBPassword
-		if password == "" {
-			password = "postgres"
-		}
-		host := cfg.DBHost
-		if host == "" {
-			host = "localhost"
-		}
-		port := cfg.DBPort
-		if port == "" {
-			port = "5432"
-		}
-		dsn = fmt.Sprintf(
-			"host=%s user=%s password=%s dbname=myapp port=%s sslmode=disable",
-			host, user, password, port,
-		)
+func connectPostgreSQL(cfg *config.Config, role string) (*gorm.DB, error) {
+	dsn := dsnForRole(cfg, PostgreSQL, role)
+	if role == DBReadRole && cfg.DBReadOnly {
+		dsn = postgresReadOnlyDSN(dsn)
 	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
@@ -184,14 +249,17 @@ func connectPostgreSQL(cfg *config.Config) (*gorm.DB, error) {
 	return db, nil
 }
 
-func connectSQLite(cfg *config.Config) (*gorm.DB, error) {
+func connectSQLite(cfg *config.Config, role string) (*gorm.DB, error) {
 	// Worker 模式只读本地文件，不走 Turso。
-	if cfg.ClusterRole == model.ClusterRoleWorker {
-		path := cfg.DBPath
+	if role == DBReadRole {
+		path := cfg.DBReadDSN
+		if path == "" {
+			path = cfg.DBPath
+		}
 		if path == "" {
 			return nil, fmt.Errorf("DB_PATH is required for worker SQLite mode")
 		}
-		dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(10000)", path)
+		dsn := sqliteReadOnlyDSN(path)
 		db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 		if err != nil {
 			return nil, err
@@ -284,9 +352,75 @@ func sqliteLocalDSN(base, journalMode string) string {
 	)
 }
 
-func connectMySQL(cfg *config.Config) (*gorm.DB, error) {
-	dsn := cfg.DBDSN
-	if dsn == "" {
+func connectMySQL(cfg *config.Config, role string) (*gorm.DB, error) {
+	dsn := dsnForRole(cfg, MySQL, role)
+	if role == DBReadRole && cfg.DBReadOnly {
+		dsn = mysqlReadOnlyDSN(dsn)
+	}
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, err
+	}
+	if err := configureDBPool(db, cfg); err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+// dsnForRole 解析 writer/reader DSN。reader 优先 DB_READ_DSN，其次
+// DB_READ_* 字段，最后回退主库字段（共享同一实例时仍由会话只读约束兜底）。
+func dsnForRole(cfg *config.Config, dbType DatabaseEnum, role string) string {
+	if role == DBReadRole && cfg.DBReadDSN != "" {
+		return cfg.DBReadDSN
+	}
+	if role == DBReadRole && cfg.UsesReadReplica() {
+		switch dbType {
+		case PostgreSQL:
+			user := cfg.DBReadUser
+			if user == "" {
+				user = "postgres"
+			}
+			return fmt.Sprintf(
+				"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
+				cfg.DBReadHost, user, cfg.DBReadPassword, readDBName(cfg), cfg.DBReadPort,
+			)
+		case MySQL:
+			user := cfg.DBReadUser
+			if user == "" {
+				user = "root"
+			}
+			return fmt.Sprintf(
+				"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+				user, cfg.DBReadPassword, cfg.DBReadHost, cfg.DBReadPort, readDBName(cfg),
+			)
+		}
+	}
+	if cfg.DBDSN != "" {
+		return cfg.DBDSN
+	}
+	switch dbType {
+	case PostgreSQL:
+		user := cfg.DBUser
+		if user == "" {
+			user = "postgres"
+		}
+		password := cfg.DBPassword
+		if password == "" {
+			password = "postgres"
+		}
+		host := cfg.DBHost
+		if host == "" {
+			host = "localhost"
+		}
+		port := cfg.DBPort
+		if port == "" {
+			port = "5432"
+		}
+		return fmt.Sprintf(
+			"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
+			host, user, password, "myapp", port,
+		)
+	case MySQL:
 		user := cfg.DBUser
 		if user == "" {
 			user = "root"
@@ -299,19 +433,49 @@ func connectMySQL(cfg *config.Config) (*gorm.DB, error) {
 		if port == "" {
 			port = "3306"
 		}
-		dsn = fmt.Sprintf(
-			"%s:%s@tcp(%s:%s)/myapp?charset=utf8mb4&parseTime=True&loc=Local",
-			user, cfg.DBPassword, host, port,
+		return fmt.Sprintf(
+			"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+			user, cfg.DBPassword, host, port, "myapp",
 		)
+	default:
+		return ""
 	}
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
-	if err != nil {
-		return nil, err
+}
+
+func readDBName(cfg *config.Config) string {
+	if cfg.DBReadDBName != "" {
+		return cfg.DBReadDBName
 	}
-	if err := configureDBPool(db, cfg); err != nil {
-		return nil, err
+	return "myapp"
+}
+
+func postgresReadOnlyDSN(base string) string {
+	if strings.Contains(base, "options=") {
+		return base + " -cdefault_transaction_read_only=on"
 	}
-	return db, nil
+	return base + " options=-cdefault_transaction_read_only=on"
+}
+
+func mysqlReadOnlyDSN(base string) string {
+	if strings.Contains(base, "transaction_read_only=") {
+		return base
+	}
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	return base + sep + "transaction_read_only=ON"
+}
+
+func sqliteReadOnlyDSN(base string) string {
+	if !strings.HasPrefix(base, "file:") {
+		base = "file:" + base
+	}
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	return fmt.Sprintf("%s%smode=ro&_pragma=busy_timeout(10000)", base, sep)
 }
 
 // 连接池写死在代码内，不提供环境变量覆盖。

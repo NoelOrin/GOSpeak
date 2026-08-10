@@ -24,6 +24,9 @@ import (
 type InfraStats interface {
 	DBStats() sql.DBStats
 	DBPing() error
+	DBReplicaLagMs() int64
+	DBReplicaLagThresholdMs() int64
+	DBReplicaLagDegraded() bool
 	RedisConnected() bool
 	RedisPingMs() int64
 	RedisDBSize() int64
@@ -143,6 +146,10 @@ type HealthSnapshot struct {
 	DBMaxOpen        int   `json:"db_max_open"`
 	DBWaitCount      int64 `json:"db_wait_count"`
 	DBWaitDurationMs int64 `json:"db_wait_duration_ms"`
+	// 只读副本延迟（毫秒）；未配置副本或无复制延迟时为 0。
+	DBReplicaLagMs          int64 `json:"db_replica_lag_ms"`
+	DBReplicaLagThresholdMs int64 `json:"db_replica_lag_threshold_ms"`
+	DBReplicaLagDegraded    bool  `json:"db_replica_lag_degraded"`
 
 	// Redis
 	RedisConnected        bool    `json:"redis_connected"`
@@ -220,6 +227,9 @@ func (h *MonitorHandler) Collect() HealthSnapshot {
 		if h.stats.DBPing() == nil {
 			snap.DBConnected = true
 		}
+		snap.DBReplicaLagMs = h.stats.DBReplicaLagMs()
+		snap.DBReplicaLagThresholdMs = h.stats.DBReplicaLagThresholdMs()
+		snap.DBReplicaLagDegraded = h.stats.DBReplicaLagDegraded()
 
 		snap.RedisConnected = h.stats.RedisConnected()
 		snap.RedisPingMs = h.stats.RedisPingMs()

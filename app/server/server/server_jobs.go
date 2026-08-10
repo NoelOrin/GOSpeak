@@ -21,7 +21,10 @@ func startJobConsumers(cfg *config.Config, q *bus.JobQueue, instanceID string, h
 	messageSvc.SetSyncWriteAllowed(cfg.IsAgent())
 	conversationSvc.SetJobQueue(q)
 	conversationSvc.SetSyncWriteAllowed(cfg.IsAgent())
-	clusterSvc.SetControlQueue(q)
+	if q.RoleAware() {
+		// legacy WorkQueue 无法支撑全节点控制广播，控制命令走 NATS internal fanout。
+		clusterSvc.SetControlQueue(q)
+	}
 
 	handler := func(job bus.JobEnvelope) error {
 		if job.Type == "cluster.control" {
@@ -31,6 +34,14 @@ func startJobConsumers(cfg *config.Config, q *bus.JobQueue, instanceID string, h
 			}
 			if cmd.NodeID != "" && cmd.NodeID != localNodeID {
 				// 定向命令不属于本节点：确认跳过，避免无限重投。
+				return nil
+			}
+		}
+		switch job.Type {
+		case "chat.persist", "chat.mutate", "chat.private.persist":
+			// legacy WorkQueue 无角色分流时，Worker 必须跳过聊天持久化任务，
+			// 避免数据面实例消费后写库或把任务重投到只有 Worker 的队列。
+			if !cfg.IsAgent() {
 				return nil
 			}
 		}

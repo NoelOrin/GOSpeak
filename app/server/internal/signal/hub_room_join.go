@@ -62,6 +62,7 @@ func (h *Hub) OnRoomCreate(c ws.ClientMessenger, data string) {
 		Password:    hashedPassword,
 		Type:        model.RoomTypeVoice,
 		CreatedAtMS: time.Now().UnixMilli(),
+		OwnerNodeID: h.instanceID,
 	})
 	// 通知远端实例重新计算房间列表，临时房间不再只靠主动拉取刷新。
 	h.notifyRoomStateChanged(roomKey(req.DomainUUID, req.Room))
@@ -498,6 +499,7 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 		}
 	}
 
+	h.ensureRoomOwnership(newKey, req, room)
 	memberList = h.enrichMembers(memberList)
 	if req.Stream != "" {
 		h.syncStreamPut(req.Stream, newKey, identity)

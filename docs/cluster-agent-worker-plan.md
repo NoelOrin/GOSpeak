@@ -1,6 +1,6 @@
 # GOSpeak 中心 Agent + Worker 架构实施计划
 
-> 当前状态：Phase 0-5 控制面已落地（角色化启动、节点注册/心跳、Server 调度、NATS 控制命令、Worker 只读 DB、前端 workerUrl 路由、集群管理页、Nginx 集群路由、健康统计）；Phase 6 已提供主备锁与自动扩缩/灰度扩展点。
+> 当前状态：Phase 0-5 控制面主体已实现（角色化启动、节点注册/心跳、Server 调度、NATS 控制命令、Worker 只读 DB、前端 workerUrl 路由、集群管理页、Nginx 集群路由、健康统计）；Phase 6 已提供主备锁、DB 写面 fence、自动扩缩/灰度扩展点。本文中未勾选的 checkbox 表示仍待验收或扩展项，不代表整体控制面未实现。
 > 详细剩余计划：`docs/superpowers/plans/2026-08-02-cluster-control-plane-completion.md`
 > 详细实现与验收计划：`docs/superpowers/plans/2026-08-02-cluster-control-plane-completion.md`
 
@@ -236,6 +236,14 @@ GOSpeak 当前是单进程/对等实例架构：多个后端实例通过 NATS/Re
 任务：
 
 - [ ] Agent 主备切换，保持单一写者
+- [x] NATS 主备锁 + DB `cluster_leader_fences` 写面 fence，旧 leader 写请求在接管后直接拒绝
+- [x] Worker 只读副本配置（`DB_READ_DSN`/`DB_READ_*`）与会话级 `transaction_read_only`
+- [x] replica lag 指标（SSE + Prometheus）与 `DB_REPLICA_LAG_THRESHOLD` 降级标记
+- [x] 控制命令全节点广播 + `cluster.control.<nodeID>` 定向投递
+- [x] 房间级 `(domain_uuid, room) → Worker` 归属路由
+- [x] Agent 主锁抢占后才执行 seed/插件/bootstrap
+- [x] draining 时迁移 Server 副本并定向通知旧节点客户端重连
+- [x] Worker 注册绑定 `CLUSTER_NODE_SECRET`，禁止冒领已有节点 UUID
 - [ ] 按负载自动扩缩容 Server 副本
 - [ ] 滚动升级与节点灰度下线
 

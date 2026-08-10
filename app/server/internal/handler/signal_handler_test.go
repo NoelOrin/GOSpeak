@@ -88,7 +88,12 @@ func setupRouterFull(sfu *mockSFU, checker func(domainUUID, userUUID string) boo
 	svc := service.NewSFUService(sfu, nil)
 	svc.SetDomainMemberChecker(checker)
 	h := NewSignalHandler(svc)
-	h.SetClusterResolver(resolver)
+	if resolver != nil {
+		h.SetClusterResolver(resolver)
+		h.SetRoomResolver(func(domainUUID, room string) (string, error) {
+			return resolver(domainUUID)
+		})
+	}
 	// 模拟 JWTAuth 注入 username
 	r.Use(func(c *gin.Context) {
 		if c.GetHeader("X-Test-User") != "" {
@@ -103,6 +108,37 @@ func setupRouterFull(sfu *mockSFU, checker func(domainUUID, userUUID string) boo
 	r.GET("/rooms", h.ListRooms)
 	r.GET("/participants", h.ListParticipants)
 	return r
+}
+
+func TestGetJoinToken_UsesRoomResolver(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rr := gin.New()
+	svc := service.NewSFUService(&mockSFU{}, nil)
+	svc.SetDomainMemberChecker(func(string, string) bool { return true })
+	sh := NewSignalHandler(svc)
+	sh.SetRoomResolver(func(domainUUID, room string) (string, error) {
+		if room == "lobby" {
+			return "wss://room-worker/ws", nil
+		}
+		return "wss://domain-worker/ws", nil
+	})
+	rr.Use(func(c *gin.Context) {
+		c.Set("username", "user-1")
+		c.Next()
+	})
+	rr.POST("/token", sh.GetJoinToken)
+
+	body := `{"room":"lobby","domain_uuid":"domain-a"}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/token", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr.ServeHTTP(w, req)
+
+	resp := parseResp(t, w.Body.String())
+	data := resp.Data.(map[string]interface{})
+	if data["workerUrl"] != "wss://room-worker/ws" {
+		t.Fatalf("expected room-level worker url, got %v", data["workerUrl"])
+	}
 }
 
 type mockLiveKitJobPublisher struct {

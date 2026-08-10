@@ -1178,6 +1178,37 @@ func TestMessageService_PersistFromJob_InvalidPayload(t *testing.T) {
 	}
 }
 
+func TestMessageService_JobWritesRejectedOnDataPlane(t *testing.T) {
+	svc, _, _, _, _ := setupMessageServiceTest(t)
+	svc.SetSyncWriteAllowed(false)
+
+	now := time.Now().UTC()
+	payload, err := json.Marshal(map[string]interface{}{
+		"uuid":       uuid.New().String(),
+		"room_uuid":  uuid.New().String(),
+		"author_id":  "alice",
+		"content":    "must not persist",
+		"reply_to":   "",
+		"mentions":   []string{},
+		"created_at": now,
+	})
+	assertNoError(t, err)
+	if err := svc.PersistFromJob(payload); err == nil {
+		t.Fatal("expected data-plane persist job to be rejected")
+	}
+
+	mutatePayload, _ := json.Marshal(map[string]interface{}{
+		"action":       "edit",
+		"message_uuid": uuid.New().String(),
+		"content":      "must not mutate",
+		"room_uuid":    uuid.New().String(),
+		"author_id":    "alice",
+	})
+	if err := svc.MutateFromJob(mutatePayload); err == nil {
+		t.Fatal("expected data-plane mutate job to be rejected")
+	}
+}
+
 // ─── MutateFromJob Tests ───
 
 func TestMessageService_MutateFromJob_Edit(t *testing.T) {

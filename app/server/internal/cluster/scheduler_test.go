@@ -44,3 +44,23 @@ func TestChooseNodesZeroCount(t *testing.T) {
 		t.Fatalf("expected nil for zero count, got %v", got)
 	}
 }
+
+func TestChooseNodesWithRequirementFiltersLabelsAndProvider(t *testing.T) {
+	nodes := []model.ClusterNode{
+		{UUID: "livekit-cn", Status: model.ClusterNodeReady, SFUHealthy: true, SFUProvider: "livekit", MaxServers: 10, MaxRooms: 100},
+		{UUID: "srs-cn", Status: model.ClusterNodeReady, SFUHealthy: true, SFUProvider: "srs", MaxServers: 10, MaxRooms: 100},
+		{UUID: "livekit-global", Status: model.ClusterNodeReady, SFUHealthy: true, SFUProvider: "livekit", MaxServers: 10, MaxRooms: 100},
+	}
+	nodes[0].SetLabels(map[string]string{"region": "cn", "pool": "voice"})
+	nodes[1].SetLabels(map[string]string{"region": "cn", "pool": "voice"})
+	nodes[2].SetLabels(map[string]string{"region": "global", "pool": "voice"})
+
+	req := NodeRequirement{
+		SFUProvider: "livekit",
+		Labels:      map[string]string{"region": "cn", "pool": "voice"},
+	}
+	got := ChooseNodesWithRequirement(nodes, nil, 2, nil, req)
+	if len(got) != 1 || got[0] != "livekit-cn" {
+		t.Fatalf("expected only livekit-cn, got %v", got)
+	}
+}

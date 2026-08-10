@@ -21,12 +21,15 @@ type Snapshot struct {
 	HubOnlineUserCount  int
 	WSClientDropped     uint64
 
-	DBConnected      bool
-	DBInUse          int
-	DBIdle           int
-	DBMaxOpen        int
-	DBWaitCount      int64
-	DBWaitDurationMs int64
+	DBConnected             bool
+	DBInUse                 int
+	DBIdle                  int
+	DBMaxOpen               int
+	DBWaitCount             int64
+	DBWaitDurationMs        int64
+	DBReplicaLagMs          int64
+	DBReplicaLagThresholdMs int64
+	DBReplicaLagDegraded    bool
 
 	RedisConnected        bool
 	RedisPingMs           int64
@@ -67,6 +70,8 @@ type Server struct {
 	dbConnectionsMax         prometheus.Gauge
 	dbWaitCount              prometheus.Gauge
 	dbWaitDurationSeconds    prometheus.Gauge
+	dbReplicaLagSeconds      prometheus.Gauge
+	dbReplicaLagDegraded     prometheus.Gauge
 	redisConnected           prometheus.Gauge
 	redisPingMs              prometheus.Gauge
 	redisDBSize              prometheus.Gauge
@@ -143,6 +148,14 @@ func New(snapshot func() Snapshot) *Server {
 		dbWaitDurationSeconds: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "gospeak_db_wait_duration_seconds",
 			Help: "Database connection wait duration in seconds observed by this process.",
+		}),
+		dbReplicaLagSeconds: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "gospeak_db_replica_lag_seconds",
+			Help: "Read replica replication lag in seconds observed by this process.",
+		}),
+		dbReplicaLagDegraded: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "gospeak_db_replica_degraded",
+			Help: "1 when read replica lag exceeds the configured threshold.",
 		}),
 		redisConnected: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "gospeak_redis_connected",
@@ -230,6 +243,8 @@ func New(snapshot func() Snapshot) *Server {
 		s.dbConnectionsMax,
 		s.dbWaitCount,
 		s.dbWaitDurationSeconds,
+		s.dbReplicaLagSeconds,
+		s.dbReplicaLagDegraded,
 		s.redisConnected,
 		s.redisPingMs,
 		s.redisDBSize,
@@ -313,6 +328,12 @@ func (s *Server) refresh() {
 	s.dbConnectionsMax.Set(float64(snap.DBMaxOpen))
 	s.dbWaitCount.Set(float64(snap.DBWaitCount))
 	s.dbWaitDurationSeconds.Set(float64(snap.DBWaitDurationMs) / 1000)
+	s.dbReplicaLagSeconds.Set(float64(snap.DBReplicaLagMs) / 1000)
+	if snap.DBReplicaLagDegraded {
+		s.dbReplicaLagDegraded.Set(1)
+	} else {
+		s.dbReplicaLagDegraded.Set(0)
+	}
 
 	if snap.RedisConnected {
 		s.redisConnected.Set(1)

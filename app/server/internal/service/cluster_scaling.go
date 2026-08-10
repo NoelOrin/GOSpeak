@@ -14,12 +14,17 @@ import (
 // ScaleServer 调整 Server（Domain）的实例副本数。
 // preferredNode 通常传本地 all 节点 UUID，让单机模式优先把 Server 分配回本节点。
 func (s *ClusterService) ScaleServer(serverUUID string, replicas int, preferredNode string) ([]model.ServerAssignment, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.scaleServerLocked(serverUUID, replicas, preferredNode)
+	return s.ScaleServerWithRequirement(serverUUID, replicas, preferredNode, cluster.NodeRequirement{})
 }
 
-func (s *ClusterService) scaleServerLocked(serverUUID string, replicas int, preferredNode string) ([]model.ServerAssignment, error) {
+// ScaleServerWithRequirement 带标签/SFU Provider 约束扩缩 Server。
+func (s *ClusterService) ScaleServerWithRequirement(serverUUID string, replicas int, preferredNode string, requirement cluster.NodeRequirement) ([]model.ServerAssignment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.scaleServerLocked(serverUUID, replicas, preferredNode, requirement)
+}
+
+func (s *ClusterService) scaleServerLocked(serverUUID string, replicas int, preferredNode string, requirement cluster.NodeRequirement) ([]model.ServerAssignment, error) {
 	if strings.TrimSpace(serverUUID) == "" {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "server_uuid is required")
 	}
@@ -50,7 +55,7 @@ func (s *ClusterService) scaleServerLocked(serverUUID string, replicas int, pref
 	activeCurrent := make([]model.ServerAssignment, 0, len(current))
 	for _, assignment := range current {
 		node, ok := byUUID[assignment.NodeUUID]
-		if !ok || !cluster.CanSchedule(node) {
+		if !ok || !cluster.CanSchedule(node) || !requirement.Matches(node) {
 			if err := s.assignRepo.Remove(serverUUID, assignment.NodeUUID); err != nil {
 				return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 			}
@@ -82,7 +87,7 @@ func (s *ClusterService) scaleServerLocked(serverUUID string, replicas int, pref
 	}
 
 	if len(current) < replicas {
-		selected := cluster.ChooseNodes(nodes, current, replicas-len(current), preferredNode)
+		selected := cluster.ChooseNodesWithRequirement(nodes, current, replicas-len(current), []string{preferredNode}, requirement)
 		for _, nodeUUID := range selected {
 			if err := s.assignRepo.Ensure(serverUUID, nodeUUID); err != nil {
 				return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -242,7 +247,7 @@ func (s *ClusterService) reconcilePendingServers(nodeUUID string) {
 			continue
 		}
 		if len(assignments) == 0 {
-			if _, err := s.scaleServerLocked(domain.UUID, 1, nodeUUID); err != nil {
+			if _, err := s.scaleServerLocked(domain.UUID, 1, nodeUUID, cluster.NodeRequirement{}); err != nil {
 				log.Printf("[cluster] reconcile scale failed server=%s: %v", domain.UUID, err)
 			}
 		}

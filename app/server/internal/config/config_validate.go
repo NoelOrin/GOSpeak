@@ -22,6 +22,9 @@ func (c *Config) Validate() error {
 			errs = append(errs, "DB_HOST is required when DB_TYPE is not SQLite and DB_DSN is empty")
 		}
 	}
+	if _, err := time.ParseDuration(strings.TrimSpace(c.DBReplicaLagThreshold)); err != nil {
+		errs = append(errs, fmt.Sprintf("DB_REPLICA_LAG_THRESHOLD %q invalid duration", c.DBReplicaLagThreshold))
+	}
 
 	switch c.SFUProvider {
 	case "livekit", "srs", "agora", "cloudflare":
@@ -45,6 +48,9 @@ func (c *Config) Validate() error {
 	}
 	if c.ClusterRole == "worker" && strings.TrimSpace(c.ClusterAgentToken) == "" {
 		errs = append(errs, "CLUSTER_AGENT_TOKEN is required when GOSPEAK_ROLE=worker")
+	}
+	if c.ClusterRole == "worker" && strings.TrimSpace(c.ClusterNodeSecret) == "" {
+		errs = append(errs, "CLUSTER_NODE_SECRET is required when GOSPEAK_ROLE=worker")
 	}
 	if c.ClusterRole == "worker" && strings.TrimSpace(c.ClusterAdvertiseURL) == "" {
 		errs = append(errs, "CLUSTER_ADVERTISE_URL is required when GOSPEAK_ROLE=worker")

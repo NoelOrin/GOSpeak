@@ -381,6 +381,10 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | `DB_PATH` | `db/app.db` | SQLite file path |
 | `DB_DSN` | — | Custom DSN (overrides the field-by-field settings) |
 | `DB_WAL` | `false` | SQLite WAL mode（并发读建议开启）|
+| `DB_READ_DSN` | — | Worker 只读副本 DSN（优先于 `DB_READ_*` 字段）|
+| `DB_READ_HOST` / `DB_READ_PORT` / `DB_READ_USER` / `DB_READ_PASSWORD` / `DB_READ_DBNAME` | 回退主库字段 | Worker 只读副本连接参数 |
+| `DB_READ_ONLY` | `true` | Worker 会话强制只读（PG `default_transaction_read_only`，MySQL `transaction_read_only`）|
+| `DB_REPLICA_LAG_THRESHOLD` | `5s` | 只读副本延迟降级阈值 |
 
 ### JWT
 

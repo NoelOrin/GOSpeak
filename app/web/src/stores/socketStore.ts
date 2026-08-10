@@ -71,6 +71,7 @@ export const socketStore = createRoot(() => {
 	const currentDomainUUID = createMemo<string | null>(
 		() => domainStore.state.currentDomainUUID ?? null,
 	);
+	let pendingTextRejoin: { room: string; domain_uuid?: string } | null = null;
 	// members 派生自 rooms[] 中当前房，消除 members/rooms 双源时序竞态
 	const members = createMemo<MemberInfo[]>(
 		() =>
@@ -134,6 +135,18 @@ export const socketStore = createRoot(() => {
 		setConnecting(false);
 		setConnected(true);
 		console.log("[Socket] connected");
+		if (pendingTextRejoin) {
+			const rejoin = pendingTextRejoin;
+			pendingTextRejoin = null;
+			const identity = userStore.user()?.name ?? "";
+			void joinRoom(rejoin.room, identity, undefined, rejoin.domain_uuid)
+				.then(() => {
+					console.log("[Socket] text room re-joined after worker switch");
+				})
+				.catch((err: unknown) => {
+					console.warn("[Socket] text room re-join failed:", err);
+				});
+		}
 	});
 
 	adapter.onConnectError((err: Error) => {
@@ -145,8 +158,19 @@ export const socketStore = createRoot(() => {
 	adapter.onDisconnected((reason: string) => {
 		setConnecting(false);
 		setConnected(false);
+		const prevRoom = currentRoom();
+		const prevDomain = currentDomainUUID();
+		const wasText =
+			!!prevRoom &&
+			rooms().some((r) => r.name === prevRoom && r.type === "text");
 		// 被动断线同样清理房间/禁言状态，避免重连窗口显示假在线/假禁言。
 		resetRoomState();
+		if (wasText && prevRoom) {
+			pendingTextRejoin = {
+				room: prevRoom,
+				domain_uuid: prevDomain ?? undefined,
+			};
+		}
 		console.log("[Socket] disconnected:", reason);
 	});
 

@@ -18,6 +18,9 @@ type JobEnvelope struct {
 	Type    string          `json:"type"`
 	Payload json.RawMessage `json:"payload"`
 	TS      int64           `json:"ts"`
+	// TargetNodeID 非空时投递到 {prefix}.jobs.{type}.{nodeID}，
+	// 广播消费者仍会收到并由 handler 自行过滤。
+	TargetNodeID string `json:"target_node_id,omitempty"`
 }
 
 // JobHandler processes one job; return error to Nak for retry.
@@ -126,7 +129,11 @@ func (q *JobQueue) Publish(ctx context.Context, job JobEnvelope) error {
 		// 以 job ID 作为 JetStream MsgId，生产端重试/重放时由服务端去重。
 		opts = append(opts, nats.MsgId(job.ID))
 	}
-	_, err = q.js.Publish(q.subjectFor(job.Type), b, opts...)
+	subject := q.subjectFor(job.Type)
+	if job.TargetNodeID != "" {
+		subject += "." + job.TargetNodeID
+	}
+	_, err = q.js.Publish(subject, b, opts...)
 	return err
 }
 
@@ -182,7 +189,6 @@ func (q *JobQueue) ConsumeRuntime(durable string, handler JobHandler) ([]*nats.S
 		q.prefix + ".jobs.srs",
 		q.prefix + ".jobs.livekit",
 		q.prefix + ".jobs.sfu_cleanup",
-		q.prefix + ".jobs.cluster.control",
 	}
 	var subs []*nats.Subscription
 	for i, subject := range subjects {
@@ -194,6 +200,26 @@ func (q *JobQueue) ConsumeRuntime(durable string, handler JobHandler) ([]*nats.S
 			return nil, err
 		}
 		subs = append(subs, sub)
+	}
+	// 控制命令必须广播到每个 Worker：按实例持久化名订阅通配符，
+	// 不使用 queue group，避免 mute/kick/delete 只命中一个节点。
+	baseDurable := q.prefix + "-control-" + sanitizeDurable(durable)
+	controlSubjects := []struct {
+		subject string
+		durable string
+	}{
+		{q.prefix + ".jobs.cluster.control", baseDurable + "-broadcast"},
+		{q.prefix + ".jobs.cluster.control.>", baseDurable + "-directed"},
+	}
+	for _, cs := range controlSubjects {
+		controlSub, err := q.consumeBroadcast(cs.subject, cs.durable, handler)
+		if err != nil {
+			for _, s := range subs {
+				_ = s.Unsubscribe()
+			}
+			return nil, err
+		}
+		subs = append(subs, controlSub)
 	}
 	return subs, nil
 }
@@ -236,6 +262,39 @@ func (q *JobQueue) consumeFiltered(subject, queueGroup, durable string, handler 
 			var job JobEnvelope
 			if err := json.Unmarshal(msg.Data, &job); err != nil {
 				log.Printf("[JobQueue] bad job: %v", err)
+				_ = msg.Term()
+				return
+			}
+			if err := handler(job); err != nil {
+				log.Printf("[JobQueue] handler type=%s err=%v", job.Type, err)
+				_ = msg.Nak()
+				return
+			}
+			_ = msg.Ack()
+		},
+		nats.Durable(durableName),
+		nats.ManualAck(),
+		nats.AckWait(30*time.Second),
+		nats.MaxDeliver(5),
+	)
+	if err != nil {
+		return nil, err
+	}
+	q.mu.Lock()
+	q.subs = append(q.subs, sub)
+	q.mu.Unlock()
+	return sub, nil
+}
+
+// consumeBroadcast 为每个实例订阅同一 subject，每条消息都会投递给每个订阅者。
+func (q *JobQueue) consumeBroadcast(subject, durable string, handler JobHandler) (*nats.Subscription, error) {
+	durableName := sanitizeDurable(durable)
+	sub, err := q.js.Subscribe(
+		subject,
+		func(msg *nats.Msg) {
+			var job JobEnvelope
+			if err := json.Unmarshal(msg.Data, &job); err != nil {
+				log.Printf("[JobQueue] bad broadcast job: %v", err)
 				_ = msg.Term()
 				return
 			}

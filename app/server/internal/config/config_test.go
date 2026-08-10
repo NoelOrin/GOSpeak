@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNormalizeDBTypeAliases(t *testing.T) {
@@ -112,6 +113,33 @@ func TestLoadAcceptsLegacyPostgresSQL(t *testing.T) {
 	}
 }
 
+func TestLoadReadReplicaDefaults(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("DB_TYPE", "PostgreSQL")
+	t.Setenv("DB_HOST", "db.example")
+	t.Setenv("DB_READ_HOST", "replica.example")
+	t.Setenv("DB_READ_PASSWORD", "readpw")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.UsesReadReplica() {
+		t.Fatal("expected UsesReadReplica true")
+	}
+	if cfg.DBReadHost != "replica.example" {
+		t.Fatalf("DBReadHost=%q want replica.example", cfg.DBReadHost)
+	}
+	if cfg.DBReadPort != "5432" {
+		t.Fatalf("DBReadPort=%q want 5432", cfg.DBReadPort)
+	}
+	if cfg.DBReadUser != "postgres" {
+		t.Fatalf("DBReadUser=%q want postgres", cfg.DBReadUser)
+	}
+	if cfg.ReplicaLagThresholdDuration() != 5*time.Second {
+		t.Fatalf("ReplicaLagThresholdDuration()=%v want 5s", cfg.ReplicaLagThresholdDuration())
+	}
+}
+
 func TestLoadEnvFilesDoesNotOverrideProcessEnv(t *testing.T) {
 	dir := t.TempDir()
 	cwd, err := os.Getwd()
@@ -188,6 +216,22 @@ func TestLoadRejectsWorkerWithoutAgentURL(t *testing.T) {
 	t.Setenv("GOSPEAK_ROLE", "worker")
 	if _, err := Load(); err == nil {
 		t.Fatal("expected worker config error")
+	}
+}
+
+func TestLoadAcceptsWorkerWithNodeSecret(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("GOSPEAK_ROLE", "worker")
+	t.Setenv("CLUSTER_AGENT_URL", "http://agent:9000")
+	t.Setenv("CLUSTER_AGENT_TOKEN", "admin-token")
+	t.Setenv("CLUSTER_ADVERTISE_URL", "http://worker.example:8998")
+	t.Setenv("CLUSTER_NODE_SECRET", "worker-secret")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load worker with secret: %v", err)
+	}
+	if cfg.ClusterNodeSecret != "worker-secret" {
+		t.Fatalf("ClusterNodeSecret=%q want worker-secret", cfg.ClusterNodeSecret)
 	}
 }
 

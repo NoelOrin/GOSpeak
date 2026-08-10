@@ -85,6 +85,33 @@ describe("runVoiceJoin", () => {
 		expect(deps.joinSignalRoom).toHaveBeenCalled();
 	});
 
+	it("rejoins previous text room after switching worker", async () => {
+		const connectSignal = vi.fn(async () => {});
+		const rejoinTextRoom = vi.fn(async () => {});
+		const { deps } = makeDeps({
+			connectSignal,
+			getCurrentRoom: () => ({
+				room: "lobby",
+				domain_uuid: "domain-a",
+				type: "text",
+			}),
+			rejoinTextRoom,
+		});
+		await runVoiceJoin(
+			makeToken({
+				workerUrl: "wss://worker-a.example",
+				room: "r1",
+				domain_uuid: "domain-a",
+			}) as any,
+			deps as any,
+		);
+		expect(connectSignal).toHaveBeenCalledWith("wss://worker-a.example");
+		expect(rejoinTextRoom).toHaveBeenCalledWith("lobby", "domain-a", "alice");
+		expect(deps.joinSignalRoom.mock.invocationCallOrder[0]).toBeGreaterThan(
+			rejoinTextRoom.mock.invocationCallOrder[0],
+		);
+	});
+
 	it("uses sfuRoom for media join while signal keeps logical room + domain_uuid", async () => {
 		const { deps, client } = makeDeps();
 		const token = makeToken({

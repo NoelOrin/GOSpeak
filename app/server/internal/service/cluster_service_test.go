@@ -12,6 +12,7 @@ import (
 
 	"context"
 
+	"GOSpeak/internal/bus"
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/repository"
@@ -110,6 +111,31 @@ func TestClusterService_RegisterAndHeartbeat(t *testing.T) {
 	}
 }
 
+func TestClusterService_RegisterNodeSecretBindsIdentity(t *testing.T) {
+	svc, _ := setupClusterServiceTestDB(t)
+
+	node := model.ClusterNode{
+		UUID: "node-secret", Name: "worker-secret",
+		Status: model.ClusterNodePending, Role: model.ClusterRoleWorker,
+		SFUProvider: "livekit", MaxServers: 10, MaxRooms: 100,
+	}
+	if _, err := svc.RegisterNodeWithSecret(node, "node-secret-1"); err != nil {
+		t.Fatalf("first register: %v", err)
+	}
+
+	if _, err := svc.RegisterNodeWithSecret(node, "wrong-secret"); err == nil {
+		t.Fatal("expected wrong node secret to be rejected")
+	}
+
+	updated, err := svc.RegisterNodeWithSecret(node, "node-secret-1")
+	if err != nil {
+		t.Fatalf("register with correct secret: %v", err)
+	}
+	if updated.SecretHash == "" {
+		t.Fatal("expected secret hash to be stored")
+	}
+}
+
 func TestClusterService_ScaleServer(t *testing.T) {
 	svc, db := setupClusterServiceTestDB(t)
 	nodeRepo := repository.NewClusterNodeRepository(db)
@@ -149,6 +175,37 @@ func TestClusterService_ScaleServer(t *testing.T) {
 	}
 	if len(assignments) != 0 {
 		t.Fatalf("expected assignments deleted, got %d", len(assignments))
+	}
+}
+
+type fakeRoomMetaReader struct {
+	meta bus.RoomMeta
+}
+
+func (f fakeRoomMetaReader) GetRoomMeta(_ context.Context, _ string) (bus.RoomMeta, error) {
+	return f.meta, nil
+}
+
+func TestClusterService_ResolveRoomPrefersOwnerNode(t *testing.T) {
+	svc, db := setupClusterServiceTestDB(t)
+	nodeRepo := repository.NewClusterNodeRepository(db)
+	owner := model.ClusterNode{
+		UUID: "room-worker", Name: "room-worker",
+		Status: model.ClusterNodeReady, SFUHealthy: true,
+		AdvertiseURL: "wss://room-worker.example",
+		MaxServers:   10, MaxRooms: 100,
+	}
+	if err := nodeRepo.Create(&owner); err != nil {
+		t.Fatalf("create owner node: %v", err)
+	}
+	svc.SetRoomMetaStore(fakeRoomMetaReader{meta: bus.RoomMeta{OwnerNodeID: "room-worker"}})
+
+	_, node, err := svc.ResolveRoom("domain-a", "lobby")
+	if err != nil {
+		t.Fatalf("ResolveRoom: %v", err)
+	}
+	if node == nil || node.UUID != "room-worker" {
+		t.Fatalf("expected room-worker, got %+v", node)
 	}
 }
 

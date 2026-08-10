@@ -44,6 +44,17 @@ export type VoiceJoinDeps = {
 		domain_uuid?: string,
 	) => Promise<VoiceJoinAck>;
 	connectSignal?: (workerUrl: string) => Promise<unknown>;
+	/** 切换 Worker 前捕获当前房间，用于切流后恢复文字房信令槽位。 */
+	getCurrentRoom?: () => {
+		room: string;
+		domain_uuid?: string;
+		type?: string;
+	} | null;
+	rejoinTextRoom?: (
+		room: string,
+		domain_uuid: string | undefined,
+		identity: string,
+	) => Promise<unknown>;
 	onPhase: (phase: VoicePhase) => void;
 	/**
 	 * media join 成功后立刻回调（所有 provider 通用）。
@@ -145,6 +156,7 @@ async function executeVoiceJoin(
 	} = deps;
 
 	throwIfAborted(signal);
+	const previousRoom = deps.getCurrentRoom?.() ?? null;
 
 	onPhase("loading_sfu");
 	const client = await raceAbort(
@@ -181,6 +193,19 @@ async function executeVoiceJoin(
 		const joinSignal = async () => {
 			if (token.workerUrl && deps.connectSignal) {
 				await deps.connectSignal(token.workerUrl);
+				if (
+					previousRoom &&
+					deps.rejoinTextRoom &&
+					previousRoom.type === "text" &&
+					(previousRoom.room !== token.room ||
+						(previousRoom.domain_uuid || "") !== (token.domain_uuid || ""))
+				) {
+					await deps.rejoinTextRoom(
+						previousRoom.room,
+						previousRoom.domain_uuid,
+						token.identity,
+					);
+				}
 			}
 			await raceAbort(
 				joinSignalRoom(token.room, token.identity, password, token.domain_uuid),

@@ -82,13 +82,74 @@ func TestSQLiteLocalDSN(t *testing.T) {
 	}
 }
 
+func TestReadOnlyDSNHelpers(t *testing.T) {
+	cases := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{
+			name: "postgres appends options",
+			got:  postgresReadOnlyDSN("host=a user=b password=c dbname=myapp port=5432 sslmode=disable"),
+			want: "host=a user=b password=c dbname=myapp port=5432 sslmode=disable options=-cdefault_transaction_read_only=on",
+		},
+		{
+			name: "postgres preserves existing options",
+			got:  postgresReadOnlyDSN("host=a options=-csearch_path=public"),
+			want: "host=a options=-csearch_path=public -cdefault_transaction_read_only=on",
+		},
+		{
+			name: "mysql appends session variable",
+			got:  mysqlReadOnlyDSN("u:p@tcp(h:3306)/myapp?parseTime=True"),
+			want: "u:p@tcp(h:3306)/myapp?parseTime=True&transaction_read_only=ON",
+		},
+		{
+			name: "mysql preserves existing session variable",
+			got:  mysqlReadOnlyDSN("u:p@tcp(h:3306)/myapp?transaction_read_only=ON"),
+			want: "u:p@tcp(h:3306)/myapp?transaction_read_only=ON",
+		},
+		{
+			name: "sqlite read only file",
+			got:  sqliteReadOnlyDSN("/tmp/worker.db"),
+			want: "file:/tmp/worker.db?mode=ro&_pragma=busy_timeout(10000)",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.got != tt.want {
+				t.Fatalf("got %q, want %q", tt.got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDSNForReadReplica(t *testing.T) {
+	cfg := &config.Config{
+		DBType:       "PostgreSQL",
+		DBHost:       "primary.example",
+		DBPort:       "5432",
+		DBUser:       "writer",
+		DBPassword:   "pw",
+		DBReadHost:   "replica.example",
+		DBReadPort:   "5433",
+		DBReadUser:   "reader",
+		DBReadDBName: "gospeak",
+		DBReadOnly:   true,
+	}
+	got := dsnForRole(cfg, PostgreSQL, DBReadRole)
+	want := "host=replica.example user=reader password= dbname=gospeak port=5433 sslmode=disable"
+	if got != want {
+		t.Fatalf("dsnForRole = %q, want %q", got, want)
+	}
+}
+
 func TestConnectSQLiteLocalFileWithDBDSN(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "libsql-local.db")
 	cfg := &config.Config{
 		DBType: "SQLite",
 		DBDSN:  "file:" + path,
 	}
-	db, err := connectSQLite(cfg)
+	db, err := connectSQLite(cfg, DBWriteRole)
 	if err != nil {
 		t.Fatalf("connectSQLite local DB_DSN: %v", err)
 	}
@@ -122,7 +183,7 @@ func TestConnectSQLiteTursoRemote(t *testing.T) {
 		// libsql 驱动支持 file: URL，本地冒烟测试无需真实 Turso 端点。
 		TursoDatabaseURL: "file:" + filepath.Join(t.TempDir(), "turso-local.db"),
 	}
-	db, err := connectSQLite(cfg)
+	db, err := connectSQLite(cfg, DBWriteRole)
 	if err != nil {
 		t.Fatalf("connectSQLite turso: %v", err)
 	}

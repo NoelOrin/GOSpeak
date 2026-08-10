@@ -55,6 +55,15 @@ groups:
           summary: "Database unavailable"
           description: "{{ $labels.instance }} 数据库不可用"
 
+      - alert: GOSpeakReplicaLagHigh
+        expr: gospeak_db_replica_degraded == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Read replica lag high"
+          description: "{{ $labels.instance }} 只读副本延迟超过阈值，Worker 已降级"
+
       - alert: GOSpeakOfflineClusterNodes
         expr: gospeak_cluster_offline_nodes > 0
         for: 2m

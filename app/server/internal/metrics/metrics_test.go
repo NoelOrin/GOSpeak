@@ -14,11 +14,13 @@ import (
 func TestMetricsHandlerExposesSnapshot(t *testing.T) {
 	srv := New(func() Snapshot {
 		return Snapshot{
-			HubRoomCount:        3,
-			HubParticipantCount: 7,
-			DBConnected:         true,
-			EventBusConnected:   true,
-			ClusterReadyNodes:   2,
+			HubRoomCount:         3,
+			HubParticipantCount:  7,
+			DBConnected:          true,
+			DBReplicaLagMs:       1200,
+			DBReplicaLagDegraded: true,
+			EventBusConnected:    true,
+			ClusterReadyNodes:    2,
 		}
 	})
 
@@ -33,6 +35,8 @@ func TestMetricsHandlerExposesSnapshot(t *testing.T) {
 		"gospeak_ws_rooms 3",
 		"gospeak_ws_participants 7",
 		"gospeak_db_connected 1",
+		"gospeak_db_replica_lag_seconds 1.2",
+		"gospeak_db_replica_degraded 1",
 		"gospeak_eventbus_connected 1",
 		"gospeak_cluster_ready_nodes 2",
 	} {

@@ -163,6 +163,78 @@ func TestJobQueue_RoleAwareSplitsChatAndRuntime(t *testing.T) {
 	}
 }
 
+func TestJobQueue_ControlBroadcastReachesEveryWorker(t *testing.T) {
+	es, err := StartEmbeddedServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(es.Shutdown)
+
+	q1, err := OpenJobQueue(JobQueueConfig{URL: es.ClientURL(), Prefix: "gospeak_control_bcast"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = q1.Close() })
+	q2, err := OpenJobQueue(JobQueueConfig{URL: es.ClientURL(), Prefix: "gospeak_control_bcast"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = q2.Close() })
+
+	got := make(chan string, 2)
+	handler := func(id string) JobHandler {
+		return func(job JobEnvelope) error {
+			got <- id
+			return nil
+		}
+	}
+	if _, err := q1.ConsumeRuntime("worker-a.host", handler("a")); err != nil {
+		t.Fatalf("ConsumeRuntime a: %v", err)
+	}
+	if _, err := q2.ConsumeRuntime("worker-b.host", handler("b")); err != nil {
+		t.Fatalf("ConsumeRuntime b: %v", err)
+	}
+
+	payload, _ := json.Marshal(map[string]string{"command": "mute"})
+	if err := q1.Publish(context.Background(), JobEnvelope{
+		ID: "control-1", Type: "cluster.control", Payload: payload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	seen := map[string]bool{}
+	for i := 0; i < 2; i++ {
+		select {
+		case id := <-got:
+			seen[id] = true
+		case <-time.After(3 * time.Second):
+			t.Fatalf("timeout waiting for control broadcast, seen=%v", seen)
+		}
+	}
+	if !seen["a"] || !seen["b"] {
+		t.Fatalf("control broadcast must reach both workers, seen=%v", seen)
+	}
+
+	if err := q1.Publish(context.Background(), JobEnvelope{
+		ID: "control-2", Type: "cluster.control", TargetNodeID: "worker-b.host",
+		Payload: payload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	seen = map[string]bool{}
+	for i := 0; i < 2; i++ {
+		select {
+		case id := <-got:
+			seen[id] = true
+		case <-time.After(3 * time.Second):
+			t.Fatalf("timeout waiting for directed control, seen=%v", seen)
+		}
+	}
+	if !seen["a"] || !seen["b"] {
+		t.Fatalf("directed control must be visible to all workers, seen=%v", seen)
+	}
+}
+
 func TestJobQueue_LegacyWorkQueueIsNotRoleAware(t *testing.T) {
 	es, err := StartEmbeddedServer()
 	if err != nil {

@@ -14,6 +14,9 @@ import (
 // PersistFromJob is called by the jobs consumer to persist a message from a "chat.persist" job.
 // 幂等处理：广播失败兜底或并发 job 已落库时直接跳过创建，避免重试/重放重复写入。
 func (s *MessageService) PersistFromJob(payload []byte) error {
+	if !s.syncWriteAllowed {
+		return errors.New("message persistence is not allowed on data-plane instance")
+	}
 	var data struct {
 		UUID        string    `json:"uuid"`
 		RoomUUID    string    `json:"room_uuid"`
@@ -66,6 +69,9 @@ func (s *MessageService) ensureJobMentions(messageUUID string, mentions []string
 // 消息未落库时，编辑/删除携带 room_uuid/author_id 的 job 会用时间戳 upsert 占位记录，
 // 避免消息创建 job 重试耗尽后变更永久丢失。
 func (s *MessageService) MutateFromJob(payload []byte) error {
+	if !s.syncWriteAllowed {
+		return errors.New("message mutation is not allowed on data-plane instance")
+	}
 	var data struct {
 		Action      string    `json:"action"`
 		MessageUUID string    `json:"message_uuid"`

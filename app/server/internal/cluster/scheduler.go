@@ -6,6 +6,29 @@ import (
 	"GOSpeak/internal/model"
 )
 
+// NodeRequirement 表达 Server 对节点的调度约束。
+type NodeRequirement struct {
+	SFUProvider string
+	Labels      map[string]string
+}
+
+// Matches 判断节点是否满足 Provider 与标签约束。
+func (r NodeRequirement) Matches(node model.ClusterNode) bool {
+	if r.SFUProvider != "" && node.SFUProvider != r.SFUProvider {
+		return false
+	}
+	if len(r.Labels) == 0 {
+		return true
+	}
+	labels := node.LabelMap()
+	for key, value := range r.Labels {
+		if labels[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
 // CanSchedule 判断节点当前是否接受新的 Server 分配。
 func CanSchedule(node model.ClusterNode) bool {
 	switch node.Status {
@@ -40,6 +63,11 @@ func NodeScore(node model.ClusterNode) float64 {
 // ChooseNodes 从可调度节点中选择 count 个未分配给指定 Server 的节点。
 // 优先选择 preferred 中出现的节点，再按负载评分升序选择。
 func ChooseNodes(nodes []model.ClusterNode, current []model.ServerAssignment, count int, preferred ...string) []string {
+	return ChooseNodesWithRequirement(nodes, current, count, preferred, NodeRequirement{})
+}
+
+// ChooseNodesWithRequirement 从满足标签/Provider 约束的可调度节点中选择 count 个。
+func ChooseNodesWithRequirement(nodes []model.ClusterNode, current []model.ServerAssignment, count int, preferred []string, requirement NodeRequirement) []string {
 	if count <= 0 {
 		return nil
 	}
@@ -54,7 +82,7 @@ func ChooseNodes(nodes []model.ClusterNode, current []model.ServerAssignment, co
 
 	candidates := make([]model.ClusterNode, 0, len(nodes))
 	for _, node := range nodes {
-		if !CanSchedule(node) {
+		if !CanSchedule(node) || !requirement.Matches(node) {
 			continue
 		}
 		if _, ok := currentSet[node.UUID]; ok {

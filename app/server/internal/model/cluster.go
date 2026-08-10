@@ -26,25 +26,28 @@ const (
 
 // ClusterNode 是 Agent 控制面中的节点状态记录。
 type ClusterNode struct {
-	ID             uint      `gorm:"primaryKey" json:"id"`
-	UUID           string    `gorm:"size:64;uniqueIndex" json:"uuid"`
-	Name           string    `gorm:"size:128;uniqueIndex" json:"name"`
-	Host           string    `gorm:"size:255" json:"host"`
-	AdvertiseURL   string    `gorm:"size:512" json:"advertise_url"`
-	Role           string    `gorm:"size:16;index" json:"role"`
-	Status         string    `gorm:"size:16;index;default:pending" json:"status"`
-	SFUProvider    string    `gorm:"size:64" json:"sfu_provider"`
-	MaxServers     int       `gorm:"default:100" json:"max_servers"`
-	MaxRooms       int       `gorm:"default:1000" json:"max_rooms"`
-	ServingServers int       `gorm:"default:0" json:"serving_servers"`
-	Rooms          int       `gorm:"default:0" json:"rooms"`
-	Connections    int       `gorm:"default:0" json:"connections"`
-	LoadPercent    float64   `gorm:"default:0" json:"load_percent"`
-	SFUHealthy     bool      `gorm:"default:true" json:"sfu_healthy"`
-	LabelsJSON     string    `gorm:"column:labels_json;type:text" json:"-"`
-	LastSeenAt     time.Time `json:"last_seen_at"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID                   uint      `gorm:"primaryKey" json:"id"`
+	UUID                 string    `gorm:"size:64;uniqueIndex" json:"uuid"`
+	Name                 string    `gorm:"size:128;uniqueIndex" json:"name"`
+	Host                 string    `gorm:"size:255" json:"host"`
+	AdvertiseURL         string    `gorm:"size:512" json:"advertise_url"`
+	Role                 string    `gorm:"size:16;index" json:"role"`
+	Status               string    `gorm:"size:16;index;default:pending" json:"status"`
+	SFUProvider          string    `gorm:"size:64" json:"sfu_provider"`
+	MaxServers           int       `gorm:"default:100" json:"max_servers"`
+	MaxRooms             int       `gorm:"default:1000" json:"max_rooms"`
+	ServingServers       int       `gorm:"default:0" json:"serving_servers"`
+	Rooms                int       `gorm:"default:0" json:"rooms"`
+	Connections          int       `gorm:"default:0" json:"connections"`
+	LoadPercent          float64   `gorm:"default:0" json:"load_percent"`
+	SFUHealthy           bool      `gorm:"default:true" json:"sfu_healthy"`
+	DBReplicaLagMs       int64     `gorm:"default:0" json:"db_replica_lag_ms"`
+	DBReplicaLagDegraded bool      `gorm:"default:false" json:"db_replica_lag_degraded"`
+	SecretHash           string    `gorm:"column:secret_hash;type:text" json:"-"`
+	LabelsJSON           string    `gorm:"column:labels_json;type:text" json:"-"`
+	LastSeenAt           time.Time `json:"last_seen_at"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 func (n *ClusterNode) TableName() string {
@@ -113,4 +116,18 @@ func (a *ServerAssignment) BeforeCreate(_ *gorm.DB) error {
 		a.Status = ServerAssignmentAssigned
 	}
 	return nil
+}
+
+// ClusterLeaderFence 是 Agent 主备切换时的 DB 层写面 fence。
+// 每次新的 Agent leader 抢占都会递增 Epoch 并改写 LeaderID，
+// 旧 leader 的写请求在 Verify 时失败，避免网络分区导致双写。
+type ClusterLeaderFence struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	LeaderID  string    `gorm:"size:128;not null" json:"leader_id"`
+	Epoch     uint64    `gorm:"not null;default:1" json:"epoch"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (ClusterLeaderFence) TableName() string {
+	return "cluster_leader_fences"
 }

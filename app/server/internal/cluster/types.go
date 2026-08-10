@@ -8,14 +8,16 @@ import (
 
 // HeartbeatReport 是 Worker/All 节点上报给 Agent 的运行时快照。
 type HeartbeatReport struct {
-	NodeID         string  `json:"node_id"`
-	Status         string  `json:"status,omitempty"`
-	AdvertiseURL   string  `json:"advertise_url,omitempty"`
-	Rooms          int     `json:"rooms"`
-	Connections    int     `json:"connections"`
-	ServingServers int     `json:"serving_servers"`
-	LoadPercent    float64 `json:"load_percent"`
-	SFUHealthy     *bool   `json:"sfu_healthy,omitempty"`
+	NodeID               string  `json:"node_id"`
+	Status               string  `json:"status,omitempty"`
+	AdvertiseURL         string  `json:"advertise_url,omitempty"`
+	Rooms                int     `json:"rooms"`
+	Connections          int     `json:"connections"`
+	ServingServers       int     `json:"serving_servers"`
+	LoadPercent          float64 `json:"load_percent"`
+	SFUHealthy           *bool   `json:"sfu_healthy,omitempty"`
+	DBReplicaLagMs       int64   `json:"db_replica_lag_ms,omitempty"`
+	DBReplicaLagDegraded bool    `json:"db_replica_lag_degraded,omitempty"`
 }
 
 // RegisterRequest 是 Worker 首次向 Agent 注册时提交的节点信息。
@@ -29,6 +31,7 @@ type RegisterRequest struct {
 	MaxServers   int               `json:"max_servers"`
 	MaxRooms     int               `json:"max_rooms"`
 	Labels       map[string]string `json:"labels"`
+	NodeSecret   string            `json:"node_secret,omitempty"`
 }
 
 // ParseLabels 解析 CLUSTER_LABELS 风格字符串，例如 region=cn,pool=voice。

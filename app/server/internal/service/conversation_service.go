@@ -280,6 +280,9 @@ func (s *ConversationService) SendDirect(senderIdentity, targetIdentity, content
 
 // PersistPrivateFromJob applies a private-message persistence job idempotently.
 func (s *ConversationService) PersistPrivateFromJob(payload []byte) error {
+	if !s.syncWriteAllowed {
+		return errors.New("private message persistence is not allowed on data-plane instance")
+	}
 	var data struct {
 		UUID           string    `json:"uuid"`
 		SenderIdentity string    `json:"sender_identity"`

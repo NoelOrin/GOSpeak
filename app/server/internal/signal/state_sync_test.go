@@ -213,6 +213,28 @@ func TestHub_JoinSFU_WritesMembershipKV(t *testing.T) {
 	}
 }
 
+func TestHub_JoinSFU_RegistersRoomOwner(t *testing.T) {
+	store := newMemStateStore()
+	hub := NewHub(nil, nil, nil, nil)
+	hub.SetMembershipStore(store, "inst-a")
+
+	hub.ensureRoomOwnership(
+		"domain-a:lobby",
+		RoomRequest{Room: "lobby", DomainUUID: "domain-a"},
+		&Room{Name: "lobby", Password: "hash"},
+	)
+
+	store.mu.Lock()
+	meta, ok := store.metas["domain-a:lobby"]
+	store.mu.Unlock()
+	if !ok {
+		t.Fatal("expected room meta to be written")
+	}
+	if meta.OwnerNodeID != "inst-a" {
+		t.Fatalf("expected owner inst-a, got %q", meta.OwnerNodeID)
+	}
+}
+
 func TestHub_GetRoomMembers_MergesKV(t *testing.T) {
 	store := newMemStateStore()
 	store.rooms["r1"] = bus.RoomMembersSnapshot{

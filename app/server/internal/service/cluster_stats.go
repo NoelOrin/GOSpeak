@@ -13,6 +13,40 @@ import (
 	"GOSpeak/internal/pkg"
 )
 
+// RoomMetaReader 读取共享 KV 中的房间元数据，用于房间级 Worker 路由。
+type RoomMetaReader interface {
+	GetRoomMeta(ctx context.Context, room string) (bus.RoomMeta, error)
+}
+
+// SetRoomMetaStore 注入共享房间元数据后端（Redis/NATS KV）。
+func (s *ClusterService) SetRoomMetaStore(store RoomMetaReader) {
+	s.mu.Lock()
+	s.roomMetaStore = store
+	s.mu.Unlock()
+}
+
+// ResolveRoom 优先按 (domain_uuid, room) 的持有者节点解析 Worker；
+// 无归属或持有者不可调度时回退到 Domain 级 ResolveServer。
+func (s *ClusterService) ResolveRoom(domainUUID, room string) (*model.ServerAssignment, *model.ClusterNode, error) {
+	s.mu.RLock()
+	store := s.roomMetaStore
+	s.mu.RUnlock()
+	if store != nil && room != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		meta, err := store.GetRoomMeta(ctx, pkg.RoomKey(domainUUID, room))
+		cancel()
+		if err == nil && meta.OwnerNodeID != "" {
+			s.mu.RLock()
+			node, nerr := s.nodeRepo.GetByUUID(meta.OwnerNodeID)
+			s.mu.RUnlock()
+			if nerr == nil && node != nil && cluster.CanSchedule(*node) && node.AdvertiseURL != "" {
+				return nil, node, nil
+			}
+		}
+	}
+	return s.ResolveServer(domainUUID)
+}
+
 // PublishControl 发布持久化控制命令，由目标 Worker 消费执行。
 // JetStream 保证 Worker 离线期间不丢失，失败由消费者 Nak 重试。
 func (s *ClusterService) PublishControl(cmd cluster.ControlCommand) error {
@@ -25,9 +59,10 @@ func (s *ClusterService) PublishControl(cmd cluster.ControlCommand) error {
 			return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 		}
 		if err := s.controlQueue.Publish(context.Background(), bus.JobEnvelope{
-			ID:      fmt.Sprintf("control-%d", time.Now().UnixNano()),
-			Type:    "cluster.control",
-			Payload: payload,
+			ID:           fmt.Sprintf("control-%d", time.Now().UnixNano()),
+			Type:         "cluster.control",
+			TargetNodeID: cmd.NodeID,
+			Payload:      payload,
 		}); err != nil {
 			return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish cluster control command failed")
 		}

@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"log"
+	"time"
 
 	"GOSpeak/internal/bus"
+	"GOSpeak/internal/model"
 )
 
 // roomMetaStore 是 membershipStore 可选实现的扩展接口：
@@ -71,4 +73,28 @@ func (h *Hub) deleteRoomMeta(key string) {
 	if err != nil && !bus.IsMembershipNotFound(err) {
 		log.Printf("[Signal] state store delete room meta %s: %v", key, err)
 	}
+}
+
+// ensureRoomOwnership 在媒体面加入成功后把当前实例登记为房间持有者，
+// Agent 进房 token 才能按 (domain_uuid, room) 解析到同一个 Worker。
+func (h *Hub) ensureRoomOwnership(key string, req RoomRequest, room *Room) {
+	meta, err := h.getRoomMeta(key)
+	if err != nil {
+		meta = bus.RoomMeta{
+			Name:        req.Room,
+			DomainUUID:  req.DomainUUID,
+			Type:        model.RoomTypeVoice,
+			CreatedAtMS: time.Now().UnixMilli(),
+		}
+	}
+	meta.OwnerNodeID = h.instanceID
+	if room != nil {
+		if meta.Password == "" {
+			meta.Password = room.Password
+		}
+		if meta.Type == "" {
+			meta.Type = model.RoomTypeVoice
+		}
+	}
+	h.syncRoomMeta(key, meta)
 }

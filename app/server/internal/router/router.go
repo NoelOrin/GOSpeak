@@ -70,6 +70,8 @@ type Handlers struct {
 	Cluster      *handler.ClusterHandler
 	// PluginHost 用于挂载插件自定义路由
 	PluginHost interface{ MountRoutes(*gin.RouterGroup) }
+	// FenceCheck 由 Agent leader 注入；写请求会先校验 DB 写面。
+	FenceCheck middleware.FenceChecker
 }
 
 func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
@@ -126,6 +128,9 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	protected := api.Group("")
 	protected.Use(middleware.JWTAuth())
 	protected.Use(middleware.BanCheck())
+	if h != nil && h.FenceCheck != nil {
+		protected.Use(middleware.RequireAgentFence(h.FenceCheck))
+	}
 	userRoutes.Register(protected.Group("/user"), h.User)
 	userGroupRoutes.RegisterProtected(protected.Group("/user-group"), h.UserGroup)
 	authRoutes.RegisterProtected(protected.Group("/auth"), h.Auth)

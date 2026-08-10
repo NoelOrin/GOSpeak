@@ -27,16 +27,18 @@ func (e *agentHTTPError) Error() string {
 
 // AgentClient 是 Worker 侧访问 Agent 控制面 HTTP API 的轻量客户端。
 type AgentClient struct {
-	baseURL string
-	token   string
-	http    *http.Client
+	baseURL    string
+	token      string
+	nodeSecret string
+	http       *http.Client
 }
 
 // NewAgentClient 创建 AgentClient。
-func NewAgentClient(baseURL, token string) *AgentClient {
+func NewAgentClient(baseURL, token, nodeSecret string) *AgentClient {
 	return &AgentClient{
-		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		token:   strings.TrimSpace(token),
+		baseURL:    strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		token:      strings.TrimSpace(token),
+		nodeSecret: strings.TrimSpace(nodeSecret),
 		http: &http.Client{
 			Timeout: 5 * time.Second,
 		},
@@ -45,6 +47,7 @@ func NewAgentClient(baseURL, token string) *AgentClient {
 
 // Register 向 Agent 注册当前节点。
 func (c *AgentClient) Register(ctx context.Context, req RegisterRequest) error {
+	req.NodeSecret = c.nodeSecret
 	return c.do(ctx, "/api/v1/cluster/nodes/register", req)
 }
 

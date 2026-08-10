@@ -5,6 +5,13 @@ import "strings"
 func (c *Config) normalize() {
 	c.AppEnv = strings.TrimSpace(c.AppEnv)
 	c.DBType = normalizeDBType(c.DBType)
+	c.DBReadDSN = strings.TrimSpace(c.DBReadDSN)
+	c.DBReadHost = strings.TrimSpace(c.DBReadHost)
+	c.DBReadPort = strings.TrimSpace(c.DBReadPort)
+	c.DBReadUser = strings.TrimSpace(c.DBReadUser)
+	c.DBReadPassword = strings.TrimSpace(c.DBReadPassword)
+	c.DBReadDBName = strings.TrimSpace(c.DBReadDBName)
+	c.DBReplicaLagThreshold = strings.TrimSpace(c.DBReplicaLagThreshold)
 	c.SFUProvider = strings.ToLower(strings.TrimSpace(c.SFUProvider))
 	c.StateStore = strings.ToLower(strings.TrimSpace(c.StateStore))
 	c.StorageType = strings.ToLower(strings.TrimSpace(c.StorageType))
@@ -19,6 +26,7 @@ func (c *Config) normalize() {
 	c.ClusterAdvertiseURL = strings.TrimSpace(c.ClusterAdvertiseURL)
 	c.ClusterAgentURL = strings.TrimSpace(c.ClusterAgentURL)
 	c.ClusterAgentToken = strings.TrimSpace(c.ClusterAgentToken)
+	c.ClusterNodeSecret = strings.TrimSpace(c.ClusterNodeSecret)
 	c.ClusterHeartbeatInterval = strings.TrimSpace(c.ClusterHeartbeatInterval)
 	c.ClusterHeartbeatTimeout = strings.TrimSpace(c.ClusterHeartbeatTimeout)
 	c.ClusterLabels = strings.TrimSpace(c.ClusterLabels)
@@ -35,6 +43,9 @@ func (c *Config) normalize() {
 			c.DBPort = "3306"
 		}
 	}
+	if c.DBReadPort == "" {
+		c.DBReadPort = c.DBPort
+	}
 	if c.DBUser == "" {
 		switch c.DBType {
 		case "PostgreSQL":
@@ -42,6 +53,15 @@ func (c *Config) normalize() {
 		case "MySQL":
 			c.DBUser = "root"
 		}
+	}
+	if c.DBReadUser == "" {
+		c.DBReadUser = c.DBUser
+	}
+	if c.DBReadPassword == "" {
+		c.DBReadPassword = c.DBPassword
+	}
+	if c.DBReadHost == "" {
+		c.DBReadHost = c.DBHost
 	}
 	if c.RedisPort == "" {
 		c.RedisPort = "6379"
@@ -72,6 +92,9 @@ func (c *Config) normalize() {
 	}
 	if c.ClusterHeartbeatTimeout == "" {
 		c.ClusterHeartbeatTimeout = "30s"
+	}
+	if c.DBReplicaLagThreshold == "" {
+		c.DBReplicaLagThreshold = "5s"
 	}
 
 	c.LogLevel = strings.ToLower(strings.TrimSpace(c.LogLevel))

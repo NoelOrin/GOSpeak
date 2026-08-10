@@ -120,6 +120,12 @@ func (h *Hub) HandleClusterCommand(cmd cluster.ControlCommand) error {
 			h.enforceUserMediaMute(userID, false, 0)
 		}
 		return nil
+	case cluster.CommandDrainNode:
+		// 旧节点收到定向 drain 命令后断开全部连接，客户端自动重连并拿到新 workerUrl。
+		if cl, ok := h.fanout.(interface{ CloseAll() }); ok && cl != nil {
+			cl.CloseAll()
+		}
+		return nil
 	default:
 		return fmt.Errorf("unsupported cluster command %q", cmd.Command)
 	}

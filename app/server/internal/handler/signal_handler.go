@@ -34,6 +34,7 @@ type SignalHandler struct {
 	jobs livekitJobPublisher
 
 	clusterResolver func(domainUUID string) (string, error)
+	roomResolver    func(domainUUID, room string) (string, error)
 
 	resolveLiveKitSecret func() string
 }
@@ -45,6 +46,11 @@ func NewSignalHandler(sfuSvc *service.SFUService) *SignalHandler {
 // SetClusterResolver 注入 Domain/Server → workerUrl 的解析器，用于多副本信令路由。
 func (h *SignalHandler) SetClusterResolver(fn func(domainUUID string) (string, error)) {
 	h.clusterResolver = fn
+}
+
+// SetRoomResolver 注入房间级 Worker 路由，用于进房 token 按 (domain_uuid, room) 解析。
+func (h *SignalHandler) SetRoomResolver(fn func(domainUUID, room string) (string, error)) {
+	h.roomResolver = fn
 }
 
 func (h *SignalHandler) SetJobs(j livekitJobPublisher) {
@@ -189,8 +195,8 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 		"sfuRoom":     result.SFURoom,
 		"domain_uuid": req.DomainUUID,
 	}
-	if req.DomainUUID != "" && h.clusterResolver != nil {
-		if workerURL, resolveErr := h.clusterResolver(req.DomainUUID); resolveErr == nil && workerURL != "" {
+	if req.DomainUUID != "" && h.roomResolver != nil {
+		if workerURL, resolveErr := h.roomResolver(req.DomainUUID, req.Room); resolveErr == nil && workerURL != "" {
 			data["workerUrl"] = workerURL
 		}
 	}

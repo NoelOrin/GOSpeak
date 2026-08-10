@@ -172,7 +172,7 @@ func startWorkerClusterRuntime(cfg *config.Config, hub *signal.Hub, sfuProvider 
 		MaxRooms:     cfg.ClusterMaxRooms,
 		Labels:       cluster.ParseLabels(cfg.ClusterLabels),
 	}
-	client := cluster.NewAgentClient(cfg.ClusterAgentURL, cfg.ClusterAgentToken)
+	client := cluster.NewAgentClient(cfg.ClusterAgentURL, cfg.ClusterAgentToken, cfg.ClusterNodeSecret)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -239,14 +239,25 @@ func collectClusterReport(cfg *config.Config, nodeID string, hub *signal.Hub, sf
 	if !sfuHealthy {
 		status = model.ClusterNodeUnhealthy
 	}
+	lagMs := int64(0)
+	lagDegraded := false
+	if lag, lagErr := repository.ReplicaLag(); lagErr == nil {
+		lagMs = lag.Milliseconds()
+		threshold := cfg.ReplicaLagThresholdDuration()
+		lagDegraded = threshold > 0 && lag > threshold
+	} else {
+		lagMs = -1
+	}
 	return cluster.HeartbeatReport{
-		NodeID:       nodeID,
-		Status:       status,
-		AdvertiseURL: cfg.ClusterAdvertiseURL,
-		Rooms:        rooms,
-		Connections:  connections,
-		LoadPercent:  load,
-		SFUHealthy:   &sfuHealthy,
+		NodeID:               nodeID,
+		Status:               status,
+		AdvertiseURL:         cfg.ClusterAdvertiseURL,
+		Rooms:                rooms,
+		Connections:          connections,
+		LoadPercent:          load,
+		SFUHealthy:           &sfuHealthy,
+		DBReplicaLagMs:       lagMs,
+		DBReplicaLagDegraded: lagDegraded,
 	}
 }
 
@@ -291,11 +302,12 @@ func workerAdvertiseURL(cfg *config.Config) string {
 
 // startClusterRuntimes 选择并启动当前节点的 cluster runtime（leader lock / all / worker / agent）。
 // 返回控制面 handler、清理函数与节点身份，供组合根接线与优雅关闭使用。
-func startClusterRuntimes(cfg *config.Config, db *gorm.DB, natsConn *nats.Conn, instanceID string, clusterSvc *service.ClusterService, hub *signal.Hub, sfuProvider sfu.Provider) (*handler.ClusterHandler, func(), *cluster.NATSLeaderLock, func(), string, bool, error) {
+func startClusterRuntimes(cfg *config.Config, db *gorm.DB, natsConn *nats.Conn, instanceID string, clusterSvc *service.ClusterService, hub *signal.Hub, sfuProvider sfu.Provider) (*handler.ClusterHandler, func(), *cluster.NATSLeaderLock, func(), *service.LeaderFenceService, string, bool, error) {
 	var clusterHandler *handler.ClusterHandler
 	var clusterStop func()
 	var agentLeaderLock *cluster.NATSLeaderLock
 	var stopLeaderRenew func()
+	var leaderFence *service.LeaderFenceService
 	localNodeUUID := ""
 	degradedToWorker := false
 	var err error
@@ -312,6 +324,12 @@ func startClusterRuntimes(cfg *config.Config, db *gorm.DB, natsConn *nats.Conn, 
 			degradedToWorker = true
 		default:
 			agentLeaderLock = leaderLock
+			leaderFence = service.NewLeaderFenceService(repository.NewClusterFenceRepository(db), instanceID)
+			if fenceErr := leaderFence.Acquire(); fenceErr != nil {
+				logger.WithComponent("Cluster").Errorf("acquire db leader fence failed instance=%s err=%v", instanceID, fenceErr)
+				_ = leaderLock.Release(instanceID)
+				return nil, nil, nil, nil, nil, "", false, fmt.Errorf("acquire db leader fence: %w", fenceErr)
+			}
 			renewCtx, renewCancel := context.WithCancel(context.Background())
 			renewInterval := cfg.ClusterHeartbeatIntervalDuration() / 2
 			if renewInterval > 2*time.Second {
@@ -323,6 +341,9 @@ func startClusterRuntimes(cfg *config.Config, db *gorm.DB, natsConn *nats.Conn, 
 				case <-renewLost:
 					// 锁丢失意味着另一个 Agent 可能已接管：继续保留写面会形成双写，
 					// 直接触发优雅退出，由编排重启并重新竞争。
+					if leaderFence != nil {
+						leaderFence.Deactivate()
+					}
 					logger.WithComponent("Cluster").Errorf("agent leader lock lost; shutting down to avoid split brain instance=%s", instanceID)
 					_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
 				case <-renewDone:
@@ -354,7 +375,7 @@ func startClusterRuntimes(cfg *config.Config, db *gorm.DB, natsConn *nats.Conn, 
 		clusterStop, err = startAgentClusterRuntime(cfg, clusterSvc)
 	}
 	if err != nil {
-		return nil, nil, nil, nil, "", false, fmt.Errorf("failed to start cluster runtime: %w", err)
+		return nil, nil, nil, nil, nil, "", false, fmt.Errorf("failed to start cluster runtime: %w", err)
 	}
-	return clusterHandler, clusterStop, agentLeaderLock, stopLeaderRenew, localNodeUUID, degradedToWorker, nil
+	return clusterHandler, clusterStop, agentLeaderLock, stopLeaderRenew, leaderFence, localNodeUUID, degradedToWorker, nil
 }

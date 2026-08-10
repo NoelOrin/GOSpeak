@@ -244,6 +244,27 @@ export function useVoiceSession() {
 									socketStore.joinRoom(room, identity, password, domain_uuid),
 								connectSignal: (workerUrl) =>
 									socketStore.connectToWorker(workerUrl),
+								getCurrentRoom: () => {
+									const room = socketStore.currentRoom();
+									const domain = socketStore.currentDomainUUID();
+									if (!room) return null;
+									const meta = socketStore
+										.rooms()
+										.find(
+											(r) =>
+												r.name === room &&
+												(r.domain_uuid || "") === (domain || ""),
+										);
+									return {
+										room,
+										domain_uuid: domain ?? undefined,
+										type: meta?.type,
+									};
+								},
+								rejoinTextRoom: (room, domain_uuid, identity) =>
+									socketStore
+										.joinRoom(room, identity, undefined, domain_uuid)
+										.then(() => undefined),
 								joinSignalSfu: (room, identity, stream, domain_uuid) =>
 									socketStore.joinRoomSFU(room, identity, stream, domain_uuid),
 								onPhase: (nextPhase) => {

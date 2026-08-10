@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -27,12 +28,13 @@ var (
 
 // ClusterService 是 Agent 控制面的节点与 Server 分配服务。
 type ClusterService struct {
-	mu           sync.RWMutex
-	nodeRepo     *repository.ClusterNodeRepository
-	assignRepo   *repository.ServerAssignmentRepository
-	notifier     ClusterNotifier
-	serverRepo   *repository.DomainRepository
-	controlQueue MessageJobQueue
+	mu            sync.RWMutex
+	nodeRepo      *repository.ClusterNodeRepository
+	assignRepo    *repository.ServerAssignmentRepository
+	notifier      ClusterNotifier
+	serverRepo    *repository.DomainRepository
+	controlQueue  MessageJobQueue
+	roomMetaStore RoomMetaReader
 }
 
 func NewClusterService(
@@ -132,7 +134,7 @@ func (s *ClusterService) EnsureLocalNode(cfg *config.Config, instanceID string) 
 }
 
 // RegisterNodeParams 将 HTTP 请求参数映射为节点模型，handler 不再直接构造持久层实体。
-func (s *ClusterService) RegisterNodeParams(uuid, name, host, advertiseURL, role, status, sfuProvider string, maxServers, maxRooms int, labels map[string]string) (*model.ClusterNode, error) {
+func (s *ClusterService) RegisterNodeParams(uuid, name, host, advertiseURL, role, status, sfuProvider string, maxServers, maxRooms int, labels map[string]string, nodeSecret string) (*model.ClusterNode, error) {
 	node := model.ClusterNode{
 		UUID:         uuid,
 		Name:         name,
@@ -145,13 +147,17 @@ func (s *ClusterService) RegisterNodeParams(uuid, name, host, advertiseURL, role
 		MaxRooms:     maxRooms,
 	}
 	node.SetLabels(labels)
-	return s.RegisterNode(node)
+	return s.RegisterNodeWithSecret(node, nodeSecret)
 }
 
 // RegisterNode 创建或更新 Worker 节点。
-
 // RegisterNode 创建或更新 Worker 节点。
 func (s *ClusterService) RegisterNode(req model.ClusterNode) (*model.ClusterNode, error) {
+	return s.RegisterNodeWithSecret(req, "")
+}
+
+// RegisterNodeWithSecret 创建或更新 Worker 节点，并用节点 secret 校验既有节点身份。
+func (s *ClusterService) RegisterNodeWithSecret(req model.ClusterNode, nodeSecret string) (*model.ClusterNode, error) {
 	if strings.TrimSpace(req.UUID) == "" {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "node uuid is required")
 	}
@@ -173,6 +179,17 @@ func (s *ClusterService) RegisterNode(req model.ClusterNode) (*model.ClusterNode
 
 	existing, err := s.nodeRepo.GetByUUID(req.UUID)
 	if err == nil {
+		if existing.SecretHash != "" {
+			if nodeSecret == "" || !pkg.VerifyPassword(existing.SecretHash, nodeSecret) {
+				return nil, pkg.NewAppError(pkg.FORBIDDEN, "invalid node secret")
+			}
+		} else if nodeSecret != "" {
+			hash, hashErr := pkg.HashPassword(nodeSecret)
+			if hashErr != nil {
+				return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "hash node secret failed")
+			}
+			existing.SecretHash = hash
+		}
 		existing.Name = req.Name
 		existing.Host = req.Host
 		existing.AdvertiseURL = req.AdvertiseURL
@@ -194,6 +211,13 @@ func (s *ClusterService) RegisterNode(req model.ClusterNode) (*model.ClusterNode
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
+	if nodeSecret != "" {
+		hash, hashErr := pkg.HashPassword(nodeSecret)
+		if hashErr != nil {
+			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "hash node secret failed")
+		}
+		req.SecretHash = hash
+	}
 	req.LastSeenAt = time.Now()
 	if err := s.nodeRepo.Create(&req); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -243,6 +267,8 @@ func (s *ClusterService) Heartbeat(nodeID string, report cluster.HeartbeatReport
 	if report.SFUHealthy != nil {
 		node.SFUHealthy = *report.SFUHealthy
 	}
+	node.DBReplicaLagMs = report.DBReplicaLagMs
+	node.DBReplicaLagDegraded = report.DBReplicaLagDegraded
 	if report.ServingServers > 0 {
 		node.ServingServers = report.ServingServers
 	} else if count, countErr := s.assignRepo.CountByNode(nodeID); countErr == nil {
@@ -305,6 +331,33 @@ func (s *ClusterService) DrainNode(nodeID string) error {
 		"node_id": node.UUID, "status": node.Status,
 	}); err != nil {
 		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish node draining event failed")
+	}
+
+	// 迁移该节点上在线 Server 的副本，并在旧节点广播重连事件。
+	assignments, listErr := s.assignRepo.ListByNode(nodeID)
+	if listErr != nil {
+		log.Printf("[cluster] drain list assignments node=%s: %v", nodeID, listErr)
+	}
+	seenServers := map[string]bool{}
+	for _, assignment := range assignments {
+		if seenServers[assignment.ServerUUID] {
+			continue
+		}
+		seenServers[assignment.ServerUUID] = true
+		current, countErr := s.assignRepo.ListByServer(assignment.ServerUUID)
+		if countErr != nil {
+			log.Printf("[cluster] drain list server=%s: %v", assignment.ServerUUID, countErr)
+			continue
+		}
+		if _, err := s.ScaleServer(assignment.ServerUUID, len(current), ""); err != nil {
+			log.Printf("[cluster] drain migrate server=%s node=%s: %v", assignment.ServerUUID, nodeID, err)
+		}
+	}
+	if err := s.PublishControl(cluster.ControlCommand{
+		Command: cluster.CommandDrainNode,
+		NodeID:  nodeID,
+	}); err != nil {
+		log.Printf("[cluster] publish drain reconnect node=%s: %v", nodeID, err)
 	}
 	return nil
 }
