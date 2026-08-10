@@ -13,12 +13,13 @@ import (
 // ─── mock message service ───
 
 type mockMessageSvc struct {
-	sendCalled    int
-	editCalled    int
-	deleteCalled  int
-	reactCalled   int
-	unreactCalled int
-	lastRoomUUID  string
+	sendCalled          int
+	editCalled          int
+	deleteCalled        int
+	reactCalled         int
+	unreactCalled       int
+	lastRoomUUID        string
+	lastCanDeleteOthers bool
 }
 
 func (m *mockMessageSvc) Send(roomUUID string, actor service.MessageActor, content, replyTo, clientNonce string, mentions []string) (*service.MessageDTO, error) {
@@ -34,6 +35,7 @@ func (m *mockMessageSvc) Edit(roomUUID, messageUUID string, actor service.Messag
 
 func (m *mockMessageSvc) Delete(roomUUID, messageUUID string, actor service.MessageActor, canDeleteOthers bool) error {
 	m.deleteCalled++
+	m.lastCanDeleteOthers = canDeleteOthers
 	return nil
 }
 
@@ -456,5 +458,36 @@ func TestRoomJoinSFU_WithServer(t *testing.T) {
 	json.Unmarshal([]byte(ack), &ackMap)
 	if ackMap["error"] != "text room has no media" {
 		t.Errorf("expected error, got %v", ackMap)
+	}
+}
+
+func TestOnMessageDelete_DomainRoleCanDeleteOthers(t *testing.T) {
+	store := &mockRoomStore{rooms: []model.Room{
+		{UUID: "uuid-domain", Name: "text-chat", Type: model.RoomTypeText, DomainUUID: "domain-a"},
+	}}
+	h := newTestHub()
+	h.roomStore = store
+	h.permChecker = &mockPermChecker{rolePerms: map[string]map[string]bool{"user": {"message:send": true}}}
+	h.domainPermChecker = func(domainUUID, userUUID, permCode string) bool {
+		return domainUUID == "domain-a" && userUUID == "mod-1" && permCode == "message:delete_others"
+	}
+	msgSvc := &mockMessageSvc{}
+	h.SetMessageService(msgSvc)
+
+	conn := newMockClient("conn-1")
+	conn.claims = &pkg.Claims{Username: "mod-1", UserUUID: "mod-1", Role: "user"}
+	if _, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"mod-1","domain_uuid":"domain-a"}`); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	ack, err := h.OnMessageDelete(conn, `{"room":"text-chat","domain_uuid":"domain-a","message_uuid":"msg-1"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ackMap := decodeAck(t, ack)
+	if ackMap["success"] != true {
+		t.Fatalf("expected success, got %v", ackMap)
+	}
+	if msgSvc.lastCanDeleteOthers != true {
+		t.Fatalf("expected canDeleteOthers true, got %v", msgSvc.lastCanDeleteOthers)
 	}
 }

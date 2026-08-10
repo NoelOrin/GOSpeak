@@ -202,10 +202,14 @@ func (h *Hub) OnMessageDelete(c ws.ClientMessenger, data string) (string, error)
 		return ackErr, nil
 	}
 
-	// canDeleteOthers: check permission via permChecker
+	// canDeleteOthers: global permission first, then domain-scoped permission
 	canDeleteOthers := false
-	if claims := c.Claims(); claims != nil && h.permChecker != nil {
-		canDeleteOthers = h.permChecker.HasPermission(claims.Role, permcode.PermMessageDeleteOthers)
+	if claims := c.Claims(); claims != nil {
+		if h.permChecker != nil && h.permChecker.HasPermission(claims.Role, permcode.PermMessageDeleteOthers) {
+			canDeleteOthers = true
+		} else if h.domainPermChecker != nil && req.DomainUUID != "" && claims.UserUUID != "" {
+			canDeleteOthers = h.domainPermChecker(req.DomainUUID, claims.UserUUID, permcode.PermMessageDeleteOthers)
+		}
 	}
 
 	if err := h.msgSvc.Delete(roomUUID, req.MessageUUID, actor, canDeleteOthers); err != nil {

@@ -105,6 +105,7 @@ type Hub struct {
 	msgSvc                  messageSender
 	convSvc                 conversationSender
 	domainChecker           func(domainUUID, userUUID string) bool
+	domainPermChecker       func(domainUUID, userUUID, permCode string) bool
 	clientDomains           map[string]string // socketID -> current domain scope (empty = platform)
 	membershipHeartbeatStop chan struct{}
 	membershipHeartbeatDone chan struct{}
@@ -117,16 +118,17 @@ type Hub struct {
 
 // HubOptions 聚合 Hub 的协作依赖，由组合根在构造时一次传入。
 type HubOptions struct {
-	Fanout             ws.Broadcaster
-	EventBus           eventBus
-	SFUProvider        sfu.Provider
-	StreamResolver     StreamNameResolver
-	MessageSender      messageSender
-	ConversationSender conversationSender
-	DomainChecker      func(domainUUID, userUUID string) bool
-	MembershipStore    membershipStore
-	InstanceID         string
-	StateNotifier      stateNotifier
+	Fanout                  ws.Broadcaster
+	EventBus                eventBus
+	SFUProvider             sfu.Provider
+	StreamResolver          StreamNameResolver
+	MessageSender           messageSender
+	ConversationSender      conversationSender
+	DomainChecker           func(domainUUID, userUUID string) bool
+	DomainPermissionChecker func(domainUUID, userUUID, permCode string) bool
+	MembershipStore         membershipStore
+	InstanceID              string
+	StateNotifier           stateNotifier
 }
 
 // NewHub 保留测试友好的四参构造，生产路径请使用 NewHubWithOptions。
@@ -158,6 +160,7 @@ func NewHubWithOptions(store roomStore, mStore muteStore, uStore userStore, pChe
 	h.msgSvc = opts.MessageSender
 	h.convSvc = opts.ConversationSender
 	h.domainChecker = opts.DomainChecker
+	h.domainPermChecker = opts.DomainPermissionChecker
 	h.membershipStore = opts.MembershipStore
 	h.instanceID = opts.InstanceID
 	h.stateNotifier = opts.StateNotifier
@@ -185,6 +188,10 @@ func (h *Hub) SetStreamResolver(r StreamNameResolver) {
 
 func (h *Hub) SetDomainChecker(checker func(domainUUID, userUUID string) bool) {
 	h.domainChecker = checker
+}
+
+func (h *Hub) SetDomainPermissionChecker(checker func(domainUUID, userUUID, permCode string) bool) {
+	h.domainPermChecker = checker
 }
 
 // ─── 事件注册 ───

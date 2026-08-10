@@ -19,7 +19,6 @@ import (
 	"GOSpeak/internal/sfu/factory"
 	"GOSpeak/internal/signal"
 	"GOSpeak/internal/storage"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -213,16 +212,17 @@ func StartGin(env EnvEnum) error {
 	conversationSvc := service.NewConversationService(conversationRepo, messageRepo)
 	conversationSvc.SetEventBus(eventBus)
 	signalHub := signal.NewHubWithOptions(roomSvc, muteSvc, userSvc, permSvc, signal.HubOptions{
-		Fanout:             wsFanout,
-		EventBus:           eventBus,
-		SFUProvider:        sfuProvider,
-		StreamResolver:     streamResolver,
-		MessageSender:      messageSvc,
-		ConversationSender: conversationSvc,
-		DomainChecker:      domainSvc.IsMember,
-		MembershipStore:    store,
-		InstanceID:         instanceID,
-		StateNotifier:      eventBus,
+		Fanout:                  wsFanout,
+		EventBus:                eventBus,
+		SFUProvider:             sfuProvider,
+		StreamResolver:          streamResolver,
+		MessageSender:           messageSvc,
+		ConversationSender:      conversationSvc,
+		DomainChecker:           domainSvc.IsMember,
+		DomainPermissionChecker: domainSvc.HasDomainPermission,
+		MembershipStore:         store,
+		InstanceID:              instanceID,
+		StateNotifier:           eventBus,
 	})
 	if store != nil {
 		signalHub.StartMembershipHeartbeat()
@@ -377,7 +377,7 @@ func StartGin(env EnvEnum) error {
 	roomH := handler.NewRoomHandler(roomSvc, permSvc, domainSvc)
 	roomH.SetRoomListBroadcaster(signalHub)
 	roomH.SetControlPublisher(clusterSvc)
-	msgH := handler.NewMessageHandler(messageSvc, permSvc)
+	msgH := handler.NewMessageHandler(messageSvc, permSvc, roomSvc, domainSvc)
 	permH := handler.NewPermissionHandler(permSvc)
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
 	muteH.SetControlPublisher(clusterSvc)

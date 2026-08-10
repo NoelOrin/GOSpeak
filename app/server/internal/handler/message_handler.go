@@ -9,12 +9,14 @@ import (
 )
 
 type MessageHandler struct {
-	msgSvc  *service.MessageService
-	permSvc *service.PermissionService
+	msgSvc    *service.MessageService
+	permSvc   *service.PermissionService
+	roomSvc   *service.RoomService
+	domainSvc *service.DomainService
 }
 
-func NewMessageHandler(msgSvc *service.MessageService, permSvc *service.PermissionService) *MessageHandler {
-	return &MessageHandler{msgSvc: msgSvc, permSvc: permSvc}
+func NewMessageHandler(msgSvc *service.MessageService, permSvc *service.PermissionService, roomSvc *service.RoomService, domainSvc *service.DomainService) *MessageHandler {
+	return &MessageHandler{msgSvc: msgSvc, permSvc: permSvc, roomSvc: roomSvc, domainSvc: domainSvc}
 }
 
 func messageActorFromContext(c *gin.Context) (service.MessageActor, bool) {
@@ -194,6 +196,11 @@ func (h *MessageHandler) Delete(c *gin.Context) {
 	}
 	roleStr, _ := roleVal.(string)
 	canDeleteOthers := h.permSvc != nil && h.permSvc.HasPermission(roleStr, permcode.PermMessageDeleteOthers)
+	if !canDeleteOthers && h.roomSvc != nil && h.domainSvc != nil {
+		if room, roomErr := h.roomSvc.GetByUUID(req.RoomUUID); roomErr == nil && room != nil && room.DomainUUID != "" {
+			canDeleteOthers = h.domainSvc.HasDomainPermission(room.DomainUUID, currentUserUUID(c), permcode.PermMessageDeleteOthers)
+		}
+	}
 	if err := h.msgSvc.Delete(req.RoomUUID, req.MessageUUID, actor, canDeleteOthers); err != nil {
 		pkg.HandleError(c, err)
 		return
