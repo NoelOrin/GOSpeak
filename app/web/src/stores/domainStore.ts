@@ -7,6 +7,7 @@ import {
 	domainMembers,
 	deleteDomain,
 	leaveDomain,
+	myDomainPermissions,
 	myDomains,
 } from "@/api/domain";
 
@@ -15,6 +16,7 @@ interface DomainState {
 	currentDomainUUID: string | null;
 	domainCache: Record<string, Domain>;
 	memberCache: Record<string, DomainMember[]>;
+	myRolePermissions: Record<string, string[]>;
 	domainLoading: Record<string, boolean>;
 	memberLoading: Record<string, boolean>;
 	domainErrors: Record<string, string | null>;
@@ -33,6 +35,7 @@ export function createDomainStore() {
 		currentDomainUUID: null,
 		domainCache: {},
 		memberCache: {},
+		myRolePermissions: {},
 		domainLoading: {},
 		memberLoading: {},
 		domainErrors: {},
@@ -102,6 +105,7 @@ export function createDomainStore() {
 	const activateDomain = (uuid: string) => {
 		setCurrentDomain(uuid);
 		void loadMembers(uuid).catch(() => {});
+		void loadMyPermissions(uuid).catch(() => {});
 	};
 
 	const loadMembers = async (domainUUID: string) => {
@@ -124,6 +128,12 @@ export function createDomainStore() {
 			}
 			throw error;
 		}
+	};
+
+	const loadMyPermissions = async (domainUUID: string): Promise<string[]> => {
+		const data = await myDomainPermissions(domainUUID);
+		setState("myRolePermissions", domainUUID, data.permissions);
+		return data.permissions;
 	};
 
 	const addDomain = (domain: Domain) => {
@@ -155,6 +165,7 @@ export function createDomainStore() {
 		setState("myDomainUUIDs", (prev) => prev.filter((u) => u !== uuid));
 		setState("domainCache", (prev) => ({ ...prev, [uuid]: undefined }));
 		setState("memberCache", (prev) => ({ ...prev, [uuid]: undefined }));
+		setState("myRolePermissions", (prev) => ({ ...prev, [uuid]: undefined }));
 		setState("domainLoading", (prev) => ({ ...prev, [uuid]: undefined }));
 		setState("memberLoading", (prev) => ({ ...prev, [uuid]: undefined }));
 		setState("domainErrors", (prev) => ({ ...prev, [uuid]: undefined }));
@@ -182,6 +193,7 @@ export function createDomainStore() {
 		setCurrentDomain,
 		activateDomain,
 		loadMembers,
+		loadMyPermissions,
 		updateCachedDomain,
 		addDomain,
 		removeDomain,

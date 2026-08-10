@@ -14,18 +14,22 @@ vi.mock("@/api/apiClient", () => {
 import apiClient from "@/api/apiClient";
 import {
 	createDomain,
+	createDomainRole,
 	deleteDomain,
 	getDomain,
 	domainMembers,
 	joinDomain,
 	kickDomainMember,
 	leaveDomain,
+	listDomainRoles,
 	listDomains,
 	listPublicDomains,
+	myDomainPermissions,
 	myDomains,
 	getMyDomainsDetailed,
 	previewDomainInvite,
 	updateDomain,
+	updateDomainMemberRole,
 } from "@/api/domain";
 
 describe("domainApi", () => {
@@ -205,5 +209,47 @@ describe("domainApi", () => {
 			url: "/api/v1/domain/members",
 			data: { domain_uuid: "g-1" },
 		});
+	});
+});
+
+describe("domainRoleApi", () => {
+	it("listDomainRoles calls correct endpoint", async () => {
+		const data = { roles: [], assignable: ["room:read"] };
+		(apiClient.post as any).mockResolvedValue(data);
+		const result = await listDomainRoles("g-1");
+		expect(apiClient.post).toHaveBeenCalledWith({
+			url: "/api/v1/domain/roles/list",
+			data: { domain_uuid: "g-1" },
+		});
+		expect(result.assignable).toEqual(["room:read"]);
+	});
+
+	it("createDomainRole sends name and permissions", async () => {
+		(apiClient.post as any).mockResolvedValue(null);
+		await createDomainRole("g-1", "moderator", ["room:read"]);
+		expect(apiClient.post).toHaveBeenCalledWith({
+			url: "/api/v1/domain/roles/create",
+			data: {
+				domain_uuid: "g-1",
+				name: "moderator",
+				permissions: ["room:read"],
+			},
+		});
+	});
+
+	it("updateDomainMemberRole sends role name", async () => {
+		(apiClient.post as any).mockResolvedValue(null);
+		await updateDomainMemberRole("g-1", "u-2", "admin");
+		expect(apiClient.post).toHaveBeenCalledWith({
+			url: "/api/v1/domain/members/update-role",
+			data: { domain_uuid: "g-1", user_uuid: "u-2", role_name: "admin" },
+		});
+	});
+
+	it("myDomainPermissions returns role and codes", async () => {
+		const data = { role_name: "admin", permissions: ["room:read"] };
+		(apiClient.post as any).mockResolvedValue(data);
+		const result = await myDomainPermissions("g-1");
+		expect(result.role_name).toBe("admin");
 	});
 });

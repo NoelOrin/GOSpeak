@@ -6,12 +6,14 @@ const {
 	myDomainsMock,
 	getDomainMock,
 	domainMembersMock,
+	myDomainPermissionsMock,
 	leaveDomainMock,
 	deleteDomainMock,
 } = vi.hoisted(() => ({
 	myDomainsMock: vi.fn(),
 	getDomainMock: vi.fn(),
 	domainMembersMock: vi.fn(),
+	myDomainPermissionsMock: vi.fn(),
 	leaveDomainMock: vi.fn(),
 	deleteDomainMock: vi.fn(),
 }));
@@ -20,6 +22,7 @@ vi.mock("@/api/domain", () => ({
 	myDomains: myDomainsMock,
 	getDomain: getDomainMock,
 	domainMembers: domainMembersMock,
+	myDomainPermissions: myDomainPermissionsMock,
 	leaveDomain: leaveDomainMock,
 	deleteDomain: deleteDomainMock,
 }));
@@ -433,5 +436,20 @@ describe("domainStore", () => {
 		await vi.waitFor(() => {
 			expect(store.state.domainCache["g-1"]).toEqual(domain);
 		});
+	});
+});
+
+describe("domainStore permissions", () => {
+	it("loads and caches my domain permissions", async () => {
+		const store = createDomainStore();
+		myDomainPermissionsMock.mockResolvedValue({
+			role_name: "admin",
+			permissions: ["room:read", "room:delete"],
+		});
+		await store.loadMyPermissions("g-1");
+		expect(store.state.myRolePermissions["g-1"]).toEqual([
+			"room:read",
+			"room:delete",
+		]);
 	});
 });

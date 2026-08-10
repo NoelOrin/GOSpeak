@@ -180,3 +180,82 @@ export async function domainMembers(
 	});
 	return data?.members ?? [];
 }
+
+export interface DomainRole {
+	name: string;
+	is_system: boolean;
+	permissions: string[];
+}
+
+export interface DomainRoleList {
+	roles: DomainRole[];
+	assignable: string[];
+}
+
+export async function listDomainRoles(
+	domainUUID: string,
+): Promise<DomainRoleList> {
+	const result = await apiClient.post<DomainRoleList>({
+		url: "/api/v1/domain/roles/list",
+		data: { domain_uuid: domainUUID },
+	});
+	if (!result) throw new Error("domain role data is missing");
+	return result;
+}
+
+export async function createDomainRole(
+	domainUUID: string,
+	name: string,
+	permissions: string[],
+): Promise<void> {
+	await apiClient.post({
+		url: "/api/v1/domain/roles/create",
+		data: { domain_uuid: domainUUID, name, permissions },
+	});
+}
+
+export async function updateDomainRolePermissions(
+	domainUUID: string,
+	roleName: string,
+	permissions: string[],
+): Promise<void> {
+	await apiClient.post({
+		url: "/api/v1/domain/roles/update",
+		data: { domain_uuid: domainUUID, role_name: roleName, permissions },
+	});
+}
+
+export async function deleteDomainRole(
+	domainUUID: string,
+	roleName: string,
+): Promise<void> {
+	await apiClient.post({
+		url: "/api/v1/domain/roles/delete",
+		data: { domain_uuid: domainUUID, role_name: roleName },
+	});
+}
+
+export async function updateDomainMemberRole(
+	domainUUID: string,
+	userUUID: string,
+	roleName: string,
+): Promise<void> {
+	await apiClient.post({
+		url: "/api/v1/domain/members/update-role",
+		data: { domain_uuid: domainUUID, user_uuid: userUUID, role_name: roleName },
+	});
+}
+
+export async function myDomainPermissions(
+	domainUUID: string,
+): Promise<{ role_name: string; permissions: string[] }> {
+	const result = await apiClient.post<{
+		role_name: string;
+		permissions: string[];
+	}>({
+		url: "/api/v1/domain/my-permissions",
+		data: { domain_uuid: domainUUID },
+	});
+	if (!result) throw new Error("domain permission data is missing");
+	return result;
+}
