@@ -102,7 +102,10 @@ func (h *Hub) checkMessagePerm(c ws.ClientMessenger, roomDomainUUID string) stri
 			role = user.Role
 		}
 	}
-	if roomDomainUUID != "" && claims.UserUUID != "" && h.domainPermChecker != nil {
+	if roomDomainUUID != "" {
+		if h.domainPermChecker == nil || claims.UserUUID == "" {
+			return `{"error":"permission denied"}`
+		}
 		if !h.domainPermChecker(roomDomainUUID, claims.UserUUID, permcode.PermMessageSend) {
 			return `{"error":"permission denied"}`
 		}

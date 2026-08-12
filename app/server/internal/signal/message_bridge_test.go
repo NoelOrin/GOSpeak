@@ -277,6 +277,9 @@ func TestOnMessageSend_UsesDomainScopedRoom(t *testing.T) {
 	}}
 	h := newTestHub()
 	h.roomStore = store
+	h.domainPermChecker = func(domainUUID, userUUID, permCode string) bool {
+		return domainUUID == "domain-a" && userUUID == "alice" && permCode == "message:send"
+	}
 	msgSvc := &mockMessageSvc{}
 	h.SetMessageService(msgSvc)
 	conn := newAuthedMockClient("conn-1", "alice")
@@ -614,6 +617,34 @@ func TestOnMessageSend_DomainPermissionAllowsMember(t *testing.T) {
 	ackMap := decodeAck(t, ack)
 	if ackMap["success"] != true {
 		t.Fatalf("expected success, got %v", ackMap)
+	}
+}
+
+func TestOnMessageSend_DomainPermissionNilCheckerFailsClosed(t *testing.T) {
+	store := &mockRoomStore{rooms: []model.Room{
+		{UUID: "uuid-domain", Name: "text-chat", Type: model.RoomTypeText, DomainUUID: "domain-a"},
+	}}
+	h := newTestHub()
+	h.roomStore = store
+	h.permChecker = &mockPermChecker{rolePerms: map[string]map[string]bool{"user": {"message:send": true}}}
+	msgSvc := &mockMessageSvc{}
+	h.SetMessageService(msgSvc)
+
+	conn := newMockClient("conn-1")
+	conn.claims = &pkg.Claims{Username: "guest-1", UserUUID: "guest-1", Role: "user"}
+	if _, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"guest-1","domain_uuid":"domain-a"}`); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","domain_uuid":"domain-a","content":"hi"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ackMap := decodeAck(t, ack)
+	if ackMap["error"] != "permission denied" {
+		t.Fatalf("expected permission denied without domain checker, got %v", ackMap)
+	}
+	if msgSvc.sendCalled != 0 {
+		t.Fatalf("send must not be called, got %d calls", msgSvc.sendCalled)
 	}
 }
 
