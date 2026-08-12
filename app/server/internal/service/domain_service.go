@@ -461,6 +461,9 @@ func (s *DomainService) SetMemberRole(domainUUID, operatorUUID, targetUserUUID, 
 	if roleName == model.DomainRoleOwner {
 		return pkg.NewAppError(pkg.FORBIDDEN, "owner role cannot be assigned")
 	}
+	if roleName == model.DomainRoleAdmin && !s.IsOwner(domainUUID, operatorUUID) {
+		return pkg.NewAppError(pkg.FORBIDDEN, "only domain owner can assign admin role")
+	}
 	target, err := s.domainRepo.GetMember(domainUUID, targetUserUUID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
