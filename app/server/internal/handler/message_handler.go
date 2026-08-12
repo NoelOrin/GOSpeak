@@ -43,6 +43,10 @@ func (h *MessageHandler) roomOf(c *gin.Context, roomUUID string) (*model.Room, b
 		pkg.HandleError(c, err)
 		return nil, false
 	}
+	if room == nil {
+		pkg.Fail(c, pkg.INTERNAL_ERROR, "room not found")
+		return nil, false
+	}
 	return room, true
 }
 

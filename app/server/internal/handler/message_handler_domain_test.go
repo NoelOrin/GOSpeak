@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
 	"GOSpeak/internal/service"
 
@@ -212,5 +213,64 @@ func TestMessageHandler_Delete_DomainPermissionDoesNotFallBackToGlobal(t *testin
 	}
 	if code := intCode(resp["code"]); code != 1013 {
 		t.Fatalf("domain room must not fall back to global delete_others: expected 1013, got %d: %s", code, resp["msg"])
+	}
+}
+
+func TestMessageHandler_BotClaimsPermissionsOnPlatformRoom(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Room{}, &model.Message{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	room := &model.Room{Name: "chat", DomainUUID: "", Type: model.RoomTypeText}
+	if err := db.Create(room).Error; err != nil {
+		t.Fatalf("seed room: %v", err)
+	}
+
+	roomSvc := service.NewRoomService(repository.NewRoomRepository(db))
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
+	msgSvc := service.NewMessageService(repository.NewMessageRepository(db), repository.NewRoomRepository(db), domainSvc)
+	h := NewMessageHandler(msgSvc, nil, roomSvc, domainSvc)
+
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("username", "bot-1")
+		c.Set("user_uuid", "bot-1")
+		c.Set("role", "user")
+		c.Set("claims", &pkg.Claims{Role: "user", Permissions: []string{"message:read"}})
+		c.Next()
+	})
+	r.POST("/send", h.Send)
+	r.POST("/list", h.List)
+
+	sendBody, _ := json.Marshal(map[string]string{"room_uuid": room.UUID, "content": "hello"})
+	sendReq := httptest.NewRequest(http.MethodPost, "/send", bytes.NewReader(sendBody))
+	sendReq.Header.Set("Content-Type", "application/json")
+	sendW := httptest.NewRecorder()
+	r.ServeHTTP(sendW, sendReq)
+
+	var sendResp map[string]interface{}
+	if err := json.Unmarshal(sendW.Body.Bytes(), &sendResp); err != nil {
+		t.Fatalf("decode send response: %v", err)
+	}
+	if code := intCode(sendResp["code"]); code != 1013 {
+		t.Fatalf("bot without message:send must not send: expected 1013, got %d: %s", code, sendResp["msg"])
+	}
+
+	listBody, _ := json.Marshal(map[string]string{"room_uuid": room.UUID})
+	listReq := httptest.NewRequest(http.MethodPost, "/list", bytes.NewReader(listBody))
+	listReq.Header.Set("Content-Type", "application/json")
+	listW := httptest.NewRecorder()
+	r.ServeHTTP(listW, listReq)
+
+	var listResp map[string]interface{}
+	if err := json.Unmarshal(listW.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	if code := intCode(listResp["code"]); code != 0 {
+		t.Fatalf("bot with message:read must read: expected 0, got %d: %s", code, listResp["msg"])
 	}
 }

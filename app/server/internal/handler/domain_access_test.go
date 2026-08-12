@@ -3,6 +3,8 @@ package handler
 import (
 	"testing"
 
+	"GOSpeak/internal/pkg"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -42,6 +44,21 @@ func TestDomainPermissionGranted_PlatformRoomFallsBackToGlobal(t *testing.T) {
 	}
 }
 
+func TestDomainPermissionGranted_PlatformRoomPrefersClaimsPermissions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(nil)
+	c.Set("user_uuid", "user-1")
+	c.Set("role", "user")
+	c.Set("claims", &pkg.Claims{Role: "user", Permissions: []string{"message:read"}})
+
+	if !domainPermissionGranted(c, "", "message:read", nil, fakeGlobalPermChecker(false)) {
+		t.Fatal("expected explicit claims permission to grant platform room access")
+	}
+	if domainPermissionGranted(c, "", "message:send", nil, fakeGlobalPermChecker(false)) {
+		t.Fatal("expected missing explicit claims permission to deny platform room access")
+	}
+}
+
 func TestDomainPermissionGranted_NilCheckersFailClosed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(nil)
@@ -74,10 +91,10 @@ func TestDomainPermissionGranted_TypedNilCheckersFailClosed(t *testing.T) {
 }
 
 type fakeDomainPermSvc struct {
-	allow          bool
-	gotDomainUUID  string
-	gotUserUUID    string
-	gotPermCode    string
+	allow         bool
+	gotDomainUUID string
+	gotUserUUID   string
+	gotPermCode   string
 }
 
 func (f *fakeDomainPermSvc) HasDomainPermission(domainUUID, userUUID, permCode string) bool {
