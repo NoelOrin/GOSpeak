@@ -25,7 +25,7 @@ describe("auth module", () => {
     const result = await api("/api/v1/auth/login", {
       body: { username: user.username, password: "wrong-password" },
     });
-    expect(result.status).toBe(400);
+    expect(result.status).toBe(401);
     expect(result.code).toBe(1010);
   });
 
