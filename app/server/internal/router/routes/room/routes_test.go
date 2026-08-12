@@ -47,7 +47,7 @@ func TestRegisterProtectedRoomRoutes(t *testing.T) {
 	}
 }
 
-func TestRoomHandler_Update_AllowedThroughProtectedRoutesWithoutGlobalPermission(t *testing.T) {
+func TestRoomHandler_CRUD_AllowedThroughProtectedRoutesWithoutGlobalPermission(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	middleware.SetDomainChecker(func(_, _ string) bool { return true })
 	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
@@ -74,7 +74,7 @@ func TestRoomHandler_Update_AllowedThroughProtectedRoutesWithoutGlobalPermission
 	}
 	if err := repository.NewDomainRoleRepository(db).CreateRoleWithPermissions(
 		&model.DomainRole{DomainUUID: domain.UUID, Name: "moderator"},
-		[]string{model.PermRoomUpdate, model.PermRoomDelete},
+		[]string{model.PermRoomCreate, model.PermRoomRead, model.PermRoomUpdate, model.PermRoomDelete},
 	); err != nil {
 		t.Fatalf("create role: %v", err)
 	}
@@ -105,6 +105,9 @@ func TestRoomHandler_Update_AllowedThroughProtectedRoutesWithoutGlobalPermission
 		path string
 		body string
 	}{
+		{name: "create", path: "/room/create", body: `{"name":"created-room","domain_uuid":"` + domain.UUID + `"}`},
+		{name: "get", path: "/room/get", body: `{"id":` + strconv.FormatUint(uint64(room.ID), 10) + `}`},
+		{name: "list", path: "/room/list", body: `{}`},
 		{name: "update", path: "/room/update", body: `{"id":` + strconv.FormatUint(uint64(room.ID), 10) + `,"name":"renamed"}`},
 		{name: "delete", path: "/room/delete", body: `{"id":` + strconv.FormatUint(uint64(room.ID), 10) + `}`},
 	} {

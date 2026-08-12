@@ -145,7 +145,25 @@ func TestRoomHandler_Get_DomainReadPermissionRequired(t *testing.T) {
 	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
 
 	db, _, domainSvc, roomID := newRoomDomainManageEnv(t, "viewer-1", "viewer", "someone-else", true, nil)
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+
+	permRepo := repository.NewPermissionRepository(db)
+	for _, perm := range model.DefaultPermissions {
+		if err := permRepo.CreateIfNotExists(&perm); err != nil {
+			t.Fatalf("seed permission %s: %v", perm.Code, err)
+		}
+	}
+	if err := permRepo.SeedRolePermissionsIfEmpty("user", []string{model.PermRoomRead}); err != nil {
+		t.Fatalf("seed global role permission: %v", err)
+	}
+	permSvc := service.NewPermissionService(permRepo)
+	if err := permSvc.LoadCache(); err != nil {
+		t.Fatalf("load permission cache: %v", err)
+	}
+	if !permSvc.HasPermission("user", model.PermRoomRead) {
+		t.Fatal("test precondition: global user role must have room:read")
+	}
+
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), permSvc, domainSvc)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "viewer-1")
@@ -166,7 +184,25 @@ func TestRoomHandler_List_DomainReadPermissionRequired(t *testing.T) {
 	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
 
 	db, domain, domainSvc, _ := newRoomDomainManageEnv(t, "viewer-1", "viewer", "someone-else", true, nil)
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+
+	permRepo := repository.NewPermissionRepository(db)
+	for _, perm := range model.DefaultPermissions {
+		if err := permRepo.CreateIfNotExists(&perm); err != nil {
+			t.Fatalf("seed permission %s: %v", perm.Code, err)
+		}
+	}
+	if err := permRepo.SeedRolePermissionsIfEmpty("user", []string{model.PermRoomRead}); err != nil {
+		t.Fatalf("seed global role permission: %v", err)
+	}
+	permSvc := service.NewPermissionService(permRepo)
+	if err := permSvc.LoadCache(); err != nil {
+		t.Fatalf("load permission cache: %v", err)
+	}
+	if !permSvc.HasPermission("user", model.PermRoomRead) {
+		t.Fatal("test precondition: global user role must have room:read")
+	}
+
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), permSvc, domainSvc)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "viewer-1")
@@ -180,5 +216,48 @@ func TestRoomHandler_List_DomainReadPermissionRequired(t *testing.T) {
 	w := postRoomJSON(t, r, "/room/list", `{}`)
 	if code := roomResponseCode(t, w); code != 1013 {
 		t.Fatalf("expected 1013 without domain room:read, got %d: %s", code, w.Body.String())
+	}
+}
+
+func TestRoomHandler_Get_AllowsDomainRoleWithoutGlobalPermission(t *testing.T) {
+	middleware.SetDomainChecker(func(_, _ string) bool { return true })
+	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
+
+	db, _, domainSvc, roomID := newRoomDomainManageEnv(t, "reader-1", "reader", "someone-else", true, []string{model.PermRoomRead})
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("username", "reader-1")
+		c.Set("user_uuid", "reader-1")
+		c.Set("role", "user")
+		c.Next()
+	})
+	r.POST("/room/get", h.Get)
+
+	w := postRoomJSON(t, r, "/room/get", `{"id":`+strconv.FormatUint(uint64(roomID), 10)+`}`)
+	if code := roomResponseCode(t, w); code != 0 {
+		t.Fatalf("expected code 0 via domain room:read, got %d: %s", code, w.Body.String())
+	}
+}
+
+func TestRoomHandler_List_AllowsDomainRoleWithoutGlobalPermission(t *testing.T) {
+	middleware.SetDomainChecker(func(_, _ string) bool { return true })
+	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
+
+	db, domain, domainSvc, _ := newRoomDomainManageEnv(t, "reader-1", "reader", "someone-else", true, []string{model.PermRoomRead})
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("username", "reader-1")
+		c.Set("user_uuid", "reader-1")
+		c.Set("role", "user")
+		c.Set("domain_uuid", domain.UUID)
+		c.Next()
+	})
+	r.POST("/room/list", h.List)
+
+	w := postRoomJSON(t, r, "/room/list", `{}`)
+	if code := roomResponseCode(t, w); code != 0 {
+		t.Fatalf("expected code 0 via domain room:read, got %d: %s", code, w.Body.String())
 	}
 }

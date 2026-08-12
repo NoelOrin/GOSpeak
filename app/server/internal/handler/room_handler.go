@@ -206,10 +206,10 @@ func (h *RoomHandler) Get(c *gin.Context) {
 			pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
 			return
 		}
-		if !domainPermissionGranted(c, room.DomainUUID, permcode.PermRoomRead, h.domainSvc, h.permSvc) {
-			pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain room permission")
-			return
-		}
+	}
+	if !domainPermissionGranted(c, room.DomainUUID, permcode.PermRoomRead, h.domainSvc, h.permSvc) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain room permission")
+		return
 	}
 
 	pkg.Success(c, service.RoomToDTO(room))
@@ -248,10 +248,10 @@ func (h *RoomHandler) List(c *gin.Context) {
 			pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
 			return
 		}
-		if !domainPermissionGranted(c, domainUUID, permcode.PermRoomRead, h.domainSvc, h.permSvc) {
-			pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain room permission")
-			return
-		}
+	}
+	if !domainPermissionGranted(c, domainUUID, permcode.PermRoomRead, h.domainSvc, h.permSvc) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain room permission")
+		return
 	}
 
 	var rooms []model.Room

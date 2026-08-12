@@ -181,7 +181,7 @@ func TestRoomHandler_List_NoDomainUUID_OnlyPlatformRooms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Room{}); err != nil {
+	if err := db.AutoMigrate(&model.Room{}, &model.Permission{}, &model.RolePermission{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	rooms := []model.Room{
@@ -192,8 +192,31 @@ func TestRoomHandler_List_NoDomainUUID_OnlyPlatformRooms(t *testing.T) {
 		t.Fatalf("seed rooms: %v", err)
 	}
 
+	permRepo := repository.NewPermissionRepository(db)
+	for _, perm := range model.DefaultPermissions {
+		if err := permRepo.CreateIfNotExists(&perm); err != nil {
+			t.Fatalf("seed permission %s: %v", perm.Code, err)
+		}
+	}
+	if err := permRepo.SeedRolePermissionsIfEmpty("user", []string{model.PermRoomRead}); err != nil {
+		t.Fatalf("seed global role permission: %v", err)
+	}
+	permSvc := service.NewPermissionService(permRepo)
+	if err := permSvc.LoadCache(); err != nil {
+		t.Fatalf("load permission cache: %v", err)
+	}
+	if !permSvc.HasPermission("user", model.PermRoomRead) {
+		t.Fatal("test precondition: global user role must have room:read")
+	}
+
 	r := gin.New()
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)
+	r.Use(func(c *gin.Context) {
+		c.Set("username", "user-1")
+		c.Set("user_uuid", "user-1")
+		c.Set("role", "user")
+		c.Next()
+	})
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), permSvc, nil)
 	r.POST("/api/v1/room/list", h.List)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/list", strings.NewReader(`{}`))
