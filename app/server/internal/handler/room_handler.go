@@ -78,7 +78,7 @@ func (h *RoomHandler) canManageRoom(c *gin.Context, room *model.Room, perm strin
 	username, _ := c.Get("username")
 	usernameStr, _ := username.(string)
 	if room.DomainUUID != "" {
-		if h.domainSvc != nil && h.domainSvc.HasDomainPermission(room.DomainUUID, currentUserUUID(c), perm) {
+		if domainPermissionGranted(c, room.DomainUUID, perm, h.domainSvc, h.permSvc) {
 			return true
 		}
 		// 域房间创建者保留对自己房间的管理权。
