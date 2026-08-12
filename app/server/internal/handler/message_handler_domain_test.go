@@ -274,3 +274,71 @@ func TestMessageHandler_BotClaimsPermissionsOnPlatformRoom(t *testing.T) {
 		t.Fatalf("bot with message:read must read: expected 0, got %d: %s", code, listResp["msg"])
 	}
 }
+
+func TestMessageHandler_Delete_BotClaimsMissingDeleteOthersDoesNotFallBackToGlobal(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Room{}, &model.Message{}, &model.Permission{}, &model.RolePermission{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	room := &model.Room{Name: "chat", DomainUUID: "", Type: model.RoomTypeText}
+	if err := db.Create(room).Error; err != nil {
+		t.Fatalf("seed room: %v", err)
+	}
+	msg := &model.Message{
+		RoomUUID: room.UUID, AuthorID: "other", AuthorUUID: "other-uuid",
+		Content: "hello", ConversationType: model.ConversationTypeRoom,
+	}
+	if err := db.Create(msg).Error; err != nil {
+		t.Fatalf("seed message: %v", err)
+	}
+
+	permRepo := repository.NewPermissionRepository(db)
+	for _, perm := range model.DefaultPermissions {
+		if err := permRepo.CreateIfNotExists(&perm); err != nil {
+			t.Fatalf("seed permission %s: %v", perm.Code, err)
+		}
+	}
+	if err := permRepo.SeedRolePermissionsIfEmpty("user", []string{model.PermMessageDeleteOthers}); err != nil {
+		t.Fatalf("seed global role permission: %v", err)
+	}
+	permSvc := service.NewPermissionService(permRepo)
+	if err := permSvc.LoadCache(); err != nil {
+		t.Fatalf("load permission cache: %v", err)
+	}
+	if !permSvc.HasPermission("user", model.PermMessageDeleteOthers) {
+		t.Fatal("test precondition: global user role must have message:delete_others")
+	}
+
+	roomSvc := service.NewRoomService(repository.NewRoomRepository(db))
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
+	msgSvc := service.NewMessageService(repository.NewMessageRepository(db), repository.NewRoomRepository(db), domainSvc)
+	h := NewMessageHandler(msgSvc, permSvc, roomSvc, domainSvc)
+
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("username", "bot-1")
+		c.Set("user_uuid", "bot-1")
+		c.Set("role", "user")
+		c.Set("claims", &pkg.Claims{Role: "user", Permissions: []string{"message:send"}})
+		c.Next()
+	})
+	r.POST("/delete", h.Delete)
+
+	body, _ := json.Marshal(map[string]string{"room_uuid": room.UUID, "message_uuid": msg.UUID})
+	req := httptest.NewRequest(http.MethodPost, "/delete", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if code := intCode(resp["code"]); code != 1013 {
+		t.Fatalf("expected 1013 when claims lack message:delete_others despite global role: got %d: %s", code, resp["msg"])
+	}
+}

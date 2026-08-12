@@ -10,6 +10,7 @@ import (
 
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
 	"GOSpeak/internal/service"
 
@@ -137,6 +138,54 @@ func TestRoomHandler_Delete_DomainPermissionDoesNotFallBackToGlobal(t *testing.T
 	w := postRoomJSON(t, r, "/room/delete", `{"id":`+strconv.FormatUint(uint64(roomID), 10)+`}`)
 	if code := roomResponseCode(t, w); code != 1013 {
 		t.Fatalf("expected 1013 (no global fallback for domain room), got %d: %s", code, w.Body.String())
+	}
+}
+
+func TestRoomHandler_Update_BotClaimsMissingPermissionDoesNotFallBackToGlobal(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Room{}, &model.Permission{}, &model.RolePermission{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	room := model.Room{Name: "lobby", DomainUUID: "", CreatedBy: "someone-else"}
+	if err := db.Create(&room).Error; err != nil {
+		t.Fatalf("seed room: %v", err)
+	}
+
+	permRepo := repository.NewPermissionRepository(db)
+	for _, perm := range model.DefaultPermissions {
+		if err := permRepo.CreateIfNotExists(&perm); err != nil {
+			t.Fatalf("seed permission %s: %v", perm.Code, err)
+		}
+	}
+	if err := permRepo.SeedRolePermissionsIfEmpty("user", []string{model.PermRoomUpdate}); err != nil {
+		t.Fatalf("seed global role permission: %v", err)
+	}
+	permSvc := service.NewPermissionService(permRepo)
+	if err := permSvc.LoadCache(); err != nil {
+		t.Fatalf("load permission cache: %v", err)
+	}
+	if !permSvc.HasPermission("user", model.PermRoomUpdate) {
+		t.Fatal("test precondition: global user role must have room:update")
+	}
+
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), permSvc, nil)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("username", "bot-1")
+		c.Set("user_uuid", "bot-1")
+		c.Set("role", "user")
+		c.Set("claims", &pkg.Claims{Role: "user", Permissions: []string{"room:read"}})
+		c.Next()
+	})
+	r.POST("/room/update", h.Update)
+
+	w := postRoomJSON(t, r, "/room/update", `{"id":`+strconv.FormatUint(uint64(room.ID), 10)+`,"name":"renamed"}`)
+	if code := roomResponseCode(t, w); code != 1013 {
+		t.Fatalf("expected 1013 when claims lack room:update despite global role: got %d: %s", code, w.Body.String())
 	}
 }
 

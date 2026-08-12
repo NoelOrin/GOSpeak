@@ -75,18 +75,12 @@ func domainUUIDFromContext(c *gin.Context) string {
 }
 
 func (h *RoomHandler) canManageRoom(c *gin.Context, room *model.Room, perm string) bool {
-	username, _ := c.Get("username")
-	usernameStr, _ := username.(string)
-	if room.DomainUUID != "" {
-		if domainPermissionGranted(c, room.DomainUUID, perm, h.domainSvc, h.permSvc) {
-			return true
-		}
-		// 域房间创建者保留对自己房间的管理权。
-		return room.CreatedBy == usernameStr
-	}
-	if h.permSvc != nil && h.permSvc.HasPermission(roleFromContext(c), perm) {
+	if domainPermissionGranted(c, room.DomainUUID, perm, h.domainSvc, h.permSvc) {
 		return true
 	}
+	// 平台房间与域房间都只保留创建者管理权，不回退到其它全局角色权限。
+	username, _ := c.Get("username")
+	usernameStr, _ := username.(string)
 	return room.CreatedBy == usernameStr
 }
 

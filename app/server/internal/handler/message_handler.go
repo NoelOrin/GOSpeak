@@ -241,12 +241,6 @@ func (h *MessageHandler) Delete(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
-	roleVal, ok := c.Get("role")
-	if !ok {
-		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
-		return
-	}
-	roleStr, _ := roleVal.(string)
 	room, ok := h.roomOf(c, req.RoomUUID)
 	if !ok {
 		return
@@ -255,12 +249,7 @@ func (h *MessageHandler) Delete(c *gin.Context) {
 		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
 		return
 	}
-	canDeleteOthers := false
-	if room.DomainUUID != "" {
-		canDeleteOthers = h.domainSvc != nil && h.domainSvc.HasDomainPermission(room.DomainUUID, currentUserUUID(c), permcode.PermMessageDeleteOthers)
-	} else {
-		canDeleteOthers = h.permSvc != nil && h.permSvc.HasPermission(roleStr, permcode.PermMessageDeleteOthers)
-	}
+	canDeleteOthers := domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageDeleteOthers, h.domainSvc, h.permSvc)
 	if err := h.msgSvc.Delete(req.RoomUUID, req.MessageUUID, actor, canDeleteOthers); err != nil {
 		pkg.HandleError(c, err)
 		return

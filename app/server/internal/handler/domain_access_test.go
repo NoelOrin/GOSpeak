@@ -59,6 +59,18 @@ func TestDomainPermissionGranted_PlatformRoomPrefersClaimsPermissions(t *testing
 	}
 }
 
+func TestDomainPermissionGranted_ClaimsMissingPermissionDoesNotFallBackToGlobal(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(nil)
+	c.Set("user_uuid", "user-1")
+	c.Set("role", "admin")
+	c.Set("claims", &pkg.Claims{Role: "user", Permissions: []string{"message:read"}})
+
+	if domainPermissionGranted(c, "", "room:delete", nil, fakeGlobalPermChecker(true)) {
+		t.Fatal("expected missing explicit claims permission to deny platform access even when global role allows it")
+	}
+}
+
 func TestDomainPermissionGranted_NilCheckersFailClosed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(nil)
