@@ -31,8 +31,18 @@ func TestRoomHandler_Create_BroadcastsRoomList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Room{}); err != nil {
+	if err := db.AutoMigrate(&model.Room{}, &model.Domain{}, &model.DomainMember{}, &model.DomainRole{}, &model.DomainRolePermission{}); err != nil {
 		t.Fatalf("migrate: %v", err)
+	}
+	domain := &model.Domain{UUID: "domain-a", Name: "Chat", OwnerUUID: "owner-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{DomainUUID: domain.UUID, UserUUID: "user-1", RoleName: model.DomainRoleMember}).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
 	}
 
 	middleware.SetDomainChecker(func(domainUUID, userUUID string) bool { return true })
@@ -45,7 +55,8 @@ func TestRoomHandler_Create_BroadcastsRoomList(t *testing.T) {
 		c.Next()
 	})
 	broadcaster := &recordingRoomListBroadcaster{}
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
 	h.SetRoomListBroadcaster(broadcaster)
 	r.POST("/api/v1/room/create", h.Create)
 

@@ -486,3 +486,35 @@ func TestDomainService_SetMemberRole(t *testing.T) {
 		t.Fatal("must reject assigning owner role")
 	}
 }
+
+func TestDomainService_SetMemberRole_AdminOnlyForOwner(t *testing.T) {
+	svc, db := setupDomainServiceTestDB(t)
+	domain := seedDomainOwner(t, db, "Chat", "owner-1")
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{DomainUUID: domain.UUID, UserUUID: "admin-1", RoleName: model.DomainRoleAdmin}).Error; err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{DomainUUID: domain.UUID, UserUUID: "member-1", RoleName: model.DomainRoleMember}).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+
+	err := svc.SetMemberRole(domain.UUID, "admin-1", "member-1", model.DomainRoleAdmin)
+	checkAppErrCode(t, err, pkg.FORBIDDEN)
+}
+
+func TestDomainService_SetMemberRole_OwnerCanAssignAdmin(t *testing.T) {
+	svc, db := setupDomainServiceTestDB(t)
+	domain := seedDomainOwner(t, db, "Chat", "owner-1")
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{DomainUUID: domain.UUID, UserUUID: "member-1", RoleName: model.DomainRoleMember}).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+
+	if err := svc.SetMemberRole(domain.UUID, "owner-1", "member-1", model.DomainRoleAdmin); err != nil {
+		t.Fatalf("owner should assign admin: %v", err)
+	}
+}
