@@ -23,8 +23,18 @@ func TestRoomHandler_List_FiltersDomainUUID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Room{}); err != nil {
+	if err := db.AutoMigrate(&model.Room{}, &model.Domain{}, &model.DomainMember{}, &model.DomainRole{}, &model.DomainRolePermission{}); err != nil {
 		t.Fatalf("migrate: %v", err)
+	}
+	domain := &model.Domain{UUID: "domain-a", Name: "Chat", OwnerUUID: "owner-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{DomainUUID: domain.UUID, UserUUID: "user-1", RoleName: model.DomainRoleMember}).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
 	}
 	rooms := []model.Room{
 		{Name: "lobby", DomainUUID: "domain-a"},
@@ -44,7 +54,8 @@ func TestRoomHandler_List_FiltersDomainUUID(t *testing.T) {
 		c.Set("domain_uuid", "domain-a")
 		c.Next()
 	})
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
 	r.POST("/api/v1/room/list", h.List)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/list", strings.NewReader(`{"domain_uuid":"domain-a"}`))
@@ -115,8 +126,18 @@ func TestRoomHandler_Create_PersistsDomainUUID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Room{}); err != nil {
+	if err := db.AutoMigrate(&model.Room{}, &model.Domain{}, &model.DomainMember{}, &model.DomainRole{}, &model.DomainRolePermission{}); err != nil {
 		t.Fatalf("migrate: %v", err)
+	}
+	domain := &model.Domain{UUID: "domain-a", Name: "Chat", OwnerUUID: "owner-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{DomainUUID: domain.UUID, UserUUID: "user-1", RoleName: model.DomainRoleMember}).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
 	}
 
 	middleware.SetDomainChecker(func(domainUUID, userUUID string) bool { return true })
@@ -129,7 +150,8 @@ func TestRoomHandler_Create_PersistsDomainUUID(t *testing.T) {
 		c.Set("domain_uuid", "domain-a")
 		c.Next()
 	})
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
 	r.POST("/api/v1/room/create", h.Create)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/create", strings.NewReader(`{"name":"lobby","domain_uuid":"domain-a"}`))
