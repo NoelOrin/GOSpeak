@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
@@ -32,6 +33,19 @@ func messageActorFromContext(c *gin.Context) (service.MessageActor, bool) {
 	return service.MessageActor{Identity: username, UserUUID: userUUID}, true
 }
 
+func (h *MessageHandler) roomOf(c *gin.Context, roomUUID string) (*model.Room, bool) {
+	if h.roomSvc == nil {
+		pkg.Fail(c, pkg.INTERNAL_ERROR, "room service unavailable")
+		return nil, false
+	}
+	room, err := h.roomSvc.GetByUUID(roomUUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return nil, false
+	}
+	return room, true
+}
+
 // List
 // @Summary      消息历史
 // @Description  分页获取房间消息历史，最新在前
@@ -56,6 +70,14 @@ func (h *MessageHandler) List(c *gin.Context) {
 	actor, ok := messageActorFromContext(c)
 	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	room, ok := h.roomOf(c, req.RoomUUID)
+	if !ok {
+		return
+	}
+	if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageRead, h.domainSvc, h.permSvc) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
 		return
 	}
 	items, hasMore, nextBefore, err := h.msgSvc.ListHistory(req.RoomUUID, actor, req.Before, req.Limit, req.Password)
@@ -92,6 +114,14 @@ func (h *MessageHandler) Search(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
+	room, ok := h.roomOf(c, req.RoomUUID)
+	if !ok {
+		return
+	}
+	if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageRead, h.domainSvc, h.permSvc) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
+		return
+	}
 	items, err := h.msgSvc.Search(req.RoomUUID, actor, req.Query, req.Password)
 	if err != nil {
 		pkg.HandleError(c, err)
@@ -126,6 +156,14 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
+	room, ok := h.roomOf(c, req.RoomUUID)
+	if !ok {
+		return
+	}
+	if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
+		return
+	}
 	dto, err := h.msgSvc.Send(req.RoomUUID, actor, req.Content, req.ReplyTo, req.ClientNonce, req.Mentions)
 	if err != nil {
 		pkg.HandleError(c, err)
@@ -157,6 +195,14 @@ func (h *MessageHandler) Edit(c *gin.Context) {
 	actor, ok := messageActorFromContext(c)
 	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	room, ok := h.roomOf(c, req.RoomUUID)
+	if !ok {
+		return
+	}
+	if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
 		return
 	}
 	dto, err := h.msgSvc.Edit(req.RoomUUID, req.MessageUUID, actor, req.Content)
@@ -197,13 +243,18 @@ func (h *MessageHandler) Delete(c *gin.Context) {
 		return
 	}
 	roleStr, _ := roleVal.(string)
-	canDeleteOthers := false
-	if h.roomSvc != nil && h.domainSvc != nil {
-		if room, roomErr := h.roomSvc.GetByUUID(req.RoomUUID); roomErr == nil && room != nil && room.DomainUUID != "" {
-			canDeleteOthers = h.domainSvc.HasDomainPermission(room.DomainUUID, currentUserUUID(c), permcode.PermMessageDeleteOthers)
-		}
+	room, ok := h.roomOf(c, req.RoomUUID)
+	if !ok {
+		return
 	}
-	if !canDeleteOthers {
+	if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
+		return
+	}
+	canDeleteOthers := false
+	if room.DomainUUID != "" {
+		canDeleteOthers = h.domainSvc != nil && h.domainSvc.HasDomainPermission(room.DomainUUID, currentUserUUID(c), permcode.PermMessageDeleteOthers)
+	} else {
 		canDeleteOthers = h.permSvc != nil && h.permSvc.HasPermission(roleStr, permcode.PermMessageDeleteOthers)
 	}
 	if err := h.msgSvc.Delete(req.RoomUUID, req.MessageUUID, actor, canDeleteOthers); err != nil {
@@ -238,6 +289,14 @@ func (h *MessageHandler) React(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
+	room, ok := h.roomOf(c, req.RoomUUID)
+	if !ok {
+		return
+	}
+	if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
+		return
+	}
 	if err := h.msgSvc.React(req.RoomUUID, req.MessageUUID, actor, req.Emoji); err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -268,6 +327,14 @@ func (h *MessageHandler) Unreact(c *gin.Context) {
 	actor, ok := messageActorFromContext(c)
 	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	room, ok := h.roomOf(c, req.RoomUUID)
+	if !ok {
+		return
+	}
+	if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
 		return
 	}
 	if err := h.msgSvc.Unreact(req.RoomUUID, req.MessageUUID, actor, req.Emoji); err != nil {

@@ -2,18 +2,16 @@ package message
 
 import (
 	"GOSpeak/internal/handler"
-	"GOSpeak/internal/middleware"
-	"GOSpeak/internal/permcode"
 
 	"github.com/gin-gonic/gin"
 )
 
 func RegisterProtected(r *gin.RouterGroup, h *handler.MessageHandler) {
-	r.POST("/messages/list", middleware.RequirePermission(permcode.PermMessageRead), h.List)
-	r.POST("/messages/search", middleware.RequirePermission(permcode.PermMessageRead), h.Search)
-	r.POST("/messages/send", middleware.RequirePermission(permcode.PermMessageSend), h.Send)
-	r.POST("/messages/edit", middleware.RequirePermission(permcode.PermMessageSend), h.Edit)
-	r.POST("/messages/delete", middleware.RequirePermission(permcode.PermMessageSend), h.Delete)
-	r.POST("/messages/react", middleware.RequirePermission(permcode.PermMessageSend), h.React)
-	r.POST("/messages/unreact", middleware.RequirePermission(permcode.PermMessageSend), h.Unreact)
+	r.POST("/messages/list", h.List)
+	r.POST("/messages/search", h.Search)
+	r.POST("/messages/send", h.Send)
+	r.POST("/messages/edit", h.Edit)
+	r.POST("/messages/delete", h.Delete)
+	r.POST("/messages/react", h.React)
+	r.POST("/messages/unreact", h.Unreact)
 }
