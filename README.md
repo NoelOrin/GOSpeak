@@ -68,7 +68,7 @@ chmod +x gospeak-linux-amd64
 
 1. 功能合并到 `release` 分支后，CI 自动创建/更新 Release PR，版本号按 Conventional Commits 计算：`feat` 升 minor、`fix` 升 patch、`BREAKING CHANGE` 升 major。
 2. Review 并合并 Release PR 后，CI 自动打 `vX.Y.Z` tag、创建 GitHub Release，并触发现有 CI 构建 Docker 镜像、上传跨平台二进制。
-3. 首次启用前需在 `release` 分支手动打 `v1.0.0` 锚点 tag，之后全部自动。
+3. 首次启用前需在 `release` 分支手动打 `v0.1.0` 锚点 tag（首个自动 Release 会从 `v0.2.0` 开始），之后全部自动。
 
 ### 5 分钟开发模式跑起来
 
