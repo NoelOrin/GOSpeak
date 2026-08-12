@@ -648,6 +648,27 @@ func TestOnMessageSend_DomainPermissionNilCheckerFailsClosed(t *testing.T) {
 	}
 }
 
+func TestCheckMessagePerm_NilClaimsFailsClosed(t *testing.T) {
+	h := newTestHub()
+	conn := newMockClient("conn-1")
+	if ack := h.checkMessagePerm(conn, "domain-a"); ack == "" {
+		t.Fatal("expected permission denied for nil claims on domain room")
+	}
+	if ack := h.checkMessagePerm(conn, ""); ack == "" {
+		t.Fatal("expected permission denied for nil claims on platform room")
+	}
+}
+
+func TestCheckMessagePerm_DomainRoomEmptyUserUUIDFailsClosed(t *testing.T) {
+	h := newTestHub()
+	h.domainPermChecker = func(domainUUID, userUUID, permCode string) bool { return true }
+	conn := newMockClient("conn-1")
+	conn.claims = &pkg.Claims{Username: "guest-1", UserUUID: "", Role: "user"}
+	if ack := h.checkMessagePerm(conn, "domain-a"); ack == "" {
+		t.Fatal("expected permission denied for empty user uuid on domain room")
+	}
+}
+
 func TestOnMessageDelete_DomainPermissionDoesNotFallBackToGlobalDeleteOthers(t *testing.T) {
 	store := &mockRoomStore{rooms: []model.Room{
 		{UUID: "uuid-domain", Name: "text-chat", Type: model.RoomTypeText, DomainUUID: "domain-a"},

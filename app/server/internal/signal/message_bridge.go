@@ -94,7 +94,7 @@ func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, roomName, domainUUID stri
 func (h *Hub) checkMessagePerm(c ws.ClientMessenger, roomDomainUUID string) string {
 	claims := c.Claims()
 	if claims == nil {
-		return ""
+		return `{"error":"permission denied"}`
 	}
 	role := claims.Role
 	if role == "" && h.userStore != nil {
