@@ -128,13 +128,18 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		accessClaims, _ = v.(*pkg.Claims)
 	}
 
-	// 无论服务端黑名单是否成功，浏览器侧 Cookie 都立即失效。
-	h.cookie.Clear(c)
-
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
 	}
 	_ = c.ShouldBindJSON(&req)
+	if req.RefreshToken == "" {
+		if cookie, err := c.Request.Cookie(h.cookie.RefreshName); err == nil && cookie.Value != "" {
+			req.RefreshToken = cookie.Value
+		}
+	}
+
+	// 无论服务端黑名单是否成功，浏览器侧 Cookie 都立即失效。
+	h.cookie.Clear(c)
 
 	if err := h.authService.Logout(accessClaims, req.RefreshToken); err != nil {
 		pkg.HandleError(c, err)
