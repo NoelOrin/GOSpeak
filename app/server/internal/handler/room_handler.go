@@ -77,9 +77,12 @@ func domainUUIDFromContext(c *gin.Context) string {
 func (h *RoomHandler) canManageRoom(c *gin.Context, room *model.Room, perm string) bool {
 	username, _ := c.Get("username")
 	usernameStr, _ := username.(string)
-	if room.DomainUUID != "" && h.domainSvc != nil &&
-		h.domainSvc.HasDomainPermission(room.DomainUUID, currentUserUUID(c), perm) {
-		return true
+	if room.DomainUUID != "" {
+		if h.domainSvc != nil && h.domainSvc.HasDomainPermission(room.DomainUUID, currentUserUUID(c), perm) {
+			return true
+		}
+		// 域房间创建者保留对自己房间的管理权。
+		return room.CreatedBy == usernameStr
 	}
 	if h.permSvc != nil && h.permSvc.HasPermission(roleFromContext(c), perm) {
 		return true
@@ -143,6 +146,10 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
 		return
 	}
+	if !domainPermissionGranted(c, domainUUID, permcode.PermRoomCreate, h.domainSvc, h.permSvc) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain room permission")
+		return
+	}
 	audioOnly := true
 	if req.AudioOnly != nil {
 		audioOnly = *req.AudioOnly
@@ -194,9 +201,15 @@ func (h *RoomHandler) Get(c *gin.Context) {
 		return
 	}
 
-	if room.DomainUUID != "" && !middleware.IsDomainMember(room.DomainUUID, currentUserUUID(c)) {
-		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
-		return
+	if room.DomainUUID != "" {
+		if !middleware.IsDomainMember(room.DomainUUID, currentUserUUID(c)) {
+			pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
+			return
+		}
+		if !domainPermissionGranted(c, room.DomainUUID, permcode.PermRoomRead, h.domainSvc, h.permSvc) {
+			pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain room permission")
+			return
+		}
 	}
 
 	pkg.Success(c, service.RoomToDTO(room))
@@ -230,9 +243,15 @@ func (h *RoomHandler) List(c *gin.Context) {
 	}
 
 	domainUUID := domainUUIDFromContext(c)
-	if domainUUID != "" && !middleware.IsDomainMember(domainUUID, currentUserUUID(c)) {
-		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
-		return
+	if domainUUID != "" {
+		if !middleware.IsDomainMember(domainUUID, currentUserUUID(c)) {
+			pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
+			return
+		}
+		if !domainPermissionGranted(c, domainUUID, permcode.PermRoomRead, h.domainSvc, h.permSvc) {
+			pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain room permission")
+			return
+		}
 	}
 
 	var rooms []model.Room
