@@ -10,7 +10,7 @@
 | Provider | 成熟度 | 接口方法覆盖 | 关键缺口 |
 |----------|--------|--------------|----------|
 | LiveKit | 完整 | 8/8 ✅ | 无 |
-| SRS | 高 | 8/8 | mute 为强制停推（degraded）；unmute 需前端重推 |
+| SRS | 高 | 8/8 | mute 为 Discord 式（订阅端静音 + on_publish 禁推，degraded）；成员仍可收听 |
 | Agora | 中 | 8/8 | mute/kick = degraded（kicking-rule） |
 | Cloudflare | 低–中 | 8/8 | `List*` 仅进程内内存、`MuteParticipant` ❌（soft） |
 
@@ -22,7 +22,7 @@
 | `GenerateAdminToken` | ✅ | ✅ | ⚠️ (空串) | ✅ (无 admin join token) |
 | `ListRooms` | ✅ | ✅ | ✅ | ⚠️ (进程内缓存) |
 | `ListParticipants` | ✅ | ✅ | ✅ | ⚠️ (进程内缓存) |
-| `MuteParticipant` | ✅ | ✅ (踢推流) | ✅ (禁发布 rule) | ❌ |
+| `MuteParticipant` | ✅ | ✅ (禁推黑名单，不踢流) | ✅ (禁发布 rule) | ❌ |
 | `RemoveParticipant` | ✅ | ✅ | ✅ (短时 kicking-rule) | ✅ (DeleteSession) |
 | `DeleteRoom` | ✅ | ✅ | ✅ | ✅ (批量删 session) |
 | `GetHost` | ✅ | ✅ | ✅ | ✅ |
@@ -33,7 +33,7 @@
 |----------|------|----------|----------|-------------|
 | Agora | `GenerateAdminToken` | 中 | 返回空字符串 `""` | 返回真实 token 或 `AppError` |
 | Agora | `RemoveParticipant` | 低 | 短时 kicking-rule（默认 60s）强制离会 | 语义接近 hard kick，短暂挡重进；非永久 ban |
-| SRS | `MuteParticipant` | 中 | 降级 hard：KickByStreams 强制停推 | unmute 软恢复，前端重新 WHIP |
+| SRS | `MuteParticipant` | 中高 | degraded：禁推黑名单（不踢流，订阅端静音） | unmute 删除黑名单，前端恢复音量 |
 | Cloudflare | `GenerateToken` | 中 | 返回 JSON 配置块（sessionId/appId/stunUrl），非真实鉴权 token | 设计如此（无原生 token 体系） |
 | Cloudflare | `ListRooms` | 中 | 仅进程内 `sessions` map（room→identity→sessionId） | 非跨实例权威，进程重启/多实例不同步 |
 | Cloudflare | `ListParticipants` | 中 | 仅进程内 map 的 identity 集合，`JoinedAt` 为当前时间 | 非跨实例权威 |
@@ -44,7 +44,7 @@
 | Provider | 路径 | 关键事实 |
 |----------|------|----------|
 | LiveKit | `internal/sfu/providers/livekit/` | 唯一全 ✅；`MuteParticipant` 支持按 trackSid 精确静音或按 identity 批量静音；`ProviderName()` = `livekit` |
-| SRS | `internal/sfu/providers/srs/` | WHIP/WHEP；`List*` 经 `RoomRegistry` 聚合真实房间；`StreamProvider`/`ClientInfoProvider`；`GenerateToken` 签发 stream token |
+| SRS | `internal/sfu/providers/srs/` | WHIP/WHEP；`List*`/`DeleteRoom` 经 `/api/v1/streams`+`/api/v1/clients` 直查 + stream→room 反查；`StreamProvider`/`ClientInfoProvider`；`GenerateToken` 签发 stream token |
 | Agora | `internal/sfu/providers/agora/` | Token/列举可用；mute/kick 走 kicking-rule（degraded）；rule id 经 MuteRuleStore 跨实例缓存（nats KV→memory）；`GenerateAdminToken` 空串；`ClientInfo` 暴露 `appId` |
 | Cloudflare | `internal/sfu/providers/cloudflare/` | 无原生 room/token；`GenerateToken` 建 session 返回 JSON 配置；`List*` 仅内存；`StreamProvider`/`ClientInfoProvider` |
 
@@ -58,11 +58,13 @@ SFU `MuteParticipant` 是 **服务端轨道级 SFU mute**，而非用户禁言�
 
 用户禁言由独立层实现：
 - `MuteService` + `MuteHandler` + `Hub.BroadcastMute` / `Hub.BroadcastUnmute`
-- WebSocket 事件：`user:muted` / `user:unmuted`
+- WebSocket 事件：`user:muted` / `user:unmuted`（被禁言者本人）；`member:muted` / `member:unmuted`（全员订阅端静音）
 - 数据库中持久化禁言记录，含过期自动清理
 - 该层 **已完整实现且功能齐全**
 
-本地播放静音（静音远端音轨音量）是纯客户端行为，与以上两层无关。
+本地播放静音（静音远端音轨音量）是纯客户端行为，与以上两层无关。服务器禁言在 SRS 等无原生媒体静音的
+provider 上，通过 `member:muted` 事件驱动订阅端强制静音（`handler_audio.setServerMutedByIdentity`），
+与本地个人静音/音量独立。
 
 ### 7. 信令层踢人分发（按 `ErrSFUNotSupported` 优雅降级）
 

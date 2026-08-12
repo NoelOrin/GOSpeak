@@ -110,6 +110,45 @@ func TestClient_GetSession(t *testing.T) {
 	}
 }
 
+func TestClient_GetSessionTracks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertEqual(t, r.Method, http.MethodGet)
+		assertEqual(t, r.URL.Path, "/apps/test-app-id/sessions/sess-1")
+		assertEqual(t, r.Header.Get("Authorization"), "Bearer test-secret")
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(SessionStateResponse{
+			Tracks: []TrackState{
+				{Location: "local", MID: "0", TrackName: "audio", Status: "active"},
+				{Location: "remote", MID: "7", SessionID: "sess-other", TrackName: "audio", Status: "active"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := &Client{
+		appID:      "test-app-id",
+		appSecret:  "test-secret",
+		baseURL:    server.URL,
+		httpClient: http.DefaultClient,
+	}
+
+	state, err := client.GetSessionTracks("sess-1")
+	if err != nil {
+		t.Fatalf("GetSessionTracks failed: %v", err)
+	}
+	if len(state.Tracks) != 2 {
+		t.Fatalf("expected 2 tracks, got %d", len(state.Tracks))
+	}
+	if state.Tracks[0].Location != "local" || state.Tracks[0].MID != "0" {
+		t.Fatalf("unexpected local track: %+v", state.Tracks[0])
+	}
+	if state.Tracks[1].Location != "remote" || state.Tracks[1].MID != "7" {
+		t.Fatalf("unexpected remote track: %+v", state.Tracks[1])
+	}
+}
+
 func TestClient_AddTracks(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertEqual(t, r.Method, http.MethodPost)

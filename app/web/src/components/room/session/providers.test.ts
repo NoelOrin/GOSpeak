@@ -7,6 +7,10 @@ vi.mock("idb-keyval", () => ({
 	del: vi.fn(async () => {}),
 }));
 
+vi.mock("@/handler_audio", () => ({
+	setServerMutedByIdentity: vi.fn(),
+}));
+
 describe("getVoiceProviderAdapter", () => {
 	it("srs uses background signal + serialize joins (WHIP)", () => {
 		const srs = getVoiceProviderAdapter("srs");
@@ -65,6 +69,30 @@ describe("getVoiceProviderAdapter", () => {
 		expect(subscribePeers).toHaveBeenCalledWith([
 			{ identity: "bob", stream: "gs-bob" },
 		]);
+	});
+
+	it("srs afterMediaJoin applies server mute for muted members", async () => {
+		const { setServerMutedByIdentity } = await import("@/handler_audio");
+		const adapter = getVoiceProviderAdapter("srs");
+		await adapter.afterMediaJoin?.(
+			{ subscribePeers: vi.fn() } as any,
+			{
+				token: "t",
+				room: "r1",
+				identity: "alice",
+				stream: "gs-alice",
+			} as any,
+			{
+				members: [
+					{ identity: "alice", stream: "gs-alice", isMuted: true } as any,
+					{ identity: "bob", stream: "gs-bob", isMuted: true } as any,
+					{ identity: "carol", stream: "gs-carol", isMuted: false } as any,
+				],
+			},
+		);
+		expect(setServerMutedByIdentity).toHaveBeenCalledWith("bob", true);
+		expect(setServerMutedByIdentity).not.toHaveBeenCalledWith("alice", true);
+		expect(setServerMutedByIdentity).not.toHaveBeenCalledWith("carol", true);
 	});
 
 	it("livekit afterMediaJoin is optional/no-op", async () => {

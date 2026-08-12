@@ -480,7 +480,6 @@ type Provider interface {
     ProviderName() string
     Capabilities() Capabilities
     GenerateToken(room, identity string) (string, error)
-    GenerateAdminToken() (string, error)  // ErrSFUNotSupported if not supported
     ListRooms() ([]RoomSummary, error)
     ListParticipants(room string) ([]ParticipantSummary, error)
     MuteParticipant(room, identity, trackSid string, muted bool) error
@@ -512,14 +511,12 @@ type Capabilities struct {
     ServerMute  bool   // true when MuteLevel is hard or degraded
     ServerKick  bool   // true when KickLevel is hard or degraded
     DeleteRoom  bool
-    AdminToken  bool
     ListRooms   bool
     ListMembers bool
     MuteLevel   string  // hard | degraded | soft | none
     KickLevel   string
     DeleteLevel string
     ListLevel   string
-    AdminLevel  string
 }
 ```
 
@@ -536,12 +533,12 @@ type Capabilities struct {
 
 ### Provider Capability Summary
 
-| Provider | ServerMute | ServerKick | MuteLevel | KickLevel | AdminToken |
-|----------|-----------|-----------|-----------|-----------|-----------|
-| LiveKit | ✅ | ✅ | hard | hard | ✅ |
-| SRS | ✅ | ✅ | degraded | hard | ✅ |
-| Cloudflare | ❌ | ✅ | soft | hard | ❌ |
-| Agora | ✅ | ✅ | degraded | degraded | ❌ |
+| Provider | ServerMute | ServerKick | MuteLevel | KickLevel |
+|----------|-----------|-----------|-----------|-----------|
+| LiveKit | ✅ | ✅ | hard | hard |
+| SRS | ✅ | ✅ | degraded | hard |
+| Cloudflare | ✅ | ✅ | degraded | hard |
+| Agora | ✅ | ✅ | degraded | degraded |
 
 ### Factory (`internal/sfu/factory/factory.go`)
 

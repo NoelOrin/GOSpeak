@@ -36,7 +36,6 @@ func (m *mockSFU) Capabilities() sfu.Capabilities {
 		ServerMute:  true,
 		ServerKick:  true,
 		DeleteRoom:  true,
-		AdminToken:  true,
 		ListRooms:   true,
 		ListMembers: true,
 	}
@@ -47,7 +46,6 @@ func (m *mockSFU) GenerateToken(room, identity string) (string, error) {
 	}
 	return "mock-token", nil
 }
-func (m *mockSFU) GenerateAdminToken() (string, error) { return "admin-token", nil }
 func (m *mockSFU) ListRooms() ([]sfu.RoomSummary, error) {
 	if m.listRoomsFn != nil {
 		return m.listRoomsFn()

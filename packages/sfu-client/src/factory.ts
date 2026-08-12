@@ -1,8 +1,13 @@
-import type { SFUProvider } from "./provider";
+import {
+	assertSFUProviderEnabled,
+	isSFUProviderEnabled,
+	type SFUProvider,
+} from "./provider";
 import type { SFUClient, SFUClientOptions } from "./types";
 
 const providerLoaders: Record<SFUProvider, () => Promise<unknown>> = {
 	// MediaSoup/Daily 已禁用保留：对应 client 文件未注册，避免被工厂加载。
+	// Agora 保留 loader 以便恢复，但禁用期不会进入该分支。
 	agora: () => import("./agora-client"),
 	srs: () => import("./srs-client"),
 	livekit: () => import("./livekit-client"),
@@ -10,6 +15,7 @@ const providerLoaders: Record<SFUProvider, () => Promise<unknown>> = {
 };
 
 export async function preloadSFUClient(provider: SFUProvider): Promise<void> {
+	if (!isSFUProviderEnabled(provider)) return;
 	await (providerLoaders[provider] ?? providerLoaders.livekit)();
 }
 
@@ -24,6 +30,7 @@ export async function createSFUClient(
 	provider: SFUProvider,
 	options?: SFUClientOptions,
 ): Promise<SFUClient> {
+	assertSFUProviderEnabled(provider);
 	switch (provider) {
 		case "agora": {
 			const { AgoraSFUClient } = (await providerLoaders.agora()) as {

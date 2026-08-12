@@ -159,19 +159,209 @@ func TestService_ListParticipants(t *testing.T) {
 	}
 }
 
-func TestService_MuteParticipant_NotSupported(t *testing.T) {
-	svc := &Service{}
-	err := svc.MuteParticipant("room1", "user1", "track1", true)
-	if !errors.Is(err, pkg.ErrSFUNotSupported) {
-		t.Fatalf("expected ErrSFUNotSupported, got %v", err)
+func TestService_MuteParticipant_CloseTracks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/apps/test-app/sessions/sess-mute" && r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(SessionStateResponse{
+				Tracks: []TrackState{
+					{Location: "local", MID: "0", TrackName: "audio", Status: "active"},
+					{Location: "remote", MID: "7", SessionID: "sess-other", TrackName: "audio", Status: "active"},
+				},
+			})
+			return
+		}
+		if r.URL.Path == "/apps/test-app/sessions/sess-mute/tracks/close" && r.Method == http.MethodPut {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			var req CloseTrackRequest
+			if err := json.Unmarshal(body, &req); err != nil {
+				t.Fatalf("decode close tracks body: %v", err)
+			}
+			if !req.Force {
+				t.Fatal("expected force=true for mute close tracks")
+			}
+			if len(req.Tracks) != 1 || req.Tracks[0].MID != "0" {
+				t.Fatalf("expected only local mid 0 close, got %+v", req.Tracks)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(CloseTrackResponse{})
+			return
+		}
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	svc := &Service{
+		appID: "test-app",
+		client: &Client{
+			appID:      "test-app",
+			appSecret:  "test-secret",
+			baseURL:    server.URL,
+			httpClient: http.DefaultClient,
+		},
+		sessions: map[string]map[string]sessionMeta{
+			"room1": {"user1": {sessionID: "sess-mute"}},
+		},
+	}
+
+	if err := svc.MuteParticipant("room1", "user1", "", true); err != nil {
+		t.Fatalf("MuteParticipant failed: %v", err)
 	}
 }
 
-func TestService_GenerateAdminToken_NotSupported(t *testing.T) {
+func TestService_MuteParticipant_NoLocalTracks(t *testing.T) {
+	closeCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/apps/test-app/sessions/sess-mute" && r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(SessionStateResponse{
+				Tracks: []TrackState{
+					{Location: "remote", MID: "7", SessionID: "sess-other", TrackName: "audio", Status: "active"},
+				},
+			})
+			return
+		}
+		if r.URL.Path == "/apps/test-app/sessions/sess-mute/tracks/close" {
+			closeCalled = true
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	svc := &Service{
+		appID: "test-app",
+		client: &Client{
+			appID:      "test-app",
+			appSecret:  "test-secret",
+			baseURL:    server.URL,
+			httpClient: http.DefaultClient,
+		},
+		sessions: map[string]map[string]sessionMeta{
+			"room1": {"user1": {sessionID: "sess-mute"}},
+		},
+	}
+
+	if err := svc.MuteParticipant("room1", "user1", "", true); err != nil {
+		t.Fatalf("MuteParticipant failed: %v", err)
+	}
+	if closeCalled {
+		t.Fatal("expected no CloseTracks call when session has no local tracks")
+	}
+}
+
+func TestService_MuteParticipant_GetStateError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/apps/test-app/sessions/sess-mute" && r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	svc := &Service{
+		appID: "test-app",
+		client: &Client{
+			appID:      "test-app",
+			appSecret:  "test-secret",
+			baseURL:    server.URL,
+			httpClient: http.DefaultClient,
+		},
+		sessions: map[string]map[string]sessionMeta{
+			"room1": {"user1": {sessionID: "sess-mute"}},
+		},
+	}
+	err := svc.MuteParticipant("room1", "user1", "", true)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.SFU_ERROR {
+		t.Fatalf("expected SFU_ERROR, got %v", err)
+	}
+}
+
+func TestService_MuteParticipant_Unmute_SoftFallback(t *testing.T) {
 	svc := &Service{}
-	_, err := svc.GenerateAdminToken()
+	err := svc.MuteParticipant("room1", "user1", "", false)
 	if !errors.Is(err, pkg.ErrSFUNotSupported) {
-		t.Fatalf("expected ErrSFUNotSupported, got %v", err)
+		t.Fatalf("expected ErrSFUNotSupported for unmute, got %v", err)
+	}
+}
+
+func TestService_MuteParticipant_NoSession(t *testing.T) {
+	svc := &Service{
+		appID: "test-app",
+		client: &Client{
+			appID:      "test-app",
+			appSecret:  "test-secret",
+			baseURL:    "http://unused",
+			httpClient: http.DefaultClient,
+		},
+		sessions: map[string]map[string]sessionMeta{},
+	}
+	if err := svc.MuteParticipant("room1", "ghost", "", true); err != nil {
+		t.Fatalf("expected nil for missing session, got %v", err)
+	}
+}
+
+func TestService_MuteParticipant_NotConfigured(t *testing.T) {
+	svc := &Service{}
+	err := svc.MuteParticipant("room1", "user1", "", true)
+	if err == nil {
+		t.Fatal("expected configuration error")
+	}
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.SFU_NOT_CONFIGURED {
+		t.Fatalf("expected SFU_NOT_CONFIGURED, got %v", err)
+	}
+}
+
+func TestService_MuteParticipant_CloseTracksError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/apps/test-app/sessions/sess-mute" && r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(SessionStateResponse{
+				Tracks: []TrackState{{Location: "local", MID: "0", Status: "active"}},
+			})
+			return
+		}
+		if r.URL.Path == "/apps/test-app/sessions/sess-mute/tracks/close" && r.Method == http.MethodPut {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	svc := &Service{
+		appID: "test-app",
+		client: &Client{
+			appID:      "test-app",
+			appSecret:  "test-secret",
+			baseURL:    server.URL,
+			httpClient: http.DefaultClient,
+		},
+		sessions: map[string]map[string]sessionMeta{
+			"room1": {"user1": {sessionID: "sess-mute"}},
+		},
+	}
+	err := svc.MuteParticipant("room1", "user1", "", true)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.SFU_ERROR {
+		t.Fatalf("expected SFU_ERROR, got %v", err)
 	}
 }
 

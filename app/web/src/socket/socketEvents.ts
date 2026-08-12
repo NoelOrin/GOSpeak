@@ -1,6 +1,7 @@
 import type { SFUProvider } from "@gospeak/sfu-client/types";
 import type { Setter } from "solid-js";
 import { showToast } from "solid-notifications";
+import { setServerMutedByIdentity } from "@/handler_audio";
 import type { PrivateMessageDTO } from "@/protocol/conversation";
 import { EVENTS } from "@/socket/events";
 import {
@@ -215,6 +216,18 @@ export function bindServerEvents(
 		deps.setSpeechRestricted(false);
 		deps.setSpeechRestrictionInfo(null);
 	});
+	adapter.onServerEvent(
+		EVENTS.MEMBER_MUTED as string,
+		(data: { identity?: string; muted?: boolean }) => {
+			if (data.identity) setServerMutedByIdentity(data.identity, true);
+		},
+	);
+	adapter.onServerEvent(
+		EVENTS.MEMBER_UNMUTED as string,
+		(data: { identity?: string; muted?: boolean }) => {
+			if (data.identity) setServerMutedByIdentity(data.identity, false);
+		},
+	);
 	// 发言检测（SRS / Cloudflare）：信令层聚合后广播房间级 active speakers
 	adapter.onServerEvent(
 		EVENTS.ROOM_ACTIVE_SPEAKERS,

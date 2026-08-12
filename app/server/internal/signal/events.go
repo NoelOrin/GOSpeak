@@ -48,6 +48,10 @@ const (
 	EventUserMuted   = "user:muted"
 	EventUserUnmuted = "user:unmuted"
 
+	// 成员级禁言事件（订阅端静音用）：所有客户端按 identity 静音/恢复远端 track。
+	EventMemberMuted   = "member:muted"
+	EventMemberUnmuted = "member:unmuted"
+
 	// SFU 热切换：通知所有客户端断连并刷新
 	EventSFUProviderChanged = "sfu:provider-changed"
 

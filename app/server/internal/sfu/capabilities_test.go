@@ -10,49 +10,49 @@ func TestCapabilitiesMatrix(t *testing.T) {
 		{
 			name: "livekit",
 			want: Capabilities{
-				ServerMute: true, ServerKick: true, DeleteRoom: true, AdminToken: true, ListRooms: true, ListMembers: true,
+				ServerMute: true, ServerKick: true, DeleteRoom: true, ListRooms: true, ListMembers: true,
 				MuteLevel: EnforcementHard, KickLevel: EnforcementHard, DeleteLevel: EnforcementHard,
-				ListLevel: EnforcementHard, AdminLevel: EnforcementHard,
+				ListLevel: EnforcementHard,
 			},
 		},
 		{
 			name: "mediasoup",
 			want: Capabilities{
-				ServerMute: true, ServerKick: true, DeleteRoom: true, AdminToken: false, ListRooms: true, ListMembers: true,
+				ServerMute: true, ServerKick: true, DeleteRoom: true, ListRooms: true, ListMembers: true,
 				MuteLevel: EnforcementHard, KickLevel: EnforcementHard, DeleteLevel: EnforcementHard,
-				ListLevel: EnforcementHard, AdminLevel: EnforcementNone,
+				ListLevel: EnforcementHard,
 			},
 		},
 		{
 			name: "srs",
-			want: Capabilities{
-				ServerMute: true, ServerKick: true, DeleteRoom: true, AdminToken: true, ListRooms: true, ListMembers: true,
-				MuteLevel: EnforcementDegraded, KickLevel: EnforcementHard, DeleteLevel: EnforcementHard,
-				ListLevel: EnforcementDegraded, AdminLevel: EnforcementHard,
-			},
+		want: Capabilities{
+			ServerMute: true, ServerKick: true, DeleteRoom: true, ListRooms: true, ListMembers: true,
+			MuteLevel: EnforcementDegraded, KickLevel: EnforcementHard, DeleteLevel: EnforcementHard,
+			ListLevel: EnforcementHard,
+		},
 		},
 		{
 			name: "cloudflare",
 			want: Capabilities{
-				ServerMute: false, ServerKick: true, DeleteRoom: true, AdminToken: false, ListRooms: true, ListMembers: true,
-				MuteLevel: EnforcementSoft, KickLevel: EnforcementHard, DeleteLevel: EnforcementDegraded,
-				ListLevel: EnforcementDegraded, AdminLevel: EnforcementNone,
+				ServerMute: true, ServerKick: true, DeleteRoom: true, ListRooms: true, ListMembers: true,
+				MuteLevel: EnforcementDegraded, KickLevel: EnforcementHard, DeleteLevel: EnforcementDegraded,
+				ListLevel: EnforcementDegraded,
 			},
 		},
 		{
 			name: "daily",
 			want: Capabilities{
-				ServerMute: false, ServerKick: true, DeleteRoom: true, AdminToken: false, ListRooms: true, ListMembers: true,
+				ServerMute: false, ServerKick: true, DeleteRoom: true, ListRooms: true, ListMembers: true,
 				MuteLevel: EnforcementSoft, KickLevel: EnforcementHard, DeleteLevel: EnforcementHard,
-				ListLevel: EnforcementHard, AdminLevel: EnforcementNone,
+				ListLevel: EnforcementHard,
 			},
 		},
 		{
 			name: "agora",
 			want: Capabilities{
-				ServerMute: true, ServerKick: true, DeleteRoom: true, AdminToken: false, ListRooms: true, ListMembers: true,
+				ServerMute: true, ServerKick: true, DeleteRoom: true, ListRooms: true, ListMembers: true,
 				MuteLevel: EnforcementDegraded, KickLevel: EnforcementDegraded, DeleteLevel: EnforcementHard,
-				ListLevel: EnforcementHard, AdminLevel: EnforcementNone,
+				ListLevel: EnforcementHard,
 			},
 		},
 	}
@@ -75,9 +75,6 @@ func TestCapabilitiesMatrix(t *testing.T) {
 			if got.ListRooms != (got.ListLevel != EnforcementNone) || got.ListMembers != (got.ListLevel != EnforcementNone) {
 				t.Fatalf("ListRooms/ListMembers=%v/%v but ListLevel=%q", got.ListRooms, got.ListMembers, got.ListLevel)
 			}
-			if got.AdminToken != (got.AdminLevel == EnforcementHard) {
-				t.Fatalf("AdminToken=%v but AdminLevel=%q", got.AdminToken, got.AdminLevel)
-			}
 		})
 	}
 }
@@ -86,7 +83,7 @@ func TestCapabilitiesForUnknownProviderDefaultsToNone(t *testing.T) {
 	got := CapabilitiesFor("unknown")
 	want := Capabilities{
 		MuteLevel: EnforcementNone, KickLevel: EnforcementNone, DeleteLevel: EnforcementNone,
-		ListLevel: EnforcementNone, AdminLevel: EnforcementNone,
+		ListLevel: EnforcementNone,
 	}
 	if got != want {
 		t.Fatalf("CapabilitiesFor(unknown) = %+v, want %+v", got, want)

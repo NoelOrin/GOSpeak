@@ -71,10 +71,6 @@ func (s *Service) GenerateToken(room, identity string) (string, error) {
 	return token, nil
 }
 
-func (s *Service) GenerateAdminToken() (string, error) {
-	return "", pkg.NewErrSFUNotSupported()
-}
-
 func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
 	rooms, err := s.restClient().ListRooms()
 	if err != nil {

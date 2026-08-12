@@ -16,6 +16,20 @@ type SessionInfo struct {
 	IceServers  []IceServer `json:"iceServers,omitempty"`
 }
 
+// TrackState describes a single track in a session state response.
+type TrackState struct {
+	Location  string `json:"location,omitempty"`
+	MID       string `json:"mid,omitempty"`
+	SessionID string `json:"sessionId,omitempty"`
+	TrackName string `json:"trackName,omitempty"`
+	Status    string `json:"status,omitempty"`
+}
+
+// SessionStateResponse is the GET /sessions/{sessionId} payload.
+type SessionStateResponse struct {
+	Tracks []TrackState `json:"tracks,omitempty"`
+}
+
 type IceServer struct {
 	URLs       []string `json:"urls"`
 	Username   string   `json:"username,omitempty"`

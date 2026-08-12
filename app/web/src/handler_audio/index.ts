@@ -8,6 +8,7 @@ import { setSpeakingIdentities } from "./speakingStore";
 const tracks = new Map<string, RemoteAudioTrackLike>();
 const audioElements = new Map<string, HTMLMediaElement>();
 const mutedIdentities = new Set<string>();
+const serverMutedIdentities = new Set<string>();
 const volumes = new Map<string, number>();
 
 // 全局输出：masterVolume 0-1，masterMuted true=静音所有远端音频。
@@ -16,7 +17,13 @@ let masterVolume = 1;
 let masterMuted = false;
 
 function effectiveVolume(identity: string): number {
-	if (masterMuted || mutedIdentities.has(identity)) return 0;
+	if (
+		masterMuted ||
+		mutedIdentities.has(identity) ||
+		serverMutedIdentities.has(identity)
+	) {
+		return 0;
+	}
 	return masterVolume * (volumes.get(identity) ?? 1);
 }
 
@@ -97,6 +104,7 @@ export function cleanupAudioHandler() {
 	});
 	audioElements.clear();
 	mutedIdentities.clear();
+	serverMutedIdentities.clear();
 	volumes.clear();
 	masterVolume = 1;
 	masterMuted = false;
@@ -116,6 +124,19 @@ export function setMutedByIdentity(identity: string, muted: boolean) {
 		mutedIdentities.add(identity);
 	} else {
 		mutedIdentities.delete(identity);
+	}
+	const track = tracks.get(identity);
+	if (track) {
+		track.setVolume(effectiveVolume(identity));
+	}
+}
+
+/** 服务器禁言驱动的订阅端静音（member:muted/member:unmuted），独立于本地个人静音。 */
+export function setServerMutedByIdentity(identity: string, muted: boolean) {
+	if (muted) {
+		serverMutedIdentities.add(identity);
+	} else {
+		serverMutedIdentities.delete(identity);
 	}
 	const track = tracks.get(identity);
 	if (track) {

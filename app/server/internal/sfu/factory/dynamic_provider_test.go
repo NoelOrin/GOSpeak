@@ -23,9 +23,6 @@ func (s *stubProvider) Capabilities() sfu.Capabilities {
 func (s *stubProvider) GenerateToken(room, identity string) (string, error) {
 	return "token", nil
 }
-func (s *stubProvider) GenerateAdminToken() (string, error) {
-	return "", pkg.NewErrSFUNotSupported()
-}
 func (s *stubProvider) ListRooms() ([]sfu.RoomSummary, error) { return nil, nil }
 func (s *stubProvider) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
 	return nil, nil

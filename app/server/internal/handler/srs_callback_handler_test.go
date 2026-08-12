@@ -2,12 +2,14 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/sfu/providers/srs"
 	"GOSpeak/internal/signal"
 
@@ -267,5 +269,52 @@ func TestParseCallbackParams_EmptyOrInvalidReturnsEmpty(t *testing.T) {
 	}
 	if got := parseCallbackParams("%zz"); len(got) != 0 {
 		t.Fatalf("expected empty map for invalid query, got %v", got)
+	}
+}
+
+func TestSrsCallback_OnPublish_BlockedStream_Rejects(t *testing.T) {
+	hub := newCallbackHub()
+	h := NewSRSCallbackHandler(hub, "secret")
+	store := sfu.NewMemoryMuteRuleStore()
+	_ = store.Save(context.Background(), srs.PublishBlockKey("gs-aaa"), 1, 0)
+	h.SetMuteRuleStore(store)
+
+	stream := "gs-aaa"
+	tok := srsStreamTokenForTest(stream, "secret")
+	payload := map[string]string{
+		"action": "on_publish",
+		"stream": "live/" + stream,
+		"param":  "app=live&stream=" + stream + "&token=" + tok,
+	}
+	w := postJSON(t, h, payload)
+	if !strings.Contains(w.Body.String(), `"code":1`) {
+		t.Fatalf("blocked on_publish should return code 1, got %s", w.Body.String())
+	}
+	if hub.IsStreamActive(stream) {
+		t.Fatal("blocked stream must NOT be registered")
+	}
+}
+
+func TestSrsCallback_OnPublish_AfterUnmute_Allows(t *testing.T) {
+	hub := newCallbackHub()
+	h := NewSRSCallbackHandler(hub, "secret")
+	store := sfu.NewMemoryMuteRuleStore()
+	h.SetMuteRuleStore(store)
+	stream := "gs-aaa"
+	_ = store.Save(context.Background(), srs.PublishBlockKey(stream), 1, 0)
+	_ = store.Delete(context.Background(), srs.PublishBlockKey(stream))
+
+	tok := srsStreamTokenForTest(stream, "secret")
+	payload := map[string]string{
+		"action": "on_publish",
+		"stream": "live/" + stream,
+		"param":  "app=live&stream=" + stream + "&token=" + tok,
+	}
+	w := postJSON(t, h, payload)
+	if !strings.Contains(w.Body.String(), `"code":0`) {
+		t.Fatalf("unblocked on_publish should return code 0, got %s", w.Body.String())
+	}
+	if !hub.IsStreamActive(stream) {
+		t.Fatal("stream should be registered after unmute")
 	}
 }

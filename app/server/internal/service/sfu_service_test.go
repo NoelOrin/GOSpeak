@@ -23,9 +23,6 @@ func (f *fakeSFUProvider) GenerateToken(room, identity string) (string, error) {
 	f.generatedIdentity = identity
 	return "token-" + room, nil
 }
-func (f *fakeSFUProvider) GenerateAdminToken() (string, error) {
-	return "", pkg.NewErrSFUNotSupported()
-}
 func (f *fakeSFUProvider) ListRooms() ([]sfu.RoomSummary, error) {
 	return nil, nil
 }

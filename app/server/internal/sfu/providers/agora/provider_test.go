@@ -17,13 +17,6 @@ var _ sfu.ClientInfoProvider = (*Service)(nil)
 var _ sfu.TimedMuteProvider = (*Service)(nil)
 var _ sfu.MuteRuleStoreSetter = (*Service)(nil)
 
-func TestUnsupportedOperations(t *testing.T) {
-	svc := &Service{}
-	if _, err := svc.GenerateAdminToken(); !errors.Is(err, pkg.ErrSFUNotSupported) {
-		t.Fatalf("GenerateAdminToken: want ErrSFUNotSupported, got %v", err)
-	}
-}
-
 func TestProviderName(t *testing.T) {
 	if got := (&Service{}).ProviderName(); got != "agora" {
 		t.Fatalf("ProviderName = %q, want agora", got)

@@ -1,4 +1,4 @@
-import { PROVIDER_LABELS } from "@gospeak/sfu-client";
+import { isSFUProviderEnabled, PROVIDER_LABELS } from "@gospeak/sfu-client";
 import { createSFUClient, preloadSFUClient } from "@gospeak/sfu-client/client";
 import type {
 	SFUClient,
@@ -19,10 +19,15 @@ const providerPreloaders: Record<SFUProvider, () => Promise<void>> = {
 const preloadedProviders = new Set<SFUProvider>();
 
 export function rememberSfuProvider(provider: SFUProvider): void {
+	if (!isSFUProviderEnabled(provider)) return;
 	localStorage.setItem(STORAGE_LAST_SFU_PROVIDER, provider);
 }
 
-const VALID_PROVIDERS = new Set<string>(Object.keys(PROVIDER_LABELS));
+const VALID_PROVIDERS = new Set<string>(
+	Object.keys(PROVIDER_LABELS).filter((provider) =>
+		isSFUProviderEnabled(provider as SFUProvider),
+	),
+);
 
 export function getRememberedSfuProvider(): SFUProvider | undefined {
 	const provider = localStorage.getItem(STORAGE_LAST_SFU_PROVIDER);
@@ -51,6 +56,9 @@ export async function loadSfuClient(
 	provider: SFUProvider,
 	options?: SFUClientOptions,
 ): Promise<SFUClient> {
+	if (!isSFUProviderEnabled(provider)) {
+		throw new Error(`${PROVIDER_LABELS[provider]} 语音后端已在前端暂时停用`);
+	}
 	rememberSfuProvider(provider);
 	try {
 		await preloadSfuClient(provider);

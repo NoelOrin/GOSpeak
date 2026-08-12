@@ -1,5 +1,6 @@
 import type { SFUClient, SFUProvider } from "@gospeak/sfu-client/types";
 import type { JoinTokenResponse } from "@/api/sfu";
+import { setServerMutedByIdentity } from "@/handler_audio";
 import { socketStore } from "@/stores/socketStore";
 import type { VoiceProviderAdapter } from "./voiceSessionTypes";
 
@@ -40,6 +41,12 @@ const srsAdapter: VoiceProviderAdapter = {
 			.filter((m) => m.identity !== token.identity && m.stream)
 			.map((m) => ({ identity: m.identity, stream: m.stream as string }));
 		if (peers.length) client.subscribePeers?.(peers);
+		// 服务器禁言状态同步：join 时已有成员若被禁言，订阅端立即静音。
+		for (const m of ack.members ?? []) {
+			if (m.identity !== token.identity && m.isMuted) {
+				setServerMutedByIdentity(m.identity, true);
+			}
+		}
 		bindSignalActiveSpeakers(client, token);
 	},
 };

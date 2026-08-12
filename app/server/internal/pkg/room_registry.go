@@ -22,3 +22,15 @@ type RoomRegistry interface {
 type RoomRegistrySetter interface {
 	SetRoomRegistry(r RoomRegistry)
 }
+
+// StreamRoomResolver 提供 stream→room 反查，供 SRS 等无原生 room 维度的 provider
+// 在 SRS API 直查后映射回 GOSpeak room（复合键 domainUUID:roomName）。
+// 由 signal.Hub 实现：本地 streamRoomCache 优先，membership KV 兜底。
+type StreamRoomResolver interface {
+	RoomForStream(stream string) (string, bool)
+}
+
+// StreamRoomResolverSetter 由需要 stream→room 反查的 provider 实现可选接口。
+type StreamRoomResolverSetter interface {
+	SetStreamRoomResolver(r StreamRoomResolver)
+}

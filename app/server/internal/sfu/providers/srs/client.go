@@ -19,12 +19,14 @@ type apiResponse struct {
 }
 
 // SRS6 /api/v1/clients 实际字段:
-//   id / name(=stream 名 gs-xxx) / url(/live/gs-xxx) / stream(=内部 vid-xxx) / type / publish
+//
+//	id / name(=stream 名 gs-xxx) / url(/live/gs-xxx) / stream(=内部 vid-xxx) / type / publish
+//
 // 旧代码 json:"client" 永远解不出 ID，KickByStreams 全空，重入 WHIP 撞 5020。
 type clientsResponseClient struct {
-	ID      string `json:"id"`
+	ID string `json:"id"`
 	// Stream 在 SRS 响应里是内部 stream id，不用于业务匹配。
-	Stream  string `json:"stream"`
+	Stream string `json:"stream"`
 	// Name 才是业务 stream 名（gs-xxx）。
 	Name    string `json:"name"`
 	URL     string `json:"url"`
@@ -50,8 +52,19 @@ func (cl clientsResponseClient) streamName() string {
 }
 
 type clientsResponse struct {
-	Code    int                    `json:"code"`
+	Code    int                     `json:"code"`
 	Clients []clientsResponseClient `json:"clients"`
+}
+
+type streamsResponse struct {
+	Code    int                     `json:"code"`
+	Streams []streamsResponseStream `json:"streams"`
+}
+
+// streamsResponseStream 对应 SRS6 /api/v1/streams 条目；Name 是业务流名（gs-xxx）。
+type streamsResponseStream struct {
+	App  string `json:"app"`
+	Name string `json:"name"`
 }
 
 func NewClient(baseURL string) *Client {
@@ -61,6 +74,35 @@ func NewClient(baseURL string) *Client {
 			Timeout: 5 * time.Second,
 		},
 	}
+}
+
+// ListStreams 返回 SRS 上所有活跃 stream 的业务名（如 gs-xxx）。
+// 直接使用 SRS HTTP API /api/v1/streams/，不依赖本地 RoomRegistry。
+func (c *Client) ListStreams() ([]string, error) {
+	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/api/v1/streams/", nil)
+	if err != nil {
+		return nil, fmt.Errorf("srs build list streams request: %w", err)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("srs list streams: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result streamsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("srs decode streams: %w", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("srs api error: code=%d", result.Code)
+	}
+	out := make([]string, 0, len(result.Streams))
+	for _, st := range result.Streams {
+		if st.Name != "" {
+			out = append(out, st.Name)
+		}
+	}
+	return out, nil
 }
 
 func (c *Client) fetchClients() ([]clientsResponseClient, error) {

@@ -135,6 +135,28 @@ docker logs gospeak-srs 2>&1 | grep "on_publish\|on_play\|on_unpublish\|on_stop"
 2. 确认 backend 起在 8998,`host.docker.internal` 可达
 3. 检查 SRS → backend 网络:`docker exec gospeak-srs curl -s http://host.docker.internal:8998/api/v1/srs/callback` 应可达
 
+## 5. 禁言与房间维度管理
+
+### 5.1 禁言语义（Discord 式）
+
+> 禁言时后端写入禁推黑名单（NATS KV / 内存），**不踢流**——被禁言成员保留订阅仍可收听；
+> 其他客户端收到 `member:muted` 事件后对该成员远端音轨静音。
+> SRS `on_publish` http_hook 命中黑名单时返回 `code:1` 拒绝推流，因此禁言期间断流/重连无法绕过发声。
+> 解禁后黑名单删除，客户端收到 `member:unmuted` 恢复音量，可重新推流。
+
+### 5.2 SRS 多节点 / Cluster 说明
+
+SRS 5.0+ 的 origin-edge / origin cluster 是**流分发与故障转移**能力（edge 回源、RTMP302 重定向），
+HTTP API（`/api/v1/streams`、`/api/v1/clients`）仍是节点级的，SRS **没有原生 room 维度管理 API**。
+GOSpeak 的 room 维度管理（ListRooms/ListParticipants/DeleteRoom）通过直查 SRS API + stream→room
+业务映射实现：
+
+- 单节点：`SRS_HOST` 指向该节点即可，无需集群。
+- 多节点部署：将 `SRS_HOST`/`SRS_WHIP_URL` 指向可聚合的入口节点（edge 或反代），
+  或由部署层遍历各节点后聚合（GOSpeak 不内置集群遍历）。
+- stream→room 映射跨实例不变：依赖 membership KV（NATS）与 `member:joined`/`on_publish` 登记，
+  与 SRS 节点数无关。
+
 ## 排查表
 
 | 症状 | 原因 | 修 |

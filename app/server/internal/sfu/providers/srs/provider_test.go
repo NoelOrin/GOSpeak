@@ -1,6 +1,7 @@
 package srs
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -51,11 +52,25 @@ func (s *stubRegistry) IdentityForStream(room, stream string) (string, bool) {
 	return "", false
 }
 
+// stubResolver 模拟 pkg.StreamRoomResolver：stream -> room（复合键）。
+type stubResolver struct {
+	roomForStream map[string]string
+}
+
+func (r *stubResolver) RoomForStream(stream string) (string, bool) {
+	if r == nil || r.roomForStream == nil {
+		return "", false
+	}
+	room, ok := r.roomForStream[stream]
+	return room, ok
+}
+
 // srsTestServer 用 httptest 模拟 SRS HTTP API（/api/v1/clients/ + kick）。
 type srsTestServer struct {
 	srv       *httptest.Server
 	mu        sync.Mutex
 	clients   []clientsResponseClient
+	streams   []string
 	kickedIDs []string
 	kickFail  map[string]bool // id -> 模拟 kick 失败
 }
@@ -63,6 +78,19 @@ type srsTestServer struct {
 func newSRSTestServer() *srsTestServer {
 	ts := &srsTestServer{kickFail: map[string]bool{}}
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/streams/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		ts.mu.Lock()
+		defer ts.mu.Unlock()
+		streams := make([]map[string]string, 0, len(ts.streams))
+		for _, name := range ts.streams {
+			streams = append(streams, map[string]string{"app": "live", "name": name})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"code": 0, "streams": streams})
+	})
 	mux.HandleFunc("/api/v1/clients/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			ts.mu.Lock()
@@ -429,23 +457,49 @@ func TestKickByStreams_UsesNameNotInternalStreamID(t *testing.T) {
 	}
 }
 
-func TestMuteParticipant_UnmuteSoftNoop(t *testing.T) {
-	svc := newSRSTestService(t)
-	if err := svc.MuteParticipant("room", "user", "", false); err != pkg.ErrSFUNotSupported {
-		t.Fatalf("unmute should signal soft no-op, got %v", err)
-	}
-}
-
 func newSRSTestService(t *testing.T) *Service {
 	t.Helper()
 	return &Service{client: NewClient("http://127.0.0.1:9")}
 }
 
-func TestSRS_MuteFalseReturnsSoft(t *testing.T) {
-	svc := newSRSTestService(t)
-	if err := svc.MuteParticipant("r", "u", "", false); err != pkg.ErrSFUNotSupported {
-		t.Fatalf("expected ErrSFUNotSupported for unmute, got %v", err)
+func TestMuteParticipantTimed_MuteWritesPublishBlock(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.close()
+	stream := GenerateStreamName("room-r", "alice")
+
+	s := newServiceWithURL(ts.srv.URL)
+	s.registry = &stubRegistry{identityStreams: map[string]string{"room-r\x00alice": stream}}
+	store := sfu.NewMemoryMuteRuleStore()
+	s.SetMuteRuleStore(store)
+
+	if err := s.MuteParticipantTimed("room-r", "alice", "", true, 60); err != nil {
+		t.Fatalf("mute err: %v", err)
 	}
+	if id, _ := store.Get(context.Background(), PublishBlockKey(stream)); id != publishBlockRuleID {
+		t.Fatalf("publish block not saved, id=%d", id)
+	}
+	if len(ts.kickedIDs) != 0 {
+		t.Fatalf("Discord-style mute must NOT kick, kickedIDs=%v", ts.kickedIDs)
+	}
+}
+
+func TestMuteParticipantTimed_UnmuteDeletesPublishBlock(t *testing.T) {
+	s := newSRSTestService(t)
+	store := sfu.NewMemoryMuteRuleStore()
+	s.SetMuteRuleStore(store)
+	stream := GenerateStreamName("room-r", "alice")
+	_ = store.Save(context.Background(), PublishBlockKey(stream), publishBlockRuleID, 0)
+
+	if err := s.MuteParticipantTimed("room-r", "alice", "", false, 0); err != nil {
+		t.Fatalf("unmute err: %v", err)
+	}
+	if id, _ := store.Get(context.Background(), PublishBlockKey(stream)); id != 0 {
+		t.Fatalf("publish block should be deleted, id=%d", id)
+	}
+}
+
+func TestSRS_ImplementsTimedMuteProvider(t *testing.T) {
+	var _ sfu.TimedMuteProvider = (*Service)(nil)
 }
 
 func TestCapabilities_ServerMuteEnabled(t *testing.T) {
@@ -455,6 +509,9 @@ func TestCapabilities_ServerMuteEnabled(t *testing.T) {
 	}
 	if caps.MuteLevel != "degraded" {
 		t.Fatalf("srs MuteLevel=%q, want degraded", caps.MuteLevel)
+	}
+	if caps.ListLevel != "hard" {
+		t.Fatalf("srs ListLevel=%q, want hard", caps.ListLevel)
 	}
 	if !reflect.DeepEqual(caps, sfu.CapabilitiesFor("srs")) {
 		t.Fatalf("Capabilities() = %+v, want %+v", caps, sfu.CapabilitiesFor("srs"))
@@ -473,20 +530,6 @@ func assertSRSAppErrorCode(t *testing.T, err error, want pkg.ErrCode) {
 	if appErr.Code != want {
 		t.Fatalf("error code = %d, want %d: %v", appErr.Code, want, err)
 	}
-}
-
-func TestMuteParticipant_KickError(t *testing.T) {
-	ts := newSRSTestServer()
-	defer ts.close()
-	stream := GenerateStreamName("room-r", "alice")
-	ts.mu.Lock()
-	ts.clients = []clientsResponseClient{{ID: "cid-1", Stream: stream}}
-	ts.kickFail["cid-1"] = true
-	ts.mu.Unlock()
-
-	s := newServiceWithURL(ts.srv.URL)
-	s.registry = &stubRegistry{streams: map[string][]string{"room-r": {stream}}}
-	assertSRSAppErrorCode(t, s.MuteParticipant("room-r", "alice", "", true), pkg.SFU_ERROR)
 }
 
 func TestRemoveParticipant_KickError(t *testing.T) {
@@ -514,4 +557,174 @@ func TestDeleteRoom_StreamAPIError(t *testing.T) {
 	defer srv.Close()
 	s := newServiceWithURL(srv.URL)
 	assertSRSAppErrorCode(t, s.DeleteRoom("room-x"), pkg.SFU_ERROR)
+}
+
+func TestListStreams_FromSRSAPI(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.close()
+	ts.mu.Lock()
+	ts.streams = []string{"gs-a", "gs-b"}
+	ts.mu.Unlock()
+
+	got, err := NewClient(ts.srv.URL).ListStreams()
+	if err != nil {
+		t.Fatalf("ListStreams err: %v", err)
+	}
+	if !reflect.DeepEqual(got, []string{"gs-a", "gs-b"}) {
+		t.Fatalf("ListStreams = %v, want [gs-a gs-b]", got)
+	}
+}
+
+func TestListStreams_APICodeError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"code": 2048})
+	}))
+	defer srv.Close()
+
+	if _, err := NewClient(srv.URL).ListStreams(); err == nil {
+		t.Fatal("expected error for non-zero SRS api code")
+	}
+}
+
+func TestListStreams_EmptyStreams(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.close()
+
+	got, err := NewClient(ts.srv.URL).ListStreams()
+	if err != nil {
+		t.Fatalf("ListStreams err: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("ListStreams = %v, want empty", got)
+	}
+}
+
+func TestListRooms_FromSRSAPI(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.close()
+	ts.mu.Lock()
+	ts.streams = []string{"gs-abc", "gs-def", "gs-abc2", "other-stream"}
+	ts.mu.Unlock()
+
+	s := newServiceWithURL(ts.srv.URL)
+	s.resolver = &stubResolver{roomForStream: map[string]string{
+		"gs-abc":  "dom:room-a",
+		"gs-def":  "dom:room-b",
+		"gs-abc2": "dom:room-a",
+	}}
+
+	rooms, err := s.ListRooms()
+	if err != nil {
+		t.Fatalf("ListRooms err: %v", err)
+	}
+	if len(rooms) != 2 {
+		t.Fatalf("rooms = %+v, want 2 rooms", rooms)
+	}
+	byName := map[string]int{}
+	for _, r := range rooms {
+		byName[r.Name] = r.MemberCount
+	}
+	if byName["dom:room-a"] != 2 || byName["dom:room-b"] != 1 {
+		t.Fatalf("rooms = %+v, want room-a:2 room-b:1", rooms)
+	}
+}
+
+func TestListParticipants_FromSRSAPI(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.close()
+	ts.mu.Lock()
+	ts.streams = []string{"gs-a1", "gs-a2", "gs-b1"}
+	ts.mu.Unlock()
+
+	s := newServiceWithURL(ts.srv.URL)
+	s.resolver = &stubResolver{roomForStream: map[string]string{
+		"gs-a1": "dom:room-a",
+		"gs-a2": "dom:room-a",
+		"gs-b1": "dom:room-b",
+	}}
+	s.registry = &stubRegistry{identityStreams: map[string]string{
+		"dom:room-a\x00alice": "gs-a1",
+		"dom:room-a\x00bob":   "gs-a2",
+	}}
+
+	parts, err := s.ListParticipants("dom:room-a")
+	if err != nil {
+		t.Fatalf("ListParticipants err: %v", err)
+	}
+	if len(parts) != 2 {
+		t.Fatalf("participants = %+v, want 2", parts)
+	}
+	ids := map[string]bool{}
+	for _, p := range parts {
+		ids[p.Identity] = true
+	}
+	if !ids["alice"] || !ids["bob"] {
+		t.Fatalf("participants = %+v, want alice+bob (identity from registry)", parts)
+	}
+}
+
+func TestListParticipants_FromSRSAPI_SkipsUnresolvableStream(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.close()
+	ts.mu.Lock()
+	ts.streams = []string{"gs-orphan", "gs-a1"}
+	ts.mu.Unlock()
+
+	s := newServiceWithURL(ts.srv.URL)
+	s.resolver = &stubResolver{roomForStream: map[string]string{"gs-a1": "dom:room-a"}}
+	s.registry = &stubRegistry{identityStreams: map[string]string{
+		"dom:room-a\x00alice": "gs-a1",
+	}}
+
+	parts, err := s.ListParticipants("dom:room-a")
+	if err != nil {
+		t.Fatalf("ListParticipants err: %v", err)
+	}
+	if len(parts) != 1 || parts[0].Identity != "alice" {
+		t.Fatalf("participants = %+v, want [alice] only", parts)
+	}
+}
+
+func TestDeleteRoom_FromSRSAPI(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.close()
+	ts.mu.Lock()
+	ts.streams = []string{"gs-a1", "gs-b1"}
+	ts.clients = []clientsResponseClient{
+		{ID: "cid-1", Name: "gs-a1"},
+		{ID: "cid-2", Name: "gs-b1"},
+	}
+	ts.mu.Unlock()
+
+	s := newServiceWithURL(ts.srv.URL)
+	s.resolver = &stubResolver{roomForStream: map[string]string{
+		"gs-a1": "dom:room-a",
+		"gs-b1": "dom:room-b",
+	}}
+	reg := &stubRegistry{}
+	s.registry = reg
+
+	if err := s.DeleteRoom("dom:room-a"); err != nil {
+		t.Fatalf("DeleteRoom err: %v", err)
+	}
+	if len(ts.kickedIDs) != 1 || ts.kickedIDs[0] != "cid-1" {
+		t.Fatalf("kickedIDs=%v, want [cid-1] (only room-a stream)", ts.kickedIDs)
+	}
+	if len(reg.cleared) != 1 || reg.cleared[0] != "dom:room-a" {
+		t.Fatalf("cleared=%v, want [dom:room-a]", reg.cleared)
+	}
+}
+
+func TestDeleteRoom_FromSRSAPI_NotFound(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.close()
+	ts.mu.Lock()
+	ts.streams = []string{"gs-b1"}
+	ts.mu.Unlock()
+
+	s := newServiceWithURL(ts.srv.URL)
+	s.resolver = &stubResolver{roomForStream: map[string]string{"gs-b1": "dom:room-b"}}
+	s.registry = &stubRegistry{}
+
+	assertSRSAppErrorCode(t, s.DeleteRoom("dom:room-a"), pkg.NOT_FOUND)
 }

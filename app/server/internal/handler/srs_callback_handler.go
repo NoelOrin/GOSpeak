@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/sfu/providers/srs"
 	"GOSpeak/internal/signal"
 
@@ -21,6 +22,7 @@ type SRSCallbackHandler struct {
 	secret        string
 	resolveSecret func() string
 	jobs          streamJobPublisher
+	muteStore     sfu.MuteRuleStore
 }
 
 func NewSRSCallbackHandler(hub *signal.Hub, secret string) *SRSCallbackHandler {
@@ -33,6 +35,11 @@ func NewSRSCallbackHandlerWithResolver(hub *signal.Hub, resolve func() string) *
 
 func (h *SRSCallbackHandler) SetJobs(j streamJobPublisher) {
 	h.jobs = j
+}
+
+// SetMuteRuleStore 注入 SRS 禁推黑名单（与 srs.Service 共用同一 store）。
+func (h *SRSCallbackHandler) SetMuteRuleStore(store sfu.MuteRuleStore) {
+	h.muteStore = store
 }
 
 func (h *SRSCallbackHandler) currentSecret() string {
@@ -60,6 +67,13 @@ func (h *SRSCallbackHandler) HandleCallback(c *gin.Context) {
 		if token == "" || !srs.ValidateStreamToken(stream, token, secret) {
 			c.JSON(http.StatusOK, gin.H{"code": 1})
 			return
+		}
+		if h.muteStore != nil {
+			blocked, _ := h.muteStore.Get(c.Request.Context(), srs.PublishBlockKey(stream))
+			if blocked > 0 {
+				c.JSON(http.StatusOK, gin.H{"code": 1})
+				return
+			}
 		}
 		if h.jobs != nil {
 			_ = h.jobs.PublishSRS(c.Request.Context(), "on_publish", stream)

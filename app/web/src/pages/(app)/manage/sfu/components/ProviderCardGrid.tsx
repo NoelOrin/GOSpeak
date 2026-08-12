@@ -1,3 +1,4 @@
+import { isSFUProviderEnabled } from "@gospeak/sfu-client";
 import type { SFUProvider } from "@gospeak/sfu-client/types";
 import Check from "lucide-solid/icons/check";
 import Cloud from "lucide-solid/icons/cloud";
@@ -35,7 +36,8 @@ export default function ProviderCardGrid(props: ProviderCardGridProps) {
 						);
 						return cfg ? isProviderConfigured(option.value, cfg) : false;
 					};
-					const disabled = () => !!props.disabled;
+					const providerEnabled = () => isSFUProviderEnabled(option.value);
+					const disabled = () => !!props.disabled || !providerEnabled();
 
 					return (
 						<button
@@ -106,7 +108,11 @@ export default function ProviderCardGrid(props: ProviderCardGridProps) {
 
 							<div class="flex min-h-4 items-center justify-between gap-2">
 								<span class="text-[11px] text-base-content/40">
-									{isActive() ? "运行中" : "点击选择"}
+									{isActive()
+										? "运行中"
+										: providerEnabled()
+											? "点击选择"
+											: "已停用"}
 								</span>
 							</div>
 						</button>

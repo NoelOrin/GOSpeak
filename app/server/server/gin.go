@@ -295,6 +295,10 @@ func StartGin(env EnvEnum) error {
 	if rs, ok := sfuProvider.(pkg.RoomRegistrySetter); ok {
 		rs.SetRoomRegistry(signalHub)
 	}
+	// 注入 stream→room 反查给 SRS 等 provider（SRS API 直查后映射回 GOSpeak room）。
+	if rs, ok := sfuProvider.(pkg.StreamRoomResolverSetter); ok {
+		rs.SetStreamRoomResolver(signalHub)
+	}
 	// MediaSoup 专用信号初始化已禁用保留：SetSFUSignalHandler 不再调用。
 	signalHub.SetupFanout(wsFanout, wsHandler)
 	sfuSvc := service.NewSFUService(sfuProvider, signalHub)
@@ -333,6 +337,7 @@ func StartGin(env EnvEnum) error {
 	if jobQueue != nil {
 		srsCallbackH.SetJobs(jobQueue)
 	}
+	srsCallbackH.SetMuteRuleStore(muteRuleStore)
 
 	authCookieCfg := handler.NewAuthCookieConfig(cfg)
 	authH := handler.NewAuthHandler(authSvc, authCookieCfg)

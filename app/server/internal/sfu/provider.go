@@ -14,9 +14,6 @@ type Provider interface {
 	// Capabilities returns media-layer hard-enforcement support for this provider.
 	Capabilities() Capabilities
 	GenerateToken(room, identity string) (string, error)
-	// GenerateAdminToken returns a management token when the backend has that concept.
-	// Providers without admin-token semantics return pkg.NewErrSFUNotSupported().
-	GenerateAdminToken() (string, error)
 	ListRooms() ([]RoomSummary, error)
 	ListParticipants(room string) ([]ParticipantSummary, error)
 	MuteParticipant(room, identity, trackSid string, muted bool) error

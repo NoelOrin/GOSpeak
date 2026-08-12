@@ -35,6 +35,12 @@ func (h *Hub) BroadcastMute(userID uint, info *MuteInfo) {
 		}
 	}
 	h.publishNamespace(EventUserMuted, data)
+	if identity := h.identityForUserID(userID); identity != "" {
+		h.publishNamespace(EventMemberMuted, map[string]interface{}{
+			"identity": identity,
+			"muted":    true,
+		})
+	}
 }
 
 // BroadcastUnmute 广播取消禁言事件到所有客户端。
@@ -46,6 +52,12 @@ func (h *Hub) BroadcastUnmute(userID uint) {
 		"user_id":     userID,
 		"enforcement": enforcement,
 	})
+	if identity := h.identityForUserID(userID); identity != "" {
+		h.publishNamespace(EventMemberUnmuted, map[string]interface{}{
+			"identity": identity,
+			"muted":    false,
+		})
+	}
 }
 
 // enforceUserMediaMute 在支持 ServerMute 的 provider 上，对 userID 当前所在房间做媒体层 mute/unmute。

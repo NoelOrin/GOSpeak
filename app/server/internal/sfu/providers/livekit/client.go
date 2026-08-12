@@ -51,23 +51,6 @@ func (s *Service) GenerateToken(room, identity string) (string, error) {
 	return token, nil
 }
 
-func (s *Service) GenerateAdminToken() (string, error) {
-	at := auth.NewAccessToken(s.apiKey, s.apiSecret)
-	grant := &auth.VideoGrant{
-		RoomCreate: true,
-		RoomList:   true,
-	}
-	at.AddGrant(grant).
-		SetIdentity("admin").
-		SetValidFor(time.Hour)
-
-	token, err := at.ToJWT()
-	if err != nil {
-		return "", pkg.NewAppError(pkg.SFU_ERROR, err.Error())
-	}
-	return token, nil
-}
-
 func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
 	if s.client == nil {
 		return nil, pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)

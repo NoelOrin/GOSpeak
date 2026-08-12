@@ -1,6 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { SRSSFUClient } from "./srs-client";
+import { isWhipBusyError } from "./srs-stream-gate";
 import type { JoinParams, SignalSocket } from "./types";
+
+describe("isWhipBusyError", () => {
+	it("treats 5020/stream busy as busy", () => {
+		expect(isWhipBusyError(new Error("SRS WHIP request failed: 5020"))).toBe(true);
+		expect(isWhipBusyError(new Error("stream busy"))).toBe(true);
+	});
+
+	it("never treats 403 publish denied as busy", () => {
+		expect(isWhipBusyError(new Error("SRS WHIP request failed: 403"))).toBe(false);
+		expect(isWhipBusyError(new Error("publish denied"))).toBe(false);
+	});
+});
 
 // RTCPeerConnection mock
 function makeMockPc() {

@@ -1,4 +1,8 @@
-import { DEFAULT_SFU_PROVIDER, PROVIDER_LABELS } from "@gospeak/sfu-client";
+import {
+	DEFAULT_SFU_PROVIDER,
+	isSFUProviderEnabled,
+	PROVIDER_LABELS,
+} from "@gospeak/sfu-client";
 import type { SFUProvider } from "@gospeak/sfu-client/types";
 import { createFileRoute, redirect } from "@tanstack/solid-router";
 import ArrowRight from "lucide-solid/icons/arrow-right";
@@ -201,6 +205,12 @@ function SFUPage() {
 	const handleSave = async () => {
 		if (saving()) return;
 		const current = form();
+		if (!isSFUProviderEnabled(current.provider)) {
+			showToast("该语音后端已在前端暂时停用，无法保存或激活", {
+				type: "error",
+			});
+			return;
+		}
 		const e = validateSFUForm(current, secretFlags());
 		setErrors(e);
 		if (Object.keys(e).length > 0) {
@@ -226,6 +236,12 @@ function SFUPage() {
 
 	const handleSwitch = async (provider: SFUProvider) => {
 		if (saving()) return;
+		if (!isSFUProviderEnabled(provider)) {
+			showToast("该语音后端已在前端暂时停用，无法切换", {
+				type: "error",
+			});
+			return;
+		}
 		setSaving(true);
 		try {
 			const cfg = await switchSFUProvider(provider);

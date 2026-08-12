@@ -24,12 +24,13 @@ type sessionDomainLookup interface {
 }
 
 type DynamicProvider struct {
-	resolve           ConfigResolver
-	mu                sync.RWMutex
-	roomRegistry      pkg.RoomRegistry
-	muteRuleStore     sfu.MuteRuleStore
-	cachedFingerprint string
-	cachedProvider    sfu.Provider
+	resolve            ConfigResolver
+	mu                 sync.RWMutex
+	roomRegistry       pkg.RoomRegistry
+	streamRoomResolver pkg.StreamRoomResolver
+	muteRuleStore      sfu.MuteRuleStore
+	cachedFingerprint  string
+	cachedProvider     sfu.Provider
 }
 
 // providerCloser 是可选资源释放接口；provider 重建时旧实例若实现则关闭，
@@ -62,6 +63,18 @@ func (p *DynamicProvider) SetRoomRegistry(r pkg.RoomRegistry) {
 	if p.cachedProvider != nil {
 		if rs, ok := p.cachedProvider.(pkg.RoomRegistrySetter); ok {
 			rs.SetRoomRegistry(r)
+		}
+	}
+	p.mu.Unlock()
+}
+
+// SetStreamRoomResolver 注入 stream→room 反查，转发给需要它的 provider。
+func (p *DynamicProvider) SetStreamRoomResolver(r pkg.StreamRoomResolver) {
+	p.mu.Lock()
+	p.streamRoomResolver = r
+	if p.cachedProvider != nil {
+		if rs, ok := p.cachedProvider.(pkg.StreamRoomResolverSetter); ok {
+			rs.SetStreamRoomResolver(r)
 		}
 	}
 	p.mu.Unlock()
@@ -122,14 +135,6 @@ func (p *DynamicProvider) SessionDomain(sessionID string) (string, bool) {
 		return lp.SessionDomain(sessionID)
 	}
 	return "", false
-}
-
-func (p *DynamicProvider) GenerateAdminToken() (string, error) {
-	provider, err := p.current()
-	if err != nil {
-		return "", err
-	}
-	return provider.GenerateAdminToken()
 }
 
 func (p *DynamicProvider) ListRooms() ([]sfu.RoomSummary, error) {
@@ -315,6 +320,11 @@ func (p *DynamicProvider) current() (sfu.Provider, error) {
 	if p.roomRegistry != nil {
 		if rs, ok := provider.(pkg.RoomRegistrySetter); ok {
 			rs.SetRoomRegistry(p.roomRegistry)
+		}
+	}
+	if p.streamRoomResolver != nil {
+		if rs, ok := provider.(pkg.StreamRoomResolverSetter); ok {
+			rs.SetStreamRoomResolver(p.streamRoomResolver)
 		}
 	}
 	if p.muteRuleStore != nil {

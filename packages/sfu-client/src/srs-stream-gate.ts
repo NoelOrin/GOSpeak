@@ -163,6 +163,10 @@ export function sleep(ms: number): Promise<void> {
 
 export function isWhipBusyError(err: unknown): boolean {
 	const msg = err instanceof Error ? err.message : String(err ?? "");
+	// 403 = SRS on_publish 回调拒绝（禁推/鉴权失败），不是 busy，绝不能按 busy 无限重试。
+	if (/403|publish denied|forbidden/i.test(msg)) {
+		return false;
+	}
 	// SRS stream busy / duplicate publish 常见：5020、500、400、Failed to fetch 竞态
 	return /5020|stream busy|busy|already|409|500|400|Failed to fetch|WHIP request failed/i.test(
 		msg,

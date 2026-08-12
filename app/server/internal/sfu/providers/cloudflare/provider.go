@@ -93,11 +93,6 @@ func (s *Service) GenerateTokenForUser(room, identity, ownerUUID string) (string
 	return string(tokenBytes), nil
 }
 
-// GenerateAdminToken is not supported: Cloudflare Realtime sessions are per-participant.
-func (s *Service) GenerateAdminToken() (string, error) {
-	return "", pkg.NewErrSFUNotSupported()
-}
-
 func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -128,7 +123,39 @@ func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error
 }
 
 func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) error {
-	return pkg.NewErrSFUNotSupported()
+	if !muted {
+		// 媒体层无法恢复已关闭的轨道，unmute 是 no-op；
+		// 返回 ErrSFUNotSupported 让调用方按软语义降级（客户端重新发布）。
+		return pkg.ErrSFUNotSupported
+	}
+	if s.client == nil || s.appID == "" {
+		return pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "CF_APP_ID is required")
+	}
+	meta, ok := s.getSession(room, identity)
+	if !ok || meta.sessionID == "" {
+		// 无媒体会话视为已禁言（与 SRS 未发布场景对齐）。
+		return nil
+	}
+	// 只关闭该 session 本地发布的轨道，保留 remote 订阅轨道，
+	// 被禁言者仍可收听其他成员（Discord 式 mute）。
+	state, err := s.client.GetSessionTracks(meta.sessionID)
+	if err != nil {
+		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, "cloudflare get session state: "+err.Error())
+	}
+	specs := make([]CloseTrackSpec, 0, len(state.Tracks))
+	for _, tr := range state.Tracks {
+		if tr.Location == "local" && tr.MID != "" {
+			specs = append(specs, CloseTrackSpec{MID: tr.MID})
+		}
+	}
+	if len(specs) == 0 {
+		// 无本地发布轨道，视为已禁言。
+		return nil
+	}
+	if _, err := s.client.CloseTracks(meta.sessionID, &CloseTrackRequest{Tracks: specs, Force: true}); err != nil {
+		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, "cloudflare close tracks: "+err.Error())
+	}
+	return nil
 }
 
 func (s *Service) RemoveParticipant(room, identity string) error {

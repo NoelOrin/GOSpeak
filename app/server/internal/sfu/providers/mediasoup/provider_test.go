@@ -119,13 +119,6 @@ func TestRemoveParticipant_Delegates(t *testing.T) {
 	}
 }
 
-func TestGenerateAdminToken_NotSupported(t *testing.T) {
-	svc := &Service{Bridge: NewBridgeClient("http://localhost")}
-	if _, err := svc.GenerateAdminToken(); !errors.Is(err, pkg.ErrSFUNotSupported) {
-		t.Fatalf("GenerateAdminToken: want ErrSFUNotSupported, got %v", err)
-	}
-}
-
 func TestCapabilities(t *testing.T) {
 	caps := (&Service{}).Capabilities()
 	if !reflect.DeepEqual(caps, sfu.CapabilitiesFor("mediasoup")) {

@@ -36,14 +36,12 @@ type Capabilities struct {
 	ServerMute  bool   `json:"serverMute"`
 	ServerKick  bool   `json:"serverKick"`
 	DeleteRoom  bool   `json:"deleteRoom"`
-	AdminToken  bool   `json:"adminToken"`
 	ListRooms   bool   `json:"listRooms"`
 	ListMembers bool   `json:"listMembers"`
 	MuteLevel   string `json:"muteLevel"`
 	KickLevel   string `json:"kickLevel"`
 	DeleteLevel string `json:"deleteLevel"`
 	ListLevel   string `json:"listLevel"`
-	AdminLevel  string `json:"adminLevel"`
 }
 
 // TimedMuteProvider optionally accepts TTL for mute enforcement.

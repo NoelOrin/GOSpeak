@@ -63,6 +63,16 @@ func (c *Client) GetSession(sessionID string) (*SessionInfo, error) {
 	return &result, nil
 }
 
+// GetSessionTracks returns the tracks associated with a session, including
+// location (local/remote), mid and status for each track.
+func (c *Client) GetSessionTracks(sessionID string) (*SessionStateResponse, error) {
+	var result SessionStateResponse
+	if err := c.doJSON(http.MethodGet, fmt.Sprintf("/apps/%s/sessions/%s", c.appID, sessionID), nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 func (c *Client) AddTracks(sessionID string, req *TrackRequest) (*TracksResponse, error) {
 	var result TracksResponse
 	if err := c.doJSON(http.MethodPost, fmt.Sprintf("/apps/%s/sessions/%s/tracks/new", c.appID, sessionID), req, &result); err != nil {

@@ -9,7 +9,6 @@ export interface SFUProviderCapabilities {
 	serverMute?: boolean;
 	serverKick?: boolean;
 	deleteRoom?: boolean;
-	adminToken?: boolean;
 	listRooms?: boolean;
 	listMembers?: boolean;
 }
@@ -20,14 +19,12 @@ export interface SFUMediaCapabilities {
 	serverMute: boolean;
 	serverKick: boolean;
 	deleteRoom: boolean;
-	adminToken: boolean;
 	listRooms: boolean;
 	listMembers: boolean;
 	muteLevel?: SFUEnforcementLevel;
 	kickLevel?: SFUEnforcementLevel;
 	deleteLevel?: SFUEnforcementLevel;
 	listLevel?: SFUEnforcementLevel;
-	adminLevel?: SFUEnforcementLevel;
 }
 
 /** hard = media forced; degraded = forced via substitute API; soft = signal/policy only */
@@ -35,13 +32,7 @@ export interface SFUMediaCapabilities {
 /** hard = media forced; degraded = forced via substitute API; soft = signal/policy only */
 
 export interface SFUCapabilityDetail {
-	key:
-		| "serverMute"
-		| "serverKick"
-		| "deleteRoom"
-		| "listMembers"
-		| "listRooms"
-		| "adminToken";
+	key: "serverMute" | "serverKick" | "deleteRoom" | "listMembers" | "listRooms";
 	label: string;
 	level: SFUEnforcementLevel;
 	/** short implementation note shown on selected-provider card */
@@ -99,13 +90,6 @@ export const SFU_ENFORCEMENT_PROFILES: Record<
 				impl: "ListRooms 查活跃媒体房间",
 				fallback: "不与信令房间表互相伪装",
 			},
-			{
-				key: "adminToken",
-				label: "管理 Token",
-				level: "hard",
-				impl: "签发 RoomCreate/RoomList admin JWT",
-				fallback: "无则不伪造 admin token",
-			},
 		],
 	},
 	agora: {
@@ -146,13 +130,6 @@ export const SFU_ENFORCEMENT_PROFILES: Record<
 				level: "hard",
 				impl: "Agora channel list REST",
 				fallback: "不与信令房间表互相伪装",
-			},
-			{
-				key: "adminToken",
-				label: "管理 Token",
-				level: "none",
-				impl: "管理面使用 Customer ID/Secret，无 admin RTC token",
-				fallback: "返回 not supported",
 			},
 		],
 	},
@@ -195,25 +172,19 @@ export const SFU_ENFORCEMENT_PROFILES: Record<
 				impl: "RoomRegistry 聚合活跃 room",
 				fallback: "不直接拿信令房间伪装媒体房间",
 			},
-			{
-				key: "adminToken",
-				label: "管理 Token",
-				level: "hard",
-				impl: "HMAC/JWT stream admin token",
-				fallback: "无 secret 时拒签",
-			},
 		],
 	},
 	cloudflare: {
 		provider: "cloudflare",
-		summary: "无原生房间/静音；踢人靠删 session，列表仅进程内缓存。",
+		summary:
+			"无原生房间；禁言靠 CloseTracks 关轨，踢人靠删 session，列表仅进程内缓存。",
 		details: [
 			{
 				key: "serverMute",
 				label: "服务端静音",
-				level: "soft",
-				impl: "无 session 级 mute；关 track 不足以稳定替代",
-				fallback: "信令 user:muted + 前端停推",
+				level: "degraded",
+				impl: "CloseTracks 关闭本地发布轨道（保留订阅）",
+				fallback: "unmute 媒体层 no-op，客户端重新发布",
 			},
 			{
 				key: "serverKick",
@@ -242,13 +213,6 @@ export const SFU_ENFORCEMENT_PROFILES: Record<
 				level: "degraded",
 				impl: "本地 sessions map 的 room 键",
 				fallback: "非跨实例权威",
-			},
-			{
-				key: "adminToken",
-				label: "管理 Token",
-				level: "none",
-				impl: "使用 App Secret 调 REST，无 admin join token",
-				fallback: "返回 not supported",
 			},
 		],
 	},
@@ -297,11 +261,6 @@ export function getSFUEnforcementProfile(
 			override.listLevel,
 			base.details.find((d) => d.key === "listRooms")?.level ?? "soft",
 		),
-		adminToken: levelFromBool(
-			override.adminToken,
-			override.adminLevel,
-			base.details.find((d) => d.key === "adminToken")?.level ?? "none",
-		),
 	};
 
 	return {
@@ -324,7 +283,6 @@ export const SFU_PROVIDER_CAPABILITIES: Record<
 		serverMute: true,
 		serverKick: true,
 		deleteRoom: true,
-		adminToken: true,
 		listRooms: true,
 		listMembers: true,
 	},
@@ -334,7 +292,6 @@ export const SFU_PROVIDER_CAPABILITIES: Record<
 		serverMute: true,
 		serverKick: true,
 		deleteRoom: true,
-		adminToken: false,
 		listRooms: true,
 		listMembers: true,
 	},
@@ -344,7 +301,6 @@ export const SFU_PROVIDER_CAPABILITIES: Record<
 		serverMute: true,
 		serverKick: true,
 		deleteRoom: true,
-		adminToken: true,
 		listRooms: true,
 		listMembers: true,
 	},
@@ -354,7 +310,6 @@ export const SFU_PROVIDER_CAPABILITIES: Record<
 		serverMute: false,
 		serverKick: true,
 		deleteRoom: true,
-		adminToken: false,
 		listRooms: true,
 		listMembers: true,
 	},
@@ -371,7 +326,6 @@ export function getSFUProviderCapabilities(
 		serverMute: override.serverMute,
 		serverKick: override.serverKick,
 		deleteRoom: override.deleteRoom,
-		adminToken: override.adminToken,
 		listRooms: override.listRooms,
 		listMembers: override.listMembers,
 		supportsParticipants: override.listMembers,

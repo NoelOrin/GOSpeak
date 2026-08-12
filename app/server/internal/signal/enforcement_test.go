@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"GOSpeak/internal/model"
-	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
 )
 
@@ -23,9 +22,6 @@ func (p *capsProvider) ProviderName() string           { return "test" }
 func (p *capsProvider) Capabilities() sfu.Capabilities { return p.caps }
 func (p *capsProvider) GenerateToken(string, string) (string, error) {
 	return "t", nil
-}
-func (p *capsProvider) GenerateAdminToken() (string, error) {
-	return "", pkg.NewErrSFUNotSupported()
 }
 func (p *capsProvider) ListRooms() ([]sfu.RoomSummary, error) { return nil, nil }
 func (p *capsProvider) ListParticipants(string) ([]sfu.ParticipantSummary, error) {

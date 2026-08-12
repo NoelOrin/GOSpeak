@@ -16,4 +16,10 @@ export type {
 	SFUPublishAudioOptions,
 } from "./types";
 export type { SFUProvider } from "./provider";
-export { DEFAULT_SFU_PROVIDER, PROVIDER_LABELS } from "./provider";
+export {
+	DEFAULT_SFU_PROVIDER,
+	DISABLED_SFU_PROVIDERS,
+	ENABLED_SFU_PROVIDERS,
+	isSFUProviderEnabled,
+	PROVIDER_LABELS,
+} from "./provider";
