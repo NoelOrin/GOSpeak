@@ -1,0 +1,28 @@
+# 自动版本管理：基于 Conventional Commits 生成 Release PR，
+# 合并后自动打 tag 并创建 GitHub Release，触发 CI 构建产物与镜像。
+name: release-please
+
+on:
+  push:
+    branches: [release]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          target-branch: release
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
