@@ -469,7 +469,8 @@ func TestOnMessageDelete_DomainRoleCanDeleteOthers(t *testing.T) {
 	h.roomStore = store
 	h.permChecker = &mockPermChecker{rolePerms: map[string]map[string]bool{"user": {"message:send": true}}}
 	h.domainPermChecker = func(domainUUID, userUUID, permCode string) bool {
-		return domainUUID == "domain-a" && userUUID == "mod-1" && permCode == "message:delete_others"
+		return domainUUID == "domain-a" && userUUID == "mod-1" &&
+			(permCode == "message:send" || permCode == "message:delete_others")
 	}
 	msgSvc := &mockMessageSvc{}
 	h.SetMessageService(msgSvc)
@@ -492,7 +493,7 @@ func TestOnMessageDelete_DomainRoleCanDeleteOthers(t *testing.T) {
 	}
 }
 
-func TestOnMessageDelete_GlobalPermissionFallsBackWhenDomainMissing(t *testing.T) {
+func TestOnMessageDelete_DomainPermissionGatesDeleteWhenCheckerWired(t *testing.T) {
 	store := &mockRoomStore{rooms: []model.Room{
 		{UUID: "uuid-domain", Name: "text-chat", Type: model.RoomTypeText, DomainUUID: "domain-a"},
 	}}
@@ -515,11 +516,11 @@ func TestOnMessageDelete_GlobalPermissionFallsBackWhenDomainMissing(t *testing.T
 		t.Fatalf("unexpected error: %v", err)
 	}
 	ackMap := decodeAck(t, ack)
-	if ackMap["success"] != true {
-		t.Fatalf("expected success, got %v", ackMap)
+	if ackMap["error"] != "permission denied" {
+		t.Fatalf("expected permission denied, got %v", ackMap)
 	}
-	if msgSvc.lastCanDeleteOthers != true {
-		t.Fatalf("expected global fallback true, got %v", msgSvc.lastCanDeleteOthers)
+	if msgSvc.deleteCalled != 0 {
+		t.Fatalf("delete must not be called, got %d calls", msgSvc.deleteCalled)
 	}
 }
 
@@ -533,7 +534,8 @@ func TestOnMessageDelete_UsesResolvedRoomDomain(t *testing.T) {
 		"user": {"message:send": true},
 	}}
 	h.domainPermChecker = func(domainUUID, userUUID, permCode string) bool {
-		return domainUUID == "domain-a" && userUUID == "mod-1" && permCode == "message:delete_others"
+		return domainUUID == "domain-a" && userUUID == "mod-1" &&
+			(permCode == "message:send" || permCode == "message:delete_others")
 	}
 	msgSvc := &mockMessageSvc{}
 	h.SetMessageService(msgSvc)
@@ -553,5 +555,127 @@ func TestOnMessageDelete_UsesResolvedRoomDomain(t *testing.T) {
 	}
 	if msgSvc.lastCanDeleteOthers != true {
 		t.Fatalf("expected domain permission from resolved room, got %v", msgSvc.lastCanDeleteOthers)
+	}
+}
+
+func TestOnMessageSend_DomainPermissionRequiredWhenCheckerWired(t *testing.T) {
+	store := &mockRoomStore{rooms: []model.Room{
+		{UUID: "uuid-domain", Name: "text-chat", Type: model.RoomTypeText, DomainUUID: "domain-a"},
+	}}
+	h := newTestHub()
+	h.roomStore = store
+	h.permChecker = &mockPermChecker{rolePerms: map[string]map[string]bool{"user": {"message:send": true}}}
+	h.domainPermChecker = func(domainUUID, userUUID, permCode string) bool {
+		return domainUUID == "domain-a" && userUUID == "mod-1" && permCode == "message:send"
+	}
+	msgSvc := &mockMessageSvc{}
+	h.SetMessageService(msgSvc)
+
+	conn := newMockClient("conn-1")
+	conn.claims = &pkg.Claims{Username: "guest-1", UserUUID: "guest-1", Role: "user"}
+	if _, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"guest-1","domain_uuid":"domain-a"}`); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","domain_uuid":"domain-a","content":"hi"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ackMap := decodeAck(t, ack)
+	if ackMap["error"] != "permission denied" {
+		t.Fatalf("expected permission denied, got %v", ackMap)
+	}
+	if msgSvc.sendCalled != 0 {
+		t.Fatalf("send must not be called, got %d calls", msgSvc.sendCalled)
+	}
+}
+
+func TestOnMessageSend_DomainPermissionAllowsMember(t *testing.T) {
+	store := &mockRoomStore{rooms: []model.Room{
+		{UUID: "uuid-domain", Name: "text-chat", Type: model.RoomTypeText, DomainUUID: "domain-a"},
+	}}
+	h := newTestHub()
+	h.roomStore = store
+	h.permChecker = &mockPermChecker{rolePerms: map[string]map[string]bool{"user": {"message:send": true}}}
+	h.domainPermChecker = func(domainUUID, userUUID, permCode string) bool {
+		return domainUUID == "domain-a" && userUUID == "mod-1" && permCode == "message:send"
+	}
+	msgSvc := &mockMessageSvc{}
+	h.SetMessageService(msgSvc)
+
+	conn := newMockClient("conn-1")
+	conn.claims = &pkg.Claims{Username: "mod-1", UserUUID: "mod-1", Role: "user"}
+	if _, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"mod-1","domain_uuid":"domain-a"}`); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","domain_uuid":"domain-a","content":"hi"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ackMap := decodeAck(t, ack)
+	if ackMap["success"] != true {
+		t.Fatalf("expected success, got %v", ackMap)
+	}
+}
+
+func TestOnMessageDelete_DomainPermissionDoesNotFallBackToGlobalDeleteOthers(t *testing.T) {
+	store := &mockRoomStore{rooms: []model.Room{
+		{UUID: "uuid-domain", Name: "text-chat", Type: model.RoomTypeText, DomainUUID: "domain-a"},
+	}}
+	h := newTestHub()
+	h.roomStore = store
+	h.permChecker = &mockPermChecker{rolePerms: map[string]map[string]bool{
+		"user": {"message:send": true, "message:delete_others": true},
+	}}
+	h.domainPermChecker = func(domainUUID, userUUID, permCode string) bool {
+		return domainUUID == "domain-a" && userUUID == "mod-1" && permCode == "message:send"
+	}
+	msgSvc := &mockMessageSvc{}
+	h.SetMessageService(msgSvc)
+
+	conn := newMockClient("conn-1")
+	conn.claims = &pkg.Claims{Username: "mod-1", UserUUID: "mod-1", Role: "user"}
+	if _, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"mod-1","domain_uuid":"domain-a"}`); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	ack, err := h.OnMessageDelete(conn, `{"room":"text-chat","domain_uuid":"domain-a","message_uuid":"msg-1"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ackMap := decodeAck(t, ack)
+	if ackMap["success"] != true {
+		t.Fatalf("expected success, got %v", ackMap)
+	}
+	if msgSvc.lastCanDeleteOthers != false {
+		t.Fatalf("domain room must not fall back to global delete_others, got %v", msgSvc.lastCanDeleteOthers)
+	}
+}
+
+func TestOnMessageDelete_PlatformRoomClaimsMissingDeleteOthersDoesNotFallBackToGlobal(t *testing.T) {
+	store := &mockRoomStore{rooms: []model.Room{
+		{UUID: "uuid-platform", Name: "text-chat", Type: model.RoomTypeText},
+	}}
+	h := newTestHub()
+	h.roomStore = store
+	h.permChecker = &mockPermChecker{rolePerms: map[string]map[string]bool{
+		"user": {"message:send": true, "message:delete_others": true},
+	}}
+	msgSvc := &mockMessageSvc{}
+	h.SetMessageService(msgSvc)
+
+	conn := newMockClient("conn-1")
+	conn.claims = &pkg.Claims{Username: "bot-1", UserUUID: "bot-1", Role: "user", Permissions: []string{"message:send"}}
+	if _, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"bot-1"}`); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	ack, err := h.OnMessageDelete(conn, `{"room":"text-chat","message_uuid":"msg-1"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ackMap := decodeAck(t, ack)
+	if ackMap["success"] != true {
+		t.Fatalf("expected success, got %v", ackMap)
+	}
+	if msgSvc.lastCanDeleteOthers != false {
+		t.Fatalf("platform room must honor claims over global role, got %v", msgSvc.lastCanDeleteOthers)
 	}
 }
