@@ -6,7 +6,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"GOSpeak/internal/authstate"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
@@ -176,5 +178,78 @@ func TestAuthHandler_GetRefreshToken_ReadsRefreshCookie(t *testing.T) {
 	}
 	if !gotAccess || !gotRefresh {
 		t.Fatal("expected rotated access/refresh cookies after refresh")
+	}
+}
+
+type fakeAuthBackend struct {
+	blacklisted map[string]time.Time
+}
+
+func (f *fakeAuthBackend) BlacklistToken(jti string, remaining time.Duration) error {
+	f.blacklisted[jti] = time.Now().Add(remaining)
+	return nil
+}
+func (f *fakeAuthBackend) IsBlacklisted(jti string) bool { _, ok := f.blacklisted[jti]; return ok }
+func (f *fakeAuthBackend) IsBlacklistedErr(jti string) (bool, error) {
+	return f.IsBlacklisted(jti), nil
+}
+func (f *fakeAuthBackend) GetSigningKey() (string, bool, error) { return "", false, nil }
+func (f *fakeAuthBackend) SetSigningKey(string, int64) error    { return nil }
+func (f *fakeAuthBackend) UpdateSigningKey(string, int64) error { return nil }
+func (f *fakeAuthBackend) GetCreatedAt() (int64, bool, error)   { return 0, false, nil }
+func (f *fakeAuthBackend) AddHistoryKey(string) error           { return nil }
+func (f *fakeAuthBackend) HistoryKeys() []string                { return nil }
+func (f *fakeAuthBackend) MarkRefreshFamilyUsed(string, time.Duration) (bool, error) {
+	return true, nil
+}
+func (f *fakeAuthBackend) IsRefreshFamilyUsed(string) (bool, error) { return false, nil }
+func (f *fakeAuthBackend) RevokeRefreshFamily(string) error         { return nil }
+func (f *fakeAuthBackend) Backend() string                          { return "fake" }
+
+func TestAuthHandler_Logout_RevokesRefreshTokenFromCookie(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := newTestAuthHandler(t)
+	backend := &fakeAuthBackend{blacklisted: map[string]time.Time{}}
+	authstate.SetBackend(backend)
+	t.Cleanup(func() { authstate.SetBackend(nil) })
+
+	access, err := pkg.GenerateToken("alice", "Alice", "uuid-alice", "user", 1)
+	if err != nil {
+		t.Fatalf("GenerateToken: %v", err)
+	}
+	accessClaims, err := pkg.ParseToken(access)
+	if err != nil {
+		t.Fatalf("ParseToken access: %v", err)
+	}
+	refresh, err := pkg.GenerateRefreshToken("alice", "Alice", "uuid-alice", "user", 1)
+	if err != nil {
+		t.Fatalf("GenerateRefreshToken: %v", err)
+	}
+	refreshClaims, err := pkg.ParseToken(refresh)
+	if err != nil {
+		t.Fatalf("ParseToken refresh: %v", err)
+	}
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("claims", accessClaims)
+		c.Next()
+	})
+	router.POST("/logout", h.Logout)
+
+	req := httptest.NewRequest(http.MethodPost, "/logout", nil)
+	req.AddCookie(&http.Cookie{Name: h.cookie.RefreshName, Value: refresh})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if code := intCode(resp["code"]); code != 0 {
+		t.Fatalf("expected code 0, got %d: %s", code, resp["msg"])
+	}
+	if revoked, _ := authstate.IsBlacklistedErr(refreshClaims.ID); !revoked {
+		t.Fatal("refresh token from cookie must be blacklisted")
 	}
 }
