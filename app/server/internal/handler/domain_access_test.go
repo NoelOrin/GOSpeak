@@ -56,6 +56,23 @@ func TestDomainPermissionGranted_NilCheckersFailClosed(t *testing.T) {
 	}
 }
 
+func TestDomainPermissionGranted_TypedNilCheckersFailClosed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(nil)
+	c.Set("user_uuid", "member-1")
+	c.Set("role", "admin")
+
+	var domainSvc *fakeDomainPermSvc
+	if domainPermissionGranted(c, "domain-a", "room:create", domainSvc, fakeGlobalPermChecker(true)) {
+		t.Fatal("expected typed nil domain checker to deny domain access")
+	}
+
+	var permSvc *fakeGlobalPermSvc
+	if domainPermissionGranted(c, "", "room:read", fakeDomainPermChecker(true), permSvc) {
+		t.Fatal("expected typed nil global checker to deny platform access")
+	}
+}
+
 type fakeDomainPermSvc struct {
 	allow          bool
 	gotDomainUUID  string
