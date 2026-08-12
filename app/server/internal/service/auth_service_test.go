@@ -3,7 +3,9 @@ package service
 import (
 	"errors"
 	"testing"
+	"time"
 
+	"GOSpeak/internal/authstate"
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
@@ -11,6 +13,7 @@ import (
 	"GOSpeak/internal/repository"
 
 	"github.com/glebarez/sqlite"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -194,4 +197,51 @@ func TestAuthTokenStateMachine(t *testing.T) {
 			t.Fatal("expected verification failure")
 		}
 	})
+}
+
+func TestRefreshFromToken_NewTokenCanRefreshAgain(t *testing.T) {
+	svc := setupAuthServiceTest(t)
+	refresh, err := pkg.GenerateRefreshToken("alice", "Alice", "uuid-alice", "user", 1)
+	if err != nil {
+		t.Fatalf("GenerateRefreshToken: %v", err)
+	}
+	first, err := svc.RefreshFromToken(refresh)
+	if err != nil {
+		t.Fatalf("first refresh: %v", err)
+	}
+	if first.RefreshToken == "" || first.RefreshToken == refresh {
+		t.Fatal("expected a new rotated refresh token")
+	}
+	second, err := svc.RefreshFromToken(first.RefreshToken)
+	if err != nil {
+		t.Fatalf("second refresh with rotated token must succeed, got %v", err)
+	}
+	if second.RefreshToken == "" || second.RefreshToken == first.RefreshToken {
+		t.Fatal("expected another rotated refresh token")
+	}
+}
+
+func TestRefreshFromToken_LegacyTokenWithoutFamilyCannotReplay(t *testing.T) {
+	svc := setupAuthServiceTest(t)
+	claims := pkg.Claims{
+		Username:     "alice",
+		UserUUID:     "uuid-alice",
+		Role:         "user",
+		TokenVersion: 1,
+		TokenType:    pkg.RefreshTokenType,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
+			ID:        "legacy-jti-1",
+		},
+	}
+	refresh, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(authstate.GetSigningKey())
+	if err != nil {
+		t.Fatalf("sign legacy refresh token: %v", err)
+	}
+	if _, err := svc.RefreshFromToken(refresh); err != nil {
+		t.Fatalf("first refresh: %v", err)
+	}
+	if _, err := svc.RefreshFromToken(refresh); err == nil {
+		t.Fatal("legacy refresh token replay must be rejected")
+	}
 }

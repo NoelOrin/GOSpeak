@@ -190,7 +190,7 @@ func (s *AuthService) RefreshAccessForUserUUID(userUUID string) (string, error) 
 
 // RefreshFromToken 解析 refresh_token，校验黑名单/版本/封禁后，按库内最新用户信息签发 access_token。
 // RefreshFromToken 校验并轮换 refresh_token：重放同 family 旧 token 时吊销整族并返回 TOKEN_REVOKED。
-// 成功时返回新的 access_token + 同 family refresh_token。
+// 成功时返回新的 access_token + 轮换到新 family 的 refresh_token。
 func (s *AuthService) RefreshFromToken(refreshToken string) (*RefreshResponse, error) {
 	claims, err := pkg.ParseToken(refreshToken)
 	if err != nil {
@@ -227,10 +227,8 @@ func (s *AuthService) RefreshFromToken(refreshToken string) (*RefreshResponse, e
 
 	family := claims.RefreshFamily
 	if family == "" {
-		family, err = pkg.GenerateRefreshFamily()
-		if err != nil {
-			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-		}
+		// 历史 token 没有 family：用 JTI 作为一次性标记，防止无限重放。
+		family = claims.ID
 	}
 
 	// family 已用说明旧 token 被重放，吊销整族后拒绝本次刷新
@@ -258,7 +256,11 @@ func (s *AuthService) RefreshFromToken(refreshToken string) (*RefreshResponse, e
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	nextRefresh, err := pkg.GenerateRefreshTokenWithFamily(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion, family)
+	nextFamily, err := pkg.GenerateRefreshFamily()
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	nextRefresh, err := pkg.GenerateRefreshTokenWithFamily(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion, nextFamily)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
