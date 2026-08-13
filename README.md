@@ -62,6 +62,8 @@ chmod +x gospeak-linux-amd64
 # 浏览器打开 http://<host>:8998 即可使用
 ```
 
+单二进制直跑 HTTPS + HTTP/2 时，配置 `TLS_CERT` / `TLS_KEY` 后启动即可；两者需同时配置，未配置时自动保持 HTTP/1.1。详见 [`docs/http2-https.md`](./docs/http2-https.md)。
+
 ## 发布流程
 
 版本由 `release-please` 自动管理（GitHub Actions）：

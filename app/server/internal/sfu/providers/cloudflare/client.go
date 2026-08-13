@@ -55,9 +55,14 @@ func (c *Client) CreateSession(req *NewSessionRequest) (*NewSessionResponse, err
 	return &result, nil
 }
 
+// sessionPath 是 Cloudflare Realtime session 相关接口的公共路径。
+func (c *Client) sessionPath(sessionID string) string {
+	return fmt.Sprintf("/apps/%s/sessions/%s", c.appID, sessionID)
+}
+
 func (c *Client) GetSession(sessionID string) (*SessionInfo, error) {
 	var result SessionInfo
-	if err := c.doJSON(http.MethodGet, fmt.Sprintf("/apps/%s/sessions/%s", c.appID, sessionID), nil, &result); err != nil {
+	if err := c.doJSON(http.MethodGet, c.sessionPath(sessionID), nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -67,7 +72,7 @@ func (c *Client) GetSession(sessionID string) (*SessionInfo, error) {
 // location (local/remote), mid and status for each track.
 func (c *Client) GetSessionTracks(sessionID string) (*SessionStateResponse, error) {
 	var result SessionStateResponse
-	if err := c.doJSON(http.MethodGet, fmt.Sprintf("/apps/%s/sessions/%s", c.appID, sessionID), nil, &result); err != nil {
+	if err := c.doJSON(http.MethodGet, c.sessionPath(sessionID), nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

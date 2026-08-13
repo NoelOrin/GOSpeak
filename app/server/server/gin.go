@@ -6,6 +6,7 @@ import (
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/handler"
+	"GOSpeak/internal/jobs"
 	"GOSpeak/internal/logger"
 	"GOSpeak/internal/metrics"
 	"GOSpeak/internal/middleware"
@@ -19,6 +20,7 @@ import (
 	"GOSpeak/internal/sfu/factory"
 	"GOSpeak/internal/signal"
 	"GOSpeak/internal/storage"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -392,6 +394,13 @@ func StartGin(env EnvEnum) error {
 			})
 		}
 	})
+	// 临时禁言到期扫描：ListActiveMutes 会清理过期记录并触发 onExpired（广播 + SFU 恢复）。
+	// 之前的到期清理依赖查询路径惰性触发，无定时任务时到期后订阅端会残留静音状态。
+	_ = jobs.StartMuteExpiryScanner(context.Background(), func() {
+		if _, err := muteSvc.ListActiveMutes(); err != nil {
+			logger.WithComponent("MuteExpiry").Warnf("scan expired mutes: %v", err)
+		}
+	}, time.Minute)
 	sfuConfigH := handler.NewSFUConfigHandler(sfuConfigSvc, signalHub)
 	storageH := handler.NewStorageHandler(storageSvc)
 	botH := handler.NewBotHandler(botSvc)
@@ -546,7 +555,11 @@ func StartGin(env EnvEnum) error {
 		port = "8998"
 	}
 
-	logger.WithComponent("Swagger").Infof("API 文档地址: http://localhost:%s/swagger/index.html", port)
+	scheme := "http"
+	if cfg.TLSCertFile != "" || cfg.TLSKeyFile != "" {
+		scheme = "https"
+	}
+	logger.WithComponent("Swagger").Infof("API 文档地址: %s://localhost:%s/swagger/index.html", scheme, port)
 
 	// /ws 必须绕过 Gin：nhooyr/websocket 的 hijack 与 gin.ResponseWriter 不兼容。
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -575,8 +588,20 @@ func StartGin(env EnvEnum) error {
 		closeEventBus:   closeEventBus,
 	})
 
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := serveHTTP(srv, cfg.TLSCertFile, cfg.TLSKeyFile); err != nil && err != http.ErrServerClosed {
 		logger.WithComponent("HTTP").Fatalf("listen error: %v", err)
 	}
 	return nil
+}
+
+// serveHTTP 按 TLS 配置选择监听方式：两者均未配置时保持明文 HTTP/1.1；
+// 配置证书后启用 HTTPS，Go 标准库会自动提供 h2 + HTTP/1.1 ALPN fallback。
+func serveHTTP(srv *http.Server, tlsCert, tlsKey string) error {
+	if tlsCert == "" && tlsKey == "" {
+		return srv.ListenAndServe()
+	}
+	if tlsCert == "" || tlsKey == "" {
+		return fmt.Errorf("TLS_CERT and TLS_KEY must be configured together")
+	}
+	return srv.ListenAndServeTLS(tlsCert, tlsKey)
 }

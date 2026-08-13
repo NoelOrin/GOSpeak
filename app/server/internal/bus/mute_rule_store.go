@@ -13,11 +13,22 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
+// defaultMuteRuleTTL is the JetStream KV bucket MaxAge used when
+// NATSMuteRuleStoreConfig.BucketTTL is nil. It is a physical upper bound, not
+// a substitute for per-key TTLs: values carry their own expiry (enforced
+// lazily on Get), and a key with a shorter per-key TTL expires before this
+// cap. Set BucketTTL=0 or a longer value to keep permanent rules (ttl<=0)
+// alive.
 const defaultMuteRuleTTL = 24 * time.Hour
 
+// secondsToMillisCutoff separates legacy unix-seconds values (pre-5138) from
+// millisecond timestamps written by the current format.
+const secondsToMillisCutoff = int64(100_000_000_000)
+
 // NATSMuteRuleStore stores mute rule ids in JetStream KV.
-// Bucket TTL is coarse (default 24h); per-key shorter TTL is not available on
-// this nats.go version, so callers should still delete on unmute.
+// Values are "ruleID" (permanent until unmute) or "ruleID:unixMilli"
+// (per-key TTL); expiry is enforced lazily on read, and unmute removes
+// entries with Delete. The bucket MaxAge defaults to 24h as a physical cap.
 type NATSMuteRuleStore struct {
 	kv  nats.KeyValue
 	nc  *nats.Conn
@@ -28,16 +39,32 @@ type NATSMuteRuleStoreConfig struct {
 	URL    string
 	Prefix string
 	NC     *nats.Conn
-	// BucketTTL is the JetStream KV bucket MaxAge. Zero => 24h.
-	BucketTTL time.Duration
+	// BucketTTL overrides the JetStream KV bucket MaxAge, the physical upper
+	// bound for every entry. nil uses the default 24h; a pointer to 0 disables
+	// bucket-level expiry, and longer values support permanent mutes. Per-key
+	// TTLs encoded in values still expire entries before this cap. An
+	// already-created bucket keeps the MaxAge it was created with, so
+	// migrating requires recreating the bucket.
+	BucketTTL *time.Duration
 }
 
+// OpenNATSMuteRuleStore opens (or reuses) the mute-rule KV bucket. Bucket
+// MaxAge defaults to 24h as a physical cap; NATSMuteRuleStoreConfig.BucketTTL
+// overrides it (a pointer to 0 disables bucket-level expiry). Per-key TTLs
+// encoded in values are enforced lazily on Get, so an entry expires at its own
+// deadline even when the bucket survives. Existing buckets keep the MaxAge
+// they were created with, so changing the default requires recreating the
+// bucket.
 func OpenNATSMuteRuleStore(cfg NATSMuteRuleStoreConfig) (*NATSMuteRuleStore, error) {
 	if cfg.Prefix == "" {
 		cfg.Prefix = "gospeak"
 	}
-	if cfg.BucketTTL <= 0 {
-		cfg.BucketTTL = defaultMuteRuleTTL
+	bucketTTL := defaultMuteRuleTTL
+	if cfg.BucketTTL != nil {
+		bucketTTL = *cfg.BucketTTL
+		if bucketTTL < 0 {
+			bucketTTL = 0
+		}
 	}
 
 	var nc *nats.Conn
@@ -69,7 +96,7 @@ func OpenNATSMuteRuleStore(cfg NATSMuteRuleStoreConfig) (*NATSMuteRuleStore, err
 	if err != nil {
 		kv, err = js.CreateKeyValue(&nats.KeyValueConfig{
 			Bucket: bucket,
-			TTL:    cfg.BucketTTL,
+			TTL:    bucketTTL,
 		})
 		if err != nil {
 			if own {
@@ -102,28 +129,72 @@ func (s *NATSMuteRuleStore) Close() error {
 	return nil
 }
 
-func (s *NATSMuteRuleStore) Save(_ context.Context, key string, ruleID int, _ time.Duration) error {
+func (s *NATSMuteRuleStore) Save(_ context.Context, key string, ruleID int, ttl time.Duration) error {
 	if s == nil || key == "" || ruleID <= 0 {
 		return nil
 	}
-	// JetStream KV key cannot contain '|'; sanitize.
-	_, err := s.kv.Put(muteRuleKVKey(key), []byte(strconv.Itoa(ruleID)))
+	value := strconv.Itoa(ruleID)
+	if ttl > 0 {
+		value = fmt.Sprintf("%d:%d", ruleID, time.Now().Add(ttl).UnixMilli())
+	}
+	_, err := s.kv.Put(muteRuleKVKey(key), []byte(value))
 	return err
+}
+
+// parseMuteRuleValue 解析 value "ruleID" 或 "ruleID:expiresAt"。
+// 无冒号表示永久规则（无过期时间）；有冒号时 expiresAt 必须为正数，
+// 否则视为损坏值返回错误，调用方按 miss 处理，不与永久规则混淆。
+// expiresAt 统一归一化为毫秒：新格式直接使用毫秒时间戳，旧格式秒值按秒处理。
+func parseMuteRuleValue(value string) (ruleID int, expiresAt int64, err error) {
+	if i := strings.IndexByte(value, ':'); i >= 0 {
+		ruleID, err = strconv.Atoi(value[:i])
+		if err != nil {
+			return 0, 0, err
+		}
+		if ruleID <= 0 {
+			return 0, 0, fmt.Errorf("invalid mute rule id %q", value[:i])
+		}
+		expiresAt, err = strconv.ParseInt(value[i+1:], 10, 64)
+		if err != nil {
+			return 0, 0, err
+		}
+		if expiresAt <= 0 {
+			return 0, 0, fmt.Errorf("invalid mute rule expiry %q", value[i+1:])
+		}
+		if expiresAt > 0 && expiresAt < secondsToMillisCutoff {
+			expiresAt *= 1000
+		}
+		return ruleID, expiresAt, nil
+	}
+	ruleID, err = strconv.Atoi(value)
+	if err != nil {
+		return 0, 0, err
+	}
+	if ruleID <= 0 {
+		return 0, 0, fmt.Errorf("invalid mute rule id %q", value)
+	}
+	return ruleID, 0, nil
 }
 
 func (s *NATSMuteRuleStore) Get(_ context.Context, key string) (int, error) {
 	if s == nil || key == "" {
 		return 0, nil
 	}
-	entry, err := s.kv.Get(muteRuleKVKey(key))
+	kvKey := muteRuleKVKey(key)
+	entry, err := s.kv.Get(kvKey)
 	if err != nil {
 		if err == nats.ErrKeyNotFound || err == nats.ErrKeyDeleted {
 			return 0, nil
 		}
 		return 0, err
 	}
-	id, err := strconv.Atoi(string(entry.Value()))
+	id, expiresAt, err := parseMuteRuleValue(string(entry.Value()))
 	if err != nil {
+		return 0, nil
+	}
+	if expiresAt > 0 && time.Now().After(time.UnixMilli(expiresAt)) {
+		// 过期值按 miss 返回，entry 保留到后续覆盖或显式 Delete；
+		// 这里不做惰性删除，避免与并发 Save 交错时误删新规则。
 		return 0, nil
 	}
 	return id, nil
@@ -148,6 +219,9 @@ type ResolveMuteRuleConfig struct {
 	Mode   string
 	Prefix string
 	NATS   *nats.Conn
+	// BucketTTL 透传给 NATSMuteRuleStore 的 bucket MaxAge；nil 保持默认 24h。
+	// 生产需要永久禁言时应显式配置为 0（或更长），旧 bucket 已存在时需重建。
+	BucketTTL *time.Duration
 }
 
 // ResolveMuteRuleStore opens shared mute-rule store with degradation.
@@ -167,8 +241,9 @@ func ResolveMuteRuleStore(cfg ResolveMuteRuleConfig) (sfu.MuteRuleStore, string)
 			return nil, fmt.Errorf("nats connection not available")
 		}
 		return OpenNATSMuteRuleStore(NATSMuteRuleStoreConfig{
-			Prefix: prefix,
-			NC:     cfg.NATS,
+			Prefix:    prefix,
+			NC:        cfg.NATS,
+			BucketTTL: cfg.BucketTTL,
 		})
 	}
 

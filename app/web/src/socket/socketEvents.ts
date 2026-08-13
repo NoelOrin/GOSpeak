@@ -219,13 +219,17 @@ export function bindServerEvents(
 	adapter.onServerEvent(
 		EVENTS.MEMBER_MUTED as string,
 		(data: { identity?: string; muted?: boolean }) => {
-			if (data.identity) setServerMutedByIdentity(data.identity, true);
+			if (data.identity) {
+				setServerMutedByIdentity(data.identity, data.muted !== false);
+			}
 		},
 	);
 	adapter.onServerEvent(
 		EVENTS.MEMBER_UNMUTED as string,
 		(data: { identity?: string; muted?: boolean }) => {
-			if (data.identity) setServerMutedByIdentity(data.identity, false);
+			if (data.identity) {
+				setServerMutedByIdentity(data.identity, Boolean(data.muted));
+			}
 		},
 	);
 	// 发言检测（SRS / Cloudflare）：信令层聚合后广播房间级 active speakers

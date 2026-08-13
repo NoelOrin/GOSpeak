@@ -10,11 +10,11 @@ import (
 
 // botMessagePayload is the client→server payload for bot:command and bot:message.
 type botMessagePayload struct {
-	Room    string `json:"room"`
+	Room       string `json:"room"`
 	DomainUUID string `json:"domain_uuid,omitempty"`
-	Text    string `json:"text"`
-	Content string `json:"content"`
-	ReplyTo string `json:"replyTo,omitempty"`
+	Text       string `json:"text"`
+	Content    string `json:"content"`
+	ReplyTo    string `json:"replyTo,omitempty"`
 }
 
 // broadcastBotMessage is the server→client payload for bot:command and bot:message broadcasts.

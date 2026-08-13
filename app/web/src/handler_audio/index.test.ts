@@ -55,4 +55,17 @@ describe("setServerMutedByIdentity", () => {
 		mod.setMutedByIdentity("alice", false);
 		expect(track.setVolume).toHaveBeenLastCalledWith(1);
 	});
+
+	it("clears server mute state when remote track unsubscribed", () => {
+		const client = makeClient(track);
+		setupAudioHandler(client as any);
+		mod.setServerMutedByIdentity("alice", true);
+		expect(mod.getServerMutedIdentities().has("alice")).toBe(true);
+
+		const removeCb = vi.mocked(client.onRemoteAudioTrackRemoved).mock
+			.calls[0][0] as (identity: string) => void;
+		removeCb("alice");
+
+		expect(mod.getServerMutedIdentities().has("alice")).toBe(false);
+	});
 });

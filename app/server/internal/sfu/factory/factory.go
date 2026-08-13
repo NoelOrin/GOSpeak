@@ -4,10 +4,10 @@ import (
 	"GOSpeak/internal/config"
 	"fmt"
 
+	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/sfu/providers/agora"
 	"GOSpeak/internal/sfu/providers/cloudflare"
 	"GOSpeak/internal/sfu/providers/livekit"
-	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/sfu/providers/srs"
 )
 

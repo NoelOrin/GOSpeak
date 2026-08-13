@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"GOSpeak/internal/config"
+	"GOSpeak/internal/logger"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
 )
@@ -125,16 +126,18 @@ func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error
 func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) error {
 	if !muted {
 		// 媒体层无法恢复已关闭的轨道，unmute 是 no-op；
-		// 返回 ErrSFUNotSupported 让调用方按软语义降级（客户端重新发布）。
-		return pkg.ErrSFUNotSupported
+		// 返回包装后的 ErrSFUNotSupported（AppError）让 HandleError 映射为 502，客户端按软语义重新发布。
+		return pkg.NewErrSFUNotSupported()
 	}
 	if s.client == nil || s.appID == "" {
 		return pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "CF_APP_ID is required")
 	}
 	meta, ok := s.getSession(room, identity)
 	if !ok || meta.sessionID == "" {
-		// 无媒体会话视为已禁言（与 SRS 未发布场景对齐）。
-		return nil
+		logger.Debugf("[cloudflare] session lookup miss room=%s identity=%s", room, identity)
+		// 本地无会话记录：可能是"从未发布"（本可视为已禁言），也可能是跨实例会话。
+		// 无法确认媒体状态时诚实上报 not-supported，由调用方按 soft 语义处理，避免假 degraded 成功。
+		return pkg.NewErrSFUNotSupported()
 	}
 	// 只关闭该 session 本地发布的轨道，保留 remote 订阅轨道，
 	// 被禁言者仍可收听其他成员（Discord 式 mute）。
@@ -144,15 +147,33 @@ func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) e
 	}
 	specs := make([]CloseTrackSpec, 0, len(state.Tracks))
 	for _, tr := range state.Tracks {
-		if tr.Location == "local" && tr.MID != "" {
-			specs = append(specs, CloseTrackSpec{MID: tr.MID})
+		if tr.Location != "local" || tr.MID == "" {
+			continue
 		}
+		if tr.Status == "closed" {
+			// 已关闭轨道不再 CloseTracks，避免重复关闭报错。
+			continue
+		}
+		specs = append(specs, CloseTrackSpec{MID: tr.MID})
 	}
 	if len(specs) == 0 {
 		// 无本地发布轨道，视为已禁言。
 		return nil
 	}
 	if _, err := s.client.CloseTracks(meta.sessionID, &CloseTrackRequest{Tracks: specs, Force: true}); err != nil {
+		// TOCTOU 兜底：快照与关闭之间轨道可能已被移除；复查后若无 local track 视为成功。
+		if state2, sErr := s.client.GetSessionTracks(meta.sessionID); sErr == nil {
+			alive := false
+			for _, tr := range state2.Tracks {
+				if tr.Location == "local" && tr.Status != "closed" {
+					alive = true
+					break
+				}
+			}
+			if !alive {
+				return nil
+			}
+		}
 		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, "cloudflare close tracks: "+err.Error())
 	}
 	return nil

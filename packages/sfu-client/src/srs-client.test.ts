@@ -13,6 +13,12 @@ describe("isWhipBusyError", () => {
 		expect(isWhipBusyError(new Error("SRS WHIP request failed: 403"))).toBe(false);
 		expect(isWhipBusyError(new Error("publish denied"))).toBe(false);
 	});
+
+	it("treats codes containing 403 (e.g. 4032) as busy, not publish denied", () => {
+		expect(
+			isWhipBusyError(new Error("SRS WHIP request failed: 4032")),
+		).toBe(true);
+	});
 });
 
 // RTCPeerConnection mock

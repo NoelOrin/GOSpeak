@@ -206,9 +206,12 @@ function SFUPage() {
 		if (saving()) return;
 		const current = form();
 		if (!isSFUProviderEnabled(current.provider)) {
-			showToast("该语音后端已在前端暂时停用，无法保存或激活", {
-				type: "error",
-			});
+			showToast(
+				"该语音后端已在前端暂时停用，请先切换到已启用的 provider 再保存配置",
+				{
+					type: "error",
+				},
+			);
 			return;
 		}
 		const e = validateSFUForm(current, secretFlags());

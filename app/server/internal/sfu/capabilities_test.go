@@ -25,11 +25,11 @@ func TestCapabilitiesMatrix(t *testing.T) {
 		},
 		{
 			name: "srs",
-		want: Capabilities{
-			ServerMute: true, ServerKick: true, DeleteRoom: true, ListRooms: true, ListMembers: true,
-			MuteLevel: EnforcementDegraded, KickLevel: EnforcementHard, DeleteLevel: EnforcementHard,
-			ListLevel: EnforcementHard,
-		},
+			want: Capabilities{
+				ServerMute: true, ServerKick: true, DeleteRoom: true, ListRooms: true, ListMembers: true,
+				MuteLevel: EnforcementDegraded, KickLevel: EnforcementHard, DeleteLevel: EnforcementHard,
+				ListLevel: EnforcementHard,
+			},
 		},
 		{
 			name: "cloudflare",

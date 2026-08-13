@@ -56,3 +56,26 @@ func TestCachedMuteRuleStore_WriteThrough(t *testing.T) {
 		t.Fatalf("backend=%s", cache.Backend())
 	}
 }
+
+func TestCachedMuteRuleStore_GetFreshSkipsL1(t *testing.T) {
+	shared := NewMemoryMuteRuleStore()
+	cache := NewCachedMuteRuleStore(shared)
+	ctx := context.Background()
+	if err := cache.Save(ctx, "srs_pub_block:gs-abc", 1, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	// 模拟另一实例 unmute：只删 shared，本地 L1 仍缓存旧值。
+	if err := shared.Delete(ctx, "srs_pub_block:gs-abc"); err != nil {
+		t.Fatal(err)
+	}
+	if id, err := cache.Get(ctx, "srs_pub_block:gs-abc"); err != nil || id != 1 {
+		t.Fatalf("plain Get should still hit stale L1 (id=%d err=%v)", id, err)
+	}
+	fresh, err := cache.GetFresh(ctx, "srs_pub_block:gs-abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fresh != 0 {
+		t.Fatalf("GetFresh should bypass L1 and see shared delete, got id=%d", fresh)
+	}
+}

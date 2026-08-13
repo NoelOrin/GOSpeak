@@ -25,8 +25,8 @@ func RegisterAll(reg *plugin.Registry) error {
 func EmbeddedSummary() []map[string]any {
 	return []map[string]any{
 		{
-			"name":      botbase.Name,
-			"embedded":  botbase.HasEmbeddedAssets(),
+			"name":       botbase.Name,
+			"embedded":   botbase.HasEmbeddedAssets(),
 			"auto_start": true,
 		},
 	}

@@ -184,6 +184,7 @@ curl -s http://localhost:1985/api/v1/versions
 - 必须有 `location /rtc/v1/` → `srs:1985`，且写在 SPA `location /` **之前**
 - 只反代 WHIP/WHEP HTTP；**不要**用 nginx `stream` 转 8000/udp（会改源地址，ICE 易挂）
 - 生产 HTTPS 时：页面与 `/rtc/v1` 同域同 scheme，避免 mixed content
+- HTTPS + HTTP/2：使用 `deploy/nginx-https.conf`（宿主）或 `deploy/nginx-docker-https.conf`（Docker），443 同端口自动提供 h2 + HTTP/1.1 fallback
 - Go 管理 SRS 用内网 `SRS_HOST=srs`，浏览器用 `SRS_PUBLIC_HOST`，两套地址不要混
 
 ### 9.4 启动顺序与 callback

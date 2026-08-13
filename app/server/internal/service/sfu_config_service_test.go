@@ -1,10 +1,12 @@
 package service
 
 import (
+	"errors"
 	"testing"
 
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
 
 	"github.com/glebarez/sqlite"
@@ -240,6 +242,94 @@ func TestSwitchProvider_NoConfigChange(t *testing.T) {
 	srsCfg, _ := repo.GetByProvider("srs")
 	if srsCfg.SRSHost != "srs-host" {
 		t.Errorf("srs_host = %q, want srs-host", srsCfg.SRSHost)
+	}
+}
+
+func TestSwitchProvider_RejectsDisabledProvider(t *testing.T) {
+	repo := newSFUConfigTestRepo(t)
+	baseCfg := &config.Config{SFUProvider: "livekit"}
+	svc := NewSFUConfigService(repo, baseCfg)
+	if err := svc.SyncFromEnv(); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	_, err := svc.SwitchProvider("agora")
+	if err == nil {
+		t.Fatal("switch to disabled provider must fail")
+	}
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.FORBIDDEN {
+		t.Fatalf("expected FORBIDDEN AppError, got %v", err)
+	}
+}
+
+func TestUpdateFromDTO_RejectsDisabledProvider(t *testing.T) {
+	repo := newSFUConfigTestRepo(t)
+	baseCfg := &config.Config{SFUProvider: "livekit"}
+	svc := NewSFUConfigService(repo, baseCfg)
+	if err := svc.SyncFromEnv(); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	_, err := svc.UpdateFromDTO(&UpdateSFUConfigRequest{Provider: "agora"})
+	if err == nil {
+		t.Fatal("update to disabled provider must fail")
+	}
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.FORBIDDEN {
+		t.Fatalf("expected FORBIDDEN AppError, got %v", err)
+	}
+
+	active, err := repo.GetActiveProvider()
+	if err != nil {
+		t.Fatalf("get active: %v", err)
+	}
+	if active != "livekit" {
+		t.Fatalf("active = %q, want livekit preserved", active)
+	}
+}
+
+func TestSyncFromEnv_DisabledActiveProvider_DoesNotFail(t *testing.T) {
+	repo := newSFUConfigTestRepo(t)
+	if err := NewSFUConfigService(repo, &config.Config{SFUProvider: "livekit"}).SyncFromEnv(); err != nil {
+		t.Fatalf("initial sync: %v", err)
+	}
+
+	svc := NewSFUConfigService(repo, &config.Config{SFUProvider: "agora"})
+	if err := svc.SyncFromEnv(); err != nil {
+		t.Fatalf("sync with disabled provider must not abort startup, got %v", err)
+	}
+
+	active, err := repo.GetActiveProvider()
+	if err != nil {
+		t.Fatalf("get active: %v", err)
+	}
+	if active != "livekit" {
+		t.Fatalf("active = %q, want livekit preserved (agora must not be activated)", active)
+	}
+}
+
+func TestSyncFromEnv_FallsBackWhenCurrentActiveIsDisabled(t *testing.T) {
+	repo := newSFUConfigTestRepo(t)
+	if err := NewSFUConfigService(repo, &config.Config{SFUProvider: "livekit"}).SyncFromEnv(); err != nil {
+		t.Fatalf("initial sync: %v", err)
+	}
+
+	// 模拟旧库遗留的禁用激活状态。
+	if err := repo.SetActiveProvider("agora"); err != nil {
+		t.Fatalf("seed disabled active provider: %v", err)
+	}
+
+	svc := NewSFUConfigService(repo, &config.Config{SFUProvider: "agora"})
+	if err := svc.SyncFromEnv(); err != nil {
+		t.Fatalf("sync with disabled env provider must not abort startup, got %v", err)
+	}
+
+	active, err := repo.GetActiveProvider()
+	if err != nil {
+		t.Fatalf("get active: %v", err)
+	}
+	if active != "livekit" {
+		t.Fatalf("active = %q, want livekit fallback (disabled active must not be preserved)", active)
 	}
 }
 

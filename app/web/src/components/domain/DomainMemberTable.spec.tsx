@@ -153,7 +153,11 @@ describe("Domain manage form validation", () => {
 describe("DomainMemberTable role select logic", () => {
 	it("allows changing role for other non-owner members", () => {
 		expect(
-			canChangeMemberRole(member, "u-owner", "u-admin", true, ["admin", "member", "guest"]),
+			canChangeMemberRole(member, "u-owner", "u-admin", true, [
+				"admin",
+				"member",
+				"guest",
+			]),
 		).toBe(true);
 	});
 
@@ -167,8 +171,8 @@ describe("DomainMemberTable role select logic", () => {
 		expect(
 			canChangeMemberRole(member, "u-owner", "u-admin", false, ["admin"]),
 		).toBe(false);
-		expect(
-			canChangeMemberRole(member, "u-owner", "u-admin", true, []),
-		).toBe(false);
+		expect(canChangeMemberRole(member, "u-owner", "u-admin", true, [])).toBe(
+			false,
+		);
 	});
 });

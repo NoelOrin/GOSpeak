@@ -141,7 +141,7 @@ export const SFU_ENFORCEMENT_PROFILES: Record<
 				key: "serverMute",
 				label: "服务端静音",
 				level: "degraded",
-				impl: "KickByStreams 踢掉 WHIP 推流客户端（强制 unpublish）",
+				impl: "写禁推黑名单 + 订阅端静音，断流后禁止重推",
 				fallback: "信令禁言；unmute 后前端重新 WHIP",
 			},
 			{
@@ -161,15 +161,15 @@ export const SFU_ENFORCEMENT_PROFILES: Record<
 			{
 				key: "listMembers",
 				label: "成员列表",
-				level: "degraded",
-				impl: "RoomRegistry + SRS clients 聚合 identity",
+				level: "hard",
+				impl: "SRS /api/v1/streams 直查 + stream→room 反查聚合 identity",
 				fallback: "无 registry 时能力受限",
 			},
 			{
 				key: "listRooms",
 				label: "房间列表",
-				level: "degraded",
-				impl: "RoomRegistry 聚合活跃 room",
+				level: "hard",
+				impl: "SRS /api/v1/streams 直查 + stream→room 反查聚合 room",
 				fallback: "不直接拿信令房间伪装媒体房间",
 			},
 		],
@@ -307,7 +307,7 @@ export const SFU_PROVIDER_CAPABILITIES: Record<
 	cloudflare: {
 		supportsParticipants: true,
 		kickViaSignal: true,
-		serverMute: false,
+		serverMute: true,
 		serverKick: true,
 		deleteRoom: true,
 		listRooms: true,

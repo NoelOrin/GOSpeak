@@ -2,40 +2,69 @@ package srs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"GOSpeak/internal/config"
+	"GOSpeak/internal/logger"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
 )
 
+// errDeleteRoomPartial 标记删房期间的媒体层部分失败或 TOCTOU 残留：
+// registry 不能清理，也不应回退到 registry 分支重试（重试可能误清新流登记）。
+var errDeleteRoomPartial = errors.New("srs delete room partial failure")
+
 type Service struct {
-	client     *Client
-	secret     string
-	host       string
-	publicHost string
-	whipURL    string
-	registry   pkg.RoomRegistry
-	resolver   pkg.StreamRoomResolver
-	muteRules  sfu.MuteRuleStore
+	client      *Client
+	secret      string
+	host        string
+	publicHost  string
+	whipURL     string
+	mu          sync.RWMutex
+	registry    pkg.RoomRegistry
+	resolver    pkg.StreamRoomResolver
+	muteMu      sync.Mutex
+	muteRules   sfu.MuteRuleStore
+	cacheMu     sync.Mutex
+	streamCache map[string]streamRoomEntry
 }
 
+type streamRoomEntry struct {
+	room  string
+	found bool
+	at    time.Time
+}
+
+// streamRoomCacheTTL 控制 stream→room 反查缓存窗口；缓存只为收敛 N+1，允许短暂陈旧。
+const streamRoomCacheTTL = 5 * time.Second
+
 func (s *Service) SetRoomRegistry(r pkg.RoomRegistry) {
+	s.mu.Lock()
 	s.registry = r
+	s.mu.Unlock()
 }
 
 // SetStreamRoomResolver 注入 stream→room 反查（signal.Hub 实现）。
 func (s *Service) SetStreamRoomResolver(r pkg.StreamRoomResolver) {
+	s.mu.Lock()
 	s.resolver = r
+	s.mu.Unlock()
 }
 
 // SetMuteRuleStore 注入跨实例禁推黑名单（nats → memory），实现 sfu.MuteRuleStoreSetter。
+// 设计上用于启动期注入；nil 输入回退到默认内存 store。即使运行期发生替换，
+// muteMu 也保证替换与 withMuteStore 内的 Save/Delete/Get 互斥，不会出现
+// “写入旧 store 后读取新 store”的中间状态。
 func (s *Service) SetMuteRuleStore(store sfu.MuteRuleStore) {
 	if store == nil {
 		store = sfu.NewMemoryMuteRuleStore()
 	}
+	s.muteMu.Lock()
+	defer s.muteMu.Unlock()
 	s.muteRules = store
 }
 
@@ -54,11 +83,13 @@ func NewService(cfg *config.Config) *Service {
 	}
 	baseURL := fmt.Sprintf("http://%s:%s", host, apiPort)
 	return &Service{
-		client:     NewClient(baseURL),
-		secret:     cfg.SRSSecret,
-		host:       baseURL,
-		publicHost: strings.TrimSpace(cfg.SRSPublicHost),
-		whipURL:    whipURL,
+		client:      NewClient(baseURL),
+		secret:      cfg.SRSSecret,
+		host:        baseURL,
+		publicHost:  strings.TrimSpace(cfg.SRSPublicHost),
+		whipURL:     whipURL,
+		muteRules:   sfu.NewMemoryMuteRuleStore(),
+		streamCache: make(map[string]streamRoomEntry),
 	}
 }
 
@@ -75,17 +106,22 @@ func (s *Service) GenerateToken(room, identity string) (string, error) {
 }
 
 func (s *Service) ListRooms() ([]sfu.RoomSummary, error) {
-	if s.resolver != nil {
-		return s.listRoomsFromSRS()
+	if s.resolverRef() != nil {
+		rooms, err := s.listRoomsFromSRS()
+		if err == nil {
+			return rooms, nil
+		}
+		logger.Warnf("[srs] list rooms from SRS API failed, fallback to registry: %v", err)
 	}
 	// 降级：resolver 未注入时保持 registry 聚合。
-	if s.registry == nil {
+	registry := s.registryRef()
+	if registry == nil {
 		return nil, pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "srs room registry not configured")
 	}
-	rooms := s.registry.Rooms()
+	rooms := registry.Rooms()
 	out := make([]sfu.RoomSummary, 0, len(rooms))
 	for _, name := range rooms {
-		streams := s.registry.Streams(name)
+		streams := registry.Streams(name)
 		out = append(out, sfu.RoomSummary{Name: name, MemberCount: len(streams)})
 	}
 	return out, nil
@@ -97,32 +133,43 @@ func (s *Service) listRoomsFromSRS() ([]sfu.RoomSummary, error) {
 	if err != nil {
 		return nil, pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
 	}
-	rooms := make(map[string]int)
-	for _, stream := range streams {
-		if !strings.HasPrefix(stream, streamNamePrefix) {
-			continue
+	// room -> identity 集合，按 identity 去重后再计数（与 ListParticipants 口径一致）。
+	rooms := make(map[string]map[string]struct{})
+	for _, rs := range s.collectRoomStreams(streams, "") {
+		identity := ""
+		if registry := s.registryRef(); registry != nil {
+			if id, ok := registry.IdentityForStream(rs.roomKey, rs.stream); ok {
+				identity = id
+			}
 		}
-		room, ok := s.resolver.RoomForStream(stream)
-		if !ok || room == "" {
-			continue
+		if identity == "" {
+			identity = strings.TrimPrefix(rs.stream, streamNamePrefix)
 		}
-		rooms[room]++
+		if rooms[rs.roomKey] == nil {
+			rooms[rs.roomKey] = make(map[string]struct{})
+		}
+		rooms[rs.roomKey][identity] = struct{}{}
 	}
 	out := make([]sfu.RoomSummary, 0, len(rooms))
-	for room, count := range rooms {
-		out = append(out, sfu.RoomSummary{Name: room, MemberCount: count})
+	for room, members := range rooms {
+		out = append(out, sfu.RoomSummary{Name: room, MemberCount: len(members)})
 	}
 	return out, nil
 }
 
 func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
-	if s.resolver != nil {
-		return s.listParticipantsFromSRS(room)
+	if s.resolverRef() != nil {
+		parts, err := s.listParticipantsFromSRS(room)
+		if err == nil {
+			return parts, nil
+		}
+		logger.Warnf("[srs] list participants from SRS API failed, fallback to registry: %v", err)
 	}
 	// 降级：resolver 未注入时保持旧 registry 路径。
 	var streams []string
-	if s.registry != nil {
-		streams = s.registry.Streams(room)
+	registry := s.registryRef()
+	if registry != nil {
+		streams = registry.Streams(room)
 	}
 	if len(streams) == 0 {
 		return []sfu.ParticipantSummary{}, nil
@@ -136,8 +183,8 @@ func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error
 	for _, p := range participants {
 		stream, _ := p["stream"].(string)
 		identity := ""
-		if s.registry != nil && stream != "" {
-			if id, ok := s.registry.IdentityForStream(room, stream); ok {
+		if registry != nil && stream != "" {
+			if id, ok := registry.IdentityForStream(room, stream); ok {
 				identity = id
 			}
 		}
@@ -159,8 +206,8 @@ func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error
 }
 
 // listParticipantsFromSRS 从 /api/v1/streams/ 拉全部活跃推流（不含播放连接），
-// 用 resolver 反查 room 过滤，identity 经 registry 解析；解析不到的流跳过，
-// 避免 SRS 残留/内部流污染统计。
+// 用 resolver 反查 room 过滤，identity 经 registry 解析；解析不到的孤儿流
+// 以 stream 名兜底计入，保证活跃发布者不被静默丢失（对齐 ListLevel=hard）。
 func (s *Service) listParticipantsFromSRS(room string) ([]sfu.ParticipantSummary, error) {
 	streams, err := s.client.ListStreams()
 	if err != nil {
@@ -168,22 +215,17 @@ func (s *Service) listParticipantsFromSRS(room string) ([]sfu.ParticipantSummary
 	}
 	seen := make(map[string]struct{}, len(streams))
 	out := make([]sfu.ParticipantSummary, 0, len(streams))
-	for _, stream := range streams {
-		if !strings.HasPrefix(stream, streamNamePrefix) {
-			continue
-		}
-		candidate, ok := s.resolver.RoomForStream(stream)
-		if !ok || !roomMatches(candidate, room) {
-			continue
-		}
+	for _, rs := range s.collectRoomStreams(streams, room) {
 		identity := ""
-		if s.registry != nil {
-			if id, ok := s.registry.IdentityForStream(candidate, stream); ok {
+		if registry := s.registryRef(); registry != nil {
+			if id, ok := registry.IdentityForStream(rs.roomKey, rs.stream); ok {
 				identity = id
 			}
 		}
 		if identity == "" {
-			continue // 无法识别的流不计入
+			// 登记丢失的孤儿流仍计入参与者：保证 ListLevel=hard 的口径是
+			// "返回真实活跃发布者"，而不是静默丢失。
+			identity = strings.TrimPrefix(rs.stream, streamNamePrefix)
 		}
 		if _, ok := seen[identity]; ok {
 			continue
@@ -194,19 +236,76 @@ func (s *Service) listParticipantsFromSRS(room string) ([]sfu.ParticipantSummary
 	return out, nil
 }
 
-// roomMatches 支持复合键（domainUUID:roomName）精确匹配与纯逻辑名后缀匹配。
-func roomMatches(candidate, room string) bool {
-	if candidate == room {
-		return true
-	}
-	if !strings.Contains(room, ":") {
-		if i := strings.LastIndex(candidate, ":"); i >= 0 && candidate[i+1:] == room {
-			return true
-		}
-	}
-	return false
+// roomStream 记录属于某 room 的 SRS 业务流及其反查出的房间键。
+type roomStream struct {
+	stream  string
+	roomKey string
 }
 
+// collectRoomStreams 从 SRS 全量流中筛选属于 room 的流（统一三处调用点的过滤逻辑）。
+// room 为空时只做前缀与反查过滤，供 listRoomsFromSRS 聚合全部房间。
+func (s *Service) collectRoomStreams(streams []string, room string) []roomStream {
+	out := make([]roomStream, 0, len(streams))
+	for _, stream := range streams {
+		if !strings.HasPrefix(stream, streamNamePrefix) {
+			continue
+		}
+		candidate, ok := s.resolveStreamRoom(stream)
+		if !ok || candidate == "" {
+			continue
+		}
+		if room != "" && !roomMatches(candidate, room) {
+			continue
+		}
+		out = append(out, roomStream{stream: stream, roomKey: candidate})
+	}
+	return out
+}
+
+// resolveStreamRoom 优先读短 TTL 缓存，miss 时经 resolver 反查并回填。
+func (s *Service) resolveStreamRoom(stream string) (string, bool) {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	if s.streamCache == nil {
+		s.streamCache = make(map[string]streamRoomEntry)
+	}
+	if entry, ok := s.streamCache[stream]; ok {
+		if time.Since(entry.at) < streamRoomCacheTTL {
+			return entry.room, entry.found
+		}
+		// 过期命中立即淘汰：历史唯一 stream 数不随不再查询的流持续增长。
+		delete(s.streamCache, stream)
+	}
+	resolver := s.resolverRef()
+	if resolver == nil {
+		return "", false
+	}
+	room, ok := resolver.RoomForStream(stream)
+	s.streamCache[stream] = streamRoomEntry{room: room, found: ok, at: time.Now()}
+	return room, ok
+}
+
+func (s *Service) registryRef() pkg.RoomRegistry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.registry
+}
+
+func (s *Service) resolverRef() pkg.StreamRoomResolver {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.resolver
+}
+
+// roomMatches 判断 stream 反查出的房间键是否属于目标房间。
+// 房间键由 pkg.RoomKey 生成：域房为 "domainUUID:roomName" 复合键，平台房为裸名。
+// 只做精确匹配：后缀回退会让裸名请求命中任意域的复合键，导致跨租户枚举/误踢。
+func roomMatches(candidate, room string) bool {
+	return candidate == room
+}
+
+// publishBlockRuleID 是 SRS 禁推黑名单的占位 ruleID：SRS 侧只有"存在/不存在"两种状态，
+// 不需要真实 rule 标识；值恒为 1。
 const publishBlockRuleID = 1
 
 // PublishBlockKey 是 SRS 禁推黑名单的 MuteRuleStore key（provider 与 callback handler 共用）。
@@ -214,17 +313,39 @@ func PublishBlockKey(stream string) string {
 	return "srs_pub_block:" + stream
 }
 
-func (s *Service) ruleStore() sfu.MuteRuleStore {
-	if s.muteRules != nil {
-		return s.muteRules
+// withMuteStore 在锁内取得当前黑名单 store（nil 时先创建默认内存实例），
+// 并在同一临界区内执行 fn（Save/Delete/Get 等）。这样一次读写不会拆成
+// “先取 store、后操作”两个步骤，避免 SetMuteRuleStore 在中间换 store 后
+// 写入落在旧实例、读取落在新实例（旧写新读，黑名单静默丢失）。
+func (s *Service) withMuteStore(fn func(sfu.MuteRuleStore) error) error {
+	s.muteMu.Lock()
+	defer s.muteMu.Unlock()
+	if s.muteRules == nil {
+		s.muteRules = sfu.NewMemoryMuteRuleStore()
 	}
-	return sfu.NewMemoryMuteRuleStore()
+	return fn(s.muteRules)
+}
+
+// ruleStore 返回当前稳定的黑名单 store（读回/测试用）：
+// NewService 构造期创建默认内存实例；直构 &Service{} 或未注入时惰性兜底创建。
+// 生产读写统一走 withMuteStore，此处只做原子取引用。
+func (s *Service) ruleStore() sfu.MuteRuleStore {
+	var store sfu.MuteRuleStore
+	_ = s.withMuteStore(func(st sfu.MuteRuleStore) error {
+		store = st
+		return nil
+	})
+	return store
 }
 
 // MuteParticipantTimed 实现 sfu.TimedMuteProvider（Discord 式，不踢流）：
 // muted=true 写禁推黑名单——当前推流保留（订阅端静音由 member:muted 事件驱动，成员仍能听），
 // 一旦断流/重连，SRS on_publish 回调会拒绝该 stream 重新发布；
 // muted=false 移除黑名单，允许重新发布。ttlSeconds>0 时黑名单带 TTL。
+//
+// 兼容性说明：Discord 式禁言不再踢流，媒体层拦截依赖 SRS on_publish 禁推黑名单 +
+// 订阅端 member:muted 静音。旧前端若不处理 member:muted，被禁言者仍可被听到；
+// 升级前端与后端需同版本部署。
 func (s *Service) MuteParticipantTimed(room, identity, trackSid string, muted bool, ttlSeconds int) error {
 	stream := s.resolveStream(room, identity)
 	return s.applyPublishBlock(stream, muted, ttlSeconds)
@@ -235,8 +356,8 @@ func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) e
 }
 
 func (s *Service) resolveStream(room, identity string) string {
-	if s.registry != nil {
-		if st, ok := s.registry.StreamForIdentity(room, identity); ok {
+	if registry := s.registryRef(); registry != nil {
+		if st, ok := registry.StreamForIdentity(room, identity); ok {
 			return st
 		}
 	}
@@ -246,20 +367,22 @@ func (s *Service) resolveStream(room, identity string) string {
 func (s *Service) applyPublishBlock(stream string, muted bool, ttlSeconds int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if muted {
-		var ttl time.Duration
-		if ttlSeconds > 0 {
-			ttl = time.Duration(ttlSeconds) * time.Second
+	return s.withMuteStore(func(store sfu.MuteRuleStore) error {
+		if muted {
+			var ttl time.Duration
+			if ttlSeconds > 0 {
+				ttl = time.Duration(ttlSeconds) * time.Second
+			}
+			return store.Save(ctx, PublishBlockKey(stream), publishBlockRuleID, ttl)
 		}
-		return s.ruleStore().Save(ctx, PublishBlockKey(stream), publishBlockRuleID, ttl)
-	}
-	return s.ruleStore().Delete(ctx, PublishBlockKey(stream))
+		return store.Delete(ctx, PublishBlockKey(stream))
+	})
 }
 
 func (s *Service) RemoveParticipant(room, identity string) error {
 	stream := ""
-	if s.registry != nil {
-		if st, ok := s.registry.StreamForIdentity(room, identity); ok {
+	if registry := s.registryRef(); registry != nil {
+		if st, ok := registry.StreamForIdentity(room, identity); ok {
 			stream = st
 		}
 	}
@@ -277,12 +400,20 @@ func (s *Service) RemoveParticipant(room, identity string) error {
 }
 
 func (s *Service) DeleteRoom(room string) error {
-	if s.resolver != nil {
-		return s.deleteRoomFromSRS(room)
+	if s.resolverRef() != nil {
+		err := s.deleteRoomFromSRS(room)
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, errDeleteRoomPartial) {
+			return err
+		}
+		logger.Warnf("[srs] delete room from SRS API failed, fallback to registry: %v", err)
 	}
 	// 降级：resolver 未注入时保持旧 registry 路径。
-	if s.registry != nil {
-		streams := s.registry.Streams(room)
+	registry := s.registryRef()
+	if registry != nil {
+		streams := registry.Streams(room)
 		kicked, remaining, err := s.client.KickByStreams(streams)
 		if err != nil {
 			return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
@@ -290,7 +421,7 @@ func (s *Service) DeleteRoom(room string) error {
 		if kicked == 0 && remaining == 0 && len(streams) == 0 {
 			return pkg.NewAppError(pkg.NOT_FOUND, "srs room not found or empty")
 		}
-		s.registry.ClearRoom(room)
+		registry.ClearRoom(room)
 		return nil
 	}
 	if err := s.client.DeleteRoom(room); err != nil {
@@ -307,29 +438,36 @@ func (s *Service) deleteRoomFromSRS(room string) error {
 	if err != nil {
 		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
 	}
-	targets := make([]string, 0, len(streams))
-	for _, stream := range streams {
-		if !strings.HasPrefix(stream, streamNamePrefix) {
-			continue
-		}
-		candidate, ok := s.resolver.RoomForStream(stream)
-		if !ok || !roomMatches(candidate, room) {
-			continue
-		}
-		targets = append(targets, stream)
+	roomStreams := s.collectRoomStreams(streams, room)
+	targets := make([]string, 0, len(roomStreams))
+	for _, rs := range roomStreams {
+		targets = append(targets, rs.stream)
+	}
+	if len(targets) == 0 {
+		return pkg.NewAppError(pkg.NOT_FOUND, "srs room not found or empty")
 	}
 	kicked, remaining, err := s.client.KickByStreams(targets)
 	if err != nil {
-		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, err, err.Error())
+		// KickByStreams 在 remaining>0 时返回 error；把计数带进错误，避免静默丢部分失败。
+		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, errDeleteRoomPartial,
+			fmt.Sprintf("srs delete room partial failure: kicked=%d remaining=%d: %v", kicked, remaining, err))
 	}
-	if kicked == 0 && remaining == 0 && len(targets) == 0 {
-		return pkg.NewAppError(pkg.NOT_FOUND, "srs room not found or empty")
+	if kicked == 0 {
+		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, errDeleteRoomPartial, "srs delete room: no stream kicked")
 	}
-	if remaining > 0 && kicked == 0 {
-		return pkg.NewAppError(pkg.SFU_ERROR, "srs delete room partial failure")
+	// kick 后复查：KickByStreams 与 ClearRoom 之间新加入的流不能被连带清理。
+	after, listErr := s.client.ListStreams()
+	if listErr != nil {
+		// 复查失败无法证明 room 已清空，按部分失败处理：不清理 registry。
+		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, errDeleteRoomPartial,
+			fmt.Sprintf("srs delete room partial failure: re-check streams after kick: %v", listErr))
 	}
-	if s.registry != nil {
-		s.registry.ClearRoom(room)
+	if len(s.collectRoomStreams(after, room)) > 0 {
+		return pkg.NewAppErrorWithCause(pkg.SFU_ERROR, errDeleteRoomPartial,
+			"srs delete room partial failure: new streams joined during kick")
+	}
+	if registry := s.registryRef(); registry != nil {
+		registry.ClearRoom(room)
 	}
 	return nil
 }

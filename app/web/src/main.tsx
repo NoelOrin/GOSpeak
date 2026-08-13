@@ -1,4 +1,8 @@
-import { DEFAULT_SFU_PROVIDER, type SFUProvider } from "@gospeak/sfu-client";
+import {
+	DEFAULT_SFU_PROVIDER,
+	isSFUProviderEnabled,
+	type SFUProvider,
+} from "@gospeak/sfu-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import {
 	createRouter,
@@ -57,7 +61,9 @@ const initialProvider =
 	(import.meta.env.VITE_SFU_PROVIDER as SFUProvider | undefined) ||
 	DEFAULT_SFU_PROVIDER;
 
-void preloadSfuClient(initialProvider);
+if (isSFUProviderEnabled(initialProvider)) {
+	void preloadSfuClient(initialProvider);
+}
 
 if (rootElement) {
 	render(

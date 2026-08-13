@@ -5,7 +5,6 @@
 | 功能 | LiveKit | SRS | Agora | Cloudflare |
 |------|---------|-----|-------|------------|
 | `GenerateToken` | ✅ | ✅ (WHIP Bearer) | ✅ | ✅ (WHIP/WHEP) |
-| `GenerateAdminToken` | ✅ | ✅ | ❌ | ❌ |
 | `ListRooms` | ✅ | ✅ | ✅ | ✅ (进程内缓存) |
 | `ListParticipants` | ✅ | ✅ | ✅ | ✅ (进程内缓存) |
 | `MuteParticipant` | ✅ 服务端强制 | ✅ 强制停推 | ✅ kicking-rule 降级 | ❌ (soft，前端停推) |

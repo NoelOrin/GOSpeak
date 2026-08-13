@@ -19,7 +19,6 @@
 | 方法 | LiveKit | SRS | Agora | Cloudflare |
 |------|---------|-----|-------|------------|
 | `GenerateToken` | ✅ | ✅ | ✅ | ⚠️ (JSON 配置块) |
-| `GenerateAdminToken` | ✅ | ✅ | ⚠️ (空串) | ✅ (无 admin join token) |
 | `ListRooms` | ✅ | ✅ | ✅ | ⚠️ (进程内缓存) |
 | `ListParticipants` | ✅ | ✅ | ✅ | ⚠️ (进程内缓存) |
 | `MuteParticipant` | ✅ | ✅ (禁推黑名单，不踢流) | ✅ (禁发布 rule) | ❌ |
@@ -31,7 +30,6 @@
 
 | Provider | 方法 | 严重程度 | 当前行为 | 建议 / 状态 |
 |----------|------|----------|----------|-------------|
-| Agora | `GenerateAdminToken` | 中 | 返回空字符串 `""` | 返回真实 token 或 `AppError` |
 | Agora | `RemoveParticipant` | 低 | 短时 kicking-rule（默认 60s）强制离会 | 语义接近 hard kick，短暂挡重进；非永久 ban |
 | SRS | `MuteParticipant` | 中高 | degraded：禁推黑名单（不踢流，订阅端静音） | unmute 删除黑名单，前端恢复音量 |
 | Cloudflare | `GenerateToken` | 中 | 返回 JSON 配置块（sessionId/appId/stunUrl），非真实鉴权 token | 设计如此（无原生 token 体系） |
@@ -45,7 +43,7 @@
 |----------|------|----------|
 | LiveKit | `internal/sfu/providers/livekit/` | 唯一全 ✅；`MuteParticipant` 支持按 trackSid 精确静音或按 identity 批量静音；`ProviderName()` = `livekit` |
 | SRS | `internal/sfu/providers/srs/` | WHIP/WHEP；`List*`/`DeleteRoom` 经 `/api/v1/streams`+`/api/v1/clients` 直查 + stream→room 反查；`StreamProvider`/`ClientInfoProvider`；`GenerateToken` 签发 stream token |
-| Agora | `internal/sfu/providers/agora/` | Token/列举可用；mute/kick 走 kicking-rule（degraded）；rule id 经 MuteRuleStore 跨实例缓存（nats KV→memory）；`GenerateAdminToken` 空串；`ClientInfo` 暴露 `appId` |
+| Agora | `internal/sfu/providers/agora/` | Token/列举可用；mute/kick 走 kicking-rule（degraded）；rule id 经 MuteRuleStore 跨实例缓存（nats KV→memory）；`ClientInfo` 暴露 `appId` |
 | Cloudflare | `internal/sfu/providers/cloudflare/` | 无原生 room/token；`GenerateToken` 建 session 返回 JSON 配置；`List*` 仅内存；`StreamProvider`/`ClientInfoProvider` |
 
 ### 5. 前端 SFU 客户端（`packages/sfu-client`）

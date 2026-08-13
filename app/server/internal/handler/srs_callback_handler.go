@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"GOSpeak/internal/logger"
 	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/sfu/providers/srs"
 	"GOSpeak/internal/signal"
@@ -65,8 +66,25 @@ func (h *SRSCallbackHandler) HandleCallback(c *gin.Context) {
 			return
 		}
 		if h.muteStore != nil {
-			blocked, _ := h.muteStore.Get(c.Request.Context(), srs.PublishBlockKey(stream))
+			var blocked int
+			var err error
+			if fresh, ok := h.muteStore.(sfu.FreshMuteRuleStore); ok {
+				// 禁推黑名单以 shared 为权威：跳过 L1，避免跨实例解禁后仍被本实例 L1 拦截。
+				blocked, err = fresh.GetFresh(c.Request.Context(), srs.PublishBlockKey(stream))
+			} else {
+				blocked, err = h.muteStore.Get(c.Request.Context(), srs.PublishBlockKey(stream))
+			}
+			if err != nil {
+				// 黑名单读取失败时 fail-closed：拒绝发布并记录日志，
+				// 避免存储抖动窗口内被禁言者重新推流绕过硬禁言。
+				logger.WithComponent("SRSCallback").WithFields(logger.Fields{
+					"stream": stream,
+				}).WithError(err).Warn("publish block check failed, denying publish")
+				c.JSON(http.StatusOK, gin.H{"code": 1})
+				return
+			}
 			if blocked > 0 {
+				logger.WithComponent("SRSCallback").WithField("stream", stream).Warn("publish blocked by mute rule")
 				c.JSON(http.StatusOK, gin.H{"code": 1})
 				return
 			}

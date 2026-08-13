@@ -2,6 +2,7 @@ package service
 
 import (
 	"GOSpeak/internal/config"
+	"GOSpeak/internal/logger"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
@@ -72,6 +73,13 @@ type SFUConfigService struct {
 	baseCfg *config.Config
 }
 
+// frontendDisabledProviders 与前端 DISABLED_SFU_PROVIDERS 对齐：
+// 这些 provider 仅保留代码与类型，不允许作为激活 provider。
+var frontendDisabledProviders = map[string]bool{"agora": true}
+
+// defaultSFUProvider 是 env 未指定或禁用 provider 无法激活时的回退值。
+const defaultSFUProvider = "livekit"
+
 func NewSFUConfigService(repo *repository.SFUConfigRepository, baseCfg *config.Config) *SFUConfigService {
 	return &SFUConfigService{repo: repo, baseCfg: baseCfg}
 }
@@ -119,6 +127,9 @@ func (s *SFUConfigService) GetProviderConfig(provider string) (*model.SFUConfig,
 // UpdateFromDTO 更新指定 provider 的配置，并将其设为当前激活。
 // 每个 provider 的行独立，切换时其他 provider 的配置不受影响。
 func (s *SFUConfigService) UpdateFromDTO(req *UpdateSFUConfigRequest) (*model.SFUConfig, error) {
+	if frontendDisabledProviders[req.Provider] {
+		return nil, pkg.NewAppError(pkg.FORBIDDEN, "provider is temporarily disabled")
+	}
 	if !isValidProvider(req.Provider) {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "provider must be livekit, agora, srs, or cloudflare")
 	}
@@ -176,6 +187,9 @@ func (s *SFUConfigService) UpdateFromDTO(req *UpdateSFUConfigRequest) (*model.SF
 
 // SwitchProvider 切换当前激活的 provider，不修改配置。返回新激活 provider 的配置。
 func (s *SFUConfigService) SwitchProvider(provider string) (*model.SFUConfig, error) {
+	if frontendDisabledProviders[provider] {
+		return nil, pkg.NewAppError(pkg.FORBIDDEN, "provider is temporarily disabled")
+	}
 	if !isValidProvider(provider) {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "provider must be livekit, agora, srs, or cloudflare")
 	}
@@ -220,7 +234,24 @@ func (s *SFUConfigService) SyncFromEnv() error {
 	// 设置激活 provider（env 指定或默认 livekit）
 	active := s.baseCfg.SFUProvider
 	if active == "" {
-		active = "livekit"
+		active = defaultSFUProvider
+	}
+	if frontendDisabledProviders[active] {
+		// 旧部署可能在 env 中保留已禁用 provider：不中止启动。DB 当前激活
+		// 若同样不可用，则回退到默认可用 provider，避免启动后仍指向禁用后端。
+		current, err := s.repo.GetActiveProvider()
+		if err != nil {
+			return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+		}
+		if frontendDisabledProviders[current] || !isValidProvider(current) {
+			if err := s.repo.SetActiveProvider(defaultSFUProvider); err != nil {
+				return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+			}
+			logger.WithComponent("SFUConfig").Warnf("SFU_PROVIDER=%s is disabled and DB active=%s is unusable, falling back to %s", active, current, defaultSFUProvider)
+			return nil
+		}
+		logger.WithComponent("SFUConfig").Warnf("SFU_PROVIDER=%s is disabled, keeping current active provider %s", active, current)
+		return nil
 	}
 	if err := s.repo.SetActiveProvider(active); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())

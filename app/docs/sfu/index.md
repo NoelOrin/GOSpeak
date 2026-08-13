@@ -18,7 +18,6 @@ GOSpeak 通过 **Provider 抽象层**支持多种 SFU（Selective Forwarding Uni
 ```go
 type Provider interface {
     GenerateToken(room, identity string) (string, error)
-    GenerateAdminToken() (string, error)
     ListRooms() ([]RoomSummary, error)
     ListParticipants(room string) ([]ParticipantSummary, error)
     MuteParticipant(room, identity, trackSid string, muted bool) error

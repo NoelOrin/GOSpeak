@@ -78,6 +78,10 @@ type Config struct {
 	GinMode          string `env:"GIN_MODE" envDefault:""`
 	WSAllowedOrigins string `env:"WS_ALLOWED_ORIGINS" envDefault:""`
 
+	// TLS 直跑 HTTPS + HTTP/2：两者同时配置时启用；未配置时保持明文 HTTP/1.1。
+	TLSCertFile string `env:"TLS_CERT" envDefault:""`
+	TLSKeyFile  string `env:"TLS_KEY" envDefault:""`
+
 	// 鉴权 Cookie 配置：access/refresh token 均以 HttpOnly Cookie 承载。
 	AccessCookieName  string `env:"ACCESS_COOKIE_NAME" envDefault:"gospeak_token"`
 	RefreshCookieName string `env:"REFRESH_COOKIE_NAME" envDefault:"gospeak_refresh_token"`

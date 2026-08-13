@@ -57,11 +57,11 @@ type TrackSpec struct {
 }
 
 type TracksResponse struct {
-	SessionDescription            *SessionDescription `json:"sessionDescription,omitempty"`
-	Tracks                        []TrackResult       `json:"tracks,omitempty"`
-	RequiresImmediateRenegotiation bool               `json:"requiresImmediateRenegotiation,omitempty"`
-	ErrorCode                     string              `json:"errorCode,omitempty"`
-	ErrorDescription              string              `json:"errorDescription,omitempty"`
+	SessionDescription             *SessionDescription `json:"sessionDescription,omitempty"`
+	Tracks                         []TrackResult       `json:"tracks,omitempty"`
+	RequiresImmediateRenegotiation bool                `json:"requiresImmediateRenegotiation,omitempty"`
+	ErrorCode                      string              `json:"errorCode,omitempty"`
+	ErrorDescription               string              `json:"errorDescription,omitempty"`
 }
 
 type TrackResult struct {
@@ -86,9 +86,9 @@ type CloseTrackSpec struct {
 }
 
 type CloseTrackResponse struct {
-	Tracks                        []CloseTrackResult  `json:"tracks,omitempty"`
-	SessionDescription            *SessionDescription `json:"sessionDescription,omitempty"`
-	RequiresImmediateRenegotiation bool               `json:"requiresImmediateRenegotiation,omitempty"`
+	Tracks                         []CloseTrackResult  `json:"tracks,omitempty"`
+	SessionDescription             *SessionDescription `json:"sessionDescription,omitempty"`
+	RequiresImmediateRenegotiation bool                `json:"requiresImmediateRenegotiation,omitempty"`
 }
 
 type CloseTrackResult struct {

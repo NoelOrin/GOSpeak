@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/sfu/providers/srs"
@@ -295,6 +297,32 @@ func TestSrsCallback_OnPublish_BlockedStream_Rejects(t *testing.T) {
 	}
 }
 
+func TestSrsCallback_OnPublish_CachedBlockedStream_Rejects(t *testing.T) {
+	hub := newCallbackHub()
+	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
+	shared := sfu.NewMemoryMuteRuleStore()
+	cache := sfu.NewCachedMuteRuleStore(shared)
+	if err := cache.Save(context.Background(), srs.PublishBlockKey("gs-cache"), 1, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	h.SetMuteRuleStore(cache)
+
+	stream := "gs-cache"
+	tok := srsStreamTokenForTest(stream, "secret")
+	payload := map[string]string{
+		"action": "on_publish",
+		"stream": "live/" + stream,
+		"param":  "app=live&stream=" + stream + "&token=" + tok,
+	}
+	w := postJSON(t, h, payload)
+	if !strings.Contains(w.Body.String(), `"code":1`) {
+		t.Fatalf("cached blocked on_publish should return code 1, got %s", w.Body.String())
+	}
+	if hub.IsStreamActive(stream) {
+		t.Fatal("cached blocked stream must NOT be registered")
+	}
+}
+
 func TestSrsCallback_OnPublish_AfterUnmute_Allows(t *testing.T) {
 	hub := newCallbackHub()
 	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
@@ -316,5 +344,69 @@ func TestSrsCallback_OnPublish_AfterUnmute_Allows(t *testing.T) {
 	}
 	if !hub.IsStreamActive(stream) {
 		t.Fatal("stream should be registered after unmute")
+	}
+}
+
+func TestSrsCallback_OnPublish_CrossInstanceUnmute_Allows(t *testing.T) {
+	hub := newCallbackHub()
+	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
+	shared := sfu.NewMemoryMuteRuleStore()
+	cache := sfu.NewCachedMuteRuleStore(shared)
+	stream := "gs-cross"
+	if err := cache.Save(context.Background(), srs.PublishBlockKey(stream), 1, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	h.SetMuteRuleStore(cache)
+	// 另一实例 unmute 只删 shared；本实例 L1 仍缓存旧值。
+	if err := shared.Delete(context.Background(), srs.PublishBlockKey(stream)); err != nil {
+		t.Fatal(err)
+	}
+	if id, err := cache.Get(context.Background(), srs.PublishBlockKey(stream)); err != nil || id != 1 {
+		t.Fatalf("plain Get should still hit stale L1 (id=%d err=%v)", id, err)
+	}
+
+	tok := srsStreamTokenForTest(stream, "secret")
+	payload := map[string]string{
+		"action": "on_publish",
+		"stream": "live/" + stream,
+		"param":  "app=live&stream=" + stream + "&token=" + tok,
+	}
+	w := postJSON(t, h, payload)
+	if !strings.Contains(w.Body.String(), `"code":0`) {
+		t.Fatalf("cross-instance unmuted on_publish should return code 0, got %s", w.Body.String())
+	}
+	if !hub.IsStreamActive(stream) {
+		t.Fatal("stream should be registered after cross-instance unmute")
+	}
+}
+
+type failingMuteStore struct{}
+
+func (failingMuteStore) Save(context.Context, string, int, time.Duration) error { return nil }
+func (failingMuteStore) Get(context.Context, string) (int, error) {
+	return 0, errors.New("kv down")
+}
+func (failingMuteStore) Delete(context.Context, string) error { return nil }
+func (failingMuteStore) Backend() string                      { return "memory" }
+
+func TestSrsCallback_OnPublish_MuteStoreError_Denies(t *testing.T) {
+	hub := newCallbackHub()
+	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
+	h.SetMuteRuleStore(failingMuteStore{})
+
+	stream := "gs-fail"
+	tok := srsStreamTokenForTest(stream, "secret")
+	payload := map[string]string{
+		"action": "on_publish",
+		"stream": "live/" + stream,
+		"param":  "app=live&stream=" + stream + "&token=" + tok,
+	}
+	w := postJSON(t, h, payload)
+	// 黑名单存储故障必须 fail-closed：拒绝发布，而不是静默放行。
+	if !strings.Contains(w.Body.String(), `"code":1`) {
+		t.Fatalf("store error on_publish should deny (code 1), got %s", w.Body.String())
+	}
+	if hub.IsStreamActive(stream) {
+		t.Fatal("stream should NOT be registered when mute store check fails")
 	}
 }
