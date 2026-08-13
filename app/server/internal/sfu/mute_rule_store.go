@@ -31,6 +31,13 @@ type MuteRuleStoreSetter interface {
 	SetMuteRuleStore(store MuteRuleStore)
 }
 
+// FreshMuteRuleStore 由需要"以 shared 为权威、跳过 L1"的消费者实现
+// （如 SRS 禁推黑名单：ruleID 恒为 1，L1 只会放大跨实例解禁延迟）。
+type FreshMuteRuleStore interface {
+	MuteRuleStore
+	GetFresh(ctx context.Context, key string) (int, error)
+}
+
 type memoryRuleEntry struct {
 	ruleID    int
 	expiresAt time.Time // zero = no expiry
@@ -149,6 +156,17 @@ func (s *CachedMuteRuleStore) Get(ctx context.Context, key string) (int, error) 
 	// Best-effort L1 fill with short TTL so stale rule IDs expire quickly.
 	_ = s.local.Save(ctx, key, id, cachedMuteRuleL1TTL)
 	return id, nil
+}
+
+// GetFresh 跳过本地 L1，直接读 shared 权威值；无 shared 时回退 local。
+func (s *CachedMuteRuleStore) GetFresh(ctx context.Context, key string) (int, error) {
+	if s == nil {
+		return 0, nil
+	}
+	if s.shared == nil {
+		return s.local.Get(ctx, key)
+	}
+	return s.shared.Get(ctx, key)
 }
 
 func (s *CachedMuteRuleStore) Delete(ctx context.Context, key string) error {

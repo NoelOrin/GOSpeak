@@ -10,6 +10,7 @@ import (
 	"sort"
 	"sync"
 	"testing"
+	"time"
 
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
@@ -18,10 +19,11 @@ import (
 
 // stubRegistry 模拟 pkg.RoomRegistry 用于 SRS provider 测试。
 type stubRegistry struct {
-	rooms           []string
-	streams         map[string][]string
-	cleared         []string
-	identityStreams map[string]string // "room\x00identity" -> stream
+	rooms            []string
+	streams          map[string][]string
+	cleared          []string
+	identityStreams  map[string]string // "room\x00identity" -> stream
+	streamIdentities map[string]string // stream -> identity（支持同一 identity 多 stream）
 }
 
 func (s *stubRegistry) Rooms() []string { return s.rooms }
@@ -40,6 +42,11 @@ func (s *stubRegistry) StreamForIdentity(room, identity string) (string, bool) {
 	return st, ok
 }
 func (s *stubRegistry) IdentityForStream(room, stream string) (string, bool) {
+	if s.streamIdentities != nil {
+		if id, ok := s.streamIdentities[stream]; ok {
+			return id, true
+		}
+	}
 	if s.identityStreams == nil {
 		return "", false
 	}
@@ -67,12 +74,14 @@ func (r *stubResolver) RoomForStream(stream string) (string, bool) {
 
 // srsTestServer 用 httptest 模拟 SRS HTTP API（/api/v1/clients/ + kick）。
 type srsTestServer struct {
-	srv       *httptest.Server
-	mu        sync.Mutex
-	clients   []clientsResponseClient
-	streams   []string
-	kickedIDs []string
-	kickFail  map[string]bool // id -> 模拟 kick 失败
+	srv                  *httptest.Server
+	mu                   sync.Mutex
+	clients              []clientsResponseClient
+	streams              []string
+	kickedIDs            []string
+	kickFail             map[string]bool // id -> 模拟 kick 失败
+	afterKickAddStream   string          // 模拟 kick 成功瞬间新流加入
+	failStreamsAfterKick bool            // kick 后复查 streams 接口返回错误
 }
 
 func newSRSTestServer() *srsTestServer {
@@ -85,6 +94,10 @@ func newSRSTestServer() *srsTestServer {
 		}
 		ts.mu.Lock()
 		defer ts.mu.Unlock()
+		if ts.failStreamsAfterKick && len(ts.kickedIDs) > 0 {
+			http.Error(w, "srs streams unavailable after kick", http.StatusServiceUnavailable)
+			return
+		}
 		streams := make([]map[string]string, 0, len(ts.streams))
 		for _, name := range ts.streams {
 			streams = append(streams, map[string]string{"app": "live", "name": name})
@@ -107,6 +120,22 @@ func newSRSTestServer() *srsTestServer {
 				return
 			}
 			ts.kickedIDs = append(ts.kickedIDs, id)
+			for _, cl := range ts.clients {
+				if cl.ID == id {
+					name := cl.streamName()
+					for i, st := range ts.streams {
+						if st == name {
+							ts.streams = append(ts.streams[:i], ts.streams[i+1:]...)
+							break
+						}
+					}
+					break
+				}
+			}
+			if ts.afterKickAddStream != "" {
+				ts.streams = append(ts.streams, ts.afterKickAddStream)
+				ts.afterKickAddStream = ""
+			}
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"code": 0})
 		}
 	})
@@ -498,6 +527,156 @@ func TestMuteParticipantTimed_UnmuteDeletesPublishBlock(t *testing.T) {
 	}
 }
 
+func TestRuleStore_StableAcrossCalls_WithoutInjection(t *testing.T) {
+	svc := NewService(&config.Config{})
+	ctx := context.Background()
+	if err := svc.MuteParticipantTimed("dom-a:r1", "alice", "", true, 0); err != nil {
+		t.Fatal(err)
+	}
+	stream := GenerateStreamName("dom-a:r1", "alice")
+	// 未注入 store 时，mute 写入必须可被同一 service 读取（否则黑名单静默丢失）。
+	id, err := svc.ruleStore().Get(ctx, PublishBlockKey(stream))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != publishBlockRuleID {
+		t.Fatalf("rule id = %d, want %d (mute must persist in same instance)", id, publishBlockRuleID)
+	}
+	// 同一默认 store 实例上 unmute 必须删除黑名单：Delete 落在同一实例，不因重建丢状态。
+	if err := svc.MuteParticipantTimed("dom-a:r1", "alice", "", false, 0); err != nil {
+		t.Fatal(err)
+	}
+	id, err = svc.ruleStore().Get(ctx, PublishBlockKey(stream))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != 0 {
+		t.Fatalf("rule id = %d, want 0 (unmute must delete from same instance)", id)
+	}
+}
+
+func TestRuleStore_LazyFallback_ForDirectConstruction(t *testing.T) {
+	svc := &Service{} // 直构（newSRSTestService 同款）：muteRules 为 nil
+	ctx := context.Background()
+	stream := GenerateStreamName("dom-a:r1", "alice")
+	// 未注入且未走 NewService 时，ruleStore 必须惰性兜底默认 store，不能 nil-interface panic。
+	if id, err := svc.ruleStore().Get(ctx, PublishBlockKey("gs-direct")); err != nil {
+		t.Fatal(err)
+	} else if id != 0 {
+		t.Fatalf("fresh fallback store should be empty, got rule id %d", id)
+	}
+	// 兜底 store 必须稳定复用：mute 写入后先读回 1，unmute 后再读到 0，
+	// 不因每次新建/替换丢状态。
+	if err := svc.MuteParticipantTimed("dom-a:r1", "alice", "", true, 0); err != nil {
+		t.Fatal(err)
+	}
+	id, err := svc.ruleStore().Get(ctx, PublishBlockKey(stream))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != publishBlockRuleID {
+		t.Fatalf("rule id = %d, want %d (mute must be readable after direct-construction fallback)", id, publishBlockRuleID)
+	}
+	if err := svc.MuteParticipantTimed("dom-a:r1", "alice", "", false, 0); err != nil {
+		t.Fatal(err)
+	}
+	id, err = svc.ruleStore().Get(ctx, PublishBlockKey(stream))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != 0 {
+		t.Fatalf("rule id = %d, want 0 (fallback store must persist across calls)", id)
+	}
+}
+
+// blockingMuteRuleStore 让 Save 挂起，用于验证 store 替换不能插入到写入临界区。
+type blockingMuteRuleStore struct {
+	saveStarted chan struct{}
+	releaseSave chan struct{}
+	startOnce   sync.Once
+}
+
+func (b *blockingMuteRuleStore) Save(context.Context, string, int, time.Duration) error {
+	b.startOnce.Do(func() { close(b.saveStarted) })
+	<-b.releaseSave
+	return nil
+}
+
+func (b *blockingMuteRuleStore) Get(context.Context, string) (int, error) { return 1, nil }
+func (b *blockingMuteRuleStore) Delete(context.Context, string) error     { return nil }
+func (b *blockingMuteRuleStore) Backend() string                          { return "memory" }
+
+func TestRuleStore_StoreSwapCannotInterleaveWithSave(t *testing.T) {
+	svc := &Service{}
+	blocking := &blockingMuteRuleStore{
+		saveStarted: make(chan struct{}),
+		releaseSave: make(chan struct{}),
+	}
+	svc.SetMuteRuleStore(blocking)
+
+	muteDone := make(chan error, 1)
+	go func() {
+		muteDone <- svc.MuteParticipantTimed("dom-a:r1", "alice", "", true, 0)
+	}()
+	<-blocking.saveStarted
+
+	swapDone := make(chan struct{})
+	go func() {
+		svc.SetMuteRuleStore(sfu.NewMemoryMuteRuleStore())
+		close(swapDone)
+	}()
+
+	// 替换与 Save 必须互斥：Save 未结束时 SetMuteRuleStore 不能换 store，
+	// 否则写入落在旧 store、后续读取落在新 store（旧写新读，黑名单静默丢失）。
+	select {
+	case <-swapDone:
+		close(blocking.releaseSave)
+		<-muteDone
+		t.Fatal("SetMuteRuleStore returned while Save was still in flight")
+	case <-time.After(500 * time.Millisecond):
+		close(blocking.releaseSave)
+	}
+	if err := <-muteDone; err != nil {
+		t.Fatal(err)
+	}
+	<-swapDone
+}
+
+func TestRuleStore_ConcurrentAccess_NoRace(t *testing.T) {
+	ctx := context.Background()
+	stream := GenerateStreamName("dom-a:r1", "alice")
+
+	// 直构兜底 + 并发 MuteParticipantTimed：兜底 store 只创建一次，
+	// 并发 mute 全部写入后仍能读回 1（否则并发兜底/替换会静默丢黑名单）。
+	svc := &Service{}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = svc.MuteParticipantTimed("dom-a:r1", "alice", "", true, 0)
+		}()
+	}
+	wg.Wait()
+	if id, err := svc.ruleStore().Get(ctx, PublishBlockKey(stream)); err != nil {
+		t.Fatal(err)
+	} else if id != publishBlockRuleID {
+		t.Fatalf("after concurrent mute rule id = %d, want %d", id, publishBlockRuleID)
+	}
+
+	// 注入替换与读写并发执行不能有数据竞争（由 -race 覆盖）。
+	var swapWG sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		swapWG.Add(1)
+		go func() {
+			defer swapWG.Done()
+			svc.SetMuteRuleStore(sfu.NewMemoryMuteRuleStore())
+			_, _ = svc.ruleStore().Get(ctx, PublishBlockKey("gs-race"))
+		}()
+	}
+	swapWG.Wait()
+}
+
 func TestSRS_ImplementsTimedMuteProvider(t *testing.T) {
 	var _ sfu.TimedMuteProvider = (*Service)(nil)
 }
@@ -727,4 +906,380 @@ func TestDeleteRoom_FromSRSAPI_NotFound(t *testing.T) {
 	s.registry = &stubRegistry{}
 
 	assertSRSAppErrorCode(t, s.DeleteRoom("dom:room-a"), pkg.NOT_FOUND)
+}
+
+func TestRoomMatches_ExactKeyOnly(t *testing.T) {
+	cases := []struct {
+		name      string
+		candidate string
+		room      string
+		want      bool
+	}{
+		{"same composite key", "dom-a:lobby", "dom-a:lobby", true},
+		{"same platform key", "lobby", "lobby", true},
+		{"cross-domain same name must NOT match", "dom-b:lobby", "lobby", false},
+		{"bare name must NOT match composite", "dom-a:lobby", "lobby", false},
+		{"different domain same room", "dom-a:lobby", "dom-b:lobby", false},
+		{"empty keys", "", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := roomMatches(tc.candidate, tc.room); got != tc.want {
+				t.Fatalf("roomMatches(%q, %q) = %v, want %v", tc.candidate, tc.room, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestListRooms_FallsBackToRegistry_WhenSRSUnavailable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "srs down", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	svc := NewService(&config.Config{SRSHost: "127.0.0.1", SRSApiPort: "1"})
+	_ = srv
+	svc.SetRoomRegistry(&stubRegistry{
+		rooms:   []string{"dom-a:r1"},
+		streams: map[string][]string{"dom-a:r1": {"gs-1"}},
+	})
+	svc.SetStreamRoomResolver(&stubResolver{})
+
+	rooms, err := svc.ListRooms()
+	if err != nil {
+		t.Fatalf("ListRooms should fall back to registry, got err=%v", err)
+	}
+	if len(rooms) != 1 || rooms[0].Name != "dom-a:r1" {
+		t.Fatalf("expected registry room dom-a:r1, got %+v", rooms)
+	}
+}
+
+func TestListRooms_MemberCount_DeduplicatedByIdentity(t *testing.T) {
+	ts := newSRSTestServer()
+	ts.streams = []string{"gs-a1", "gs-a2", "gs-b1"}
+	defer ts.srv.Close()
+
+	reg := &stubRegistry{
+		streamIdentities: map[string]string{
+			"gs-a1": "alice",
+			"gs-a2": "alice", // 同 identity 双 stream
+			"gs-b1": "bob",
+		},
+	}
+	svc := NewService(&config.Config{})
+	svc.client = NewClient(ts.srv.URL)
+	svc.SetRoomRegistry(reg)
+	svc.SetStreamRoomResolver(&stubResolver{roomForStream: map[string]string{
+		"gs-a1": "dom-a:r1", "gs-a2": "dom-a:r1", "gs-b1": "dom-a:r1",
+	}})
+
+	rooms, err := svc.listRoomsFromSRS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rooms) != 1 || rooms[0].MemberCount != 2 {
+		t.Fatalf("expected 2 unique members in dom-a:r1, got %+v", rooms)
+	}
+}
+
+func TestCollectRoomStreams_FiltersByPrefixAndRoom(t *testing.T) {
+	svc := NewService(&config.Config{})
+	svc.SetStreamRoomResolver(&stubResolver{roomForStream: map[string]string{
+		"gs-a1": "dom-a:r1", "gs-a2": "dom-a:r1", "gs-b1": "dom-b:r1",
+	}})
+	got := svc.collectRoomStreams([]string{"gs-a1", "gs-a2", "gs-b1", "x-other"}, "dom-a:r1")
+	if len(got) != 2 {
+		t.Fatalf("expected 2 streams for dom-a:r1, got %+v", got)
+	}
+	if got[0].stream != "gs-a1" || got[1].stream != "gs-a2" {
+		t.Fatalf("unexpected streams: %+v", got)
+	}
+}
+
+type countingResolver struct {
+	stubResolver
+	calls int
+}
+
+func (r *countingResolver) RoomForStream(stream string) (string, bool) {
+	r.calls++
+	return r.stubResolver.RoomForStream(stream)
+}
+
+func TestStreamRoomCache_ReusesLookupsAcrossCalls(t *testing.T) {
+	ts := newSRSTestServer()
+	ts.streams = []string{"gs-a1"}
+	defer ts.srv.Close()
+
+	resolver := &countingResolver{stubResolver: stubResolver{roomForStream: map[string]string{
+		"gs-a1": "dom-a:r1",
+	}}}
+	svc := NewService(&config.Config{})
+	svc.client = NewClient(ts.srv.URL)
+	svc.SetStreamRoomResolver(resolver)
+	svc.SetRoomRegistry(&stubRegistry{})
+
+	if _, err := svc.listRoomsFromSRS(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.listParticipantsFromSRS("dom-a:r1"); err != nil {
+		t.Fatal(err)
+	}
+	if resolver.calls > 1 {
+		t.Fatalf("expected <=1 RoomForStream calls across two lists, got %d", resolver.calls)
+	}
+}
+
+func TestStreamRoomCache_ExpiredEntryIsEvicted(t *testing.T) {
+	ts := newSRSTestServer()
+	ts.streams = []string{"gs-a1"}
+	defer ts.srv.Close()
+
+	resolver := &countingResolver{stubResolver: stubResolver{roomForStream: map[string]string{
+		"gs-a1": "dom-a:r1",
+	}}}
+	svc := NewService(&config.Config{})
+	svc.client = NewClient(ts.srv.URL)
+	svc.SetStreamRoomResolver(resolver)
+
+	room, ok := svc.resolveStreamRoom("gs-a1")
+	if !ok || room != "dom-a:r1" {
+		t.Fatalf("first resolve = %q/%v, want dom-a:r1/true", room, ok)
+	}
+	if resolver.calls != 1 {
+		t.Fatalf("first resolve calls = %d, want 1", resolver.calls)
+	}
+
+	// 回拨缓存时间戳代替固定 sleep，确定性地让缓存项过期。
+	svc.cacheMu.Lock()
+	entry := svc.streamCache["gs-a1"]
+	entry.at = time.Now().Add(-streamRoomCacheTTL - time.Second)
+	svc.streamCache["gs-a1"] = entry
+	svc.cacheMu.Unlock()
+
+	// resolver 侧变化后，过期命中必须重新反查而不是复用旧值。
+	resolver.roomForStream["gs-a1"] = "dom-a:r2"
+	room, ok = svc.resolveStreamRoom("gs-a1")
+	if !ok || room != "dom-a:r2" {
+		t.Fatalf("expired resolve = %q/%v, want dom-a:r2/true", room, ok)
+	}
+	if resolver.calls != 2 {
+		t.Fatalf("expired resolve calls = %d, want 2 (cache must not serve stale entry)", resolver.calls)
+	}
+
+	// resolver 缺失时过期项必须被淘汰，不能长期残留在 map 中。
+	svc.cacheMu.Lock()
+	entry = svc.streamCache["gs-a1"]
+	entry.at = time.Now().Add(-streamRoomCacheTTL - time.Second)
+	svc.streamCache["gs-a1"] = entry
+	svc.cacheMu.Unlock()
+	svc.SetStreamRoomResolver(nil)
+
+	if _, ok := svc.resolveStreamRoom("gs-a1"); ok {
+		t.Fatal("resolve without resolver must not report found")
+	}
+	svc.cacheMu.Lock()
+	_, retained := svc.streamCache["gs-a1"]
+	svc.cacheMu.Unlock()
+	if retained {
+		t.Fatal("expired cache entry must be evicted, not retained indefinitely")
+	}
+}
+
+func TestDeleteRoom_PartialKick_DoesNotClearRegistry(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.srv.Close()
+	ts.streams = []string{"gs-a1", "gs-a2"}
+	ts.clients = []clientsResponseClient{
+		{ID: "cid-1", Name: "gs-a1"},
+		{ID: "cid-2", Name: "gs-a2"},
+	}
+	ts.kickFail["cid-2"] = true
+
+	reg := &stubRegistry{
+		streams: map[string][]string{"dom-a:r1": {"gs-a1", "gs-a2"}},
+	}
+	svc := NewService(&config.Config{})
+	svc.client = NewClient(ts.srv.URL)
+	svc.SetRoomRegistry(reg)
+	svc.SetStreamRoomResolver(&stubResolver{roomForStream: map[string]string{
+		"gs-a1": "dom-a:r1", "gs-a2": "dom-a:r1",
+	}})
+
+	err := svc.DeleteRoom("dom-a:r1")
+	if err == nil {
+		t.Fatal("partial kick must surface as error")
+	}
+	if len(reg.cleared) != 0 {
+		t.Fatalf("registry must NOT be cleared on partial failure, cleared=%v", reg.cleared)
+	}
+}
+
+func TestDeleteRoom_RecheckListFailure_DoesNotClearRegistry(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.srv.Close()
+	ts.streams = []string{"gs-a1"}
+	ts.clients = []clientsResponseClient{{ID: "cid-1", Name: "gs-a1"}}
+	ts.failStreamsAfterKick = true
+
+	reg := &stubRegistry{
+		streams: map[string][]string{"dom-a:r1": {"gs-a1"}},
+	}
+	svc := NewService(&config.Config{})
+	svc.client = NewClient(ts.srv.URL)
+	svc.SetRoomRegistry(reg)
+	svc.SetStreamRoomResolver(&stubResolver{roomForStream: map[string]string{
+		"gs-a1": "dom-a:r1",
+	}})
+
+	err := svc.DeleteRoom("dom-a:r1")
+	if err == nil {
+		t.Fatal("re-check list failure must surface as partial failure")
+	}
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) || appErr.Code != pkg.SFU_ERROR {
+		t.Fatalf("expected SFU_ERROR AppError, got %v", err)
+	}
+	if !errors.Is(err, errDeleteRoomPartial) {
+		t.Fatalf("expected recognizable partial-failure error, got %v", err)
+	}
+	if len(reg.cleared) != 0 {
+		t.Fatalf("registry must NOT be cleared when re-check fails, cleared=%v", reg.cleared)
+	}
+}
+
+func TestDeleteRoom_NewStreamJoinedDuringKick_DoesNotClearRegistry(t *testing.T) {
+	ts := newSRSTestServer()
+	defer ts.srv.Close()
+	ts.streams = []string{"gs-a1"}
+	ts.clients = []clientsResponseClient{{ID: "cid-1", Name: "gs-a1"}}
+	ts.afterKickAddStream = "gs-a2"
+
+	reg := &stubRegistry{
+		streams: map[string][]string{"dom-a:r1": {"gs-a1"}},
+	}
+	svc := NewService(&config.Config{})
+	svc.client = NewClient(ts.srv.URL)
+	svc.SetRoomRegistry(reg)
+	svc.SetStreamRoomResolver(&stubResolver{roomForStream: map[string]string{
+		"gs-a1": "dom-a:r1", "gs-a2": "dom-a:r1",
+	}})
+
+	err := svc.DeleteRoom("dom-a:r1")
+	if err == nil {
+		t.Fatal("new stream joined during kick must surface as error")
+	}
+	if len(reg.cleared) != 0 {
+		t.Fatalf("registry must NOT be cleared when streams remain, cleared=%v", reg.cleared)
+	}
+}
+
+func TestService_ConcurrentInjectAndList_NoRace(t *testing.T) {
+	svc := NewService(&config.Config{})
+	svc.SetRoomRegistry(&stubRegistry{})
+	svc.SetStreamRoomResolver(&stubResolver{})
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			svc.SetStreamRoomResolver(&stubResolver{})
+			svc.SetMuteRuleStore(sfu.NewMemoryMuteRuleStore())
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = svc.ListRooms()
+			_ = svc.MuteParticipantTimed("r", "alice", "", true, 0)
+		}()
+	}
+	wg.Wait()
+}
+
+func TestListParticipants_UnresolvableStream_IncludedWithPlaceholder(t *testing.T) {
+	ts := newSRSTestServer()
+	ts.streams = []string{"gs-orphan"}
+	defer ts.srv.Close()
+
+	svc := NewService(&config.Config{})
+	svc.client = NewClient(ts.srv.URL)
+	svc.SetStreamRoomResolver(&stubResolver{roomForStream: map[string]string{
+		"gs-orphan": "dom-a:r1",
+	}})
+	svc.SetRoomRegistry(&stubRegistry{})
+
+	parts, err := svc.listParticipantsFromSRS("dom-a:r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parts) != 1 {
+		t.Fatalf("unresolvable active stream must still be listed, got %+v", parts)
+	}
+}
+
+func TestListParticipants_FallsBackToRegistry_WhenSRSStreamsUnavailable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/streams/" && r.Method == http.MethodGet:
+			http.Error(w, "srs streams down", http.StatusServiceUnavailable)
+		case r.URL.Path == "/api/v1/clients/" && r.Method == http.MethodGet:
+			_ = json.NewEncoder(w).Encode(clientsResponse{
+				Code:    0,
+				Clients: []clientsResponseClient{{ID: "cid-1", Name: "gs-a"}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	s := newServiceWithURL(srv.URL)
+	s.registry = &stubRegistry{
+		streams: map[string][]string{"room-x": {"gs-a"}},
+		identityStreams: map[string]string{
+			"room-x\x00alice": "gs-a",
+		},
+	}
+	s.resolver = &stubResolver{roomForStream: map[string]string{"gs-a": "room-x"}}
+
+	parts, err := s.ListParticipants("room-x")
+	if err != nil {
+		t.Fatalf("ListParticipants should fall back to registry, got err=%v", err)
+	}
+	if len(parts) != 1 || parts[0].Identity != "alice" {
+		t.Fatalf("expected registry participant alice, got %+v", parts)
+	}
+}
+
+func TestDeleteRoom_FallsBackToRegistry_WhenSRSStreamsUnavailable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/streams/" && r.Method == http.MethodGet:
+			http.Error(w, "srs streams down", http.StatusServiceUnavailable)
+		case r.URL.Path == "/api/v1/clients/" && r.Method == http.MethodGet:
+			_ = json.NewEncoder(w).Encode(clientsResponse{
+				Code:    0,
+				Clients: []clientsResponseClient{{ID: "cid-1", Name: "gs-a"}},
+			})
+		case r.URL.Path == "/api/v1/clients/cid-1" && r.Method == http.MethodDelete:
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"code": 0})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	reg := &stubRegistry{
+		streams: map[string][]string{"room-x": {"gs-a"}},
+	}
+	s := newServiceWithURL(srv.URL)
+	s.registry = reg
+	s.resolver = &stubResolver{roomForStream: map[string]string{"gs-a": "room-x"}}
+
+	if err := s.DeleteRoom("room-x"); err != nil {
+		t.Fatalf("DeleteRoom should fall back to registry, got err=%v", err)
+	}
+	if len(reg.cleared) != 1 || reg.cleared[0] != "room-x" {
+		t.Fatalf("expected registry room room-x cleared, got %+v", reg.cleared)
+	}
 }

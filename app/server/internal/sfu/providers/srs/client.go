@@ -88,6 +88,9 @@ func (c *Client) ListStreams() ([]string, error) {
 		return nil, fmt.Errorf("srs list streams: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("srs list streams: unexpected status=%d", resp.StatusCode)
+	}
 
 	var result streamsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -115,6 +118,9 @@ func (c *Client) fetchClients() ([]clientsResponseClient, error) {
 		return nil, fmt.Errorf("srs list clients: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("srs list clients: unexpected status=%d", resp.StatusCode)
+	}
 
 	var result clientsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -229,6 +235,9 @@ func (c *Client) doCodeRequest(req *http.Request, action string) error {
 		return fmt.Errorf("srs %s: %w", action, err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("srs %s: unexpected status=%d", action, resp.StatusCode)
+	}
 
 	var result apiResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

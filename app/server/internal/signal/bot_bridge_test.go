@@ -177,7 +177,7 @@ func TestPublishBotMessage_BotWithPermissions(t *testing.T) {
 	})
 
 	conn := &mockClient{
-		id:     "bot-sock",
+		id: "bot-sock",
 		claims: &pkg.Claims{
 			Username:    "helper-bot",
 			Role:        "user",

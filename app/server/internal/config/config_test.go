@@ -50,6 +50,22 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadTLSOptions(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("TLS_CERT", "/etc/gospeak/fullchain.pem")
+	t.Setenv("TLS_KEY", "/etc/gospeak/privkey.pem")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.TLSCertFile != "/etc/gospeak/fullchain.pem" {
+		t.Fatalf("TLSCertFile=%q want /etc/gospeak/fullchain.pem", cfg.TLSCertFile)
+	}
+	if cfg.TLSKeyFile != "/etc/gospeak/privkey.pem" {
+		t.Fatalf("TLSKeyFile=%q want /etc/gospeak/privkey.pem", cfg.TLSKeyFile)
+	}
+}
+
 func TestLoadRejectsInvalidPort(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("SERVER_PORT", "70000")
@@ -308,6 +324,7 @@ func clearConfigEnv(t *testing.T) {
 	keys := []string{
 		"APP_ENV", "DB_TYPE", "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_PATH", "DB_DSN", "DB_WAL", "TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN",
 		"JWT_KEY", "JWT_KEY_TTL", "SFU_PROVIDER", "SERVER_PORT", "STATIC_DIR", "CORS_ORIGIN", "GIN_MODE",
+		"TLS_CERT", "TLS_KEY",
 		"LOG_LEVEL", "LOG_FORMAT", "LOG_OUTPUT", "LOG_FILE", "LOG_CALLER",
 		"NATS_URL", "NATS_SUBJECT_PREFIX", "NATS_NAME", "NATS_CONNECT_TIMEOUT", "NATS_EMBEDDED_PORT", "STATE_STORE",
 		"GOSPEAK_ROLE", "CLUSTER_NODE_ID", "CLUSTER_ADVERTISE_URL", "CLUSTER_AGENT_URL", "CLUSTER_AGENT_TOKEN",

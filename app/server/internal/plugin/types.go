@@ -21,12 +21,12 @@ const (
 
 // Meta 插件元信息，供管理端展示
 type Meta struct {
-	Name        string         `json:"name"`
-	DisplayName string         `json:"display_name"`
-	Version     string         `json:"version"`
-	Author      string         `json:"author"`
-	Desc        string         `json:"desc"`
-	Kind        Kind           `json:"kind"`
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	Version     string `json:"version"`
+	Author      string `json:"author"`
+	Desc        string `json:"desc"`
+	Kind        Kind   `json:"kind"`
 	// ConfigSchema 可选：前端表单提示（JSON object 描述）
 	ConfigSchema map[string]any `json:"config_schema,omitempty"`
 }
@@ -92,10 +92,10 @@ type HostDB interface {
 // Info 管理端列表项
 type Info struct {
 	Meta
-	Enabled    bool           `json:"enabled"`
-	Status     Status         `json:"status"`
-	Error      string         `json:"error,omitempty"`
-	Config     map[string]any `json:"config,omitempty"`
+	Enabled     bool             `json:"enabled"`
+	Status      Status           `json:"status"`
+	Error       string           `json:"error,omitempty"`
+	Config      map[string]any   `json:"config,omitempty"`
 	SideServers []SideServerInfo `json:"side_servers,omitempty"`
 }
 

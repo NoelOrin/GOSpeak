@@ -214,6 +214,75 @@ func TestService_MuteParticipant_CloseTracks(t *testing.T) {
 	}
 }
 
+func TestMuteParticipant_SkipsClosedTracks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/apps/test-app/sessions/sess-1" && r.Method == http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(SessionStateResponse{Tracks: []TrackState{
+				{Location: "local", MID: "m-active", Status: "active"},
+				{Location: "local", MID: "m-closed", Status: "closed"},
+			}})
+		case r.URL.Path == "/apps/test-app/sessions/sess-1/tracks/close" && r.Method == http.MethodPut:
+			var req CloseTrackRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode close request: %v", err)
+			}
+			if len(req.Tracks) != 1 || req.Tracks[0].MID != "m-active" {
+				t.Fatalf("close specs = %+v, want only active mid", req.Tracks)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(CloseTrackResponse{})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	svc := NewService(&config.Config{CFAppID: "test-app", CFAppSecret: "test-secret"})
+	svc.client.baseURL = server.URL
+	svc.client.httpClient = http.DefaultClient
+	svc.putSession("r1", "alice", "sess-1", 1, "")
+
+	if err := svc.MuteParticipant("r1", "alice", "", true); err != nil {
+		t.Fatalf("MuteParticipant failed: %v", err)
+	}
+}
+
+func TestMuteParticipant_CloseTracksError_RecheckTreatsAsSuccess(t *testing.T) {
+	getCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/apps/test-app/sessions/sess-1" && r.Method == http.MethodGet:
+			getCalls++
+			w.Header().Set("Content-Type", "application/json")
+			if getCalls == 1 {
+				_ = json.NewEncoder(w).Encode(SessionStateResponse{Tracks: []TrackState{
+					{Location: "local", MID: "m-active", Status: "active"},
+				}})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(SessionStateResponse{Tracks: []TrackState{
+				{Location: "local", MID: "m-active", Status: "closed"},
+			}})
+		case r.URL.Path == "/apps/test-app/sessions/sess-1/tracks/close" && r.Method == http.MethodPut:
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	svc := NewService(&config.Config{CFAppID: "test-app", CFAppSecret: "test-secret"})
+	svc.client.baseURL = server.URL
+	svc.client.httpClient = http.DefaultClient
+	svc.putSession("r1", "alice", "sess-1", 1, "")
+
+	if err := svc.MuteParticipant("r1", "alice", "", true); err != nil {
+		t.Fatalf("MuteParticipant should treat already-closed tracks as success, got %v", err)
+	}
+}
+
 func TestService_MuteParticipant_NoLocalTracks(t *testing.T) {
 	closeCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -297,6 +366,18 @@ func TestService_MuteParticipant_Unmute_SoftFallback(t *testing.T) {
 	}
 }
 
+func TestMuteParticipant_Unmute_ReturnsAppError(t *testing.T) {
+	svc := NewService(&config.Config{CFAppID: "app", CFAppSecret: "sec"})
+	err := svc.MuteParticipant("r", "alice", "", false)
+	if err == nil {
+		t.Fatal("unmute should return ErrSFUNotSupported")
+	}
+	var appErr *pkg.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("unmute should return *pkg.AppError, got %T", err)
+	}
+}
+
 func TestService_MuteParticipant_NoSession(t *testing.T) {
 	svc := &Service{
 		appID: "test-app",
@@ -308,8 +389,17 @@ func TestService_MuteParticipant_NoSession(t *testing.T) {
 		},
 		sessions: map[string]map[string]sessionMeta{},
 	}
-	if err := svc.MuteParticipant("room1", "ghost", "", true); err != nil {
-		t.Fatalf("expected nil for missing session, got %v", err)
+	err := svc.MuteParticipant("room1", "ghost", "", true)
+	if !errors.Is(err, pkg.ErrSFUNotSupported) {
+		t.Fatalf("expected ErrSFUNotSupported for missing session, got %v", err)
+	}
+}
+
+func TestMuteParticipant_LocalSessionMiss_SoftFallback(t *testing.T) {
+	svc := NewService(&config.Config{CFAppID: "app", CFAppSecret: "sec"})
+	err := svc.MuteParticipant("r", "ghost", "", true)
+	if !errors.Is(err, pkg.ErrSFUNotSupported) {
+		t.Fatalf("local miss must not fake success, err=%v", err)
 	}
 }
 

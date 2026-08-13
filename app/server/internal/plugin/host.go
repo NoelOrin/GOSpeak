@@ -23,14 +23,14 @@ import (
 
 // HostImpl 宿主实现
 type HostImpl struct {
-	db     *gorm.DB
-	cfg    *config.Config
-	repo   *repository.PluginConfigRepository
+	db   *gorm.DB
+	cfg  *config.Config
+	repo *repository.PluginConfigRepository
 
-	mu           sync.Mutex
-	routeFns     map[string][]func(*gin.RouterGroup) // pluginName -> route registrars
+	mu            sync.Mutex
+	routeFns      map[string][]func(*gin.RouterGroup) // pluginName -> route registrars
 	currentPlugin string
-	sideServers  map[string]*sideServer // key = pluginName/serverName
+	sideServers   map[string]*sideServer // key = pluginName/serverName
 }
 
 type sideServer struct {

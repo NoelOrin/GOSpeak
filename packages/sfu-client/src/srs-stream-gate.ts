@@ -163,8 +163,9 @@ export function sleep(ms: number): Promise<void> {
 
 export function isWhipBusyError(err: unknown): boolean {
 	const msg = err instanceof Error ? err.message : String(err ?? "");
-	// 403 = SRS on_publish 回调拒绝（禁推/鉴权失败），不是 busy，绝不能按 busy 无限重试。
-	if (/403|publish denied|forbidden/i.test(msg)) {
+	// 403 = SRS on_publish 回调拒绝（禁推/鉴权失败），不是 busy，绝不能按 busy 无限重试；
+	// 加数字边界避免误伤 4032/1403 等业务码（那些应视为 busy 重试）。
+	if (/(?:^|\D)403(?:\D|$)|publish denied|forbidden/i.test(msg)) {
 		return false;
 	}
 	// SRS stream busy / duplicate publish 常见：5020、500、400、Failed to fetch 竞态

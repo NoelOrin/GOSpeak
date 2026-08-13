@@ -19,7 +19,6 @@ export type { SFUProvider } from "./provider";
 export {
 	DEFAULT_SFU_PROVIDER,
 	DISABLED_SFU_PROVIDERS,
-	ENABLED_SFU_PROVIDERS,
 	isSFUProviderEnabled,
 	PROVIDER_LABELS,
 } from "./provider";

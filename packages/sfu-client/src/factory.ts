@@ -1,6 +1,5 @@
 import {
 	assertSFUProviderEnabled,
-	isSFUProviderEnabled,
 	type SFUProvider,
 } from "./provider";
 import type { SFUClient, SFUClientOptions } from "./types";
@@ -15,7 +14,7 @@ const providerLoaders: Record<SFUProvider, () => Promise<unknown>> = {
 };
 
 export async function preloadSFUClient(provider: SFUProvider): Promise<void> {
-	if (!isSFUProviderEnabled(provider)) return;
+	assertSFUProviderEnabled(provider);
 	await (providerLoaders[provider] ?? providerLoaders.livekit)();
 }
 

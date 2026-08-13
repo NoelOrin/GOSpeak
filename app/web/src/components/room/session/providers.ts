@@ -19,6 +19,18 @@ function bindSignalActiveSpeakers(
 	});
 }
 
+// 服务器禁言状态同步：以 join ack 快照为权威双向设置。
+// 只置位不重置会让断线重连错过 member:unmuted 的成员残留陈旧静音。
+function syncServerMuteState(
+	ack: { members?: Array<{ identity: string; isMuted?: boolean }> },
+	selfIdentity: string,
+): void {
+	for (const m of ack.members ?? []) {
+		if (m.identity === selfIdentity) continue;
+		setServerMutedByIdentity(m.identity, Boolean(m.isMuted));
+	}
+}
+
 // LiveKit：完整 media + signal 后才 ready。不串行、不 background。
 const livekitAdapter: VoiceProviderAdapter = {
 	provider: "livekit",
@@ -41,12 +53,7 @@ const srsAdapter: VoiceProviderAdapter = {
 			.filter((m) => m.identity !== token.identity && m.stream)
 			.map((m) => ({ identity: m.identity, stream: m.stream as string }));
 		if (peers.length) client.subscribePeers?.(peers);
-		// 服务器禁言状态同步：join 时已有成员若被禁言，订阅端立即静音。
-		for (const m of ack.members ?? []) {
-			if (m.identity !== token.identity && m.isMuted) {
-				setServerMutedByIdentity(m.identity, true);
-			}
-		}
+		syncServerMuteState(ack, token.identity);
 		bindSignalActiveSpeakers(client, token);
 	},
 };
@@ -72,6 +79,7 @@ const cloudflareAdapter: VoiceProviderAdapter = {
 			.filter((m) => m.identity !== token.identity && m.stream)
 			.map((m) => ({ identity: m.identity, stream: m.stream as string }));
 		if (peers.length) client.subscribePeers?.(peers);
+		syncServerMuteState(ack, token.identity);
 		bindSignalActiveSpeakers(client, token);
 	},
 };

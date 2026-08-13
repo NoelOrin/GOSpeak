@@ -2,12 +2,15 @@ package signal
 
 import (
 	"GOSpeak/internal/bus"
+	"GOSpeak/internal/logger"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/ws"
 	"encoding/json"
 	"errors"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -190,6 +193,76 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 			roomType = model.NormalizeRoomType(meta.Type)
 		}
 	}
+
+	// 解禁后重连自愈：离线期间 unmute 无法定位 stream（registry/KV 已清），
+	// SRS 禁推黑名单可能残留；join 时以 DB 禁言状态为权威重建媒体状态。
+	// 被禁言用户在上面的 fail-closed 检查即被拒绝，不会走到这里。
+	// 仅语音房 + 黑名单型（degraded）provider 执行；LiveKit 等 hard track 级
+	// mute 离线时随会话自然消失，不需要自愈清理。
+	if roomType == model.RoomTypeVoice && h.sfuProvider != nil && h.sfuProvider.Capabilities().MuteLevel == sfu.EnforcementDegraded {
+		var unmuteErr error
+		if tp, ok := h.sfuProvider.(sfu.TimedMuteProvider); ok {
+			unmuteErr = tp.MuteParticipantTimed(key, identity, "", false, 0)
+		} else {
+			unmuteErr = h.sfuProvider.MuteParticipant(key, identity, "", false)
+		}
+		if unmuteErr != nil {
+			h.logMuteResidueError("clear mute residue failed", key, identity, unmuteErr)
+		}
+
+		// unmute 与管理员新禁言之间存在竞态窗口：unmute 刚清掉黑名单后，
+		// 立即复查 DB；若已禁言，按当前禁言记录重新媒体 mute，避免清掉新黑名单。
+		if h.muteStore != nil {
+			muted, mute, recheckErr := h.muteStore.IsMutedByIdentity(identity)
+			if recheckErr != nil {
+				logger.Warnf("[signal] mute residue recheck failed, keep unmute result room=%s identity=%s err=%v", key, identity, recheckErr)
+			} else if muted {
+				remaining := int64(0)
+				if mute != nil && !mute.Permanent {
+					if mute.ExpiresAt != nil {
+						remaining = int64(time.Until(*mute.ExpiresAt).Seconds())
+						if remaining < 0 {
+							remaining = 0
+						}
+					}
+					if remaining <= 0 {
+						// 已到期/剩余不足 1 秒：不 re-mute（避免把临时禁言误写成 ttl<=0），
+						// 直接按禁言拒绝并跳过媒体重写。
+						return marshalAck(map[string]interface{}{
+							"error":     "user is muted",
+							"muted":     true,
+							"permanent": false,
+							"remaining": 0,
+						})
+					}
+				}
+				if sfu.LevelEnabled(h.sfuProvider.Capabilities().MuteLevel) {
+					ttlSeconds := sfu.PermanentMuteTTLSeconds
+					if mute != nil && !mute.Permanent {
+						ttlSeconds = int(remaining)
+					}
+					var muteErr error
+					if tp, ok := h.sfuProvider.(sfu.TimedMuteProvider); ok {
+						muteErr = tp.MuteParticipantTimed(key, identity, "", true, ttlSeconds)
+					} else {
+						muteErr = h.sfuProvider.MuteParticipant(key, identity, "", true)
+					}
+					if muteErr != nil {
+						h.logMuteResidueError("re-mute new mute failed", key, identity, muteErr)
+					}
+				}
+				// 管理员禁言路径已广播 member:muted，且用户未成功 join，
+				// 这里只返回 muted ack，避免重复广播。
+				return marshalAck(map[string]interface{}{
+					"error":     "user is muted",
+					"muted":     true,
+					"permanent": mute != nil && mute.Permanent,
+					"remaining": remaining,
+				})
+			}
+		}
+	}
+
 	h.mu.Lock()
 	slots := h.connSlots[c.ID()]
 	if slots == nil {
@@ -225,6 +298,33 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 		"room":     req.Room,
 		"identity": identity,
 	})
+}
+
+// logMuteResidueError 分级记录自愈清理错误：预期性失败（不支持或目标不存在）降级为 warn，
+// 其余视为真实异常按 error 记录，避免离线重连场景高频刷 error 日志。
+func (h *Hub) logMuteResidueError(action, room, identity string, err error) {
+	if err == nil {
+		return
+	}
+	if isExpectedMuteResidueError(err) {
+		logger.Warnf("[signal] %s (expected) room=%s identity=%s err=%v", action, room, identity, err)
+		return
+	}
+	logger.Errorf("[signal] %s room=%s identity=%s err=%v", action, room, identity, err)
+}
+
+// isExpectedMuteResidueError 识别 provider 在清理“不存在的参与者/流”时的预期失败：
+// 不支持操作、NOT_FOUND 业务码，以及 provider 文案中的 participant/stream not found。
+func isExpectedMuteResidueError(err error) bool {
+	if errors.Is(err, pkg.ErrSFUNotSupported) || errors.Is(err, pkg.ErrNotFound) {
+		return true
+	}
+	var appErr *pkg.AppError
+	if errors.As(err, &appErr) && appErr.Code == pkg.NOT_FOUND {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "participant not found") || strings.Contains(msg, "stream not found")
 }
 
 // OnRoomJoinSFU 在 SFU 媒体连接确认后写成员并广播加入。

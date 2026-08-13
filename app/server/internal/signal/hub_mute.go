@@ -19,7 +19,12 @@ func (h *Hub) BroadcastMute(userID uint, info *MuteInfo) {
 			ttlSeconds = int(info.Duration)
 		}
 	}
-	enforcement := h.enforceUserMediaMute(userID, true, ttlSeconds)
+	identity := h.identityForUserID(userID)
+	var rooms []string
+	if identity != "" {
+		rooms = h.roomsForIdentity(identity)
+	}
+	enforcement := h.enforceUserMediaMuteInRooms(identity, rooms, true, ttlSeconds)
 	data := map[string]interface{}{
 		"user_id":     userID,
 		"permanent":   info.Permanent,
@@ -35,37 +40,44 @@ func (h *Hub) BroadcastMute(userID uint, info *MuteInfo) {
 		}
 	}
 	h.publishNamespace(EventUserMuted, data)
-	if identity := h.identityForUserID(userID); identity != "" {
-		h.publishNamespace(EventMemberMuted, map[string]interface{}{
-			"identity": identity,
-			"muted":    true,
-		})
+	if identity != "" {
+		h.publishMemberMuteEventInRooms(identity, true, rooms)
 	}
 }
 
 // BroadcastUnmute 广播取消禁言事件到所有客户端。
-
-// BroadcastUnmute 广播取消禁言事件到所有客户端。
 func (h *Hub) BroadcastUnmute(userID uint) {
-	enforcement := h.enforceUserMediaMute(userID, false, 0)
+	identity := h.identityForUserID(userID)
+	var rooms []string
+	if identity != "" {
+		rooms = h.roomsForIdentity(identity)
+	}
+	enforcement := h.enforceUserMediaMuteInRooms(identity, rooms, false, 0)
 	h.publishNamespace(EventUserUnmuted, map[string]interface{}{
 		"user_id":     userID,
 		"enforcement": enforcement,
 	})
-	if identity := h.identityForUserID(userID); identity != "" {
-		h.publishNamespace(EventMemberUnmuted, map[string]interface{}{
-			"identity": identity,
-			"muted":    false,
-		})
+	if identity != "" {
+		h.publishMemberMuteEventInRooms(identity, false, rooms)
 	}
 }
 
 // enforceUserMediaMute 在支持 ServerMute 的 provider 上，对 userID 当前所在房间做媒体层 mute/unmute。
 // 返回 hard|degraded|soft。多房间必须全部成功才返回非 soft。
-
-// enforceUserMediaMute 在支持 ServerMute 的 provider 上，对 userID 当前所在房间做媒体层 mute/unmute。
-// 返回 hard|degraded|soft。多房间必须全部成功才返回非 soft。
 func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) string {
+	identity := h.identityForUserID(userID)
+	return h.enforceUserMediaMuteByIdentity(identity, muted, ttlSeconds)
+}
+
+// enforceUserMediaMuteByIdentity 是 enforceUserMediaMute 的 identity 版本，
+// 供 BroadcastMute/BroadcastUnmute 复用已解析的 identity，避免重复 DB 查询。
+func (h *Hub) enforceUserMediaMuteByIdentity(identity string, muted bool, ttlSeconds int) string {
+	return h.enforceUserMediaMuteInRooms(identity, h.roomsForIdentity(identity), muted, ttlSeconds)
+}
+
+// enforceUserMediaMuteInRooms 对已收集的房间列表做媒体层 mute/unmute。
+// rooms 由调用方一次性计算，避免禁言事件与媒体强制各自触发一轮跨实例扫描。
+func (h *Hub) enforceUserMediaMuteInRooms(identity string, rooms []string, muted bool, ttlSeconds int) string {
 	if h.sfuProvider == nil {
 		return sfu.EnforcementSoft
 	}
@@ -74,35 +86,86 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 		return sfu.EnforcementSoft
 	}
 
-	identity := h.identityForUserID(userID)
 	if identity == "" {
-		log.Printf("[Signal] mute media skip: cannot resolve identity for userID=%d", userID)
+		log.Printf("[Signal] mute media skip: cannot resolve identity")
+		return sfu.EnforcementSoft
+	}
+	if len(rooms) == 0 {
+		// No online media target: policy still soft-enforced; not a media hard success.
 		return sfu.EnforcementSoft
 	}
 
-	type target struct {
-		room     string // composite key (domainUUID:roomName)
-		identity string
+	success := 0
+	for _, room := range rooms {
+		var err error
+		if tp, ok := h.sfuProvider.(sfu.TimedMuteProvider); ok {
+			err = tp.MuteParticipantTimed(room, identity, "", muted, ttlSeconds)
+		} else {
+			err = h.sfuProvider.MuteParticipant(room, identity, "", muted)
+		}
+		if err != nil {
+			if errors.Is(err, pkg.ErrSFUNotSupported) {
+				if muted {
+					log.Printf("[Signal] SFU mute unsupported, soft fallback room=%s identity=%s", room, identity)
+				} else {
+					log.Printf("[Signal] SFU unmute unsupported, soft unmute room=%s identity=%s", room, identity)
+				}
+			} else {
+				log.Printf("[Signal] failed SFU mute (soft fallback) room=%s identity=%s err=%v", room, identity, err)
+			}
+			continue
+		}
+		success++
 	}
+	if success == 0 {
+		return sfu.EnforcementSoft
+	}
+	if success < len(rooms) {
+		// Partial multi-room success: do not overclaim full hard/degraded.
+		log.Printf("[Signal] partial SFU mute success %d/%d identity=%s", success, len(rooms), identity)
+		return sfu.EnforcementSoft
+	}
+	return sfu.EnforcementFromLevel(caps.MuteLevel)
+}
+
+// publishMemberMuteEventInRooms 将成员禁言状态事件定向发布到已收集的房间；
+// 用户不在任何房间（离线）时退回全局广播，配合 join 自愈清理。
+func (h *Hub) publishMemberMuteEventInRooms(identity string, muted bool, rooms []string) {
+	event := EventMemberMuted
+	if !muted {
+		event = EventMemberUnmuted
+	}
+	payload := map[string]interface{}{
+		"identity": identity,
+		"muted":    muted,
+	}
+	if len(rooms) == 0 {
+		h.publishNamespace(event, payload)
+		return
+	}
+	for _, room := range rooms {
+		h.publishRoom(room, event, payload)
+	}
+}
+
+// roomsForIdentity 返回 identity 当前所在房间键（本地 rooms + 跨实例 membership KV）。
+// 供禁言事件定向广播与媒体强制共用。
+func (h *Hub) roomsForIdentity(identity string) []string {
 	seen := make(map[string]struct{})
-	targets := make([]target, 0)
+	rooms := make([]string, 0, 2)
 	h.mu.RLock()
 	for roomName, room := range h.rooms {
-		for _, member := range room.Members {
-			if member.Identity == identity {
-				if _, ok := seen[roomName]; !ok {
-					seen[roomName] = struct{}{}
-					targets = append(targets, target{room: roomName, identity: identity})
-				}
-				break
-			}
+		if roomLookupIdentity(room, identity) != nil {
+			seen[roomName] = struct{}{}
+			rooms = append(rooms, roomName)
 		}
 	}
 	h.mu.RUnlock()
-	// Multi-instance: user may only be online on another process; still media-enforce via SFU APIs.
 	if h.membershipStore != nil {
 		kvCtx, kvCancel := kvTimeoutCtx()
-		if names, err := h.membershipStore.ListRoomNames(kvCtx); err == nil {
+		names, err := h.membershipStore.ListRoomNames(kvCtx)
+		kvCancel()
+		if err == nil {
 			for _, roomName := range names {
 				if roomName == "" {
 					continue
@@ -119,50 +182,14 @@ func (h *Hub) enforceUserMediaMute(userID uint, muted bool, ttlSeconds int) stri
 				for _, m := range snap.Members {
 					if m.Identity == identity {
 						seen[roomName] = struct{}{}
-						targets = append(targets, target{room: roomName, identity: identity})
+						rooms = append(rooms, roomName)
 						break
 					}
 				}
 			}
 		}
-		kvCancel()
 	}
-	if len(targets) == 0 {
-		// No online media target: policy still soft-enforced; not a media hard success.
-		return sfu.EnforcementSoft
-	}
-
-	success := 0
-	for _, t := range targets {
-		var err error
-		if tp, ok := h.sfuProvider.(sfu.TimedMuteProvider); ok {
-			err = tp.MuteParticipantTimed(t.room, t.identity, "", muted, ttlSeconds)
-		} else {
-			err = h.sfuProvider.MuteParticipant(t.room, t.identity, "", muted)
-		}
-		if err != nil {
-			if errors.Is(err, pkg.ErrSFUNotSupported) {
-				if muted {
-					log.Printf("[Signal] SFU mute unsupported, soft fallback room=%s identity=%s", t.room, t.identity)
-				} else {
-					log.Printf("[Signal] SFU unmute unsupported, soft unmute room=%s identity=%s", t.room, t.identity)
-				}
-			} else {
-				log.Printf("[Signal] failed SFU mute (soft fallback) room=%s identity=%s err=%v", t.room, t.identity, err)
-			}
-			continue
-		}
-		success++
-	}
-	if success == 0 {
-		return sfu.EnforcementSoft
-	}
-	if success < len(targets) {
-		// Partial multi-room success: do not overclaim full hard/degraded.
-		log.Printf("[Signal] partial SFU mute success %d/%d identity=%s", success, len(targets), identity)
-		return sfu.EnforcementSoft
-	}
-	return sfu.EnforcementFromLevel(caps.MuteLevel)
+	return rooms
 }
 
 // identityForUserID resolves username from userStore by numeric user id.

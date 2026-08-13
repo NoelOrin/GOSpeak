@@ -6,7 +6,7 @@ import "time"
 // IdentityA and IdentityB are always sorted lexicographically so lookups
 // work regardless of who initiates the conversation.
 type ConversationParticipant struct {
-	ConversationID      string     `gorm:"primaryKey;size:32" json:"conversation_id"`
+	ConversationID     string     `gorm:"primaryKey;size:32" json:"conversation_id"`
 	IdentityA          string     `gorm:"size:64;not null;index:idx_conv_part_a" json:"identity_a"`
 	IdentityB          string     `gorm:"size:64;not null;index:idx_conv_part_b" json:"identity_b"`
 	LastMessageID      *string    `gorm:"size:26" json:"last_message_id"`

@@ -10,8 +10,10 @@ describe("temporarily disabled SFU providers", () => {
 		expect(isSFUProviderEnabled("cloudflare")).toBe(true);
 	});
 
-	it("preload resolves without loading the agora client chunk", async () => {
-		await expect(preloadSFUClient("agora")).resolves.toBeUndefined();
+	it("preload rejects disabled provider like create", async () => {
+		await expect(preloadSFUClient("agora")).rejects.toThrow(
+			/temporarily disabled/,
+		);
 	});
 
 	it("create rejects agora with a disabled error", async () => {

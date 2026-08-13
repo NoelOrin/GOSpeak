@@ -120,7 +120,7 @@ func listOllamaModels(ctx context.Context, baseURL string) ([]string, error) {
 	}
 	var payload struct {
 		Models []struct {
-			Name string `json:"name"`
+			Name  string `json:"name"`
 			Model string `json:"model"`
 		} `json:"models"`
 	}

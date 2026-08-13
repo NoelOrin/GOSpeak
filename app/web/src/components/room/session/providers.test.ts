@@ -73,6 +73,7 @@ describe("getVoiceProviderAdapter", () => {
 
 	it("srs afterMediaJoin applies server mute for muted members", async () => {
 		const { setServerMutedByIdentity } = await import("@/handler_audio");
+		vi.mocked(setServerMutedByIdentity).mockClear();
 		const adapter = getVoiceProviderAdapter("srs");
 		await adapter.afterMediaJoin?.(
 			{ subscribePeers: vi.fn() } as any,
@@ -91,8 +92,34 @@ describe("getVoiceProviderAdapter", () => {
 			},
 		);
 		expect(setServerMutedByIdentity).toHaveBeenCalledWith("bob", true);
+		expect(setServerMutedByIdentity).toHaveBeenCalledWith("carol", false);
 		expect(setServerMutedByIdentity).not.toHaveBeenCalledWith("alice", true);
-		expect(setServerMutedByIdentity).not.toHaveBeenCalledWith("carol", true);
+		expect(setServerMutedByIdentity).not.toHaveBeenCalledWith("alice", false);
+	});
+
+	it("cloudflare afterMediaJoin syncs server mute state both ways", async () => {
+		const { setServerMutedByIdentity } = await import("@/handler_audio");
+		vi.mocked(setServerMutedByIdentity).mockClear();
+		const adapter = getVoiceProviderAdapter("cloudflare");
+		await adapter.afterMediaJoin?.(
+			{ subscribePeers: vi.fn() } as any,
+			{
+				token: "t",
+				room: "r1",
+				identity: "alice",
+				stream: "sess-alice",
+			} as any,
+			{
+				members: [
+					{ identity: "alice", stream: "sess-alice", isMuted: true } as any,
+					{ identity: "bob", stream: "sess-bob", isMuted: true } as any,
+					{ identity: "carol", stream: "sess-carol", isMuted: false } as any,
+				],
+			},
+		);
+		expect(setServerMutedByIdentity).toHaveBeenCalledWith("bob", true);
+		expect(setServerMutedByIdentity).toHaveBeenCalledWith("carol", false);
+		expect(setServerMutedByIdentity).not.toHaveBeenCalledWith("alice", true);
 	});
 
 	it("livekit afterMediaJoin is optional/no-op", async () => {

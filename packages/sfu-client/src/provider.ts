@@ -4,10 +4,6 @@ export type SFUProvider = "livekit" | "agora" | "srs" | "cloudflare";
 /** 暂时禁用但仍保留代码与类型的 SFU provider。 */
 export const DISABLED_SFU_PROVIDERS: readonly SFUProvider[] = ["agora"];
 
-export const ENABLED_SFU_PROVIDERS: readonly SFUProvider[] = (
-	["livekit", "agora", "srs", "cloudflare"] as const
-).filter((provider) => !DISABLED_SFU_PROVIDERS.includes(provider));
-
 export function isSFUProviderEnabled(provider: SFUProvider): boolean {
 	return !DISABLED_SFU_PROVIDERS.includes(provider);
 }

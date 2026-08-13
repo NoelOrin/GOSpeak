@@ -72,4 +72,26 @@ describe("server mute socket events", () => {
 		adapter.emit(EVENTS.MEMBER_MUTED, {});
 		expect(setServerMutedByIdentity).not.toHaveBeenCalled();
 	});
+
+	it("member:muted honors payload muted flag", async () => {
+		const { setServerMutedByIdentity } = await import("@/handler_audio");
+		vi.mocked(setServerMutedByIdentity).mockClear();
+		const { bindServerEvents } = await import("@/socket/socketEvents");
+		const adapter = createFakeAdapter();
+		bindServerEvents(adapter as any, fakeDeps());
+
+		adapter.emit(EVENTS.MEMBER_MUTED, { identity: "bob", muted: false });
+		expect(setServerMutedByIdentity).toHaveBeenCalledWith("bob", false);
+	});
+
+	it("member:unmuted honors payload muted flag", async () => {
+		const { setServerMutedByIdentity } = await import("@/handler_audio");
+		vi.mocked(setServerMutedByIdentity).mockClear();
+		const { bindServerEvents } = await import("@/socket/socketEvents");
+		const adapter = createFakeAdapter();
+		bindServerEvents(adapter as any, fakeDeps());
+
+		adapter.emit(EVENTS.MEMBER_UNMUTED, { identity: "bob", muted: true });
+		expect(setServerMutedByIdentity).toHaveBeenCalledWith("bob", true);
+	});
 });

@@ -124,4 +124,3 @@ func TestInit_EmbeddedPortFixed(t *testing.T) {
 		t.Fatalf("ConnectedUrl = %q, want %q", got, want)
 	}
 }
-

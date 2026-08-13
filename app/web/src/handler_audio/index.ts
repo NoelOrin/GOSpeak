@@ -50,6 +50,9 @@ function onTrackUnsubscribed(identity: string) {
 	const track = tracks.get(identity);
 	track?.detach();
 	tracks.delete(identity);
+	// 服务器静音是事件驱动状态：轨道移除后残留会导致 Set 无限增长，
+	// 且成员重连后 join ack 会重新同步该状态。
+	serverMutedIdentities.delete(identity);
 	const el = audioElements.get(identity);
 	if (el?.parentNode) {
 		el.parentNode.removeChild(el);
@@ -120,23 +123,28 @@ export function setVolumeByIdentity(identity: string, volume: number) {
 }
 
 export function setMutedByIdentity(identity: string, muted: boolean) {
-	if (muted) {
-		mutedIdentities.add(identity);
-	} else {
-		mutedIdentities.delete(identity);
-	}
-	const track = tracks.get(identity);
-	if (track) {
-		track.setVolume(effectiveVolume(identity));
-	}
+	applyMuteState(identity, mutedIdentities, muted);
 }
 
 /** 服务器禁言驱动的订阅端静音（member:muted/member:unmuted），独立于本地个人静音。 */
 export function setServerMutedByIdentity(identity: string, muted: boolean) {
+	applyMuteState(identity, serverMutedIdentities, muted);
+}
+
+/** 测试/调试用：当前被服务器静音的 identity 集合。 */
+export function getServerMutedIdentities(): ReadonlySet<string> {
+	return serverMutedIdentities;
+}
+
+function applyMuteState(
+	identity: string,
+	store: Set<string>,
+	muted: boolean,
+): void {
 	if (muted) {
-		serverMutedIdentities.add(identity);
+		store.add(identity);
 	} else {
-		serverMutedIdentities.delete(identity);
+		store.delete(identity);
 	}
 	const track = tracks.get(identity);
 	if (track) {

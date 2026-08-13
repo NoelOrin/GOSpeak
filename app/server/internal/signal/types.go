@@ -4,9 +4,9 @@ type RoomRequest struct {
 	Room string `json:"room"`
 	// DomainUUID 命名空间隔离：同一房间名在不同 Domain 下视为不同房间。
 	DomainUUID string `json:"domain_uuid,omitempty"`
-	Password  string `json:"password,omitempty"`
-	Identity  string `json:"identity,omitempty"`
-	Stream    string `json:"stream,omitempty"`
+	Password   string `json:"password,omitempty"`
+	Identity   string `json:"identity,omitempty"`
+	Stream     string `json:"stream,omitempty"`
 }
 
 type MemberInfo struct {
@@ -25,7 +25,7 @@ type RoomInfo struct {
 	ID            uint         `json:"id"`
 	UUID          string       `json:"uuid"`
 	Name          string       `json:"name"`
-	DomainUUID     string       `json:"domain_uuid,omitempty"`
+	DomainUUID    string       `json:"domain_uuid,omitempty"`
 	HasPassword   bool         `json:"hasPassword"`
 	Description   string       `json:"description"`
 	Limit         uint         `json:"limit"`
