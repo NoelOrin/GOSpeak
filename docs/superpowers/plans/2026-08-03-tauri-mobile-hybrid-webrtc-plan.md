@@ -1,5 +1,7 @@
 # Tauri 移动端混合 WebRTC 实施计划
 
+> **Status (2026-08-13):** 🔴 未启动 (2026-08-13) — 仓库无任何 tauri 代码; 唯一未动工的大计划
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在复用 `@gospeak/web` 的前提下，为 GOSpeak 增加 Tauri 2 移动端壳与原生 WebRTC 媒体层，实现 Android/iOS 前台与后台 LiveKit 语音，同时保持 Web 端行为不变。

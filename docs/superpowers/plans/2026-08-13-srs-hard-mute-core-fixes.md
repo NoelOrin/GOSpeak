@@ -1,5 +1,7 @@
 # SRS 硬禁言核心修复 Implementation Plan
 
+> **Status (2026-08-13):** 🟠 进行中 (2026-08-13) — 代码已 staged 未提交 (mute_expiry job/roomMatches/NATS TTL)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 修复提交 74c835a（Discord 式硬禁言 + SRS API 房间管理）的后端核心缺陷：跨租户房间匹配、禁言黑名单静默失效、离线 unmute 黑名单残留、回调 fail-open、跨实例缓存失效与 NATS TTL 失真。

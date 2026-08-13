@@ -1,5 +1,7 @@
 # SFU Provider 加固 Implementation Plan
 
+> **Status (2026-08-13):** 🟠 进行中 (2026-08-13) — 代码已 staged 未提交 (srs/cloudflare provider/hub_mute/capabilities)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 修复提交 74c835a 引入的 SRS / Cloudflare provider 质量与边界问题（🔵 全量 + 非核心 🟡），包括 HTTP 状态检查、API 失败回退、N+1 反查、删房一致化、跨实例语义诚实化、广播定向化、注入加锁、能力口径对齐、agora 禁用对称、文档清理。

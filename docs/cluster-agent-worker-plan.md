@@ -1,8 +1,7 @@
 # GOSpeak 中心 Agent + Worker 架构实施计划
 
 > 当前状态：Phase 0-5 控制面主体已实现（角色化启动、节点注册/心跳、Server 调度、NATS 控制命令、Worker 只读 DB、前端 workerUrl 路由、集群管理页、Nginx 集群路由、健康统计）；Phase 6 已提供主备锁、DB 写面 fence、自动扩缩/灰度扩展点。本文中未勾选的 checkbox 表示仍待验收或扩展项，不代表整体控制面未实现。
-> 详细剩余计划：`docs/superpowers/plans/2026-08-02-cluster-control-plane-completion.md`
-> 详细实现与验收计划：`docs/superpowers/plans/2026-08-02-cluster-control-plane-completion.md`
+> 实现说明：详细实现与验收计划已由本文档承载；原 `2026-08-02-cluster-control-plane-completion.md` 已完成并清理。
 
 ## 1. 背景
 

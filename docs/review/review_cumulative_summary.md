@@ -11,7 +11,7 @@
 - 15 个风险中 14 个已修复；剩余 1 个（`R09 repository errors.Is`）已在 6ba3dfb 及本轮收口为部分修复，不再阻塞。
 - 24 个 Nit 已全部收口（WS ACK、Remove 语义、KV ctx、logger、DTO、metrics/request_id、restartIce、权限下发等）。
 - 验证：`go test ./...` 通过；前端 Vitest 198/198 通过；mediasoup worker 3/3 通过；`pnpm typecheck` 通过。
-- 跟踪文件：`agent_test_logs/review-24/findings-status.md` 未修复条目已清零；`docs/superpowers/plans/2026-08-05-review-gap-fixes.md` 全部 Task 已勾选。
+- 跟踪文件：`agent_test_logs/review-24/findings-status.md` 未修复条目已清零；2026-08-05 Review 缺口修复计划全部 Task 已勾选（计划文档已完成并清理）。
 
 ## 🔴 确认 Bug（需修复）
 

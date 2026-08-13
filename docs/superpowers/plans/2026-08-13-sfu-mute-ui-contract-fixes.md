@@ -1,5 +1,7 @@
 # SFU 禁言前端与能力契约修复 Implementation Plan
 
+> **Status (2026-08-13):** 🟠 进行中 (2026-08-13) — 代码已 staged 未提交 (vitest 基建/providers/sfuProfiles/handler_audio)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 修复提交 74c835a 引入的前端问题：测试基建假绿灯、join 静音状态单向同步、socket 事件契约字段被忽略、SFU 能力表与后端漂移、agora 禁用不对称、音频状态残留与重复逻辑、WHIP 403 判定过宽、preload 行为不一致。

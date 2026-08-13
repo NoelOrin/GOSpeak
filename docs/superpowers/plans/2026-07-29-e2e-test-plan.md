@@ -1,5 +1,7 @@
 # E2E 端到端测试计划 — Guild + WebSocket Migration
 
+> **Status (2026-08-13):** ⚠️ 部分落地 — Playwright + room-voice-e2e skill 已就绪; 套件部分落地 (见 agent_test_logs)
+
 > **基础框架:** 基于现有 `.agents/skills/room-voice-e2e/` (Playwright)
 > **新增套件:** Guild 管理 / 跨 Guild 隔离 / WS 协议 / WS 断连恢复 / Phase 1+2 全链路
 > **测试范围:** 浏览器 → 前端 → API → WS → 信号层 → SFU 全链路

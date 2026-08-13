@@ -1,5 +1,7 @@
 # Bot 体系重构 + 禁言管理 + 多房间支持 实施计划
 
+> **Status (2026-08-13):** ⚠️ 部分完成 — 主体已由后续 2026-07-16-bot-platform-unified.md 承接 (packages/bot 已实现)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 删除旧 `gk_` BotAPIKey 体系，改为 Bot 以 `users` 表记录 (IsBot=true) 写入 + JWT 同构认证，同时使 Bot 具备禁言管理能力和多房间接入能力。

@@ -1,5 +1,7 @@
 # NATS 多阶段优化 Implementation Plan
 
+> **Status (2026-08-13):** ⚠️ 部分完成 — 阶段一 embedded NATS 已完成; 后续阶段 (在线状态/可靠异步/mediasoup 控制面) 未落地
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
 > **Related:**

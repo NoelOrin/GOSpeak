@@ -1,5 +1,7 @@
 # 项目结构整理与去耦合 实施计划
 
+> **Status (2026-08-13):** ⚠️ 部分完成 — apiClient/roomDetail/socketStore 拆分已落地; 剩余项见 docs/frontend-coupling-remaining.md (已归档)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement task-by-task.
 
 **Goal:** 清理已识别的命名不一致 + 残余前端耦合 + Go 后端 internal 扁平结构优化
