@@ -31,15 +31,3 @@ func FS() http.FileSystem {
 	}
 	return http.FS(sub)
 }
-
-// FileSystem 返回以 dist 根目录为根的 fs.FS，供自定义路由使用。
-func FileSystem() (fs.FS, bool) {
-	if !HasAssets() {
-		return nil, false
-	}
-	sub, err := fs.Sub(embedded, "dist")
-	if err != nil {
-		return nil, false
-	}
-	return sub, true
-}

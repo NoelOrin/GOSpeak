@@ -14,14 +14,6 @@ export type VoicePhase =
 	| "failed"
 	| "leaving";
 
-export type VoiceSessionView = {
-	phase: VoicePhase;
-	roomName: string | null;
-	provider: SFUProvider | undefined;
-	client: SFUClient | null;
-	error: string | null;
-};
-
 export type VoiceJoinAck = {
 	members?: MemberInfo[];
 	room?: string;

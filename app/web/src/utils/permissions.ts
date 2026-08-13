@@ -107,10 +107,4 @@ export function hasManageAccess(): boolean {
 	return hasAnyPermission(...MANAGE_ENTRY_PERMISSIONS);
 }
 
-export function requirePermission(code: string): void {
-	if (!hasPermission(code)) {
-		throw new Error("FORBIDDEN");
-	}
-}
-
 export { rolePermissions };

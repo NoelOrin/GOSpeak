@@ -3,7 +3,6 @@
 package webui
 
 import (
-	"io/fs"
 	"net/http"
 )
 
@@ -16,9 +15,4 @@ func HasAssets() bool {
 // FS 在 noembedweb 构建标签下返回 nil。
 func FS() http.FileSystem {
 	return nil
-}
-
-// FileSystem 在 noembedweb 构建标签下返回空。
-func FileSystem() (fs.FS, bool) {
-	return nil, false
 }

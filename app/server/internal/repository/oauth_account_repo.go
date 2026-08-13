@@ -26,27 +26,6 @@ func (r *OAuthAccountRepository) GetByProviderAndUID(provider, uid string) (*mod
 	return &account, nil
 }
 
-func (r *OAuthAccountRepository) GetByUserID(userID uint) ([]model.OAuthAccount, error) {
-	var accounts []model.OAuthAccount
-	err := r.db.Where("user_id = ?", userID).Find(&accounts).Error
-	if err != nil {
-		return nil, err
-	}
-	for i := range accounts {
-		if err := decryptOAuthAccountSecrets(&accounts[i]); err != nil {
-			return nil, err
-		}
-	}
-	return accounts, err
-}
-
-func (r *OAuthAccountRepository) Create(account *model.OAuthAccount) error {
-	if err := encryptOAuthAccountSecrets(account); err != nil {
-		return err
-	}
-	return r.db.Create(account).Error
-}
-
 // CreateWithUser 原子地创建用户并绑定 OAuth 账户，避免第二步失败留下孤儿用户。
 func (r *OAuthAccountRepository) CreateWithUser(user *model.User, account *model.OAuthAccount) error {
 	if err := encryptOAuthAccountSecrets(account); err != nil {

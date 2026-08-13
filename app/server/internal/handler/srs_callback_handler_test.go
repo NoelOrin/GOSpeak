@@ -44,7 +44,7 @@ func postJSON(t *testing.T, h *SRSCallbackHandler, payload map[string]string) *h
 
 func TestSrsCallback_OnPublish_ValidToken_RegistersStream(t *testing.T) {
 	hub := newCallbackHub()
-	h := NewSRSCallbackHandler(hub, "secret")
+	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
 
 	stream := "gs-aaa"
 	tok := srsStreamTokenForTest(stream, "secret")
@@ -64,7 +64,7 @@ func TestSrsCallback_OnPublish_ValidToken_RegistersStream(t *testing.T) {
 
 func TestSrsCallback_OnPublish_InvalidToken_Rejects(t *testing.T) {
 	hub := newCallbackHub()
-	h := NewSRSCallbackHandler(hub, "secret")
+	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
 	payload := map[string]string{
 		"action": "on_publish",
 		"stream": "live/gs-aaa",
@@ -83,7 +83,7 @@ func TestSrsCallback_OnPublish_InvalidToken_Rejects(t *testing.T) {
 func TestSrsCallback_OnPlay_ActiveStream_Allows(t *testing.T) {
 	hub := newCallbackHub()
 	hub.RegisterStream("gs-bbb")
-	h := NewSRSCallbackHandler(hub, "secret")
+	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
 	tok := srsStreamTokenForTest("gs-bbb", "secret")
 	payload := map[string]string{
 		"action": "on_play",
@@ -99,7 +99,7 @@ func TestSrsCallback_OnPlay_ActiveStream_Allows(t *testing.T) {
 func TestSrsCallback_OnPlay_MissingToken_Rejects(t *testing.T) {
 	hub := newCallbackHub()
 	hub.RegisterStream("gs-bbb")
-	h := NewSRSCallbackHandler(hub, "secret")
+	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
 	payload := map[string]string{
 		"action": "on_play",
 		"stream": "gs-bbb",
@@ -130,7 +130,7 @@ func TestSrsCallback_ResolveSecret_UsesResolver(t *testing.T) {
 
 func TestSrsCallback_OnPlay_InactiveStream_Rejects(t *testing.T) {
 	hub := newCallbackHub()
-	h := NewSRSCallbackHandler(hub, "secret")
+	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
 	payload := map[string]string{
 		"action": "on_play",
 		"stream": "gs-ccc",
@@ -146,7 +146,7 @@ func TestSrsCallback_OnPlay_InactiveStream_Rejects(t *testing.T) {
 func TestSrsCallback_OnUnpublish_UnregistersStream(t *testing.T) {
 	hub := newCallbackHub()
 	hub.RegisterStream("gs-ddd")
-	h := NewSRSCallbackHandler(hub, "secret")
+	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
 	payload := map[string]string{
 		"action": "on_unpublish",
 		"stream": "gs-ddd",
@@ -161,7 +161,7 @@ func TestSrsCallback_OnUnpublish_UnregistersStream(t *testing.T) {
 func TestSrsCallback_OnUnpublish_InvalidToken_Rejects(t *testing.T) {
 	hub := newCallbackHub()
 	hub.RegisterStream("gs-invalid")
-	h := NewSRSCallbackHandler(hub, "secret")
+	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
 	payload := map[string]string{
 		"action": "on_unpublish",
 		"stream": "gs-invalid",
@@ -176,7 +176,7 @@ func TestSrsCallback_OnUnpublish_InvalidToken_Rejects(t *testing.T) {
 func TestSrsCallback_OnUnpublish_MissingToken_Rejects(t *testing.T) {
 	hub := newCallbackHub()
 	hub.RegisterStream("gs-notoken")
-	h := NewSRSCallbackHandler(hub, "secret")
+	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
 	payload := map[string]string{
 		"action": "on_unpublish",
 		"stream": "gs-notoken",
@@ -191,7 +191,7 @@ func TestSrsCallback_OnUnpublish_MissingToken_Rejects(t *testing.T) {
 func TestSrsCallback_OnStop_DoesNotUnregister(t *testing.T) {
 	hub := newCallbackHub()
 	hub.RegisterStream("gs-eee")
-	h := NewSRSCallbackHandler(hub, "secret")
+	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
 	payload := map[string]string{
 		"action": "on_stop",
 		"stream": "gs-eee",
@@ -274,7 +274,7 @@ func TestParseCallbackParams_EmptyOrInvalidReturnsEmpty(t *testing.T) {
 
 func TestSrsCallback_OnPublish_BlockedStream_Rejects(t *testing.T) {
 	hub := newCallbackHub()
-	h := NewSRSCallbackHandler(hub, "secret")
+	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
 	store := sfu.NewMemoryMuteRuleStore()
 	_ = store.Save(context.Background(), srs.PublishBlockKey("gs-aaa"), 1, 0)
 	h.SetMuteRuleStore(store)
@@ -297,7 +297,7 @@ func TestSrsCallback_OnPublish_BlockedStream_Rejects(t *testing.T) {
 
 func TestSrsCallback_OnPublish_AfterUnmute_Allows(t *testing.T) {
 	hub := newCallbackHub()
-	h := NewSRSCallbackHandler(hub, "secret")
+	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
 	store := sfu.NewMemoryMuteRuleStore()
 	h.SetMuteRuleStore(store)
 	stream := "gs-aaa"

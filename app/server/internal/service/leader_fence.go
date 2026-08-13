@@ -65,10 +65,3 @@ func (s *LeaderFenceService) Deactivate() {
 	s.active = false
 	s.mu.Unlock()
 }
-
-// Active 返回本地写面是否仍处于激活状态。
-func (s *LeaderFenceService) Active() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.active
-}

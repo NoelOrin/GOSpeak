@@ -1,7 +1,6 @@
 import type { SFUClient } from "@gospeak/sfu-client/types";
 import { createEffect } from "solid-js";
 import {
-	cleanupAudioHandler,
 	setAudioOutputDevice,
 	setMasterMuted,
 	setMasterVolume,
@@ -48,8 +47,4 @@ export function useRoomAudioBridge(
 	createEffect(() => {
 		setAudioOutputDevice(AudioDeviceStore.state.selectedAudioOutput || "");
 	});
-}
-
-export function teardownRoomAudioBridge() {
-	cleanupAudioHandler();
 }

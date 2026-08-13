@@ -20,12 +20,6 @@ func (r *RoleRepository) List() ([]model.Role, error) {
 	return roles, err
 }
 
-func (r *RoleRepository) GetByName(name string) (*model.Role, error) {
-	var role model.Role
-	err := r.db.Where("name = ?", name).First(&role).Error
-	return &role, err
-}
-
 func (r *RoleRepository) CreateIfNotExists(role *model.Role) error {
 	return r.db.Where("name = ?", role.Name).FirstOrCreate(role).Error
 }

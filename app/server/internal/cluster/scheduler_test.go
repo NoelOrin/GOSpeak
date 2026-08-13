@@ -14,7 +14,7 @@ func TestChooseNodesSkipsUnhealthyAndPrefersPreferred(t *testing.T) {
 		{UUID: "d", Status: model.ClusterNodeReady, SFUHealthy: false, MaxServers: 10, MaxRooms: 100},
 	}
 
-	got := ChooseNodes(nodes, nil, 2, "a")
+	got := ChooseNodesWithRequirement(nodes, nil, 2, []string{"a"}, NodeRequirement{})
 	if len(got) != 2 {
 		t.Fatalf("expected 2 nodes, got %v", got)
 	}
@@ -33,14 +33,14 @@ func TestChooseNodesSkipsAlreadyAssigned(t *testing.T) {
 	}
 	current := []model.ServerAssignment{{ServerUUID: "srv", NodeUUID: "a"}}
 
-	got := ChooseNodes(nodes, current, 1)
+	got := ChooseNodesWithRequirement(nodes, current, 1, nil, NodeRequirement{})
 	if len(got) != 1 || got[0] != "b" {
 		t.Fatalf("expected only unassigned node b, got %v", got)
 	}
 }
 
 func TestChooseNodesZeroCount(t *testing.T) {
-	if got := ChooseNodes(nil, nil, 0); got != nil {
+	if got := ChooseNodesWithRequirement(nil, nil, 0, nil, NodeRequirement{}); got != nil {
 		t.Fatalf("expected nil for zero count, got %v", got)
 	}
 }

@@ -112,7 +112,3 @@ func (s *SFUService) ListRooms() ([]sfu.RoomSummary, error) {
 func (s *SFUService) ListParticipants(room string) ([]sfu.ParticipantSummary, error) {
 	return s.provider.ListParticipants(room)
 }
-
-func (s *SFUService) Capabilities() sfu.Capabilities {
-	return s.provider.Capabilities()
-}

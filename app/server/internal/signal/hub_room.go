@@ -58,21 +58,6 @@ func roomLookupIdentity(room *Room, identity string) *MemberInfo {
 	return nil
 }
 
-// roomInitByIdentity lazy-inits ByIdentity from existing Members.
-
-// roomInitByIdentity lazy-inits ByIdentity from existing Members.
-func roomInitByIdentity(room *Room) {
-	if room.ByIdentity != nil {
-		return
-	}
-	room.ByIdentity = make(map[string]*MemberInfo, len(room.Members))
-	for _, m := range room.Members {
-		if m.Identity != "" {
-			room.ByIdentity[m.Identity] = m
-		}
-	}
-}
-
 // socketServer is replaced by ws.Broadcaster.
 
 // eventBus is the narrow publish surface used by Hub for client fanout.

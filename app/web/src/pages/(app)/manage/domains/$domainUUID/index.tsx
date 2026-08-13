@@ -41,6 +41,7 @@ import domainStore from "@/stores/domainStore";
 import userStore from "@/stores/userStore";
 import { hasDomainPermission } from "@/utils/domainPermissions";
 import { hasAnyPermission, hasPermission } from "@/utils/permissions";
+import { domainNameSchema, fieldError } from "@/utils/formSchemas";
 
 export const Route = createFileRoute("/(app)/manage/domains/$domainUUID/")({
 	component: RouteComponent,
@@ -56,9 +57,8 @@ export interface DomainFormErrors {
 
 export function validateDomainForm(name: string): DomainFormErrors {
 	const errors: DomainFormErrors = {};
-	if (!name.trim()) {
-		errors.name = "域名称不能为空";
-	}
+	const message = fieldError(domainNameSchema, name);
+	if (message) errors.name = message;
 	return errors;
 }
 
@@ -75,8 +75,13 @@ function apiErrorMessage(error: unknown) {
 
 function RouteComponent() {
 	const params = Route.useParams();
-	const { state, setCurrentDomain, loadMembers, loadMyPermissions, updateCachedDomain } =
-		domainStore;
+	const {
+		state,
+		setCurrentDomain,
+		loadMembers,
+		loadMyPermissions,
+		updateCachedDomain,
+	} = domainStore;
 	const uuid = () => params().domainUUID;
 	const currentUser = () => userStore.user();
 

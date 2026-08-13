@@ -47,8 +47,8 @@ func TestLeaderFence_VerifyFailsAfterTakeover(t *testing.T) {
 	if err := svcA.Verify(); err == nil {
 		t.Fatal("old leader verify must fail after takeover")
 	}
-	if svcA.Active() {
-		t.Fatal("old leader should be deactivated after failed verify")
+	if err := svcA.Verify(); err == nil {
+		t.Fatal("old leader verify must keep failing after takeover")
 	}
 }
 

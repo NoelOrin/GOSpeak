@@ -4,6 +4,13 @@ import { showToast } from "solid-notifications";
 import type { RoomRecord } from "@/api/room";
 import { updateRoom } from "@/api/room";
 import { Form, type FormFieldConfig } from "@/components/form";
+import {
+	editRoomLimitSchema,
+	editRoomSchema,
+	fieldError,
+	roomDescriptionSchema,
+	roomNameSchema,
+} from "@/utils/formSchemas";
 
 function apiErrorMessage(error: unknown) {
 	const response = (
@@ -27,15 +34,23 @@ export function validateEditRoomForm(
 	description: string,
 	limit: number | "",
 ): EditRoomFormErrors {
+	const result = editRoomSchema.safeParse({ name, description, limit });
+	if (result.success) return {};
+
 	const errors: EditRoomFormErrors = {};
-	const trimmed = name.trim();
-	if (trimmed.length < 2) errors.name = "房间名称至少需要 2 个字符";
-	else if (trimmed.length > 32) errors.name = "房间名称不能超过 32 个字符";
-	if (description.trim().length > 120)
-		errors.description = "房间说明不能超过 120 个字符";
-	if (limit === "" || Number.isNaN(limit) || limit < 2)
-		errors.limit = "人数上限至少为 2";
-	else if (limit > 200) errors.limit = "人数上限不能超过 200";
+	for (const issue of result.error.issues) {
+		switch (issue.path[0]) {
+			case "name":
+				if (!errors.name) errors.name = issue.message;
+				break;
+			case "description":
+				if (!errors.description) errors.description = issue.message;
+				break;
+			case "limit":
+				if (!errors.limit) errors.limit = issue.message;
+				break;
+		}
+	}
 	return errors;
 }
 
@@ -48,10 +63,10 @@ interface EditRoomModalProps {
 
 const EditRoomModal: Component<EditRoomModalProps> = (props) => {
 	const roomNameValidation = (value: string) =>
-		validateEditRoomForm(value, "", 2).name;
+		fieldError(roomNameSchema, value);
 
 	const limitValidation = (value: number) =>
-		validateEditRoomForm("x", "", value).limit;
+		fieldError(editRoomLimitSchema, value);
 
 	const form = createForm(() => ({
 		defaultValues: {
@@ -111,8 +126,7 @@ const EditRoomModal: Component<EditRoomModalProps> = (props) => {
 			label: "房间说明",
 			type: "textarea",
 			placeholder: "选填，用于说明当前房间的主题或规则",
-			validation: (value: string) =>
-				validateEditRoomForm("x", value, 2).description,
+			validation: (value: string) => fieldError(roomDescriptionSchema, value),
 			className: "min-h-24",
 		},
 	];

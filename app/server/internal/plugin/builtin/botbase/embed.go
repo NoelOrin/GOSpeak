@@ -4,22 +4,12 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 )
 
 // assets 在编译期嵌入二进制，发布产物无需额外携带 bot 基础插件文件。
 //
 //go:embed all:assets
 var embeddedAssets embed.FS
-
-// EmbeddedFS 返回 bot-base 内嵌资源（manifest / default_config 等）。
-func EmbeddedFS() fs.FS {
-	sub, err := fs.Sub(embeddedAssets, "assets")
-	if err != nil {
-		return embeddedAssets
-	}
-	return sub
-}
 
 func loadEmbeddedManifest() (map[string]any, error) {
 	b, err := embeddedAssets.ReadFile("assets/manifest.json")

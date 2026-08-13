@@ -5,6 +5,13 @@ import { showToast } from "solid-notifications";
 import { createRoom as createRoomApi } from "@/api/room";
 import { Form, type FormFieldConfig } from "@/components/form";
 import { socketStore } from "@/stores/socketStore";
+import {
+	createRoomLimitSchema,
+	fieldError,
+	roomDescriptionSchema,
+	roomNameSchema,
+	roomPasswordSchema,
+} from "@/utils/formSchemas";
 
 export interface CreateRoomConfig {
 	name: string;
@@ -27,19 +34,11 @@ interface CreateRoomModalProps {
 
 const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 	const navigate = useNavigate();
-	const roomNameValidation = (value: string) => {
-		const trimmed = value.trim();
-		if (trimmed.length < 2) return "房间名称至少需要 2 个字符";
-		if (trimmed.length > 32) return "房间名称不能超过 32 个字符";
-		return undefined;
-	};
+	const roomNameValidation = (value: string) =>
+		fieldError(roomNameSchema, value);
 
-	const limitValidation = (value: number) => {
-		if (Number.isNaN(value)) return "请填写人数上限";
-		if (value < 2) return "人数上限至少为 2";
-		if (value > 200) return "人数上限不能超过 200";
-		return undefined;
-	};
+	const limitValidation = (value: number) =>
+		fieldError(createRoomLimitSchema, value);
 
 	const form = createForm(() => ({
 		defaultValues: {
@@ -140,8 +139,7 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 			label: "房间密码",
 			type: "password",
 			placeholder: "选填，留空表示公开房间",
-			validation: (value: string) =>
-				value.length > 32 ? "房间密码不能超过 32 个字符" : undefined,
+			validation: (value: string) => fieldError(roomPasswordSchema, value),
 		},
 		{
 			name: "limit",
@@ -170,8 +168,7 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 			label: "房间说明",
 			type: "textarea",
 			placeholder: "选填，用于说明当前房间的主题或规则",
-			validation: (value: string) =>
-				value.trim().length > 120 ? "房间说明不能超过 120 个字符" : undefined,
+			validation: (value: string) => fieldError(roomDescriptionSchema, value),
 			className: "min-h-24",
 		},
 	];

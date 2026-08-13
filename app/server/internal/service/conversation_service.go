@@ -194,14 +194,6 @@ func (s *ConversationService) MarkRead(conversationID, identity string) error {
 	return nil
 }
 
-// ConvTo returns the identity of the other participant in a conversation.
-func ConvTo(cp *model.ConversationParticipant, self string) string {
-	if cp.IdentityA != self {
-		return cp.IdentityA
-	}
-	return cp.IdentityB
-}
-
 // SendDirect creates and broadcasts a private message, then enqueues async persistence.
 // Data-plane instances never fall back to a synchronous DB write.
 func (s *ConversationService) SendDirect(senderIdentity, targetIdentity, content, clientNonce string) (*MessageDTO, error) {

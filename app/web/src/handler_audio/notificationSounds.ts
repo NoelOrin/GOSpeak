@@ -10,10 +10,6 @@ export function setNotificationSoundEnabled(v: boolean) {
 	enabled = v;
 }
 
-export function isNotificationSoundEnabled(): boolean {
-	return enabled;
-}
-
 function playTone(
 	freq: number,
 	duration: number,

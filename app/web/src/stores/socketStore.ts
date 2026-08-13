@@ -43,10 +43,8 @@ const handleProviderChanged = createProviderReloadHandler({
 export type {
 	ActivityEvent,
 	MemberInfo,
-	MuteEvent,
 	RoomInfo,
 	RoomPresenceEvent,
-	UnmuteEvent,
 } from "@/socket/types";
 
 import type {

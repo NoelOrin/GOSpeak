@@ -60,12 +60,6 @@ func NodeScore(node model.ClusterNode) float64 {
 	return servers*0.4 + rooms*0.3 + load*0.3
 }
 
-// ChooseNodes 从可调度节点中选择 count 个未分配给指定 Server 的节点。
-// 优先选择 preferred 中出现的节点，再按负载评分升序选择。
-func ChooseNodes(nodes []model.ClusterNode, current []model.ServerAssignment, count int, preferred ...string) []string {
-	return ChooseNodesWithRequirement(nodes, current, count, preferred, NodeRequirement{})
-}
-
 // ChooseNodesWithRequirement 从满足标签/Provider 约束的可调度节点中选择 count 个。
 func ChooseNodesWithRequirement(nodes []model.ClusterNode, current []model.ServerAssignment, count int, preferred []string, requirement NodeRequirement) []string {
 	if count <= 0 {

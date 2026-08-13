@@ -43,13 +43,6 @@ func (h *RoomHandler) SetRoomListBroadcaster(b roomListBroadcaster) {
 	h.roomListBroadcaster = b
 }
 
-// notifyRoomList 触发信号层房间列表广播（房间变更后通知所有在线客户端）。
-func (h *RoomHandler) notifyRoomList(domainUUID string) {
-	if h.roomListBroadcaster != nil {
-		h.roomListBroadcaster.BroadcastRoomList(domainUUID)
-	}
-}
-
 func currentUserUUID(c *gin.Context) string {
 	if v, ok := c.Get("user_uuid"); ok {
 		if s, ok := v.(string); ok && s != "" {

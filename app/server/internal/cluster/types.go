@@ -2,7 +2,6 @@
 package cluster
 
 import (
-	"encoding/json"
 	"strings"
 )
 
@@ -51,16 +50,4 @@ func ParseLabels(raw string) map[string]string {
 		labels[key] = strings.TrimSpace(value)
 	}
 	return labels
-}
-
-// EncodeLabels 序列化标签 map 为 JSON 字符串。
-func EncodeLabels(labels map[string]string) string {
-	if labels == nil {
-		labels = map[string]string{}
-	}
-	raw, err := json.Marshal(labels)
-	if err != nil {
-		return "{}"
-	}
-	return string(raw)
 }

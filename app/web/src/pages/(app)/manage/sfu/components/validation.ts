@@ -1,5 +1,6 @@
 import type { UpdateSFUConfigParams } from "@/api/sfu";
 import { PROVIDER_FIELD_KEYS, type SecretFlags } from "./constants";
+import { z } from "zod";
 
 export type FieldErrors = Partial<Record<keyof UpdateSFUConfigParams, string>>;
 
@@ -31,72 +32,110 @@ export const isHost = (v: string): boolean => {
 	return /^[a-zA-Z0-9.\-_:]+$/.test(s);
 };
 
+const requiredString = (message: string) =>
+	z.unknown().refine((value) => clean(String(value ?? "")) !== "", message);
+
+const secretString = (set: boolean, message: string) =>
+	z
+		.unknown()
+		.refine((value) => set || clean(String(value ?? "")) !== "", message);
+
+const urlString = (schemes: string[], message: string) =>
+	z.unknown().refine((value) => isUrl(String(value ?? ""), schemes), message);
+
+const optionalUrlString = (schemes: string[], message: string) =>
+	z
+		.unknown()
+		.refine((value) => !value || isUrl(String(value), schemes), message);
+
+function sfuSchema(form: UpdateSFUConfigParams, flags: SecretFlags) {
+	switch (form.provider) {
+		case "livekit":
+			return z.object({
+				provider: z.literal("livekit"),
+				livekit_host: urlString(
+					["ws", "wss"],
+					"需要 ws:// 或 wss:// 开头的合法 URL",
+				),
+				livekit_key: requiredString("API Key 必填"),
+				livekit_secret: secretString(
+					flags.livekit_secret_set,
+					"API Secret 必填",
+				),
+			});
+		case "agora":
+			return z.object({
+				provider: z.literal("agora"),
+				agora_app_id: requiredString("App ID 必填"),
+				agora_app_certificate: secretString(
+					flags.agora_app_certificate_set,
+					"App Certificate 必填",
+				),
+				agora_customer_id: requiredString("Customer ID 必填"),
+				agora_customer_secret: secretString(
+					flags.agora_customer_secret_set,
+					"Customer Secret 必填",
+				),
+				agora_host: optionalUrlString(
+					["http", "https"],
+					"需要 http(s):// 开头的合法 URL",
+				),
+			});
+		case "srs":
+			return z.object({
+				provider: z.literal("srs"),
+				srs_host: z
+					.unknown()
+					.refine(
+						(value) => isHost(String(value ?? "")),
+						"需要域名或 IP, 不含 scheme / 路径 / 引号",
+					),
+				srs_api_port: z
+					.unknown()
+					.refine((value) => isPort(String(value ?? "")), "1-65535 数字"),
+				srs_secret: secretString(flags.srs_secret_set, "Secret 必填"),
+				srs_public_host: z
+					.unknown()
+					.refine(
+						(value) =>
+							!value || isUrl(String(value), ["http", "https", "ws", "wss"]),
+						"需要 http(s)/ws(s) URL，或留空",
+					),
+				srs_whip_url: z
+					.unknown()
+					.refine(
+						(value) =>
+							!value ||
+							String(value).startsWith("/") ||
+							isUrl(String(value), ["http", "https"]),
+						"需要绝对路径或 http(s) URL",
+					),
+			});
+		case "cloudflare":
+			return z.object({
+				provider: z.literal("cloudflare"),
+				cf_app_id: requiredString("App ID 必填"),
+				cf_app_secret: secretString(flags.cf_app_secret_set, "App Secret 必填"),
+			});
+		default:
+			return z.object({ provider: z.string() });
+	}
+}
+
 export function validateSFUForm(
 	form: UpdateSFUConfigParams,
 	flags: SecretFlags,
 ): FieldErrors {
-	const f = form;
-	const e: FieldErrors = {};
-	const p = f.provider;
+	const result = sfuSchema(form, flags).safeParse(form);
+	if (result.success) return {};
 
-	const require = (key: keyof UpdateSFUConfigParams, msg: string) => {
-		if (!clean(String(f[key] ?? ""))) e[key] = msg;
-	};
-	const requireSecret = (
-		key: keyof UpdateSFUConfigParams,
-		set: boolean,
-		msg: string,
-	) => {
-		if (!set && !clean(String(f[key] ?? ""))) e[key] = msg;
-	};
-
-	if (p === "livekit") {
-		if (!isUrl(f.livekit_host ?? "", ["ws", "wss"]))
-			e.livekit_host = "需要 ws:// 或 wss:// 开头的合法 URL";
-		require("livekit_key", "API Key 必填");
-		requireSecret(
-			"livekit_secret",
-			flags.livekit_secret_set,
-			"API Secret 必填",
-		);
-	} else if (p === "agora") {
-		require("agora_app_id", "App ID 必填");
-		requireSecret(
-			"agora_app_certificate",
-			flags.agora_app_certificate_set,
-			"App Certificate 必填",
-		);
-		require("agora_customer_id", "Customer ID 必填");
-		requireSecret(
-			"agora_customer_secret",
-			flags.agora_customer_secret_set,
-			"Customer Secret 必填",
-		);
-		if (f.agora_host && !isUrl(f.agora_host, ["http", "https"]))
-			e.agora_host = "需要 http(s):// 开头的合法 URL";
-	} else if (p === "srs") {
-		if (!isHost(f.srs_host ?? ""))
-			e.srs_host = "需要域名或 IP, 不含 scheme / 路径 / 引号";
-		if (!isPort(f.srs_api_port ?? "")) e.srs_api_port = "1-65535 数字";
-		requireSecret("srs_secret", flags.srs_secret_set, "Secret 必填");
-		if (
-			f.srs_public_host &&
-			!isUrl(f.srs_public_host, ["http", "https", "ws", "wss"])
-		)
-			e.srs_public_host = "需要 http(s)/ws(s) URL，或留空";
-		if (
-			f.srs_whip_url &&
-			!(
-				f.srs_whip_url.startsWith("/") ||
-				isUrl(f.srs_whip_url, ["http", "https"])
-			)
-		)
-			e.srs_whip_url = "需要绝对路径或 http(s) URL";
-	} else if (p === "cloudflare") {
-		require("cf_app_id", "App ID 必填");
-		requireSecret("cf_app_secret", flags.cf_app_secret_set, "App Secret 必填");
+	const errors: FieldErrors = {};
+	for (const issue of result.error.issues) {
+		const key = issue.path[0] as keyof UpdateSFUConfigParams | undefined;
+		if (key === undefined || key === "provider") continue;
+		if (!errors[key]) errors[key] = issue.message;
 	}
-	return e;
+	return errors;
 }
 
 /** 仅清洗并保留当前 provider 的字段，提交体不再夹带其他 SFU 参数。 */

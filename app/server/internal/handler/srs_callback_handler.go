@@ -25,10 +25,6 @@ type SRSCallbackHandler struct {
 	muteStore     sfu.MuteRuleStore
 }
 
-func NewSRSCallbackHandler(hub *signal.Hub, secret string) *SRSCallbackHandler {
-	return &SRSCallbackHandler{hub: hub, secret: secret}
-}
-
 func NewSRSCallbackHandlerWithResolver(hub *signal.Hub, resolve func() string) *SRSCallbackHandler {
 	return &SRSCallbackHandler{hub: hub, resolveSecret: resolve}
 }

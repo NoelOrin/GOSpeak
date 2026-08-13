@@ -1,5 +1,10 @@
 import { createForm } from "@tanstack/solid-form";
 import { createSignal, Show } from "solid-js";
+import {
+	fieldError,
+	newPasswordSchema,
+	requiredString,
+} from "@/utils/formSchemas";
 
 interface PasswordChangeFormProps {
 	onSubmit: (values: {
@@ -57,7 +62,7 @@ export default function PasswordChangeForm(props: PasswordChangeFormProps) {
 					name="username"
 					validators={{
 						onChange: ({ value }: { value: string }) => {
-							if (!value) return "用户名 是必填项";
+							return fieldError(requiredString("用户名 是必填项"), value);
 						},
 					}}
 				>
@@ -110,7 +115,7 @@ export default function PasswordChangeForm(props: PasswordChangeFormProps) {
 					name="oldPassword"
 					validators={{
 						onChange: ({ value }: { value: string }) => {
-							if (!value) return "旧密码 是必填项";
+							return fieldError(requiredString("旧密码 是必填项"), value);
 						},
 					}}
 				>
@@ -143,8 +148,7 @@ export default function PasswordChangeForm(props: PasswordChangeFormProps) {
 				name="newPassword"
 				validators={{
 					onChange: ({ value }: { value: string }) => {
-						if (!value) return "新密码 是必填项";
-						if (value.length < 6) return "密码长度不能少于6位";
+						return fieldError(newPasswordSchema, value);
 					},
 				}}
 			>
@@ -177,7 +181,7 @@ export default function PasswordChangeForm(props: PasswordChangeFormProps) {
 				validators={{
 					onChangeListenTo: ["newPassword"],
 					onChange: ({ value }: { value: string }) => {
-						if (!value) return "确认密码 是必填项";
+						return fieldError(requiredString("确认密码 是必填项"), value);
 					},
 				}}
 			>
