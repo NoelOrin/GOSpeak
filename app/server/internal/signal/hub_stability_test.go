@@ -212,6 +212,84 @@ func TestHub_OnMemberSpeaking_MuteCheckErrorIgnored(t *testing.T) {
 	}
 }
 
+// TestHub_OnMemberSpeaking_DedupesUnchangedState 验证同值上报不再重复广播
+// room:active-speakers，只有状态翻转（true/false）才广播。
+func TestHub_OnMemberSpeaking_DedupesUnchangedState(t *testing.T) {
+	hub := NewHub(nil, newMockMuteStore(), nil, nil)
+	hub.fanout = newMockBroadcaster()
+	seedKickRoom(hub, "domain-a:lobby", map[string]string{"sock-1": "alice"})
+
+	conn := newAuthedMockClient("sock-1", "alice")
+	hub.OnMemberSpeaking(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"alice","speaking":true}`)
+	hub.OnMemberSpeaking(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"alice","speaking":true}`)
+
+	fanout := hub.fanout.(*mockBroadcaster)
+	if got := len(fanout.roomCasts["domain-a:lobby"][EventRoomActiveSpeakers]); got != 1 {
+		t.Fatalf("duplicate same-value speaking must not re-broadcast, got %d broadcasts", got)
+	}
+
+	// 状态翻转必须广播
+	hub.OnMemberSpeaking(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"alice","speaking":false}`)
+	if got := len(fanout.roomCasts["domain-a:lobby"][EventRoomActiveSpeakers]); got != 2 {
+		t.Fatalf("state flip must broadcast, got %d broadcasts", got)
+	}
+
+	// 同值 false 再次上报不再广播
+	hub.OnMemberSpeaking(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"alice","speaking":false}`)
+	if got := len(fanout.roomCasts["domain-a:lobby"][EventRoomActiveSpeakers]); got != 2 {
+		t.Fatalf("duplicate same-value speaking must not re-broadcast, got %d broadcasts", got)
+	}
+}
+
+// TestOnRoomJoinSFU_ReplaysActiveSpeakers 验证新成员 SFU join 成功后，
+// 服务端向房间回放当前 active speakers，让无 SFU 原生检测的 provider 下
+// 加入者立即看到正在发言的成员。
+func TestOnRoomJoinSFU_ReplaysActiveSpeakers(t *testing.T) {
+	hub := newTestHub()
+
+	alice := fakeConn("alice")
+	if _, err := hub.OnRoomJoin(alice, `{"room":"lobby","domain_uuid":"dom-a","identity":"alice"}`); err != nil {
+		t.Fatalf("alice room join: %v", err)
+	}
+	if _, err := hub.OnRoomJoinSFU(alice, `{"room":"lobby","domain_uuid":"dom-a","identity":"alice"}`); err != nil {
+		t.Fatalf("alice sfu join: %v", err)
+	}
+	hub.OnMemberSpeaking(alice, `{"room":"lobby","domain_uuid":"dom-a","identity":"alice","speaking":true}`)
+
+	fanout := hub.fanout.(*mockBroadcaster)
+	castsBefore := len(fanout.roomCasts["dom-a:lobby"][EventRoomActiveSpeakers])
+	if castsBefore == 0 {
+		t.Fatal("alice speaking should have broadcast active speakers")
+	}
+
+	bob := fakeConn("bob")
+	if _, err := hub.OnRoomJoin(bob, `{"room":"lobby","domain_uuid":"dom-a","identity":"bob"}`); err != nil {
+		t.Fatalf("bob room join: %v", err)
+	}
+	if _, err := hub.OnRoomJoinSFU(bob, `{"room":"lobby","domain_uuid":"dom-a","identity":"bob"}`); err != nil {
+		t.Fatalf("bob sfu join: %v", err)
+	}
+
+	casts := fanout.roomCasts["dom-a:lobby"][EventRoomActiveSpeakers]
+	if len(casts) != castsBefore+1 {
+		t.Fatalf("join must replay active speakers: got %d broadcasts, want %d", len(casts), castsBefore+1)
+	}
+	last := casts[len(casts)-1].(map[string]interface{})
+	ids, ok := last["identities"].([]string)
+	if !ok {
+		t.Fatalf("replay payload identities type = %T, want []string", last["identities"])
+	}
+	foundAlice := false
+	for _, id := range ids {
+		if id == "alice" {
+			foundAlice = true
+		}
+	}
+	if !foundAlice {
+		t.Fatalf("join replay identities = %v, want alice present", ids)
+	}
+}
+
 // ─── Member enrichment outside h.mu ───
 
 func TestHub_GetRoomMembers_EnrichesOutsideLock(t *testing.T) {

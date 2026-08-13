@@ -633,6 +633,10 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 
 	h.broadcastRoomUpdatedLocal(roomKey(req.DomainUUID, req.Room))
 
+	// 加入回放：新成员此刻已在 fanout，向房间广播当前 active speakers，
+	// 让 SRS/Cloudflare 等无 SFU 原生检测的 provider 下，加入者立即看到正在发言的人。
+	h.broadcastActiveSpeakers(req.DomainUUID, req.Room)
+
 	return marshalAck(map[string]interface{}{
 		"ok":       true,
 		"room":     req.Room,

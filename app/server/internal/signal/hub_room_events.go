@@ -386,10 +386,14 @@ func (h *Hub) OnMemberSpeaking(c ws.ClientMessenger, data string) {
 	if room.Speaking == nil {
 		room.Speaking = make(map[string]bool)
 	}
+	// 去重：状态未变化时跳过广播，避免 SRS/Cloudflare 高频上报打爆房间 fanout。
+	changed := room.Speaking[req.Identity] != req.Speaking
 	room.Speaking[req.Identity] = req.Speaking
 	h.mu.Unlock()
 
-	h.broadcastActiveSpeakers(req.DomainUUID, req.Room)
+	if changed {
+		h.broadcastActiveSpeakers(req.DomainUUID, req.Room)
+	}
 }
 
 // computeActiveSpeakersLocked 在持锁状态下返回房间内正在发言的成员 identity 列表。

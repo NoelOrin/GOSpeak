@@ -152,4 +152,20 @@ describe("socketStore worker routing", () => {
 		onStateChangeCb?.("open", "closing");
 		expect(socketStore.socketState()).toBe("closing");
 	});
+
+	it("clearCurrentRoom clears speaking identities", async () => {
+		const { setSpeakingIdentities } = await import(
+			"@/handler_audio/speakingStore"
+		);
+		socketStore.clearCurrentRoom();
+		expect(setSpeakingIdentities).toHaveBeenCalledWith([]);
+	});
+
+	it("disconnect clears speaking identities via resetRoomState", async () => {
+		const { setSpeakingIdentities } = await import(
+			"@/handler_audio/speakingStore"
+		);
+		socketStore.disconnect();
+		expect(setSpeakingIdentities).toHaveBeenCalledWith([]);
+	});
 });

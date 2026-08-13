@@ -10,11 +10,23 @@ function defaultJoinKey(token: JoinTokenResponse): string {
 
 // 无 SFU 原生 active speaker 的 provider（SRS / Cloudflare）：
 // 本端分析本地麦克风音量（onLocalSpeakingChange）→ 信令层聚合广播房间级 active speakers。
+// 采样由 AudioWorkletProcessor 事件驱动（音频线程按块 postMessage，无 JS 定时器），
+// 本地滞回只在状态翻转时回调，这里再做同值节流兜底（翻转立即上报，同值重复至少间隔
+// 150ms）；服务端另有状态去重。
 function bindSignalActiveSpeakers(
 	client: SFUClient,
 	token: JoinTokenResponse,
 ): void {
+	let lastValue: boolean | null = null;
+	let lastSentAt = 0;
+	const MIN_SEND_INTERVAL_MS = 150;
 	client.onLocalSpeakingChange?.((speaking) => {
+		const now = Date.now();
+		if (speaking === lastValue && now - lastSentAt < MIN_SEND_INTERVAL_MS) {
+			return;
+		}
+		lastValue = speaking;
+		lastSentAt = now;
 		socketStore.emitSpeaking(token.room, token.identity, speaking);
 	});
 }

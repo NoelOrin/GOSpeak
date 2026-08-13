@@ -8,6 +8,7 @@ import type {
 
 import { acquireStream, appendStream, enqueueStreamOp, isWhipBusyError, releaseStream, sleep, WHIP_BUSY_RETRY, WHIP_BUSY_RETRY_MS } from "./srs-stream-gate";
 import { SRSRemoteAudioTrack } from "./srs-track";
+import { LocalSpeakingMeter } from "./speaking-meter";
 
 interface PeerSub {
 	identity: string;
@@ -35,9 +36,10 @@ export class SRSSFUClient implements SFUClient {
 	private hasJoined = false;
 	private isReconnecting = false;
 	private onPcStateChangeBound?: () => void;
-	private activeSpeakerRaf: number | null = null;
+	// 本地发言检测：ScriptProcessorNode 事件驱动采样（无 JS 定时器轮询），
+	// 起麦需连续 120ms、停麦需连续 300ms 才翻转，抑制阈值抖动闪烁。
+	private speakingMeter: LocalSpeakingMeter;
 	public static readonly MAX_SUBSCRIBE_RETRIES = 60;
-	private analyzerContext: AudioContext | null = null;
 	private publishResourceUrl = "";
 	private identity = "";
 	private room = "";
@@ -61,6 +63,12 @@ export class SRSSFUClient implements SFUClient {
 
 	constructor(private readonly options: SFUClientOptions = {}) {
 		this.socket = options.socket;
+		this.speakingMeter = new LocalSpeakingMeter({
+			threshold: 10,
+			holdOnMs: 120,
+			holdOffMs: 300,
+			onSpeakingChange: (speaking) => this.onLocalSpeakingChangeCb?.(speaking),
+		});
 	}
 
 	async joinRoom(params: JoinParams): Promise<void> {
@@ -465,11 +473,8 @@ export class SRSSFUClient implements SFUClient {
 				track.stop();
 			});
 			this.micEnabled = false;
-			if (this.activeSpeakerRaf !== null) {
-				cancelAnimationFrame(this.activeSpeakerRaf);
-				this.activeSpeakerRaf = null;
-			}
-			this.onLocalSpeakingChangeCb?.(false);
+			// 停麦：立即上报停麦并拆除分析，静音期间不再有空转回调。
+			this.speakingMeter.stop();
 			return;
 		}
 
@@ -481,7 +486,7 @@ export class SRSSFUClient implements SFUClient {
 				track.enabled = true;
 			});
 			this.micEnabled = true;
-			this.startAudioLevelLoop();
+			this.startSpeakingMeter();
 			return;
 		}
 
@@ -505,7 +510,7 @@ export class SRSSFUClient implements SFUClient {
 			this.localStream = media;
 			this.micEnabled = true;
 			await this.startPublish();
-			this.startAudioLevelLoop();
+			this.startSpeakingMeter();
 			return;
 		}
 
@@ -523,7 +528,7 @@ export class SRSSFUClient implements SFUClient {
 		});
 		this.localStream = media;
 		this.micEnabled = true;
-		this.startAudioLevelLoop();
+		this.startSpeakingMeter();
 	}
 
 
@@ -685,7 +690,7 @@ export class SRSSFUClient implements SFUClient {
 				this.onPcStateChangeBound,
 			);
 		}
-		this.startAudioLevelLoop();
+		this.startSpeakingMeter();
 		// WHIP 201 后不等 ICE。ICE 若最终 fail 由 iceconnectionstatechange listener 处理。
 	}
 
@@ -698,12 +703,7 @@ export class SRSSFUClient implements SFUClient {
 				this.onPcStateChangeBound,
 			);
 		}
-		if (this.activeSpeakerRaf !== null) {
-			cancelAnimationFrame(this.activeSpeakerRaf);
-			this.activeSpeakerRaf = null;
-		}
-		await this.analyzerContext?.close().catch(() => {});
-		this.analyzerContext = null;
+		this.speakingMeter.stop();
 
 		// 先关 PC / 停轨，再 best-effort DELETE。DELETE 慢不能拖住切房。
 		const resourceUrl = this.publishResourceUrl;
@@ -871,34 +871,9 @@ export class SRSSFUClient implements SFUClient {
 		this.micEnabled = true;
 	}
 
-	private startAudioLevelLoop(): void {
+	private startSpeakingMeter(): void {
 		if (!this.localStream || !this.micEnabled) return;
-		if (this.activeSpeakerRaf !== null) {
-			cancelAnimationFrame(this.activeSpeakerRaf);
-			this.activeSpeakerRaf = null;
-		}
-		if (this.analyzerContext) {
-			this.analyzerContext.close().catch(() => {});
-			this.analyzerContext = null;
-		}
-		this.analyzerContext = new AudioContext();
-		const source = this.analyzerContext.createMediaStreamSource(
-			this.localStream,
-		);
-		const analyser = this.analyzerContext.createAnalyser();
-		source.connect(analyser);
-		analyser.fftSize = 256;
-		const levels = new Uint8Array(analyser.frequencyBinCount);
-		const tick = () => {
-			analyser.getByteFrequencyData(levels);
-			const average =
-				levels.reduce((sum, value) => sum + value, 0) /
-				levels.length;
-			const speaking = average > 10;
-			this.onLocalSpeakingChangeCb?.(speaking);
-			this.activeSpeakerRaf = requestAnimationFrame(tick);
-		};
-		tick();
+		this.speakingMeter.start(this.localStream);
 	}
 
 	private async deleteResource(url: string): Promise<void> {

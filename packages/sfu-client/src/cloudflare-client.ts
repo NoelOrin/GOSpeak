@@ -7,6 +7,7 @@ import type {
 	SFUClientOptions,
 	SignalSocket,
 } from "./types";
+import { LocalSpeakingMeter } from "./speaking-meter";
 
 type SessionDescription = { type: RTCSdpType | string; sdp: string };
 
@@ -122,14 +123,20 @@ export class CloudflareSFUClient implements SFUClient {
 	private onPcStateChangeBound?: () => void;
 	private socketMemberJoinedCleanup?: () => void;
 	private socketMemberLeftCleanup?: () => void;
-	private activeSpeakerTimer: ReturnType<typeof setInterval> | null = null;
-	private analyzerContext: AudioContext | null = null;
-	private analyzer?: AnalyserNode | null = null;
-	private analyzedTrack: MediaStreamTrack | null = null;
+	// 本地发言检测：ScriptProcessorNode 事件驱动采样（无 JS 定时器轮询），
+	// 起麦需连续 150ms、停麦需连续 500ms 才翻转，抑制阈值抖动闪烁。
+	private speakingMeter: LocalSpeakingMeter;
+	private localStream: MediaStream | null = null;
 	private micEnabled = true;
 
 	constructor(private readonly options: SFUClientOptions = {}) {
 		this.socket = options.socket;
+		this.speakingMeter = new LocalSpeakingMeter({
+			threshold: 10,
+			holdOnMs: 150,
+			holdOffMs: 500,
+			onSpeakingChange: (speaking) => this.onLocalSpeakingChangeCb?.(speaking),
+		});
 	}
 
 	async joinRoom(params: JoinParams): Promise<void> {
@@ -189,6 +196,7 @@ export class CloudflareSFUClient implements SFUClient {
 
 		try {
 			this.localTrack = await this.createLocalAudioTrack();
+			this.localStream = new MediaStream([this.localTrack]);
 			const sender = this.pc.addTrack(this.localTrack);
 			const transceiver = this.pc
 				.getTransceivers()
@@ -236,7 +244,8 @@ export class CloudflareSFUClient implements SFUClient {
 
 			this.hasJoined = true;
 			this.bindSocketMembers();
-			this.startActiveSpeakerLoop();
+			// 事件驱动发言检测：音频管线回调驱动，无 JS 定时器轮询。
+			if (this.localStream) this.speakingMeter.start(this.localStream);
 		} catch (err) {
 			await this.cleanupMedia();
 			throw err;
@@ -250,7 +259,7 @@ export class CloudflareSFUClient implements SFUClient {
 		this.leaving = true;
 		this.hasJoined = false;
 		this.unbindSocketMembers();
-		this.stopActiveSpeakerLoop();
+		this.speakingMeter.stop();
 
 		const sessionId = this.sessionId;
 		try {
@@ -278,7 +287,7 @@ export class CloudflareSFUClient implements SFUClient {
 		this.micEnabled = enabled;
 		if (this.localTrack) {
 			this.localTrack.enabled = enabled;
-			if (!enabled) this.onLocalSpeakingChangeCb?.(false);
+			if (!enabled) this.speakingMeter.forceFalse();
 			return;
 		}
 		if (enabled && this.hasJoined && this.pc) {
@@ -470,6 +479,9 @@ export class CloudflareSFUClient implements SFUClient {
 	private async publishLocalTrack(): Promise<void> {
 		if (!this.pc || !this.sessionId) return;
 		this.localTrack = await this.createLocalAudioTrack();
+		this.localStream = new MediaStream([this.localTrack]);
+		// 换轨后重新绑定分析源（meter 检测到流变化自动拆旧建新）。
+		this.speakingMeter.start(this.localStream);
 		const sender = this.pc.addTrack(this.localTrack);
 		const transceiver = this.pc.getTransceivers().find((t) => t.sender === sender);
 		const mid = transceiver?.mid || "0";
@@ -550,55 +562,8 @@ export class CloudflareSFUClient implements SFUClient {
 			this.pc.close();
 			this.pc = null;
 		}
-		if (this.analyzerContext) {
-			void this.analyzerContext.close().catch(() => undefined);
-			this.analyzerContext = null;
-		}
-	}
-
-	private startActiveSpeakerLoop(): void {
-		this.stopActiveSpeakerLoop();
-		this.activeSpeakerTimer = setInterval(() => {
-			// Cloudflare 无 SFU 原生 active speaker：本端分析本地麦克风音量并上报信令层。
-			if (!this.micEnabled) {
-				this.onLocalSpeakingChangeCb?.(false);
-				return;
-			}
-			const ctx = this.ensureAnalyzer();
-			if (!ctx || !this.analyzer) {
-				this.onLocalSpeakingChangeCb?.(false);
-				return;
-			}
-			const levels = new Uint8Array(this.analyzer.frequencyBinCount);
-			this.analyzer.getByteFrequencyData(levels);
-			const average =
-				levels.reduce((sum, value) => sum + value, 0) / levels.length;
-			this.onLocalSpeakingChangeCb?.(average > 10);
-		}, 200);
-	}
-
-	private ensureAnalyzer(): AudioContext | null {
-		if (!this.localTrack) return null;
-		if (this.analyzedTrack === this.localTrack && this.analyzerContext && this.analyzer) {
-			return this.analyzerContext;
-		}
-		this.analyzerContext?.close().catch(() => undefined);
-		const ctx = new AudioContext();
-		const source = ctx.createMediaStreamSource(new MediaStream([this.localTrack]));
-		const analyzer = ctx.createAnalyser();
-		analyzer.fftSize = 256;
-		source.connect(analyzer);
-		this.analyzerContext = ctx;
-		this.analyzer = analyzer;
-		this.analyzedTrack = this.localTrack;
-		return ctx;
-	}
-
-	private stopActiveSpeakerLoop(): void {
-		if (this.activeSpeakerTimer) {
-			clearInterval(this.activeSpeakerTimer);
-			this.activeSpeakerTimer = null;
-		}
+		this.speakingMeter.stop();
+		this.localStream = null;
 	}
 
 	private async waitIceGatheringComplete(pc: RTCPeerConnection): Promise<void> {

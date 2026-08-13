@@ -50,7 +50,31 @@
 
 四端均已实现（LiveKit、SRS、Agora、Cloudflare）。无已知标记。SRS/Cloudflare 通过 `srs-client.ts` / `cloudflare-client.ts` 接入，使用 background signal 并按 session/stream 订阅对端。
 
-### 6. 关于 Mute 语义的说明
+### 6. 发言检测（Active Speakers）能力矩阵
+
+**评估时间**: 2026-08-05（已对照 `packages/sfu-client/src/` 与 `internal/signal/hub_room_events.go` 源码核实）
+
+| Provider | 检测机制 | 链路 | 能力 |
+|----------|----------|------|------|
+| LiveKit | SFU 原生 `RoomEvent.ActiveSpeakersChanged` | 客户端 `onActiveSpeakers` → 前端高亮 | ✅ 原生 |
+| Agora | SFU 原生音量上报 `volume-indicator`（level>5 过滤） | 客户端 `onActiveSpeakers` → 前端高亮 | ✅ 原生（阈值） |
+| SRS | 无原生 → 本地 WebAudio 音量分析（AudioWorkletProcessor 事件驱动采样，avg>10） | `onLocalSpeakingChange` → `member:speaking` → 服务端聚合 → `room:active-speakers` | ⚠️ 降级 |
+| Cloudflare | 无原生 → 本地 WebAudio 音量分析（AudioWorkletProcessor 事件驱动采样，avg>10） | 同上 | ⚠️ 降级 |
+
+**信令聚合链路要点**（SRS / Cloudflare）：
+- 客户端仅上报「自身」状态；服务端按房间聚合 `Room.Speaking` 后广播 `room:active-speakers`（identities 列表）
+- 服务端 `OnMemberSpeaking`：本人校验 + 禁言 fail-closed 检查 + **同值去重**（状态未变化不广播）
+- 客户端采样为事件驱动（AudioWorkletProcessor 运行在音频渲染线程，按块 `postMessage` 触发主线程采样，无 JS 定时器轮询；默认 16 块 ≈ 43ms），本地滞回（SRS holdOn 120ms / holdOff 300ms；Cloudflare holdOn 150ms / holdOff 500ms）只在状态翻转时上报，另加同值节流（≥150ms）兜底
+- 新成员 `room:join:sfu` 成功后服务端回放当前 active speakers，加入者立即看到正在发言的人
+- 成员离开 / 断连 / 被踢 / 切房时清发言态并广播最新列表重置高亮
+- 前端离开 / 断连 / 切房时清空 `speakingIdentities`，避免陈旧高亮残留
+
+**已知限制**：
+- SRS / Cloudflare 为本地音量阈值判定，非 SFU 端权威；阈值附近依赖滞回抑制闪烁
+- 多实例部署下，新成员 join 回放仅包含本实例成员发言态；跨实例发言以实时事件广播为准
+- `srs-client.ts` / `cloudflare-client.ts` 的 `onActiveSpeakers` 为接口占位，实际发言态只走 `onLocalSpeakingChange` 信令链路
+
+### 7. 关于 Mute 语义的说明
 
 SFU `MuteParticipant` 是 **服务端轨道级 SFU mute**，而非用户禁言。
 
@@ -64,7 +88,7 @@ SFU `MuteParticipant` 是 **服务端轨道级 SFU mute**，而非用户禁言�
 provider 上，通过 `member:muted` 事件驱动订阅端强制静音（`handler_audio.setServerMutedByIdentity`），
 与本地个人静音/音量独立。
 
-### 7. 信令层踢人分发（按 `ErrSFUNotSupported` 优雅降级）
+### 8. 信令层踢人分发（按 `ErrSFUNotSupported` 优雅降级）
 
 `internal/signal/hub.go` 的 `removeParticipantSafe` 不再硬编码 provider 名，而是直接调用 `sfuProvider.RemoveParticipant(room, identity)`，仅当返回 `pkg.ErrSFUNotSupported` 时静默跳过。因此「踢人是否真正到达 SFU」完全由各 provider 自身实现决定：
 

@@ -80,16 +80,26 @@ beforeEach(() => {
 		configurable: true,
 	});
 	class MockAudioContext {
+		destination = {};
+		audioWorklet = { addModule: vi.fn(async () => {}) };
 		createMediaStreamSource = vi.fn(() => ({ connect: vi.fn() }));
 		createAnalyser = vi.fn(() => ({
 			fftSize: 0,
 			frequencyBinCount: 256,
 			getByteFrequencyData: () => {},
+			connect: vi.fn(),
+			disconnect: vi.fn(),
 		}));
+		createGain = vi.fn(() => ({ gain: { value: 1 }, connect: vi.fn() }));
 		close() {
 			return Promise.resolve();
 		}
 	}
+	(globalThis as any).AudioWorkletNode = class {
+		port = { onmessage: null, postMessage: vi.fn(), close: vi.fn() };
+		connect = vi.fn();
+		disconnect = vi.fn();
+	};
 	(globalThis as any).AudioContext = MockAudioContext;
 	(globalThis as any).requestAnimationFrame = (cb: FrameRequestCallback) =>
 		setTimeout(() => cb(performance.now()), 16);

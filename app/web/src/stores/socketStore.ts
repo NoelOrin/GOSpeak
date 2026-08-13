@@ -261,6 +261,8 @@ export const socketStore = createRoot(() => {
 		setSpeechRestricted(false);
 		setSpeechRestrictionInfo(null);
 		setActiveSFUProvider(undefined);
+		// 断连后旧房间的发言高亮不再有效，清空避免重连/换房时残留误亮。
+		setSpeakingIdentities([]);
 	}
 
 	function disconnect() {
@@ -306,6 +308,8 @@ export const socketStore = createRoot(() => {
 
 	function clearCurrentRoom() {
 		setCurrentRoom(null);
+		// 离开/被踢/切房退出当前会话时清空发言态，防止陈旧 identity 残留高亮。
+		setSpeakingIdentities([]);
 	}
 
 	function waitForConnected(timeoutMs = 8000): Promise<void> {
@@ -349,6 +353,8 @@ export const socketStore = createRoot(() => {
 					throw new Error(data.error);
 				}
 				setCurrentRoom(data.room);
+				// 切房时旧房发言态已失效；新房发言列表由 join 回放 / SFU 原生事件随后送达。
+				setSpeakingIdentities([]);
 				return data;
 			});
 	}
