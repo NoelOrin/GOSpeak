@@ -1,16 +1,10 @@
 # Plans 索引 — 状态总览
 
-> 更新于 2026-08-14。已完成/已归档计划已清理，仅保留仍在跟进中的计划。
+> 更新于 2026-08-18。已完成/已归档计划已清理，仅保留仍在跟进中的计划。
 > 状态标注见各计划文件头部 `> **Status**` 块。
 > 图例: 🟠 进行中 · 🔴 未启动 · ⚠️ 部分完成
 
 ## 进行中 / 待跟进
-
-### 🟠 (3)
-
-- [`2026-08-13-sfu-mute-ui-contract-fixes.md`](./2026-08-13-sfu-mute-ui-contract-fixes.md) — SFU 禁言前端与能力契约修复 Implementation Plan — 🟠 进行中 (2026-08-13)
-- [`2026-08-13-sfu-provider-hardening.md`](./2026-08-13-sfu-provider-hardening.md) — SFU Provider 加固 Implementation Plan — 🟠 进行中 (2026-08-13)
-- [`2026-08-13-srs-hard-mute-core-fixes.md`](./2026-08-13-srs-hard-mute-core-fixes.md) — SRS 硬禁言核心修复 Implementation Plan — 🟠 进行中 (2026-08-13)
 
 ### 🔴 (1)
 
@@ -27,4 +21,4 @@
 - [`2026-08-13-speaking-detection-event-driven.md`](./2026-08-13-speaking-detection-event-driven.md) — 发言检测事件驱动化 Implementation Plan — ⚠️ 部分完成 (2026-08-13)
 
 ---
-共 11 份待跟进计划。
+共 8 份待跟进计划。
