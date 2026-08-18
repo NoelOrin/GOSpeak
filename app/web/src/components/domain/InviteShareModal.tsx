@@ -1,4 +1,4 @@
-import { type Component, createSignal, onMount, Show } from "solid-js";
+import { type Component, createSignal, createEffect, Show } from "solid-js";
 import QRCode from "qrcode";
 
 const InviteShareModal: Component<{
@@ -11,8 +11,14 @@ const InviteShareModal: Component<{
 	const [copied, setCopied] = createSignal(false);
 	const [copyError, setCopyError] = createSignal("");
 
-	onMount(() => {
-		void QRCode.toDataURL(props.inviteUrl, { width: 240, margin: 2 })
+	createEffect(() => {
+		const url = props.inviteUrl;
+		if (!url) {
+			setQrDataUrl("");
+			setQrError("");
+			return;
+		}
+		void QRCode.toDataURL(url, { width: 240, margin: 2 })
 			.then((dataUrl) => {
 				setQrDataUrl(dataUrl);
 				setQrError("");

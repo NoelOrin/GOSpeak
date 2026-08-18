@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/solid-router";
 // import Search from "lucide-solid/icons/search";
 import MessageSquare from "lucide-solid/icons/message-square";
 import Home from "lucide-solid/icons/home";
+import Link from "lucide-solid/icons/link";
 import Settings from "lucide-solid/icons/settings";
 import ShieldCheck from "lucide-solid/icons/shield-check";
 import { createResource, For, Show } from "solid-js";
@@ -55,6 +56,14 @@ const Sidebar = (props: SidebarProps) => {
 				</OptionSquare>
 				<OptionSquare label="聊天" onClick={() => navigate({ to: "/chat" })}>
 					<MessageSquare {...iconProps} />
+				</OptionSquare>
+				<OptionSquare
+					label="分享链接"
+					onClick={() =>
+						navigate({ to: "/link", search: { domain: undefined } })
+					}
+				>
+					<Link {...iconProps} />
 				</OptionSquare>
 				<OptionSquare label="设置" onClick={() => props.onOpenSettings?.()}>
 					<Settings {...iconProps} />

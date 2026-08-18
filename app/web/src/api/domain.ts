@@ -132,6 +132,15 @@ export async function joinDomain(inviteCode: string): Promise<Domain> {
 	return result;
 }
 
+export async function resetDomainInviteCode(uuid: string): Promise<Domain> {
+	const result = await apiClient.post<Domain>({
+		url: "/api/v1/domain/reset-invite",
+		data: { domain_uuid: uuid },
+	});
+	if (!result) throw new Error("domain data is missing");
+	return result;
+}
+
 export async function leaveDomain(uuid: string): Promise<void> {
 	await apiClient.post({
 		url: "/api/v1/domain/leave",
