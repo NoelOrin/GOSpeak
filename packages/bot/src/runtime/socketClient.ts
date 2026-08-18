@@ -1,6 +1,7 @@
 export type { SocketClientOptions } from "./socketClientTransport";
 import type { Logger } from "../core/context";
 import {
+	type ActiveSpeakersEvent,
 	type BotEvent,
 	EventType,
 	type MemberRef,
@@ -38,10 +39,15 @@ export class GOSpeakSocketClient {
 	private manualDisconnect = false;
 	private rejoinRooms: Map<string, { identity: string }> = new Map();
 	private readonly maxReconnectDelayMs = 30_000;
+	/** Bot identity (set from opts) used for member:speaking self-reports. */
+	private _identity?: string;
+	/** Latest active-speaker set per room, from room:active-speakers broadcasts. */
+	private _speaking = new Map<string, Set<string>>();
 
 	constructor(opts: SocketClientOptions) {
 		this.opts = opts;
 		this.logger = opts.logger;
+		this._identity = opts.identity;
 	}
 
 	get isConnected(): boolean {
@@ -219,6 +225,7 @@ export class GOSpeakSocketClient {
 	}
 
 	leaveRoom(room: string): void {
+		this._speaking.delete(room);
 		if (!this.connected) {
 			this.joinedRooms.delete(room);
 			return;
@@ -276,6 +283,26 @@ export class GOSpeakSocketClient {
 		this.send({ event: "room:kick", data: { room, targetIdentity } });
 	}
 
+	/** Self-report local speaking state so the server highlights this bot as an active speaker. */
+	reportSpeaking(room: string, speaking: boolean): void {
+		if (!room) {
+			this.logger.warn("reportSpeaking requires a room");
+			return;
+		}
+		this.send(
+			GOSpeakSocketClient.buildSpeakingMessage(
+				room,
+				this._identity ?? "",
+				speaking,
+			),
+		);
+	}
+
+	/** Current active speakers in a room, from the latest room:active-speakers broadcast. */
+	getSpeakers(room: string): string[] {
+		return [...(this._speaking.get(room) ?? [])];
+	}
+
 	private send(msg: WSMessage): void {
 		if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
 			this.logger.warn("socket not connected; message dropped");
@@ -300,6 +327,30 @@ export class GOSpeakSocketClient {
 		const name = raw?.name ?? raw?.displayName ?? identity;
 		const role = (raw?.role ?? "member") as MemberRef["role"];
 		return { identity: String(identity), name: String(name), role };
+	}
+
+	static parseActiveSpeakers(raw: any): ActiveSpeakersEvent | null {
+		if (!raw) return null;
+		const roomName =
+			typeof raw === "string" ? raw : (raw?.room ?? raw?.name ?? "");
+		if (!roomName) return null;
+		const identities = Array.isArray(raw?.identities)
+			? raw.identities.map((x: unknown) => String(x))
+			: [];
+		return {
+			eventType: EventType.OnActiveSpeakers,
+			room: { id: String(roomName), name: String(roomName) },
+			identities,
+			timestamp: Date.now(),
+		};
+	}
+
+	static buildSpeakingMessage(
+		room: string,
+		identity: string,
+		speaking: boolean,
+	): WSMessage {
+		return { event: "member:speaking", data: { room, identity, speaking } };
 	}
 
 	private dispatchEvent(event: string, raw: any): void {
@@ -392,6 +443,14 @@ export class GOSpeakSocketClient {
 					} as RoomEvent);
 				}
 				break;
+			case "room:active-speakers": {
+				const ev = GOSpeakSocketClient.parseActiveSpeakers(raw);
+				if (ev) {
+					this._speaking.set(ev.room.name, new Set(ev.identities));
+					this.emit(ev);
+				}
+				break;
+			}
 			case "bot:command":
 			case "bot:message": {
 				const events = this._adapter.adaptBotMessage(

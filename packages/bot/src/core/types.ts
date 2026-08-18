@@ -18,6 +18,7 @@ export enum EventType {
 	OnPluginLoaded = "OnPluginLoaded",
 	OnPluginUnloaded = "OnPluginUnloaded",
 	OnPluginError = "OnPluginError",
+	OnActiveSpeakers = "OnActiveSpeakers",
 }
 
 export type PermissionLevel =
@@ -82,6 +83,13 @@ export interface UserMuteEvent {
 	timestamp: number;
 }
 
+export interface ActiveSpeakersEvent {
+	eventType: EventType.OnActiveSpeakers;
+	room: RoomRef;
+	identities: string[];
+	timestamp: number;
+}
+
 export interface SpeechEvent {
 	eventType: EventType.OnSpeechPartial | EventType.OnSpeechFinal;
 	room: string;
@@ -116,6 +124,7 @@ export type BotEvent =
 	| MemberStateEvent
 	| UserMuteEvent
 	| SpeechEvent
+	| ActiveSpeakersEvent
 	| PluginErrorEvent
 	| LifecycleEvent;
 

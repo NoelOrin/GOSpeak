@@ -84,6 +84,7 @@ export class Demo extends Plugin {
 - `ctx.chat.send/reply` → socket `bot:message`
 - `ctx.voice.removeMember` → socket `room:kick`
 - `ctx.voice.muteMember` → REST mute
+- `ctx.voice.setSpeaking(room, speaking)` → 回写 member:speaking（active-speaker 高亮，best-effort）
 - `ctx.voice.speak/publishPcm` → TTS/PublishAdapter（需 enableSpeak）
 - `ctx.rooms.*` → REST + join/leave
 - `ctx.users.getByIdentity` → REST
@@ -106,6 +107,12 @@ export class Demo extends Plugin {
 | listen-manager | `/listen add|remove|list|clear` |
 | voice-react | 唤醒词 / 违规词 / 语音踢人 |
 | idle-guard | 定时巡检 |
+
+### 发言态（active-speaker）
+
+房间活跃发言者变化由 server 通过 `room:active-speakers` 广播，bot 转为 `OnActiveSpeakers` 事件（携带 `room` 与 `identities`）。插件可用 `@On(EventType.OnActiveSpeakers)` 订阅，构建发言高亮、语音踢人触发等能力。
+
+bot 通过 TTS 发声（`speak` / `publishPcm`）时会回写 `member:speaking`，让其他客户端把 bot 高亮为活跃发言者。该回写依赖 bot 已通过信令 `room:join` 进入该房间（见不变式 5），bot 在发声前会自动补一次信令 join。
 
 ## 测试
 

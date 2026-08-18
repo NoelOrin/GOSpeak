@@ -42,6 +42,8 @@ export interface VoiceClient {
 		sampleRate?: number,
 	): Promise<void>;
 	stopSpeaking?(roomId: string): Promise<void>;
+	/** Report local speaking state for active-speaker highlighting (best-effort, socket-only). */
+	setSpeaking?(roomId: string, speaking: boolean): void;
 }
 
 export interface KeyValueStore {

@@ -135,6 +135,12 @@ export class CapabilityRouter implements ChatClient, RoomClient, VoiceClient {
 		await this.speakHooks.stopSpeaking(roomId);
 	}
 
+	// ── 发言态回写（socket-only，best-effort）──
+
+	setSpeaking(roomId: string, speaking: boolean): void {
+		this.socket.reportSpeaking(roomId, speaking);
+	}
+
 	// ── 禁言查询 (REST) ──
 
 	async listMutes(): Promise<unknown[]> {

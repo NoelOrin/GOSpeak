@@ -162,6 +162,7 @@ export class BotRunner {
 		this.socket = new GOSpeakSocketClient({
 			url: this.config.socketUrl,
 			token: accessToken,
+			identity: this.config.identity,
 			logger: this.logger,
 			baseUrl: this.config.serverUrl,
 		});
@@ -303,6 +304,9 @@ export class BotRunner {
 			.catch(() => {})
 			.then(async () => {
 				this._speakingRooms.add(roomId);
+				// 信令在场后再发声，使 member:speaking 回写被 server 接受（不变式 5）
+				await this.joinRoom(roomId);
+				this.socket.reportSpeaking(roomId, true);
 				try {
 					const tts = this._tts;
 					if (!tts) throw new Error("speak not enabled");
@@ -318,6 +322,7 @@ export class BotRunner {
 					await publisher.publishPcm(roomId, pcm, 16000);
 				} finally {
 					this._speakingRooms.delete(roomId);
+					this.socket.reportSpeaking(roomId, false);
 				}
 			});
 		this._speakQueues.set(roomId, next);
@@ -339,20 +344,27 @@ export class BotRunner {
 		pcm16: Int16Array,
 		sampleRate = 16000,
 	): Promise<void> {
+		await this.joinRoom(roomId);
+		this.socket.reportSpeaking(roomId, true);
 		const token = await this.api.getSFUToken(roomId);
 		const publisher = this.getPublishAdapter(token.provider);
-		await publisher.join({
-			room: roomId,
-			identity: this.config.identity,
-			token: token.token,
-			serverUrl: token.serverUrl,
-		});
-		await publisher.publishPcm(roomId, pcm16, sampleRate);
+		try {
+			await publisher.join({
+				room: roomId,
+				identity: this.config.identity,
+				token: token.token,
+				serverUrl: token.serverUrl,
+			});
+			await publisher.publishPcm(roomId, pcm16, sampleRate);
+		} finally {
+			this.socket.reportSpeaking(roomId, false);
+		}
 	}
 
 	async stopSpeaking(roomId: string): Promise<void> {
 		await this._publishRouter?.get().unpublish(roomId);
 		this._speakingRooms.delete(roomId);
+		this.socket.reportSpeaking(roomId, false);
 	}
 
 	/** 运行时加载：从绝对路径或 pluginDir 内相对路径加载插件 */

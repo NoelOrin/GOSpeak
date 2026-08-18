@@ -17,6 +17,8 @@ export interface SocketClientOptions {
 	url: string;
 	token?: string;
 	logger: Logger;
+	/** Bot identity used when self-reporting speaking state via member:speaking. */
+	identity?: string;
 	/** Used to resolve relative socket URLs (usually the server base URL). */
 	baseUrl?: string;
 }

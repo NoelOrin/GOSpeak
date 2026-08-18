@@ -35,6 +35,7 @@ export {
 	setPluginActivated,
 } from "./registry";
 export type {
+	ActiveSpeakersEvent,
 	BotEvent,
 	MemberRef,
 	MemberStateEvent,
