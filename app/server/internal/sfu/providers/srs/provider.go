@@ -55,14 +55,11 @@ func (s *Service) SetStreamRoomResolver(r pkg.StreamRoomResolver) {
 	s.mu.Unlock()
 }
 
-// SetMuteRuleStore 注入跨实例禁推黑名单（nats → memory），实现 sfu.MuteRuleStoreSetter。
+// SetMuteRuleStore 注入跨实例禁推黑名单（nats KV），实现 sfu.MuteRuleStoreSetter。
 // 设计上用于启动期注入；nil 输入回退到默认内存 store。即使运行期发生替换，
 // muteMu 也保证替换与 withMuteStore 内的 Save/Delete/Get 互斥，不会出现
 // “写入旧 store 后读取新 store”的中间状态。
 func (s *Service) SetMuteRuleStore(store sfu.MuteRuleStore) {
-	if store == nil {
-		store = sfu.NewMemoryMuteRuleStore()
-	}
 	s.muteMu.Lock()
 	defer s.muteMu.Unlock()
 	s.muteRules = store
@@ -88,7 +85,7 @@ func NewService(cfg *config.Config) *Service {
 		host:        baseURL,
 		publicHost:  strings.TrimSpace(cfg.SRSPublicHost),
 		whipURL:     whipURL,
-		muteRules:   sfu.NewMemoryMuteRuleStore(),
+		muteRules:   nil,
 		streamCache: make(map[string]streamRoomEntry),
 	}
 }
@@ -313,21 +310,17 @@ func PublishBlockKey(stream string) string {
 	return "srs_pub_block:" + stream
 }
 
-// withMuteStore 在锁内取得当前黑名单 store（nil 时先创建默认内存实例），
+// withMuteStore 在锁内取得当前黑名单 store（可能为 nil，表示未注入共享 store），
 // 并在同一临界区内执行 fn（Save/Delete/Get 等）。这样一次读写不会拆成
 // “先取 store、后操作”两个步骤，避免 SetMuteRuleStore 在中间换 store 后
 // 写入落在旧实例、读取落在新实例（旧写新读，黑名单静默丢失）。
 func (s *Service) withMuteStore(fn func(sfu.MuteRuleStore) error) error {
 	s.muteMu.Lock()
 	defer s.muteMu.Unlock()
-	if s.muteRules == nil {
-		s.muteRules = sfu.NewMemoryMuteRuleStore()
-	}
 	return fn(s.muteRules)
 }
 
-// ruleStore 返回当前稳定的黑名单 store（读回/测试用）：
-// NewService 构造期创建默认内存实例；直构 &Service{} 或未注入时惰性兜底创建。
+// ruleStore 返回当前黑名单 store（读回/测试用）。未注入时为 nil，
 // 生产读写统一走 withMuteStore，此处只做原子取引用。
 func (s *Service) ruleStore() sfu.MuteRuleStore {
 	var store sfu.MuteRuleStore
@@ -368,6 +361,9 @@ func (s *Service) applyPublishBlock(stream string, muted bool, ttlSeconds int) e
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return s.withMuteStore(func(store sfu.MuteRuleStore) error {
+		if store == nil {
+			return nil
+		}
 		if muted {
 			var ttl time.Duration
 			if ttlSeconds > 0 {

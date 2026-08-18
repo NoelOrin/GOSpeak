@@ -3,7 +3,6 @@ package bus
 import (
 	"context"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -212,21 +211,21 @@ func (s *NATSMuteRuleStore) Delete(_ context.Context, key string) error {
 }
 
 // ResolveMuteRuleConfig selects mute-rule backend.
-// Mode: auto|nats|memory (default auto).
-// auto preference: nats → memory.
-// Always returns a non-nil store (at least memory).
+// Mode: auto|nats (default auto). In-memory / none fallbacks are forbidden:
+// the process always runs with a NATS connection (embedded or external,
+// guaranteed by bus.Init), so a missing NATS connection is treated as a
+// fatal startup error rather than a silent degradation.
 type ResolveMuteRuleConfig struct {
-	Mode   string
-	Prefix string
-	NATS   *nats.Conn
-	// BucketTTL 透传给 NATSMuteRuleStore 的 bucket MaxAge；nil 保持默认 24h。
-	// 生产需要永久禁言时应显式配置为 0（或更长），旧 bucket 已存在时需重建。
+	Mode      string
+	Prefix    string
+	NATS      *nats.Conn
 	BucketTTL *time.Duration
 }
 
-// ResolveMuteRuleStore opens shared mute-rule store with degradation.
-// Result is always non-nil: CachedMuteRuleStore over nats, or pure memory.
-func ResolveMuteRuleStore(cfg ResolveMuteRuleConfig) (sfu.MuteRuleStore, string) {
+// ResolveMuteRuleStore opens the shared mute-rule store backed by NATS KV.
+// It never degrades to an in-memory store: when NATS is unavailable it returns
+// an error so the caller can fail fast during startup.
+func ResolveMuteRuleStore(cfg ResolveMuteRuleConfig) (sfu.MuteRuleStore, string, error) {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
 		mode = "auto"
@@ -235,43 +234,21 @@ func ResolveMuteRuleStore(cfg ResolveMuteRuleConfig) (sfu.MuteRuleStore, string)
 	if prefix == "" {
 		prefix = "gospeak"
 	}
-
-	tryNATS := func() (sfu.MuteRuleStore, error) {
-		if cfg.NATS == nil {
-			return nil, fmt.Errorf("nats connection not available")
-		}
-		return OpenNATSMuteRuleStore(NATSMuteRuleStoreConfig{
-			Prefix:    prefix,
-			NC:        cfg.NATS,
-			BucketTTL: cfg.BucketTTL,
-		})
+	if mode != "auto" && mode != "nats" {
+		return nil, "", fmt.Errorf("mute rule store: unsupported mode %q (want auto|nats)", mode)
 	}
-
-	wrap := func(shared sfu.MuteRuleStore) sfu.MuteRuleStore {
-		return sfu.NewCachedMuteRuleStore(shared)
+	if cfg.NATS == nil {
+		return nil, "", fmt.Errorf("mute rule store: nats connection required (embedded or external URL)")
 	}
-
-	switch mode {
-	case "memory", "none":
-		return sfu.NewMemoryMuteRuleStore(), "memory"
-	case "nats":
-		if st, err := tryNATS(); err == nil {
-			return wrap(st), "nats"
-		} else {
-			log.Printf("[MuteRuleStore] nats unavailable: %v; fallback memory", err)
-			return sfu.NewMemoryMuteRuleStore(), "memory"
-		}
-	case "auto":
-		if st, err := tryNATS(); err == nil {
-			return wrap(st), "nats"
-		} else {
-			log.Printf("[MuteRuleStore] nats unavailable: %v; fallback memory", err)
-		}
-		return sfu.NewMemoryMuteRuleStore(), "memory"
-	default:
-		log.Printf("[MuteRuleStore] unknown mode %q; fallback memory", mode)
-		return sfu.NewMemoryMuteRuleStore(), "memory"
+	shared, err := OpenNATSMuteRuleStore(NATSMuteRuleStoreConfig{
+		Prefix:    prefix,
+		NC:        cfg.NATS,
+		BucketTTL: cfg.BucketTTL,
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("mute rule store nats: %w", err)
 	}
+	return sfu.NewCachedMuteRuleStore(shared), "nats", nil
 }
 
 // Ensure interface compliance.

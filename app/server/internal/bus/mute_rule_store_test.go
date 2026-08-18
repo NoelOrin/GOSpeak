@@ -237,18 +237,6 @@ func TestNATSMuteRuleStore_PermanentRuleWithDisabledBucketTTL(t *testing.T) {
 	}
 }
 
-func TestResolveMuteRuleStore_AutoFallsToMemory(t *testing.T) {
-	store, backend := ResolveMuteRuleStore(ResolveMuteRuleConfig{Mode: "auto"})
-	if store == nil {
-		t.Fatal("expected non-nil store")
-	}
-	if backend != "memory" {
-		t.Fatalf("backend=%s", backend)
-	}
-	if store.Backend() != "memory" {
-		t.Fatalf("store.Backend=%s", store.Backend())
-	}
-}
 
 func TestResolveMuteRuleStore_NATSModeWithConn(t *testing.T) {
 	es, err := StartEmbeddedServer()
@@ -257,9 +245,6 @@ func TestResolveMuteRuleStore_NATSModeWithConn(t *testing.T) {
 	}
 	t.Cleanup(es.Shutdown)
 
-	// Resolve with live NATS connection via OpenNATSMuteRuleStore path:
-	// Open a temporary store just to get a connected NC is awkward; connect via nats.Connect.
-	// Use OpenStateStore's URL path by calling OpenNATSMuteRuleStore and wrapping.
 	raw, err := OpenNATSMuteRuleStore(NATSMuteRuleStoreConfig{
 		URL:    es.ClientURL(),
 		Prefix: "gospeak_test_mute_res",
@@ -269,10 +254,14 @@ func TestResolveMuteRuleStore_NATSModeWithConn(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = raw.Close() })
 
-	// Resolve mode=nats without NC falls to memory
-	store, backend := ResolveMuteRuleStore(ResolveMuteRuleConfig{Mode: "nats"})
-	if store == nil || backend != "memory" {
-		t.Fatalf("nil nats should memory, got backend=%s store=%v", backend, store)
+	// mode=nats with a live NATS connection resolves to the nats backend.
+	store, backend, err := ResolveMuteRuleStore(ResolveMuteRuleConfig{
+		Mode:   "nats",
+		Prefix: "gospeak_test_mute_res",
+		NATS:   raw.nc,
+	})
+	if err != nil || store == nil || backend != "nats" {
+		t.Fatalf("resolve mode=nats with NC: backend=%s store=%v err=%v, want nats", backend, store, err)
 	}
 
 	// Cached wrapper over nats raw must cross process-local L1 via shared KV
@@ -291,6 +280,23 @@ func TestResolveMuteRuleStore_NATSModeWithConn(t *testing.T) {
 	}
 }
 
+// ResolveMuteRuleStore must fail when NATS is unavailable instead of silently
+// degrading to an in-memory store.
+func TestResolveMuteRuleStore_RequiresNATS(t *testing.T) {
+	if _, _, err := ResolveMuteRuleStore(ResolveMuteRuleConfig{Mode: "auto"}); err == nil {
+		t.Fatal("expected error when NATS unavailable (auto)")
+	}
+	if _, _, err := ResolveMuteRuleStore(ResolveMuteRuleConfig{Mode: "nats"}); err == nil {
+		t.Fatal("expected error when NATS unavailable (nats)")
+	}
+	if _, _, err := ResolveMuteRuleStore(ResolveMuteRuleConfig{Mode: "none"}); err == nil {
+		t.Fatal("expected error for forbidden mode none")
+	}
+	if _, _, err := ResolveMuteRuleStore(ResolveMuteRuleConfig{Mode: "memory"}); err == nil {
+		t.Fatal("expected error for forbidden mode memory")
+	}
+}
+
 func TestResolveMuteRuleStore_PassesBucketTTLToNATS(t *testing.T) {
 	es, err := StartEmbeddedServer()
 	if err != nil {
@@ -306,13 +312,13 @@ func TestResolveMuteRuleStore_PassesBucketTTLToNATS(t *testing.T) {
 
 	zeroBucketTTL := time.Duration(0)
 	prefix := "gospeak_test_mute_res_bucket_ttl"
-	store, backend := ResolveMuteRuleStore(ResolveMuteRuleConfig{
+	store, backend, err := ResolveMuteRuleStore(ResolveMuteRuleConfig{
 		Mode:      "nats",
 		Prefix:    prefix,
 		NATS:      nc,
 		BucketTTL: &zeroBucketTTL,
 	})
-	if store == nil || backend != "nats" {
+	if err != nil || store == nil || backend != "nats" {
 		t.Fatalf("resolve backend=%s store=%v, want nats", backend, store)
 	}
 

@@ -498,7 +498,7 @@ func TestMuteParticipantTimed_MuteWritesPublishBlock(t *testing.T) {
 
 	s := newServiceWithURL(ts.srv.URL)
 	s.registry = &stubRegistry{identityStreams: map[string]string{"room-r\x00alice": stream}}
-	store := sfu.NewMemoryMuteRuleStore()
+	store := newMemMuteRuleStore()
 	s.SetMuteRuleStore(store)
 
 	if err := s.MuteParticipantTimed("room-r", "alice", "", true, 60); err != nil {
@@ -514,7 +514,7 @@ func TestMuteParticipantTimed_MuteWritesPublishBlock(t *testing.T) {
 
 func TestMuteParticipantTimed_UnmuteDeletesPublishBlock(t *testing.T) {
 	s := newSRSTestService(t)
-	store := sfu.NewMemoryMuteRuleStore()
+	store := newMemMuteRuleStore()
 	s.SetMuteRuleStore(store)
 	stream := GenerateStreamName("room-r", "alice")
 	_ = store.Save(context.Background(), PublishBlockKey(stream), publishBlockRuleID, 0)
@@ -529,63 +529,37 @@ func TestMuteParticipantTimed_UnmuteDeletesPublishBlock(t *testing.T) {
 
 func TestRuleStore_StableAcrossCalls_WithoutInjection(t *testing.T) {
 	svc := NewService(&config.Config{})
-	ctx := context.Background()
+	// 未注入 store 时，mute/unmute 必须安全 no-op（不再惰性创建内存 store）。
+	// 多实例 rule 跟踪完全依赖注入的共享 store，未注入即不持久化。
 	if err := svc.MuteParticipantTimed("dom-a:r1", "alice", "", true, 0); err != nil {
 		t.Fatal(err)
 	}
-	stream := GenerateStreamName("dom-a:r1", "alice")
-	// 未注入 store 时，mute 写入必须可被同一 service 读取（否则黑名单静默丢失）。
-	id, err := svc.ruleStore().Get(ctx, PublishBlockKey(stream))
-	if err != nil {
-		t.Fatal(err)
+	// 无共享 store：ruleStore 返回 nil，黑名单不持久化，也不 panic。
+	if st := svc.ruleStore(); st != nil {
+		t.Fatalf("ruleStore() = %v, want nil (no memory fallback)", st)
 	}
-	if id != publishBlockRuleID {
-		t.Fatalf("rule id = %d, want %d (mute must persist in same instance)", id, publishBlockRuleID)
-	}
-	// 同一默认 store 实例上 unmute 必须删除黑名单：Delete 落在同一实例，不因重建丢状态。
 	if err := svc.MuteParticipantTimed("dom-a:r1", "alice", "", false, 0); err != nil {
 		t.Fatal(err)
 	}
-	id, err = svc.ruleStore().Get(ctx, PublishBlockKey(stream))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if id != 0 {
-		t.Fatalf("rule id = %d, want 0 (unmute must delete from same instance)", id)
+	if st := svc.ruleStore(); st != nil {
+		t.Fatalf("ruleStore() = %v, want nil", st)
 	}
 }
 
-func TestRuleStore_LazyFallback_ForDirectConstruction(t *testing.T) {
+func TestRuleStore_NoFallback_ForDirectConstruction(t *testing.T) {
 	svc := &Service{} // 直构（newSRSTestService 同款）：muteRules 为 nil
-	ctx := context.Background()
-	stream := GenerateStreamName("dom-a:r1", "alice")
-	// 未注入且未走 NewService 时，ruleStore 必须惰性兜底默认 store，不能 nil-interface panic。
-	if id, err := svc.ruleStore().Get(ctx, PublishBlockKey("gs-direct")); err != nil {
-		t.Fatal(err)
-	} else if id != 0 {
-		t.Fatalf("fresh fallback store should be empty, got rule id %d", id)
+	// 未注入时 ruleStore 返回 nil（不再惰性兜底内存 store），调用必须安全不 panic。
+	if st := svc.ruleStore(); st != nil {
+		t.Fatalf("ruleStore() = %v, want nil (no memory fallback)", st)
 	}
-	// 兜底 store 必须稳定复用：mute 写入后先读回 1，unmute 后再读到 0，
-	// 不因每次新建/替换丢状态。
 	if err := svc.MuteParticipantTimed("dom-a:r1", "alice", "", true, 0); err != nil {
 		t.Fatal(err)
 	}
-	id, err := svc.ruleStore().Get(ctx, PublishBlockKey(stream))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if id != publishBlockRuleID {
-		t.Fatalf("rule id = %d, want %d (mute must be readable after direct-construction fallback)", id, publishBlockRuleID)
+	if st := svc.ruleStore(); st != nil {
+		t.Fatalf("ruleStore() = %v, want nil", st)
 	}
 	if err := svc.MuteParticipantTimed("dom-a:r1", "alice", "", false, 0); err != nil {
 		t.Fatal(err)
-	}
-	id, err = svc.ruleStore().Get(ctx, PublishBlockKey(stream))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if id != 0 {
-		t.Fatalf("rule id = %d, want 0 (fallback store must persist across calls)", id)
 	}
 }
 
@@ -622,7 +596,7 @@ func TestRuleStore_StoreSwapCannotInterleaveWithSave(t *testing.T) {
 
 	swapDone := make(chan struct{})
 	go func() {
-		svc.SetMuteRuleStore(sfu.NewMemoryMuteRuleStore())
+		svc.SetMuteRuleStore(newMemMuteRuleStore())
 		close(swapDone)
 	}()
 
@@ -646,9 +620,10 @@ func TestRuleStore_ConcurrentAccess_NoRace(t *testing.T) {
 	ctx := context.Background()
 	stream := GenerateStreamName("dom-a:r1", "alice")
 
-	// 直构兜底 + 并发 MuteParticipantTimed：兜底 store 只创建一次，
-	// 并发 mute 全部写入后仍能读回 1（否则并发兜底/替换会静默丢黑名单）。
+	// 注入共享 store 后并发 MuteParticipantTimed：并发 mute 全部写入后仍能读回 1。
+	// 未注入时 mute 是安全 no-op（不再惰性兜底内存 store），持久化必须依赖注入的 store。
 	svc := &Service{}
+	svc.SetMuteRuleStore(newMemMuteRuleStore())
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
@@ -670,7 +645,7 @@ func TestRuleStore_ConcurrentAccess_NoRace(t *testing.T) {
 		swapWG.Add(1)
 		go func() {
 			defer swapWG.Done()
-			svc.SetMuteRuleStore(sfu.NewMemoryMuteRuleStore())
+			svc.SetMuteRuleStore(newMemMuteRuleStore())
 			_, _ = svc.ruleStore().Get(ctx, PublishBlockKey("gs-race"))
 		}()
 	}
@@ -1184,7 +1159,7 @@ func TestService_ConcurrentInjectAndList_NoRace(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			svc.SetStreamRoomResolver(&stubResolver{})
-			svc.SetMuteRuleStore(sfu.NewMemoryMuteRuleStore())
+			svc.SetMuteRuleStore(newMemMuteRuleStore())
 		}()
 		wg.Add(1)
 		go func() {
@@ -1282,4 +1257,58 @@ func TestDeleteRoom_FallsBackToRegistry_WhenSRSStreamsUnavailable(t *testing.T) 
 	if len(reg.cleared) != 1 || reg.cleared[0] != "room-x" {
 		t.Fatalf("expected registry room room-x cleared, got %+v", reg.cleared)
 	}
+}
+
+
+// memMuteRuleStore 是测试用 MuteRuleStore 实现（不进入生产代码，杜绝被误用作降级后端）。
+type memMuteRuleStore struct {
+	mu   sync.Mutex
+	data map[string]memMuteEntry
+}
+
+type memMuteEntry struct {
+	ruleID    int
+	expiresAt time.Time
+}
+
+func newMemMuteRuleStore() *memMuteRuleStore {
+	return &memMuteRuleStore{data: map[string]memMuteEntry{}}
+}
+
+func (s *memMuteRuleStore) Backend() string { return "mem" }
+
+func (s *memMuteRuleStore) Save(_ context.Context, key string, ruleID int, ttl time.Duration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ruleID <= 0 {
+		delete(s.data, key)
+		return nil
+	}
+	e := memMuteEntry{ruleID: ruleID}
+	if ttl > 0 {
+		e.expiresAt = time.Now().Add(ttl)
+	}
+	s.data[key] = e
+	return nil
+}
+
+func (s *memMuteRuleStore) Get(_ context.Context, key string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.data[key]
+	if !ok {
+		return 0, nil
+	}
+	if !e.expiresAt.IsZero() && time.Now().After(e.expiresAt) {
+		delete(s.data, key)
+		return 0, nil
+	}
+	return e.ruleID, nil
+}
+
+func (s *memMuteRuleStore) Delete(_ context.Context, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.data, key)
+	return nil
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/nats-io/nats.go"
@@ -28,19 +27,20 @@ type MembershipStore interface {
 var _ MembershipStore = (*StateStore)(nil)
 
 // ResolveMembershipConfig selects membership backend.
-// Mode: auto|nats|none (default auto).
-// auto preference: nats → none.
+// Mode: auto|nats (default auto). A missing NATS connection is a fatal error:
+// the process always runs with a NATS connection (embedded or external,
+// guaranteed by bus.Init), so there is no none / in-memory degradation.
 type ResolveMembershipConfig struct {
 	Mode   string
 	Prefix string
 
-	// NATS connection for JetStream KV; nil skips nats backend.
+	// NATS connection for JetStream KV; must be non-nil (provided by bus.Init).
 	NATS *nats.Conn
 }
 
-// ResolveMembershipStore opens membership store by mode with degradation.
-// Returns (nil, "none", nil) when no backend is available or mode=none.
-// Forced mode (nats) returns error if that backend cannot be opened.
+// ResolveMembershipStore opens the membership/stream store backed by NATS KV.
+// It fails fast when NATS is unavailable instead of degrading to a local-only
+// "none" backend, so cross-instance room views always have shared state.
 func ResolveMembershipStore(cfg ResolveMembershipConfig) (MembershipStore, string, error) {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
@@ -50,36 +50,20 @@ func ResolveMembershipStore(cfg ResolveMembershipConfig) (MembershipStore, strin
 	if prefix == "" {
 		prefix = "gospeak"
 	}
-
-	tryNATS := func() (MembershipStore, error) {
-		if cfg.NATS == nil {
-			return nil, fmt.Errorf("nats connection not available")
-		}
-		return OpenStateStore(StateStoreConfig{
-			Prefix: prefix,
-			NC:     cfg.NATS,
-		})
+	if mode != "auto" && mode != "nats" {
+		return nil, "", fmt.Errorf("state store: unsupported mode %q (want auto|nats)", mode)
 	}
-
-	switch mode {
-	case "none":
-		return nil, "none", nil
-	case "nats":
-		st, err := tryNATS()
-		if err != nil {
-			return nil, "none", fmt.Errorf("state store nats: %w", err)
-		}
-		return st, "nats", nil
-	case "auto":
-		if st, err := tryNATS(); err == nil {
-			return st, "nats", nil
-		} else {
-			log.Printf("[StateStore] nats unavailable: %v; fallback none", err)
-		}
-		return nil, "none", nil
-	default:
-		return nil, "none", fmt.Errorf("state store: unknown mode %q (want auto|nats|none)", mode)
+	if cfg.NATS == nil {
+		return nil, "", fmt.Errorf("state store: nats connection required (embedded or external URL)")
 	}
+	st, err := OpenStateStore(StateStoreConfig{
+		Prefix: prefix,
+		NC:     cfg.NATS,
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("state store nats: %w", err)
+	}
+	return st, "nats", nil
 }
 
 // IsMembershipNotFound 判断共享状态读取错误是否为“记录不存在”。

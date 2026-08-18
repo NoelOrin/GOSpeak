@@ -2,7 +2,6 @@ package sfu
 
 import (
 	"context"
-	"sync"
 	"time"
 )
 
@@ -38,144 +37,51 @@ type FreshMuteRuleStore interface {
 	GetFresh(ctx context.Context, key string) (int, error)
 }
 
-type memoryRuleEntry struct {
-	ruleID    int
-	expiresAt time.Time // zero = no expiry
-}
-
-// MemoryMuteRuleStore is process-local only. Multi-instance still weak.
-type MemoryMuteRuleStore struct {
-	mu   sync.Mutex
-	data map[string]memoryRuleEntry
-}
-
-func NewMemoryMuteRuleStore() *MemoryMuteRuleStore {
-	return &MemoryMuteRuleStore{data: make(map[string]memoryRuleEntry)}
-}
-
-func (s *MemoryMuteRuleStore) Backend() string { return "memory" }
-
-func (s *MemoryMuteRuleStore) Save(_ context.Context, key string, ruleID int, ttl time.Duration) error {
-	if s == nil || key == "" || ruleID <= 0 {
-		return nil
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.data == nil {
-		s.data = make(map[string]memoryRuleEntry)
-	}
-	entry := memoryRuleEntry{ruleID: ruleID}
-	if ttl > 0 {
-		entry.expiresAt = time.Now().Add(ttl)
-	}
-	s.data[key] = entry
-	return nil
-}
-
-func (s *MemoryMuteRuleStore) Get(_ context.Context, key string) (int, error) {
-	if s == nil || key == "" {
-		return 0, nil
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	entry, ok := s.data[key]
-	if !ok {
-		return 0, nil
-	}
-	if !entry.expiresAt.IsZero() && time.Now().After(entry.expiresAt) {
-		delete(s.data, key)
-		return 0, nil
-	}
-	return entry.ruleID, nil
-}
-
-func (s *MemoryMuteRuleStore) Delete(_ context.Context, key string) error {
-	if s == nil || key == "" {
-		return nil
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.data, key)
-	return nil
-}
-
-// CachedMuteRuleStore is L1 memory + shared L2 (nats).
-// Write-through on Save/Delete; Get fills L1 from L2 on miss.
+// CachedMuteRuleStore is a thin wrapper that adds the FreshMuteRuleStore
+// (GetFresh) capability over a shared backend (always NATS KV in production).
+// It deliberately holds no process-local memory state: a missing backend is a
+// programming error, never a silent in-memory degradation.
 type CachedMuteRuleStore struct {
-	local  *MemoryMuteRuleStore
 	shared MuteRuleStore
 }
 
 func NewCachedMuteRuleStore(shared MuteRuleStore) *CachedMuteRuleStore {
-	if shared == nil {
-		return &CachedMuteRuleStore{local: NewMemoryMuteRuleStore()}
-	}
-	return &CachedMuteRuleStore{
-		local:  NewMemoryMuteRuleStore(),
-		shared: shared,
-	}
+	return &CachedMuteRuleStore{shared: shared}
 }
 
 func (s *CachedMuteRuleStore) Backend() string {
-	if s == nil {
+	if s == nil || s.shared == nil {
 		return "memory"
 	}
-	if s.shared != nil {
-		return s.shared.Backend()
-	}
-	return "memory"
+	return s.shared.Backend()
 }
 
 func (s *CachedMuteRuleStore) Save(ctx context.Context, key string, ruleID int, ttl time.Duration) error {
-	if s == nil {
+	if s == nil || s.shared == nil {
 		return nil
 	}
-	_ = s.local.Save(ctx, key, ruleID, ttl)
-	if s.shared != nil {
-		return s.shared.Save(ctx, key, ruleID, ttl)
-	}
-	return nil
+	return s.shared.Save(ctx, key, ruleID, ttl)
 }
 
 func (s *CachedMuteRuleStore) Get(ctx context.Context, key string) (int, error) {
-	if s == nil {
+	if s == nil || s.shared == nil {
 		return 0, nil
 	}
-	if id, err := s.local.Get(ctx, key); err != nil {
-		return 0, err
-	} else if id > 0 {
-		return id, nil
-	}
-	if s.shared == nil {
-		return 0, nil
-	}
-	id, err := s.shared.Get(ctx, key)
-	if err != nil || id <= 0 {
-		return id, err
-	}
-	// Best-effort L1 fill with short TTL so stale rule IDs expire quickly.
-	_ = s.local.Save(ctx, key, id, cachedMuteRuleL1TTL)
-	return id, nil
+	return s.shared.Get(ctx, key)
 }
 
-// GetFresh 跳过本地 L1，直接读 shared 权威值；无 shared 时回退 local。
+// GetFresh reads the authoritative shared value (no local cache to bypass).
+// It implements sfu.FreshMuteRuleStore.
 func (s *CachedMuteRuleStore) GetFresh(ctx context.Context, key string) (int, error) {
-	if s == nil {
+	if s == nil || s.shared == nil {
 		return 0, nil
-	}
-	if s.shared == nil {
-		return s.local.Get(ctx, key)
 	}
 	return s.shared.Get(ctx, key)
 }
 
 func (s *CachedMuteRuleStore) Delete(ctx context.Context, key string) error {
-	if s == nil {
+	if s == nil || s.shared == nil {
 		return nil
 	}
-	_ = s.local.Delete(ctx, key)
-	if s.shared != nil {
-		return s.shared.Delete(ctx, key)
-	}
-	return nil
+	return s.shared.Delete(ctx, key)
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -277,7 +278,7 @@ func TestParseCallbackParams_EmptyOrInvalidReturnsEmpty(t *testing.T) {
 func TestSrsCallback_OnPublish_BlockedStream_Rejects(t *testing.T) {
 	hub := newCallbackHub()
 	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
-	store := sfu.NewMemoryMuteRuleStore()
+	store := newFakeMuteRuleStore()
 	_ = store.Save(context.Background(), srs.PublishBlockKey("gs-aaa"), 1, 0)
 	h.SetMuteRuleStore(store)
 
@@ -300,7 +301,7 @@ func TestSrsCallback_OnPublish_BlockedStream_Rejects(t *testing.T) {
 func TestSrsCallback_OnPublish_CachedBlockedStream_Rejects(t *testing.T) {
 	hub := newCallbackHub()
 	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
-	shared := sfu.NewMemoryMuteRuleStore()
+	shared := newFakeMuteRuleStore()
 	cache := sfu.NewCachedMuteRuleStore(shared)
 	if err := cache.Save(context.Background(), srs.PublishBlockKey("gs-cache"), 1, time.Minute); err != nil {
 		t.Fatal(err)
@@ -326,7 +327,7 @@ func TestSrsCallback_OnPublish_CachedBlockedStream_Rejects(t *testing.T) {
 func TestSrsCallback_OnPublish_AfterUnmute_Allows(t *testing.T) {
 	hub := newCallbackHub()
 	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
-	store := sfu.NewMemoryMuteRuleStore()
+	store := newFakeMuteRuleStore()
 	h.SetMuteRuleStore(store)
 	stream := "gs-aaa"
 	_ = store.Save(context.Background(), srs.PublishBlockKey(stream), 1, 0)
@@ -350,19 +351,19 @@ func TestSrsCallback_OnPublish_AfterUnmute_Allows(t *testing.T) {
 func TestSrsCallback_OnPublish_CrossInstanceUnmute_Allows(t *testing.T) {
 	hub := newCallbackHub()
 	h := NewSRSCallbackHandlerWithResolver(hub, func() string { return "secret" })
-	shared := sfu.NewMemoryMuteRuleStore()
+	shared := newFakeMuteRuleStore()
 	cache := sfu.NewCachedMuteRuleStore(shared)
 	stream := "gs-cross"
 	if err := cache.Save(context.Background(), srs.PublishBlockKey(stream), 1, time.Minute); err != nil {
 		t.Fatal(err)
 	}
 	h.SetMuteRuleStore(cache)
-	// 另一实例 unmute 只删 shared；本实例 L1 仍缓存旧值。
+	// 另一实例 unmute 只删 shared；无 L1 遮挡，本实例立即可见。
 	if err := shared.Delete(context.Background(), srs.PublishBlockKey(stream)); err != nil {
 		t.Fatal(err)
 	}
-	if id, err := cache.Get(context.Background(), srs.PublishBlockKey(stream)); err != nil || id != 1 {
-		t.Fatalf("plain Get should still hit stale L1 (id=%d err=%v)", id, err)
+	if id, err := cache.Get(context.Background(), srs.PublishBlockKey(stream)); err != nil || id != 0 {
+		t.Fatalf("after shared delete Get should see unmute (id=%d err=%v)", id, err)
 	}
 
 	tok := srsStreamTokenForTest(stream, "secret")
@@ -409,4 +410,58 @@ func TestSrsCallback_OnPublish_MuteStoreError_Denies(t *testing.T) {
 	if hub.IsStreamActive(stream) {
 		t.Fatal("stream should NOT be registered when mute store check fails")
 	}
+}
+
+
+// fakeMuteRuleStore 是测试用 MuteRuleStore 实现（不进入生产代码，杜绝被误用作降级后端）。
+type fakeMuteRuleStore struct {
+	mu   sync.Mutex
+	data map[string]fakeMuteEntry
+}
+
+type fakeMuteEntry struct {
+	ruleID    int
+	expiresAt time.Time
+}
+
+func newFakeMuteRuleStore() *fakeMuteRuleStore {
+	return &fakeMuteRuleStore{data: map[string]fakeMuteEntry{}}
+}
+
+func (s *fakeMuteRuleStore) Backend() string { return "fake" }
+
+func (s *fakeMuteRuleStore) Save(_ context.Context, key string, ruleID int, ttl time.Duration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ruleID <= 0 {
+		delete(s.data, key)
+		return nil
+	}
+	e := fakeMuteEntry{ruleID: ruleID}
+	if ttl > 0 {
+		e.expiresAt = time.Now().Add(ttl)
+	}
+	s.data[key] = e
+	return nil
+}
+
+func (s *fakeMuteRuleStore) Get(_ context.Context, key string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.data[key]
+	if !ok {
+		return 0, nil
+	}
+	if !e.expiresAt.IsZero() && time.Now().After(e.expiresAt) {
+		delete(s.data, key)
+		return 0, nil
+	}
+	return e.ruleID, nil
+}
+
+func (s *fakeMuteRuleStore) Delete(_ context.Context, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.data, key)
+	return nil
 }

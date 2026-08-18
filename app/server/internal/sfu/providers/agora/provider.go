@@ -21,7 +21,7 @@ type Service struct {
 	customerID     string
 	customerSecret string
 
-	// muteRules is multi-instance rule id cache (memory / nats KV).
+	// muteRules is multi-instance rule id cache (nats KV, injected). Nil when not wired.
 	muteRules sfu.MuteRuleStore
 	rest      *RESTClient
 }
@@ -33,7 +33,7 @@ func NewService(cfg *config.Config) *Service {
 		host:           cfg.AgoraHost,
 		customerID:     cfg.AgoraCustomerID,
 		customerSecret: cfg.AgoraCustomerSecret,
-		muteRules:      sfu.NewMemoryMuteRuleStore(),
+		muteRules:      nil,
 		rest:           NewRESTClient(cfg.AgoraAppID, cfg.AgoraCustomerID, cfg.AgoraCustomerSecret),
 	}
 }
@@ -41,10 +41,6 @@ func NewService(cfg *config.Config) *Service {
 // SetMuteRuleStore injects shared mute-rule cache (nats preferred).
 func (s *Service) SetMuteRuleStore(store sfu.MuteRuleStore) {
 	if s == nil {
-		return
-	}
-	if store == nil {
-		s.muteRules = sfu.NewMemoryMuteRuleStore()
 		return
 	}
 	s.muteRules = store
@@ -178,18 +174,25 @@ func (s *Service) mapRESTError(err error) error {
 }
 
 func (s *Service) ruleStore() sfu.MuteRuleStore {
-	if s == nil || s.muteRules == nil {
-		return sfu.NewMemoryMuteRuleStore()
+	if s == nil {
+		return nil
 	}
 	return s.muteRules
 }
 
 func (s *Service) saveRule(key string, ruleID int, ttl time.Duration) error {
-	return s.ruleStore().Save(context.Background(), key, ruleID, ttl)
+	if st := s.ruleStore(); st != nil {
+		return st.Save(context.Background(), key, ruleID, ttl)
+	}
+	return nil
 }
 
 func (s *Service) getRule(key string) int {
-	id, err := s.ruleStore().Get(context.Background(), key)
+	st := s.ruleStore()
+	if st == nil {
+		return 0
+	}
+	id, err := st.Get(context.Background(), key)
 	if err != nil {
 		return 0
 	}
@@ -197,7 +200,9 @@ func (s *Service) getRule(key string) int {
 }
 
 func (s *Service) deleteRule(key string) {
-	_ = s.ruleStore().Delete(context.Background(), key)
+	if st := s.ruleStore(); st != nil {
+		_ = st.Delete(context.Background(), key)
+	}
 }
 
 func (s *Service) clearMuteRule(room, identity, key string) error {
