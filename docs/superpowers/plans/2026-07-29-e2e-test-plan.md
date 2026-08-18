@@ -1,9 +1,10 @@
-# E2E 端到端测试计划 — Guild + WebSocket Migration
+# E2E 端到端测试计划 — Domain + WebSocket Migration
+> **术语说明:** 本文档初版以 Guild 描述，当前代码已统一为 **Domain**（语音域/租户），相关接口为 `/api/v1/domain/*`。
 
 > **Status (2026-08-13):** ⚠️ 部分落地 — Playwright + room-voice-e2e skill 已就绪; 套件部分落地 (见 agent_test_logs)
 
 > **基础框架:** 基于现有 `.agents/skills/room-voice-e2e/` (Playwright)
-> **新增套件:** Guild 管理 / 跨 Guild 隔离 / WS 协议 / WS 断连恢复 / Phase 1+2 全链路
+> **新增套件:** Domain 管理 / 跨 Domain 隔离 / WS 协议 / WS 断连恢复 / Phase 1+2 全链路
 > **测试范围:** 浏览器 → 前端 → API → WS → 信号层 → SFU 全链路
 
 ---
@@ -18,7 +19,7 @@
 │  (ui-helpers.mjs / media-probe.mjs / 新 helpers) │
 ├─────────────────────────────────────────────────┤
 │         HTTP API 层 (axios/fetch)                │
-│  登录 / Guild CRUD / 房间管理 / 权限配置         │
+│  登录 / Domain CRUD / 房间管理 / 权限配置         │
 ├─────────────────────────────────────────────────┤
 │         WebSocket 信号层 (socket.io→原生 WS)      │
 │  房间加入/离开/踢人/禁言/消息/发言检测           │
@@ -32,8 +33,8 @@
 
 | 维度 | 现有（room-voice-e2e） | 新增（本计划） |
 |------|----------------------|----------------|
-| 测试套件 | join / switch / rapid-switch / media / multi-user | guild / guild-room-isolation / guild-membership / ws-reconnect / ws-protocol / full-phase |
-| 测试数据 | 房间名 + 用户 | Guild + 房间 + 跨 Guild 用户 + 角色 |
+| 测试套件 | join / switch / rapid-switch / media / multi-user | domain / domain-room-isolation / domain-membership / ws-reconnect / ws-protocol / full-phase |
+| 测试数据 | 房间名 + 用户 | Domain + 房间 + 跨 Domain 用户 + 角色 |
 | 鉴权方式 | 用户名密码登录 → JWT → socket.io | 同左 + API token（Phase 2 后 WS 直连） |
 | 媒体验证 | getUserMedia / RTCPeerConnection | 同左 |
 | 断言基础 | UI 状态 + media probe | UI 状态 + media probe + API 响应 + WS 消息抓包 |
@@ -48,65 +49,65 @@
 .agents/skills/room-voice-e2e/
 ├── scripts/
 │   ├── run-room-voice-e2e.mjs        # 已有（扩�� suite 列表）
-│   ├── ui-helpers.mjs                # 已有（扩增 guild 帮助函数）
+│   ├── ui-helpers.mjs                # 已有（扩增 domain 帮助函数）
 │   ├── media-probe.mjs               # 已有（不变）
-│   ├── guild-helpers.mjs             # 新增 — Guild API + UI 操作
+│   ├── domain-helpers.mjs             # 新增 — Domain API + UI 操作
 │   ├── ws-helpers.mjs                # 新增 — WS 消息抓包 + 协议验证
-│   └── cleanup-helpers.mjs           # 新增 — 测试清理（删 Guild/房间/用户）
+│   └── cleanup-helpers.mjs           # 新增 — 测试清理（删 Domain/房间/用户）
 └── references/
-    ├── scenarios.md                  # 已有（扩增 Guild/WS 场景）
-    ├── selectors.md                  # 已有（扩增 Guild UI 选择器）
+    ├── scenarios.md                  # 已有（扩增 Domain/WS 场景）
+    ├── selectors.md                  # 已有（扩增 Domain UI 选择器）
     ├── media-assertions.md           # 已有
-    └── guild-selectors.md            # 新增 — Guild UI 专用选择器
+    └── domain-selectors.md            # 新增 — Domain UI 专用选择器
 ```
 
-### 2.2 Guild Helpers (`guild-helpers.mjs`)
+### 2.2 Domain Helpers (`domain-helpers.mjs`)
 
 ```javascript
-// ===== Guild CRUD =====
+// ===== Domain CRUD =====
 
-/** 通过 API 创建 Guild，返回 guild 对象 */
-async function createGuild(page, name, { description, isPublic } = {}) {
+/** 通过 API 创建 Domain，返回 domain 对象 */
+async function createDomain(page, name, { description, isPublic } = {}) {
   const token = await getAuthToken(page);
   const res = await page.evaluate(async (opts) => {
-    const r = await fetch('/api/v1/guild/create', {
+    const r = await fetch('/api/v1/domain/create', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${opts.token}` },
       body: JSON.stringify({ name: opts.name, description: opts.description || '', is_public: opts.isPublic || false }),
     });
     return r.json();
   }, { token, name, description, isPublic });
-  if (res.code !== 0) throw new Error(`createGuild failed: ${res.msg}`);
+  if (res.code !== 0) throw new Error(`createDomain failed: ${res.msg}`);
   return res.data;
 }
 
-/** 通过 API 加入 Guild */
-async function joinGuild(page, inviteCode) {
+/** 通过 API 加入 Domain */
+async function joinDomain(page, inviteCode) {
   // ... 类似模式
 }
 
-/** 通过 UI 左侧栏查看当前 Guild */
-async function getVisibleGuilds(page) {
-  return page.$$eval('[data-testid="guild-icon"]', els =>
-    els.map(el => ({ name: el.title, uuid: el.dataset.guildUuid }))
+/** 通过 UI 左侧栏查看当前 Domain */
+async function getVisibleDomains(page) {
+  return page.$$eval('[data-testid="domain-icon"]', els =>
+    els.map(el => ({ name: el.title, uuid: el.dataset.domainUuid }))
   );
 }
 
-/** 在 UI 中切换到指定 Guild */
-async function selectGuild(page, guildUUID) {
-  await page.click(`[data-testid="guild-icon"][data-guild-uuid="${guildUUID}"]`);
-  await page.waitForSelector('[data-testid="guild-name"]');
+/** 在 UI 中切换到指定 Domain */
+async function selectDomain(page, domainUUID) {
+  await page.click(`[data-testid="domain-icon"][data-domain-uuid="${domainUUID}"]`);
+  await page.waitForSelector('[data-testid="domain-name"]');
 }
 
-// ===== Guild 成员管理 =====
+// ===== Domain 成员管理 =====
 
-/** 通过 API 获取 Guild 成员列表 */
-async function getGuildMembers(page, guildUUID) {
-  // ... GET /api/v1/guild/members
+/** 通过 API 获取 Domain 成员列表 */
+async function getDomainMembers(page, domainUUID) {
+  // ... GET /api/v1/domain/members
 }
 
 /** 通过 API 踢出成员 */
-async function kickGuildMember(page, guildUUID, userUUID) {
-  // ... POST /api/v1/guild/kick
+async function kickDomainMember(page, domainUUID, userUUID) {
+  // ... POST /api/v1/domain/kick
 }
 ```
 
@@ -172,10 +173,10 @@ async function installWSProbe(page) {
 
 /**
  * RoomRequest 帮助函数：构建标准 WS 消息。
- * Phase 1 后自动加入 guild_uuid 字段。
+ * Phase 1 后自动加入 domain_uuid 字段。
  */
-function makeRoomRequest(room, guildUUID, extra = {}) {
-  return { room, guild_uuid: guildUUID, ...extra };
+function makeRoomRequest(room, domainUUID, extra = {}) {
+  return { room, domain_uuid: domainUUID, ...extra };
 }
 ```
 
@@ -188,7 +189,7 @@ function makeRoomRequest(room, guildUUID, extra = {}) {
  * E2E 测试数据准备：
  * 1. 创建/确保 E2E_USER / E2E_USER_B 账号存在
  * 2. 重置密码为非强制改密态
- * 3. 创建 E2E Guild（若不存在）
+ * 3. 创建 E2E Domain（若不存在）
  * 4. 创建 E2E 房间（若不存在）
  *
  * 运行: node scripts/seed-e2e-data.mjs [--reset]
@@ -197,57 +198,57 @@ function makeRoomRequest(room, guildUUID, extra = {}) {
 
 ---
 
-## 三、Phase 1 — Guild E2E 套件
+## 三、Phase 1 — Domain E2E 套件
 
-### Suite: `guild` — Guild 创建管理
+### Suite: `domain` — Domain 创建管理
 
 | 步骤 | 操作 | 断言 |
 |------|------|------|
 | 1 | 用户 A 登录 | Dashboard 可见 |
-| 2 | 点击"创建服务器"按钮 | CreateGuildModal 弹出 |
-| 3 | 输入名称 "E2E Test Guild"，点创建 | API 返回 0，返回 guild UUID |
-| 4 | 左侧 Guild 栏出现新图标 | 图标首字母显示 "ET" |
-| 5 | 点图标进入 Guild | 标题显示 "E2E Test Guild" |
-| 6 | 创建第二个 Guild "E2E Guild B" | 左侧出现两个图标 |
-| 7 | 在两个 Guild 间切换 | 每次切换后标题和房间列表更新 |
+| 2 | 点击"创建服务器"按钮 | CreateDomainModal 弹出 |
+| 3 | 输入名称 "E2E Test Domain"，点创建 | API 返回 0，返回 domain UUID |
+| 4 | 左侧 Domain 栏出现新图标 | 图标首字母显示 "ET" |
+| 5 | 点图标进入 Domain | 标题显示 "E2E Test Domain" |
+| 6 | 创建第二个 Domain "E2E Domain B" | 左侧出现两个图标 |
+| 7 | 在两个 Domain 间切换 | 每次切换后标题和房间列表更新 |
 
 **通过标准:**
-- Guild 图标在左侧栏正确渲染（首字母 / 头像）
-- 切换 Guild 时房间列表刷新
+- Domain 图标在左侧栏正确渲染（首字母 / 头像）
+- 切换 Domain 时房间列表刷新
 - API 返回值与 UI 显示一致
 
-### Suite: `guild-join` — Guild 邀请加入
+### Suite: `domain-join` — Domain 邀请加入
 
 | 步骤 | 操作 | 断言 |
 |------|------|------|
-| 1 | 用户 A 创建 Guild "E2E Private" | 返回 invite_code |
+| 1 | 用户 A 创建 Domain "E2E Private" | 返回 invite_code |
 | 2 | 用户 A 复制邀请码显示在 UI | UI 展示邀请码 |
-| 3 | 用户 B 打开"加入服务器"弹窗 | JoinGuildModal 弹出 |
+| 3 | 用户 B 打开"加入服务器"弹窗 | JoinDomainModal 弹出 |
 | 4 | 用户 B 输入邀请码，点加入 | API 返回 0 |
-| 5 | 用户 B 左侧栏出现 Guild 图标 | 可见 |
+| 5 | 用户 B 左侧栏出现 Domain 图标 | 可见 |
 | 6 | 用户 A 查看成员列表 | 显示 2 名成员（A + B） |
 
 **通过标准:**
 - 邀请码加入全流程
 - 双方成员列表同步
 
-### Suite: `guild-room-isolation` — 跨 Guild 房间隔离
+### Suite: `domain-room-isolation` — 跨 Domain 房间隔离
 
 | 步骤 | 操作 | 断言 |
 |------|------|------|
-| 1 | 用户 A 在 Guild A 创建房间 "lobby" | 房间创建成功 |
-| 2 | 用户 A 在 Guild B 创建同名房间 "lobby" | 房间创建成功 |
-| 3 | 用户 A 进入 Guild A.lobby | 房间列表显示 Guild A 的房间 |
-| 4 | 用户 B 加入 Guild B 并进入 Guild B.lobby | 双方在不同 Guild 的同名房间 |
-| 5 | 用户 A 在 Guild A.lobby 说话 | 用户 B **不** 应收到 Guild A 的音频 |
-| 6 | 用户 B 查看 Guild B 的房间列表 | 不包含 Guild A 的房间 |
+| 1 | 用户 A 在 Domain A 创建房间 "lobby" | 房间创建成功 |
+| 2 | 用户 A 在 Domain B 创建同名房间 "lobby" | 房间创建成功 |
+| 3 | 用户 A 进入 Domain A.lobby | 房间列表显示 Domain A 的房间 |
+| 4 | 用户 B 加入 Domain B 并进入 Domain B.lobby | 双方在不同 Domain 的同名房间 |
+| 5 | 用户 A 在 Domain A.lobby 说话 | 用户 B **不** 应收到 Domain A 的音频 |
+| 6 | 用户 B 查看 Domain B 的房间列表 | 不包含 Domain A 的房间 |
 
 **通过标准:**
-- `roomKey(guildUUID, roomName)` 隔离生效
-- WS/Fanout 广播不跨 Guild
-- 房间列表按 Guild 过滤
+- `roomKey(domainUUID, roomName)` 隔离生效
+- WS/Fanout 广播不跨 Domain
+- 房间列表按 Domain 过滤
 
-### Suite: `guild-membership` — Guild 成员角色
+### Suite: `domain-membership` — Domain 成员角色
 
 | 步骤 | 操作 | 断言 |
 |------|------|------|
@@ -256,29 +257,29 @@ function makeRoomRequest(room, guildUUID, extra = {}) {
 | 3 | 用户 B (admin) 踢出用户 C | API 返回 0 |
 | 4 | 用户 C 尝试重新加入 | 可重新加入（被踢不 shut） |
 | 5 | 用户 A 转让 owner 给用户 B | API 返回 0 |
-| 6 | 用户 A 尝试删除 Guild（现为普通成员）| API 返回 403 |
-| 7 | 用户 B (新 owner) 删除 Guild | API 返回 0 |
+| 6 | 用户 A 尝试删除 Domain（现为普通成员）| API 返回 403 |
+| 7 | 用户 B (新 owner) 删除 Domain | API 返回 0 |
 
 **通过标准:**
 - 角色层级正确执行 (owner ≥ admin ≥ member)
 - 转让 owner 后权限即时生效
-- 非 owner 不能删除 Guild
+- 非 owner 不能删除 Domain
 
-### Suite: `guild-multi-room` — Guild 内多房间语音
+### Suite: `domain-multi-room` — Domain 内多房间语音
 
-**前置条件:** 需准备 2 个用户 (A, B)，同一 Guild，同一 SFU provider。
+**前置条件:** 需准备 2 个用户 (A, B)，同一 Domain，同一 SFU provider。
 
 | 步骤 | 操作 | 断言 |
 |------|------|------|
-| 1 | 用户 A 在 Guild X 创建房间 A 和 房间 B | 两个房间 |
+| 1 | 用户 A 在 Domain X 创建房间 A 和 房间 B | 两个房间 |
 | 2 | 用户 A 进房间 A，用户 B 进房间 B | 各自在对应房间 |
 | 3 | 用户 A 切换到房间 B | A 离开房间 A + A 加入房间 B |
 | 4 | 用户 A 在房间 B 与 B 通话 | 双方媒体正常（如 multi-user 套件标准） |
-| 5 | 创建第 3 个用户 C，加入 Guild X | C 看到房间 A、B 列表 |
+| 5 | 创建第 3 个用户 C，加入 Domain X | C 看到房间 A、B 列表 |
 
 **通过标准:**
-- 同 Guild 内多房间互不干扰
-- 跨 Guild 房间切换不影响其他 Guild
+- 同 Domain 内多房间互不干扰
+- 跨 Domain 房间切换不影响其他 Domain
 - 新人看到所有可见房间
 
 ---
@@ -306,7 +307,7 @@ function makeRoomRequest(room, guildUUID, extra = {}) {
 
 | 步骤 | 操作 | 断言 |
 |------|------|------|
-| 1 | 用户 A 进房间 (Guild X.lobby) | 媒体正常 (Phase 1 标准) |
+| 1 | 用户 A 进房间 (Domain X.lobby) | 媒体正常 (Phase 1 标准) |
 | 2 | 模拟断连: `page.evaluate(() => socket?.disconnect())` | 客户端触发重连逻辑 |
 | 3 | 等待自动重连 | WS 重新连接 |
 | 4 | 用户 A 仍显示在房间成员列表中 | 服务端 OnClientDisconnect 处理后重建？取决于设计 |
@@ -316,19 +317,19 @@ function makeRoomRequest(room, guildUUID, extra = {}) {
 - **方案 A（内存状态）:** 断连后 OnClientDisconnect 清理房间成员，重连后需重新 join room. 成员列表暂时消失后恢复。
 - **方案 B（持久化状态）:** 断连不清成员，重连后重新注册到 fanout。成员列表断连期间可见但静音。
 
-### Suite: `ws-protocol` — Guild-WS 联合协议
+### Suite: `ws-protocol` — Domain-WS 联合协议
 
 | 步骤 | 操作 | 断言 |
 |------|------|------|
-| 1 | 用户 A 在 Guild X 发送 `room:join` 带 guild_uuid | 加入房间 `roomKey(GuildX, roomName)` |
-| 2 | 用户 B 在 Guild Y 对**同名 room** 发 `room:join` | 独立加入，不互相影响 |
+| 1 | 用户 A 在 Domain X 发送 `room:join` 带 domain_uuid | 加入房间 `roomKey(DomainX, roomName)` |
+| 2 | 用户 B 在 Domain Y 对**同名 room** 发 `room:join` | 独立加入，不互相影响 |
 | 3 | 用户 A 发 `room:kick` 带目标 identity | 仅目标收到 `room:kicked` 事件 |
 | 4 | 用户 A 发 `member:mic-state` | 房间内广播 `member:updated` |
 | 5 | 用户 A 发 `message:send` 带 content | ACK 返回 message ID，房间广播 `message:new` |
 
 **通过标准:**
 - 所有 11 个事件通过 WS 线协议可正常收发
-- GuildUUID 正确出现在 room 相关请求中
+- DomainUUID 正确出现在 room 相关请求中
 - ACK 和非 ACK 事件格式区分正确
 - error ACK 返回正确错误码
 
@@ -357,10 +358,10 @@ function makeRoomRequest(room, guildUUID, extra = {}) {
 
 ```
 1. 用户 A 登录
-2. 创建 Guild "E2E Full"
-3. 创建房间 "lobby"（Guild 内）
+2. 创建 Domain "E2E Full"
+3. 创建房间 "lobby"（Domain 内）
 4. 进入房间
-5. 用户 B 通过邀请码加入 Guild
+5. 用户 B 通过邀请码加入 Domain
 6. 用户 B 进入同一房间
 7. WS probe 验证双方消息格式正确
 8. 双方媒体正常（getUserMedia + RTCPeerConnection）
@@ -370,8 +371,8 @@ function makeRoomRequest(room, guildUUID, extra = {}) {
 12. 用户 A 发送文本消息
 13. ACK 返回 + 广播
 14. 用户 A 断开网络 → 自动重连
-15. 创建第二个 Guild → 房间隔离验证
-16. 清理：删除 Guild、登出
+15. 创建第二个 Domain → 房间隔离验证
+16. 清理：删除 Domain、登出
 ```
 
 **执行命令:**
@@ -389,11 +390,11 @@ E2E_USER=e2e_user E2E_PASS=e2e_pass E2E_USER_B=e2e_user_b E2E_PASS_B=e2e_pass_b 
 
 | Suite ID | 名称 | 用户数 | 执行时间 | 通过标准 |
 |----------|------|--------|----------|----------|
-| `guild` | Guild 创建管理 | 1 | ~30s | CRUD API + UI 一致 |
-| `guild-join` | 邀请加入 | 2 | ~30s | 邀请码全流程 |
-| `guild-room-isolation` | 跨 Guild 房间隔离 | 2 | ~40s | roomKey 隔离生效 |
-| `guild-membership` | 成员角色 | 2~3 | ~45s | 角色层级执行正确 |
-| `guild-multi-room` | Guild 多房间语音 | 2~3 | ~60s | 同 Guild 多房间媒体 |
+| `domain` | Domain 创建管理 | 1 | ~30s | CRUD API + UI 一致 |
+| `domain-join` | 邀请加入 | 2 | ~30s | 邀请码全流程 |
+| `domain-room-isolation` | 跨 Domain 房间隔离 | 2 | ~40s | roomKey 隔离生效 |
+| `domain-membership` | 成员角色 | 2~3 | ~45s | 角色层级执行正确 |
+| `domain-multi-room` | Domain 多房间语音 | 2~3 | ~60s | 同 Domain 多房间媒体 |
 
 ### Phase 2 套件
 
@@ -401,7 +402,7 @@ E2E_USER=e2e_user E2E_PASS=e2e_pass E2E_USER_B=e2e_user_b E2E_PASS_B=e2e_pass_b 
 |----------|------|--------|----------|----------|
 | `ws-connect` | WS 连接生命周期 | 1 | ~20s | 协议格式 + 鉴权 |
 | `ws-reconnect` | WS 断连恢复 | 1~2 | ~30s | 重连后状态一致 |
-| `ws-protocol` | Guild-WS 联合协议 | 2 | ~45s | 所有事件收发正确 |
+| `ws-protocol` | Domain-WS 联合协议 | 2 | ~45s | 所有事件收发正确 |
 | `ws-concurrency` | 多连接并发 | 3 | ~30s | 无丢失/死锁 |
 
 ### 全链路套件
@@ -437,7 +438,7 @@ cd /Users/noelorin/GOSpeak
 # 终端2: cd app/web && pnpm dev
 
 # Phase 1 套件
-E2E_USER=e2e_user E2E_PASS=e2e_pass node run-room-voice-e2e.mjs --suite guild
+E2E_USER=e2e_user E2E_PASS=e2e_pass node run-room-voice-e2e.mjs --suite domain
 
 # Phase 2 套件
 E2E_USER=e2e_user E2E_PASS=e2e_pass E2E_USER_B=e2e_user_b E2E_PASS_B=e2e_pass_b   node run-room-voice-e2e.mjs --suite ws-protocol
@@ -457,7 +458,7 @@ on:
   pull_request:
 
 jobs:
-  guild-e2e:
+  domain-e2e:
     runs-on: ubuntu-latest
     services:
       app:  # Go 后端
@@ -473,7 +474,7 @@ jobs:
       - run: |
           cd .agents/skills/room-voice-e2e/scripts
           pnpm install
-          E2E_USER=e2e_test E2E_PASS=e2e_test           E2E_USER_B=e2e_test_b E2E_PASS_B=e2e_test_b           node run-room-voice-e2e.mjs --suite guild
+          E2E_USER=e2e_test E2E_PASS=e2e_test           E2E_USER_B=e2e_test_b E2E_PASS_B=e2e_test_b           node run-room-voice-e2e.mjs --suite domain
 
   ws-e2e:
     # ... 类似，--suite ws-protocol,ws-connect
@@ -515,51 +516,51 @@ node scripts/seed-e2e-data.mjs --reset
 
 ```
 agent_test_logs/
-├── e2e-guild-2026-07-29-14-30.md          # 套件报告
+├── e2e-domain-2026-07-29-14-30.md          # 套件报告
 ├── e2e-ws-protocol-2026-07-29-14-31.md
 ├── artifacts/
-│   ├── guild-room-isolation-failure-1.png  # 失败截图
+│   ├── domain-room-isolation-failure-1.png  # 失败截图
 │   └── ws-protocol-msg-log.json            # WS 消息日志（调试用）
 ```
 
 报告格式（与现有 `test-logging` skill 一致）：
 
 ```markdown
-# E2E Report: guild (2026-07-29 14:30)
-- Suite: guild
+# E2E Report: domain (2026-07-29 14:30)
+- Suite: domain
 - Environment: CI / Local
 - SFU Provider: livekit
-- Result: ✅ 4/4 passed (1 skipped: guild-multi-room requires 3 users)
+- Result: ✅ 4/4 passed (1 skipped: domain-multi-room requires 3 users)
 
 ## Results
 | Test | Status | Duration |
 |------|--------|----------|
-| Guild 创建管理 | ✅ | 12.3s |
+| Domain 创建管理 | ✅ | 12.3s |
 | 邀请加入 | ✅ | 14.1s |
-| 跨 Guild 隔离 | ✅ | 18.7s |
+| 跨 Domain 隔离 | ✅ | 18.7s |
 | 成员角色 | ✅ | 22.4s |
 | 多房间语音 | ⏭️ SKIP | — (needs 3 users) |
 
 ## Details
-- guild-create: API 返回 0, UI 显示正确
-- guild-join: B 用户通过邀请码加入, 双方成员列表同步
-- guild-room-isolation: A 说话 B 在另一个 Guild 听不到
-- guild-kick: admin 踢 member 成功
+- domain-create: API 返回 0, UI 显示正确
+- domain-join: B 用户通过邀请码加入, 双方成员列表同步
+- domain-room-isolation: A 说话 B 在另一个 Domain 听不到
+- domain-kick: admin 踢 member 成功
 ```
 
 ---
 
 ## 八、执行顺序与里程碑
 
-### Phase 1 E2E 就绪（Guild 实现后）
+### Phase 1 E2E 就绪（Domain 实现后）
 
 ```
 合并条件:
-├── guild 套件 ✅
-├── guild-join 套件 ✅
-├── guild-room-isolation 套件 ✅
-├── guild-membership 套件 ✅
-└── guild-multi-room 套件 ✅ (可选, 依赖 3 用户)
+├── domain 套件 ✅
+├── domain-join 套件 ✅
+├── domain-room-isolation 套件 ✅
+├── domain-membership 套件 ✅
+└── domain-multi-room 套件 ✅ (可选, 依赖 3 用户)
 ```
 
 ### Phase 2 E2E 就绪（WS 迁移后）

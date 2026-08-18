@@ -1379,7 +1379,7 @@ func TestMessageService_Send_BroadcastUsesDomainScopedKey(t *testing.T) {
 	svc, bus, _, roomRepo, _ := setupMessageServiceTest(t)
 	svc.SetEventBus(bus)
 
-	domainRoomUUID := addDomainTextRoom(roomRepo, "domain-text-room", "guild-abc")
+	domainRoomUUID := addDomainTextRoom(roomRepo, "domain-text-room", "domain-abc")
 
 	_, err := svc.Send(domainRoomUUID, testActorWithUUID("alice", "uuid-alice"), "hello", "", "", nil)
 	assertNoError(t, err)
@@ -1387,8 +1387,8 @@ func TestMessageService_Send_BroadcastUsesDomainScopedKey(t *testing.T) {
 	if len(bus.rooms) != 1 {
 		t.Fatalf("expected 1 broadcast, got %d", len(bus.rooms))
 	}
-	if bus.rooms[0] != "guild-abc:domain-text-room" {
-		t.Errorf("expected domain-scoped room key 'guild-abc:domain-text-room', got %q", bus.rooms[0])
+	if bus.rooms[0] != "domain-abc:domain-text-room" {
+		t.Errorf("expected domain-scoped room key 'domain-abc:domain-text-room', got %q", bus.rooms[0])
 	}
 }
 
@@ -1412,7 +1412,7 @@ func TestMessageService_Edit_BroadcastUsesDomainScopedKey(t *testing.T) {
 	svc, bus, _, roomRepo, _ := setupMessageServiceTest(t)
 	svc.SetEventBus(bus)
 
-	domainRoomUUID := addDomainTextRoom(roomRepo, "domain-room", "guild-xyz")
+	domainRoomUUID := addDomainTextRoom(roomRepo, "domain-room", "domain-xyz")
 
 	dto, err := svc.Send(domainRoomUUID, testActorWithUUID("alice", "uuid-alice"), "orig", "", "", nil)
 	assertNoError(t, err)
@@ -1426,7 +1426,7 @@ func TestMessageService_Edit_BroadcastUsesDomainScopedKey(t *testing.T) {
 	if len(bus.rooms) != 1 {
 		t.Fatalf("expected 1 broadcast, got %d", len(bus.rooms))
 	}
-	if bus.rooms[0] != "guild-xyz:domain-room" {
+	if bus.rooms[0] != "domain-xyz:domain-room" {
 		t.Errorf("expected domain-scoped key, got %q", bus.rooms[0])
 	}
 }
@@ -1435,7 +1435,7 @@ func TestMessageService_Delete_BroadcastUsesDomainScopedKey(t *testing.T) {
 	svc, bus, _, roomRepo, _ := setupMessageServiceTest(t)
 	svc.SetEventBus(bus)
 
-	domainRoomUUID := addDomainTextRoom(roomRepo, "domain-delete-room", "guild-del")
+	domainRoomUUID := addDomainTextRoom(roomRepo, "domain-delete-room", "domain-del")
 	dto, err := svc.Send(domainRoomUUID, testActorWithUUID("alice", "uuid-alice"), "orig", "", "", nil)
 	assertNoError(t, err)
 
@@ -1445,7 +1445,7 @@ func TestMessageService_Delete_BroadcastUsesDomainScopedKey(t *testing.T) {
 	if len(bus.calls) != 1 || bus.calls[0] != "message:deleted" {
 		t.Fatalf("expected message:deleted broadcast, got %v", bus.calls)
 	}
-	if bus.rooms[0] != "guild-del:domain-delete-room" {
+	if bus.rooms[0] != "domain-del:domain-delete-room" {
 		t.Errorf("expected domain-scoped key, got %q", bus.rooms[0])
 	}
 }
@@ -1454,7 +1454,7 @@ func TestMessageService_React_BroadcastUsesDomainScopedKey(t *testing.T) {
 	svc, bus, _, roomRepo, _ := setupMessageServiceTest(t)
 	svc.SetEventBus(bus)
 
-	domainRoomUUID := addDomainTextRoom(roomRepo, "domain-react-room", "guild-react")
+	domainRoomUUID := addDomainTextRoom(roomRepo, "domain-react-room", "domain-react")
 	dto, err := svc.Send(domainRoomUUID, testActorWithUUID("alice", "uuid-alice"), "orig", "", "", nil)
 	assertNoError(t, err)
 
@@ -1464,7 +1464,7 @@ func TestMessageService_React_BroadcastUsesDomainScopedKey(t *testing.T) {
 	if len(bus.calls) != 1 || bus.calls[0] != "message:reaction" {
 		t.Fatalf("expected message:reaction broadcast, got %v", bus.calls)
 	}
-	if bus.rooms[0] != "guild-react:domain-react-room" {
+	if bus.rooms[0] != "domain-react:domain-react-room" {
 		t.Errorf("expected domain-scoped key, got %q", bus.rooms[0])
 	}
 }
@@ -1473,7 +1473,7 @@ func TestMessageService_Unreact_BroadcastUsesDomainScopedKey(t *testing.T) {
 	svc, bus, _, roomRepo, _ := setupMessageServiceTest(t)
 	svc.SetEventBus(bus)
 
-	domainRoomUUID := addDomainTextRoom(roomRepo, "domain-unreact-room", "guild-unreact")
+	domainRoomUUID := addDomainTextRoom(roomRepo, "domain-unreact-room", "domain-unreact")
 	dto, err := svc.Send(domainRoomUUID, testActorWithUUID("alice", "uuid-alice"), "orig", "", "", nil)
 	assertNoError(t, err)
 	assertNoError(t, svc.React(domainRoomUUID, dto.UUID, testActorWithUUID("alice", "uuid-alice"), "+1"))
@@ -1484,7 +1484,7 @@ func TestMessageService_Unreact_BroadcastUsesDomainScopedKey(t *testing.T) {
 	if len(bus.calls) != 1 || bus.calls[0] != "message:reaction" {
 		t.Fatalf("expected message:reaction broadcast, got %v", bus.calls)
 	}
-	if bus.rooms[0] != "guild-unreact:domain-unreact-room" {
+	if bus.rooms[0] != "domain-unreact:domain-unreact-room" {
 		t.Errorf("expected domain-scoped key, got %q", bus.rooms[0])
 	}
 }

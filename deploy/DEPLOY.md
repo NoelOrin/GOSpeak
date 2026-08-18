@@ -242,9 +242,9 @@ docker compose -f deploy/docker-compose.yml --profile srs --profile app down
 - **外部**：`NATS_URL` 非空时先探测可用性（`NATS_CONNECT_TIMEOUT`，默认 2s）。
   - 探测成功 → 连外部，不启内嵌（`eventbus_mode=external`）
   - 探测失败 → **启动失败并 panic**，不回退内嵌
-- **阶段二（状态共享）**：房间 membership/stream 存储优先级 **`STATE_STORE=auto` → nats → none**。
+- **阶段二（状态共享）**：房间 membership/stream 存储**强制 NATS KV**（`STATE_STORE=auto|nats`）。bus.Init 已保证内嵌或外部 NATS 可用，因此无内存 / none 降级；NATS 不可用时启动失败（fail-fast）。
   - `nats`：JetStream KV（`{prefix}_membership` / `{prefix}_stream`）；外部 NATS 需 `-js`。
-  - `none`：仅本机内存。
+  - 不允许 `none`：不再回退本机内存，避免多实例状态不一致。
   成员变更仍经 `state:room-changed` 内部事件通知对端从存储重算列表。 成员变更后发布内部事件 `state:room-changed`，对端从 KV 重算并**本机**推送 `room:updated` / `room:list:result`（不再跨实例直接 fanout 带人数快照）。
 - **多副本**：所有实例必须配置**同一个**外部 `NATS_URL` 且探测成功；否则进程启动失败。
 - **监控**：SSE health 含 `eventbus_mode`、`eventbus_connected`、`eventbus_fallback_from_external`。

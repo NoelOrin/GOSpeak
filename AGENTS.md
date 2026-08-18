@@ -750,7 +750,7 @@ Built-in providers: `GitHubProvider`, `GoogleProvider`, `QQProvider`. Factory: `
 
 ## Domain (语音服务器)
 
-GOSpeak 支持多 Server（类 Discord Guild）架构。每个 `Domain` 是房间、成员、角色的顶层归属容器。
+GOSpeak 支持多 Server（类 Discord 服务器）架构，即多租户语音域（Domain）架构。每个 `Domain` 是房间、成员、角色的顶层归属容器。
 
 ### 数据模型
 

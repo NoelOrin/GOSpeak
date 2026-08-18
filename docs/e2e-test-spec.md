@@ -79,7 +79,7 @@ pnpm --filter @gospeak/web dev
 ### 3.3 测试数据隔离
 
 - 房间名必须使用 `e2e-*` 前缀。
-- 测试创建的 Guild、房间、消息等数据应在执行后清理。
+- 测试创建的 Domain、房间、消息等数据应在执行后清理。
 - 禁止删除用户数据库、生产房间或非 `e2e-*` 数据。
 - 多用户测试使用不同 Playwright context，不得复用同一登录态。
 
@@ -104,10 +104,10 @@ E2E_BROWSER 显式指定 → OS 默认浏览器 → chrome → chromium → msed
 | `rapid-switch` | A/B 快速来回 | 1 | 每轮 join 成功，无 failed/retry |
 | `media` | 单人推流/会话 | 1 | getUserMedia + RTCPeerConnection/local track |
 | `multi-user` | 本地多人拉流 | 2 | 双方人数 ≥2，各自收到远端 audio |
-| `guild`（扩展） | Guild 创建/切换/成员 | 1~2 | API 与 UI 一致，成员同步 |
+| `domain`（扩展） | Domain 创建/切换/成员 | 1~2 | API 与 UI 一致，成员同步 |
 | `ws-*`（扩展） | WS 协议/重连/并发 | 1~3 | 协议格式、状态恢复、无消息丢失 |
 
-当前语音回归以 `join`、`switch`、`rapid-switch`、`media`、`multi-user` 为准；`guild` 与 `ws-*` 在对应功能合入后纳入全量回归。
+当前语音回归以 `join`、`switch`、`rapid-switch`、`media`、`multi-user` 为准；`domain` 与 `ws-*` 在对应功能合入后纳入全量回归。
 
 ## 5. 用例规范
 
@@ -267,7 +267,7 @@ const remote = await page.evaluate(() =>
 ### 9.2 清理
 
 - 每个套件结束或失败后清理临时房间。
-- Guild/WS 扩展套件结束后删除测试 Guild 与关联房间。
+- Domain/WS 扩展套件结束后删除测试 Domain 与关联房间。
 - 保留 artifacts 与报告，不保留临时账号密码明文。
 
 ## 10. 执行方式
@@ -313,7 +313,7 @@ CI 建议按以下矩阵拆分，避免单 job 时间过长：
 
 ```text
 voice-regression: join + switch + rapid-switch + media + multi-user
-guild-regression: guild 套件（功能合入后）
+domain-regression: domain 套件（功能合入后）
 ws-regression: ws-connect + ws-reconnect + ws-protocol + ws-concurrency（功能合入后）
 full-regression: 全链路套件（仅 main / 发布前）
 ```
@@ -347,7 +347,7 @@ CI 必须：
 
 ## 13. 扩展原则
 
-后续新增 Guild、WS 迁移、文本消息等 E2E 套件时：
+后续新增 Domain、WS 迁移、文本消息等 E2E 套件时：
 
 - 复用现有 `ui-helpers.mjs`、`media-probe.mjs`、`ws-helpers.mjs`。
 - 套件必须定义前置条件、步骤、断言、通过标准、清理步骤。
