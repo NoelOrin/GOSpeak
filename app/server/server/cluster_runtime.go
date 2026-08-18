@@ -7,7 +7,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"GOSpeak/internal/cluster"
@@ -345,7 +344,7 @@ func startClusterRuntimes(cfg *config.Config, db *gorm.DB, natsConn *nats.Conn, 
 						leaderFence.Deactivate()
 					}
 					logger.WithComponent("Cluster").Errorf("agent leader lock lost; shutting down to avoid split brain instance=%s", instanceID)
-					_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
+					terminateSelf()
 				case <-renewDone:
 				}
 			}()

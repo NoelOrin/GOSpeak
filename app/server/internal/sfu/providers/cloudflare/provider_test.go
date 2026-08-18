@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sync/atomic"
 	"testing"
 
 	"GOSpeak/internal/config"
@@ -487,10 +488,10 @@ func TestService_RemoveParticipant(t *testing.T) {
 }
 
 func TestService_DeleteRoom(t *testing.T) {
-	callCount := 0
+	var callCount int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if (r.URL.Path == "/apps/test-app/sessions/sess-1" || r.URL.Path == "/apps/test-app/sessions/sess-2") && r.Method == http.MethodDelete {
-			callCount++
+			atomic.AddInt64(&callCount, 1)
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -517,8 +518,8 @@ func TestService_DeleteRoom(t *testing.T) {
 	if err := svc.DeleteRoom("room1"); err != nil {
 		t.Fatalf("DeleteRoom failed: %v", err)
 	}
-	if callCount != 2 {
-		t.Fatalf("expected 2 close track calls, got %d", callCount)
+	if got := atomic.LoadInt64(&callCount); got != 2 {
+		t.Fatalf("expected 2 close track calls, got %d", got)
 	}
 	rooms, err := svc.ListRooms()
 	if err != nil {
@@ -598,12 +599,12 @@ func TestService_RemoveParticipant_DeleteError(t *testing.T) {
 }
 
 func TestService_DeleteRoom_PartialError(t *testing.T) {
-	callCount := 0
+	var callCount int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete {
 			t.Fatalf("method = %s, want DELETE", r.Method)
 		}
-		callCount++
+		atomic.AddInt64(&callCount, 1)
 		if r.URL.Path == "/apps/test-app/sessions/sess-1" {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -631,7 +632,7 @@ func TestService_DeleteRoom_PartialError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected partial failure error")
 	}
-	if callCount != 2 {
-		t.Fatalf("expected 2 delete calls, got %d", callCount)
+	if got := atomic.LoadInt64(&callCount); got != 2 {
+		t.Fatalf("expected 2 delete calls, got %d", got)
 	}
 }
