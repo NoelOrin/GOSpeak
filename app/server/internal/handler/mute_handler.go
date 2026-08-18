@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"fmt"
 	"log"
 
+	"GOSpeak/internal/audit"
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
@@ -28,6 +30,7 @@ type MuteHandler struct {
 	userSvc          *service.UserService
 	broadcaster      MuteBroadcaster
 	controlPublisher ControlPublisher
+	auditor          *audit.Service
 }
 
 func NewMuteHandler(muteSvc *service.MuteService, userSvc *service.UserService, broadcaster MuteBroadcaster) *MuteHandler {
@@ -38,6 +41,9 @@ func NewMuteHandler(muteSvc *service.MuteService, userSvc *service.UserService, 
 func (h *MuteHandler) SetControlPublisher(p ControlPublisher) {
 	h.controlPublisher = p
 }
+
+// SetAuditor 注入审计服务，用于记录禁言/解禁操作。
+func (h *MuteHandler) SetAuditor(a *audit.Service) { h.auditor = a }
 
 // CreateMute
 // @Summary      禁言用户
@@ -86,6 +92,19 @@ func (h *MuteHandler) CreateMute(c *gin.Context) {
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
+	}
+	if h.auditor != nil {
+		h.auditor.Log(audit.Entry{
+			ActorID:    muter.ID,
+			ActorUUID:  muter.UUID,
+			ActorName:  muter.Name,
+			Action:     audit.ActionMuteUser,
+			TargetType: audit.TargetUser,
+			TargetID:   fmt.Sprintf("%d", req.UserID),
+			Detail:     fmt.Sprintf("permanent=%v duration=%ds reason=%q", req.Permanent, req.Duration, req.Reason),
+			IP:         c.ClientIP(),
+			Success:    true,
+		})
 	}
 
 	// 广播禁言事件 — convert model.Mute to signal.MuteInfo at the boundary
@@ -140,6 +159,18 @@ func (h *MuteHandler) CancelMute(c *gin.Context) {
 	if err := h.muteSvc.UnmuteUser(req.UserID); err != nil {
 		pkg.HandleError(c, err)
 		return
+	}
+	if h.auditor != nil {
+		ua, un := auditActor(c)
+		h.auditor.Log(audit.Entry{
+			ActorUUID:  ua,
+			ActorName:  un,
+			Action:     audit.ActionUnmuteUser,
+			TargetType: audit.TargetUser,
+			TargetID:   fmt.Sprintf("%d", req.UserID),
+			IP:         c.ClientIP(),
+			Success:    true,
+		})
 	}
 
 	// 广播取消禁言事件

@@ -40,4 +40,6 @@ const (
 
 	PermClusterRead   = "cluster:read"
 	PermClusterManage = "cluster:manage"
+
+	PermAuditRead = "audit:read"
 )

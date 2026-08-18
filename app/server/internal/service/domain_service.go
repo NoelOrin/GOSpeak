@@ -175,6 +175,22 @@ func (s *DomainService) Update(domain *model.Domain) error {
 	return s.domainRepo.Update(domain)
 }
 
+// ResetInviteCode 重置指定域的邀请码，使旧链接失效并返回更新后的域。
+func (s *DomainService) ResetInviteCode(domainUUID string) (*model.Domain, error) {
+	if _, err := s.domainRepo.GetByUUID(domainUUID); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrDomainNotFound
+		}
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	code := model.GenerateInviteCode()
+	domain, err := s.domainRepo.ResetInviteCode(domainUUID, code)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return domain, nil
+}
+
 func (s *DomainService) Delete(uuid string) error {
 	if _, err := s.domainRepo.GetByUUID(uuid); err != nil {
 		if err == gorm.ErrRecordNotFound {

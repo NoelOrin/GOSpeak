@@ -2,10 +2,12 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"strings"
 
+	"GOSpeak/internal/audit"
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
@@ -22,11 +24,15 @@ type RoomHandler struct {
 	domainSvc           *service.DomainService
 	controlPublisher    ControlPublisher
 	roomListBroadcaster roomListBroadcaster
+	auditor             *audit.Service
 }
 
 func NewRoomHandler(roomSvc *service.RoomService, permSvc *service.PermissionService, domainSvc *service.DomainService) *RoomHandler {
 	return &RoomHandler{roomSvc: roomSvc, permSvc: permSvc, domainSvc: domainSvc}
 }
+
+// SetAuditor 注入审计服务，用于记录删除房间等敏感操作。
+func (h *RoomHandler) SetAuditor(a *audit.Service) { h.auditor = a }
 
 // SetControlPublisher 注入集群控制命令发布器。
 func (h *RoomHandler) SetControlPublisher(p ControlPublisher) {
@@ -366,6 +372,19 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 	if err := h.roomSvc.Delete(req.ID); err != nil {
 		pkg.HandleError(c, err)
 		return
+	}
+	if h.auditor != nil {
+		ua, un := auditActor(c)
+		h.auditor.Log(audit.Entry{
+			ActorUUID:  ua,
+			ActorName:  un,
+			Action:     audit.ActionDeleteRoom,
+			TargetType: audit.TargetRoom,
+			TargetID:   fmt.Sprintf("%d", req.ID),
+			Detail:     fmt.Sprintf("name=%q domain=%s", room.Name, room.DomainUUID),
+			IP:         c.ClientIP(),
+			Success:    true,
+		})
 	}
 
 	if h.roomListBroadcaster != nil {

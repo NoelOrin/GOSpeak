@@ -36,7 +36,7 @@ func TestDomainMember_BeforeCreate(t *testing.T) {
 }
 
 func TestGenerateInviteCode(t *testing.T) {
-	code := generateInviteCode()
+	code := GenerateInviteCode()
 	if len(code) != 8 {
 		t.Fatalf("expected len=8, got %d", len(code))
 	}

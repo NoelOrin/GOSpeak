@@ -262,6 +262,7 @@ func autoMigrate() error {
 		&model.ClusterNode{},
 		&model.ServerAssignment{},
 		&model.ClusterLeaderFence{},
+		&model.AuditLog{},
 	); err != nil {
 		return err
 	}

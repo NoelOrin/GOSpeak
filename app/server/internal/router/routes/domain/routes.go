@@ -17,6 +17,7 @@ func Register(r *gin.RouterGroup, h *handler.DomainHandler) {
 	r.POST("/list-public", h.ListPublic)
 	r.POST("/my-domains", h.MyDomains)
 	r.POST("/update", middleware.RequireDomainMember(), h.Update)
+	r.POST("/reset-invite", middleware.RequireDomainMember(), h.ResetInvite)
 	r.POST("/delete", middleware.RequireDomainMember(), h.Delete)
 	r.POST("/join", h.Join)
 	r.POST("/preview", h.Preview)

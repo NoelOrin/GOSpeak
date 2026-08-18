@@ -87,6 +87,18 @@ func (r *DomainRepository) Update(domain *model.Domain) error {
 	return r.db.Save(domain).Error
 }
 
+// ResetInviteCode 重新生成并写入指定域的邀请码，返回更新后的域。
+func (r *DomainRepository) ResetInviteCode(domainUUID, code string) (*model.Domain, error) {
+	res := r.db.Model(&model.Domain{}).Where("uuid = ?", domainUUID).Update("invite_code", code)
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return r.GetByUUID(domainUUID)
+}
+
 func (r *DomainRepository) Delete(uuid string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("domain_uuid = ?", uuid).Delete(&model.DomainMember{}).Error; err != nil {

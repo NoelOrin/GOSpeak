@@ -33,9 +33,9 @@ func (c *Config) Validate() error {
 	}
 
 	switch c.StateStore {
-	case "auto", "nats", "none":
+	case "auto", "nats":
 	default:
-		errs = append(errs, fmt.Sprintf("STATE_STORE %q unsupported (auto|nats|none)", c.StateStore))
+		errs = append(errs, fmt.Sprintf("STATE_STORE %q unsupported (auto|nats)", c.StateStore))
 	}
 
 	switch c.ClusterRole {

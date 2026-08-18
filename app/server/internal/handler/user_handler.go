@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"fmt"
 	"strings"
 
+	"GOSpeak/internal/audit"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
@@ -13,12 +15,16 @@ import (
 type UserHandler struct {
 	userService *service.UserService
 	permSvc     *service.PermissionService
+	auditor     *audit.Service
 }
 
 func NewUserHandler(userService *service.UserService, permSvc *service.PermissionService, _ ...*service.StorageService) *UserHandler {
 	// storage 已注入 UserService；保留可选参数兼容旧 DI 调用
 	return &UserHandler{userService: userService, permSvc: permSvc}
 }
+
+// SetAuditor 注入审计服务，用于记录删除用户等敏感操作。
+func (h *UserHandler) SetAuditor(a *audit.Service) { h.auditor = a }
 
 var presetAvatarPaths = []string{
 	"/presets/avatar-1.svg",
@@ -167,6 +173,18 @@ func (h *UserHandler) Delete(c *gin.Context) {
 	if err := h.userService.Delete(req.ID); err != nil {
 		pkg.HandleError(c, err)
 		return
+	}
+	if h.auditor != nil {
+		ua, un := auditActor(c)
+		h.auditor.Log(audit.Entry{
+			ActorUUID:  ua,
+			ActorName:  un,
+			Action:     audit.ActionDeleteUser,
+			TargetType: audit.TargetUser,
+			TargetID:   fmt.Sprintf("%d", req.ID),
+			IP:         c.ClientIP(),
+			Success:    true,
+		})
 	}
 
 	pkg.Success(c, nil)

@@ -3,6 +3,7 @@ package handler
 import (
 	"log"
 
+	"GOSpeak/internal/audit"
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
@@ -19,6 +20,7 @@ type DomainHandler struct {
 	onDomainDelete   func(string)
 	onDomainCreated  func(string)
 	onDomainKick     func(domainUUID, userUUID string)
+	auditor          *audit.Service
 	onDomainLeave    func(domainUUID, userUUID string)
 	controlPublisher ControlPublisher
 }
@@ -41,6 +43,9 @@ func (h *DomainHandler) SetOnDomainDelete(fn func(string)) {
 func (h *DomainHandler) SetOnDomainKick(fn func(domainUUID, userUUID string)) {
 	h.onDomainKick = fn
 }
+
+// SetAuditor 注入审计服务，用于记录管理类敏感操作。
+func (h *DomainHandler) SetAuditor(a *audit.Service) { h.auditor = a }
 
 // SetOnDomainLeave 注入成员主动离开后的信令清理回调。
 func (h *DomainHandler) SetOnDomainLeave(fn func(domainUUID, userUUID string)) {
@@ -222,6 +227,34 @@ func (h *DomainHandler) Update(c *gin.Context) {
 type DeleteDomainRequest struct {
 }
 
+// ResetInvite 重置语音域邀请码，使旧邀请链接立即失效。仅 Owner/Admin 或持有 domain:manage 权限的用户可调用。
+func (h *DomainHandler) ResetInvite(c *gin.Context) {
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	roleOK := h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainManage)
+	ownerOK := h.domainSvc.IsOwner(domainUUID, userUUID)
+	permOK := h.hasPermission(c, permcode.PermDomainManage)
+	if !permOK && !roleOK && !ownerOK {
+		pkg.Fail(c, pkg.FORBIDDEN, "not domain owner or missing permission")
+		return
+	}
+	domain, err := h.domainSvc.ResetInviteCode(domainUUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, domain)
+}
+
 // Delete 删除语音域。仅 Owner 和持有 domain:delete 权限的用户可调用。
 func (h *DomainHandler) Delete(c *gin.Context) {
 	domainUUID := domainUUIDFromContext(c)
@@ -367,6 +400,18 @@ func (h *DomainHandler) Kick(c *gin.Context) {
 	if err := h.domainSvc.Kick(domainUUID, req.UserUUID); err != nil {
 		pkg.HandleError(c, err)
 		return
+	}
+	if h.auditor != nil {
+		aua, aname := auditActor(c)
+		h.auditor.Log(audit.Entry{
+			ActorUUID:  aua,
+			ActorName:  aname,
+			Action:     audit.ActionKickMember,
+			TargetType: audit.TargetMember,
+			TargetID:   req.UserUUID,
+			IP:         c.ClientIP(),
+			Success:    true,
+		})
 	}
 	if h.onDomainKick != nil {
 		h.onDomainKick(domainUUID, req.UserUUID)

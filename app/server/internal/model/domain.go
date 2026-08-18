@@ -30,7 +30,7 @@ func (d *Domain) BeforeCreate(_ *gorm.DB) error {
 		d.UUID = cuid2.Generate()
 	}
 	if d.InviteCode == "" {
-		d.InviteCode = generateInviteCode()
+		d.InviteCode = GenerateInviteCode()
 	}
 	return nil
 }
@@ -77,8 +77,8 @@ type DomainDetail struct {
 	RoomCount   int64     `json:"room_count"`
 }
 
-// generateInviteCode 生成 8 字符随机邀请码。
-func generateInviteCode() string {
+// GenerateInviteCode 生成 8 字符随机邀请码。
+func GenerateInviteCode() string {
 	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	u := cuid2.Generate()
 	var b [8]byte

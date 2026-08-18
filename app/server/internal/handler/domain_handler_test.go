@@ -80,9 +80,11 @@ func setupDomainHandlerRouterWithPermSvc(t *testing.T, domainSvc *service.Domain
 	rg.POST("/list-public", h.ListPublic)
 	rg.POST("/my-domains", h.MyDomains)
 	rg.POST("/join", h.Join)
+	rg.POST("/preview", h.Preview)
 	rg.POST("/leave", h.Leave)
 	rg.POST("/kick", h.Kick)
 	rg.POST("/update", h.Update)
+	rg.POST("/reset-invite", h.ResetInvite)
 	rg.POST("/delete", h.Delete)
 	rg.POST("/members", h.Members)
 	rg.POST("/roles/list", h.ListRoles)
@@ -664,4 +666,67 @@ func TestDomainHandler_RoleManagement_AdminPermissionsAreFixed(t *testing.T) {
 			t.Fatalf("update %s: expected 403, got %d body %s", roleName, resp.Code, resp.Body.String())
 		}
 	}
+}
+
+func TestDomainHandler_ResetInvite_OwnerSuccess(t *testing.T) {
+	db, domainSvc := setupDomainHandlerTestDB(t)
+	router := setupDomainHandlerRouter(t, domainSvc)
+
+	g := &model.Domain{Name: "Reset Domain", OwnerUUID: "owner-1"}
+	if err := db.Create(g).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	oldCode := g.InviteCode
+	if oldCode == "" {
+		t.Fatal("expected seeded invite_code")
+	}
+
+	w := postDomainJSON(t, router, "/api/v1/domain/reset-invite",
+		`{"domain_uuid":"`+g.UUID+`"}`,
+		map[string]string{"X-User-UUID": "owner-1"})
+	resp := parseDomainResp(t, w.Body.String())
+	if code := intCode(resp["code"]); code != 0 {
+		t.Fatalf("expected code 0, got %d: %s", code, resp["msg"])
+	}
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected data object")
+	}
+	newCode, _ := data["invite_code"].(string)
+	if newCode == "" || newCode == oldCode {
+		t.Fatalf("expected new invite_code, got %q (old %q)", newCode, oldCode)
+	}
+
+	// 旧邀请码应立即失效
+	pw := postDomainJSON(t, router, "/api/v1/domain/preview",
+		`{"invite_code":"`+oldCode+`"}`,
+		map[string]string{"X-User-UUID": "user-1"})
+	presp := parseDomainResp(t, pw.Body.String())
+	if intCode(presp["code"]) == 0 {
+		t.Fatalf("expected old invite_code to be invalid, got code 0")
+	}
+	_ = domainSvc
+}
+
+func TestDomainHandler_ResetInvite_MemberForbidden(t *testing.T) {
+	db, domainSvc := setupDomainHandlerTestDB(t)
+	router := setupDomainHandlerRouter(t, domainSvc)
+
+	g := &model.Domain{Name: "Forbidden Domain", OwnerUUID: "owner-1"}
+	if err := db.Create(g).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	member := &model.DomainMember{DomainUUID: g.UUID, UserUUID: "member-2", RoleName: "member"}
+	if err := db.Create(member).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+
+	w := postDomainJSON(t, router, "/api/v1/domain/reset-invite",
+		`{"domain_uuid":"`+g.UUID+`"}`,
+		map[string]string{"X-User-UUID": "member-2"})
+	resp := parseDomainResp(t, w.Body.String())
+	if code := intCode(resp["code"]); code != 1013 {
+		t.Fatalf("expected FORBIDDEN (1013), got %d: %s", code, resp["msg"])
+	}
+	_ = domainSvc
 }
