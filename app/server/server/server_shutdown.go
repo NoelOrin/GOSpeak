@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"GOSpeak/internal/audit"
 	"GOSpeak/internal/authstate"
 	"GOSpeak/internal/cluster"
 	"GOSpeak/internal/logger"
@@ -27,6 +28,7 @@ type shutdownDeps struct {
 	agentLeaderLock *cluster.NATSLeaderLock
 	leaderFence     *service.LeaderFenceService
 	instanceID      string
+	auditSvc        *audit.Service
 	closeEventBus   func()
 }
 
@@ -76,4 +78,10 @@ func runGracefulShutdown(deps shutdownDeps) {
 	logger.WithComponent("EventBus").Info("closing event bus")
 	deps.closeEventBus()
 	logger.WithComponent("EventBus").Info("closed")
+
+	// 4) 最后排空审计队列，确保已入队记录落库
+	if deps.auditSvc != nil {
+		deps.auditSvc.Stop()
+		logger.WithComponent("Audit").Info("audit queue drained")
+	}
 }

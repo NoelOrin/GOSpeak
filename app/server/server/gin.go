@@ -1,6 +1,7 @@
 package server
 
 import (
+	"GOSpeak/internal/audit"
 	"GOSpeak/internal/authstate"
 	"GOSpeak/internal/bus"
 	"GOSpeak/internal/cluster"
@@ -185,19 +186,16 @@ func StartGin(env EnvEnum) error {
 		natsConn = nb.Conn()
 	}
 
-	// membership KV: nats → none (STATE_STORE=auto default)
+	// membership KV: 强制 NATS（内嵌或外部 URL，bus.Init 已保证可用）。
 	store, backend, err := bus.ResolveMembershipStore(bus.ResolveMembershipConfig{
 		Mode:   cfg.StateStore,
 		Prefix: cfg.NATSSubjectPrefix,
 		NATS:   natsConn,
 	})
 	if err != nil {
-		logger.WithComponent("StateStore").Warnf("unavailable mode=%s: %v", cfg.StateStore, err)
-	} else if store != nil {
-		logger.WithComponent("StateStore").Infof("ready backend=%s instance=%s", backend, instanceID)
-	} else {
-		logger.WithComponent("StateStore").Info("backend=none (local membership only)")
+		return fmt.Errorf("failed to init membership store: %w", err)
 	}
+	logger.WithComponent("StateStore").Infof("ready backend=%s instance=%s", backend, instanceID)
 
 	var streamResolver signal.StreamNameResolver
 	if snr, ok := sfuProvider.(signal.StreamNameResolver); ok {
@@ -255,31 +253,33 @@ func StartGin(env EnvEnum) error {
 		})
 	}
 
-	// mute rule KV for degraded media mute (Agora kicking-rule ids): nats → memory
-	muteRuleStore, muteRuleBackend := bus.ResolveMuteRuleStore(bus.ResolveMuteRuleConfig{
+	// mute rule KV for degraded media mute (Agora kicking-rule ids): 强制 NATS。
+	muteRuleStore, muteRuleBackend, err := bus.ResolveMuteRuleStore(bus.ResolveMuteRuleConfig{
 		Mode:   cfg.StateStore,
 		Prefix: cfg.NATSSubjectPrefix,
 		NATS:   natsConn,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to init mute rule store: %w", err)
+	}
 	if dp, ok := sfuProvider.(*factory.DynamicProvider); ok {
 		dp.SetMuteRuleStore(muteRuleStore)
 	}
 	logger.WithComponent("MuteRuleStore").Infof("ready backend=%s", muteRuleBackend)
 
-	// JWT blacklist + signing key: NATS KV so multi-instance logout still works.
-	if natsConn != nil {
-		if authStore, err := bus.OpenAuthStore(bus.AuthStoreConfig{
-			Prefix: cfg.NATSSubjectPrefix,
-			NC:     natsConn,
-		}); err != nil {
-			logger.WithComponent("AuthStore").Warnf("nats unavailable: %v", err)
-		} else {
-			authstate.SetBackend(authStore)
-			logger.WithComponent("AuthStore").Infof("ready backend=%s", authStore.Backend())
-		}
-	} else {
-		logger.WithComponent("AuthStore").Info("backend=none (static JWT_KEY / no multi-instance blacklist)")
+	// JWT blacklist + signing key: 强制 NATS KV（bus.Init 保证内嵌或外部 NATS 可用）。
+	if natsConn == nil {
+		return fmt.Errorf("failed to init auth store: nats connection required")
 	}
+	authStore, err := bus.OpenAuthStore(bus.AuthStoreConfig{
+		Prefix: cfg.NATSSubjectPrefix,
+		NC:     natsConn,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to init auth store: %w", err)
+	}
+	authstate.SetBackend(authStore)
+	logger.WithComponent("AuthStore").Infof("ready backend=%s", authStore.Backend())
 
 	var jobQueue *bus.JobQueue
 	if nb, ok := eventBus.(*bus.NATSBus); ok && nb.Conn() != nil {
@@ -346,6 +346,8 @@ func StartGin(env EnvEnum) error {
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)
 	emailConfigH := handler.NewEmailConfigHandler(emailConfigSvc)
 	userH := handler.NewUserHandler(userSvc, permSvc, storageSvc)
+	auditSvc := audit.NewService(db)
+	userH.SetAuditor(auditSvc)
 	userGroupH := handler.NewUserGroupHandler(userGroupSvc, userSvc)
 	oauthH := handler.NewOAuthHandler(oauthSvc, authCookieCfg)
 	roleH := handler.NewRoleHandler(roleSvc)
@@ -378,10 +380,12 @@ func StartGin(env EnvEnum) error {
 	roomH := handler.NewRoomHandler(roomSvc, permSvc, domainSvc)
 	roomH.SetRoomListBroadcaster(signalHub)
 	roomH.SetControlPublisher(clusterSvc)
+	roomH.SetAuditor(auditSvc)
 	msgH := handler.NewMessageHandler(messageSvc, permSvc, roomSvc, domainSvc)
 	permH := handler.NewPermissionHandler(permSvc)
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
 	muteH.SetControlPublisher(clusterSvc)
+	muteH.SetAuditor(auditSvc)
 
 	// 临时禁言过期：删除记录后走完整 unmute（广播 + SFU 恢复），
 	// 若期间管理员已重新禁言则跳过，避免误解除新禁言。
@@ -452,6 +456,8 @@ func StartGin(env EnvEnum) error {
 	domainH := handler.NewDomainHandler(domainSvc, permSvc)
 	domainH.SetControlPublisher(clusterSvc)
 	domainH.SetOnDomainKick(signalHub.KickUserFromDomain)
+	domainH.SetAuditor(auditSvc)
+	auditH := handler.NewAuditHandler(auditSvc)
 	domainH.SetOnDomainLeave(signalHub.KickUserFromDomain)
 	if !degradedToWorker {
 		domainH.SetOnDomainCreated(func(serverUUID string) {
@@ -547,6 +553,7 @@ func StartGin(env EnvEnum) error {
 		Domain:       domainH,
 		Conversation: conversationH,
 		Cluster:      clusterHandler,
+		Audit:        auditH,
 		PluginHost:   pluginHost,
 	})
 
@@ -585,6 +592,7 @@ func StartGin(env EnvEnum) error {
 		agentLeaderLock: agentLeaderLock,
 		leaderFence:     leaderFence,
 		instanceID:      instanceID,
+		auditSvc:        auditSvc,
 		closeEventBus:   closeEventBus,
 	})
 

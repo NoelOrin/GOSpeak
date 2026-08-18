@@ -6,6 +6,7 @@ import (
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
+	auditRoutes "GOSpeak/internal/router/routes/audit"
 	authRoutes "GOSpeak/internal/router/routes/auth"
 	botRoutes "GOSpeak/internal/router/routes/bot"
 	clusterRoutes "GOSpeak/internal/router/routes/cluster"
@@ -68,6 +69,7 @@ type Handlers struct {
 	Domain       *handler.DomainHandler
 	Conversation *handler.ConversationHandler
 	Cluster      *handler.ClusterHandler
+	Audit        *handler.AuditHandler
 	// PluginHost 用于挂载插件自定义路由
 	PluginHost interface{ MountRoutes(*gin.RouterGroup) }
 	// FenceCheck 由 Agent leader 注入；写请求会先校验 DB 写面。
@@ -163,6 +165,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	if h.Cluster != nil {
 		clusterRoutes.RegisterProtected(protected.Group("/cluster"), h.Cluster)
 	}
+	auditRoutes.RegisterProtected(protected.Group("/audit"), h.Audit)
 	systemRoutes.RegisterProtected(protected.Group("/system"), h.Monitor)
 
 	return r
