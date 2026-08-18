@@ -78,16 +78,88 @@ DB_PASSWORD="gospeak"
 
 对于大多数非对称 NAT 场景，无需额外 TURN 服务器。
 
-## Docker 镜像如何构建？
+## 如何获取并运行 Docker 镜像？
+
+GOSpeak 的官方发布镜像托管在 GitHub 容器镜像仓库（`ghcr.io`），每个 Release 自动构建并推送 `linux/amd64` 与 `linux/arm64` 双架构镜像。
+
+> 完整部署说明见 [单容器 Docker 部署](/deployment/docker)。
+
+### 镜像源
+
+镜像地址为 `ghcr.io/noelorin/gospeak`，tag 由 Release 版本号推导：
+
+| tag | 含义 | 示例 |
+|-----|------|------|
+| `x.y.z` | 精确版本 | `ghcr.io/noelorin/gospeak:1.2.3` |
+| `x.y` | 次版本（自动跟随小版本更新）| `ghcr.io/noelorin/gospeak:1.2` |
+| `x` | 主版本（自动跟随全部更新）| `ghcr.io/noelorin/gospeak:1` |
+
+拉取镜像：
 
 ```bash
-# 从仓库根目录构建一体镜像（Go 后端 + 前端 SPA）
-docker build -t gospeak .
+docker pull ghcr.io/noelorin/gospeak:1
+```
 
-# 运行
+> 若网络无法访问 `ghcr.io`，可改用下方的「本地构建」方式，或在 Docker 守护进程配置镜像加速（见下）后再拉取。
+
+### 本地构建（备用镜像源）
+
+需要自定义镜像或无法访问 `ghcr.io` 时，从仓库根目录自行构建一体镜像（Go 后端 + 前端 SPA）：
+
+```bash
+docker build -t gospeak .
+```
+
+### 镜像加速（registry mirror）
+
+部分网络环境下 `docker pull` 官方源速度慢或不稳定，可在 Docker 守护进程配置镜像加速器作为拉取代理。编辑 `/etc/docker/daemon.json`（不存在则新建）：
+
+```json
+{
+  "registry-mirrors": [
+    "https://<你的镜像加速地址>"
+  ]
+}
+```
+
+重启守护进程后生效：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
+
+> 镜像加速器只代理 `docker pull` 的镜像拉取、不改变镜像内容；请仅使用你信任的加速源。
+
+### docker run 单容器运行
+
+使用官方镜像启动一个最小可运行实例（SQLite + 内存 NATS），数据通过命名卷持久化：
+
+```bash
 docker run -d \
-  --env-file deploy/env/app.srs.env \
+  --name gospeak \
+  --restart unless-stopped \
   -p 8998:8998 \
+  --env-file deploy/env/app.srs.env \
+  -v gospeak-db:/app/db \
+  -v gospeak-uploads:/app/uploads \
+  ghcr.io/noelorin/gospeak:1
+```
+
+- 首次访问：`http://<host>:8998/`；`/ping` 为健康检查端点（容器内已内置 HEALTHCHECK）。
+- 容器内数据目录：`/app/db`（SQLite）、`/app/uploads`（对象存储），建议用卷持久化，避免容器重建丢数据。
+- 完整配置项见 [环境变量参考](/guide/configuration)；生产部署建议改用 [Docker Compose](/deployment/docker-compose) 一键编排。
+
+若改用本地构建的 `gospeak` 镜像，把最后一行镜像名替换为 `gospeak` 即可：
+
+```bash
+docker run -d \
+  --name gospeak \
+  --restart unless-stopped \
+  -p 8998:8998 \
+  --env-file deploy/env/app.srs.env \
+  -v gospeak-db:/app/db \
+  -v gospeak-uploads:/app/uploads \
   gospeak
 ```
 

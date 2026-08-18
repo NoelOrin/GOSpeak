@@ -9,7 +9,7 @@ hero:
   text: 自部署 Discord 语音平替
   tagline: 开箱即用的游戏语音平台。基于 WebRTC，支持多 SFU 后端运行时切换，渐进式数据库，自托管语音数据。
   image:
-    src: /logo.svg
+    src: /logo.png
     alt: GOSpeak
   actions:
     - theme: brand

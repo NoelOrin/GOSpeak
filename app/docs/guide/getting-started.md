@@ -123,6 +123,7 @@ pnpm dev:web              # 仅启动前端（vite）
 pnpm build:server         # 构建 Go 二进制
 pnpm test:server          # 运行后端集成测试
 docker build -t gospeak . # 构建 Docker 镜像
+docker pull ghcr.io/noelorin/gospeak:1  # 拉取官方发布镜像（或本地 docker build）
 ```
 
 ## 下一步

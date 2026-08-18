@@ -21,7 +21,7 @@ GOSpeak 支持从本地开发到生产环境的**渐进式部署**方案，根�
 | 方式 | 用途 | 难度 |
 |------|------|------|
 | Docker Compose（推荐）| 生产部署、本地测试 | ⭐⭐ |
-| Docker 单容器 | 快速验证 | ⭐ |
+| [Docker 单容器](/deployment/docker) | 快速验证 | ⭐ |
 | 二进制 + 系统服务 | 裸机部署 | ⭐⭐⭐ |
 | K8s（需自行编排）| 大规模集群 | ⭐⭐⭐⭐ |
 
@@ -47,6 +47,7 @@ GOSpeak (Go)
 ## 内容导航
 
 - [Docker Compose 部署](/deployment/docker-compose) — 完整编排方案
+- [单容器 Docker 部署](/deployment/docker) — 镜像源与 docker run 快速验证
 - [生产部署](/deployment/production) — 生产环境 Checklist
 - [数据库演进](/deployment/database) — 从 SQLite 到 PostgreSQL
 - [Nginx 配置](/deployment/nginx) — 反代与 HTTPS 配置

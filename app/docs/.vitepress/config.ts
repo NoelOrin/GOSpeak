@@ -11,11 +11,11 @@ export default defineConfig({
   base,
 
   head: [
-    ['link', { rel: 'icon', href: `${base}favicon.svg` }],
+    ['link', { rel: 'icon', href: `${base}favicon.png` }],
   ],
 
   themeConfig: {
-    logo: '/logo.svg',
+    logo: '/logo.png',
 
     nav: [
       { text: '首页', link: '/' },
@@ -64,6 +64,7 @@ export default defineConfig({
           items: [
             { text: '概述', link: '/deployment/' },
             { text: 'Docker Compose 部署', link: '/deployment/docker-compose' },
+            { text: '单容器 Docker 部署', link: '/deployment/docker' },
             { text: '生产部署', link: '/deployment/production' },
             { text: '单二进制部署', link: '/deployment/binary' },
             { text: '数据库演进', link: '/deployment/database' },
