@@ -34,12 +34,12 @@ jobs:
     with:
       run_tests: true
 
-  # workflow_dispatch 时：按自定义 tag 打 tag、推送并创建 Release（notes 含变更与 PR）
+  # workflow_dispatch 时按自定义 tag 打 tag、推送并创建 Release（notes 含变更与 PR）；
+  # release: published 时不打 tag，仅作为占位 job，使 docker/二进制 job 的依赖成立并正常运行。
   prepare-release:
     name: Tag & Create Release
     runs-on: ubuntu-latest
     needs: build
-    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
     steps:
@@ -47,16 +47,19 @@ jobs:
         with:
           fetch-depth: 0
       - name: Configure git
+        if: github.event_name == 'workflow_dispatch'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
       - name: Create and push tag
+        if: github.event_name == 'workflow_dispatch'
         env:
           TAG: ${{ github.event.inputs.tag }}
         run: |
           git tag -a "$TAG" -m "GOSpeak $TAG"
           git push origin "$TAG"
       - name: Create GitHub Release (notes + PRs)
+        if: github.event_name == 'workflow_dispatch'
         env:
           TAG: ${{ github.event.inputs.tag }}
         run: |
