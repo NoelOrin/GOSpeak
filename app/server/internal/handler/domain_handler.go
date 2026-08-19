@@ -252,6 +252,19 @@ func (h *DomainHandler) ResetInvite(c *gin.Context) {
 		pkg.HandleError(c, err)
 		return
 	}
+	if h.auditor != nil {
+		aua, aname := auditActor(c)
+		h.auditor.Log(audit.Entry{
+			ActorUUID:  aua,
+			ActorName:  aname,
+			Action:     audit.ActionResetInvite,
+			TargetType: audit.TargetDomain,
+			TargetID:   domainUUID,
+			Detail:     "invite_code reset",
+			IP:         audit.AuditIP(c),
+			Success:    true,
+		})
+	}
 	pkg.Success(c, domain)
 }
 
@@ -409,7 +422,7 @@ func (h *DomainHandler) Kick(c *gin.Context) {
 			Action:     audit.ActionKickMember,
 			TargetType: audit.TargetMember,
 			TargetID:   req.UserUUID,
-			IP:         c.ClientIP(),
+			IP:         audit.AuditIP(c),
 			Success:    true,
 		})
 	}

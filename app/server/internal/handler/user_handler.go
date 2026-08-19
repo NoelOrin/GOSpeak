@@ -182,7 +182,7 @@ func (h *UserHandler) Delete(c *gin.Context) {
 			Action:     audit.ActionDeleteUser,
 			TargetType: audit.TargetUser,
 			TargetID:   fmt.Sprintf("%d", req.ID),
-			IP:         c.ClientIP(),
+			IP:         audit.AuditIP(c),
 			Success:    true,
 		})
 	}

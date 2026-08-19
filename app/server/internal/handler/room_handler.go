@@ -382,7 +382,7 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 			TargetType: audit.TargetRoom,
 			TargetID:   fmt.Sprintf("%d", req.ID),
 			Detail:     fmt.Sprintf("name=%q domain=%s", room.Name, room.DomainUUID),
-			IP:         c.ClientIP(),
+			IP:         audit.AuditIP(c),
 			Success:    true,
 		})
 	}

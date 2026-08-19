@@ -303,9 +303,8 @@ export class BotRunner {
 		const next = prev
 			.catch(() => {})
 			.then(async () => {
-				this._speakingRooms.add(roomId);
-				// 信令在场后再发声，使 member:speaking 回写被 server 接受（不变式 5）
 				await this.joinRoom(roomId);
+				this._speakingRooms.add(roomId);
 				this.socket.reportSpeaking(roomId, true);
 				try {
 					const tts = this._tts;
@@ -346,9 +345,9 @@ export class BotRunner {
 	): Promise<void> {
 		await this.joinRoom(roomId);
 		this.socket.reportSpeaking(roomId, true);
-		const token = await this.api.getSFUToken(roomId);
-		const publisher = this.getPublishAdapter(token.provider);
 		try {
+			const token = await this.api.getSFUToken(roomId);
+			const publisher = this.getPublishAdapter(token.provider);
 			await publisher.join({
 				room: roomId,
 				identity: this.config.identity,

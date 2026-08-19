@@ -1,4 +1,10 @@
-import { type Component, createSignal, createEffect, Show } from "solid-js";
+import {
+	type Component,
+	createSignal,
+	createEffect,
+	onCleanup,
+	Show,
+} from "solid-js";
 import QRCode from "qrcode";
 
 const InviteShareModal: Component<{
@@ -11,8 +17,10 @@ const InviteShareModal: Component<{
 	const [copied, setCopied] = createSignal(false);
 	const [copyError, setCopyError] = createSignal("");
 
+	let qrVersion = 0;
 	createEffect(() => {
 		const url = props.inviteUrl;
+		const version = ++qrVersion;
 		if (!url) {
 			setQrDataUrl("");
 			setQrError("");
@@ -20,21 +28,28 @@ const InviteShareModal: Component<{
 		}
 		void QRCode.toDataURL(url, { width: 240, margin: 2 })
 			.then((dataUrl) => {
+				if (version !== qrVersion) return;
 				setQrDataUrl(dataUrl);
 				setQrError("");
 			})
 			.catch(() => {
+				if (version !== qrVersion) return;
 				setQrDataUrl("");
 				setQrError("二维码生成失败，请使用复制链接分享");
 			});
 	});
 
+	let copyTimer: ReturnType<typeof setTimeout> | undefined;
+	onCleanup(() => {
+		if (copyTimer !== undefined) clearTimeout(copyTimer);
+	});
 	const copyLink = async () => {
 		setCopyError("");
 		try {
 			await navigator.clipboard.writeText(props.inviteUrl);
 			setCopied(true);
-			setTimeout(() => setCopied(false), 2000);
+			if (copyTimer !== undefined) clearTimeout(copyTimer);
+			copyTimer = setTimeout(() => setCopied(false), 2000);
 		} catch {
 			setCopyError("复制失败，请手动复制上方链接");
 		}

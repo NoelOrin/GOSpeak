@@ -8,6 +8,7 @@ import (
 
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/logger"
 	"GOSpeak/internal/sfu"
 )
 
@@ -184,12 +185,14 @@ func (s *Service) saveRule(key string, ruleID int, ttl time.Duration) error {
 	if st := s.ruleStore(); st != nil {
 		return st.Save(context.Background(), key, ruleID, ttl)
 	}
+	logger.WithComponent("Agora").Warnf("muteRules not wired: saveRule dropped key=%s ruleID=%d", key, ruleID)
 	return nil
 }
 
 func (s *Service) getRule(key string) int {
 	st := s.ruleStore()
 	if st == nil {
+		logger.WithComponent("Agora").Warnf("muteRules not wired: getRule miss key=%s", key)
 		return 0
 	}
 	id, err := st.Get(context.Background(), key)
@@ -202,7 +205,9 @@ func (s *Service) getRule(key string) int {
 func (s *Service) deleteRule(key string) {
 	if st := s.ruleStore(); st != nil {
 		_ = st.Delete(context.Background(), key)
+		return
 	}
+	logger.WithComponent("Agora").Warnf("muteRules not wired: deleteRule dropped key=%s", key)
 }
 
 func (s *Service) clearMuteRule(room, identity, key string) error {

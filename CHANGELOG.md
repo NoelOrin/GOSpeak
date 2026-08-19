@@ -1,5 +1,18 @@
 # Changelog / 更新日志
 
+## [0.2.1](https://github.com/NoelOrin/GOSpeak/compare/v0.2.0...v0.2.1) (2026-08-19)
+
+### Bug Fixes
+
+* **audit:** harden audit service with validation, AuditIP via RemoteIP, nil-DB guard, dropped counter, logger and count isolation
+* **domain:** atomic ResetInviteCode with RETURNING fallback and invite reset audit/web error handling
+* **sfu:** CachedMuteRuleStore L1 cache, none-backend warnings, Agora/SRS wire guards and SRS publish block fix
+* **bot:** fix speakingRooms ordering, SFU token fetch inside try, socketClient identity guard
+* **web:** InviteShareModal QR race + clipboard timer cleanup, link page rAF dialog and timer handling
+* **server:** fix duplicate plugin StopAll in graceful shutdown
+* **chore:** extend lefthook pre-push (biome ci, go vet, typecheck, go test)
+* **ci:** build docker image and cross-platform binaries on release: published ([979983f](https://github.com/NoelOrin/GOSpeak/commit/979983fe556483491f7daf0cb53309ddc9ea54f4))
+
 ## 0.2.0 (2026-08-18)
 
 > 自 v0.1.0-alpha1 以来的发布，共 287 个提交（feat 129 / fix 65 / perf 1 / docs 20 / ci 3）。

@@ -4,10 +4,12 @@
 package audit
 
 import (
+	"GOSpeak/internal/logger"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
-	"log"
+	"github.com/gin-gonic/gin"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gorm.io/gorm"
@@ -15,13 +17,21 @@ import (
 
 const queueSize = 1024
 
+const (
+	AuditMaxLimit     = 200
+	AuditDefaultLimit = 50
+	auditMaxLimit     = AuditMaxLimit
+	auditDefaultLimit = AuditDefaultLimit
+)
+
 // 审计动作常量
 const (
-	ActionKickMember = "kick_member"
-	ActionMuteUser   = "mute_user"
-	ActionUnmuteUser = "unmute_user"
-	ActionDeleteRoom = "delete_room"
-	ActionDeleteUser = "delete_user"
+	ActionKickMember  = "kick_member"
+	ActionMuteUser    = "mute_user"
+	ActionUnmuteUser  = "unmute_user"
+	ActionDeleteRoom  = "delete_room"
+	ActionDeleteUser  = "delete_user"
+	ActionResetInvite = "reset_invite"
 )
 
 // 审计目标类型
@@ -30,7 +40,49 @@ const (
 	TargetRoom   = "room"
 	TargetUser   = "user"
 	TargetMute   = "mute"
+	TargetDomain = "domain"
 )
+
+var (
+	validActions = map[string]struct{}{
+		ActionKickMember:  {},
+		ActionMuteUser:    {},
+		ActionUnmuteUser:  {},
+		ActionDeleteRoom:  {},
+		ActionDeleteUser:  {},
+		ActionResetInvite: {},
+	}
+	validTargetTypes = map[string]struct{}{
+		TargetMember: {},
+		TargetRoom:   {},
+		TargetUser:   {},
+		TargetMute:   {},
+		TargetDomain: {},
+	}
+)
+
+// IsValidAction 校验 action 是否为白名单。
+func IsValidAction(a string) bool {
+	_, ok := validActions[a]
+	return ok
+}
+
+// IsValidTargetType 校验 target_type 是否为白名单。
+func IsValidTargetType(t string) bool {
+	_, ok := validTargetTypes[t]
+	return ok
+}
+
+// AuditIP 返回审计可信的客户端 IP，优先使用 RemoteIP（受 TrustedProxies 约束），避免 X-Forwarded-For 伪造。
+func AuditIP(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	if ip := c.RemoteIP(); ip != "" {
+		return ip
+	}
+	return c.ClientIP()
+}
 
 // Entry 一条审计记录的结构化输入。
 type Entry struct {
@@ -59,15 +111,20 @@ type Query struct {
 
 // Service 审计服务：异步写入 + 只读查询。
 type Service struct {
-	db     *gorm.DB
-	queue  chan model.AuditLog
-	mu     sync.Mutex
-	closed bool
-	wg     sync.WaitGroup
+	db      *gorm.DB
+	queue   chan model.AuditLog
+	mu      sync.Mutex
+	closed  bool
+	wg      sync.WaitGroup
+	dropped atomic.Int64
 }
 
 // NewService 创建审计服务并启动后台落库 goroutine。
+// db==nil 时不启动 worker，直接返回 nil，避免 nil.Create panic。
 func NewService(db *gorm.DB) *Service {
+	if db == nil {
+		return nil
+	}
 	s := &Service{db: db, queue: make(chan model.AuditLog, queueSize)}
 	s.wg.Add(1)
 	go s.worker()
@@ -78,8 +135,11 @@ func NewService(db *gorm.DB) *Service {
 func (s *Service) worker() {
 	defer s.wg.Done()
 	for rec := range s.queue {
+		if s.db == nil {
+			continue
+		}
 		if err := s.db.Create(&rec).Error; err != nil {
-			log.Printf("[audit] write failed action=%s actor=%s target=%s err=%v", rec.Action, rec.ActorUUID, rec.TargetID, err)
+			logger.WithComponent("Audit").Errorf("[audit] write failed action=%s actor=%s target=%s err=%v", rec.Action, rec.ActorUUID, rec.TargetID, err)
 		}
 	}
 }
@@ -101,18 +161,26 @@ func (s *Service) Log(e Entry) {
 		Success:    e.Success,
 	}
 	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
+	closed := s.closed
+	s.mu.Unlock()
+	if closed {
 		return
 	}
 	select {
 	case s.queue <- rec:
-		s.mu.Unlock()
 		return
 	default:
-		s.mu.Unlock()
-		log.Printf("[audit] queue full, dropped action=%s actor=%s target=%s", e.Action, e.ActorUUID, e.TargetID)
+		n := s.dropped.Add(1)
+		logger.WithComponent("Audit").Warnf("[audit] queue full, dropped action=%s actor=%s target=%s dropped_total=%d", e.Action, e.ActorUUID, e.TargetID, n)
 	}
+}
+
+// Dropped 返回队列满丢弃的总数。
+func (s *Service) Dropped() int64 {
+	if s == nil {
+		return 0
+	}
+	return s.dropped.Load()
 }
 
 // List 分页查询审计日志，返回当前页记录与符合条件的总数。
@@ -140,12 +208,13 @@ func (s *Service) List(q Query) ([]model.AuditLog, int64, error) {
 		db = db.Where("created_at <= ?", q.End)
 	}
 	var total int64
-	if err := db.Count(&total).Error; err != nil {
+	countDB := db.Session(&gorm.Session{})
+	if err := countDB.Count(&total).Error; err != nil {
 		return nil, 0, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	limit := q.Limit
-	if limit <= 0 || limit > 200 {
-		limit = 50
+	if limit <= 0 || limit > auditMaxLimit {
+		limit = auditDefaultLimit
 	}
 	offset := q.Offset
 	if offset < 0 {

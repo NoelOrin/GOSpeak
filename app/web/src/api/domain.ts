@@ -133,12 +133,20 @@ export async function joinDomain(inviteCode: string): Promise<Domain> {
 }
 
 export async function resetDomainInviteCode(uuid: string): Promise<Domain> {
-	const result = await apiClient.post<Domain>({
-		url: "/api/v1/domain/reset-invite",
-		data: { domain_uuid: uuid },
-	});
-	if (!result) throw new Error("domain data is missing");
-	return result;
+	try {
+		const result = await apiClient.post<Domain>({
+			url: "/api/v1/domain/reset-invite",
+			data: { domain_uuid: uuid },
+		});
+		if (!result) throw new Error("重置邀请码失败：服务端未返回域数据");
+		return result;
+	} catch (e: unknown) {
+		const axiosMsg = (e as { response?: { data?: { msg?: string } } })?.response
+			?.data?.msg;
+		if (axiosMsg) throw new Error(axiosMsg);
+		if (e instanceof Error && e.message) throw e;
+		throw new Error("重置邀请码失败");
+	}
 }
 
 export async function leaveDomain(uuid: string): Promise<void> {

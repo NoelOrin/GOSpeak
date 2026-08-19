@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type DomainRepository struct {
@@ -88,12 +89,26 @@ func (r *DomainRepository) Update(domain *model.Domain) error {
 }
 
 // ResetInviteCode 重新生成并写入指定域的邀请码，返回更新后的域。
+// 使用 RETURNING 原子读回更新后行，避免主从延迟读到旧 invite_code；不支持时回退二次查询。
 func (r *DomainRepository) ResetInviteCode(domainUUID, code string) (*model.Domain, error) {
-	res := r.db.Model(&model.Domain{}).Where("uuid = ?", domainUUID).Update("invite_code", code)
-	if res.Error != nil {
-		return nil, res.Error
+	var domain model.Domain
+	res := r.db.Model(&domain).Clauses(clause.Returning{}).Where("uuid = ?", domainUUID).Update("invite_code", code)
+	if res.Error == nil {
+		if res.RowsAffected == 0 {
+			return nil, gorm.ErrRecordNotFound
+		}
+		if domain.UUID != "" && domain.InviteCode == code {
+			return &domain, nil
+		}
+		// 驱动未填充 RETURNING 结果，回退同连接查询
+		return r.GetByUUID(domainUUID)
 	}
-	if res.RowsAffected == 0 {
+	// 回退：兼容不支持 RETURNING 的 SQLite / MySQL
+	res2 := r.db.Model(&model.Domain{}).Where("uuid = ?", domainUUID).Update("invite_code", code)
+	if res2.Error != nil {
+		return nil, res2.Error
+	}
+	if res2.RowsAffected == 0 {
 		return nil, gorm.ErrRecordNotFound
 	}
 	return r.GetByUUID(domainUUID)

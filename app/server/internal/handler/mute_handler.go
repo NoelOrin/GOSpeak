@@ -102,7 +102,7 @@ func (h *MuteHandler) CreateMute(c *gin.Context) {
 			TargetType: audit.TargetUser,
 			TargetID:   fmt.Sprintf("%d", req.UserID),
 			Detail:     fmt.Sprintf("permanent=%v duration=%ds reason=%q", req.Permanent, req.Duration, req.Reason),
-			IP:         c.ClientIP(),
+			IP:         audit.AuditIP(c),
 			Success:    true,
 		})
 	}
@@ -168,7 +168,7 @@ func (h *MuteHandler) CancelMute(c *gin.Context) {
 			Action:     audit.ActionUnmuteUser,
 			TargetType: audit.TargetUser,
 			TargetID:   fmt.Sprintf("%d", req.UserID),
-			IP:         c.ClientIP(),
+			IP:         audit.AuditIP(c),
 			Success:    true,
 		})
 	}

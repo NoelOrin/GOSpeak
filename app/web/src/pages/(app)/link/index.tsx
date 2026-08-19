@@ -5,7 +5,7 @@ import Copy from "lucide-solid/icons/copy";
 import Check from "lucide-solid/icons/check";
 import ArrowRight from "lucide-solid/icons/arrow-right";
 import RefreshCw from "lucide-solid/icons/refresh-cw";
-import { createResource, createSignal, For, Show } from "solid-js";
+import { createResource, createSignal, For, Show, onCleanup } from "solid-js";
 import {
 	type DomainDetail,
 	getMyDomainsDetailed,
@@ -53,15 +53,29 @@ function RouteComponent() {
 		extractDomainInviteCode(d.invite_code || "") || "";
 	const inviteUrl = (d: DomainDetail) => domainInviteUrl(inviteCode(d));
 
+	let copyCodeTimer: ReturnType<typeof setTimeout> | undefined;
+	let copyLinkTimer: ReturnType<typeof setTimeout> | undefined;
+	onCleanup(() => {
+		if (copyCodeTimer !== undefined) clearTimeout(copyCodeTimer);
+		if (copyLinkTimer !== undefined) clearTimeout(copyLinkTimer);
+	});
 	const copy = async (text: string, kind: "code" | "link", id: string) => {
 		try {
 			await navigator.clipboard.writeText(text);
 			if (kind === "code") {
 				setCopiedCode(id);
-				setTimeout(() => setCopiedCode((c) => (c === id ? null : c)), 2000);
+				if (copyCodeTimer !== undefined) clearTimeout(copyCodeTimer);
+				copyCodeTimer = setTimeout(
+					() => setCopiedCode((c) => (c === id ? null : c)),
+					2000,
+				);
 			} else {
 				setCopiedLink(id);
-				setTimeout(() => setCopiedLink((c) => (c === id ? null : c)), 2000);
+				if (copyLinkTimer !== undefined) clearTimeout(copyLinkTimer);
+				copyLinkTimer = setTimeout(
+					() => setCopiedLink((c) => (c === id ? null : c)),
+					2000,
+				);
 			}
 		} catch {
 			// 剪贴板不可用时由用户手动复制，不阻断操作
@@ -70,7 +84,11 @@ function RouteComponent() {
 
 	const openShare = (d: DomainDetail) => {
 		setShareDomain(d);
-		queueMicrotask(() => shareRef()?.showModal());
+		requestAnimationFrame(() => {
+			const dlg = shareRef();
+			if (dlg) dlg.showModal();
+			else requestAnimationFrame(() => shareRef()?.showModal());
+		});
 	};
 
 	const shareUrl = () => {
@@ -88,7 +106,10 @@ function RouteComponent() {
 
 	const requestReset = (d: DomainDetail) => {
 		setResetTarget(d);
-		queueMicrotask(() => confirmDialogRef?.showModal());
+		requestAnimationFrame(() => {
+			if (confirmDialogRef) confirmDialogRef.showModal();
+			else requestAnimationFrame(() => confirmDialogRef?.showModal());
+		});
 	};
 
 	const closeResetModal = () => {

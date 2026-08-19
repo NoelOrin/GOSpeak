@@ -289,12 +289,13 @@ export class GOSpeakSocketClient {
 			this.logger.warn("reportSpeaking requires a room");
 			return;
 		}
+		const identity = (this._identity ?? "").trim();
+		if (!identity) {
+			this.logger.warn("reportSpeaking skipped: identity is empty");
+			return;
+		}
 		this.send(
-			GOSpeakSocketClient.buildSpeakingMessage(
-				room,
-				this._identity ?? "",
-				speaking,
-			),
+			GOSpeakSocketClient.buildSpeakingMessage(room, identity, speaking),
 		);
 	}
 

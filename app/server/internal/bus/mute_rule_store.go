@@ -215,6 +215,8 @@ func (s *NATSMuteRuleStore) Delete(_ context.Context, key string) error {
 // the process always runs with a NATS connection (embedded or external,
 // guaranteed by bus.Init), so a missing NATS connection is treated as a
 // fatal startup error rather than a silent degradation.
+// 注意：CachedMuteRuleStore 保留 30s L1 以降低 KV 压力；SRS 场景（ruleID 恒为 1）
+// 必须使用 GetFresh 绕过 L1，否则 NATS 抖动会放大解禁延迟，监控需观察 miss/false-hit。
 type ResolveMuteRuleConfig struct {
 	Mode      string
 	Prefix    string

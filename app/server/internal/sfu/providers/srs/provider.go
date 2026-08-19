@@ -362,6 +362,7 @@ func (s *Service) applyPublishBlock(stream string, muted bool, ttlSeconds int) e
 	defer cancel()
 	return s.withMuteStore(func(store sfu.MuteRuleStore) error {
 		if store == nil {
+			logger.WithComponent("SRS").Warnf("mute rule store not wired, skip publish block stream=%s muted=%v", stream, muted)
 			return nil
 		}
 		if muted {

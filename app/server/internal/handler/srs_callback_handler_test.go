@@ -358,12 +358,12 @@ func TestSrsCallback_OnPublish_CrossInstanceUnmute_Allows(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.SetMuteRuleStore(cache)
-	// 另一实例 unmute 只删 shared；无 L1 遮挡，本实例立即可见。
+	// 另一实例 unmute 只删 shared；SRS 禁推以 shared 为权威，需用 GetFresh 绕过 L1。
 	if err := shared.Delete(context.Background(), srs.PublishBlockKey(stream)); err != nil {
 		t.Fatal(err)
 	}
-	if id, err := cache.Get(context.Background(), srs.PublishBlockKey(stream)); err != nil || id != 0 {
-		t.Fatalf("after shared delete Get should see unmute (id=%d err=%v)", id, err)
+	if id, err := cache.GetFresh(context.Background(), srs.PublishBlockKey(stream)); err != nil || id != 0 {
+		t.Fatalf("after shared delete GetFresh should see unmute (id=%d err=%v)", id, err)
 	}
 
 	tok := srsStreamTokenForTest(stream, "secret")

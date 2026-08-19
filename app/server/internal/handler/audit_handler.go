@@ -44,14 +44,22 @@ func (h *AuditHandler) List(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
+	if req.Action != "" && !audit.IsValidAction(req.Action) {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "invalid action")
+		return
+	}
+	if req.TargetType != "" && !audit.IsValidTargetType(req.TargetType) {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "invalid target_type")
+		return
+	}
 
 	page := req.Page
 	if page <= 0 {
 		page = 1
 	}
 	pageSize := req.PageSize
-	if pageSize <= 0 || pageSize > 200 {
-		pageSize = 50
+	if pageSize <= 0 || pageSize > audit.AuditMaxLimit {
+		pageSize = audit.AuditDefaultLimit
 	}
 
 	q := audit.Query{
@@ -63,14 +71,20 @@ func (h *AuditHandler) List(c *gin.Context) {
 		Offset:     (page - 1) * pageSize,
 	}
 	if req.Start != "" {
-		if t, err := time.Parse(time.RFC3339, req.Start); err == nil {
-			q.Start = &t
+		t, err := time.Parse(time.RFC3339, req.Start)
+		if err != nil {
+			pkg.Fail(c, pkg.INVALID_PARAMS, "invalid start time format, want RFC3339")
+			return
 		}
+		q.Start = &t
 	}
 	if req.End != "" {
-		if t, err := time.Parse(time.RFC3339, req.End); err == nil {
-			q.End = &t
+		t, err := time.Parse(time.RFC3339, req.End)
+		if err != nil {
+			pkg.Fail(c, pkg.INVALID_PARAMS, "invalid end time format, want RFC3339")
+			return
 		}
+		q.End = &t
 	}
 
 	logs, total, err := h.auditSvc.List(q)

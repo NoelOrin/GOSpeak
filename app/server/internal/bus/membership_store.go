@@ -41,6 +41,11 @@ type ResolveMembershipConfig struct {
 // ResolveMembershipStore opens the membership/stream store backed by NATS KV.
 // It fails fast when NATS is unavailable instead of degrading to a local-only
 // "none" backend, so cross-instance room views always have shared state.
+//
+// 注意（风险 7）：自 v5138 起强制依赖 NATS（embedded 或 external），已移除
+// 旧的 STATE_STORE=none 内存降级路径。单测/离线单进程若不提供 NATS 连接会直接 fail fast；
+// 嵌入式 NATS 端口被占用也会导致整个服务启动失败，需在部署文档与单测 bootstrap 中
+// 显式标注并预留端口或改用外部 NATS。
 func ResolveMembershipStore(cfg ResolveMembershipConfig) (MembershipStore, string, error) {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {

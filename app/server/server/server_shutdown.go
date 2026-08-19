@@ -52,7 +52,6 @@ func runGracefulShutdown(deps shutdownDeps) {
 		logger.WithComponent("WS").Info("websocket connections closed")
 	}
 
-	deps.pluginReg.StopAll(context.Background())
 	deps.pluginReg.StopAll(ctx)
 	logger.WithComponent("Plugin").Info("plugins stopped")
 
