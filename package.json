@@ -19,7 +19,9 @@
     "start:prod": "pnpm run prod:server",
     "format": "pnpm -r format",
     "prepare": "lefthook install",
-    "typecheck": "pnpm --filter @gospeak/web --filter @gospeak/bot --filter @gospeak/sfu-client exec tsc --noEmit"
+    "typecheck": "pnpm --filter @gospeak/web --filter @gospeak/bot --filter @gospeak/sfu-client exec tsc --noEmit",
+    "changelog": "node scripts/generate-changelog.mjs",
+    "changelog:0.2.1": "node scripts/generate-changelog.mjs 0.2.1 2026-08-19"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",

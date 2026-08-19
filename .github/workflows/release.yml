@@ -63,10 +63,35 @@ jobs:
         env:
           TAG: ${{ github.event.inputs.tag }}
         run: |
-          gh release create "$TAG" \
-            --title "GOSpeak $TAG" \
-            --generate-notes \
-            --target "${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          SECTION_FILE="/tmp/release-notes.md"
+          # 优先从 CHANGELOG.md 提取对应版本段落（自动生成的 changelog 优先）
+          awk -v ver="## \\[$VERSION\\]" '
+            $0 ~ ver {flag=1; print; next}
+            /^## / && flag {exit}
+            flag {print}
+          ' CHANGELOG.md > "$SECTION_FILE" || true
+          if [ ! -s "$SECTION_FILE" ]; then
+            awk -v ver="## $VERSION" '
+              $0 ~ ver {flag=1; print; next}
+              /^## / && flag {exit}
+              flag {print}
+            ' CHANGELOG.md > "$SECTION_FILE" || true
+          fi
+          if [ -s "$SECTION_FILE" ]; then
+            echo "Using CHANGELOG section for $TAG:"
+            cat "$SECTION_FILE"
+            gh release create "$TAG" \
+              --title "GOSpeak $TAG" \
+              --notes-file "$SECTION_FILE" \
+              --target "${{ github.ref_name }}"
+          else
+            echo "No CHANGELOG section for $TAG, fallback to generate-notes"
+            gh release create "$TAG" \
+              --title "GOSpeak $TAG" \
+              --generate-notes \
+              --target "${{ github.ref_name }}"
+          fi
 
   docker:
     name: Build & Push Docker Image

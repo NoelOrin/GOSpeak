@@ -2,16 +2,28 @@
 
 ## [0.2.1](https://github.com/NoelOrin/GOSpeak/compare/v0.2.0...v0.2.1) (2026-08-19)
 
+> 自 v0.2.0 以来的发布，共 12 个变更点（fix 10 / chore 1 / ci 1)，基于 1 个提交。
+
 ### Bug Fixes
 
-* **audit:** harden audit service with validation, AuditIP via RemoteIP, nil-DB guard, dropped counter, logger and count isolation
-* **domain:** atomic ResetInviteCode with RETURNING fallback and invite reset audit/web error handling
-* **sfu:** CachedMuteRuleStore L1 cache, none-backend warnings, Agora/SRS wire guards and SRS publish block fix
-* **bot:** fix speakingRooms ordering, SFU token fetch inside try, socketClient identity guard
-* **web:** InviteShareModal QR race + clipboard timer cleanup, link page rAF dialog and timer handling
-* **server:** fix duplicate plugin StopAll in graceful shutdown
-* **chore:** extend lefthook pre-push (biome ci, go vet, typecheck, go test)
-* **ci:** build docker image and cross-platform binaries on release: published ([979983f](https://github.com/NoelOrin/GOSpeak/commit/979983fe556483491f7daf0cb53309ddc9ea54f4))
+* fix(audit): validation, AuditIP via RemoteIP, nil-DB guard, dropped counter, logger
+* fix(handler): validate audit params, use AuditIP in domain/mute/room/user
+* fix(domain): atomic ResetInviteCode with RETURNING fallback, reset_invite audit
+* fix(domain/web): invite error handling, QR race and clipboard timer fixes
+* fix(sfu): CachedMuteRuleStore L1 cache, none-backend warnings, Agora/SRS guards
+* fix(sfu/srs): publish block error handling and SRS store wiring warning
+* fix(bus): document NATS mandatory for membership/mute stores
+* fix(server): fix duplicate plugin StopAll in graceful shutdown
+* fix(web): link page rAF dialog and timer handling
+* fix(bot): speakingRooms ordering, SFU token inside try, identity guard
+
+### Chore
+
+* chore: extend lefthook pre-push (biome ci, go vet, typecheck, go test)
+
+### CI
+
+* ci: build docker image and binaries on release published
 
 ## 0.2.0 (2026-08-18)
 
