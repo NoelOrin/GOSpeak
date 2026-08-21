@@ -224,9 +224,7 @@ func StartGin(env EnvEnum) error {
 		InstanceID:              instanceID,
 		StateNotifier:           eventBus,
 	})
-	if store != nil {
-		signalHub.StartMembershipHeartbeat()
-	}
+	signalHub.StartMembershipHeartbeat()
 	if nb, ok := eventBus.(*bus.NATSBus); ok {
 		nb.SetRemoteHook(func(event string, payload interface{}) {
 			if event == cluster.EventControlCommand {

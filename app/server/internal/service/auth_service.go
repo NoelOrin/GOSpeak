@@ -417,7 +417,7 @@ func (s *AuthService) ResetPassword(email, code, newPassword string) error {
 
 // BlacklistToken 将 JWT token 加入黑名单，使该 token 在有效期内不可再使用。
 func (s *AuthService) BlacklistToken(claims *pkg.Claims) error {
-	if claims == nil || claims.ID == "" {
+	if claims == nil || claims.ID == "" || claims.ExpiresAt == nil {
 		return nil
 	}
 	remaining := time.Until(claims.ExpiresAt.Time)

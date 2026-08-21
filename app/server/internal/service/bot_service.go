@@ -21,8 +21,6 @@ import (
 
 const botNamePrefix = "bot_"
 
-var permanentExpiry = time.Date(2125, 1, 1, 0, 0, 0, 0, time.UTC)
-
 type CreateBotRequest struct {
 	Name        string   `json:"name" binding:"required"`
 	Permissions []string `json:"permissions" binding:"required"`
@@ -120,9 +118,7 @@ func (s *BotService) Create(req *CreateBotRequest) (*CreateBotResult, error) {
 		Permissions: req.Permissions,
 		User:        user,
 		Permanent:   isPermanent,
-	}
-	if !isPermanent {
-		result.ExpiresAt = &expiresAt
+		ExpiresAt:   expiresAt,
 	}
 	return result, nil
 }
@@ -180,24 +176,25 @@ func parseExpiryDuration(s string) (time.Duration, error) {
 	return time.ParseDuration(s)
 }
 
-func parseBotExpiry(expiresIn string, isBot bool) (time.Time, bool, error) {
+func parseBotExpiry(expiresIn string, isBot bool) (*time.Time, bool, error) {
 	expiresIn = strings.TrimSpace(expiresIn)
 
 	if expiresIn == "" {
 		if isBot {
-			return permanentExpiry, true, nil
+			return nil, true, nil
 		}
-		return time.Time{}, false, pkg.NewAppError(pkg.INVALID_PARAMS, "expires_in is required for non-bot users")
+		return nil, false, pkg.NewAppError(pkg.INVALID_PARAMS, "expires_in is required for non-bot users")
 	}
 
 	d, err := parseExpiryDuration(expiresIn)
 	if err != nil {
-		return time.Time{}, false, pkg.NewAppError(pkg.INVALID_PARAMS, "invalid expires_in, use Go duration like 720h or 30d")
+		return nil, false, pkg.NewAppError(pkg.INVALID_PARAMS, "invalid expires_in, use Go duration like 720h or 30d")
 	}
 	if d <= 0 {
-		return time.Time{}, false, pkg.NewAppError(pkg.INVALID_PARAMS, "expires_in must be positive")
+		return nil, false, pkg.NewAppError(pkg.INVALID_PARAMS, "expires_in must be positive")
 	}
-	return time.Now().Add(d), false, nil
+	expiresAt := time.Now().Add(d)
+	return &expiresAt, false, nil
 }
 
 // validateBotPermissions 校验 bot 权限码非空且均在 Bot 允许白名单内。

@@ -23,8 +23,6 @@ type HubStats struct {
 }
 
 // GetStats 返回信令面房间数、参与者总数、去重在线用户数。
-
-// GetStats 返回信令面房间数、参与者总数、去重在线用户数。
 func (h *Hub) GetStats() HubStats {
 	h.mu.RLock()
 
@@ -67,8 +65,6 @@ func (h *Hub) GetSFURooms() []RoomInfo {
 }
 
 // GetRooms returns DB-persisted rooms + in-memory active rooms merged.
-
-// GetRooms returns DB-persisted rooms + in-memory active rooms merged.
 func (h *Hub) GetRooms() []RoomInfo {
 	return h.getMergedRooms("")
 }
@@ -105,9 +101,8 @@ func (h *Hub) CheckRoomLimit(domainUUID, roomName string) (bool, uint, int, erro
 	return currentCount >= int(limit), limit, currentCount, nil
 }
 
-// CheckRoomPassword 检查房间密码，返回 (通过, 错误)
-// 密码以 DB 为准；内存房间仅作兜底。ok=true 表示通过；ok=false+err!=nil 表示需密码未提供；ok=false+err==nil 表示密码错误。
 // CheckRoomPassword 检查房间密码。ErrRoomNotFound 表示房间不存在；其他 error 表示需要密码；nil error 且 ok=false 表示密码错误。
+// 密码以 DB 为准；内存房间仅作兜底。ok=true 表示通过；ok=false+err!=nil 表示需密码未提供；ok=false+err==nil 表示密码错误。
 func (h *Hub) CheckRoomPassword(domainUUID, roomName, password string) (ok bool, err error) {
 	expected := ""
 	found := false
@@ -158,8 +153,6 @@ func (h *Hub) GetRoomMembers(roomName string) []MemberInfo {
 }
 
 // IsIdentityMuted 检查指定 identity（用户名）是否被禁言
-
-// IsIdentityMuted 检查指定 identity（用户名）是否被禁言
 func (h *Hub) IsIdentityMuted(identity string) (bool, *model.Mute, error) {
 	if h.muteStore == nil {
 		return false, nil, nil
@@ -168,14 +161,10 @@ func (h *Hub) IsIdentityMuted(identity string) (bool, *model.Mute, error) {
 }
 
 // IsMuted 是 JoinPolicy 接口适配：仅返 bool/error，剥离 *model.Mute（pkg.JoinPolicy 不依赖 model）。
-
-// IsMuted 是 JoinPolicy 接口适配：仅返 bool/error，剥离 *model.Mute（pkg.JoinPolicy 不依赖 model）。
 func (h *Hub) IsMuted(identity string) (bool, error) {
 	muted, _, err := h.IsIdentityMuted(identity)
 	return muted, err
 }
-
-// 编译期断言：Hub 实现 pkg.JoinPolicy，供 SFUService 经接口注入。
 
 // 编译期断言：Hub 实现 pkg.JoinPolicy，供 SFUService 经接口注入。
 var _ pkg.JoinPolicy = (*Hub)(nil)
@@ -305,8 +294,6 @@ func (h *Hub) roomInfoLocked(roomName string) RoomInfo {
 }
 
 // duplicateIdentityLocked 判断同一房间是否已有其他 socket 占用 identity。调用方须持有 h.mu（读或写）。
-
-// duplicateIdentityLocked 判断同一房间是否已有其他 socket 占用 identity。调用方须持有 h.mu（读或写）。
 func (h *Hub) duplicateIdentityLocked(roomName, identity, socketID string) bool {
 	room, exists := h.rooms[roomName]
 	if !exists {
@@ -319,8 +306,6 @@ func (h *Hub) duplicateIdentityLocked(roomName, identity, socketID string) bool 
 	}
 	return false
 }
-
-// deleteRoomIfEmptyLocked 在房间无成员时删除并返回 true。调用方须持有 h.mu（写）。
 
 // deleteRoomIfEmptyLocked 在房间无成员时删除并返回 true。调用方须持有 h.mu（写）。
 func (h *Hub) deleteRoomIfEmptyLocked(roomName string) bool {

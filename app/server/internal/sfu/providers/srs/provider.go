@@ -126,8 +126,9 @@ func cleanupStreamCaches() {
 	})
 }
 
-// Close 释放 HTTP 空闲连接。
+// Close 释放 HTTP 空闲连接并从清理注册表中移除。
 func (s *Service) Close() error {
+	activeServices.Delete(s)
 	if s.client != nil && s.client.http != nil {
 		s.client.http.CloseIdleConnections()
 	}

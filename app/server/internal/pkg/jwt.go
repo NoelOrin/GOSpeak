@@ -127,8 +127,11 @@ func IsRefreshToken(claims *Claims) bool {
 }
 
 func IsTokenExpired(claims *Claims) bool {
-	if claims == nil || claims.ExpiresAt == nil {
+	if claims == nil {
 		return true
+	}
+	if claims.ExpiresAt == nil {
+		return claims.TokenType != BotTokenType
 	}
 	return time.Now().Unix() > claims.ExpiresAt.Unix()
 }
@@ -138,7 +141,7 @@ func newJTI() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
 }
 
-// GenerateBotToken 签发 Bot token。如果 isPermanent 为 true，token 永不过期（100年）。
+// GenerateBotToken 签发 Bot token。如果 isPermanent 为 true，token 不设置 exp。
 func GenerateBotToken(username, displayName, userUUID, role string, tokenVersion uint, permissions []string, isPermanent bool) (string, error) {
 	claims := Claims{
 		Username:     username,
@@ -155,7 +158,7 @@ func GenerateBotToken(username, displayName, userUUID, role string, tokenVersion
 		},
 	}
 	if isPermanent {
-		claims.RegisteredClaims.ExpiresAt = jwt.NewNumericDate(time.Date(2125, 1, 1, 0, 0, 0, 0, time.UTC))
+		// Omit exp so the JWT lifetime matches the nullable database expiry.
 	} else {
 		claims.RegisteredClaims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(24 * time.Hour))
 	}
