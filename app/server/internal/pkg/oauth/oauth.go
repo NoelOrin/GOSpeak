@@ -3,6 +3,7 @@
 package oauth
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"golang.org/x/oauth2"
 )
 
 // ProviderConfig 第三方 OAuth 应用的配置项，根据平台填写对应值。
@@ -22,6 +25,24 @@ type ProviderConfig struct {
 	RedirectURL  string       // 授权后回调地址
 	Scopes       string       // 请求的权限范围，多个用空格分隔
 	FieldMapping FieldMapping // 自建 OAuth 的用户信息字段映射（仅 GenericProvider 使用）
+}
+
+// toOAuth2Config 将 ProviderConfig 转为 golang.org/x/oauth2.Config。
+func (c *ProviderConfig) toOAuth2Config() *oauth2.Config {
+	var scopes []string
+	if c.Scopes != "" {
+		scopes = strings.Fields(c.Scopes)
+	}
+	return &oauth2.Config{
+		ClientID:     c.ClientID,
+		ClientSecret: c.ClientSecret,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  c.AuthURL,
+			TokenURL: c.TokenURL,
+		},
+		RedirectURL: c.RedirectURL,
+		Scopes:      scopes,
+	}
 }
 
 // UserInfo 统一用户信息模型，屏蔽各平台字段差异。
@@ -145,33 +166,15 @@ type GitHubProvider struct {
 }
 
 func (g *GitHubProvider) GetAuthURL(state string) string {
-	params := url.Values{}
-	params.Set("client_id", g.cfg.ClientID)
-	params.Set("redirect_uri", g.cfg.RedirectURL)
-	params.Set("scope", g.cfg.Scopes)
-	params.Set("state", state)
-	return g.cfg.AuthURL + "?" + params.Encode()
+	return g.cfg.toOAuth2Config().AuthCodeURL(state)
 }
 
 func (g *GitHubProvider) ExchangeToken(code string) (string, error) {
-	data := url.Values{}
-	data.Set("client_id", g.cfg.ClientID)
-	data.Set("client_secret", g.cfg.ClientSecret)
-	data.Set("code", code)
-
-	body, err := httpPostForm(g.cfg.TokenURL, data)
+	token, err := g.cfg.toOAuth2Config().Exchange(context.Background(), code)
 	if err != nil {
 		return "", err
 	}
-	values, err := url.ParseQuery(string(body))
-	if err != nil {
-		return "", err
-	}
-	token := values.Get("access_token")
-	if token == "" {
-		return "", fmt.Errorf("github: no access_token in response")
-	}
-	return token, nil
+	return token.AccessToken, nil
 }
 
 func (g *GitHubProvider) GetUserInfo(accessToken string) (*UserInfo, error) {
@@ -205,39 +208,15 @@ type GoogleProvider struct {
 }
 
 func (gp *GoogleProvider) GetAuthURL(state string) string {
-	params := url.Values{}
-	params.Set("client_id", gp.cfg.ClientID)
-	params.Set("redirect_uri", gp.cfg.RedirectURL)
-	params.Set("response_type", "code")
-	params.Set("scope", gp.cfg.Scopes)
-	params.Set("state", state)
-	params.Set("access_type", "offline")
-	return gp.cfg.AuthURL + "?" + params.Encode()
+	return gp.cfg.toOAuth2Config().AuthCodeURL(state, oauth2.AccessTypeOffline)
 }
 
 func (gp *GoogleProvider) ExchangeToken(code string) (string, error) {
-	data := url.Values{}
-	data.Set("client_id", gp.cfg.ClientID)
-	data.Set("client_secret", gp.cfg.ClientSecret)
-	data.Set("code", code)
-	data.Set("grant_type", "authorization_code")
-	data.Set("redirect_uri", gp.cfg.RedirectURL)
-
-	body, err := httpPostForm(gp.cfg.TokenURL, data)
+	token, err := gp.cfg.toOAuth2Config().Exchange(context.Background(), code)
 	if err != nil {
 		return "", err
 	}
-	var result struct {
-		AccessToken string `json:"access_token"`
-		Error       string `json:"error"`
-	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return "", err
-	}
-	if result.Error != "" {
-		return "", fmt.Errorf("google: %s", result.Error)
-	}
-	return result.AccessToken, nil
+	return token.AccessToken, nil
 }
 
 func (gp *GoogleProvider) GetUserInfo(accessToken string) (*UserInfo, error) {
@@ -271,40 +250,15 @@ type QQProvider struct {
 }
 
 func (q *QQProvider) GetAuthURL(state string) string {
-	params := url.Values{}
-	params.Set("client_id", q.cfg.ClientID)
-	params.Set("redirect_uri", q.cfg.RedirectURL)
-	params.Set("response_type", "code")
-	params.Set("scope", q.cfg.Scopes)
-	params.Set("state", state)
-	return q.cfg.AuthURL + "?" + params.Encode()
+	return q.cfg.toOAuth2Config().AuthCodeURL(state)
 }
 
 func (q *QQProvider) ExchangeToken(code string) (string, error) {
-	params := url.Values{}
-	params.Set("client_id", q.cfg.ClientID)
-	params.Set("client_secret", q.cfg.ClientSecret)
-	params.Set("code", code)
-	params.Set("grant_type", "authorization_code")
-	params.Set("redirect_uri", q.cfg.RedirectURL)
-	params.Set("fmt", "json")
-
-	body, err := httpPostForm(q.cfg.TokenURL, params)
+	token, err := q.cfg.toOAuth2Config().Exchange(context.Background(), code)
 	if err != nil {
 		return "", err
 	}
-	var result struct {
-		AccessToken string `json:"access_token"`
-		Error       int    `json:"error"`
-		ErrorDesc   string `json:"error_description"`
-	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return "", err
-	}
-	if result.Error != 0 {
-		return "", fmt.Errorf("qq: %s", result.ErrorDesc)
-	}
-	return result.AccessToken, nil
+	return token.AccessToken, nil
 }
 
 func (q *QQProvider) GetUserInfo(accessToken string) (*UserInfo, error) {

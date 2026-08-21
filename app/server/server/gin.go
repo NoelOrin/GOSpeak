@@ -110,6 +110,9 @@ func StartGin(env EnvEnum) error {
 	domainSvc := service.NewDomainService(domainRepo, domainRoleRepo)
 
 	permSvc := service.NewPermissionService(permRepo)
+	if err := permSvc.UseCasbin(repository.NewCasbinAdapter(db)); err != nil {
+		return fmt.Errorf("failed to init casbin: %w", err)
+	}
 
 	roleSvc := service.NewRoleService(roleRepo)
 	emailConfigSvc := service.NewEmailConfigService(emailConfigRepo, cfg)
