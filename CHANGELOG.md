@@ -1,5 +1,30 @@
 # Changelog / 更新日志
 
+## [0.2.2](https://github.com/NoelOrin/GOSpeak/compare/v0.2.1...v0.2.2) (2026-08-21)
+
+> 自 v0.2.1 以来的发布，共 8 个变更点（refactor 1 / fix 2 / style 1)，基于 1 个提交。
+
+### Refactor
+
+* refactor(auth): integrate casbin, authboss, go-oauth2 and go-mail
+
+### Bug Fixes
+
+* fix(server): harden signal, SFU, auth and infra edge cases
+* fix(server): permanent bot NULL expiry, JWT compat, SFU cleaner lifecycle and hub heartbeat
+
+### Features
+
+* feat(auth): use Authboss BCryptHasher for password hash/verify (compatible with existing bcrypt hashes)
+* feat(oauth): migrate token exchange for GitHub/Google/QQ/Generic to golang.org/x/oauth2
+* feat(email): replace manual SMTP with go-mail client (SSL 465 / STARTTLS 587)
+* feat(web): add role permission management page with create/delete role and permission sync
+* feat(permission): replace in-memory cache with Casbin SyncedEnforcer backed by role_permissions table
+
+### Style
+
+* style(web): replace favicon/logo with new A2 mark (acid green tile, black bubble, white G)
+
 ## [0.2.1](https://github.com/NoelOrin/GOSpeak/compare/v0.2.0...v0.2.1) (2026-08-19)
 
 > 自 v0.2.0 以来的发布，共 12 个变更点（fix 10 / chore 1 / ci 1)，基于 1 个提交。
