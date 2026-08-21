@@ -242,7 +242,6 @@ export default defineConfig(async ({ mode }) => {
         },
       },
       // 启用 brotli 压缩
-      brotliSize: isProduction,
-     },
+    },
   };
 });

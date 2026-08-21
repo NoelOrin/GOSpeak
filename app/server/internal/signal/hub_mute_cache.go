@@ -25,3 +25,14 @@ func (h *Hub) muteCacheSet(identity string, muted bool) {
 	h.muteCache[identity] = muteCacheEntry{muted: muted, expires: time.Now().Add(5 * time.Second)}
 	h.mu.Unlock()
 }
+
+func (h *Hub) cleanupExpiredMuteCache() {
+	now := time.Now()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for identity, entry := range h.muteCache {
+		if now.After(entry.expires) {
+			delete(h.muteCache, identity)
+		}
+	}
+}

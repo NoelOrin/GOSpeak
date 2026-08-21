@@ -1,9 +1,9 @@
 package oauth
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 )
 
 // FieldMapping 自建 OAuth 提供商的用户信息字段映射。
@@ -29,53 +29,15 @@ func NewGenericProvider(name string, cfg *ProviderConfig, fields FieldMapping) *
 }
 
 func (g *GenericProvider) GetAuthURL(state string) string {
-	params := url.Values{}
-	params.Set("client_id", g.cfg.ClientID)
-	params.Set("redirect_uri", g.cfg.RedirectURL)
-	params.Set("response_type", "code")
-	if g.cfg.Scopes != "" {
-		params.Set("scope", g.cfg.Scopes)
-	}
-	params.Set("state", state)
-	return g.cfg.AuthURL + "?" + params.Encode()
+	return g.cfg.toOAuth2Config().AuthCodeURL(state)
 }
 
 func (g *GenericProvider) ExchangeToken(code string) (string, error) {
-	data := url.Values{}
-	data.Set("client_id", g.cfg.ClientID)
-	data.Set("client_secret", g.cfg.ClientSecret)
-	data.Set("code", code)
-	data.Set("grant_type", "authorization_code")
-	data.Set("redirect_uri", g.cfg.RedirectURL)
-
-	body, err := httpPostForm(g.cfg.TokenURL, data)
+	token, err := g.cfg.toOAuth2Config().Exchange(context.Background(), code)
 	if err != nil {
 		return "", err
 	}
-
-	// 先尝试 JSON 解析，再回退到 URL 编码
-	var jsonResult struct {
-		AccessToken string `json:"access_token"`
-		Error       string `json:"error"`
-	}
-	if err := json.Unmarshal(body, &jsonResult); err == nil {
-		if jsonResult.AccessToken != "" {
-			return jsonResult.AccessToken, nil
-		}
-		if jsonResult.Error != "" {
-			return "", fmt.Errorf("%s: %s", g.name, jsonResult.Error)
-		}
-	}
-
-	values, err := url.ParseQuery(string(body))
-	if err != nil {
-		return "", err
-	}
-	token := values.Get("access_token")
-	if token == "" {
-		return "", fmt.Errorf("%s: no access_token in response", g.name)
-	}
-	return token, nil
+	return token.AccessToken, nil
 }
 
 func (g *GenericProvider) GetUserInfo(accessToken string) (*UserInfo, error) {

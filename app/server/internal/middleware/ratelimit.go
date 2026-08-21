@@ -36,10 +36,17 @@ func (l *rateLimiter) allow(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	// Lazy eviction: only clean when over threshold, but cap iterations to
+	// avoid a latency spike under high concurrency.
 	if len(l.buckets) > 10000 {
+		cleaned := 0
 		for k, b := range l.buckets {
 			if now.After(b.reset) {
 				delete(l.buckets, k)
+				cleaned++
+				if cleaned >= 500 {
+					break
+				}
 			}
 		}
 	}

@@ -180,17 +180,17 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("unsupported database type: %s", dbType)
 	}
 	if err != nil {
-		panic(fmt.Sprintf("数据库连接失败 [%s]: %v", dbType, err))
+		panic(fmt.Sprintf("database connect failed [%s]: %v", dbType, err))
 	}
 	setDB(db)
 	globalDBType = dbType
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		panic(fmt.Sprintf("获取数据库实例失败 [%s]: %v", dbType, err))
+		panic(fmt.Sprintf("get database handle failed [%s]: %v", dbType, err))
 	}
 	if err = sqlDB.Ping(); err != nil {
-		panic(fmt.Sprintf("数据库 Ping 失败 [%s]: %v", dbType, err))
+		panic(fmt.Sprintf("database ping failed [%s]: %v", dbType, err))
 	}
 
 	// 仅严格 worker 跳过 schema 迁移；默认 all/agent 必须负责建表。

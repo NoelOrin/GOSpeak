@@ -119,6 +119,11 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 
 	// 密码校验（DB 为准）
 	if ok, pwdErr := h.CheckRoomPassword(req.DomainUUID, req.Room, req.Password); !ok {
+		if errors.Is(pwdErr, ErrRoomNotFound) {
+			return marshalAck(map[string]interface{}{
+				"error": "room not found",
+			})
+		}
 		if pwdErr != nil {
 			return marshalAck(map[string]interface{}{
 				"error": "room requires password",
@@ -376,6 +381,9 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	// phase2 复检 mute / limit / password，避免 phase1 通过后状态变化
 	if ok, pwdErr := h.CheckRoomPassword(req.DomainUUID, req.Room, req.Password); !ok {
 		h.fanout.Leave(roomKey(req.DomainUUID, req.Room), c.ID())
+		if errors.Is(pwdErr, ErrRoomNotFound) {
+			return marshalAck(map[string]interface{}{"error": "room not found"})
+		}
 		if pwdErr != nil {
 			return marshalAck(map[string]interface{}{"error": "room requires password"})
 		}

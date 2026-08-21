@@ -8,6 +8,7 @@ import KeyRound from "lucide-solid/icons/key-round";
 import LogIn from "lucide-solid/icons/log-in";
 import Mail from "lucide-solid/icons/mail";
 import Network from "lucide-solid/icons/network";
+import ShieldCheck from "lucide-solid/icons/shield-check";
 import ServerCog from "lucide-solid/icons/server-cog";
 import Users from "lucide-solid/icons/users";
 import { createMemo, For } from "solid-js";
@@ -18,6 +19,7 @@ type ManagePath =
 	| "cluster"
 	| "sfu"
 	| "users"
+	| "roles"
 	| "mute"
 	| "ban"
 	| "storage"
@@ -34,6 +36,7 @@ type ManageTab = {
 		| "/manage/cluster"
 		| "/manage/sfu"
 		| "/manage/users"
+		| "/manage/roles"
 		| "/manage/mute"
 		| "/manage/ban"
 		| "/manage/storage"
@@ -70,6 +73,13 @@ const MANAGE_TABS: ManageTab[] = [
 		label: "用户管理",
 		icon: Users,
 		permissions: ["user:read"],
+	},
+	{
+		path: "roles",
+		to: "/manage/roles",
+		label: "角色权限",
+		icon: ShieldCheck,
+		permissions: ["role:read"],
 	},
 	// 风控
 	{

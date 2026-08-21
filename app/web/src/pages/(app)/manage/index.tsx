@@ -7,6 +7,7 @@ const MANAGE_PATHS = [
 	"cluster",
 	"sfu",
 	"users",
+	"roles",
 	"mute",
 	"ban",
 	"storage",

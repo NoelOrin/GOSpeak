@@ -2,12 +2,17 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"sync"
 
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
-	"sync"
+
+	"github.com/casbin/casbin/v2"
+	casbinmodel "github.com/casbin/casbin/v2/model"
+	casbinpersist "github.com/casbin/casbin/v2/persist"
 )
 
 const EventPermissionsInvalidated = "cache:permissions-invalidated"
@@ -19,7 +24,9 @@ type cacheBus interface {
 
 // PermissionService 权限服务，管理权限定义和角色权限缓存。
 type PermissionService struct {
-	permRepo *repository.PermissionRepository
+	permRepo  *repository.PermissionRepository
+	enforcer  *casbin.SyncedEnforcer
+	useCasbin bool
 
 	// 缓存：roleName → permission codes
 	cache   map[string]map[string]struct{}
@@ -31,7 +38,30 @@ func NewPermissionService(permRepo *repository.PermissionRepository) *Permission
 	return &PermissionService{
 		permRepo: permRepo,
 		cache:    make(map[string]map[string]struct{}),
+		enforcer: &casbin.SyncedEnforcer{},
 	}
+}
+
+// UseCasbin loads role permissions into a Casbin enforcer and makes it the
+// authoritative HasPermission implementation. The legacy cache stays warm so
+// existing callers and rollback paths keep working during migration.
+func (s *PermissionService) UseCasbin(adapter casbinpersist.Adapter) error {
+	casbinModel, err := casbinmodel.NewModelFromString(casbinModelText())
+	if err != nil {
+		return fmt.Errorf("load casbin model: %w", err)
+	}
+	enforcer, err := casbin.NewSyncedEnforcer(casbinModel, adapter)
+	if err != nil {
+		return fmt.Errorf("init casbin enforcer: %w", err)
+	}
+	if err := enforcer.LoadPolicy(); err != nil {
+		return fmt.Errorf("load casbin policy: %w", err)
+	}
+	s.cacheMu.Lock()
+	s.enforcer = enforcer
+	s.useCasbin = true
+	s.cacheMu.Unlock()
+	return nil
 }
 
 func (s *PermissionService) SetEventBus(b cacheBus) {
@@ -67,6 +97,15 @@ func (s *PermissionService) LoadCache() error {
 // HasPermission 检查角色是否拥有指定权限码。
 func (s *PermissionService) HasPermission(roleName, permCode string) bool {
 	s.cacheMu.RLock()
+	enforcer := s.enforcer
+	hasCasbin := s.useCasbin
+	s.cacheMu.RUnlock()
+	if hasCasbin && enforcer != nil {
+		allowed, err := enforcer.Enforce(roleName, permCode)
+		return err == nil && allowed
+	}
+
+	s.cacheMu.RLock()
 	defer s.cacheMu.RUnlock()
 	perms, ok := s.cache[roleName]
 	if !ok {
@@ -101,6 +140,8 @@ func (s *PermissionService) SyncRolePermissions(roleName string, permCodes []str
 	if err := s.permRepo.SyncRolePermissions(roleName, permCodes); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
+	s.reloadCasbin()
+
 	// 刷新该角色的缓存
 	s.cacheMu.Lock()
 	set := make(map[string]struct{}, len(permCodes))
@@ -117,4 +158,18 @@ func (s *PermissionService) SyncRolePermissions(roleName string, permCodes []str
 		}
 	}
 	return nil
+}
+
+// reloadCasbin refreshes the shared enforcer after DB-backed policy changes.
+// A load failure keeps the old in-memory policy active instead of failing open.
+func (s *PermissionService) reloadCasbin() {
+	s.cacheMu.RLock()
+	enforcer := s.enforcer
+	s.cacheMu.RUnlock()
+	if enforcer == nil {
+		return
+	}
+	if err := enforcer.LoadPolicy(); err != nil {
+		log.Printf("[Permission] casbin reload failed: %v", err)
+	}
 }

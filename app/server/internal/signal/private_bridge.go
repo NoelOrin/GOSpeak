@@ -1,6 +1,7 @@
 package signal
 
 import (
+	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/pkg/message"
 	"GOSpeak/internal/ws"
 )
@@ -36,7 +37,8 @@ func (h *Hub) OnPrivateMessageSend(c ws.ClientMessenger, data string) (string, e
 
 	dto, err := h.convSvc.SendDirect(identity, req.TargetIdentity, req.Content, req.ClientNonce)
 	if err != nil {
-		return marshalAck(map[string]interface{}{"error": err.Error()})
+		_, msg := pkg.ClientError(err)
+		return marshalAck(map[string]interface{}{"error": msg})
 	}
 
 	return marshalAck(dto)

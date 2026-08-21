@@ -12,9 +12,14 @@ import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
 
-	"golang.org/x/crypto/bcrypt"
+	"github.com/aarondl/authboss/v3"
 	"gorm.io/gorm"
 )
+
+// authbossHasher is the configured Authboss password hasher. It intentionally
+// uses the same bcrypt format already present in the users table, so existing
+// accounts remain valid without migration.
+var authbossHasher = authboss.NewBCryptHasher(12)
 
 // DefaultAdminPassword 初始管理员默认密码（admin / admin123）。
 // seedAdminUser 与 Login/FirstChangePassword 的 need_change_password 检测共用此常量。
@@ -80,7 +85,7 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
+	if err := authbossHasher.CompareHashAndPassword(user.Password, req.Password); err != nil {
 		return nil, pkg.NewAppError(pkg.INVALID_PASSWORD, "invalid credentials")
 	}
 
@@ -93,7 +98,7 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, err
 	}
 
-	needChange := user.Role == "admin" && bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(DefaultAdminPassword)) == nil
+	needChange := user.Role == "admin" && authbossHasher.CompareHashAndPassword(user.Password, DefaultAdminPassword) == nil
 
 	return &AuthResponse{
 		Token:              token,
@@ -132,18 +137,21 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 		return nil, err
 	}
 
-	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hashedPwd, err := authbossHasher.GenerateHash(req.Password)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	user := &model.User{
 		Name:          req.Username,
-		Password:      string(hashedPwd),
+		Password:      hashedPwd,
 		Role:          "user",
 		Email:         req.Email,
 		EmailVerified: req.Email != "" && s.emailConfigService != nil && s.emailConfigService.IsVerificationAvailable(),
 	}
 	if err := s.userRepo.Create(user); err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, pkg.NewAppError(pkg.USERNAME_EXISTS)
+		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
@@ -296,19 +304,19 @@ func (s *AuthService) ChangePassword(username, oldPassword, newPassword string) 
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(oldPassword)); err != nil {
+	if err := authbossHasher.CompareHashAndPassword(user.Password, oldPassword); err != nil {
 		return pkg.NewAppError(pkg.INVALID_PASSWORD)
 	}
 	if err := validateNewPassword(newPassword); err != nil {
 		return err
 	}
 
-	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hashedPwd, err := authbossHasher.GenerateHash(newPassword)
 	if err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	user.Password = string(hashedPwd)
+	user.Password = hashedPwd
 	if err := s.userRepo.UpdatePasswordAndInvalidate(user); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -330,19 +338,19 @@ func (s *AuthService) FirstChangePassword(username, newPassword string, name *st
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "仅管理员支持首次登录改密")
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(DefaultAdminPassword)); err != nil {
+	if err := authbossHasher.CompareHashAndPassword(user.Password, DefaultAdminPassword); err != nil {
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "当前密码非默认密码，请使用普通改密接口")
 	}
 	if err := validateNewPassword(newPassword); err != nil {
 		return nil, err
 	}
 
-	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hashedPwd, err := authbossHasher.GenerateHash(newPassword)
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	user.Password = string(hashedPwd)
+	user.Password = hashedPwd
 
 	if name != nil && *name != "" && *name != user.Name {
 		existing, _ := s.userRepo.GetByName(*name)
@@ -395,12 +403,12 @@ func (s *AuthService) ResetPassword(email, code, newPassword string) error {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hashedPwd, err := authbossHasher.GenerateHash(newPassword)
 	if err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	user.Password = string(hashedPwd)
+	user.Password = hashedPwd
 	if err := s.userRepo.UpdatePasswordAndInvalidate(user); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -409,7 +417,7 @@ func (s *AuthService) ResetPassword(email, code, newPassword string) error {
 
 // BlacklistToken 将 JWT token 加入黑名单，使该 token 在有效期内不可再使用。
 func (s *AuthService) BlacklistToken(claims *pkg.Claims) error {
-	if claims == nil || claims.ID == "" {
+	if claims == nil || claims.ID == "" || claims.ExpiresAt == nil {
 		return nil
 	}
 	remaining := time.Until(claims.ExpiresAt.Time)

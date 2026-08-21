@@ -74,6 +74,24 @@ var tokenVersionCache = struct {
 	m map[string]tokenVersionCacheEntry
 }{m: make(map[string]tokenVersionCacheEntry)}
 
+func init() {
+	// Periodically evict expired entries to prevent unbounded growth.
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			now := time.Now()
+			tokenVersionCache.Lock()
+			for k, entry := range tokenVersionCache.m {
+				if now.After(entry.expires) {
+					delete(tokenVersionCache.m, k)
+				}
+			}
+			tokenVersionCache.Unlock()
+		}
+	}()
+}
+
 // SetPermissionChecker 注入权限查询实现（启动时调用）。
 func SetPermissionChecker(c permissionChecker) {
 	authMu.Lock()

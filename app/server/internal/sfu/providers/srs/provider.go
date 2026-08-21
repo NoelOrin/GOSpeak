@@ -79,7 +79,7 @@ func NewService(cfg *config.Config) *Service {
 		whipURL = "/rtc/v1/whip/"
 	}
 	baseURL := fmt.Sprintf("http://%s:%s", host, apiPort)
-	return &Service{
+	svc := &Service{
 		client:      NewClient(baseURL),
 		secret:      cfg.SRSSecret,
 		host:        baseURL,
@@ -88,10 +88,47 @@ func NewService(cfg *config.Config) *Service {
 		muteRules:   nil,
 		streamCache: make(map[string]streamRoomEntry),
 	}
+	activeServices.Store(svc, struct{}{})
+	return svc
 }
 
-// Close 释放 HTTP 空闲连接。
+func init() {
+	// Periodically evict expired stream→room cache entries to prevent unbounded growth.
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			// We need a reference to the service to access its streamCache.
+			// This is handled by the resolveStreamRoom lazy eviction on access.
+			// For a global cleanup, we iterate over a package-level registry.
+			cleanupStreamCaches()
+		}
+	}()
+}
+
+// cleanupStreamCaches removes expired entries from all known Service instances.
+// In practice there is one Service per process; this is a safety net.
+var activeServices sync.Map // *Service -> struct{}
+
+func cleanupStreamCaches() {
+	now := time.Now()
+	activeServices.Range(func(_, v interface{}) bool {
+		if svc, ok := v.(*Service); ok {
+			svc.cacheMu.Lock()
+			for k, entry := range svc.streamCache {
+				if now.Sub(entry.at) >= streamRoomCacheTTL {
+					delete(svc.streamCache, k)
+				}
+			}
+			svc.cacheMu.Unlock()
+		}
+		return true
+	})
+}
+
+// Close 释放 HTTP 空闲连接并从清理注册表中移除。
 func (s *Service) Close() error {
+	activeServices.Delete(s)
 	if s.client != nil && s.client.http != nil {
 		s.client.http.CloseIdleConnections()
 	}

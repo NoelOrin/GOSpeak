@@ -34,6 +34,11 @@ func NewService(cfg *config.Config) *Service {
 // Close 释放 provider 资源；LiveKit client 当前无显式连接句柄。
 func (s *Service) Close() error { return nil }
 
+// ctxWithTimeout returns a context with a bounded timeout for LiveKit API calls.
+func ctxWithTimeout() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 5*time.Second)
+}
+
 func (s *Service) GenerateToken(room, identity string) (string, error) {
 	at := auth.NewAccessToken(s.apiKey, s.apiSecret)
 	grant := &auth.VideoGrant{
@@ -75,7 +80,9 @@ func (s *Service) ListParticipants(room string) ([]sfu.ParticipantSummary, error
 	if s.client == nil {
 		return nil, pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
 	}
-	resp, err := s.client.ListParticipants(context.Background(), &livekit.ListParticipantsRequest{
+	ctx, cancel := ctxWithTimeout()
+	defer cancel()
+	resp, err := s.client.ListParticipants(ctx, &livekit.ListParticipantsRequest{
 		Room: room,
 	})
 	if err != nil {
@@ -96,7 +103,9 @@ func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) e
 		return pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
 	}
 	if trackSid != "" {
-		_, err := s.client.MutePublishedTrack(context.Background(), &livekit.MuteRoomTrackRequest{
+		ctx, cancel := ctxWithTimeout()
+		defer cancel()
+		_, err := s.client.MutePublishedTrack(ctx, &livekit.MuteRoomTrackRequest{
 			Room:     room,
 			Identity: identity,
 			TrackSid: trackSid,
@@ -107,7 +116,9 @@ func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) e
 		}
 		return nil
 	}
-	resp, err := s.client.ListParticipants(context.Background(), &livekit.ListParticipantsRequest{
+	ctx, cancel := ctxWithTimeout()
+	defer cancel()
+	resp, err := s.client.ListParticipants(ctx, &livekit.ListParticipantsRequest{
 		Room: room,
 	})
 	if err != nil {
@@ -120,7 +131,7 @@ func (s *Service) MuteParticipant(room, identity, trackSid string, muted bool) e
 		}
 		found = true
 		for _, track := range p.Tracks {
-			if _, err := s.client.MutePublishedTrack(context.Background(), &livekit.MuteRoomTrackRequest{
+			if _, err := s.client.MutePublishedTrack(ctx, &livekit.MuteRoomTrackRequest{
 				Room:     room,
 				Identity: identity,
 				TrackSid: track.Sid,
@@ -141,7 +152,9 @@ func (s *Service) RemoveParticipant(room, identity string) error {
 	if s.client == nil {
 		return pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
 	}
-	_, err := s.client.RemoveParticipant(context.Background(), &livekit.RoomParticipantIdentity{
+	ctx, cancel := ctxWithTimeout()
+	defer cancel()
+	_, err := s.client.RemoveParticipant(ctx, &livekit.RoomParticipantIdentity{
 		Room:     room,
 		Identity: identity,
 	})
@@ -155,7 +168,9 @@ func (s *Service) DeleteRoom(room string) error {
 	if s.client == nil {
 		return pkg.NewAppError(pkg.SFU_NOT_CONFIGURED)
 	}
-	_, err := s.client.DeleteRoom(context.Background(), &livekit.DeleteRoomRequest{
+	ctx, cancel := ctxWithTimeout()
+	defer cancel()
+	_, err := s.client.DeleteRoom(ctx, &livekit.DeleteRoomRequest{
 		Room: room,
 	})
 	if err != nil {
