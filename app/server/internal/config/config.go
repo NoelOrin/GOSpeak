@@ -77,6 +77,7 @@ type Config struct {
 	CORSOrigin       string `env:"CORS_ORIGIN" envDefault:"*"`
 	GinMode          string `env:"GIN_MODE" envDefault:""`
 	WSAllowedOrigins string `env:"WS_ALLOWED_ORIGINS" envDefault:""`
+	TrustedProxies   string `env:"TRUSTED_PROXIES" envDefault:""`
 
 	// TLS 直跑 HTTPS + HTTP/2：两者同时配置时启用；未配置时保持明文 HTTP/1.1。
 	TLSCertFile string `env:"TLS_CERT" envDefault:""`
@@ -107,6 +108,7 @@ type Config struct {
 	NATSToken          string `env:"NATS_TOKEN" envDefault:""`
 	NATSCredsFile      string `env:"NATS_CREDS_FILE" envDefault:""`
 	NATSTLS            bool   `env:"NATS_TLS" envDefault:"false"`
+	NATSWAL            string `env:"NATS_WAL_PATH" envDefault:""`
 	StateStore         string `env:"STATE_STORE" envDefault:"auto"`
 
 	ClusterRole              string `env:"GOSPEAK_ROLE" envDefault:"all"`
@@ -255,6 +257,11 @@ func (c *Config) NATSConnectTimeoutDuration() (time.Duration, error) {
 	return time.ParseDuration(strings.TrimSpace(c.NATSConnectTimeout))
 }
 
+// NATSWALPath 返回断线事件 WAL 文件路径；空表示禁用磁盘持久化。
+func (c *Config) NATSWALPath() string {
+	return strings.TrimSpace(c.NATSWAL)
+}
+
 // ClusterHeartbeatIntervalDuration 解析节点心跳间隔。
 func (c *Config) ClusterHeartbeatIntervalDuration() time.Duration {
 	d, err := time.ParseDuration(strings.TrimSpace(c.ClusterHeartbeatInterval))
@@ -330,6 +337,22 @@ func (c *Config) WSAllowedOriginsList() []string {
 		return nil
 	}
 	raw := strings.Split(c.WSAllowedOrigins, ",")
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// TrustedProxiesList 返回信任的代理 IP/CIDR 列表；为空时调用方回退默认值。
+func (c *Config) TrustedProxiesList() []string {
+	if strings.TrimSpace(c.TrustedProxies) == "" {
+		return nil
+	}
+	raw := strings.Split(c.TrustedProxies, ",")
 	out := make([]string, 0, len(raw))
 	for _, item := range raw {
 		item = strings.TrimSpace(item)

@@ -149,6 +149,9 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 		EmailVerified: req.Email != "" && s.emailConfigService != nil && s.emailConfigService.IsVerificationAvailable(),
 	}
 	if err := s.userRepo.Create(user); err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, pkg.NewAppError(pkg.USERNAME_EXISTS)
+		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 

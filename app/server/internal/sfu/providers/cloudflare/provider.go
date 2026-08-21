@@ -39,16 +39,44 @@ func NewService(cfg *config.Config) *Service {
 	if stunURL == "" {
 		stunURL = "stun.cloudflare.com:3478"
 	}
-	return &Service{
+	svc := &Service{
 		client:   NewClient(cfg.CFAppID, cfg.CFAppSecret),
 		appID:    cfg.CFAppID,
 		stunURL:  stunURL,
 		sessions: make(map[string]map[string]sessionMeta),
 	}
+	// Periodically evict stale sessions (no activity for 2 hours).
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			svc.evictStaleSessions()
+		}
+	}()
+	return svc
+}
+
+// evictStaleSessions removes sessions that have not been updated for 2 hours.
+func (s *Service) evictStaleSessions() {
+	cutoff := time.Now().Add(-2 * time.Hour).Unix()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for room, members := range s.sessions {
+		for identity, meta := range members {
+			if meta.joinedAt < cutoff {
+				delete(members, identity)
+			}
+		}
+		if len(members) == 0 {
+			delete(s.sessions, room)
+		}
+	}
 }
 
 func (s *Service) SetRoomRegistry(r pkg.RoomRegistry) {
+	s.mu.Lock()
 	s.registry = r
+	s.mu.Unlock()
 }
 
 // Close 释放 HTTP 空闲连接。

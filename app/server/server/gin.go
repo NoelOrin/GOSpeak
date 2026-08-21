@@ -88,9 +88,6 @@ func StartGin(env EnvEnum) error {
 	}
 
 	roleRepo := repository.NewRoleRepository(db)
-	if !cfg.IsAgent() {
-		loadRoles(roleRepo)
-	}
 
 	userRepo := repository.NewUserRepository(db)
 	userGroupRepo := repository.NewUserGroupRepository(db)
@@ -145,8 +142,13 @@ func StartGin(env EnvEnum) error {
 
 	r := gin.New()
 
-	// 只信任本机代理注入的 X-Forwarded-*，避免外部客户端伪造。
-	if err := r.SetTrustedProxies([]string{"127.0.0.1", "::1"}); err != nil {
+	// 只信任配置的代理网段注入的 X-Forwarded-*，避免外部客户端伪造。
+	// TRUSTED_PROXIES 为逗号分隔的 IP/CIDR 列表；为空时回退本机回环地址。
+	trustedProxies := cfg.TrustedProxiesList()
+	if len(trustedProxies) == 0 {
+		trustedProxies = []string{"127.0.0.1", "::1"}
+	}
+	if err := r.SetTrustedProxies(trustedProxies); err != nil {
 		logger.WithComponent("HTTP").Warnf("set trusted proxies failed: %v", err)
 	}
 	r.Use(middleware.RequestID(), logger.GinRecovery(), logger.GinLogger(), middleware.CORS(strings.Split(cfg.CORSOrigin, ",")))
@@ -174,6 +176,7 @@ func StartGin(env EnvEnum) error {
 		ConnectTimeout: timeout,
 		EmbeddedPort:   embeddedPort,
 		Deliverer:      deliverer,
+		WALPath:        cfg.NATSWALPath(),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to init event bus: %w", err)

@@ -60,9 +60,6 @@ func (h *Hub) SetStateNotifier(n stateNotifier) {
 // StartMembershipHeartbeat 周期续期本实例房间成员的 lease，避免在线但静默的成员
 // 被其他实例当作崩溃成员过滤；崩溃/分区时 lease 自然过期，幽灵成员不再无限残留。
 func (h *Hub) StartMembershipHeartbeat() {
-	if h.membershipStore == nil {
-		return
-	}
 	h.mu.Lock()
 	if h.membershipHeartbeatStop != nil {
 		h.mu.Unlock()
@@ -84,6 +81,7 @@ func (h *Hub) StartMembershipHeartbeat() {
 				return
 			case <-ticker.C:
 				h.syncAllLocalRoomsToStore()
+				h.cleanupExpiredMuteCache()
 			}
 		}
 	}()

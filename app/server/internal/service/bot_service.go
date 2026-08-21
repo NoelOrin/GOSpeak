@@ -84,6 +84,9 @@ func (s *BotService) Create(req *CreateBotRequest) (*CreateBotResult, error) {
 		IsBot:       true,
 	}
 	if err := s.userRepo.Create(user); err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, pkg.NewAppError(pkg.USERNAME_EXISTS, "bot name already exists")
+		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 

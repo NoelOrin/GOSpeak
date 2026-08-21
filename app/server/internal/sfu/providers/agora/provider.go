@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"GOSpeak/internal/config"
@@ -23,6 +24,7 @@ type Service struct {
 	customerSecret string
 
 	// muteRules is multi-instance rule id cache (nats KV, injected). Nil when not wired.
+	muteMu    sync.Mutex
 	muteRules sfu.MuteRuleStore
 	rest      *RESTClient
 }
@@ -44,7 +46,9 @@ func (s *Service) SetMuteRuleStore(store sfu.MuteRuleStore) {
 	if s == nil {
 		return
 	}
+	s.muteMu.Lock()
 	s.muteRules = store
+	s.muteMu.Unlock()
 }
 
 func (s *Service) ProviderName() string { return "agora" }
@@ -178,6 +182,8 @@ func (s *Service) ruleStore() sfu.MuteRuleStore {
 	if s == nil {
 		return nil
 	}
+	s.muteMu.Lock()
+	defer s.muteMu.Unlock()
 	return s.muteRules
 }
 

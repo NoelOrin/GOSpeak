@@ -3,7 +3,10 @@ export const BOT_ALLOWED_PERMISSION_CODES = [
 	"room:read",
 	"user:read",
 	"signal:kick",
+	"room:create",
 	"mute:manage",
+	"message:send",
+	"message:read",
 ];
 
 import apiClient from "./apiClient";

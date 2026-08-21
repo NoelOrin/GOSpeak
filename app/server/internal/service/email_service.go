@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	_ "embed"
+	"context"
 	"fmt"
 	"html/template"
 	"strconv"
@@ -122,7 +123,9 @@ func (s *EmailService) SendVerificationCode(email, scene, code string) error {
 	msg.SetBodyString(mail.TypeTextPlain, plainBody)
 	msg.AddAlternativeString(mail.TypeTextHTML, htmlBuf.String())
 
-	if err := client.DialAndSend(msg); err != nil {
+	sendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := client.DialAndSendWithContext(sendCtx, msg); err != nil {
 		return pkg.NewAppError(pkg.EMAIL_SEND_FAILED, err.Error())
 	}
 	return nil

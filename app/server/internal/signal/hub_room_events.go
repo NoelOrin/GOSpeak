@@ -58,8 +58,13 @@ func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 		h.deleteRoomSafe(key)
 	}
 
+	// Member was not in the room: acknowledge but do not broadcast member:left
+	// with a socket ID in the identity field (confuses clients).
 	if identity == "" {
-		identity = c.ID()
+		return marshalAck(map[string]interface{}{
+			"ok":   true,
+			"room": req.Room,
+		})
 	}
 
 	log.Printf("[Signal] %s (%s) left room: %s", c.ID(), identity, req.Room)

@@ -9,6 +9,9 @@ import (
 	"strings"
 )
 
+// ErrRoomNotFound indicates the room does not exist in DB or shared metadata.
+var ErrRoomNotFound = errors.New("room not found")
+
 // ─── 公共方法 ───
 
 // HubStats 信令面实时统计，用于监控面板。
@@ -104,9 +107,7 @@ func (h *Hub) CheckRoomLimit(domainUUID, roomName string) (bool, uint, int, erro
 
 // CheckRoomPassword 检查房间密码，返回 (通过, 错误)
 // 密码以 DB 为准；内存房间仅作兜底。ok=true 表示通过；ok=false+err!=nil 表示需密码未提供；ok=false+err==nil 表示密码错误。
-
-// CheckRoomPassword 检查房间密码，返回 (通过, 错误)
-// 密码以 DB 为准；内存房间仅作兜底。ok=true 表示通过；ok=false+err!=nil 表示需密码未提供；ok=false+err==nil 表示密码错误。
+// CheckRoomPassword 检查房间密码。ErrRoomNotFound 表示房间不存在；其他 error 表示需要密码；nil error 且 ok=false 表示密码错误。
 func (h *Hub) CheckRoomPassword(domainUUID, roomName, password string) (ok bool, err error) {
 	expected := ""
 	found := false
@@ -136,7 +137,7 @@ func (h *Hub) CheckRoomPassword(domainUUID, roomName, password string) (ok bool,
 		}
 	}
 
-	// 房间尚未创建/不存在：允许后续创建流程，不因密码拦截
+	// 房间尚未创建：DB/内存/KV 均无记录，视为临时房首次创建，允许通过（不在此阶段以未找到阻断）。
 	if !found {
 		return true, nil
 	}

@@ -131,7 +131,9 @@ func (r *MessageRepository) Search(roomUUID, query string, limit int) ([]model.M
 		return nil, nil
 	}
 	var rows []model.Message
-	err := r.db.Where("room_uuid = ? AND content LIKE ?", roomUUID, "%"+query+"%").
+	// Escape LIKE wildcards to prevent user-supplied % or _ from scanning the table.
+	escaped := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(query)
+	err := r.db.Where("room_uuid = ? AND content LIKE ? ESCAPE '\\'", roomUUID, "%"+escaped+"%").
 		Order("created_at DESC").Limit(limit).Find(&rows).Error
 	return rows, err
 }

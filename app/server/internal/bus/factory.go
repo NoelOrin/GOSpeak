@@ -21,6 +21,8 @@ type InitConfig struct {
 	Deliverer    Deliverer
 	// RemoteHook 可选：peer 事件在本地投递后回调（用于 Hub 控制面清理等）。
 	RemoteHook func(event string, payload interface{})
+	// WALPath 非空时启用断线事件磁盘持久化；为空保持纯内存行为（默认）。
+	WALPath string
 }
 
 // Stats 供监控面板与测试。
@@ -86,6 +88,7 @@ func Init(cfg InitConfig) (EventBus, func(), error) {
 		Mode:          mode,
 		Deliverer:     cfg.Deliverer,
 		RemoteHook:    cfg.RemoteHook,
+		WALPath:       cfg.WALPath,
 	})
 	if err != nil {
 		if embedded != nil {
