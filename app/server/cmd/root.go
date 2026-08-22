@@ -18,6 +18,9 @@ var RootCmd = &cobra.Command{
 // version 默认 dev，构建时可通过 ldflags 注入。
 var version = "dev"
 
+// commit 默认 unknown，构建时可通过 ldflags 注入。
+var commit = "unknown"
+
 func newServerCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "server",

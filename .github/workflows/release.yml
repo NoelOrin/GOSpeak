@@ -1,21 +1,32 @@
-# GOSpeak Release CI
-# 发布构建：先复用 Build 质量门禁；workflow_dispatch 时按自定义 tag 打 tag + 创建 Release（含更新内容与 PR），
-# 随后构建 Docker 镜像与跨平台二进制并上传到 Release assets。兼容 release:published（tag 已存在时仅构建产物）。
+# GOSpeak Auto Release CI
+#
+# push 到 release 分支时自动发版：
+#   1. 质量门禁（build + test）
+#   2. 从 Conventional Commits 推断下一个版本号（breaking → major / feat → minor / 其他 → patch）
+#   3. 打 annotated tag 并创建 GitHub Release（自动生成更新日志）
+#   4. 构建 Docker 镜像推送到 GHCR（amd64/arm64，注入版本元数据）
+#   5. 交叉编译 10 平台二进制并上传到 Release Assets（注入版本元数据）
+#   6. 汇总所有二进制生成 SHA256SUMS 并上传到 Release Assets
+#
+# 手动触发 workflow_dispatch 可指定 tag 或使用自动推断。
+# 在 commit message 中加入 [skip release] 可跳过本次自动发版。
+
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    branches: [release]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, e.g. v0.3.0"
-        required: true
-        type: string
-      release_build:
-        description: "Build cross-platform release binaries"
+        description: "Release tag (empty = auto from Conventional Commits)"
         required: false
-        default: true
+        default: ""
+        type: string
+      skip_build:
+        description: "Skip cross-platform binary builds"
+        required: false
+        default: false
         type: boolean
 
 permissions:
@@ -27,93 +38,204 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 先跑质量门禁（复用 build.yml），通过后再发布构建
+  # ── Quality Gate ──────────────────────────────────────────────────────────
   build:
     name: Quality Gate (build/test)
     uses: ./.github/workflows/build.yml
     with:
       run_tests: true
 
-  # workflow_dispatch 时按自定义 tag 打 tag、推送并创建 Release（notes 含变更与 PR）；
-  # release: published 时不打 tag，仅作为占位 job，使 docker/二进制 job 的依赖成立并正常运行。
+  # ── Auto Version ──────────────────────────────────────────────────────────
+  auto-version:
+    name: Determine Next Version
+    runs-on: ubuntu-latest
+    needs: build
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      should_release: ${{ steps.version.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute next version
+        id: version
+        env:
+          MANUAL_TAG: ${{ inputs.tag || '' }}
+        run: |
+          set -euo pipefail
+
+          last_msg="$(git log --format='%B' -1 HEAD)"
+          if echo "$last_msg" | grep -qi '\[skip release\]\|\[skip ci\]'; then
+            echo "::notice::Skipping release ([skip release] detected)"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "$MANUAL_TAG" ]; then
+            echo "::notice::Using manual tag: $MANUAL_TAG"
+            echo "tag=$MANUAL_TAG" >> "$GITHUB_OUTPUT"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          latest="$(git tag --sort=-v:refname --list 'v[0-9]*.[0-9]*.[0-9]*' | head -1)"
+          if [ -z "$latest" ]; then
+            latest="v0.0.0"
+          fi
+          echo "Latest tag: $latest"
+
+          breaking="$(git log "${latest}..HEAD" --format='%s%n%b' \
+            | grep -ciE '(^[a-z]+(\(.+\))?!:|^BREAKING CHANGE[: ])' || true)"
+          feat_count="$(git log "${latest}..HEAD" --format='%s' \
+            | grep -ciE '^feat(\(.+\))?:' || true)"
+
+          echo "Breaking: $breaking / Features: $feat_count"
+
+          current="${latest#v}"
+          IFS='.' read -r major minor patch <<< "$current"
+
+          if [ "$breaking" -gt 0 ]; then
+            major=$((major+1)); minor=0; patch=0
+            bump_type="major"
+          elif [ "$feat_count" -gt 0 ]; then
+            minor=$((minor+1)); patch=0
+            bump_type="minor"
+          else
+            patch=$((patch+1))
+            bump_type="patch"
+          fi
+
+          new_tag="v${major}.${minor}.${patch}"
+          echo "::notice::Version bump: $latest -> $new_tag ($bump_type)"
+
+          echo "tag=$new_tag" >> "$GITHUB_OUTPUT"
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+
+  # ── Tag & Create Release ─────────────────────────────────────────────────
   prepare-release:
     name: Tag & Create Release
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, auto-version]
+    if: needs.auto-version.outputs.should_release == 'true'
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
+
       - name: Configure git
-        if: github.event_name == 'workflow_dispatch'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Create and push tag
-        if: github.event_name == 'workflow_dispatch'
         env:
-          TAG: ${{ github.event.inputs.tag }}
+          TAG: ${{ needs.auto-version.outputs.tag }}
         run: |
-          git tag -a "$TAG" -m "GOSpeak $TAG"
-          git push origin "$TAG"
-      - name: Create GitHub Release (notes + PRs)
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          TAG: ${{ github.event.inputs.tag }}
-        run: |
-          VERSION="${TAG#v}"
-          SECTION_FILE="/tmp/release-notes.md"
-          # 优先从 CHANGELOG.md 提取对应版本段落（自动生成的 changelog 优先）
-          awk -v ver="## \\[$VERSION\\]" '
-            $0 ~ ver {flag=1; print; next}
-            /^## / && flag {exit}
-            flag {print}
-          ' CHANGELOG.md > "$SECTION_FILE" || true
-          if [ ! -s "$SECTION_FILE" ]; then
-            awk -v ver="## $VERSION" '
-              $0 ~ ver {flag=1; print; next}
-              /^## / && flag {exit}
-              flag {print}
-            ' CHANGELOG.md > "$SECTION_FILE" || true
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists"
+            exit 1
           fi
-          if [ -s "$SECTION_FILE" ]; then
-            echo "Using CHANGELOG section for $TAG:"
-            cat "$SECTION_FILE"
-            gh release create "$TAG" \
-              --title "GOSpeak $TAG" \
-              --notes-file "$SECTION_FILE" \
-              --target "${{ github.ref_name }}"
-          else
-            echo "No CHANGELOG section for $TAG, fallback to generate-notes"
-            gh release create "$TAG" \
-              --title "GOSpeak $TAG" \
-              --generate-notes \
-              --target "${{ github.ref_name }}"
+          git tag -a "$TAG" -m "Release $TAG" "${{ github.sha }}"
+          git push origin "$TAG"
+
+      - name: Generate release notes
+        id: notes
+        env:
+          TAG: ${{ needs.auto-version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          NOTES_FILE="/tmp/release-notes.md"
+
+          prev="$(git describe --tags --abbrev=0 "HEAD^" 2>/dev/null || true)"
+          if [ -z "$prev" ]; then
+            prev="$(git rev-list --max-parents=0 HEAD | tail -1)"
           fi
 
+          {
+            echo "# GOSpeak ${TAG}"
+            echo ""
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${prev}...${TAG}"
+            echo ""
+
+            range="${prev}..HEAD"
+            body_written=false
+
+            for pair in "feat:Features" "fix:Bug Fixes" "refactor:Refactoring" \
+                        "perf:Performance" "style:Style" "docs:Documentation" \
+                        "ci:CI/CD" "test:Tests" "chore:Chores"; do
+              type="${pair%%:*}"
+              label="${pair#*:}"
+              commits="$(git log "$range" --format='%s' | grep -E "^${type}[(:!]" || true)"
+              if [ -n "$commits" ]; then
+                echo "### ${label}"
+                echo ""
+                while IFS= read -r msg; do
+                  echo "* ${msg}"
+                done <<< "$commits"
+                echo ""
+                body_written=true
+              fi
+            done
+
+            other="$(git log "$range" --format='%s' | grep -vE '^(feat|fix|refactor|perf|style|docs|ci|test|chore)[(:!]' | grep -vE '^Merge (pull request|branch)' || true)"
+            if [ -n "$other" ]; then
+              echo "### Other Changes"
+              echo ""
+              while IFS= read -r msg; do
+                echo "* ${msg}"
+              done <<< "$other"
+              echo ""
+              body_written=true
+            fi
+
+            if [ "$body_written" = false ]; then
+              echo "_No categorized commits found._"
+            fi
+          } > "$NOTES_FILE"
+
+          cat "$NOTES_FILE"
+          echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.auto-version.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            --title "GOSpeak $TAG" \
+            --notes-file "${{ steps.notes.outputs.notes_file }}" \
+            --target "${{ github.sha }}"
+
+  # ── Docker Image ──────────────────────────────────────────────────────────
   docker:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
-    needs: [build, prepare-release]
+    needs: [build, auto-version, prepare-release]
     if: >-
-      ${{ github.event_name == 'release' ||
-          (github.event_name == 'workflow_dispatch' && inputs.release_build) }}
+      ${{ needs.auto-version.outputs.should_release == 'true' &&
+          !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
     permissions:
       packages: write
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
+
       - name: Log in to ghcr.io
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -121,12 +243,15 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=sha,prefix=
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
       - name: Build and push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
@@ -136,14 +261,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ needs.auto-version.outputs.tag }}
+            COMMIT=${{ github.sha }}
 
+  # ── Cross-Platform Binaries ───────────────────────────────────────────────
   build-release-binaries:
     name: Build ${{ matrix.target }}
     runs-on: ubuntu-latest
-    needs: [build, prepare-release]
+    needs: [build, auto-version, prepare-release]
     if: >-
-      ${{ github.event_name == 'release' ||
-          (github.event_name == 'workflow_dispatch' && inputs.release_build) }}
+      ${{ needs.auto-version.outputs.should_release == 'true' &&
+          !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
     permissions:
       contents: write
     strategy:
@@ -192,23 +321,27 @@ jobs:
             goarch: arm64
             ext: ".exe"
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
         with:
           go-version-file: app/server/go.mod
           cache-dependency-path: app/server/go.sum
           cache: true
+
       - name: Download web dist
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: web-dist
           path: app/web/dist
+
       - name: Embed frontend into server
         run: |
           rm -rf app/server/internal/webui/dist
           mkdir -p app/server/internal/webui/dist
           cp -R app/web/dist/. app/server/internal/webui/dist/
           test -f app/server/internal/webui/dist/index.html
+
       - name: Build binary
         working-directory: app/server
         env:
@@ -216,31 +349,63 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm }}
+          RELEASE_VERSION: ${{ needs.auto-version.outputs.tag }}
+          RELEASE_COMMIT: ${{ github.sha }}
         run: |
-          go build -ldflags="-s -w" -o "gospeak-${{ matrix.target }}${{ matrix.ext }}" main.go
+          go build \
+            -ldflags="-s -w \
+              -X 'GOSpeak/cmd.version=${RELEASE_VERSION}' \
+              -X 'GOSpeak/cmd.commit=${RELEASE_COMMIT}'" \
+            -o "gospeak-${{ matrix.target }}${{ matrix.ext }}" main.go
+
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: gospeak-${{ matrix.target }}
           path: app/server/gospeak-${{ matrix.target }}${{ matrix.ext }}
           retention-days: 14
+
       - name: Upload to release assets
-        if: ${{ github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.event.release.tag_name }}
+          TAG: ${{ needs.auto-version.outputs.tag }}
         run: |
           echo "Uploading to release $TAG..."
-          gh release upload "$TAG" "app/server/gospeak-${{ matrix.target }}${{ matrix.ext }}" --clobber
-      - name: Verify binary
-        if: matrix.goos != 'windows'
+          gh release upload "$TAG" \
+            "app/server/gospeak-${{ matrix.target }}${{ matrix.ext }}" --clobber
+
+  # ── SHA256SUMS ──────────────────────────────────────────────────────────────
+  checksums:
+    name: Generate & Upload SHA256SUMS
+    runs-on: ubuntu-latest
+    needs: [build, auto-version, prepare-release, build-release-binaries]
+    if: >-
+      ${{ needs.auto-version.outputs.should_release == 'true' &&
+          !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gospeak-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
         run: |
-          file app/server/gospeak-${{ matrix.target }}
-          strings app/server/gospeak-${{ matrix.target }} | grep -q '<!DOCTYPE html>' || \
-            strings app/server/gospeak-${{ matrix.target }} | grep -q 'index.html' || \
-            echo "WARN: could not confirm embedded HTML via strings"
-      - name: Verify binary (windows)
-        if: matrix.goos == 'windows'
+          set -euo pipefail
+          sha256sum gospeak-* > SHA256SUMS.txt
+          echo "=== SHA256SUMS ==="
+          cat SHA256SUMS.txt
+
+      - name: Upload SHA256SUMS to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.auto-version.outputs.tag }}
         run: |
-          f="${{ matrix.target }}"
-          file "app/server/gospeak-${f}.exe"
+          gh release upload "$TAG" \
+            "dist/SHA256SUMS.txt" --clobber

@@ -14,12 +14,15 @@ RUN pnpm --filter @gospeak/web build
 # ── Stage 2: Go backend (embed frontend) ─────────────────────────────────
 FROM golang:1.26-alpine AS go-builder
 WORKDIR /build
+ARG VERSION=dev
+ARG COMMIT=unknown
+
 COPY app/server/go.mod app/server/go.sum ./
 RUN go mod download
 COPY app/server/ ./
 # 将前端产物同步到 go:embed 目录，打进二进制
 COPY --from=web-builder /src/app/web/dist/ ./internal/webui/dist/
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /gospeak .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w -X 'GOSpeak/cmd.version=${VERSION}' -X 'GOSpeak/cmd.commit=${COMMIT}'" -o /gospeak .
 
 # ── Stage 3: Production ──────────────────────────────────────────────────
 FROM alpine:3.21
