@@ -1,5 +1,26 @@
 # Changelog / 更新日志
 
+## [0.2.3](https://github.com/NoelOrin/GOSpeak/compare/v0.2.2...v0.2.3) (2026-08-22)
+
+> 自 v0.2.2 以来的发布，共 5 个变更点（refactor 1 / fix 2 / style 1 / ci 1），基于 1 个提交。
+
+### Refactor
+
+* refactor(auth): integrate casbin, authboss, go-oauth2 and go-mail
+
+### Bug Fixes
+
+* fix(server): harden signal, SFU, auth and infra edge cases
+* fix(server): permanent bot NULL expiry, JWT compat, SFU cleaner lifecycle and hub heartbeat
+
+### Style
+
+* style(web): replace favicon/logo with new A2 mark
+
+### CI
+
+* ci: remove release-please workflow
+
 ## [0.2.2](https://github.com/NoelOrin/GOSpeak/compare/v0.2.1...v0.2.2) (2026-08-21)
 
 > 自 v0.2.1 以来的发布，共 8 个变更点（refactor 1 / fix 2 / style 1)，基于 1 个提交。
