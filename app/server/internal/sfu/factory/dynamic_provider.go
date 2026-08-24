@@ -3,6 +3,7 @@ package factory
 import (
 	"strings"
 	"sync"
+	"time"
 
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
@@ -31,12 +32,26 @@ type DynamicProvider struct {
 	muteRuleStore      sfu.MuteRuleStore
 	cachedFingerprint  string
 	cachedProvider     sfu.Provider
+	cachedConfig       *cachedConfig
 }
 
 // providerCloser 是可选资源释放接口；provider 重建时旧实例若实现则关闭，
 // 避免 gRPC/HTTP client 在频繁热切换中累积。
 type providerCloser interface {
 	Close() error
+}
+
+// configCacheTTL 控制热路径上配置解析结果的缓存时长。每次 SFU 操作（生成 token、
+// mute/kick/ListRooms）原本都要走 SFUConfigService.ResolveConfig 打 2 次 DB，
+// 这里缓存解析结果，切 provider/改配置后最多延迟一个 TTL 生效，对语音路由无感。
+const configCacheTTL = 2 * time.Second
+
+// cachedConfig 缓存最近一次 resolve 出来的 *config.Config，连同其 fingerprint 与写入时间，
+// 避免 current()/ProviderName() 在热路径上反复命中数据库。
+type cachedConfig struct {
+	cfg      *config.Config
+	fp       string
+	storedAt time.Time
 }
 
 func NewDynamicProvider(resolve ConfigResolver) *DynamicProvider {
@@ -55,6 +70,30 @@ func fingerprint(cfg *config.Config) string {
 		cfg.CFAppID, cfg.CFAppSecret, cfg.CFStunURL,
 	}
 	return strings.Join(fields, "|")
+}
+
+// resolveCached 在 TTL 内复用上次 resolve 的结果，fingerprint 变化时在 TTL 内刷新缓存。
+// resolve 失败时：有未过期的旧缓存则继续用旧配置（热路径不全挂），否则透传错误。
+func (p *DynamicProvider) resolveCached() (*config.Config, string, error) {
+	p.mu.RLock()
+	cc := p.cachedConfig
+	p.mu.RUnlock()
+
+	cfg, err := p.resolve()
+	if err != nil {
+		if cc != nil && time.Since(cc.storedAt) < configCacheTTL {
+			return cc.cfg, cc.fp, nil
+		}
+		return nil, "", err
+	}
+	fp := fingerprint(cfg)
+	if cc != nil && fp == cc.fp && time.Since(cc.storedAt) < configCacheTTL {
+		return cc.cfg, cc.fp, nil
+	}
+	p.mu.Lock()
+	p.cachedConfig = &cachedConfig{cfg: cfg, fp: fp, storedAt: time.Now()}
+	p.mu.Unlock()
+	return cfg, fp, nil
 }
 
 func (p *DynamicProvider) SetRoomRegistry(r pkg.RoomRegistry) {
@@ -201,7 +240,7 @@ func (p *DynamicProvider) GetHost() string {
 // Prefer the cached concrete provider only when its fingerprint still matches
 // the latest resolved config, so hot switches never report a stale name.
 func (p *DynamicProvider) ProviderName() string {
-	cfg, err := p.resolve()
+	cfg, fp, err := p.resolveCached()
 	if err != nil {
 		p.mu.RLock()
 		cached := p.cachedProvider
@@ -212,7 +251,6 @@ func (p *DynamicProvider) ProviderName() string {
 		return "livekit"
 	}
 
-	fp := fingerprint(cfg)
 	p.mu.RLock()
 	cached := p.cachedProvider
 	cachedFp := p.cachedFingerprint
@@ -277,25 +315,28 @@ func (p *DynamicProvider) ClientInfo() map[string]interface{} {
 	return map[string]interface{}{}
 }
 
-// Close 释放当前缓存的 provider 资源（若实现 Close）。
+// Close 释放当前缓存的 provider 资源（若实现 Close），并清空缓存避免 reuse-after-close。
 func (p *DynamicProvider) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.cachedProvider == nil {
 		return nil
 	}
+	var err error
 	if closer, ok := p.cachedProvider.(providerCloser); ok {
-		return closer.Close()
+		err = closer.Close()
 	}
-	return nil
+	p.cachedProvider = nil
+	p.cachedFingerprint = ""
+	p.cachedConfig = nil
+	return err
 }
 
 func (p *DynamicProvider) current() (sfu.Provider, error) {
-	cfg, err := p.resolve()
+	cfg, fp, err := p.resolveCached()
 	if err != nil {
 		return nil, err
 	}
-	fp := fingerprint(cfg)
 
 	p.mu.RLock()
 	cached := p.cachedProvider

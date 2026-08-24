@@ -17,6 +17,9 @@ type Fanout struct {
 	mu      sync.RWMutex
 	rooms   map[string]map[string]*Client // roomKey -> clientID -> *Client
 	clients map[string]*Client            // clientID -> *Client
+	// clientRooms 是反向索引：clientID -> 其加入的房间集合，
+	// Remove 只迭代该 client 实际加入的房间，避免 O(房间总数) 全表扫描。
+	clientRooms map[string]map[string]struct{}
 	// marshalCount 仅用于测试断言（单次广播仅 marshal 一次）。
 	marshalCount uint64
 }
@@ -27,8 +30,9 @@ var _ Broadcaster = (*Fanout)(nil)
 // NewFanout 创建一个空的扇出。
 func NewFanout() *Fanout {
 	return &Fanout{
-		rooms:   make(map[string]map[string]*Client),
-		clients: make(map[string]*Client),
+		rooms:       make(map[string]map[string]*Client),
+		clients:     make(map[string]*Client),
+		clientRooms: make(map[string]map[string]struct{}),
 	}
 }
 
@@ -48,8 +52,9 @@ func (f *Fanout) Remove(clientID string) []string {
 	delete(f.clients, clientID)
 
 	var rooms []string
-	for room, members := range f.rooms {
-		if _, ok := members[clientID]; ok {
+	// 仅遍历该 client 实际加入的房间，避免 O(房间总数) 全表扫描。
+	for room := range f.clientRooms[clientID] {
+		if members, ok := f.rooms[room]; ok {
 			delete(members, clientID)
 			if len(members) == 0 {
 				delete(f.rooms, room)
@@ -58,6 +63,7 @@ func (f *Fanout) Remove(clientID string) []string {
 			rooms = append(rooms, room)
 		}
 	}
+	delete(f.clientRooms, clientID)
 	return rooms
 }
 
@@ -65,12 +71,18 @@ func (f *Fanout) Remove(clientID string) []string {
 func (f *Fanout) Join(room, clientID string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	c, ok := f.clients[clientID]
+	if !ok {
+		return
+	}
 	if f.rooms[room] == nil {
 		f.rooms[room] = make(map[string]*Client)
 	}
-	if c, ok := f.clients[clientID]; ok {
-		f.rooms[room][clientID] = c
+	f.rooms[room][clientID] = c
+	if f.clientRooms[clientID] == nil {
+		f.clientRooms[clientID] = make(map[string]struct{})
 	}
+	f.clientRooms[clientID][room] = struct{}{}
 }
 
 // Leave 实现 Broadcaster.Leave。
@@ -81,6 +93,12 @@ func (f *Fanout) Leave(room, clientID string) {
 		delete(members, clientID)
 		if len(members) == 0 {
 			delete(f.rooms, room)
+		}
+	}
+	if joined, ok := f.clientRooms[clientID]; ok {
+		delete(joined, room)
+		if len(joined) == 0 {
+			delete(f.clientRooms, clientID)
 		}
 	}
 }
