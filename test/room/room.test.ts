@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { api, createDomain, createRoom, registerUser, unique } from "../helpers";
-import { getAdminToken } from "../helpers";
-import { joinDomain } from "../helpers";
 
 describe("room module", () => {
   it("creates, lists, updates and deletes a domain room", async () => {
@@ -36,17 +34,17 @@ describe("room module", () => {
     });
     expect(duplicate.code).toBe(3002);
 
-    const admin = await getAdminToken();
-    await joinDomain(admin, domain.invite_code);
+    // 域房间管理权归属创建者或域内角色：房间的创建者（owner）本身即是域成员且为创建者，
+    // 用其 token 做更新/删除，符合 handler 中 canManageRoom 的 CreatedBy 判定。
     const updated = await api<{ name: string }>("/api/v1/room/update", {
-      token: admin,
+      token: owner.access_token,
       body: { id: room.id, name: `${roomName}_updated` },
     });
     expect(updated.code).toBe(0);
     expect(updated.data?.name.endsWith("_updated")).toBe(true);
 
     const deleted = await api("/api/v1/room/delete", {
-      token: admin,
+      token: owner.access_token,
       body: { id: room.id },
     });
     expect(deleted.code).toBe(0);

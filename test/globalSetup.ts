@@ -109,7 +109,8 @@ export default async function setup(): Promise<() => Promise<void>> {
       DB_TYPE: "SQLite",
       DB_PATH: join(dir, "app.db"),
       DB_WAL: "false",
-      STATE_STORE: "none",
+      // auto = embedded NATS (default when NATS_URL empty); none 降级路径已在 v5138 移除
+      STATE_STORE: "auto",
       NATS_EMBEDDED_PORT: "0",
       NATS_CONNECT_TIMEOUT: "1s",
       SFU_PROVIDER: "srs",

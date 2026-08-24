@@ -30,6 +30,11 @@ func bootstrapAgentControlPlane(
 		}
 	}
 	seedPermissions(permRepo)
+	// seed 之后 role_permissions 才有数据；启动早期的 UseCasbin 加载的是空表，
+	// 必须重新构建 enforcer 才能把 seed 后的策略载入 Casbin，否则所有 RequirePermission 都会 403。
+	if err := permSvc.UseCasbin(repository.NewCasbinAdapter(db)); err != nil {
+		return err
+	}
 	if err := permSvc.LoadCache(); err != nil {
 		return err
 	}
