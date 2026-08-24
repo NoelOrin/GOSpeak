@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
-	"sync/atomic"
 )
 
 // broadcastWorkers 限制单次广播的并发发送 goroutine 数，避免大房间每消息 N goroutine。
@@ -20,8 +19,6 @@ type Fanout struct {
 	// clientRooms 是反向索引：clientID -> 其加入的房间集合，
 	// Remove 只迭代该 client 实际加入的房间，避免 O(房间总数) 全表扫描。
 	clientRooms map[string]map[string]struct{}
-	// marshalCount 仅用于测试断言（单次广播仅 marshal 一次）。
-	marshalCount uint64
 }
 
 // compile-time interface check
@@ -137,7 +134,6 @@ func (f *Fanout) sendAll(targets []*Client, payload interface{}) {
 		log.Printf("[ws] broadcast marshal error: %v", err)
 		return
 	}
-	atomic.AddUint64(&f.marshalCount, 1)
 	if len(targets) == 0 {
 		return
 	}
