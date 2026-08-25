@@ -350,6 +350,8 @@ func StartGin(env EnvEnum) error {
 
 	authCookieCfg := handler.NewAuthCookieConfig(cfg)
 	authH := handler.NewAuthHandler(authSvc, authCookieCfg)
+	guestSvc := service.NewGuestService(db, userRepo, domainRepo, repository.NewGuestBanRepo(db), authSvc, nil)
+	guestH := handler.NewGuestHandler(guestSvc, authCookieCfg)
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)
 	emailConfigH := handler.NewEmailConfigHandler(emailConfigSvc)
 	userH := handler.NewUserHandler(userSvc, permSvc, storageSvc)
@@ -539,6 +541,7 @@ func StartGin(env EnvEnum) error {
 			return nil
 		},
 		Auth:         authH,
+		Guest:        guestH,
 		User:         userH,
 		UserGroup:    userGroupH,
 		Signal:       signalH,
