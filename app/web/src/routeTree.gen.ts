@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './pages/__root'
 import { Route as appRouteRouteImport } from './pages/(app)/route'
 import { Route as LoginIndexRouteImport } from './pages/login/index'
+import { Route as GuestIndexRouteImport } from './pages/guest/index'
 import { Route as appProfileRouteRouteImport } from './pages/(app)/profile/route'
 import { Route as appManageRouteRouteImport } from './pages/(app)/manage/route'
 import { Route as appIndexRouteRouteImport } from './pages/(app)/index/route'
@@ -43,6 +44,11 @@ const appRouteRoute = appRouteRouteImport.update({
 const LoginIndexRoute = LoginIndexRouteImport.update({
   id: '/login/',
   path: '/login/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuestIndexRoute = GuestIndexRouteImport.update({
+  id: '/guest/',
+  path: '/guest/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const appProfileRouteRoute = appProfileRouteRouteImport.update({
@@ -173,6 +179,7 @@ export interface FileRoutesByFullPath {
   '/': typeof appIndexRouteRoute
   '/manage': typeof appManageRouteRouteWithChildren
   '/profile': typeof appProfileRouteRoute
+  '/guest/': typeof GuestIndexRoute
   '/login/': typeof LoginIndexRoute
   '/chat/': typeof appChatIndexRoute
   '/discover/': typeof appDiscoverIndexRoute
@@ -199,6 +206,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof appIndexRouteRoute
   '/profile': typeof appProfileRouteRoute
+  '/guest': typeof GuestIndexRoute
   '/login': typeof LoginIndexRoute
   '/chat': typeof appChatIndexRoute
   '/discover': typeof appDiscoverIndexRoute
@@ -228,6 +236,7 @@ export interface FileRoutesById {
   '/(app)/': typeof appIndexRouteRoute
   '/(app)/manage': typeof appManageRouteRouteWithChildren
   '/(app)/profile': typeof appProfileRouteRoute
+  '/guest/': typeof GuestIndexRoute
   '/login/': typeof LoginIndexRoute
   '/(app)/chat/': typeof appChatIndexRoute
   '/(app)/discover/': typeof appDiscoverIndexRoute
@@ -257,6 +266,7 @@ export interface FileRouteTypes {
     | '/'
     | '/manage'
     | '/profile'
+    | '/guest/'
     | '/login/'
     | '/chat/'
     | '/discover/'
@@ -283,6 +293,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/profile'
+    | '/guest'
     | '/login'
     | '/chat'
     | '/discover'
@@ -311,6 +322,7 @@ export interface FileRouteTypes {
     | '/(app)/'
     | '/(app)/manage'
     | '/(app)/profile'
+    | '/guest/'
     | '/login/'
     | '/(app)/chat/'
     | '/(app)/discover/'
@@ -337,6 +349,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   appRouteRoute: typeof appRouteRouteWithChildren
+  GuestIndexRoute: typeof GuestIndexRoute
   LoginIndexRoute: typeof LoginIndexRoute
 }
 
@@ -354,6 +367,13 @@ declare module '@tanstack/solid-router' {
       path: '/login'
       fullPath: '/login/'
       preLoaderRoute: typeof LoginIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guest/': {
+      id: '/guest/'
+      path: '/guest'
+      fullPath: '/guest/'
+      preLoaderRoute: typeof GuestIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/(app)/profile': {
@@ -597,6 +617,7 @@ const appRouteRouteWithChildren = appRouteRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   appRouteRoute: appRouteRouteWithChildren,
+  GuestIndexRoute: GuestIndexRoute,
   LoginIndexRoute: LoginIndexRoute,
 }
 export const routeTree = rootRouteImport

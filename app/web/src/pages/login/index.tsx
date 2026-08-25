@@ -1,5 +1,10 @@
 import { createForm } from "@tanstack/solid-form";
-import { createFileRoute, redirect, useNavigate } from "@tanstack/solid-router";
+import {
+	Link,
+	createFileRoute,
+	redirect,
+	useNavigate,
+} from "@tanstack/solid-router";
 import {
 	createResource,
 	createSignal,
@@ -14,6 +19,7 @@ import {
 	login as loginApi,
 } from "@/api/auth";
 import { getEnabledProviders, getOAuthLoginURL } from "@/api/oauth";
+import { listPublicDomains } from "@/api/domain";
 import { Form } from "@/components/form";
 import ProviderIcon from "@/components/oauth/ProviderIcon";
 import userStore from "@/stores/userStore";
@@ -47,6 +53,14 @@ function LoginPage() {
 	const [codeSending, setCodeSending] = createSignal(false);
 
 	const [oauthProviders] = createResource(getEnabledProviders);
+	const [publicGuestDomains] = createResource(async () => {
+		try {
+			const page = await listPublicDomains(1, 50);
+			return (page.domains ?? []).filter((d) => d.allow_guest).length;
+		} catch {
+			return 0;
+		}
+	});
 	const [oauthLoading, setOauthLoading] = createSignal(false);
 
 	function completeOAuthLogin() {
@@ -241,6 +255,17 @@ function LoginPage() {
 							<span class="loading loading-spinner loading-xs" />
 							正在完成第三方登录…
 						</div>
+					</Show>
+
+					<Show when={(publicGuestDomains() ?? 0) > 0}>
+						<div class="divider my-2 text-xs text-base-content/50">或</div>
+						<Link
+							to="/guest"
+							search={{ code: undefined, domain: undefined }}
+							class="btn btn-ghost btn-block"
+						>
+							访客登录
+						</Link>
 					</Show>
 
 					<Show when={banned()}>
