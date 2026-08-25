@@ -70,7 +70,7 @@ type DomainGuestBan struct {
        && 该身份未在该 Domain 被封
 → 事务：插 users(is_guest=true) + 插 domain_members(role=guest, nickname)
 → 签发标准 access + refresh JWT（claims 无特殊标记，is_guest 由 DB 行承载）
-→ localStorage 存 token；下次打开自动以同一身份进入
+→ token 由 HttpOnly Cookie 承载（与登录一致，复用 AuthCookie）；localStorage 仅存非敏感 user 元数据，下次打开自动以同一身份进入
 ```
 
 关键取舍：
@@ -141,7 +141,7 @@ if user.is_guest:
 ### A. 访客入口（全新）
 
 - 登录页新增「访客登录」按钮：仅在存在开放访客的公开 Domain 时显示；点击进入访客流程（选择公开 Domain 或输入邀请码 → 输昵称）
-- 邀请链接落地页：单卡片表单（昵称 ≤24 字符 + 进入按钮）；localStorage 已有本 Domain 有效 guest token 时显示「以 @昵称 继续」一键进入
+- 邀请链接落地页：单卡片表单（昵称 ≤24 字符 + 进入按钮）；localStorage 缓存显示本 Domain 已有访客身份时显示「以 @昵称 继续」一键进入
 - 失败态文案分别覆盖：Domain 未开放访客 / 达访客上限 / 已被禁止进入
 
 ### B. 访客侧受限视图
@@ -159,9 +159,9 @@ if user.is_guest:
 
 ### 技术要点
 
-- 新增 `guestStore`（Zustand）：`isGuest` / `guestInfo` / `domainGuestConfig` + `init/leave`
-- Axios 拦截器复用同一份 token 注入（`Authorization: Bearer`），不分叉
-- `PermissionGate` 类组件新增 guest 短路：`isGuest && !public → null`
+- 新增 `guestStore`（SolidJS store，沿用 `userStore.ts` 的 createSignal 模式）：`isGuest` / `guestInfo` / `domainGuestConfig` + `init/leave`
+- 请求层复用同一份 Cookie 会话（credentials 携带），guest 与正式用户共用 token 刷新链路，不分叉
+- 权限显隐组件新增 guest 短路：`isGuest && !public → null`（沿用现有权限显隐模式）
 
 ### 刻意不做
 
