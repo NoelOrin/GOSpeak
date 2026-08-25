@@ -6,6 +6,7 @@ import {
 	createEffect,
 	createMemo,
 	createSignal,
+	For,
 	Show,
 	untrack,
 } from "solid-js";
@@ -27,6 +28,8 @@ import DomainMemberTable, {
 	executeKickMember,
 	memberDisplayName,
 } from "@/components/domain/DomainMemberTable";
+import GuestAccessSettings from "@/components/domain/GuestAccessSettings";
+import GuestManageTable from "@/components/domain/GuestManageTable";
 import DomainRoomTable from "@/components/domain/DomainRoomTable";
 import {
 	ManageHeader,
@@ -37,6 +40,16 @@ import CreateRoomModal from "@/components/modal/createRoomModal";
 import { DomainSettingsForm } from "./components/DomainSettingsForm";
 import DomainRolePanel from "./components/DomainRolePanel";
 import EditRoomModal from "@/components/modal/editRoomModal";
+import {
+	banGuest,
+	getGuestConfig,
+	listGuestBans,
+	type GuestBanItem,
+	type GuestDomain,
+	unbanGuest,
+	updateGuestConfig,
+	cleanupInactiveGuests,
+} from "@/api/guest";
 import domainStore from "@/stores/domainStore";
 import userStore from "@/stores/userStore";
 import { hasDomainPermission } from "@/utils/domainPermissions";
@@ -174,6 +187,109 @@ function RouteComponent() {
 	const isOwner = createMemo(
 		() => !!currentUser() && domain()?.owner_uuid === currentUser()?.uuid,
 	);
+	// ── 访客配置与封禁 ──
+	const [guestConfig, setGuestConfig] = createSignal<GuestDomain | null>(null);
+	const [guestConfigLoading, setGuestConfigLoading] = createSignal(false);
+	const [guestSaving, setGuestSaving] = createSignal(false);
+	const [guestBans, setGuestBans] = createSignal<GuestBanItem[]>([]);
+	const [guestBansLoading, setGuestBansLoading] = createSignal(false);
+	const [unbanPending, setUnbanPending] = createSignal<string | null>(null);
+	const [banTarget, setBanTarget] = createSignal("");
+	const [banReason, setBanReason] = createSignal("");
+	const [banHours, setBanHours] = createSignal(0);
+
+	const guestMembers = () => members().filter((m) => m.role_name === "guest");
+
+	async function submitBan() {
+		const target = banTarget();
+		if (!target) {
+			showToast("请选择要封禁的访客", { type: "error" });
+			return;
+		}
+		try {
+			await handleBanGuest(target, banReason(), banHours());
+			setBanTarget("");
+			setBanReason("");
+			setBanHours(0);
+		} catch (e) {
+			showToast(apiErrorMessage(e), { type: "error" });
+		}
+	}
+
+	async function loadGuestState(domainId: string) {
+		setGuestConfigLoading(true);
+		setGuestBansLoading(true);
+		try {
+			const [cfg, bans] = await Promise.all([
+				getGuestConfig(domainId),
+				listGuestBans(domainId),
+			]);
+			setGuestConfig(cfg);
+			setGuestBans(bans);
+		} catch (e) {
+			showToast(apiErrorMessage(e), { type: "error" });
+		} finally {
+			setGuestConfigLoading(false);
+			setGuestBansLoading(false);
+		}
+	}
+
+	async function handleSaveGuestConfig(
+		patch: Omit<Parameters<typeof updateGuestConfig>[0], "domain_uuid">,
+	) {
+		setGuestSaving(true);
+		try {
+			const cfg = await updateGuestConfig({ ...patch, domain_uuid: uuid() });
+			setGuestConfig(cfg);
+			showToast("访客配置已保存", { type: "success" });
+		} catch (e) {
+			showToast(apiErrorMessage(e), { type: "error" });
+		} finally {
+			setGuestSaving(false);
+		}
+	}
+
+	async function handleBanGuest(
+		userUUID: string,
+		reason: string,
+		hours: number,
+	) {
+		await banGuest({
+			domain_uuid: uuid(),
+			user_uuid: userUUID,
+			reason,
+			duration_hours: hours,
+		});
+		// 在线踢出由后端封禁接口联动 signalHub 完成
+		await loadGuestState(uuid());
+		showToast("已封禁该访客", { type: "success" });
+	}
+
+	async function handleUnbanGuest(userUUID: string) {
+		setUnbanPending(userUUID);
+		try {
+			await unbanGuest({ domain_uuid: uuid(), user_uuid: userUUID });
+			setGuestBans((prev) => prev.filter((b) => b.user_uuid !== userUUID));
+			showToast("已解封", { type: "success" });
+		} catch (e) {
+			showToast(apiErrorMessage(e), { type: "error" });
+		} finally {
+			setUnbanPending(null);
+		}
+	}
+
+	async function handleCleanupGuests() {
+		try {
+			const res = await cleanupInactiveGuests({
+				domain_uuid: uuid(),
+				days: 30,
+			});
+			showToast(`已清理 ${res.removed} 个不活跃访客`, { type: "success" });
+		} catch (e) {
+			showToast(apiErrorMessage(e), { type: "error" });
+		}
+	}
+
 	const canManage = createMemo(
 		() =>
 			isOwner() ||
@@ -307,6 +423,7 @@ function RouteComponent() {
 		const currentUUID = uuid();
 		setCurrentDomain(currentUUID);
 		void loadMembers(currentUUID).catch(() => {});
+		void loadGuestState(currentUUID);
 		untrack(() => {
 			resetRooms();
 			void fetchRooms(1);
@@ -502,6 +619,97 @@ function RouteComponent() {
 							/>
 						</ManageSection>
 					</div>
+
+					<ManageSection
+						title="访客访问"
+						description="配置匿名访客的进入与能力开关"
+						class="min-w-0"
+					>
+						<GuestAccessSettings
+							config={guestConfig()}
+							loading={guestConfigLoading()}
+							canManage={canManage()}
+							saving={guestSaving()}
+							onSave={(patch) => void handleSaveGuestConfig(patch)}
+						/>
+					</ManageSection>
+
+					<Show when={canKick()}>
+						<ManageSection
+							title="访客封禁管理"
+							description="封禁在线或历史访客，解封立即生效"
+							padded={false}
+							class="min-w-0"
+							actions={
+								<button
+									type="button"
+									class="btn btn-ghost btn-xs"
+									disabled={guestBansLoading()}
+									onClick={() => void loadGuestState(uuid())}
+								>
+									刷新
+								</button>
+							}
+						>
+							<div class="flex flex-col gap-3 p-4 border-b border-base-200">
+								<div class="flex flex-wrap items-center gap-2">
+									<select
+										class="select select-bordered select-sm w-56"
+										value={banTarget()}
+										onChange={(e) => setBanTarget(e.currentTarget.value)}
+									>
+										<option value="">选择要封禁的访客成员…</option>
+										<For each={guestMembers()}>
+											{(m) => (
+												<option value={m.user_uuid}>
+													{memberDisplayName(m)}（{m.user_uuid.slice(0, 8)}）
+												</option>
+											)}
+										</For>
+									</select>
+									<input
+										type="text"
+										placeholder="封禁原因"
+										class="input input-bordered input-sm w-48"
+										value={banReason()}
+										onInput={(e) => setBanReason(e.currentTarget.value)}
+									/>
+									<select
+										class="select select-bordered select-sm"
+										value={String(banHours())}
+										onChange={(e) => setBanHours(Number(e.currentTarget.value))}
+									>
+										<option value="0">永久</option>
+										<option value="1">1 小时</option>
+										<option value="24">24 小时</option>
+										<option value="168">7 天</option>
+									</select>
+									<button
+										type="button"
+										class="btn btn-error btn-sm"
+										disabled={!banTarget()}
+										onClick={() => void submitBan()}
+									>
+										封禁
+									</button>
+								</div>
+								<button
+									type="button"
+									class="btn btn-ghost btn-xs self-start text-base-content/60"
+									onClick={() => void handleCleanupGuests()}
+								>
+									清理 30 天未活跃访客
+								</button>
+							</div>
+							<GuestManageTable
+								bans={guestBans()}
+								loading={guestBansLoading()}
+								canKick={canKick()}
+								unbanPending={unbanPending()}
+								onUnban={(userUUID) => void handleUnbanGuest(userUUID)}
+							/>
+						</ManageSection>
+					</Show>
 
 					<Show when={canManageRoles()}>
 						<ManageSection
