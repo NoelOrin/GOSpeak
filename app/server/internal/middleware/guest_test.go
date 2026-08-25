@@ -19,8 +19,12 @@ type fakeGuestChecker struct {
 
 func (f *fakeGuestChecker) IsGuest(userUUID string) bool { return f.guests[userUUID] }
 
-func (f *fakeGuestChecker) IsGuestBanned(domainUUID, userUUID string) bool {
-	return f.bans[domainUUID+"|"+userUUID]
+func (f *fakeGuestChecker) IsGuestBanned(domainUUID, userUUID string) (bool, error) {
+	return f.bans[domainUUID+"|"+userUUID], nil
+}
+
+func (f *fakeGuestChecker) IsGuestDomainMember(domainUUID, userUUID string) (bool, error) {
+	return true, nil
 }
 
 // buildGuestGuardCase 构造带 claims 注入与守卫的最小路由。
@@ -70,8 +74,8 @@ func guardCode(t *testing.T, rec *httptest.ResponseRecorder) int {
 
 func TestGuestGuard_GuestAllowedPathPasses(t *testing.T) {
 	checker := &fakeGuestChecker{guests: map[string]bool{"user-1": true}}
-	r, reached := buildGuestGuardCase(t, checker, "/api/v1/room/list", true)
-	rec := doGuestGuardPost(r, "/api/v1/room/list", `{}`, "")
+	r, reached := buildGuestGuardCase(t, checker, "/api/v1/room/messages/list", true)
+	rec := doGuestGuardPost(r, "/api/v1/room/messages/list", `{}`, "")
 	if rec.Code != http.StatusOK || !*reached {
 		t.Fatalf("allowed path must reach handler: %d reached=%v %s", rec.Code, *reached, rec.Body.String())
 	}
@@ -94,8 +98,8 @@ func TestGuestGuard_BannedGuestBlockedWithQueryDomain(t *testing.T) {
 		guests: map[string]bool{"user-1": true},
 		bans:   map[string]bool{"dom-1|user-1": true},
 	}
-	r, reached := buildGuestGuardCase(t, checker, "/api/v1/room/list", true)
-	rec := doGuestGuardPost(r, "/api/v1/room/list", `{}`, "domain_uuid=dom-1")
+	r, reached := buildGuestGuardCase(t, checker, "/api/v1/room/messages/list", true)
+	rec := doGuestGuardPost(r, "/api/v1/room/messages/list", `{}`, "domain_uuid=dom-1")
 	if *reached || rec.Code == http.StatusOK {
 		t.Fatal("banned guest must be blocked")
 	}

@@ -45,6 +45,15 @@ func messageActorFromContext(c *gin.Context) (service.MessageActor, bool) {
 	return service.MessageActor{Identity: username, UserUUID: userUUID}, true
 }
 
+// guestMessagingAllowed 访客身份下，发消息能力以 GuestCaps 为权威（短路域角色权限）。
+func (h *MessageHandler) guestMessagingAllowed(domainUUID, userUUID string) (bool, bool) {
+	if h.guestIs == nil || !h.guestIs(userUUID) {
+		return false, false
+	}
+	_, _, msg := h.guestCaps(domainUUID)
+	return true, msg
+}
+
 func (h *MessageHandler) roomOf(c *gin.Context, roomUUID string) (*model.Room, bool) {
 	if h.roomSvc == nil {
 		pkg.Fail(c, pkg.INTERNAL_ERROR, "room service unavailable")
@@ -176,13 +185,18 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if h.guestIs != nil && h.guestIs(actor.UserUUID) {
-		if _, _, msg := h.guestCaps(room.DomainUUID); !msg {
+	if guest, allowed := h.guestMessagingAllowed(room.DomainUUID, actor.UserUUID); guest {
+		if !allowed {
 			pkg.Fail(c, pkg.FORBIDDEN, "guest messaging disabled")
 			return
 		}
 	}
-	if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
+	if guest, allowed := h.guestMessagingAllowed(room.DomainUUID, actor.UserUUID); guest {
+		if !allowed {
+			pkg.Fail(c, pkg.FORBIDDEN, "guest messaging disabled")
+			return
+		}
+	} else if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
 		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
 		return
 	}
@@ -223,7 +237,12 @@ func (h *MessageHandler) Edit(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
+	if guest, allowed := h.guestMessagingAllowed(room.DomainUUID, actor.UserUUID); guest {
+		if !allowed {
+			pkg.Fail(c, pkg.FORBIDDEN, "guest messaging disabled")
+			return
+		}
+	} else if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
 		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
 		return
 	}
@@ -263,7 +282,12 @@ func (h *MessageHandler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
+	if guest, allowed := h.guestMessagingAllowed(room.DomainUUID, actor.UserUUID); guest {
+		if !allowed {
+			pkg.Fail(c, pkg.FORBIDDEN, "guest messaging disabled")
+			return
+		}
+	} else if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
 		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
 		return
 	}
@@ -304,7 +328,12 @@ func (h *MessageHandler) React(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
+	if guest, allowed := h.guestMessagingAllowed(room.DomainUUID, actor.UserUUID); guest {
+		if !allowed {
+			pkg.Fail(c, pkg.FORBIDDEN, "guest messaging disabled")
+			return
+		}
+	} else if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
 		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
 		return
 	}
@@ -344,7 +373,12 @@ func (h *MessageHandler) Unreact(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
+	if guest, allowed := h.guestMessagingAllowed(room.DomainUUID, actor.UserUUID); guest {
+		if !allowed {
+			pkg.Fail(c, pkg.FORBIDDEN, "guest messaging disabled")
+			return
+		}
+	} else if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
 		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
 		return
 	}

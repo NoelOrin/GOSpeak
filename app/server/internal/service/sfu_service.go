@@ -117,20 +117,14 @@ func (s *SFUService) GetJoinToken(domainUUID, room, identity, userUUID, password
 	return res, nil
 }
 
-// generateTokenWithPublish 在 Provider 支持发布控制时按 canPublish 签发；
-// 不支持时退化为普通签发 + 进房即禁言（降级实现，注释见规格 §6）。
+// generateTokenWithPublish 在 Provider 支持发布控制（LiveKit）时按 canPublish 签发，
+// 直接反映禁说策略。不支持发布控制的 provider 无法在 token 阶段限制发布，
+// 其禁说降级由信令层（Hub.enforceGuestSpeakPolicyLocked）在 SFU 进房确认后强制。
 func (s *SFUService) generateTokenWithPublish(room, identity, userUUID string, canPublish bool) (string, error) {
 	if op, ok := s.provider.(sfu.PublishControlProvider); ok {
 		return op.GenerateTokenWithPublish(room, identity, canPublish)
 	}
-	token, err := s.generateToken(room, identity, userUUID)
-	if err != nil {
-		return "", err
-	}
-	if !canPublish {
-		_ = s.provider.MuteParticipant(room, identity, "", true)
-	}
-	return token, nil
+	return s.generateToken(room, identity, userUUID)
 }
 
 func (s *SFUService) generateToken(room, identity, userUUID string) (string, error) {

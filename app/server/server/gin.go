@@ -232,11 +232,20 @@ func StartGin(env EnvEnum) error {
 		StateNotifier:           eventBus,
 	})
 	signalHub.StartMembershipHeartbeat()
+	signalHub.SetGuestSpeakPolicy(func(domainUUID, userUUID string) (bool, error) {
+		if !guestSvc.IsGuest(userUUID) {
+			return true, nil
+		}
+		_, speak, _ := guestSvc.GuestCaps(domainUUID)
+		return speak, nil
+	})
 	signalHub.SetGuestJoinGuard(func(domainUUID, userUUID string) error {
 		if !guestSvc.IsGuest(userUUID) {
 			return nil
 		}
-		if guestSvc.IsGuestBanned(domainUUID, userUUID) {
+		if banned, banErr := guestSvc.IsGuestBanned(domainUUID, userUUID); banErr != nil {
+			return errors.New("guest ban check failed")
+		} else if banned {
 			return errors.New("guest has been banned")
 		}
 		if guestSvc.GuestLimitReached(domainUUID, signalHub.DomainOnlineIdentities(domainUUID)) {

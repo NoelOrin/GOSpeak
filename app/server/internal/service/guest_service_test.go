@@ -157,7 +157,7 @@ func TestGuestService_BanUnban(t *testing.T) {
 		if err := svc.Ban(d.UUID, op, u.UUID, "扰乱秩序", 0); err != nil {
 			t.Fatalf("ban: %v", err)
 		}
-		ban := repository.NewGuestBanRepo(db).FindActive(d.UUID, u.UUID)
+		ban, _ := repository.NewGuestBanRepo(db).FindActive(d.UUID, u.UUID)
 		if ban == nil || ban.Reason != "扰乱秩序" || ban.ExpiresAt != nil {
 			t.Fatalf("expect permanent ban record: %+v", ban)
 		}
@@ -191,7 +191,7 @@ func TestGuestService_BanUnban(t *testing.T) {
 		if err := svc.Unban(d.UUID, u.UUID); err != nil {
 			t.Fatalf("unban: %v", err)
 		}
-		if ban := repository.NewGuestBanRepo(db).FindActive(d.UUID, u.UUID); ban != nil {
+		if ban, _ := repository.NewGuestBanRepo(db).FindActive(d.UUID, u.UUID); ban != nil {
 			t.Fatalf("expect no active ban: %+v", ban)
 		}
 	})

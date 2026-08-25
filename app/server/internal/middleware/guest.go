@@ -14,22 +14,24 @@ import (
 // guestChecker 抽象访客身份/封禁查询，由组合根注入（GuestService 适配）。
 type guestChecker interface {
 	IsGuest(userUUID string) bool
-	IsGuestBanned(domainUUID, userUUID string) bool
+	IsGuestBanned(domainUUID, userUUID string) (bool, error)
+	IsGuestDomainMember(domainUUID, userUUID string) (bool, error)
 }
 
-// guestAllowPrefixes 访客可调用的业务路径前缀：信令、房间（含房间消息）、
-// 自助资料、域公开读接口与登出/刷新。
-var guestAllowPrefixes = []string{
-	"/api/v1/signal/",
-	"/api/v1/room/",
-	"/api/v1/user/profile",
-	"/api/v1/auth/logout",
-	"/api/v1/auth/refresh",
-	"/api/v1/auth/guest/renew",
-	"/api/v1/domain/get",
-	"/api/v1/domain/members",
-	"/api/v1/domain/list-public",
-	"/api/v1/domain/preview",
+// 访客白名单只暴露信令、房间消息、自助会话与公开域列表。
+var guestAllowExactPaths = map[string]struct{}{
+	"/api/v1/user/profile":       {},
+	"/api/v1/auth/logout":        {},
+	"/api/v1/auth/refresh":       {},
+	"/api/v1/auth/guest/renew":   {},
+	"/api/v1/domain/list-public": {},
+}
+
+// guestDomainReadPaths 要求请求域必须是访客已加入的域。
+var guestDomainReadPaths = map[string]struct{}{
+	"/api/v1/domain/get":     {},
+	"/api/v1/domain/members": {},
+	"/api/v1/domain/preview": {},
 }
 
 // GuestGuardWith 返回使用指定 checker 的访客守卫；测试注入用。
@@ -40,7 +42,14 @@ func GuestGuardWith(checker guestChecker) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		if dom := guestDomainOf(c); dom != "" && checker.IsGuestBanned(dom, userUUID) {
+		dom := guestDomainOf(c)
+		banned, err := checker.IsGuestBanned(dom, userUUID)
+		if err != nil {
+			pkg.Fail(c, pkg.INTERNAL_ERROR, "guest ban check failed")
+			c.Abort()
+			return
+		}
+		if banned {
 			pkg.Fail(c, pkg.FORBIDDEN, "guest has been banned")
 			c.Abort()
 			return
@@ -49,6 +58,19 @@ func GuestGuardWith(checker guestChecker) gin.HandlerFunc {
 			pkg.Fail(c, pkg.FORBIDDEN, "guest access not allowed")
 			c.Abort()
 			return
+		}
+		if _, scoped := guestDomainReadPaths[c.Request.URL.Path]; scoped && dom != "" {
+			member, err := checker.IsGuestDomainMember(dom, userUUID)
+			if err != nil {
+				pkg.Fail(c, pkg.INTERNAL_ERROR, "guest domain check failed")
+				c.Abort()
+				return
+			}
+			if !member {
+				pkg.Fail(c, pkg.FORBIDDEN, "guest access not allowed")
+				c.Abort()
+				return
+			}
 		}
 		c.Next()
 	}
@@ -89,6 +111,7 @@ func guestDomainOf(c *gin.Context) string {
 		return ""
 	}
 	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
+	c.Request.ContentLength = int64(len(raw))
 	var body struct {
 		DomainUUID string `json:"domain_uuid"`
 	}
@@ -99,10 +122,9 @@ func guestDomainOf(c *gin.Context) string {
 }
 
 func guestPathAllowed(path string) bool {
-	for _, prefix := range guestAllowPrefixes {
-		if strings.HasPrefix(path, prefix) {
-			return true
-		}
+	if strings.HasPrefix(path, "/api/v1/signal/") || strings.HasPrefix(path, "/api/v1/room/messages/") {
+		return true
 	}
-	return false
+	_, ok := guestAllowExactPaths[path]
+	return ok
 }

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"time"
 
 	"GOSpeak/internal/model"
@@ -8,21 +9,29 @@ import (
 	"gorm.io/gorm"
 )
 
-type GuestBanRepo struct{ db *gorm.DB }
+type GuestBanRepo struct {
+	db *gorm.DB
+}
 
-func NewGuestBanRepo(db *gorm.DB) *GuestBanRepo { return &GuestBanRepo{db: db} }
+func NewGuestBanRepo(db *gorm.DB) *GuestBanRepo {
+	return &GuestBanRepo{db: db}
+}
 
 func (r *GuestBanRepo) Create(b *model.DomainGuestBan) error { return r.db.Create(b).Error }
 
-func (r *GuestBanRepo) FindActive(domainUUID, userUUID string) *model.DomainGuestBan {
+// FindActive 只把 RecordNotFound 视为未封禁；数据库异常必须上抛，调用方 fail-closed。
+func (r *GuestBanRepo) FindActive(domainUUID, userUUID string) (*model.DomainGuestBan, error) {
 	var b model.DomainGuestBan
 	err := r.db.Where("domain_uuid = ? AND user_uuid = ?", domainUUID, userUUID).
 		Where("expires_at IS NULL OR expires_at > ?", time.Now()).
 		Order("id DESC").First(&b).Error
-	if err != nil {
-		return nil
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
 	}
-	return &b
+	if err != nil {
+		return nil, err
+	}
+	return &b, nil
 }
 
 func (r *GuestBanRepo) ListByDomain(domainUUID string) ([]model.DomainGuestBan, error) {
@@ -31,7 +40,6 @@ func (r *GuestBanRepo) ListByDomain(domainUUID string) ([]model.DomainGuestBan, 
 	return list, err
 }
 
-// Delete 物理删除 = 解封（记录可后续进审计表，本期不留痕）。
 func (r *GuestBanRepo) Delete(domainUUID, userUUID string) error {
 	return r.db.Where("domain_uuid = ? AND user_uuid = ?", domainUUID, userUUID).
 		Delete(&model.DomainGuestBan{}).Error

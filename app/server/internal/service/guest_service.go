@@ -166,7 +166,9 @@ func (s *GuestService) Ban(domainUUID, operatorUUID, guestUUID, reason string, d
 		t := time.Now().Add(time.Duration(durationHours) * time.Hour)
 		expiresAt = &t
 	}
-	if existing := s.banRepo.FindActive(domainUUID, guestUUID); existing != nil {
+	if existing, exErr := s.banRepo.FindActive(domainUUID, guestUUID); exErr != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, exErr.Error())
+	} else if existing != nil {
 		existing.Reason = reason
 		existing.BannedBy = operatorUUID
 		existing.ExpiresAt = expiresAt
@@ -214,9 +216,18 @@ func (s *GuestService) IsGuest(userUUID string) bool {
 	return user.IsGuest
 }
 
-// IsGuestBanned 判断用户在指定域是否有活跃封禁。
-func (s *GuestService) IsGuestBanned(domainUUID, userUUID string) bool {
-	return s.banRepo.FindActive(domainUUID, userUUID) != nil
+// IsGuestBanned 判断用户在指定域是否有活跃封禁；数据库异常直接上抛。
+func (s *GuestService) IsGuestBanned(domainUUID, userUUID string) (bool, error) {
+	ban, err := s.banRepo.FindActive(domainUUID, userUUID)
+	if err != nil {
+		return false, err
+	}
+	return ban != nil, nil
+}
+
+// IsGuestDomainMember 校验用户是否为该域 guest 成员；数据库异常直接上抛。
+func (s *GuestService) IsGuestDomainMember(domainUUID, userUUID string) (bool, error) {
+	return s.isGuestMember(domainUUID, userUUID)
 }
 
 // GuestConfigUpdate 局部更新域访客配置；nil 字段不修改。
@@ -285,7 +296,9 @@ func (s *GuestService) Renew(userUUID string, req *GuestJoinRequest) (*GuestJoin
 	if !domain.AllowGuest {
 		return nil, pkg.NewAppError(pkg.FORBIDDEN, "guest access disabled")
 	}
-	if s.banRepo.FindActive(domain.UUID, user.UUID) != nil {
+	if banned, err := s.banRepo.FindActive(domain.UUID, user.UUID); err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	} else if banned != nil {
 		return nil, pkg.NewAppError(pkg.FORBIDDEN, "guest has been banned")
 	}
 	if domain.GuestLimit > 0 && s.onlineCount != nil && s.onlineCount(domain.UUID) >= domain.GuestLimit {
