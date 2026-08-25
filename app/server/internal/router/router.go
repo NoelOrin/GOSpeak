@@ -135,6 +135,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	protected := api.Group("")
 	protected.Use(middleware.JWTAuth())
 	protected.Use(middleware.BanCheck())
+	protected.Use(middleware.GuestGuard())
 	if h != nil && h.FenceCheck != nil {
 		protected.Use(middleware.RequireAgentFence(h.FenceCheck))
 	}

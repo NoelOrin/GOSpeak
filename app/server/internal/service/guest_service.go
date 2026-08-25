@@ -204,3 +204,17 @@ func (s *GuestService) ListBans(domainUUID string) ([]model.DomainGuestBan, erro
 	}
 	return list, nil
 }
+
+// IsGuest 判断用户是否访客（供 guest 守卫中间件适配）。
+func (s *GuestService) IsGuest(userUUID string) bool {
+	user, err := s.userRepo.GetByUUID(userUUID)
+	if err != nil || user == nil {
+		return false
+	}
+	return user.IsGuest
+}
+
+// IsGuestBanned 判断用户在指定域是否有活跃封禁。
+func (s *GuestService) IsGuestBanned(domainUUID, userUUID string) bool {
+	return s.banRepo.FindActive(domainUUID, userUUID) != nil
+}

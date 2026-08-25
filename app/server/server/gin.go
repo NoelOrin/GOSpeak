@@ -422,6 +422,7 @@ func StartGin(env EnvEnum) error {
 		TokenVersionChecker: authSvc,
 		BotTokenChecker:     botSvc,
 		DomainChecker:       domainSvc.IsMember,
+		GuestChecker:        guestSvc,
 		BlacklistChecker:    authstate.IsBlacklistedErr,
 		AuthCookieName:      cfg.AccessCookieName,
 	})
