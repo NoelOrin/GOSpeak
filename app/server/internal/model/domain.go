@@ -9,16 +9,21 @@ import (
 
 // Domain 代表一个语音域（原 Domain/Server 语义）。
 type Domain struct {
-	ID          uint      `gorm:"primaryKey" json:"id"`
-	UUID        string    `gorm:"size:32;uniqueIndex" json:"uuid"`
-	Name        string    `gorm:"size:100;not null" json:"name"`
-	IconURL     string    `gorm:"size:512" json:"icon_url"`
-	Description string    `gorm:"size:500" json:"description"`
-	OwnerUUID   string    `gorm:"type:uuid;index;not null" json:"owner_uuid"`
-	InviteCode  string    `gorm:"size:32;uniqueIndex" json:"invite_code"`
-	IsPublic    bool      `gorm:"default:false" json:"is_public"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID              uint      `gorm:"primaryKey" json:"id"`
+	UUID            string    `gorm:"size:32;uniqueIndex" json:"uuid"`
+	Name            string    `gorm:"size:100;not null" json:"name"`
+	IconURL         string    `gorm:"size:512" json:"icon_url"`
+	Description     string    `gorm:"size:500" json:"description"`
+	OwnerUUID       string    `gorm:"type:uuid;index;not null" json:"owner_uuid"`
+	InviteCode      string    `gorm:"size:32;uniqueIndex" json:"invite_code"`
+	IsPublic        bool      `gorm:"default:false" json:"is_public"`
+	AllowGuest      bool      `gorm:"default:false" json:"allow_guest"`
+	GuestCanListen  bool      `gorm:"default:true" json:"guest_can_listen"`
+	GuestCanSpeak   bool      `gorm:"default:true" json:"guest_can_speak"`
+	GuestCanMessage bool      `gorm:"default:false" json:"guest_can_message"`
+	GuestLimit      int       `gorm:"default:50" json:"guest_limit"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 func (d *Domain) TableName() string {

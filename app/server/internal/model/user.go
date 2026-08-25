@@ -21,6 +21,7 @@ type User struct {
 	Email         string `gorm:"size:128;index" json:"email"`
 	EmailVerified bool   `gorm:"default:false" json:"email_verified"`
 	IsBot         bool   `gorm:"default:false" json:"is_bot"`
+	IsGuest       bool   `gorm:"default:false;index" json:"is_guest"`
 	Password      string `json:"-"`
 	Role          string `gorm:"default:user" json:"role"`
 	Status        string `gorm:"size:16;default:active;index" json:"status"`
