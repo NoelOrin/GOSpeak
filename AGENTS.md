@@ -273,6 +273,8 @@ if err := c.ShouldBindJSON(&req); err != nil {
 | POST | `/api/v1/auth/refresh` | JWT | — | AuthHandler.RefreshToken |
 | POST | `/api/v1/auth/change_password` | JWT | — | AuthHandler.ChangePassword |
 | POST | `/api/v1/auth/first_change_password` | JWT | — | AuthHandler.FirstChangePassword |
+| POST | `/api/v1/auth/guest` | No | — | GuestHandler.Join（限流） |
+| POST | `/api/v1/auth/guest/renew` | JWT(guest) | — | GuestHandler.Renew |
 | POST | `/api/v1/user/profile` | JWT | — | UserHandler.GetProfile |
 | POST | `/api/v1/user/info` | JWT | — | UserHandler.GetByName |
 | POST | `/api/v1/user/update-profile` | JWT | — | UserHandler.UpdateProfile |
@@ -339,6 +341,11 @@ if err := c.ShouldBindJSON(&req); err != nil {
 | POST | `/api/v1/sfu/providers` | JWT | `sfu:manage` | SFUConfigHandler.ListProviders |
 | POST | `/api/v1/srs/callback` | No | — | SRSCallbackHandler.HandleCallback |
 | GET | `/api/v1/system/stream` | No | — | MonitorHandler.HealthStream |
+| POST | `/api/v1/domain/guest/config` | JWT | `domain:manage` | GuestHandler.Config |
+| POST | `/api/v1/domain/guest/ban` | JWT | `domain:kick` | GuestHandler.Ban |
+| POST | `/api/v1/domain/guest/unban` | JWT | `domain:kick` | GuestHandler.Unban |
+| POST | `/api/v1/domain/guest/ban-list` | JWT | `domain:manage` | GuestHandler.BanList |
+| POST | `/api/v1/domain/guest/cleanup` | JWT | `domain:manage` | GuestHandler.Cleanup |
 | POST | `/api/v1/domain/create` | JWT | `domain:create` | DomainHandler.Create |
 | POST | `/api/v1/domain/get` | JWT | — | DomainHandler.Get |
 | POST | `/api/v1/domain/list` | JWT | `domain:read` | DomainHandler.List |
@@ -1221,3 +1228,13 @@ GOSpeak/
 │   └── ...
 └── ...
 ```
+
+
+---
+
+## Guest Access（访客访问）
+
+- 设计规格：`docs/superpowers/specs/2026-08-25-guest-access-permissions-design.md`
+- 实现计划：`docs/superpowers/plans/2026-08-25-guest-access-permissions.md`
+- 访客 = `users.is_guest=true` + `DomainMember(role=guest)`；能力开关落 `domains` 表（听/说默认开，发消息默认关）；封禁表 `domain_guest_bans`
+- 守卫：`middleware.GuestGuard()` 挂在 protected 组（JWT 之后），白名单外接口对访客返回 1013
