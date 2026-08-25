@@ -98,7 +98,10 @@ func (s *GuestService) Join(req *GuestJoinRequest) (*GuestJoinResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &GuestJoinResponse{AccessToken: tokens.Access, RefreshToken: tokens.Refresh, User: user, Domain: domain}, nil
+	// 邀请码仅管理员可见，不随访客签发响应下发。
+	sanitized := *domain
+	sanitized.InviteCode = ""
+	return &GuestJoinResponse{AccessToken: tokens.Access, RefreshToken: tokens.Refresh, User: user, Domain: &sanitized}, nil
 }
 
 // resolveDomain 有 invite_code 按 code 查；否则按 domain_uuid 查且要求域公开。
