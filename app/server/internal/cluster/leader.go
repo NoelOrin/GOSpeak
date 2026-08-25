@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"GOSpeak/internal/logger"
+
 	"github.com/nats-io/nats.go"
 )
 
@@ -67,6 +69,7 @@ func (l *NATSLeaderLock) RenewLoop(ctx context.Context, nodeID string, interval 
 	done := make(chan struct{})
 	lost := make(chan struct{})
 	var lostOnce sync.Once
+	failures := 0
 	go func() {
 		defer close(done)
 		ticker := time.NewTicker(interval)
@@ -82,7 +85,16 @@ func (l *NATSLeaderLock) RenewLoop(ctx context.Context, nodeID string, interval 
 					lostOnce.Do(func() { close(lost) })
 					continue
 				}
-				_, _ = l.kv.Update("active", []byte(nodeID), entry.Revision())
+				if _, err := l.kv.Update("active", []byte(nodeID), entry.Revision()); err != nil {
+					// 更新失败不致命：下一 tick 的 Get 会重新校验归属；连续失败直至锁 TTL 到期才会被动发现丢锁。
+					// 分区期可能持续失败，仅首次与每 10 次记录一次，避免按 renew interval 刷日志。
+					failures++
+					if failures == 1 || failures%10 == 0 {
+						logger.WithComponent("Cluster").Warnf("leader lock renew failed count=%d node=%s: %v", failures, nodeID, err)
+					}
+				} else {
+					failures = 0
+				}
 			}
 		}
 	}()

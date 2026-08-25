@@ -8,6 +8,7 @@ import (
 // HeartbeatReport 是 Worker/All 节点上报给 Agent 的运行时快照。
 type HeartbeatReport struct {
 	NodeID               string  `json:"node_id"`
+	NodeSecret           string  `json:"node_secret,omitempty"`
 	Status               string  `json:"status,omitempty"`
 	AdvertiseURL         string  `json:"advertise_url,omitempty"`
 	Rooms                int     `json:"rooms"`

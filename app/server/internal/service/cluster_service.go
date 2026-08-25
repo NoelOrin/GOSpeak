@@ -183,13 +183,9 @@ func (s *ClusterService) RegisterNodeWithSecret(req model.ClusterNode, nodeSecre
 			if nodeSecret == "" || !pkg.VerifyPassword(existing.SecretHash, nodeSecret) {
 				return nil, pkg.NewAppError(pkg.FORBIDDEN, "invalid node secret")
 			}
-		} else if nodeSecret != "" {
-			hash, hashErr := pkg.HashPassword(nodeSecret)
-			if hashErr != nil {
-				return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "hash node secret failed")
-			}
-			existing.SecretHash = hash
 		}
+		// 已存在但未设 secret 的节点不允许在 re-register 时补植 SecretHash：
+		// 否则任意持 token 方可抢先植入并锁死合法节点的后续心跳/注销。
 		existing.Name = req.Name
 		existing.Host = req.Host
 		existing.AdvertiseURL = req.AdvertiseURL
@@ -241,6 +237,9 @@ func (s *ClusterService) Heartbeat(nodeID string, report cluster.HeartbeatReport
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
+	if err := verifyClusterNodeSecret(node, report.NodeSecret); err != nil {
+		return nil, err
+	}
 
 	status := report.Status
 	if status == "" {
@@ -276,28 +275,34 @@ func (s *ClusterService) Heartbeat(nodeID string, report cluster.HeartbeatReport
 	}
 	node.LastSeenAt = time.Now()
 
-	if err := s.nodeRepo.Update(node); err != nil {
+	rows, err := s.nodeRepo.UpdateRuntimeIfNotOffline(node)
+	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if rows == 0 {
+		return nil, ErrClusterNodeNotFound
 	}
 	if err := s.publishClusterEvent(cluster.EventNodeHeartbeat, map[string]interface{}{
 		"node_id": node.UUID, "status": node.Status, "rooms": node.Rooms, "connections": node.Connections,
 	}); err != nil {
-		return nil, pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish node heartbeat event failed")
+		// 心跳本身已成功写入 DB；事件发布失败不应让整次心跳请求 5xx，否则 worker 端会重试放大并误以为注册失效。
+		log.Printf("[cluster] publish node heartbeat event failed node=%s: %v", node.UUID, err)
 	}
 	s.reconcilePendingServers(node.UUID)
 	return node, nil
 }
 
 // DeregisterNode 注销节点并标记为 offline。
-
-// DeregisterNode 注销节点并标记为 offline。
-func (s *ClusterService) DeregisterNode(nodeID string) error {
+func (s *ClusterService) DeregisterNode(nodeID, nodeSecret string) error {
 	node, err := s.nodeRepo.GetByUUID(nodeID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return ErrClusterNodeNotFound
 		}
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if err := verifyClusterNodeSecret(node, nodeSecret); err != nil {
+		return err
 	}
 	node.Status = model.ClusterNodeOffline
 	node.LastSeenAt = time.Now()
@@ -308,6 +313,18 @@ func (s *ClusterService) DeregisterNode(nodeID string) error {
 		"node_id": node.UUID, "status": node.Status,
 	}); err != nil {
 		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish node deregistered event failed")
+	}
+	return nil
+}
+
+// verifyClusterNodeSecret 校验节点身份：节点设置了 SecretHash 时，操作方必须提供匹配的 node_secret，
+// 防止持有 cluster:manage token 的任一 worker 伪造/注销他人节点。
+func verifyClusterNodeSecret(node *model.ClusterNode, nodeSecret string) error {
+	if node.SecretHash == "" {
+		return nil
+	}
+	if nodeSecret == "" || !pkg.VerifyPassword(node.SecretHash, nodeSecret) {
+		return pkg.NewAppError(pkg.FORBIDDEN, "invalid node secret")
 	}
 	return nil
 }
@@ -349,7 +366,19 @@ func (s *ClusterService) DrainNode(nodeID string) error {
 			log.Printf("[cluster] drain list server=%s: %v", assignment.ServerUUID, countErr)
 			continue
 		}
-		if _, err := s.ScaleServer(assignment.ServerUUID, len(current), ""); err != nil {
+		// 目标副本数 = 当前总数扣除本节点上的分配，避免把即将下线的节点
+		// 算进目标而变成 no-op；其余在线节点原地保留，缺额补到新节点。
+		onNode := 0
+		for _, a := range current {
+			if a.NodeUUID == nodeID {
+				onNode++
+			}
+		}
+		target := len(current) - onNode
+		if target < 0 {
+			target = 0
+		}
+		if _, err := s.ScaleServer(assignment.ServerUUID, target, ""); err != nil {
 			log.Printf("[cluster] drain migrate server=%s node=%s: %v", assignment.ServerUUID, nodeID, err)
 		}
 	}
