@@ -25,6 +25,7 @@ var guestAllowPrefixes = []string{
 	"/api/v1/user/profile",
 	"/api/v1/auth/logout",
 	"/api/v1/auth/refresh",
+	"/api/v1/auth/guest/renew",
 	"/api/v1/domain/get",
 	"/api/v1/domain/members",
 	"/api/v1/domain/list-public",

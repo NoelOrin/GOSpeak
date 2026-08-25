@@ -218,3 +218,123 @@ func (s *GuestService) IsGuest(userUUID string) bool {
 func (s *GuestService) IsGuestBanned(domainUUID, userUUID string) bool {
 	return s.banRepo.FindActive(domainUUID, userUUID) != nil
 }
+
+// GuestConfigUpdate 局部更新域访客配置；nil 字段不修改。
+type GuestConfigUpdate struct {
+	AllowGuest      *bool
+	GuestCanListen  *bool
+	GuestCanSpeak   *bool
+	GuestCanMessage *bool
+	GuestLimit      *int
+}
+
+// GetConfig 读取域访客配置（含能力开关与上限）。
+func (s *GuestService) GetConfig(domainUUID string) (*model.Domain, error) {
+	domain, err := s.domainRepo.GetByUUID(domainUUID)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.NOT_FOUND, "domain not found")
+	}
+	return domain, nil
+}
+
+// UpdateConfig 更新域访客配置。
+func (s *GuestService) UpdateConfig(domainUUID string, upd GuestConfigUpdate) (*model.Domain, error) {
+	domain, err := s.GetConfig(domainUUID)
+	if err != nil {
+		return nil, err
+	}
+	if upd.AllowGuest != nil {
+		domain.AllowGuest = *upd.AllowGuest
+	}
+	if upd.GuestCanListen != nil {
+		domain.GuestCanListen = *upd.GuestCanListen
+	}
+	if upd.GuestCanSpeak != nil {
+		domain.GuestCanSpeak = *upd.GuestCanSpeak
+	}
+	if upd.GuestCanMessage != nil {
+		domain.GuestCanMessage = *upd.GuestCanMessage
+	}
+	if upd.GuestLimit != nil {
+		if *upd.GuestLimit < 0 {
+			return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "guest_limit must be >= 0")
+		}
+		domain.GuestLimit = *upd.GuestLimit
+	}
+	if err := s.domainRepo.Update(domain); err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return domain, nil
+}
+
+// Renew 已有访客身份加入另一个 Domain：复用 user 行，仅新增成员关系。
+// 已是成员时幂等返回。封禁/开关/上限检查与 Join 一致（额外校验封禁，
+// 因为身份已存在，可能已被目标域拉黑）。
+func (s *GuestService) Renew(userUUID string, req *GuestJoinRequest) (*GuestJoinResponse, error) {
+	user, err := s.userRepo.GetByUUID(userUUID)
+	if err != nil || user == nil || !user.IsGuest {
+		return nil, pkg.NewAppError(pkg.FORBIDDEN, "not a guest identity")
+	}
+	if req.InviteCode == "" && req.DomainUUID == "" {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "invite_code or domain_uuid required")
+	}
+	domain, err := s.resolveDomain(req)
+	if err != nil {
+		return nil, err
+	}
+	if !domain.AllowGuest {
+		return nil, pkg.NewAppError(pkg.FORBIDDEN, "guest access disabled")
+	}
+	if s.banRepo.FindActive(domain.UUID, user.UUID) != nil {
+		return nil, pkg.NewAppError(pkg.FORBIDDEN, "guest has been banned")
+	}
+	if domain.GuestLimit > 0 && s.onlineCount != nil && s.onlineCount(domain.UUID) >= domain.GuestLimit {
+		return nil, pkg.NewAppError(pkg.RATE_LIMITED, "guest limit reached")
+	}
+	member := &model.DomainMember{
+		DomainUUID: domain.UUID,
+		UserUUID:   user.UUID,
+		Nickname:   user.DisplayName,
+		RoleName:   model.DomainRoleGuest,
+	}
+	if existing, getErr := s.domainRepo.GetMember(domain.UUID, user.UUID); getErr == nil && existing != nil {
+		// 幂等：已是成员直接返回。
+	} else if errors.Is(getErr, gorm.ErrRecordNotFound) {
+		if err := s.db.Create(member).Error; err != nil {
+			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+		}
+	} else if getErr != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, getErr.Error())
+	}
+	tokens, err := s.auth.issueTokens(user)
+	if err != nil {
+		return nil, err
+	}
+	sanitized := *domain
+	sanitized.InviteCode = ""
+	return &GuestJoinResponse{AccessToken: tokens.Access, RefreshToken: tokens.Refresh, User: user, Domain: &sanitized}, nil
+}
+
+// CleanupInactiveGuests 删除 updated_at 早于 cutoff 的访客 users 行及其
+// 域成员关系；消息保留，author_uuid 悬空由前端显示为已注销访客。
+func (s *GuestService) CleanupInactiveGuests(days int) (int64, error) {
+	if days <= 0 {
+		return 0, pkg.NewAppError(pkg.INVALID_PARAMS, "days must be positive")
+	}
+	cutoff := time.Now().AddDate(0, 0, -days)
+	var count int64
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_uuid IN (?)",
+			tx.Model(&model.User{}).Select("uuid").Where("is_guest = ? AND updated_at < ?", true, cutoff),
+		).Delete(&model.DomainMember{}).Error; err != nil {
+			return err
+		}
+		res := tx.Where("is_guest = ? AND updated_at < ?", true, cutoff).Delete(&model.User{})
+		count = res.RowsAffected
+		return res.Error
+	})
+	if err != nil {
+		return 0, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return count, nil
+}

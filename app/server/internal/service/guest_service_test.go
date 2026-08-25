@@ -3,6 +3,7 @@ package service
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
@@ -194,4 +195,105 @@ func TestGuestService_BanUnban(t *testing.T) {
 			t.Fatalf("expect no active ban: %+v", ban)
 		}
 	})
+}
+
+func TestGuestService_UpdateConfig(t *testing.T) {
+	db := setupGuestServiceDB(t)
+	svc := newGuestService(db, nil)
+	d := seedGuestDomain(t, db, false)
+
+	allow := true
+	limit := 10
+	got, err := svc.UpdateConfig(d.UUID, GuestConfigUpdate{AllowGuest: &allow, GuestLimit: &limit})
+	if err != nil {
+		t.Fatalf("update config: %v", err)
+	}
+	if !got.AllowGuest || got.GuestLimit != 10 {
+		t.Fatalf("expect allow_guest=true limit=10, got %+v", got)
+	}
+	if got.GuestCanMessage {
+		t.Fatal("unset field must stay default(false)")
+	}
+
+	negative := -1
+	if _, err := svc.UpdateConfig(d.UUID, GuestConfigUpdate{GuestLimit: &negative}); err == nil {
+		t.Fatal("negative guest_limit must be rejected")
+	}
+}
+
+func TestGuestService_Renew(t *testing.T) {
+	db := setupGuestServiceDB(t)
+	svc := newGuestService(db, nil)
+	first := seedGuestDomain(t, db, true)
+	resp, err := svc.Join(&GuestJoinRequest{Nickname: "老访客", InviteCode: first.InviteCode})
+	if err != nil {
+		t.Fatalf("join: %v", err)
+	}
+
+	second := seedGuestDomain(t, db, true)
+	renewResp, err := svc.Renew(resp.User.UUID, &GuestJoinRequest{InviteCode: second.InviteCode})
+	if err != nil {
+		t.Fatalf("renew: %v", err)
+	}
+	if renewResp.User.UUID != resp.User.UUID {
+		t.Fatal("renew must reuse user row")
+	}
+	if member := db.Where("domain_uuid = ? AND user_uuid = ?", second.UUID, resp.User.UUID).Find(&model.DomainMember{}); member.RowsAffected != 1 {
+		t.Fatalf("expect membership row, got %d", member.RowsAffected)
+	}
+
+	// 幂等：重复 renew 不新增成员行
+	if _, err := svc.Renew(resp.User.UUID, &GuestJoinRequest{InviteCode: second.InviteCode}); err != nil {
+		t.Fatalf("idempotent renew: %v", err)
+	}
+	var memberCount int64
+	db.Model(&model.DomainMember{}).Where("domain_uuid = ? AND user_uuid = ?", second.UUID, resp.User.UUID).Count(&memberCount)
+	if memberCount != 1 {
+		t.Fatalf("still expect one row, got %d", memberCount)
+	}
+
+	// 被封禁的域不可 renew
+	if err := svc.Ban(second.UUID, "op", resp.User.UUID, "捣乱", 0); err != nil {
+		t.Fatalf("ban: %v", err)
+	}
+	if _, err := svc.Renew(resp.User.UUID, &GuestJoinRequest{InviteCode: second.InviteCode}); err == nil {
+		t.Fatal("banned guest must not renew")
+	}
+}
+
+func TestGuestService_CleanupInactiveGuests(t *testing.T) {
+	db := setupGuestServiceDB(t)
+	svc := newGuestService(db, nil)
+	d := seedGuestDomain(t, db, true)
+
+	oldGuest, err := svc.Join(&GuestJoinRequest{Nickname: "很久没来", InviteCode: d.InviteCode})
+	if err != nil {
+		t.Fatalf("join old: %v", err)
+	}
+	past := time.Now().AddDate(0, 0, -40)
+	if err := db.Model(&model.User{}).Where("uuid = ?", oldGuest.User.UUID).Update("updated_at", past).Error; err != nil {
+		t.Fatalf("age guest: %v", err)
+	}
+
+	newGuest, err := svc.Join(&GuestJoinRequest{Nickname: "刚来的", InviteCode: d.InviteCode})
+	if err != nil {
+		t.Fatalf("join new: %v", err)
+	}
+
+	removed, err := svc.CleanupInactiveGuests(30)
+	if err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	if removed != 1 {
+		t.Fatalf("expect 1 removed, got %d", removed)
+	}
+	if err := db.Where("uuid = ?", oldGuest.User.UUID).First(&model.User{}).Error; err == nil {
+		t.Fatal("old guest user must be deleted")
+	}
+	if err := db.Where("uuid = ?", newGuest.User.UUID).First(&model.User{}).Error; err != nil {
+		t.Fatal("active guest user must be kept")
+	}
+	if err := db.Where("user_uuid = ?", oldGuest.User.UUID).First(&model.DomainMember{}).Error; err == nil {
+		t.Fatal("old guest membership must be deleted")
+	}
 }

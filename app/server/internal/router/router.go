@@ -168,6 +168,9 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	if h.Domain != nil {
 		domainRoutes.Register(protected.Group("/domain"), h.Domain)
 	}
+	if h.Guest != nil {
+		guestRoutes.RegisterProtected(protected.Group(""), h.Guest)
+	}
 	if h.Cluster != nil {
 		clusterRoutes.RegisterProtected(protected.Group("/cluster"), h.Cluster)
 	}
