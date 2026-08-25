@@ -93,7 +93,7 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, pkg.NewAppError(pkg.USER_BANNED)
 	}
 
-	token, refreshToken, err := generateTokenPair(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion)
+	tokens, err := s.issueTokens(user)
 	if err != nil {
 		return nil, err
 	}
@@ -101,8 +101,8 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 	needChange := user.Role == "admin" && authbossHasher.CompareHashAndPassword(user.Password, DefaultAdminPassword) == nil
 
 	return &AuthResponse{
-		Token:              token,
-		RefreshToken:       refreshToken,
+		Token:              tokens.Access,
+		RefreshToken:       tokens.Refresh,
 		User:               *user,
 		NeedChangePassword: needChange,
 	}, nil
@@ -155,14 +155,14 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	token, refreshToken, err := generateTokenPair(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion)
+	tokens, err := s.issueTokens(user)
 	if err != nil {
 		return nil, err
 	}
 
 	return &AuthResponse{
-		Token:        token,
-		RefreshToken: refreshToken,
+		Token:        tokens.Access,
+		RefreshToken: tokens.Refresh,
 		User:         *user,
 	}, nil
 }
@@ -369,13 +369,13 @@ func (s *AuthService) FirstChangePassword(username, newPassword string, name *st
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	token, refreshToken, err := generateTokenPair(updatedUser.Name, updatedUser.DisplayName, updatedUser.UUID, updatedUser.Role, updatedUser.TokenVersion)
+	tokens, err := s.issueTokens(updatedUser)
 	if err != nil {
 		return nil, err
 	}
 	return &AuthResponse{
-		Token:        token,
-		RefreshToken: refreshToken,
+		Token:        tokens.Access,
+		RefreshToken: tokens.Refresh,
 		User:         *updatedUser,
 	}, nil
 }
@@ -453,4 +453,19 @@ func generateTokenPair(username, displayName, userUUID, role string, tokenVersio
 // GenerateTokenPair 从 model.User 生成 token 对，供 OAuth 等模块复用。
 func GenerateTokenPair(user *model.User) (string, string, error) {
 	return generateTokenPair(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion)
+}
+
+// tokenPair 一对 access/refresh token。
+type tokenPair struct {
+	Access  string
+	Refresh string
+}
+
+// issueTokens 从用户最新状态签发 access+refresh token 对（Login/Register/改密/访客共用）。
+func (s *AuthService) issueTokens(user *model.User) (*tokenPair, error) {
+	access, refresh, err := generateTokenPair(user.Name, user.DisplayName, user.UUID, user.Role, user.TokenVersion)
+	if err != nil {
+		return nil, err
+	}
+	return &tokenPair{Access: access, Refresh: refresh}, nil
 }
