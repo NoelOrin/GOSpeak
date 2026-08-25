@@ -6,6 +6,8 @@ import ConfirmModal from "@/components/common/ConfirmModal";
 import InviteShareModal from "@/components/domain/InviteShareModal";
 import domainStore from "@/stores/domainStore";
 import userStore from "@/stores/userStore";
+import { isGuest, setGuestCaps } from "@/stores/guestStore";
+import { getGuestConfig } from "@/api/guest";
 import { extractDomainInviteCode, domainInviteUrl } from "@/utils/domainInvite";
 import { hasPermission } from "@/utils/permissions";
 
@@ -44,6 +46,19 @@ function RouteComponent() {
 	createEffect(() => {
 		const uuid = params().domainUUID;
 		activateDomain(uuid);
+		if (isGuest() && uuid) {
+			getGuestConfig(uuid)
+				.then((cfg) =>
+					setGuestCaps({
+						listen: cfg.guest_can_listen ?? true,
+						speak: cfg.guest_can_speak ?? true,
+						message: cfg.guest_can_message ?? false,
+					}),
+				)
+				.catch(() =>
+					setGuestCaps({ listen: false, speak: false, message: false }),
+				);
+		}
 	});
 
 	const currentUser = () => userStore.user();

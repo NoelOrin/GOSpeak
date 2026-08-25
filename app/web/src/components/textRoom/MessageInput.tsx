@@ -4,6 +4,7 @@ import { showToast } from "solid-notifications";
 import { useUpload } from "@/hooks/useUpload";
 import { chatStore } from "@/stores/chatStore";
 import { socketStore } from "@/stores/socketStore";
+import { isGuest, guestCaps } from "@/stores/guestStore";
 
 interface MessageInputProps {
 	replyTo?: string | null;
@@ -22,6 +23,7 @@ export default function MessageInput(props: MessageInputProps) {
 	const [mentionQuery, setMentionQuery] = createSignal("");
 	const [mentionIndex, setMentionIndex] = createSignal(0);
 	const [uploadingFiles, setUploadingFiles] = createSignal<UploadingFile[]>([]);
+	const guestMsgBlocked = () => isGuest() && !guestCaps().message;
 	const { upload, uploading, progress } = useUpload("chat");
 	let textareaRef: HTMLTextAreaElement | undefined;
 	let fileInputRef: HTMLInputElement | undefined;
@@ -244,7 +246,12 @@ export default function MessageInput(props: MessageInputProps) {
 					value={content()}
 					onInput={handleInput}
 					onKeyDown={handleKeyDown}
-					placeholder="输入消息，支持 Markdown、附件和 @提及..."
+					placeholder={
+						guestMsgBlocked()
+							? "该域访客不可发送消息"
+							: "输入消息，支持 Markdown、附件和 @提及..."
+					}
+					disabled={guestMsgBlocked()}
 					class="textarea textarea-bordered flex-1 min-h-[40px] max-h-[96px] resize-none text-base sm:text-sm leading-relaxed py-[8px] sm:py-[6px]"
 					rows={1}
 				/>
@@ -272,7 +279,7 @@ export default function MessageInput(props: MessageInputProps) {
 				<button
 					type="button"
 					class="btn btn-primary h-10 min-h-10 shrink-0 px-4"
-					disabled={!content().trim() || uploading()}
+					disabled={guestMsgBlocked() || !content().trim() || uploading()}
 					onClick={handleSend}
 				>
 					发送
