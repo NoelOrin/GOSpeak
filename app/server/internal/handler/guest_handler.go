@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/permcode"
+	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
 
 	"github.com/gin-gonic/gin"
