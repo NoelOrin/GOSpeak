@@ -1,9 +1,11 @@
 package model
 
 import (
+	"strings"
+	"time"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"time"
 )
 
 const (
@@ -50,3 +52,9 @@ func (u *User) IsBanned() bool {
 func (u *User) TableName() string {
 	return "users"
 }
+
+// GuestNamePrefix 访客机器名前缀（users.name），用于在线身份快速识别。
+const GuestNamePrefix = "guest_"
+
+// IsGuestName 判断机器名是否为访客命名约定。
+func IsGuestName(name string) bool { return strings.HasPrefix(name, GuestNamePrefix) }

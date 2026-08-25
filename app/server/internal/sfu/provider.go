@@ -36,3 +36,9 @@ type ClientInfoProvider interface {
 	Provider
 	ClientInfo() map[string]interface{}
 }
+
+// PublishControlProvider 由支持发布控制的 Provider 实现：
+// 签发 token 时显式声明是否允许发布媒体流（访客说权限等场景）。
+type PublishControlProvider interface {
+	GenerateTokenWithPublish(room, identity string, canPublish bool) (string, error)
+}

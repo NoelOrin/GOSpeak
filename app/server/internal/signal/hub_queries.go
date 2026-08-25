@@ -319,3 +319,25 @@ func (h *Hub) deleteRoomIfEmptyLocked(roomName string) bool {
 
 // registerStreamLocked 在 WS join 时登记 stream→room 反查 + room→streams 聚合 + identity→stream 映射。
 // 调用方须持有 h.mu（写）。stream 为空则跳过（provider 无 stream 概念）。
+
+// DomainOnlineIdentities 返回指定域下所有房间内去重后的在线身份名。
+// 用于域级访客在线统计（软上限）。
+func (h *Hub) DomainOnlineIdentities(domainUUID string) []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	seen := make(map[string]struct{})
+	out := make([]string, 0)
+	for key, room := range h.rooms {
+		if !roomKeyMatchesDomain(key, domainUUID) {
+			continue
+		}
+		for _, m := range room.Members {
+			if _, dup := seen[m.Identity]; dup {
+				continue
+			}
+			seen[m.Identity] = struct{}{}
+			out = append(out, m.Identity)
+		}
+	}
+	return out
+}

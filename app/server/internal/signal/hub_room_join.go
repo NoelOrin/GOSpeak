@@ -101,6 +101,19 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 		})
 	}
 
+	if h.guestJoinGuard != nil && req.DomainUUID != "" {
+		userUUID := ""
+		if c != nil && c.Claims() != nil {
+			userUUID = c.Claims().UserUUID
+			if userUUID == "" {
+				userUUID = c.Claims().Username
+			}
+		}
+		if guardErr := h.guestJoinGuard(req.DomainUUID, userUUID); guardErr != nil {
+			return marshalAck(map[string]interface{}{"error": guardErr.Error()})
+		}
+	}
+
 	identity, err := resolveIdentity(c, req.Identity)
 	if err != nil {
 		return marshalAck(map[string]interface{}{
@@ -345,6 +358,19 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 		return marshalAck(map[string]interface{}{
 			"error": "not a member of this domain",
 		})
+	}
+
+	if h.guestJoinGuard != nil && req.DomainUUID != "" {
+		userUUID := ""
+		if c != nil && c.Claims() != nil {
+			userUUID = c.Claims().UserUUID
+			if userUUID == "" {
+				userUUID = c.Claims().Username
+			}
+		}
+		if guardErr := h.guestJoinGuard(req.DomainUUID, userUUID); guardErr != nil {
+			return marshalAck(map[string]interface{}{"error": guardErr.Error()})
+		}
 	}
 
 	identity, err := resolveIdentity(c, req.Identity)

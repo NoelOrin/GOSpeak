@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"GOSpeak/internal/model"
@@ -340,5 +341,62 @@ func TestMessageHandler_Delete_BotClaimsMissingDeleteOthersDoesNotFallBackToGlob
 	}
 	if code := intCode(resp["code"]); code != 1013 {
 		t.Fatalf("expected 1013 when claims lack message:delete_others despite global role: got %d: %s", code, resp["msg"])
+	}
+}
+
+func TestMessageHandler_Send_GuestMessagingDisabledGate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Room{}, &model.Domain{}, &model.DomainMember{}, &model.DomainRole{}, &model.DomainRolePermission{}, &model.Message{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	domain := &model.Domain{Name: "Gate", OwnerUUID: "owner-1", AllowGuest: true}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	room := &model.Room{Name: "gate-room", DomainUUID: domain.UUID, Type: model.RoomTypeText}
+	if err := db.Create(room).Error; err != nil {
+		t.Fatalf("seed room: %v", err)
+	}
+
+	roomSvc := service.NewRoomService(repository.NewRoomRepository(db))
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
+	msgSvc := service.NewMessageService(repository.NewMessageRepository(db), repository.NewRoomRepository(db), domainSvc)
+	h := NewMessageHandler(msgSvc, nil, roomSvc, domainSvc)
+	// 访客策略：身份是访客，但发消息开关关闭 —— 门禁先于权限判决触发。
+	h.SetGuestPolicy(
+		func(string) bool { return true },
+		func(string) (bool, bool, bool) { return true, true, false },
+	)
+
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("username", "guest-gate")
+		c.Set("user_uuid", "guest-gate")
+		c.Next()
+	})
+	r.POST("/send", h.Send)
+
+	body, _ := json.Marshal(map[string]string{"room_uuid": room.UUID, "content": "hi"})
+	req := httptest.NewRequest(http.MethodPost, "/send", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if code := intCode(resp["code"]); code != 1013 {
+		t.Fatalf("expect 1013, got %d: %s", code, w.Body.String())
+	}
+	if msg, _ := resp["msg"].(string); !strings.Contains(msg, "guest messaging") {
+		t.Fatalf("expect guest messaging gate message, got %q", resp["msg"])
 	}
 }

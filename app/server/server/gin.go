@@ -1,6 +1,8 @@
 package server
 
 import (
+	"errors"
+
 	"GOSpeak/internal/audit"
 	"GOSpeak/internal/authstate"
 	"GOSpeak/internal/bus"
@@ -11,6 +13,7 @@ import (
 	"GOSpeak/internal/logger"
 	"GOSpeak/internal/metrics"
 	"GOSpeak/internal/middleware"
+	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/plugin"
 	"GOSpeak/internal/plugin/builtin"
@@ -119,6 +122,7 @@ func StartGin(env EnvEnum) error {
 	emailSvc := service.NewEmailService(emailConfigSvc.ResolveConfig)
 	emailVerificationSvc := service.NewEmailVerificationService(emailVerificationRepo, userRepo, emailSvc, emailConfigSvc.ResolveConfig)
 	authSvc := service.NewAuthService(userRepo, emailConfigSvc, emailVerificationSvc)
+	guestSvc := service.NewGuestService(db, userRepo, domainRepo, repository.NewGuestBanRepo(db), authSvc, nil)
 	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
 	userSvc := service.NewUserService(userRepo, storageSvc)
 	userGroupSvc := service.NewUserGroupService(userGroupRepo)
@@ -228,6 +232,27 @@ func StartGin(env EnvEnum) error {
 		StateNotifier:           eventBus,
 	})
 	signalHub.StartMembershipHeartbeat()
+	signalHub.SetGuestJoinGuard(func(domainUUID, userUUID string) error {
+		if !guestSvc.IsGuest(userUUID) {
+			return nil
+		}
+		if guestSvc.IsGuestBanned(domainUUID, userUUID) {
+			return errors.New("guest has been banned")
+		}
+		if guestSvc.GuestLimitReached(domainUUID, signalHub.DomainOnlineIdentities(domainUUID)) {
+			return errors.New("guest limit reached")
+		}
+		return nil
+	})
+	guestSvc.SetOnlineCounter(func(domainUUID string) int {
+		count := 0
+		for _, identity := range signalHub.DomainOnlineIdentities(domainUUID) {
+			if model.IsGuestName(identity) {
+				count++
+			}
+		}
+		return count
+	})
 	if nb, ok := eventBus.(*bus.NATSBus); ok {
 		nb.SetRemoteHook(func(event string, payload interface{}) {
 			if event == cluster.EventControlCommand {
@@ -311,6 +336,7 @@ func StartGin(env EnvEnum) error {
 	// MediaSoup 专用信号初始化已禁用保留：SetSFUSignalHandler 不再调用。
 	signalHub.SetupFanout(wsFanout, wsHandler)
 	sfuSvc := service.NewSFUService(sfuProvider, signalHub)
+	sfuSvc.SetGuestPolicy(guestSvc.IsGuest, guestSvc.GuestCaps)
 	sfuSvc.SetDomainMemberChecker(domainSvc.IsMember)
 	signalH := handler.NewSignalHandler(sfuSvc)
 	signalH.SetLiveKitSecretResolver(func() string {
@@ -350,7 +376,6 @@ func StartGin(env EnvEnum) error {
 
 	authCookieCfg := handler.NewAuthCookieConfig(cfg)
 	authH := handler.NewAuthHandler(authSvc, authCookieCfg)
-	guestSvc := service.NewGuestService(db, userRepo, domainRepo, repository.NewGuestBanRepo(db), authSvc, nil)
 	guestH := handler.NewGuestHandler(guestSvc, domainSvc, permSvc, authCookieCfg)
 	guestH.SetOnDomainKick(signalHub.KickUserFromDomain)
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)
@@ -392,6 +417,7 @@ func StartGin(env EnvEnum) error {
 	roomH.SetControlPublisher(clusterSvc)
 	roomH.SetAuditor(auditSvc)
 	msgH := handler.NewMessageHandler(messageSvc, permSvc, roomSvc, domainSvc)
+	msgH.SetGuestPolicy(guestSvc.IsGuest, guestSvc.GuestCaps)
 	permH := handler.NewPermissionHandler(permSvc)
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
 	muteH.SetControlPublisher(clusterSvc)

@@ -14,6 +14,18 @@ type MessageHandler struct {
 	permSvc   *service.PermissionService
 	roomSvc   *service.RoomService
 	domainSvc *service.DomainService
+
+	guestIs   func(userUUID string) bool
+	guestCaps func(domainUUID string) (listen, speak, message bool)
+}
+
+// SetGuestPolicy 注入访客身份与能力开关；nil 表示不启用访客策略。
+func (h *MessageHandler) SetGuestPolicy(
+	isGuest func(userUUID string) bool,
+	caps func(domainUUID string) (listen, speak, message bool),
+) {
+	h.guestIs = isGuest
+	h.guestCaps = caps
 }
 
 func NewMessageHandler(msgSvc *service.MessageService, permSvc *service.PermissionService, roomSvc *service.RoomService, domainSvc *service.DomainService) *MessageHandler {
@@ -163,6 +175,12 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	room, ok := h.roomOf(c, req.RoomUUID)
 	if !ok {
 		return
+	}
+	if h.guestIs != nil && h.guestIs(actor.UserUUID) {
+		if _, _, msg := h.guestCaps(room.DomainUUID); !msg {
+			pkg.Fail(c, pkg.FORBIDDEN, "guest messaging disabled")
+			return
+		}
 	}
 	if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
 		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")

@@ -40,11 +40,17 @@ func ctxWithTimeout() (context.Context, context.CancelFunc) {
 }
 
 func (s *Service) GenerateToken(room, identity string) (string, error) {
+	return s.GenerateTokenWithPublish(room, identity, true)
+}
+
+// GenerateTokenWithPublish 显式声明发布权限；未显式设置时 LiveKit 默认允许发布。
+func (s *Service) GenerateTokenWithPublish(room, identity string, canPublish bool) (string, error) {
 	at := auth.NewAccessToken(s.apiKey, s.apiSecret)
 	grant := &auth.VideoGrant{
 		RoomJoin: true,
 		Room:     room,
 	}
+	grant.SetCanPublish(canPublish)
 	at.AddGrant(grant).
 		SetIdentity(identity).
 		SetValidFor(time.Hour)

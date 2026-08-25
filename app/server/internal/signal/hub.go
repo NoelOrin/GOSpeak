@@ -104,6 +104,7 @@ type Hub struct {
 	connSlots               map[string]*connRoomSlots // socketID -> slots
 	msgSvc                  messageSender
 	convSvc                 conversationSender
+	guestJoinGuard          func(domainUUID, userUUID string) error
 	domainChecker           func(domainUUID, userUUID string) bool
 	domainPermChecker       func(domainUUID, userUUID, permCode string) bool
 	clientDomains           map[string]string // socketID -> current domain scope (empty = platform)
@@ -124,6 +125,7 @@ type HubOptions struct {
 	StreamResolver          StreamNameResolver
 	MessageSender           messageSender
 	ConversationSender      conversationSender
+	GuestJoinGuard          func(domainUUID, userUUID string) error
 	DomainChecker           func(domainUUID, userUUID string) bool
 	DomainPermissionChecker func(domainUUID, userUUID, permCode string) bool
 	MembershipStore         membershipStore
@@ -159,6 +161,7 @@ func NewHubWithOptions(store roomStore, mStore muteStore, uStore userStore, pChe
 	h.streamResolver = opts.StreamResolver
 	h.msgSvc = opts.MessageSender
 	h.convSvc = opts.ConversationSender
+	h.guestJoinGuard = opts.GuestJoinGuard
 	h.domainChecker = opts.DomainChecker
 	h.domainPermChecker = opts.DomainPermissionChecker
 	h.membershipStore = opts.MembershipStore
@@ -328,4 +331,9 @@ func (h *Hub) OnError(c ws.ClientMessenger, err error) {
 
 func parseJSON(data string, v interface{}) error {
 	return json.Unmarshal([]byte(data), v)
+}
+
+// SetGuestJoinGuard 后置注入访客加入守卫（封禁/上限），供组合根在依赖齐备后调用。
+func (h *Hub) SetGuestJoinGuard(fn func(domainUUID, userUUID string) error) {
+	h.guestJoinGuard = fn
 }

@@ -135,3 +135,67 @@ func TestGetJoinToken_PlatformRoomKeepsLogicalName(t *testing.T) {
 		t.Fatalf("SFURoom = %q, want %q", res.SFURoom, "lobby")
 	}
 }
+
+type publishControlFakeProvider struct {
+	fakeSFUProvider
+	capturedCanPublish *bool
+}
+
+func (p *publishControlFakeProvider) GenerateTokenWithPublish(room, identity string, canPublish bool) (string, error) {
+	p.capturedCanPublish = &canPublish
+	return "token-" + room, nil
+}
+
+func TestGetJoinToken_GuestListenDisabled(t *testing.T) {
+	provider := &fakeSFUProvider{}
+	svc := NewSFUService(provider, nil)
+	svc.SetDomainMemberChecker(func(string, string) bool { return true })
+	svc.SetGuestPolicy(
+		func(string) bool { return true },
+		func(string) (bool, bool, bool) { return false, true, true },
+	)
+	_, err := svc.GetJoinToken("dom", "room1", "guest_x", "uuid-1", "")
+	if err == nil {
+		t.Fatal("expect forbidden when guest listen disabled")
+	}
+	appErr, ok := err.(*pkg.AppError)
+	if !ok || appErr.Code != pkg.FORBIDDEN {
+		t.Fatalf("expect 1013 forbidden, got %v", err)
+	}
+}
+
+func TestGetJoinToken_GuestSpeakOffUsesPublishControl(t *testing.T) {
+	provider := &publishControlFakeProvider{}
+	svc := NewSFUService(provider, nil)
+	svc.SetDomainMemberChecker(func(string, string) bool { return true })
+	svc.SetGuestPolicy(
+		func(string) bool { return true },
+		func(string) (bool, bool, bool) { return true, false, false },
+	)
+	res, err := svc.GetJoinToken("dom", "room1", "guest_x", "uuid-1", "")
+	if err != nil {
+		t.Fatalf("join token: %v", err)
+	}
+	if provider.capturedCanPublish == nil || *provider.capturedCanPublish {
+		t.Fatal("expect canPublish=false for guest with speak off")
+	}
+	if res.Token == "" {
+		t.Fatal("expect token issued")
+	}
+}
+
+func TestGetJoinToken_NonGuestUnaffectedByGuestPolicy(t *testing.T) {
+	provider := &publishControlFakeProvider{}
+	svc := NewSFUService(provider, nil)
+	svc.SetDomainMemberChecker(func(string, string) bool { return true })
+	svc.SetGuestPolicy(
+		func(userUUID string) bool { return userUUID == "guest" },
+		func(string) (bool, bool, bool) { return false, false, false },
+	)
+	if _, err := svc.GetJoinToken("", "room1", "alice", "alice-uuid", ""); err != nil {
+		t.Fatalf("non-guest without domain must pass: %v", err)
+	}
+	if _, err := svc.GetJoinToken("dom", "room1", "alice", "alice-uuid", ""); err != nil {
+		t.Fatalf("non-guest member must pass: %v", err)
+	}
+}

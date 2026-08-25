@@ -338,3 +338,37 @@ func (s *GuestService) CleanupInactiveGuests(days int) (int64, error) {
 	}
 	return count, nil
 }
+
+// GuestCaps 读取域访客三项能力开关（听/说/发消息）。
+// 域不存在时全 false，保证 fail-closed。
+func (s *GuestService) GuestCaps(domainUUID string) (listen, speak, message bool) {
+	domain, err := s.domainRepo.GetByUUID(domainUUID)
+	if err != nil || domain == nil {
+		return false, false, false
+	}
+	return domain.GuestCanListen, domain.GuestCanSpeak, domain.GuestCanMessage
+}
+
+// GuestLimitReached 判断域内在线访客数是否已达上限。
+// onlineIdentities 为该域全部在线身份名；软上限语义，超限返回 true。
+func (s *GuestService) GuestLimitReached(domainUUID string, onlineIdentities []string) bool {
+	domain, err := s.domainRepo.GetByUUID(domainUUID)
+	if err != nil || domain == nil {
+		return true
+	}
+	if domain.GuestLimit <= 0 {
+		return false
+	}
+	count := 0
+	for _, identity := range onlineIdentities {
+		if model.IsGuestName(identity) {
+			count++
+		}
+	}
+	return count >= domain.GuestLimit
+}
+
+// SetOnlineCounter 装配层注入域内在线访客统计（WS Hub），Join 签发上限判断使用。
+func (s *GuestService) SetOnlineCounter(fn func(domainUUID string) int) {
+	s.onlineCount = fn
+}
