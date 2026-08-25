@@ -10,14 +10,15 @@ describe("signal module", () => {
     expect(result.data?.type).toBe("offer");
   });
 
-  it("issues a websocket ticket for an authenticated user", async () => {
+  it("issues a join token for an authenticated user", async () => {
     const user = await registerUser("signal");
-    const result = await api<{ ticket: string }>("/api/v1/signal/ws-ticket", {
-      method: "GET",
+    const room = unique("voice_room");
+    const result = await api<{ token: string; provider: string; sfuRoom: string }>("/api/v1/signal/token", {
       token: user.access_token,
+      body: { room, domain_uuid: "", identity: "ignored" },
     });
     expect(result.code).toBe(0);
-    expect(result.data?.ticket).toBeTruthy();
+    expect(result.data?.token).toBeTruthy();
   });
 
   it("generates an srs join token", async () => {

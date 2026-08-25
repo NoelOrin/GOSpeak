@@ -13,6 +13,7 @@ export interface BackendUser {
 	avatar: string;
 	role: string;
 	is_bot?: boolean;
+	is_guest?: boolean;
 	permissions?: string[];
 }
 

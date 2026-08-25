@@ -676,3 +676,48 @@ func TestClusterServiceReconcileAllDoesNotReapStaleReadyNode(t *testing.T) {
 		t.Fatalf("ReconcileAll must not reap nodes; got %q", got.Status)
 	}
 }
+
+func TestClusterNodeSecretGuards(t *testing.T) {
+	svc, db := setupClusterServiceTestDB(t)
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil && sqlDB != nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	node, err := svc.RegisterNodeParams("node-sec", "node-sec", "h", "http://h", model.ClusterRoleWorker, model.ClusterNodeReady, "livekit", 10, 100, nil, "s3cret")
+	if err != nil {
+		t.Fatalf("register with secret: %v", err)
+	}
+
+	// 无 secret 的节点可直接操作（向后兼容）。
+	plain, err := svc.RegisterNodeParams("node-plain", "node-plain", "h", "http://h", model.ClusterRoleWorker, model.ClusterNodeReady, "livekit", 10, 100, nil, "")
+	if err != nil {
+		t.Fatalf("register plain: %v", err)
+	}
+	if _, err := svc.Heartbeat(plain.UUID, cluster.HeartbeatReport{NodeID: plain.UUID}); err != nil {
+		t.Fatalf("plain heartbeat should pass: %v", err)
+	}
+	if err := svc.DeregisterNode(plain.UUID, ""); err != nil {
+		t.Fatalf("plain deregister should pass: %v", err)
+	}
+
+	// 有 secret 的节点：错误/缺失 secret 必须被拒。
+	if _, err := svc.Heartbeat(node.UUID, cluster.HeartbeatReport{NodeID: node.UUID}); err == nil {
+		t.Fatal("heartbeat without secret should fail")
+	}
+	if _, err := svc.Heartbeat(node.UUID, cluster.HeartbeatReport{NodeID: node.UUID, NodeSecret: "wrong"}); err == nil {
+		t.Fatal("heartbeat with wrong secret should fail")
+	}
+	if err := svc.DeregisterNode(node.UUID, ""); err == nil {
+		t.Fatal("deregister without secret should fail")
+	}
+
+	// 正确 secret 放行。
+	if _, err := svc.Heartbeat(node.UUID, cluster.HeartbeatReport{NodeID: node.UUID, NodeSecret: "s3cret"}); err != nil {
+		t.Fatalf("heartbeat with correct secret: %v", err)
+	}
+	if err := svc.DeregisterNode(node.UUID, "s3cret"); err != nil {
+		t.Fatalf("deregister with correct secret: %v", err)
+	}
+}

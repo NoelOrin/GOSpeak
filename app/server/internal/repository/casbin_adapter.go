@@ -3,7 +3,6 @@ package repository
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"GOSpeak/internal/model"
@@ -24,19 +23,39 @@ func NewCasbinAdapter(db *gorm.DB) *CasbinAdapter {
 }
 
 func (a *CasbinAdapter) LoadPolicy(m casbinmodel.Model) error {
-	var rules []model.RolePermission
-	if err := a.db.Find(&rules).Error; err != nil {
+	// Casbin 的 act 维度是权限码（如 domain:create），而 role_permissions 表存的是
+	// permission_id 外键。这里 join permissions 取 code，保证 Enforce(role, code)
+	// 能命中策略，与写入路径（按 code 解析为 id）保持一致。
+	type row struct {
+		RoleName string
+		Code     string
+	}
+	var rules []row
+	if err := a.db.
+		Table("role_permissions").
+		Select("role_permissions.role_name AS role_name, permissions.code AS code").
+		Joins("JOIN permissions ON permissions.id = role_permissions.permission_id").
+		Scan(&rules).Error; err != nil {
 		return err
 	}
 
+	// 自反 g 边：matcher 使用 g(r.sub, p.sub)，casbin 的 g 默认不自反，
+	// 必须为每个出现过的角色加载 g, role, role，否则 g(role, role) 恒为 false。
+	roles := make(map[string]struct{}, len(rules))
 	for _, rule := range rules {
-		if err := persist.LoadPolicyArray([]string{"p", "p", rule.RoleName, fmt.Sprintf("%d", rule.PermissionID)}, m); err != nil {
+		if rule.RoleName == "" || rule.Code == "" {
+			continue
+		}
+		if err := persist.LoadPolicyArray([]string{"p", rule.RoleName, rule.Code}, m); err != nil {
+			return err
+		}
+		roles[rule.RoleName] = struct{}{}
+	}
+	for role := range roles {
+		if err := persist.LoadPolicyArray([]string{"g", role, role}, m); err != nil {
 			return err
 		}
 	}
-
-	var roles []model.Role
-	_ = roles
 	return nil
 }
 

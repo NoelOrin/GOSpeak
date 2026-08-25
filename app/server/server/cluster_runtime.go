@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"GOSpeak/internal/cluster"
@@ -66,8 +67,10 @@ func startLocalClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterSer
 	done := make(chan struct{})
 	interval := cfg.ClusterHeartbeatIntervalDuration()
 	timeout := cfg.ClusterHeartbeatTimeoutDuration()
+	probes := newSFUProbeGuard()
 
-	report := collectClusterReport(cfg, node.UUID, hub, probeSFUHealth(context.Background(), sfuProvider))
+	report := collectClusterReport(cfg, node.UUID, hub, probes.probe(ctx, sfuProvider))
+	report.NodeSecret = cfg.ClusterNodeSecret
 	if _, err := clusterSvc.Heartbeat(node.UUID, report); err != nil {
 		logger.WithComponent("Cluster").Warnf("local node initial heartbeat failed: %v", err)
 	}
@@ -82,7 +85,8 @@ func startLocalClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterSer
 				return
 			case <-ticker.C:
 			}
-			report := collectClusterReport(cfg, node.UUID, hub, probeSFUHealth(ctx, sfuProvider))
+			report := collectClusterReport(cfg, node.UUID, hub, probes.probe(ctx, sfuProvider))
+			report.NodeSecret = cfg.ClusterNodeSecret
 			if _, err := clusterSvc.Heartbeat(node.UUID, report); err != nil {
 				logger.WithComponent("Cluster").Warnf("local node heartbeat failed: %v", err)
 			}
@@ -115,7 +119,7 @@ func startLocalClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterSer
 	stop := func() {
 		cancel()
 		<-done
-		if err := clusterSvc.DeregisterNode(node.UUID); err != nil {
+		if err := clusterSvc.DeregisterNode(node.UUID, cfg.ClusterNodeSecret); err != nil {
 			logger.WithComponent("Cluster").Debugf("local node deregister failed: %v", err)
 		}
 	}
@@ -139,6 +143,21 @@ func startAgentClusterRuntime(cfg *config.Config, clusterSvc *service.ClusterSer
 			}
 			if err := clusterSvc.ReapOffline(timeout); err != nil {
 				logger.WithComponent("Cluster").Warnf("reap offline nodes failed: %v", err)
+			}
+		}
+	}()
+	go func() {
+		reconcile := time.NewTicker(timeout)
+		defer reconcile.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-reconcile.C:
+			}
+			// 周期重建宕机节点的 Server 副本，避免离线节点分配永远滞留。
+			if err := clusterSvc.ReconcileAll(timeout); err != nil {
+				logger.WithComponent("Cluster").Warnf("reconcile failed: %v", err)
 			}
 		}
 	}()
@@ -177,6 +196,7 @@ func startWorkerClusterRuntime(cfg *config.Config, hub *signal.Hub, sfuProvider 
 	done := make(chan struct{})
 	interval := cfg.ClusterHeartbeatIntervalDuration()
 	registered := false
+	probes := newSFUProbeGuard()
 
 	go func() {
 		defer close(done)
@@ -196,7 +216,7 @@ func startWorkerClusterRuntime(cfg *config.Config, hub *signal.Hub, sfuProvider 
 				registered = true
 				logger.WithComponent("Cluster").Infof("worker registered node=%s", nodeID)
 			}
-			report := collectClusterReport(cfg, nodeID, hub, probeSFUHealth(ctx, sfuProvider))
+			report := collectClusterReport(cfg, nodeID, hub, probes.probe(ctx, sfuProvider))
 			if err := client.Heartbeat(ctx, report); err != nil {
 				logger.WithComponent("Cluster").Warnf("worker heartbeat failed: %v", err)
 				if errors.Is(err, cluster.ErrClusterNodeNotFound) {
@@ -260,15 +280,55 @@ func collectClusterReport(cfg *config.Config, nodeID string, hub *signal.Hub, sf
 	}
 }
 
-// probeSFUHealth does a lightweight provider probe. Providers without a
-// real-time management list (ErrSFUNotSupported) are treated as healthy.
-// Provider clients are expected to bound their own call latency.
-func probeSFUHealth(_ context.Context, provider sfu.Provider) bool {
+// SFUProbeGuard 限制同一 provider 的健康探测单飞：上一次探测未返回时跳过本轮并沿用上次结果，
+// 避免挂死的管理调用在每次心跳叠加泄漏 goroutine、并在同一 client 上并发堆积。
+type SFUProbeGuard struct {
+	mu          sync.Mutex
+	inFlight    bool
+	lastHealthy bool
+}
+
+func newSFUProbeGuard() *SFUProbeGuard {
+	return &SFUProbeGuard{lastHealthy: true}
+}
+
+func (g *SFUProbeGuard) probe(ctx context.Context, provider sfu.Provider) bool {
 	if provider == nil {
 		return true
 	}
-	_, err := provider.ListRooms()
-	return err == nil || errors.Is(err, pkg.ErrSFUNotSupported)
+	g.mu.Lock()
+	if g.inFlight {
+		g.mu.Unlock()
+		return g.lastHealthy
+	}
+	g.inFlight = true
+	g.mu.Unlock()
+
+	healthy := probeSFUHealth(ctx, provider)
+
+	g.mu.Lock()
+	g.inFlight = false
+	g.lastHealthy = healthy
+	g.mu.Unlock()
+	return healthy
+}
+
+// probeSFUHealth 用 ctx 限时探测；接口不接受 ctx，用 goroutine + select 实现。
+// 上层 Guard 保证同一 provider 不并发堆积；provider 自身仍应配置请求超时以回收 goroutine。
+func probeSFUHealth(ctx context.Context, provider sfu.Provider) bool {
+	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	ch := make(chan error, 1)
+	go func() {
+		_, err := provider.ListRooms()
+		ch <- err
+	}()
+	select {
+	case err := <-ch:
+		return err == nil || errors.Is(err, pkg.ErrSFUNotSupported)
+	case <-probeCtx.Done():
+		return false
+	}
 }
 
 func hostnameOrDefault() string {

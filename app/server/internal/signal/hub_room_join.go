@@ -101,6 +101,19 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 		})
 	}
 
+	if h.guestJoinGuard != nil && req.DomainUUID != "" {
+		userUUID := ""
+		if c != nil && c.Claims() != nil {
+			userUUID = c.Claims().UserUUID
+			if userUUID == "" {
+				userUUID = c.Claims().Username
+			}
+		}
+		if guardErr := h.guestJoinGuard(req.DomainUUID, userUUID); guardErr != nil {
+			return marshalAck(map[string]interface{}{"error": guardErr.Error()})
+		}
+	}
+
 	identity, err := resolveIdentity(c, req.Identity)
 	if err != nil {
 		return marshalAck(map[string]interface{}{
@@ -345,6 +358,19 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 		return marshalAck(map[string]interface{}{
 			"error": "not a member of this domain",
 		})
+	}
+
+	if h.guestJoinGuard != nil && req.DomainUUID != "" {
+		userUUID := ""
+		if c != nil && c.Claims() != nil {
+			userUUID = c.Claims().UserUUID
+			if userUUID == "" {
+				userUUID = c.Claims().Username
+			}
+		}
+		if guardErr := h.guestJoinGuard(req.DomainUUID, userUUID); guardErr != nil {
+			return marshalAck(map[string]interface{}{"error": guardErr.Error()})
+		}
 	}
 
 	identity, err := resolveIdentity(c, req.Identity)
@@ -631,6 +657,10 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 		})
 	}
 
+	// 访客禁说降级：仅发布控制型 provider（LiveKit）在 token 阶段已限制发布；
+	// 其余 provider 在媒体确认后强制服务端禁言，并 fail-closed（禁言失败则拒绝进房）。
+	h.enforceGuestSpeakPolicyLocked(newKey, identity, c, req)
+
 	h.publishRoom(roomKey(req.DomainUUID, req.Room), EventMemberJoined, map[string]interface{}{
 		"room":        req.Room,
 		"domain_uuid": req.DomainUUID,
@@ -679,5 +709,60 @@ func (h *Hub) rollbackLocalJoinLocked(newKey, clientID, identity, stream, prevVo
 		if prevVoiceRoom == "" && slots.TextRoom == "" {
 			delete(h.connSlots, clientID)
 		}
+	}
+}
+
+// enforceGuestSpeakPolicyLocked 在 SFU 进房确认后，针对不支持发布控制的 provider
+// 强制禁言禁说访客；禁言失败按 fail-closed 拒绝进房并回滚本地成员状态。
+func (h *Hub) enforceGuestSpeakPolicyLocked(roomKey, identity string, c ws.ClientMessenger, req RoomRequest) {
+	if h.guestSpeakPolicy == nil || h.sfuProvider == nil {
+		return
+	}
+	userUUID := ""
+	if c != nil && c.Claims() != nil {
+		userUUID = c.Claims().UserUUID
+		if userUUID == "" {
+			userUUID = c.Claims().Username
+		}
+	}
+	if userUUID == "" {
+		return
+	}
+	canSpeak, err := h.guestSpeakPolicy(req.DomainUUID, userUUID)
+	if err != nil {
+		log.Printf("[signal] guest speak policy error room=%s identity=%s err=%v", req.Room, identity, err)
+		h.rollbackGuestSFUJoin(roomKey, c, identity, req)
+		c.Send(map[string]interface{}{"event": EventRoomJoin, "data": map[string]interface{}{"error": "guest speak policy check failed"}})
+		return
+	}
+	if canSpeak {
+		return
+	}
+	if !sfu.LevelEnabled(h.sfuProvider.Capabilities().MuteLevel) {
+		// 该 provider 既不支持发布控制也无法服务端禁言，能力开关无法满足，拒绝进房。
+		log.Printf("[signal] guest speak disabled but provider %s cannot enforce mute room=%s identity=%s", h.sfuProvider.ProviderName(), req.Room, identity)
+		h.rollbackGuestSFUJoin(roomKey, c, identity, req)
+		c.Send(map[string]interface{}{"event": EventRoomJoin, "data": map[string]interface{}{"error": "guest speaking not allowed"}})
+		return
+	}
+	muteErr := h.sfuProvider.MuteParticipant(roomKey, identity, "", true)
+	if muteErr != nil {
+		log.Printf("[signal] guest mute on join failed room=%s identity=%s err=%v", req.Room, identity, muteErr)
+		h.rollbackGuestSFUJoin(roomKey, c, identity, req)
+		c.Send(map[string]interface{}{"event": EventRoomJoin, "data": map[string]interface{}{"error": "guest mute failed"}})
+		return
+	}
+}
+
+// rollbackGuestSFUJoin 撤销已确认的访客 SFU 进房（本地成员 + KV + fanout）。
+func (h *Hub) rollbackGuestSFUJoin(roomKey string, c ws.ClientMessenger, identity string, req RoomRequest) {
+	h.mu.Lock()
+	h.rollbackLocalJoinLocked(roomKey, c.ID(), identity, req.Stream, "")
+	h.mu.Unlock()
+	h.syncRoomToStore(roomKey)
+	h.fanout.Leave(roomKey, c.ID())
+	h.removeParticipantSafe(roomKey, identity)
+	if h.participantCleanup != nil {
+		h.participantCleanup.OnParticipantLeft(roomKey, identity)
 	}
 }

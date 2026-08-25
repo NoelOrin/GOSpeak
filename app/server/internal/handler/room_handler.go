@@ -73,7 +73,14 @@ func domainUUIDFromContext(c *gin.Context) string {
 	return ""
 }
 
+func domainRoomAccessAllowed(c *gin.Context, domainUUID string) bool {
+	return middleware.IsDomainMember(domainUUID, currentUserUUID(c)) || middleware.IsPlatformAdmin(c)
+}
+
 func (h *RoomHandler) canManageRoom(c *gin.Context, room *model.Room, perm string) bool {
+	if !domainRoomAccessAllowed(c, room.DomainUUID) {
+		return false
+	}
 	if domainPermissionGranted(c, room.DomainUUID, perm, h.domainSvc, h.permSvc) {
 		return true
 	}
@@ -135,7 +142,7 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
 		return
 	}
-	if !middleware.IsDomainMember(domainUUID, currentUserUUID(c)) {
+	if !domainRoomAccessAllowed(c, domainUUID) {
 		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
 		return
 	}
@@ -195,7 +202,7 @@ func (h *RoomHandler) Get(c *gin.Context) {
 	}
 
 	if room.DomainUUID != "" {
-		if !middleware.IsDomainMember(room.DomainUUID, currentUserUUID(c)) {
+		if !domainRoomAccessAllowed(c, room.DomainUUID) {
 			pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
 			return
 		}
@@ -237,7 +244,7 @@ func (h *RoomHandler) List(c *gin.Context) {
 
 	domainUUID := domainUUIDFromContext(c)
 	if domainUUID != "" {
-		if !middleware.IsDomainMember(domainUUID, currentUserUUID(c)) {
+		if !domainRoomAccessAllowed(c, domainUUID) {
 			pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
 			return
 		}
@@ -300,7 +307,7 @@ func (h *RoomHandler) Update(c *gin.Context) {
 		return
 	}
 
-	if room.DomainUUID != "" && !middleware.IsDomainMember(room.DomainUUID, currentUserUUID(c)) {
+	if room.DomainUUID != "" && !domainRoomAccessAllowed(c, room.DomainUUID) {
 		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
 		return
 	}
@@ -359,7 +366,7 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if room.DomainUUID != "" && !middleware.IsDomainMember(room.DomainUUID, currentUserUUID(c)) {
+	if room.DomainUUID != "" && !domainRoomAccessAllowed(c, room.DomainUUID) {
 		pkg.Fail(c, pkg.FORBIDDEN, "not a member of this domain")
 		return
 	}

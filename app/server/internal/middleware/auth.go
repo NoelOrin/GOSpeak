@@ -36,6 +36,7 @@ type Dependencies struct {
 	BotTokenChecker     botTokenChecker
 	DomainChecker       func(domainUUID, userUUID string) bool
 	BlacklistChecker    BlacklistChecker
+	GuestChecker        guestChecker
 	AuthCookieName      string
 }
 
