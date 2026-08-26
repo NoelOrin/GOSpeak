@@ -240,8 +240,20 @@ func StartGin(env EnvEnum) error {
 		return speak, nil
 	})
 	signalHub.SetGuestJoinGuard(func(domainUUID, userUUID string) error {
-		if !guestSvc.IsGuest(userUUID) {
+		// user_uuid 缺失时按机器名前缀快速识别访客，避免 fallback 到 Username 后
+		// 因 UUID 查询不到而让访客守卫 fail-open 被跳过。
+		if userUUID == "" {
 			return nil
+		}
+		if !model.IsGuestName(userUUID) && !guestSvc.IsGuest(userUUID) {
+			return nil
+		}
+		// 访客只能进入其已加入的域；无域平台房间对访客关闭。
+		if domainUUID == "" {
+			return errors.New("guest can only join a domain room")
+		}
+		if listen, _, _ := guestSvc.GuestCaps(domainUUID); !listen {
+			return errors.New("guest listening disabled")
 		}
 		if banned, banErr := guestSvc.IsGuestBanned(domainUUID, userUUID); banErr != nil {
 			return errors.New("guest ban check failed")
@@ -252,6 +264,15 @@ func StartGin(env EnvEnum) error {
 			return errors.New("guest limit reached")
 		}
 		return nil
+	})
+	guestSvc.SetOnlineGuestResolver(func(domainUUID string) []string {
+		var names []string
+		for _, ident := range signalHub.DomainOnlineIdentities(domainUUID) {
+			if model.IsGuestName(ident) {
+				names = append(names, ident)
+			}
+		}
+		return names
 	})
 	guestSvc.SetOnlineCounter(func(domainUUID string) int {
 		count := 0

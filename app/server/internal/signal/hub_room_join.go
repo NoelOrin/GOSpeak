@@ -101,7 +101,7 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 		})
 	}
 
-	if h.guestJoinGuard != nil && req.DomainUUID != "" {
+	if h.guestJoinGuard != nil {
 		userUUID := ""
 		if c != nil && c.Claims() != nil {
 			userUUID = c.Claims().UserUUID
@@ -360,7 +360,7 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 		})
 	}
 
-	if h.guestJoinGuard != nil && req.DomainUUID != "" {
+	if h.guestJoinGuard != nil {
 		userUUID := ""
 		if c != nil && c.Claims() != nil {
 			userUUID = c.Claims().UserUUID

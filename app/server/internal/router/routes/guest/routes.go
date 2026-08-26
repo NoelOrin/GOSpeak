@@ -11,7 +11,8 @@ import (
 
 // Register 注册访客公开接口（挂载在 /auth 组下），带签发限流。
 func Register(r *gin.RouterGroup, h *handler.GuestHandler) {
-	r.POST("/guest", middleware.RateLimit(10, time.Hour), h.Join)
+	// 访客签发限流：按 IP+固定窗口兜底，避免匿名批量注册；共享出口 IP 时窗口放宽。
+	r.POST("/guest", middleware.RateLimit(60, time.Hour), h.Join)
 }
 
 // RegisterProtected 注册访客管理端与续约接口（JWT 保护组）。

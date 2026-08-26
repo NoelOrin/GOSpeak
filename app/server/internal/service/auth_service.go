@@ -4,6 +4,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -110,6 +111,10 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 
 // Register 新用户注册：查重名 → bcrypt 哈希密码 → 入库 → 生成 Token 对。
 func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
+	// 保留 guest_ 前缀给匿名访客机器名，禁止普通注册占用，避免混淆在线统计/守卫。
+	if strings.HasPrefix(req.Username, model.GuestNamePrefix) {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "username cannot start with guest_")
+	}
 	existing, _ := s.userRepo.GetByName(req.Username)
 	if existing != nil {
 		return nil, pkg.NewAppError(pkg.USERNAME_EXISTS)

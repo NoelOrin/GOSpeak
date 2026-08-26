@@ -190,12 +190,6 @@ func (h *MessageHandler) Send(c *gin.Context) {
 			pkg.Fail(c, pkg.FORBIDDEN, "guest messaging disabled")
 			return
 		}
-	}
-	if guest, allowed := h.guestMessagingAllowed(room.DomainUUID, actor.UserUUID); guest {
-		if !allowed {
-			pkg.Fail(c, pkg.FORBIDDEN, "guest messaging disabled")
-			return
-		}
 	} else if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
 		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
 		return
@@ -282,6 +276,7 @@ func (h *MessageHandler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
+	_, isGuest := h.guestMessagingAllowed(room.DomainUUID, actor.UserUUID)
 	if guest, allowed := h.guestMessagingAllowed(room.DomainUUID, actor.UserUUID); guest {
 		if !allowed {
 			pkg.Fail(c, pkg.FORBIDDEN, "guest messaging disabled")
@@ -291,7 +286,10 @@ func (h *MessageHandler) Delete(c *gin.Context) {
 		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
 		return
 	}
-	canDeleteOthers := domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageDeleteOthers, h.domainSvc, h.permSvc)
+	canDeleteOthers := h.guestCaps == nil && domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageDeleteOthers, h.domainSvc, h.permSvc)
+	if isGuest {
+		canDeleteOthers = false
+	}
 	if err := h.msgSvc.Delete(req.RoomUUID, req.MessageUUID, actor, canDeleteOthers); err != nil {
 		pkg.HandleError(c, err)
 		return

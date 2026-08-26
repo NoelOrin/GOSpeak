@@ -279,8 +279,17 @@ func TestGuestService_CleanupInactiveGuests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("join new: %v", err)
 	}
+	// 另一域：老化访客不应被本域清理删除。
+	other := seedGuestDomain(t, db, true)
+	otherGuest, err := svc.Join(&GuestJoinRequest{Nickname: "别的域", InviteCode: other.InviteCode})
+	if err != nil {
+		t.Fatalf("join other: %v", err)
+	}
+	if err := db.Model(&model.User{}).Where("uuid = ?", otherGuest.User.UUID).Update("updated_at", past).Error; err != nil {
+		t.Fatalf("age other guest: %v", err)
+	}
 
-	removed, err := svc.CleanupInactiveGuests(30)
+	removed, err := svc.CleanupInactiveGuests(d.UUID, 30)
 	if err != nil {
 		t.Fatalf("cleanup: %v", err)
 	}
@@ -295,5 +304,12 @@ func TestGuestService_CleanupInactiveGuests(t *testing.T) {
 	}
 	if err := db.Where("user_uuid = ?", oldGuest.User.UUID).First(&model.DomainMember{}).Error; err == nil {
 		t.Fatal("old guest membership must be deleted")
+	}
+	// 跨域隔离：另一域的过期 guest（users 行与成员关系）必须保留。
+	if err := db.Where("uuid = ?", otherGuest.User.UUID).First(&model.User{}).Error; err != nil {
+		t.Fatalf("other-domain guest user must be kept: %v", err)
+	}
+	if err := db.Where("user_uuid = ?", otherGuest.User.UUID).First(&model.DomainMember{}).Error; err != nil {
+		t.Fatalf("other-domain guest membership must be kept: %v", err)
 	}
 }

@@ -41,6 +41,9 @@ type GuestService struct {
 	banRepo     *repository.GuestBanRepo
 	auth        *AuthService
 	onlineCount func(domainUUID string) int
+	// onlineGuestResolver 返回指定域内当前在线访客的机器名（users.name）列表。
+	// 仅供 CleanupInactiveGuests 排除仍在线访客，避免误删挂机用户；nil 不排除。
+	onlineGuestResolver func(domainUUID string) []string
 }
 
 // NewGuestService 构造 GuestService。
@@ -53,6 +56,11 @@ func NewGuestService(
 	onlineCount func(domainUUID string) int,
 ) *GuestService {
 	return &GuestService{db: db, userRepo: userRepo, domainRepo: domainRepo, banRepo: banRepo, auth: auth, onlineCount: onlineCount}
+}
+
+// SetOnlineGuestResolver 注入域内在线访客机器名解析（装配层接入 WS Hub）。
+func (s *GuestService) SetOnlineGuestResolver(fn func(domainUUID string) []string) {
+	s.onlineGuestResolver = fn
 }
 
 // Join 签发访客身份并加入 Domain。事务：users 行 + domain_members(role=guest)。
@@ -166,6 +174,7 @@ func (s *GuestService) Ban(domainUUID, operatorUUID, guestUUID, reason string, d
 		t := time.Now().Add(time.Duration(durationHours) * time.Hour)
 		expiresAt = &t
 	}
+	// 注意：对已存在的临时封禁再次 Ban 会以其 durationHours 重算；传 0 会把临时封禁覆盖为永久。
 	if existing, exErr := s.banRepo.FindActive(domainUUID, guestUUID); exErr != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, exErr.Error())
 	} else if existing != nil {
@@ -311,7 +320,10 @@ func (s *GuestService) Renew(userUUID string, req *GuestJoinRequest) (*GuestJoin
 		RoleName:   model.DomainRoleGuest,
 	}
 	if existing, getErr := s.domainRepo.GetMember(domain.UUID, user.UUID); getErr == nil && existing != nil {
-		// 幂等：已是成员直接返回。
+		// 幂等：已是成员直接返回。防御校验角色必须是 guest，避免身份不一致被复用为进域凭证。
+		if existing.RoleName != model.DomainRoleGuest {
+			return nil, pkg.NewAppError(pkg.FORBIDDEN, "guest identity already bound to a non-guest membership")
+		}
 	} else if errors.Is(getErr, gorm.ErrRecordNotFound) {
 		if err := s.db.Create(member).Error; err != nil {
 			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -328,21 +340,42 @@ func (s *GuestService) Renew(userUUID string, req *GuestJoinRequest) (*GuestJoin
 	return &GuestJoinResponse{AccessToken: tokens.Access, RefreshToken: tokens.Refresh, User: user, Domain: &sanitized}, nil
 }
 
-// CleanupInactiveGuests 删除 updated_at 早于 cutoff 的访客 users 行及其
-// 域成员关系；消息保留，author_uuid 悬空由前端显示为已注销访客。
-func (s *GuestService) CleanupInactiveGuests(days int) (int64, error) {
+// CleanupInactiveGuests 删除指定域内 updated_at 早于 cutoff 的访客 users 行及其
+// 该域成员关系；消息保留，author_uuid 悬空由前端显示为已注销访客。
+// 仅处理 domainUUID 域内的 guest 成员，永不影响其它域；仍在线访客会排除。
+func (s *GuestService) CleanupInactiveGuests(domainUUID string, days int) (int64, error) {
 	if days <= 0 {
 		return 0, pkg.NewAppError(pkg.INVALID_PARAMS, "days must be positive")
 	}
 	cutoff := time.Now().AddDate(0, 0, -days)
 	var count int64
 	err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_uuid IN (?)",
-			tx.Model(&model.User{}).Select("uuid").Where("is_guest = ? AND updated_at < ?", true, cutoff),
-		).Delete(&model.DomainMember{}).Error; err != nil {
+		// 候选：目标域内的 guest 成员。先用 Pluck 物化，避免后续删除改动
+		// 同一张读表导致惰性子查询游标漂移（候选被清空）。
+		var candidates []string
+		if err := tx.Model(&model.DomainMember{}).
+			Where("domain_uuid = ?", domainUUID).
+			Where("role_name = ?", model.DomainRoleGuest).
+			Pluck("user_uuid", &candidates).Error; err != nil {
 			return err
 		}
-		res := tx.Where("is_guest = ? AND updated_at < ?", true, cutoff).Delete(&model.User{})
+		if len(candidates) == 0 {
+			return nil
+		}
+		// 仅清本域成员关系，不影响其它域。
+		if err := tx.Where("domain_uuid = ? AND user_uuid IN ?", domainUUID, candidates).
+			Delete(&model.DomainMember{}).Error; err != nil {
+			return err
+		}
+		// user 行仅在“该 guest 已不属于任何域成员”时才删除，避免跨域误删。
+		q := tx.Where("is_guest = ? AND updated_at < ? AND uuid IN ?", true, cutoff, candidates).
+			Where("NOT EXISTS (SELECT 1 FROM domain_members dm WHERE dm.user_uuid = users.uuid)")
+		if s.onlineGuestResolver != nil {
+			if online := s.onlineGuestResolver(domainUUID); len(online) > 0 {
+				q = q.Where("name NOT IN ?", online)
+			}
+		}
+		res := q.Delete(&model.User{})
 		count = res.RowsAffected
 		return res.Error
 	})

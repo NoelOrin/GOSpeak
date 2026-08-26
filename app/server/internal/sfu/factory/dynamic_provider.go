@@ -72,8 +72,9 @@ func fingerprint(cfg *config.Config) string {
 	return strings.Join(fields, "|")
 }
 
-// resolveCached 在 TTL 内复用上次 resolve 的结果，fingerprint 变化时在 TTL 内刷新缓存。
-// resolve 失败时：有未过期的旧缓存则继续用旧配置（热路径不全挂），否则透传错误。
+// resolveCached 每次仍执行 resolve（缓冲 provider 配置解析），但当 fingerprint 在 TTL 内
+// 未变化时复用已解析的 cfg，避免热路径频繁重建 provider 与缓存写入。resolve 失败时：
+// 有未过期的旧缓存则继续用旧配置（热路径不全挂），否则透传错误。
 func (p *DynamicProvider) resolveCached() (*config.Config, string, error) {
 	p.mu.RLock()
 	cc := p.cachedConfig

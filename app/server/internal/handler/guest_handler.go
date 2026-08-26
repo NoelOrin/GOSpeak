@@ -208,7 +208,7 @@ func (h *GuestHandler) Cleanup(c *gin.Context) {
 		pkg.Fail(c, pkg.FORBIDDEN)
 		return
 	}
-	count, err := h.guestSvc.CleanupInactiveGuests(req.Days)
+	count, err := h.guestSvc.CleanupInactiveGuests(req.DomainUUID, req.Days)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return

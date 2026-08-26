@@ -34,6 +34,12 @@ var guestDomainReadPaths = map[string]struct{}{
 	"/api/v1/domain/preview": {},
 }
 
+// guestAllowSignalPaths 访客在信令组仅能签发进房 token；rooms/participants 等
+// 枚举端点对访客关闭，避免枚举全平台房间/参与者造成跨域信息泄漏。
+var guestAllowSignalPaths = map[string]struct{}{
+	"/api/v1/signal/token": {},
+}
+
 // GuestGuardWith 返回使用指定 checker 的访客守卫；测试注入用。
 func GuestGuardWith(checker guestChecker) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -59,7 +65,12 @@ func GuestGuardWith(checker guestChecker) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if _, scoped := guestDomainReadPaths[c.Request.URL.Path]; scoped && dom != "" {
+		if _, scoped := guestDomainReadPaths[c.Request.URL.Path]; scoped {
+			if dom == "" {
+				pkg.Fail(c, pkg.FORBIDDEN, "guest access not allowed")
+				c.Abort()
+				return
+			}
 			member, err := checker.IsGuestDomainMember(dom, userUUID)
 			if err != nil {
 				pkg.Fail(c, pkg.INTERNAL_ERROR, "guest domain check failed")
@@ -122,9 +133,13 @@ func guestDomainOf(c *gin.Context) string {
 }
 
 func guestPathAllowed(path string) bool {
-	if strings.HasPrefix(path, "/api/v1/signal/") || strings.HasPrefix(path, "/api/v1/room/messages/") {
+	// 文字消息组前缀放行；写操作由 guest_messaging_allowed 短路，读操作走域角色权限（fail-closed）。
+	if strings.HasPrefix(path, "/api/v1/room/messages/") {
 		return true
 	}
-	_, ok := guestAllowExactPaths[path]
+	if _, ok := guestAllowExactPaths[path]; ok {
+		return true
+	}
+	_, ok := guestAllowSignalPaths[path]
 	return ok
 }

@@ -71,6 +71,7 @@ func requestDomainUUID(c *gin.Context, required bool) (string, error) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxDomainBodyBytes)
 	raw, readErr := io.ReadAll(c.Request.Body)
 	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
+	c.Request.ContentLength = int64(len(raw))
 	if readErr != nil {
 		return "", readErr
 	}
