@@ -18,7 +18,7 @@
 #   postgres  PostgreSQL
 #   srs       SRS + Nginx 反代
 #   livekit   LiveKit
-#   minio     MinIO
+#   rustfs    RustFS
 # =============================================================================
 
 name: gospeak
@@ -372,21 +372,19 @@ services:
       timeout: 3s
       retries: 10
 
-  # ── MinIO ─────────────────────────────────────────────────────────────
-  minio:
+  # ── RustFS ────────────────────────────────────────────────────────────
+  rustfs:
     <<: *restart
-    profiles: ["minio"]
-    image: minio/minio:latest
-    container_name: gospeak-minio
+    profiles: ["rustfs"]
+    image: rustfs/rustfs:latest
+    container_name: gospeak-rustfs
     ports:
       - "9000:9000"
-      - "9001:9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
     volumes:
-      - minio-data:/data
-    command: server /data --console-address ":9001"
+      - rustfs-data:/data
 
   # ── Observability (Prometheus / Grafana / Alertmanager / Loki) ───────
   prometheus:
@@ -475,7 +473,7 @@ volumes:
   gospeak-logs:
   gospeak-uploads:
   postgres-data:
-  minio-data:
+  rustfs-data:
   prometheus-data:
   grafana-data:
   loki-data:

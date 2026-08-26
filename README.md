@@ -86,7 +86,7 @@ pnpm install
 cp app/server/.env.example app/server/.env
 # 编辑 app/server/.env，填入 LiveKit 凭证（见下方配置说明）
 
-# 4. 启动依赖服务（LiveKit / MinIO）
+# 4. 启动依赖服务（LiveKit / RustFS）
 docker compose -f deploy/docker-compose.example.yml up -d
 
 # 5. 启动开发服务（后端 air 热重载 + 前端 vite）
@@ -218,7 +218,7 @@ AGORA_APP_CERTIFICATE="xxx"
 | SFU | LiveKit（主）/ SRS / Agora / Cloudflare |
 | 数据库 | SQLite / PostgreSQL / MySQL |
 | 跨实例状态 | NATS JetStream KV（黑名单、密钥轮换、房间状态）|
-| 存储 | Local / S3（MinIO / R2）|
+| 存储 | Local / S3（RustFS / R2）|
 | 认证 | JWT + OAuth2（GitHub / Google / QQ）|
 
 ---

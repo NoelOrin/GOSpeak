@@ -446,7 +446,7 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `STORAGE_TYPE` | `local` | `local` / `s3` |
-| `STORAGE_ENDPOINT` | — | S3-compatible endpoint (MinIO / R2) |
+| `STORAGE_ENDPOINT` | — | S3-compatible endpoint (RustFS / R2) |
 | `STORAGE_BUCKET` | — | S3 bucket |
 | `STORAGE_REGION` | — | S3 region |
 | `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY` | — | S3 credentials |

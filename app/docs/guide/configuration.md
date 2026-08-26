@@ -89,7 +89,7 @@ NATS KV 不可用时，黑名单/密钥轮换降级为进程内状态 + 静态�
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `STORAGE_TYPE` | `local` | 存储类型：`local` / `s3` |
-| `STORAGE_ENDPOINT` | — | S3 兼容端点（MinIO / R2）|
+| `STORAGE_ENDPOINT` | — | S3 兼容端点（RustFS / R2）|
 | `STORAGE_BUCKET` | — | S3 Bucket |
 | `STORAGE_REGION` | — | S3 Region |
 | `STORAGE_ACCESS_KEY` | — | S3 访问密钥 |

@@ -16,7 +16,7 @@ GOSpeak 是基于 WebRTC 的实时音视频沟通平台。pnpm monorepo：Go 后
 | SFU | LiveKit(主) / SRS / Agora / Cloudflare — 抽象层动态解析 |
 | DB | SQLite(默认) / PostgreSQL / MySQL — GORM 自动迁移 |
 | 跨实例状态 | NATS KV — JWT 轮换 + Token 黑名单 |
-| 存储 | local / S3(MinIO/R2) |
+| 存储 | local / S3(RustFS/R2) |
 | 认证 | JWT + OAuth2(GitHub/Google/QQ) |
 | 工具链 | pnpm 10 · Turbo · Biome(lint/format) · Vitest(待用) · Lefthook · commitlint |
 
@@ -73,7 +73,7 @@ Request → Router → Middleware(JWT+RBAC) → Handler → Service → Reposito
 # 安装
 pnpm install
 
-# 启依赖服务 (LiveKit + MinIO 默认)
+# 启依赖服务 (LiveKit + RustFS 默认)
 docker compose -f deploy/docker-compose.example.yml up -d
 
 # 开发 (同时启后端+前端)

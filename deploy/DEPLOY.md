@@ -21,7 +21,7 @@ gospeak ──State─► nats (embedded/external, 可选)
 
 - [ ] 复制 `deploy/.env.example` → `deploy/.env`
 - [ ] 复制 `deploy/env/app.srs.env.example` → `deploy/env/app.srs.env` (或 livekit)
-- [ ] 改 `JWT_KEY` / `SRS_SECRET` / DB 密码 / MinIO 密码
+- [ ] 改 `JWT_KEY` / `SRS_SECRET` / DB 密码 / RustFS 密码
 - [ ] 公网设 `SRS_CANDIDATE=<公网IP>`
 - [ ] 公网设 `SRS_PUBLIC_HOST=https://your.domain`
 - [ ] 防火墙开放:
@@ -109,7 +109,7 @@ docker compose -f deploy/docker-compose.yml --profile observability up -d
 
 ```bash
 # 旧 dev 依赖栈仍可用 example 文件; 推荐改用 profiles:
-docker compose -f deploy/docker-compose.yml --profile srs --profile minio up -d
+docker compose -f deploy/docker-compose.yml --profile srs --profile rustfs up -d
 pnpm dev:server
 pnpm dev:web
 ```
@@ -124,7 +124,7 @@ pnpm dev:web
 | 8000/udp+tcp | srs | WebRTC 媒体 |
 | 7880-7882 | livekit | LiveKit 控制/媒体 |
 | 5432 | postgres | DB |
-| 9000/9001 | minio | 对象存储 |
+| 9000/9001 | rustfs | 对象存储 |
 | 9090 | prometheus | 指标采集 |
 | 9093 | alertmanager | 告警 |
 | 3000 | grafana | 可视化 |

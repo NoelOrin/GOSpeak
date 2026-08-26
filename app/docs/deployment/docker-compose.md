@@ -10,7 +10,7 @@ GOSpeak 提供 `deploy/docker-compose.yml` 统一编排，通过 **profile** 按
 | `srs` | SRS + Nginx | SRS 自建方案 |
 | `livekit` | LiveKit | LiveKit 自建方案 |
 | `postgres` | PostgreSQL | 生产级数据库 |
-| `minio` | MinIO 对象存储 | S3 兼容存储 |
+| `rustfs` | RustFS 对象存储 | S3 兼容存储 |
 
 ## 渐进式方案
 
@@ -83,7 +83,7 @@ docker compose --profile postgres --profile srs --profile app up -d --build
 docker compose \
   --profile postgres \
   --profile srs \
-  --profile minio \
+  --profile rustfs \
   --profile app \
   up -d --build
 ```

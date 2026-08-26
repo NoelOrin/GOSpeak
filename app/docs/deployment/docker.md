@@ -2,7 +2,7 @@
 
 适合快速验证、边缘设备或内网机器：一个容器运行完整的 GOSpeak（Go 后端 + 前端 SPA），无需 docker-compose 编排。
 
-> 生产环境或需要同时部署 SFU（SRS / LiveKit）、PostgreSQL、MinIO 时，建议使用 [Docker Compose](/deployment/docker-compose) 一键编排。
+> 生产环境或需要同时部署 SFU（SRS / LiveKit）、PostgreSQL、RustFS 时，建议使用 [Docker Compose](/deployment/docker-compose) 一键编排。
 
 ## 镜像源
 

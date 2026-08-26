@@ -52,7 +52,7 @@ LIVEKIT_SECRET="your-api-secret"
 ### 3. 启动后端依赖（SFU + 可选服务）
 
 ```bash
-# SRS 模式：启动 SRS 和 MinIO（可选）
+# SRS 模式：启动 SRS 和 RustFS（可选）
 docker compose -f deploy/docker-compose.yml --profile srs up -d
 
 # 或 LiveKit 模式：启动 LiveKit
