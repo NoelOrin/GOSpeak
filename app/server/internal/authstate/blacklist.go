@@ -18,8 +18,17 @@ var memoryRefreshFamilies = struct {
 	m map[string]time.Time
 }{m: make(map[string]time.Time)}
 
+// memoryBlacklist is the single-instance fallback used when no shared backend
+// is available, so logout still revokes tokens within one process (same
+// strategy as memoryRefreshFamilies).
+var memoryBlacklist = struct {
+	sync.Mutex
+	m map[string]time.Time
+}{m: make(map[string]time.Time)}
+
 // BlacklistToken marks jti revoked for the remaining token lifetime. Without a
-// shared backend the write is a no-op (best effort).
+// shared backend the entry goes to a process-local memory blacklist (single-
+// instance fallback), matching the refresh-family strategy.
 func BlacklistToken(jti string, remaining time.Duration) error {
 	if jti == "" || remaining <= 0 {
 		return nil
@@ -27,7 +36,25 @@ func BlacklistToken(jti string, remaining time.Duration) error {
 	if b := currentBackend(); b != nil {
 		return b.BlacklistToken(jti, remaining)
 	}
+	memoryBlacklist.Lock()
+	memoryBlacklist.m[jti] = time.Now().Add(remaining)
+	memoryBlacklist.Unlock()
 	return nil
+}
+
+func isMemoryBlacklisted(jti string) bool {
+	now := time.Now()
+	memoryBlacklist.Lock()
+	defer memoryBlacklist.Unlock()
+	exp, ok := memoryBlacklist.m[jti]
+	if !ok {
+		return false
+	}
+	if !now.Before(exp) {
+		delete(memoryBlacklist.m, jti)
+		return false
+	}
+	return true
 }
 
 // IsBlacklistedErr reports whether jti is revoked. Storage errors are returned
@@ -39,7 +66,7 @@ func IsBlacklistedErr(jti string) (bool, error) {
 	if b := currentBackend(); b != nil {
 		return b.IsBlacklistedErr(jti)
 	}
-	return false, nil
+	return isMemoryBlacklisted(jti), nil
 }
 
 // IsBlacklisted reports whether jti is revoked and treats storage errors as

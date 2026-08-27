@@ -15,12 +15,30 @@ import (
 
 	"github.com/aarondl/authboss/v3"
 	"gorm.io/gorm"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // authbossHasher is the configured Authboss password hasher. It intentionally
 // uses the same bcrypt format already present in the users table, so existing
 // accounts remain valid without migration.
 var authbossHasher = authboss.NewBCryptHasher(12)
+
+// dummyPasswordHash is compared against on unknown-user login so the password
+// check takes the same time regardless of whether the account exists, closing
+// the user-enumeration timing side channel.
+var dummyPasswordHash = func() string {
+	h, _ := authbossHasher.GenerateHash("gospeak-dummy-password")
+	return h
+}()
+
+// SetBcryptCost overrides the bcrypt work factor (default 12). Called once
+// from the composition root with the loaded config.
+func SetBcryptCost(cost int) {
+	if cost < bcrypt.MinCost || cost > bcrypt.MaxCost {
+		return
+	}
+	authbossHasher = authboss.NewBCryptHasher(cost)
+}
 
 // DefaultAdminPassword 初始管理员默认密码（admin / admin123）。
 // seedAdminUser 与 Login/FirstChangePassword 的 need_change_password 检测共用此常量。
@@ -81,6 +99,7 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 	user, err := s.userRepo.GetByName(req.Username)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			_ = authbossHasher.CompareHashAndPassword(dummyPasswordHash, req.Password)
 			return nil, pkg.NewAppError(pkg.USER_NOT_FOUND, "invalid credentials")
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
@@ -155,6 +174,10 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 	}
 	if err := s.userRepo.Create(user); err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			// 并发注册时唯一索引兜底；错误文本区分是用户名还是邮箱撞上。
+			if strings.Contains(strings.ToLower(err.Error()), "email") {
+				return nil, pkg.NewAppError(pkg.EMAIL_ALREADY_EXISTS)
+			}
 			return nil, pkg.NewAppError(pkg.USERNAME_EXISTS)
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())

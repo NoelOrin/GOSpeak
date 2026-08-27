@@ -118,10 +118,20 @@ func StartGin(env EnvEnum) error {
 	}
 
 	roleSvc := service.NewRoleService(roleRepo)
+	// 角色改名/删除后连锁重载权限缓存与 Casbin 策略（角色名是两者共用的 key）。
+	roleSvc.SetOnRoleChanged(func() {
+		if err := permSvc.LoadCache(); err != nil {
+			logger.WithComponent("Permission").WithError(err).Warn("role change: permission cache reload failed")
+		}
+	})
+	roleSvc.SetOnRoleRenamed(func(oldName, newName string) error {
+		return permSvc.RenameRole(oldName, newName)
+	})
 	emailConfigSvc := service.NewEmailConfigService(emailConfigRepo, cfg)
 	emailSvc := service.NewEmailService(emailConfigSvc.ResolveConfig)
 	emailVerificationSvc := service.NewEmailVerificationService(emailVerificationRepo, userRepo, emailSvc, emailConfigSvc.ResolveConfig)
 	authSvc := service.NewAuthService(userRepo, emailConfigSvc, emailVerificationSvc)
+	service.SetBcryptCost(cfg.BcryptCost)
 	guestSvc := service.NewGuestService(db, userRepo, domainRepo, repository.NewGuestBanRepo(db), authSvc, nil)
 	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
 	userSvc := service.NewUserService(userRepo, storageSvc)

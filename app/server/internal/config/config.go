@@ -46,6 +46,9 @@ type Config struct {
 	JWTKey    string `env:"JWT_KEY" envDefault:"default-secret"`
 	JWTKeyTTL string `env:"JWT_KEY_TTL" envDefault:"24h"`
 
+	// BcryptCost 密码哈希工作因子，默认 12。
+	BcryptCost int `env:"BCRYPT_COST" envDefault:"12"`
+
 	SFUProvider         string `env:"SFU_PROVIDER" envDefault:"livekit"`
 	LiveKitHost         string `env:"LIVEKIT_HOST" envDefault:""`
 	LiveKitKey          string `env:"LIVEKIT_KEY" envDefault:""`

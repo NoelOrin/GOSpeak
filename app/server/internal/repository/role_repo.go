@@ -39,6 +39,15 @@ func (r *RoleRepository) Delete(id uint) error {
 	return nil
 }
 
+// GetByID 按主键查询角色。
+func (r *RoleRepository) GetByID(id uint) (*model.Role, error) {
+	var role model.Role
+	if err := r.db.First(&role, id).Error; err != nil {
+		return nil, err
+	}
+	return &role, nil
+}
+
 func (r *RoleRepository) Update(id uint, name string) (*model.Role, error) {
 	var role model.Role
 	if err := r.db.First(&role, id).Error; err != nil {

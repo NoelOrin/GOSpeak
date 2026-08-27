@@ -114,6 +114,8 @@ pnpm dev:server
 pnpm dev:web
 ```
 
+> ⚠️ MinIO → RustFS 迁移提示：v1.x 起对象存储由 MinIO 换为 RustFS，volume 由 `minio-data` 更名为 `rustfs-data`。升级后旧数据不会自动迁移：如需保留旧文件请先从 `minio-data` 导出拷贝到 `rustfs-data`；确认无误后执行 `docker volume rm gospeak_minio-data` 清理。生产环境必须设置 `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY`（勿用默认 rustfsadmin/rustfsadmin），Web 控制台在 9001 端口。
+
 ## 4. 端口表
 
 | 端口 | 服务 | 说明 |

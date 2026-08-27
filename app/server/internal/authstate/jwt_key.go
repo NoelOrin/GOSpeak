@@ -161,6 +161,9 @@ func staticKey() []byte {
 func randomKey() string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
+		if production {
+			panic("crypto/rand unavailable while generating JWT signing key")
+		}
 		if cfg := jwtCfg; cfg != nil && cfg.JWTKey != "" {
 			return cfg.JWTKey
 		}
