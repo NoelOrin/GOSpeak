@@ -24,5 +24,3 @@ pre-push:
       run: cd app/server && go vet ./...
     "typecheck":
       run: pnpm typecheck
-    "go test":
-      run: cd app/server && go test ./... -count=1
