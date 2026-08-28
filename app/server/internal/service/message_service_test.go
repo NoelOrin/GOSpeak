@@ -23,10 +23,11 @@ import (
 // ─── Fakes ───
 
 type fakeBus struct {
-	mu    sync.Mutex
-	calls []string // event names recorded
-	rooms []string // room keys recorded
-	err   error    // if set, PublishRoom returns this error
+	mu       sync.Mutex
+	calls    []string      // event names recorded
+	rooms    []string      // room keys recorded
+	payloads []interface{} // payloads recorded
+	err      error         // if set, PublishRoom returns this error
 }
 
 func (f *fakeBus) PublishRoom(_ context.Context, room, event string, payload interface{}) error {
@@ -37,6 +38,7 @@ func (f *fakeBus) PublishRoom(_ context.Context, room, event string, payload int
 	}
 	f.calls = append(f.calls, event)
 	f.rooms = append(f.rooms, room)
+	f.payloads = append(f.payloads, payload)
 	return nil
 }
 
@@ -45,6 +47,7 @@ func (f *fakeBus) reset() {
 	defer f.mu.Unlock()
 	f.calls = nil
 	f.rooms = nil
+	f.payloads = nil
 	f.err = nil
 }
 
@@ -300,6 +303,70 @@ func TestEnrichAuthorInfo_Batch(t *testing.T) {
 	}
 	if calls := testMessageRepoCallCount(t, svc); calls.GetByName != 0 || calls.GetByNames != 1 {
 		t.Fatalf("expected one batch call, got %+v", calls)
+	}
+}
+
+// Live broadcast DTOs must carry author display info, otherwise clients render
+// the raw username + letter avatar until the next history reload.
+func TestMessageService_Send_BroadcastCarriesAuthorInfo(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+	svc.SetUserRepo(&testUserRepo{
+		users: map[string]*model.User{
+			"alice": {Name: "alice", DisplayName: "Alice", Avatar: "/uploads/alice.png"},
+		},
+	})
+	svc.SetEventBus(bus)
+	svc.SetJobQueue(queue)
+
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "hello", "", "", nil)
+	assertNoError(t, err)
+	if dto.AuthorName != "Alice" || dto.AuthorAvatar != "/uploads/alice.png" {
+		t.Fatalf("expected returned dto enriched, got name=%q avatar=%q", dto.AuthorName, dto.AuthorAvatar)
+	}
+
+	if len(bus.payloads) != 1 {
+		t.Fatalf("expected 1 broadcast payload, got %d", len(bus.payloads))
+	}
+	broadcast, ok := bus.payloads[0].(*MessageDTO)
+	if !ok {
+		t.Fatalf("expected *MessageDTO payload, got %T", bus.payloads[0])
+	}
+	if broadcast.AuthorName != "Alice" || broadcast.AuthorAvatar != "/uploads/alice.png" {
+		t.Fatalf("expected broadcast author enriched, got name=%q avatar=%q", broadcast.AuthorName, broadcast.AuthorAvatar)
+	}
+}
+
+func TestMessageService_Edit_BroadcastCarriesAuthorInfo(t *testing.T) {
+	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
+	t.Cleanup(func() { bus.reset(); queue.reset() })
+	svc.SetUserRepo(&testUserRepo{
+		users: map[string]*model.User{
+			"alice": {Name: "alice", DisplayName: "Alice", Avatar: "/uploads/alice.png"},
+		},
+	})
+
+	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "original", "", "", nil)
+	assertNoError(t, err)
+
+	svc.SetEventBus(bus)
+	svc.SetJobQueue(queue)
+	bus.reset()
+	edited, err := svc.Edit(textUUID, dto.UUID, testActorWithUUID("alice", "uuid-alice"), "edited")
+	assertNoError(t, err)
+	if edited.AuthorName != "Alice" || edited.AuthorAvatar != "/uploads/alice.png" {
+		t.Fatalf("expected edited dto enriched, got name=%q avatar=%q", edited.AuthorName, edited.AuthorAvatar)
+	}
+
+	if len(bus.payloads) != 1 {
+		t.Fatalf("expected 1 broadcast payload, got %d", len(bus.payloads))
+	}
+	broadcast, ok := bus.payloads[0].(*MessageDTO)
+	if !ok {
+		t.Fatalf("expected *MessageDTO payload, got %T", bus.payloads[0])
+	}
+	if broadcast.AuthorName != "Alice" || broadcast.AuthorAvatar != "/uploads/alice.png" {
+		t.Fatalf("expected broadcast author enriched, got name=%q avatar=%q", broadcast.AuthorName, broadcast.AuthorAvatar)
 	}
 }
 
