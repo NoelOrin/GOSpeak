@@ -58,7 +58,7 @@ jobs:
     steps:
       - name: Checkout (release only)
         if: github.event_name == 'release'
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -169,7 +169,7 @@ jobs:
     # release 事件走 redispatch，不在 tag ref 上直接 build/deploy
     if: needs.gate.outputs.should_build == 'true' && github.event_name != 'release'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           # workflow_dispatch 可指定 tag/sha；push 使用当前触发提交
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref != '' && inputs.source_ref || github.sha }}

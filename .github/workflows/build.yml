@@ -31,7 +31,7 @@ jobs:
     name: Build Web
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/pnpm-install
       - name: Build
         working-directory: app/web
@@ -47,7 +47,7 @@ jobs:
     name: Build SFU Client
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/pnpm-install
       - name: Build
         working-directory: packages/sfu-client
@@ -57,7 +57,7 @@ jobs:
     name: Build MediaSoup Worker
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/pnpm-install
       - name: Build
         working-directory: packages/mediasoup-worker
@@ -67,7 +67,7 @@ jobs:
     name: Lint Web (Biome)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/pnpm-install
       - name: Lint
         working-directory: app/web
@@ -81,7 +81,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-web
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
         with:
           go-version-file: app/server/go.mod
@@ -108,7 +108,7 @@ jobs:
     name: Lint Server (go vet)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
         with:
           go-version-file: app/server/go.mod
@@ -126,7 +126,7 @@ jobs:
           (github.event_name == 'workflow_call' && inputs.run_tests) ||
           (github.event_name != 'workflow_dispatch' && github.event_name != 'workflow_call') }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
         with:
           go-version-file: app/server/go.mod
