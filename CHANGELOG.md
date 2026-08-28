@@ -1,5 +1,51 @@
 # Changelog / 更新日志
 
+## [0.3.0](https://github.com/NoelOrin/GOSpeak/compare/v0.2.3...v0.3.0) (2026-08-28)
+
+> 自 v0.2.3 以来的发布，共 28 个变更点（feat 12 / fix 4 / refactor 3 / style 2 / perf 1 / docs 4 / ci 1 / chore 1），基于 1 个合并提交（PR #17，含 28 个源提交）。
+
+### Features
+
+* feat(guest): 游客访问权限体系（guest 登录、guard 中间件、配置/封禁/清理/续期 API、Domain 级 listen/speak/message 开关）
+* feat(guest): GuestService join/ban 与 DomainGuestBan 模型 + 仓库
+* feat(guest): 前端游客入口页、登录游客按钮、guest store 与 api client
+* feat(guest): 按 Domain 能力门控的游客 UI 与管理员审核界面
+* feat(guest): 在 signal/sfu/message 路径强制 listen/speak/message 开关
+* feat(web): 登录页重设计（鼠标视差）
+* feat(auth): 重构登录权限服务 + 邮箱验证码模板按主应用风格重写
+* feat(permission): 新增基于 casbin 的 Domain 权限适配器
+
+### Bug Fixes
+
+* fix(guest): 加固 cleanup、join guard 与 renewal 校验
+* fix(guest): 加固 ban check、guard 白名单与 speak-off 强制
+* fix(guest): guest join 响应不泄露邀请码
+* fix(cluster): 加固多节点 agent-worker 运行时
+
+### Refactor
+
+* refactor(storage): 将 MinIO 替换为 RustFS 对象存储
+* refactor(auth): 抽取 issueTokens 令牌对辅助函数
+* refactor(ws): 移除 Fanout.marshalCount 生产字段，测试改用收消息数断言
+
+### Style
+
+* style(web): 登录页重设计 + 鼠标视差
+* style(server): gofmt guest handler 与 router imports
+
+### Performance
+
+* perf(sfu): DynamicProvider 配置缓存 + Fanout 反向索引
+
+### Documentation
+
+* docs(guest): 游客访问权限设计文档与实现计划
+* docs(guest): 游客访问路由说明
+
+### CI
+
+* ci: 重写 release 工作流，支持 push 到分支时自动发布
+
 ## [0.2.3](https://github.com/NoelOrin/GOSpeak/compare/v0.2.2...v0.2.3) (2026-08-22)
 
 > 自 v0.2.2 以来的发布，共 5 个变更点（refactor 1 / fix 2 / style 1 / ci 1），基于 1 个提交。
