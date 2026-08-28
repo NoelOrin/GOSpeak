@@ -372,3 +372,18 @@ func TestJWTTokenTTLDurations(t *testing.T) {
 		t.Errorf("invalid refresh ttl should fall back to 168h, got %v", got)
 	}
 }
+
+func TestHasExternalBus(t *testing.T) {
+	cfg := &Config{}
+	if cfg.HasExternalBus() {
+		t.Fatal("empty NATS_URL must not be external bus")
+	}
+	cfg.NATSURL = "   "
+	if cfg.HasExternalBus() {
+		t.Fatal("blank NATS_URL must not be external bus")
+	}
+	cfg.NATSURL = "nats://127.0.0.1:4222"
+	if !cfg.HasExternalBus() {
+		t.Fatal("external NATS_URL must be external bus")
+	}
+}

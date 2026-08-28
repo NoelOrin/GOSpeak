@@ -61,3 +61,65 @@ func TestStartLocalClusterRuntime_DeregistersOnStopOnly(t *testing.T) {
 		t.Fatalf("node status after stop = %q, want offline", node.Status)
 	}
 }
+
+func newClusterRuntimeDB(t *testing.T) (*gorm.DB, *service.ClusterService) {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&model.ClusterNode{}, &model.ServerAssignment{}); err != nil {
+		t.Fatal(err)
+	}
+	return db, service.NewClusterService(
+		repository.NewClusterNodeRepository(db),
+		repository.NewServerAssignmentRepository(db),
+	)
+}
+
+func TestStartClusterRuntimes_EmbeddedBusSkipsLeaderFence(t *testing.T) {
+	db, clusterSvc := newClusterRuntimeDB(t)
+	cfg := &config.Config{
+		ClusterRole:              model.ClusterRoleAll,
+		ClusterNodeID:            "local-node-embedded",
+		ClusterHeartbeatInterval: "1h",
+		ClusterHeartbeatTimeout:  "1h",
+		ClusterMaxServers:        10,
+		ClusterMaxRooms:          100,
+	}
+	_, stop, _, _, leaderFence, _, degradedToWorker, err := startClusterRuntimes(cfg, db, nil, "inst-embedded", clusterSvc, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	if leaderFence != nil {
+		t.Fatal("embedded bus must not create a leader fence")
+	}
+	if degradedToWorker {
+		t.Fatal("embedded bus must not degrade to worker")
+	}
+}
+
+func TestStartClusterRuntimes_ExternalBusWithoutConnDegradesToWorker(t *testing.T) {
+	db, clusterSvc := newClusterRuntimeDB(t)
+	cfg := &config.Config{
+		ClusterRole:              model.ClusterRoleAll,
+		ClusterNodeID:            "local-node-external",
+		NATSURL:                  "nats://127.0.0.1:4222",
+		ClusterHeartbeatInterval: "1h",
+		ClusterHeartbeatTimeout:  "1h",
+		ClusterMaxServers:        10,
+		ClusterMaxRooms:          100,
+	}
+	_, stop, _, _, leaderFence, _, degradedToWorker, err := startClusterRuntimes(cfg, db, nil, "inst-external", clusterSvc, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	if leaderFence != nil {
+		t.Fatal("lock-unavailable instance must not hold a leader fence")
+	}
+	if !degradedToWorker {
+		t.Fatal("lock-unavailable instance must degrade to worker")
+	}
+}

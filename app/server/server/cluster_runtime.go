@@ -370,7 +370,11 @@ func startClusterRuntimes(cfg *config.Config, db *gorm.DB, natsConn *nats.Conn, 
 	localNodeUUID := ""
 	degradedToWorker := false
 	var err error
-	if cfg.IsAgent() {
+	// 内嵌总线时 leader 锁是进程私有假锁，参与 DB fence 抢占只会让
+	// 共用同一 DB 的另一个实例永久偷走写面；fence 仅在共享总线上启用。
+	if cfg.IsAgent() && !cfg.HasExternalBus() {
+		logger.WithComponent("Cluster").Infof("embedded bus; skip leader lock and db fence instance=%s role=%s", instanceID, cfg.ClusterRole)
+	} else if cfg.IsAgent() {
 		acquireCtx, cancel := context.WithTimeout(context.Background(), agentLeaderAcquireTimeout)
 		leaderLock, leader, lockErr := acquireAgentLeader(acquireCtx, natsConn, cfg.NATSSubjectPrefix, instanceID)
 		cancel()

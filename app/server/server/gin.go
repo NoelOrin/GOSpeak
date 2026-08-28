@@ -510,7 +510,8 @@ func StartGin(env EnvEnum) error {
 		return fmt.Errorf("failed to start cluster runtime: %w", err)
 	}
 	// Agent 主锁抢到后才允许控制面 seed/插件写库；备机降级为 Worker 只读路径。
-	if leaderFence != nil {
+	// 内嵌总线无跨进程对等体，本进程即唯一写面，同样走完整 seed。
+	if cfg.IsAgent() && (leaderFence != nil || !cfg.HasExternalBus()) {
 		if err := bootstrapAgentControlPlane(db, roleRepo, userRepo, permRepo, sfuConfigSvc, pluginReg, permSvc); err != nil {
 			return fmt.Errorf("bootstrap agent control plane: %w", err)
 		}
@@ -602,7 +603,16 @@ func StartGin(env EnvEnum) error {
 			if leaderFence == nil {
 				return nil
 			}
-			return leaderFence.Verify()
+			if err := leaderFence.Verify(); err != nil {
+				// 写面确定丢失（被新 leader 接管）时与锁丢失同样处理：
+				// 停止服务等待编排重启，绝不带着过期写面继续运行。
+				if errors.Is(err, service.ErrLeaderFenceLost) {
+					logger.WithComponent("Cluster").Errorf("db leader fence lost; shutting down to avoid split brain instance=%s", instanceID)
+					terminateSelf()
+				}
+				return err
+			}
+			return nil
 		},
 		ReadyCheck: func() error {
 			if _, err := db.DB(); err != nil {

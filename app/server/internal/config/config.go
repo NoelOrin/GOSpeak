@@ -319,6 +319,12 @@ func (c *Config) UsesReadReplica() bool {
 		c.DBReadUser != "" || c.DBReadPassword != "" || c.DBReadDBName != ""
 }
 
+// HasExternalBus 返回是否使用外置 NATS。总线为内嵌时是进程私有假锁，
+// leader 锁与 DB 写面 fence 不具备跨进程互斥语义，不应参与抢占。
+func (c *Config) HasExternalBus() bool {
+	return strings.TrimSpace(c.NATSURL) != ""
+}
+
 // IsAgent 返回当前进程是否承担 Agent 控制面职责。
 func (c *Config) IsAgent() bool {
 	return c.ClusterRole == "agent" || c.ClusterRole == "all"
