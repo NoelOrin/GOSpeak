@@ -92,7 +92,7 @@ jobs:
   build-js:
     name: Build JS (turbo)
     needs: changes
-    if: needs.changes.outputs.js == 'true'
+    if: needs.changes.outputs.js == 'true' || needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
