@@ -288,5 +288,3 @@ function RouteComponent() {
 		</ManagePage>
 	);
 }
-
-export default RouteComponent;

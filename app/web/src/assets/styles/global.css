@@ -71,15 +71,10 @@ html {
 	@apply border-0 btn btn-sm btn-ghost;
 }
 
-/* 管理后台子页切换：轻量淡入，避免硬切闪烁 */
+/* 管理后台子页切换：仅保留滚动容器配置，已移除首帧透明的入场动画以避免路由切换闪烁 */
 .manage-shell-scroll {
 	scroll-behavior: auto;
 	overscroll-behavior: contain;
-}
-
-.manage-page {
-	animation: manage-page-enter 140ms ease-out;
-	will-change: opacity, transform;
 }
 
 /* iOS 底部安全区：底栏不被 Home Indicator 遮住 */
@@ -127,23 +122,6 @@ html {
 	.sn-dismiss-button {
 		min-width: 2.75rem;
 		min-height: 2.75rem;
-	}
-}
-
-@keyframes manage-page-enter {
-	from {
-		opacity: 0;
-		transform: translateY(4px);
-	}
-	to {
-		opacity: 1;
-		transform: none;
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.manage-page {
-		animation: none;
 	}
 }
 

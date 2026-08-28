@@ -6,7 +6,7 @@ export function ManagePage(props: { children: JSX.Element; class?: string }) {
 	// 默认 min-h-full 跟随外层滚动；需要卡片内滚动的页面请传 h-full min-h-0 overflow-hidden
 	return (
 		<div
-			class={`manage-page flex w-full min-w-0 flex-col gap-5 p-4 md:p-5 ${props.class ?? "min-h-full"}`}
+			class={`flex w-full min-w-0 flex-col gap-5 p-4 md:p-5 ${props.class ?? "min-h-full"}`}
 		>
 			{props.children}
 		</div>
