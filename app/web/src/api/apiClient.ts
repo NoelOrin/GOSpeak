@@ -15,10 +15,22 @@ export interface Result<T = any> {
 
 // Token 相关错误码
 const TOKEN_ERROR_CODES = new Set([1001, 1002, 1003, 1014]);
+const RATE_LIMITED_CODE = 1017;
 // 直接登出的错误码（不尝试刷新）
 const FORCE_LOGOUT_CODES = new Set([1015]);
 // 禁言提示但不登出的错误码
 const MUTE_ERROR_CODES = new Set([1016]);
+
+// 已在登录/注册页时不再硬跳，避免与 ensureSession 的路由跳转互相触发整页刷新循环
+const redirectToLogin = (banned = false) => {
+	if (
+		window.location.pathname === "/login" ||
+		window.location.pathname === "/register"
+	) {
+		return;
+	}
+	window.location.href = banned ? "/login?banned=1" : "/login";
+};
 
 const createInstance = (baseURL?: string) => {
 	const axiosInstance = axios.create({
@@ -51,7 +63,7 @@ const createInstance = (baseURL?: string) => {
 				error.response?.data?.code &&
 				FORCE_LOGOUT_CODES.has(error.response.data.code)
 			) {
-				window.location.href = "/login?banned=1";
+				redirectToLogin(true);
 				return Promise.reject(error);
 			}
 
@@ -76,13 +88,15 @@ const createInstance = (baseURL?: string) => {
 					try {
 						await refreshSession();
 						return axiosInstance(originalRequest);
-					} catch {
-						window.location.href = "/login";
+					} catch (e) {
+						const code = (e as AxiosError<Result>)?.response?.data?.code;
+						// refresh 被限流(1017)：沿用现有会话重试原调用方自行处理，不跳登录
+						if (code === RATE_LIMITED_CODE) return Promise.reject(error);
+						redirectToLogin();
 						return Promise.reject(error);
 					}
 				}
-
-				window.location.href = "/login";
+				redirectToLogin();
 				return Promise.reject(error);
 			}
 

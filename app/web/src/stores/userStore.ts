@@ -14,11 +14,34 @@ export interface UserInfo {
 }
 
 const STORAGE_USER = "user";
+const STORAGE_EXPIRES_AT = "gospeak_session_expires_at";
+const EXPIRE_MARGIN_MS = 60_000;
+const UNVERIFIED_GRACE_MS = 10 * 60_000;
 
 const [user, setUser] = createSignal<UserInfo | null>(null);
 const [userStale, setUserStale] = createSignal(false);
 
 let ensureSessionPromise: Promise<boolean> | null = null;
+
+function readExpiresAt(): number | null {
+	const raw = localStorage.getItem(STORAGE_EXPIRES_AT);
+	if (!raw) return null;
+	const n = Number(raw);
+	return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+let sessionExpiresAt: number | null = readExpiresAt();
+let lastVerifiedAt = 0;
+
+function recordSessionExpiryAction(expiresIn: number | null | undefined) {
+	if (typeof expiresIn === "number" && expiresIn > 0) {
+		sessionExpiresAt = Date.now() + expiresIn * 1000;
+		localStorage.setItem(STORAGE_EXPIRES_AT, String(sessionExpiresAt));
+		return;
+	}
+	sessionExpiresAt = null;
+	localStorage.removeItem(STORAGE_EXPIRES_AT);
+}
 
 // 只缓存非敏感 user 元数据；access/refresh token 完全由 HttpOnly Cookie 承载。
 const cachedUser = localStorage.getItem(STORAGE_USER);
@@ -30,28 +53,34 @@ if (cachedUser) {
 	}
 }
 
-async function loginAction(u: UserInfo) {
+async function loginAction(u: UserInfo, expiresIn?: number) {
 	localStorage.setItem(STORAGE_USER, JSON.stringify(u));
 	setUser(u);
 	setUserStale(false);
+	recordSessionExpiryAction(expiresIn);
 }
 
-async function fetchProfileAction() {
+async function fetchProfileAction(): Promise<boolean> {
 	try {
 		const profile = await getProfile();
 		const updated = { ...user(), ...profile } as UserInfo;
 		localStorage.setItem(STORAGE_USER, JSON.stringify(updated));
 		setUser(updated);
 		setUserStale(false);
+		return true;
 	} catch {
 		setUserStale(true);
+		return false;
 	}
 }
 
 async function clearAuthAction() {
 	localStorage.removeItem(STORAGE_USER);
+	localStorage.removeItem(STORAGE_EXPIRES_AT);
 	setUser(null);
 	setUserStale(false);
+	sessionExpiresAt = null;
+	lastVerifiedAt = 0;
 }
 
 async function logoutAction() {
@@ -64,29 +93,61 @@ async function logoutAction() {
 }
 
 /**
- * 确保会话可用：
- * - 由 HttpOnly refresh cookie 静默换发 access cookie
- * - 成功后拉取最新 profile；失败则清会话并返回 false
+ * 确保会话可用（过期时间驱动的懒续期）：
+ * - 有过期时间且距过期 >60s：同步放行，零网络请求
+ * - 临近过期/已过期：先 refresh（记录新 expires_in）再重验 profile
+ * - 无过期时间（存量/被清）：宽限窗口(10min)内验证过则放行，否则探测 profile 补齐
+ * - 无用户元数据：冷启动探测（cookie 可能仍有效）
+ * - refresh 被限流(1017)不视为鉴权失败：有缓存会话则沿用，不清不踢
+ * - refresh 返回真实 token 错误 → 清缓存返回 false，/login 据此停在登录页
  */
-async function ensureSessionAction(): Promise<boolean> {
-	if (ensureSessionPromise) {
-		return ensureSessionPromise;
-	}
+function isRateLimitedError(e: unknown): boolean {
+	const code = (e as { response?: { data?: { code?: number } } })?.response
+		?.data?.code;
+	return code === 1017;
+}
 
-	ensureSessionPromise = (async () => {
+async function ensureSessionAction(): Promise<boolean> {
+	if (ensureSessionPromise) return ensureSessionPromise;
+	// 注意：快速路径（未过期同步放行）会让 async IIFE 同步跑完，
+	// IIFE 内部的 finally 会在赋值完成前执行并被覆盖，导致 promise 永不清空——
+	// 清理必须挂在外层 promise 的 .finally（微任务时机必然晚于赋值）。
+	const attempt = (async () => {
 		try {
-			await refreshSession();
-			await fetchProfileAction();
-			return !!user();
-		} catch {
+			if (user()) {
+				if (sessionExpiresAt) {
+					if (Date.now() < sessionExpiresAt - EXPIRE_MARGIN_MS) return true;
+					recordSessionExpiryAction(await refreshSession());
+					const ok = await fetchProfileAction();
+					if (ok) lastVerifiedAt = Date.now();
+					return ok;
+				}
+				if (
+					lastVerifiedAt &&
+					Date.now() - lastVerifiedAt < UNVERIFIED_GRACE_MS
+				) {
+					return true;
+				}
+			}
+			if (await fetchProfileAction()) {
+				lastVerifiedAt = Date.now();
+				return true;
+			}
+			recordSessionExpiryAction(await refreshSession());
+			const ok = await fetchProfileAction();
+			if (ok) lastVerifiedAt = Date.now();
+			return ok;
+		} catch (e) {
+			if (isRateLimitedError(e) && user()) return true;
 			await clearAuthAction();
 			return false;
-		} finally {
-			ensureSessionPromise = null;
 		}
 	})();
-
-	return ensureSessionPromise;
+	const settled = attempt.finally(() => {
+		if (ensureSessionPromise === settled) ensureSessionPromise = null;
+	});
+	ensureSessionPromise = settled;
+	return settled;
 }
 
 const userStore = {
@@ -100,6 +161,7 @@ const userStore = {
 	logout: logoutAction,
 	clearAuth: clearAuthAction,
 	fetchProfile: fetchProfileAction,
+	recordSessionExpiry: recordSessionExpiryAction,
 };
 
 export default userStore;

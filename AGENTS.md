@@ -398,6 +398,8 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 |----------|---------|-------------|
 | `JWT_KEY` | `default-secret` | HMAC signing key (change in production) |
 | `JWT_KEY_TTL` | `24h` | Signing-key rotation interval (NATS KV) |
+| `JWT_ACCESS_TTL` | `15m` | Access token TTL（login/refresh 响应 `expires_in` 同源） |
+| `JWT_REFRESH_TTL` | `168h` | Refresh token TTL |
 
 ### SFU Provider
 

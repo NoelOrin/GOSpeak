@@ -1,4 +1,3 @@
-import { createForm } from "@tanstack/solid-form";
 import {
 	Link,
 	createFileRoute,
@@ -19,12 +18,11 @@ import {
 	login as loginApi,
 } from "@/api/auth";
 import { getEnabledProviders, getOAuthLoginURL } from "@/api/oauth";
-import { listPublicDomains } from "@/api/domain";
-import { Form } from "@/components/form";
 import ProviderIcon from "@/components/oauth/ProviderIcon";
 import userStore from "@/stores/userStore";
 import ForcePasswordChangeModal from "./components/ForcePasswordChangeModal";
 import ForgotPasswordModal from "./components/ForgotPasswordModal";
+import { showLoginSuccessToast } from "./components/loginSuccessToast";
 
 export const Route = createFileRoute("/login/")({
 	beforeLoad: async () => {
@@ -53,28 +51,22 @@ function LoginPage() {
 	const [codeSending, setCodeSending] = createSignal(false);
 
 	const [oauthProviders] = createResource(getEnabledProviders);
-	const [publicGuestDomains] = createResource(async () => {
-		try {
-			const page = await listPublicDomains(1, 50);
-			return (page.domains ?? []).filter((d) => d.allow_guest).length;
-		} catch {
-			return 0;
-		}
-	});
 	const [oauthLoading, setOauthLoading] = createSignal(false);
 
 	let shellRef!: HTMLDivElement;
 
-	function completeOAuthLogin() {
+	function completeOAuthLogin(expiresIn?: number) {
 		void (async () => {
 			setOauthLoading(true);
 			try {
-				// token 已由服务端写入 HttpOnly Cookie，这里只确认会话并拉取 profile。
+				// token 已由服务端写入 HttpOnly Cookie，这里先记录过期时间再确认会话并拉取 profile。
+				userStore.recordSessionExpiry(expiresIn);
 				const ok = await userStore.ensureSession();
 				if (!ok) {
 					showToast("OAuth 登录失败：未能建立会话", { type: "error" });
 					return;
 				}
+				showLoginSuccessToast();
 				navigate({ to: resolveLoginRedirect() });
 			} catch (e) {
 				await userStore.clearAuth();
@@ -94,9 +86,10 @@ function LoginPage() {
 		const data = event.data as {
 			type?: string;
 			ok?: boolean;
+			expires_in?: number;
 		} | null;
-		if (!data || data.type !== "gospeak-oauth") return;
-		if (data.ok) completeOAuthLogin();
+		if (data?.type !== "gospeak-oauth") return;
+		if (data.ok) completeOAuthLogin(data.expires_in);
 	}
 
 	onMount(() => {
@@ -178,25 +171,55 @@ function LoginPage() {
 		setShowChangeModal(false);
 	};
 
-	const form = createForm(() => ({
-		defaultValues: { username: "", password: "" },
-		onSubmit: async ({ value }) => {
-			try {
-				const data = await loginApi(value);
-				if (data.need_change_password) {
-					await userStore.login(data.user);
-					openChangeModal();
-					return;
-				}
-				await userStore.login(data.user);
-				navigate({ to: resolveLoginRedirect() });
-			} catch (e: any) {
-				if (e?.response?.data?.code === 1015) {
-					setBanned(true);
-				}
+	const [username, setUsername] = createSignal("");
+	const [password, setPassword] = createSignal("");
+	const [submitting, setSubmitting] = createSignal(false);
+	const [touched, setTouched] = createSignal({
+		username: false,
+		password: false,
+	});
+
+	const usernameError = () => {
+		if (!touched().username) return "";
+		if (!username().trim()) return "用户名 是必填项";
+		return "";
+	};
+	const passwordError = () => {
+		if (!touched().password) return "";
+		if (!password()) return "密码 是必填项";
+		return "";
+	};
+
+	async function handleLoginSubmit(e?: Event) {
+		e?.preventDefault();
+		e?.stopPropagation();
+		setTouched({ username: true, password: true });
+		if (!username().trim() || !password()) {
+			return;
+		}
+		if (submitting()) return;
+		setSubmitting(true);
+		try {
+			const data = await loginApi({
+				username: username().trim(),
+				password: password(),
+			});
+			if (data.need_change_password) {
+				await userStore.login(data.user, data.expires_in);
+				openChangeModal();
+				return;
 			}
-		},
-	}));
+			await userStore.login(data.user, data.expires_in);
+			showLoginSuccessToast();
+			navigate({ to: resolveLoginRedirect() });
+		} catch (err: any) {
+			if (err?.response?.data?.code === 1015) {
+				setBanned(true);
+			}
+		} finally {
+			setSubmitting(false);
+		}
+	}
 
 	const depth = (n: number) =>
 		({ "--depth": String(n) }) as unknown as Record<string, string>;
@@ -367,28 +390,61 @@ function LoginPage() {
 										</span>
 									</div>
 
-									<Form
-										form={form}
-										fields={[
-											{
-												name: "username",
-												label: "用户名",
-												type: "text",
-												placeholder: "请输入用户名",
-												required: true,
-											},
-											{
-												name: "password",
-												label: "密码",
-												type: "password",
-												placeholder: "请输入密码",
-												required: true,
-											},
-										]}
-										submitButtonText="登录"
-									/>
+									<form onSubmit={handleLoginSubmit} noValidate>
+										<fieldset class="fieldset relative mb-4">
+											<legend class="fieldset-legend text-[14px]">
+												用户名
+											</legend>
+											<input
+												id="field-username"
+												type="text"
+												value={username()}
+												placeholder="请输入用户名"
+												required
+												autocomplete="username"
+												class="input w-full"
+												onInput={(e) => setUsername(e.currentTarget.value)}
+												onBlur={() =>
+													setTouched((p) => ({ ...p, username: true }))
+												}
+											/>
+											<Show when={usernameError()}>
+												<p class="absolute top-full left-1 mt-1 text-xs text-error">
+													{usernameError()}
+												</p>
+											</Show>
+										</fieldset>
+										<fieldset class="fieldset relative mb-4">
+											<legend class="fieldset-legend text-[14px]">密码</legend>
+											<input
+												id="field-password"
+												type="password"
+												value={password()}
+												placeholder="请输入密码"
+												required
+												autocomplete="current-password"
+												class="input w-full"
+												onInput={(e) => setPassword(e.currentTarget.value)}
+												onBlur={() =>
+													setTouched((p) => ({ ...p, password: true }))
+												}
+											/>
+											<Show when={passwordError()}>
+												<p class="absolute top-full left-1 mt-1 text-xs text-error">
+													{passwordError()}
+												</p>
+											</Show>
+										</fieldset>
+										<button
+											type="submit"
+											class="btn btn-primary mt-4 w-full"
+											disabled={submitting()}
+										>
+											{submitting() ? "登录中..." : "登录"}
+										</button>
+									</form>
 
-									<div class="text-center mt-1">
+									<div class="mt-1 flex items-center justify-center">
 										<button
 											type="button"
 											class="link link-primary text-sm inline-flex items-center justify-center px-2 min-h-11"
@@ -396,6 +452,13 @@ function LoginPage() {
 										>
 											忘记密码?
 										</button>
+										<span class="text-base-content/20">·</span>
+										<Link
+											to="/register"
+											class="link link-primary text-sm inline-flex items-center justify-center px-2 min-h-11"
+										>
+											注册账号
+										</Link>
 									</div>
 
 									{/* 已启用的第三方登录：按提供商显示品牌 icon 按钮 */}
@@ -453,19 +516,6 @@ function LoginPage() {
 										</div>
 									</Show>
 
-									<Show when={(publicGuestDomains() ?? 0) > 0}>
-										<div class="divider my-2 text-xs text-base-content/50">
-											或
-										</div>
-										<Link
-											to="/guest"
-											search={{ code: undefined, domain: undefined }}
-											class="btn btn-ghost btn-block"
-										>
-											访客登录
-										</Link>
-									</Show>
-
 									<Show when={banned()}>
 										<div class="alert alert-error mt-2">
 											<svg
@@ -519,8 +569,9 @@ function LoginPage() {
 				onClose={closeChangeModal}
 				onSubmit={async ({ newPassword, name }) => {
 					const result = await firstChangePasswordApi(newPassword ?? "", name);
-					await userStore.login(result.user);
+					await userStore.login(result.user, result.expires_in);
 					closeChangeModal();
+					showLoginSuccessToast();
 					navigate({ to: resolveLoginRedirect() });
 				}}
 			/>

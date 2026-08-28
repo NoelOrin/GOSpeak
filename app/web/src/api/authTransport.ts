@@ -6,17 +6,20 @@ const rawAxios = axios.create({
 	headers: { "Content-Type": "application/json;charset=utf-8" },
 });
 
-let pendingRefresh: Promise<void> | null = null;
+let pendingRefresh: Promise<number | null> | null = null;
 
-/** 由 HttpOnly refresh cookie 静默续期 access token，浏览器侧无需持有任何 token。 */
-export async function refreshSession(): Promise<void> {
+/** 由 HttpOnly refresh cookie 静默续期 access token，返回服务端下发的 expires_in（秒）。 */
+export async function refreshSession(): Promise<number | null> {
 	if (!pendingRefresh) {
 		pendingRefresh = rawAxios
 			.post("/api/v1/auth/refresh_token")
-			.then(() => undefined)
+			.then((resp) => {
+				const data = resp.data?.data as { expires_in?: number } | undefined;
+				return typeof data?.expires_in === "number" ? data.expires_in : null;
+			})
 			.finally(() => {
 				pendingRefresh = null;
 			});
 	}
-	await pendingRefresh;
+	return pendingRefresh;
 }

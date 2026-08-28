@@ -10,12 +10,11 @@ import (
 )
 
 func Register(r *gin.RouterGroup, h *handler.AuthHandler) {
-	public := r.Group("")
-	public.Use(middleware.RateLimit(10, time.Minute))
-	public.POST("/login", h.Login)
-	public.POST("/register", h.Register)
-	public.POST("/refresh_token", h.GetRefreshToken)
-	public.POST("/reset_password", h.ResetPassword)
+	// 登录/注册/重置密码保持 10次/分严格限流；refresh_token 60次/分且独立桶，避免切路由频繁触发 ensureSession 被误踢。
+	r.POST("/login", middleware.RateLimit(10, time.Minute), h.Login)
+	r.POST("/register", middleware.RateLimit(10, time.Minute), h.Register)
+	r.POST("/refresh_token", middleware.RateLimit(60, time.Minute), h.GetRefreshToken)
+	r.POST("/reset_password", middleware.RateLimit(10, time.Minute), h.ResetPassword)
 }
 
 func RegisterProtected(r *gin.RouterGroup, h *handler.AuthHandler) {

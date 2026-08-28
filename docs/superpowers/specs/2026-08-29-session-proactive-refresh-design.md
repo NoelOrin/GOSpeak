@@ -26,7 +26,7 @@ access/refresh token 由 HttpOnly Cookie 承载（保持不变，这是安全上
 ## 后端改动
 
 1. **TTL 可配**（`internal/config/config.go`）：
-   - 新增 `JWTAccessTTL`（env `JWT_ACCESS_TTL`，默认 `15m`）、`JWTRefreshTTL`（env `JWT_REFRESH_TTL`，默认 `168h`）。沿用 `JWTKeyTTL` 的「string 字段 + `time.ParseDuration` 方法」模式（参考 config.go:47,249），非法值启动时报错。
+   - 新增 `JWTAccessTTL`（env `JWT_ACCESS_TTL`，默认 `15m`）、`JWTRefreshTTL`（env `JWT_REFRESH_TTL`，默认 `168h`）。沿用 `JWTKeyTTL` 的「string 字段 + `time.ParseDuration` 方法」模式（参考 config.go:47,249），非法值/非正值回落默认值，不阻塞启动。
 2. **TTL 注入**（`internal/pkg/jwt.go` + `server/gin.go`）：
    - `AccessTokenTTL` / `RefreshTokenTTL` 从 `const` 改为包级 `var`，`gin.go` 装配时由 config 显式注入。`GenerateToken` 等调用方零改动。
 3. **响应体下发**（`internal/service/auth_service.go`）：
@@ -43,7 +43,10 @@ access/refresh token 由 HttpOnly Cookie 承载（保持不变，这是安全上
    - `ensureSession` 新逻辑：
      1. `user()` 为空 → 现状探测路径（profile → 失败则 refresh → 重试；失败清理并返回 false）。冷启动、localStorage 被清但 cookie 存活的场景由此覆盖。
      2. `user()` 存在且 `now < sessionExpiresAt - 60s` → **同步返回 true，零网络请求**。
-     3. 其余（临近过期 / 已过期 / 无 `sessionExpiresAt` 的存量数据）→ `refreshSession()`（记录 `expires_in`）→ `fetchProfileAction()` 收尾。失败处理同现状：1017 且有缓存会话则沿用，否则清理返回 false。无 `sessionExpiresAt` 视为已过期，行为不劣于现状。
+     3. 其余（临近过期 / 已过期 / 无 `sessionExpiresAt` 的存量数据）→ `refreshSession()`（记录 `expires_in`）→ `fetchProfileAction()` 收尾。失败处理同现状：1017 且有缓存会话则沿用，否则清理返回 false。
+     - 存量桥接：无 `sessionExpiresAt` 时以 `lastVerifiedAt`（最近一次 profile 验证成功时刻，内存态）宽限 10 分钟——窗口内同步放行，窗口过后自动 refresh 一次换取真实 `expires_in`，此后进入零 RTT 节奏。
+     - 无 `sessionExpiresAt` 视为已过期，行为不劣于现状。
+   - 实现注意：快速路径（同步 return true）会让 async IIFE 同步完成，IIFE 内部 `finally` 清理 in-flight 去重变量会在赋值前执行并被覆盖（一次性永久泄漏）——清理必须挂在外层 promise 的 `.finally` 并加身份守卫。
    - `userStale` 语义不变。
 3. **api/auth.ts**：`LoginData` 增加 `expires_in?: number`；login / register 将其透传给 `userStore.login`。
 4. **登录页 OAuth 接收**（`src/pages/login/index.tsx:58,89`）：`completeOAuthLogin()` 接收 payload 中的 `expires_in`，先记录再走 `ensureSession()`。
@@ -59,7 +62,7 @@ access/refresh token 由 HttpOnly Cookie 承载（保持不变，这是安全上
 ## 测试计划
 
 - 后端：login / register / refresh 响应断言含 `expires_in`；TTL env 默认值、自定义值、非法值启动失败；现有 auth handler 测试回归。
-- 前端：未过期同步放行且零网络请求；临近过期先 refresh 后 profile；`expires_in` 记录与持久化；登出清理；无 `sessionExpiresAt` 存量路径；`refreshSession` 返回值；OAuth payload 接收。补入 `userStore.test.ts` 等现有测试文件。
+- 前端：未过期同步放行且零网络请求；临近过期先 refresh 后 profile；`expires_in` 记录与持久化；登出清理；无 `sessionExpiresAt` 存量路径（含 10 分钟宽限窗口内放行）；`refreshSession` 返回值；OAuth payload 接收。补入 `userStore.test.ts` 等现有测试文件。
 
 ## 验收标准
 

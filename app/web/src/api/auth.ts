@@ -20,6 +20,7 @@ export interface BackendUser {
 export interface LoginData {
 	user: BackendUser;
 	need_change_password: boolean;
+	expires_in?: number;
 }
 
 export async function login(req: LoginReq): Promise<LoginData> {
