@@ -32,6 +32,27 @@ export async function login(req: LoginReq): Promise<LoginData> {
 	return data;
 }
 
+export interface RegisterReq {
+	username: string;
+	password: string;
+	email?: string;
+	email_code?: string;
+}
+
+export async function register(req: RegisterReq): Promise<LoginData> {
+	const data = await apiClient.post<LoginData>({
+		url: "/api/v1/auth/register",
+		data: {
+			...req,
+			email: req.email || undefined,
+			email_code: req.email_code || undefined,
+		},
+	});
+
+	if (!data) throw new Error("register data is missing");
+	return data;
+}
+
 export async function logout(): Promise<void> {
 	await apiClient.post({
 		url: "/api/v1/auth/logout",

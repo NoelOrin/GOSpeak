@@ -62,6 +62,9 @@ function RouteComponent() {
 	const copy = async (text: string, kind: "code" | "link", id: string) => {
 		try {
 			await navigator.clipboard.writeText(text);
+			showToast(kind === "code" ? "邀请码已复制" : "邀请链接已复制", {
+				type: "success",
+			});
 			if (kind === "code") {
 				setCopiedCode(id);
 				if (copyCodeTimer !== undefined) clearTimeout(copyCodeTimer);
@@ -78,7 +81,7 @@ function RouteComponent() {
 				);
 			}
 		} catch {
-			// 剪贴板不可用时由用户手动复制，不阻断操作
+			showToast("复制失败，请手动复制", { type: "error" });
 		}
 	};
 

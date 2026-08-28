@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './pages/__root'
 import { Route as appRouteRouteImport } from './pages/(app)/route'
+import { Route as RegisterIndexRouteImport } from './pages/register/index'
 import { Route as LoginIndexRouteImport } from './pages/login/index'
 import { Route as GuestIndexRouteImport } from './pages/guest/index'
 import { Route as appProfileRouteRouteImport } from './pages/(app)/profile/route'
@@ -20,6 +21,7 @@ import { Route as appManageIndexRouteImport } from './pages/(app)/manage/index'
 import { Route as appLinkIndexRouteImport } from './pages/(app)/link/index'
 import { Route as appDiscoverIndexRouteImport } from './pages/(app)/discover/index'
 import { Route as appChatIndexRouteImport } from './pages/(app)/chat/index'
+import { Route as InviteDCodeIndexRouteImport } from './pages/invite/d/$code/index'
 import { Route as appManageUsersIndexRouteImport } from './pages/(app)/manage/users/index'
 import { Route as appManageStorageIndexRouteImport } from './pages/(app)/manage/storage/index'
 import { Route as appManageSfuIndexRouteImport } from './pages/(app)/manage/sfu/index'
@@ -35,10 +37,14 @@ import { Route as appManageBanIndexRouteImport } from './pages/(app)/manage/ban/
 import { Route as appManageApikeyIndexRouteImport } from './pages/(app)/manage/apikey/index'
 import { Route as appDomainDomainUUIDIndexRouteImport } from './pages/(app)/domain/$domainUUID/index'
 import { Route as appManageDomainsDomainUUIDIndexRouteImport } from './pages/(app)/manage/domains/$domainUUID/index'
-import { Route as appInviteDCodeIndexRouteImport } from './pages/(app)/invite/d/$code/index'
 
 const appRouteRoute = appRouteRouteImport.update({
   id: '/(app)',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegisterIndexRoute = RegisterIndexRouteImport.update({
+  id: '/register/',
+  path: '/register/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginIndexRoute = LoginIndexRouteImport.update({
@@ -90,6 +96,11 @@ const appChatIndexRoute = appChatIndexRouteImport.update({
   id: '/chat/',
   path: '/chat/',
   getParentRoute: () => appRouteRoute,
+} as any)
+const InviteDCodeIndexRoute = InviteDCodeIndexRouteImport.update({
+  id: '/invite/d/$code/',
+  path: '/invite/d/$code/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const appManageUsersIndexRoute = appManageUsersIndexRouteImport.update({
   id: '/users/',
@@ -169,11 +180,6 @@ const appManageDomainsDomainUUIDIndexRoute =
     path: '/domains/$domainUUID/',
     getParentRoute: () => appManageRouteRoute,
   } as any)
-const appInviteDCodeIndexRoute = appInviteDCodeIndexRouteImport.update({
-  id: '/invite/d/$code/',
-  path: '/invite/d/$code/',
-  getParentRoute: () => appRouteRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof appIndexRouteRoute
@@ -181,6 +187,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof appProfileRouteRoute
   '/guest/': typeof GuestIndexRoute
   '/login/': typeof LoginIndexRoute
+  '/register/': typeof RegisterIndexRoute
   '/chat/': typeof appChatIndexRoute
   '/discover/': typeof appDiscoverIndexRoute
   '/index/': typeof appIndexIndexRoute
@@ -200,7 +207,7 @@ export interface FileRoutesByFullPath {
   '/manage/sfu/': typeof appManageSfuIndexRoute
   '/manage/storage/': typeof appManageStorageIndexRoute
   '/manage/users/': typeof appManageUsersIndexRoute
-  '/invite/d/$code/': typeof appInviteDCodeIndexRoute
+  '/invite/d/$code/': typeof InviteDCodeIndexRoute
   '/manage/domains/$domainUUID/': typeof appManageDomainsDomainUUIDIndexRoute
 }
 export interface FileRoutesByTo {
@@ -208,6 +215,7 @@ export interface FileRoutesByTo {
   '/profile': typeof appProfileRouteRoute
   '/guest': typeof GuestIndexRoute
   '/login': typeof LoginIndexRoute
+  '/register': typeof RegisterIndexRoute
   '/chat': typeof appChatIndexRoute
   '/discover': typeof appDiscoverIndexRoute
   '/index': typeof appIndexIndexRoute
@@ -227,7 +235,7 @@ export interface FileRoutesByTo {
   '/manage/sfu': typeof appManageSfuIndexRoute
   '/manage/storage': typeof appManageStorageIndexRoute
   '/manage/users': typeof appManageUsersIndexRoute
-  '/invite/d/$code': typeof appInviteDCodeIndexRoute
+  '/invite/d/$code': typeof InviteDCodeIndexRoute
   '/manage/domains/$domainUUID': typeof appManageDomainsDomainUUIDIndexRoute
 }
 export interface FileRoutesById {
@@ -238,6 +246,7 @@ export interface FileRoutesById {
   '/(app)/profile': typeof appProfileRouteRoute
   '/guest/': typeof GuestIndexRoute
   '/login/': typeof LoginIndexRoute
+  '/register/': typeof RegisterIndexRoute
   '/(app)/chat/': typeof appChatIndexRoute
   '/(app)/discover/': typeof appDiscoverIndexRoute
   '/(app)/index/': typeof appIndexIndexRoute
@@ -257,7 +266,7 @@ export interface FileRoutesById {
   '/(app)/manage/sfu/': typeof appManageSfuIndexRoute
   '/(app)/manage/storage/': typeof appManageStorageIndexRoute
   '/(app)/manage/users/': typeof appManageUsersIndexRoute
-  '/(app)/invite/d/$code/': typeof appInviteDCodeIndexRoute
+  '/invite/d/$code/': typeof InviteDCodeIndexRoute
   '/(app)/manage/domains/$domainUUID/': typeof appManageDomainsDomainUUIDIndexRoute
 }
 export interface FileRouteTypes {
@@ -268,6 +277,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/guest/'
     | '/login/'
+    | '/register/'
     | '/chat/'
     | '/discover/'
     | '/index/'
@@ -295,6 +305,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/guest'
     | '/login'
+    | '/register'
     | '/chat'
     | '/discover'
     | '/index'
@@ -324,6 +335,7 @@ export interface FileRouteTypes {
     | '/(app)/profile'
     | '/guest/'
     | '/login/'
+    | '/register/'
     | '/(app)/chat/'
     | '/(app)/discover/'
     | '/(app)/index/'
@@ -343,7 +355,7 @@ export interface FileRouteTypes {
     | '/(app)/manage/sfu/'
     | '/(app)/manage/storage/'
     | '/(app)/manage/users/'
-    | '/(app)/invite/d/$code/'
+    | '/invite/d/$code/'
     | '/(app)/manage/domains/$domainUUID/'
   fileRoutesById: FileRoutesById
 }
@@ -351,6 +363,8 @@ export interface RootRouteChildren {
   appRouteRoute: typeof appRouteRouteWithChildren
   GuestIndexRoute: typeof GuestIndexRoute
   LoginIndexRoute: typeof LoginIndexRoute
+  RegisterIndexRoute: typeof RegisterIndexRoute
+  InviteDCodeIndexRoute: typeof InviteDCodeIndexRoute
 }
 
 declare module '@tanstack/solid-router' {
@@ -360,6 +374,13 @@ declare module '@tanstack/solid-router' {
       path: ''
       fullPath: ''
       preLoaderRoute: typeof appRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/register/': {
+      id: '/register/'
+      path: '/register'
+      fullPath: '/register/'
+      preLoaderRoute: typeof RegisterIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login/': {
@@ -431,6 +452,13 @@ declare module '@tanstack/solid-router' {
       fullPath: '/chat/'
       preLoaderRoute: typeof appChatIndexRouteImport
       parentRoute: typeof appRouteRoute
+    }
+    '/invite/d/$code/': {
+      id: '/invite/d/$code/'
+      path: '/invite/d/$code'
+      fullPath: '/invite/d/$code/'
+      preLoaderRoute: typeof InviteDCodeIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/(app)/manage/users/': {
       id: '/(app)/manage/users/'
@@ -537,13 +565,6 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof appManageDomainsDomainUUIDIndexRouteImport
       parentRoute: typeof appManageRouteRoute
     }
-    '/(app)/invite/d/$code/': {
-      id: '/(app)/invite/d/$code/'
-      path: '/invite/d/$code'
-      fullPath: '/invite/d/$code/'
-      preLoaderRoute: typeof appInviteDCodeIndexRouteImport
-      parentRoute: typeof appRouteRoute
-    }
   }
 }
 
@@ -596,7 +617,6 @@ interface appRouteRouteChildren {
   appIndexIndexRoute: typeof appIndexIndexRoute
   appLinkIndexRoute: typeof appLinkIndexRoute
   appDomainDomainUUIDIndexRoute: typeof appDomainDomainUUIDIndexRoute
-  appInviteDCodeIndexRoute: typeof appInviteDCodeIndexRoute
 }
 
 const appRouteRouteChildren: appRouteRouteChildren = {
@@ -608,7 +628,6 @@ const appRouteRouteChildren: appRouteRouteChildren = {
   appIndexIndexRoute: appIndexIndexRoute,
   appLinkIndexRoute: appLinkIndexRoute,
   appDomainDomainUUIDIndexRoute: appDomainDomainUUIDIndexRoute,
-  appInviteDCodeIndexRoute: appInviteDCodeIndexRoute,
 }
 
 const appRouteRouteWithChildren = appRouteRoute._addFileChildren(
@@ -619,6 +638,8 @@ const rootRouteChildren: RootRouteChildren = {
   appRouteRoute: appRouteRouteWithChildren,
   GuestIndexRoute: GuestIndexRoute,
   LoginIndexRoute: LoginIndexRoute,
+  RegisterIndexRoute: RegisterIndexRoute,
+  InviteDCodeIndexRoute: InviteDCodeIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
