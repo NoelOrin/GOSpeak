@@ -346,3 +346,29 @@ func clearConfigEnv(t *testing.T) {
 	}
 	SetCurrent(nil)
 }
+
+func TestJWTTokenTTLDurations(t *testing.T) {
+	cfg := &Config{}
+	if got := cfg.JWTAccessTTLDuration(); got != 15*time.Minute {
+		t.Errorf("default access ttl = %v, want 15m", got)
+	}
+	if got := cfg.JWTRefreshTTLDuration(); got != 7*24*time.Hour {
+		t.Errorf("default refresh ttl = %v, want 168h", got)
+	}
+	cfg.JWTAccessTTL = "5m"
+	cfg.JWTRefreshTTL = "72h"
+	if got := cfg.JWTAccessTTLDuration(); got != 5*time.Minute {
+		t.Errorf("custom access ttl = %v, want 5m", got)
+	}
+	if got := cfg.JWTRefreshTTLDuration(); got != 72*time.Hour {
+		t.Errorf("custom refresh ttl = %v, want 72h", got)
+	}
+	cfg.JWTAccessTTL = "bogus"
+	cfg.JWTRefreshTTL = "-1m"
+	if got := cfg.JWTAccessTTLDuration(); got != 15*time.Minute {
+		t.Errorf("invalid access ttl should fall back to 15m, got %v", got)
+	}
+	if got := cfg.JWTRefreshTTLDuration(); got != 7*24*time.Hour {
+		t.Errorf("invalid refresh ttl should fall back to 168h, got %v", got)
+	}
+}

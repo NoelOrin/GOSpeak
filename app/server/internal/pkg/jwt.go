@@ -30,11 +30,16 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// AccessTokenTTL 用户 access_token 有效期（配合 refresh_token 做无感刷新）。
-const AccessTokenTTL = 15 * time.Minute
+// AccessTokenTTL 用户 access_token 有效期（配合 refresh_token 做无感刷新），由装配处按 config 注入。
+var AccessTokenTTL = 15 * time.Minute
 
-// RefreshTokenTTL refresh_token 有效期。
-const RefreshTokenTTL = 7 * 24 * time.Hour
+// RefreshTokenTTL refresh_token 有效期，由装配处按 config 注入。
+var RefreshTokenTTL = 7 * 24 * time.Hour
+
+// AccessTokenExpiresIn access token 有效期（秒），供响应体 expires_in 使用。
+func AccessTokenExpiresIn() int64 {
+	return int64(AccessTokenTTL / time.Second)
+}
 
 // GenerateToken 签发 access_token（15m）。tokenVersion 应来自当前用户的 TokenVersion 字段。
 func GenerateToken(username, displayName, userUUID, role string, tokenVersion uint) (string, error) {

@@ -46,6 +46,9 @@ type Config struct {
 	JWTKey    string `env:"JWT_KEY" envDefault:"default-secret"`
 	JWTKeyTTL string `env:"JWT_KEY_TTL" envDefault:"24h"`
 
+	JWTAccessTTL  string `env:"JWT_ACCESS_TTL" envDefault:"15m"`
+	JWTRefreshTTL string `env:"JWT_REFRESH_TTL" envDefault:"168h"`
+
 	// BcryptCost 密码哈希工作因子，默认 12。
 	BcryptCost int `env:"BCRYPT_COST" envDefault:"12"`
 
@@ -251,6 +254,24 @@ func (c *Config) JWTKeyTTLDuration() time.Duration {
 	d, err := time.ParseDuration(strings.TrimSpace(c.JWTKeyTTL))
 	if err != nil || d <= 0 {
 		return 24 * time.Hour
+	}
+	return d
+}
+
+// JWTAccessTTLDuration 解析 access token 有效期。
+func (c *Config) JWTAccessTTLDuration() time.Duration {
+	d, err := time.ParseDuration(strings.TrimSpace(c.JWTAccessTTL))
+	if err != nil || d <= 0 {
+		return 15 * time.Minute
+	}
+	return d
+}
+
+// JWTRefreshTTLDuration 解析 refresh token 有效期。
+func (c *Config) JWTRefreshTTLDuration() time.Duration {
+	d, err := time.ParseDuration(strings.TrimSpace(c.JWTRefreshTTL))
+	if err != nil || d <= 0 {
+		return 7 * 24 * time.Hour
 	}
 	return d
 }

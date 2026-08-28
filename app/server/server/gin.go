@@ -132,6 +132,8 @@ func StartGin(env EnvEnum) error {
 	emailVerificationSvc := service.NewEmailVerificationService(emailVerificationRepo, userRepo, emailSvc, emailConfigSvc.ResolveConfig)
 	authSvc := service.NewAuthService(userRepo, emailConfigSvc, emailVerificationSvc)
 	service.SetBcryptCost(cfg.BcryptCost)
+	pkg.AccessTokenTTL = cfg.JWTAccessTTLDuration()
+	pkg.RefreshTokenTTL = cfg.JWTRefreshTTLDuration()
 	guestSvc := service.NewGuestService(db, userRepo, domainRepo, repository.NewGuestBanRepo(db), authSvc, nil)
 	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
 	userSvc := service.NewUserService(userRepo, storageSvc)
