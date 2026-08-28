@@ -36,6 +36,7 @@ jobs:
     outputs:
       go: ${{ steps.filter.outputs.go }}
       js: ${{ steps.filter.outputs.js }}
+      ci: ${{ steps.filter.outputs.ci }}
       docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +54,10 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'turbo.json'
+            ci:
+              - '.github/**'
+              - 'lefthook.yml'
+              - 'commitlint.config.js'
             docs:
               - 'docs/**'
               - '**/*.md'
@@ -61,7 +66,7 @@ jobs:
   lint:
     name: Lint (Biome + go vet)
     needs: changes
-    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.js == 'true'
+    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -81,7 +86,7 @@ jobs:
   typecheck:
     name: Typecheck
     needs: changes
-    if: needs.changes.outputs.js == 'true'
+    if: needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,7 +97,7 @@ jobs:
   build-js:
     name: Build JS (turbo)
     needs: changes
-    if: needs.changes.outputs.js == 'true' || needs.changes.outputs.go == 'true'
+    if: needs.changes.outputs.js == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -110,7 +115,7 @@ jobs:
     name: Build Server (Go)
     needs: [changes, build-js]
     if: >-
-      ${{ !cancelled() && (needs.changes.outputs.go == 'true' || needs.changes.outputs.js == 'true') }}
+      ${{ !cancelled() && (needs.changes.outputs.go == 'true' || needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -140,7 +145,7 @@ jobs:
     name: Test Server (Go)
     needs: changes
     if: >-
-      ${{ !cancelled() && needs.changes.outputs.go == 'true' &&
+      ${{ !cancelled() && (needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true') &&
           (github.event_name != 'workflow_dispatch' && github.event_name != 'workflow_call' || inputs.run_tests) }}
     runs-on: ubuntu-latest
     steps:
