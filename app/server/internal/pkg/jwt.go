@@ -75,6 +75,9 @@ func ParseToken(tokenStr string) (*Claims, error) {
 		}
 		lastErr = err
 	}
+	if lastErr == nil {
+		lastErr = jwt.ErrSignatureInvalid
+	}
 	return nil, lastErr
 }
 

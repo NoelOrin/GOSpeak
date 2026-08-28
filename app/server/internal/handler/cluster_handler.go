@@ -19,7 +19,7 @@ type ClusterHandler struct {
 }
 
 func NewClusterHandler(clusterSvc *service.ClusterService, cfg *config.Config) *ClusterHandler {
-	return &ClusterHandler{clusterSvc: clusterSvc}
+	return &ClusterHandler{clusterSvc: clusterSvc, cfg: cfg}
 }
 
 type RegisterNodeRequest struct {
@@ -57,6 +57,7 @@ func (h *ClusterHandler) Register(c *gin.Context) {
 
 type HeartbeatRequest struct {
 	NodeID         string  `json:"node_id" binding:"required"`
+	NodeSecret     string  `json:"node_secret"`
 	Status         string  `json:"status"`
 	AdvertiseURL   string  `json:"advertise_url"`
 	Rooms          int     `json:"rooms"`
@@ -75,6 +76,7 @@ func (h *ClusterHandler) Heartbeat(c *gin.Context) {
 	}
 	node, err := h.clusterSvc.Heartbeat(req.NodeID, cluster.HeartbeatReport{
 		NodeID:         req.NodeID,
+		NodeSecret:     req.NodeSecret,
 		Status:         req.Status,
 		AdvertiseURL:   req.AdvertiseURL,
 		Rooms:          req.Rooms,
@@ -91,6 +93,13 @@ func (h *ClusterHandler) Heartbeat(c *gin.Context) {
 }
 
 type DeregisterNodeRequest struct {
+	NodeID     string `json:"node_id" binding:"required"`
+	NodeSecret string `json:"node_secret"`
+}
+
+// AdminNodeRequest 供 Drain/Undrain 等管理面操作使用；不含 node_secret，
+// 避免与节点身份校验语义混淆（管理操作由 cluster:manage 权限门控）。
+type AdminNodeRequest struct {
 	NodeID string `json:"node_id" binding:"required"`
 }
 
@@ -101,7 +110,7 @@ func (h *ClusterHandler) Deregister(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	if err := h.clusterSvc.DeregisterNode(req.NodeID); err != nil {
+	if err := h.clusterSvc.DeregisterNode(req.NodeID, req.NodeSecret); err != nil {
 		pkg.HandleError(c, err)
 		return
 	}
@@ -110,7 +119,7 @@ func (h *ClusterHandler) Deregister(c *gin.Context) {
 
 // Drain 标记节点 draining，停止新分配。
 func (h *ClusterHandler) Drain(c *gin.Context) {
-	var req DeregisterNodeRequest
+	var req AdminNodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
@@ -124,7 +133,7 @@ func (h *ClusterHandler) Drain(c *gin.Context) {
 
 // Undrain 恢复节点 ready，允许继续调度。
 func (h *ClusterHandler) Undrain(c *gin.Context) {
-	var req DeregisterNodeRequest
+	var req AdminNodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return

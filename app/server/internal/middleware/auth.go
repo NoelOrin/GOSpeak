@@ -36,6 +36,7 @@ type Dependencies struct {
 	BotTokenChecker     botTokenChecker
 	DomainChecker       func(domainUUID, userUUID string) bool
 	BlacklistChecker    BlacklistChecker
+	GuestChecker        guestChecker
 	AuthCookieName      string
 }
 
@@ -202,10 +203,8 @@ func JWTAuth() gin.HandlerFunc {
 			return
 		}
 
+		// Bearer 前缀或直传 token 均可，TrimPrefix 无前缀时原样返回。
 		tokenStr := strings.TrimPrefix(tokenHeader, "Bearer ")
-		if tokenStr == tokenHeader {
-			tokenStr = tokenHeader
-		}
 
 		claims, code := VerifyToken(tokenStr)
 		if code != pkg.SUCCESS {

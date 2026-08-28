@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 
 	"GOSpeak/internal/model"
@@ -102,7 +103,11 @@ func (s *PermissionService) HasPermission(roleName, permCode string) bool {
 	s.cacheMu.RUnlock()
 	if hasCasbin && enforcer != nil {
 		allowed, err := enforcer.Enforce(roleName, permCode)
-		return err == nil && allowed
+		if err != nil {
+			log.Printf("[Permission] casbin enforce failed (role=%s perm=%s): %v", roleName, permCode, err)
+			return false
+		}
+		return allowed
 	}
 
 	s.cacheMu.RLock()
@@ -137,10 +142,29 @@ func (s *PermissionService) ListPermissions() ([]model.Permission, error) {
 
 // SyncRolePermissions 同步角色权限并刷新缓存。
 func (s *PermissionService) SyncRolePermissions(roleName string, permCodes []string) error {
+	// 校验权限码必须存在于权限定义表，防止脏数据进 DB + cache。
+	defined, err := s.permRepo.List()
+	if err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	valid := make(map[string]struct{}, len(defined))
+	for _, p := range defined {
+		valid[p.Code] = struct{}{}
+	}
+	for _, code := range permCodes {
+		if strings.TrimSpace(code) == "" {
+			return pkg.NewAppError(pkg.INVALID_PARAMS, "permission code cannot be empty")
+		}
+		if _, ok := valid[code]; !ok {
+			return pkg.NewAppError(pkg.INVALID_PARAMS, fmt.Sprintf("unknown permission code: %s", code))
+		}
+	}
 	if err := s.permRepo.SyncRolePermissions(roleName, permCodes); err != nil {
 		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	s.reloadCasbin()
+	if err := s.reloadCasbin(); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, fmt.Sprintf("casbin policy reload failed: %v", err))
+	}
 
 	// 刷新该角色的缓存
 	s.cacheMu.Lock()
@@ -160,16 +184,30 @@ func (s *PermissionService) SyncRolePermissions(roleName string, permCodes []str
 	return nil
 }
 
-// reloadCasbin refreshes the shared enforcer after DB-backed policy changes.
+
+// RenameRole 角色改名时迁移权限关联并刷新缓存与 Casbin 策略。
+func (s *PermissionService) RenameRole(oldName, newName string) error {
+	if oldName == newName {
+		return nil
+	}
+	if err := s.permRepo.RenameRolePermissions(oldName, newName); err != nil {
+		return err
+	}
+	if err := s.reloadCasbin(); err != nil {
+		return err
+	}
+	return s.LoadCache()
+}
+
 // A load failure keeps the old in-memory policy active instead of failing open.
-func (s *PermissionService) reloadCasbin() {
+// reloadCasbin 在 DB 策略变更后重载 Casbin；失败时保留旧内存策略并返回错误，由调用方上抛。
+func (s *PermissionService) reloadCasbin() error {
 	s.cacheMu.RLock()
 	enforcer := s.enforcer
 	s.cacheMu.RUnlock()
 	if enforcer == nil {
-		return
+		return nil
 	}
-	if err := enforcer.LoadPolicy(); err != nil {
-		log.Printf("[Permission] casbin reload failed: %v", err)
-	}
+	err := enforcer.LoadPolicy()
+	return err
 }

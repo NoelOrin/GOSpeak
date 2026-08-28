@@ -171,7 +171,7 @@ func (p *S3Provider) GetPublicURL(key string) string {
 
 	// 智能拼接：
 	// AWS S3: https://{bucket}.s3.{region}.amazonaws.com/{key}
-	// 其他（MinIO/R2 等）: {endpoint}/{bucket}/{key}
+	// 其他（RustFS/R2 等）: {endpoint}/{bucket}/{key}
 	ep := strings.TrimRight(p.endpoint, "/")
 	if strings.HasSuffix(ep, ".amazonaws.com") {
 		// endpoint 格式: https://s3.{region}.amazonaws.com → 提取 region

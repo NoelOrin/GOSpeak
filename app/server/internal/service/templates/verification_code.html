@@ -1,174 +1,194 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>{{.BrandName}} 验证码</title>
-</head>
-<body style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;">
-	<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7;padding:32px 0;">
-		<tr>
-			<td align="center">
-				<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-					<!-- Header -->
-					<tr>
-						<td style="padding:32px 40px 24px;text-align:center;background:linear-gradient(135deg,#5b6ee0,#7b6cd9);">
-							<h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:600;letter-spacing:1px;">{{.BrandName}}</h1>
-						</td>
-					</tr>
-					<!-- Body -->
-					<tr>
-						<td style="padding:32px 40px 16px;">
-							<p style="margin:0 0 8px;color:#1a1a2e;font-size:16px;line-height:1.6;">您好，</p>
-							<p style="margin:0 0 24px;color:#555;font-size:15px;line-height:1.6;">
-								您正在进行 <strong style="color:#5b6ee0;">{{.SceneLabel}}</strong> 操作，请使用以下验证码完成验证：
-							</p>
-							<!-- Code -->
-							<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
-								<tr>
-									<td style="text-align:center;background-color:#f0f1ff;border-radius:10px;padding:20px;border:2px dashed #5b6ee0;">
-										<span style="font-size:36px;font-weight:700;letter-spacing:10px;color:#5b6ee0;font-family:'SF Mono','Fira Code','Courier New',monospace;">{{.Code}}</span>
-									</td>
-								</tr>
-							</table>
-							<!-- TTL -->
-							<p style="margin:0 0 8px;color:#999;font-size:13px;line-height:1.5;">
-								验证码有效期为 <strong style="color:#e8554e;">{{.TTL}}</strong>，过期后请重新获取。
-							</p>
-							<p style="margin:0;color:#999;font-size:13px;line-height:1.5;">
-								如果这不是您本人的操作，请忽略此邮件，您的账号安全不受影响。
-							</p>
-						</td>
-					</tr>
-					<!-- Divider -->
-					<tr>
-						<td style="padding:0 40px;">
-							<hr style="border:none;border-top:1px solid #f0f0f0;margin:0;">
-						</td>
-					</tr>
-					<!-- Footer -->
-					<tr>
-						<td style="padding:20px 40px 32px;text-align:center;">
-							<p style="margin:0 0 4px;color:#bbb;font-size:12px;">此邮件由系统自动发送，请勿回复。</p>
-							<p style="margin:0;color:#bbb;font-size:12px;">&copy; {{.Year}} {{.BrandName}}. All rights reserved.</p>
-						</td>
-					</tr>
-				</table>
-			</td>
-		</tr>
-	</table>
-</body>
-</html>
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<meta http-equiv="X-UA-Compatible" content="IE=edge">
-	<meta name="color-scheme" content="light dark">
-	<meta name="supported-color-schemes" content="light dark">
-	<title>{{.BrandName}} 验证码</title>
-</head>
-</html>
 <!-- KEEP THIS FILE AS PLAIN HTML: it doubles as a browser-previewable design source. -->
 <!-- Go uses html/template to inject {{.Code}}, {{.SceneLabel}}, {{.TTL}}, {{.BrandName}}, {{.Year}}. -->
-<!-- Email clients ignore <style> in many cases, so ALL styling is inline. -->
 <html lang="zh-CN" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<title>{{.BrandName}} · 验证码</title>
 	<style>
-		body { margin:0 !important; padding:0 !important; }
-		@media (prefers-color-scheme: dark) {
-			.email-root { background-color:#1a1b26 !important; }
-			.email-card { background-color:#262b3d !important; }
-			.email-hero { background:linear-gradient(135deg,#6366f1,#8b5cf6) !important; }
-			.email-body-text { color:#e2e8f0 !important; }
-			.email-muted { color:#94a3b8 !important; }
-			.email-code-box { background-color:#312e5f !important; border-color:#8b5cf6 !important; }
-			.email-code { color:#c4b5fd !important; }
-			.email-accent { color:#a78bfa !important; }
-			.email-divider { border-color:#3e3f54 !important; }
-			.email-footer { color:#64748b !important; }
+		@media screen and (max-width: 620px) {
+			.email-shell-cell { padding: 24px 12px !important; }
+			.email-card-td { padding-left: 22px !important; padding-right: 22px !important; }
+			.email-header-td { padding: 26px 22px 24px !important; }
+			.email-footer-td { padding-left: 22px !important; padding-right: 22px !important; }
+			.email-title { font-size: 31px !important; }
+			.email-code { font-size: 38px !important; letter-spacing: 6px !important; }
 		}
-		@media only screen and (max-width:520px) {
-			.email-card { width:100% !important; border-radius:0 !important; }
-			.email-hero { padding:28px 24px !important; }
-			.email-body { padding:28px 24px 16px !important; }
-			.email-code { font-size:28px !important; letter-spacing:6px !important; }
-			.email-footer { padding:16px 24px 28px !important; }
+
+		@media (prefers-color-scheme: dark) {
+			.email-body { background-color: #00111d !important; }
+			.email-bg {
+				background-color: #00111d !important;
+				background-image:
+					linear-gradient(to right, rgba(255,214,167,0.05) 1px, transparent 1px),
+					linear-gradient(to bottom, rgba(255,214,167,0.05) 1px, transparent 1px) !important;
+			}
+			.email-card {
+				background-color: #001e29 !important;
+				border-color: rgba(255,214,167,0.14) !important;
+				box-shadow: 0 20px 40px rgba(0,0,0,0.55) !important;
+			}
+			.email-header-td {
+				background-color: #001e29 !important;
+				background-image: radial-gradient(circle, rgba(255,214,167,0.06) 1.5px, transparent 1.6px) !important;
+			}
+			.email-logo { background-color: #c8ff00 !important; }
+			.email-logo-g { color: #000000 !important; }
+			.email-brand-tag { color: rgba(255,214,167,0.52) !important; }
+			.email-title { color: #ffd6a7 !important; }
+			.email-eq-bar { background-color: #bdff00 !important; }
+			.email-subtitle { color: rgba(255,214,167,0.68) !important; }
+			.email-divider { border-color: rgba(255,214,167,0.14) !important; }
+			.email-card-td { background-color: #001e29 !important; }
+			.email-greeting { background-color: #00111d !important; border-color: rgba(255,214,167,0.12) !important; }
+			.email-greeting-td { color: rgba(255,214,167,0.76) !important; }
+			.email-scene-strong { color: #bdff00 !important; }
+			.email-step { border-color: rgba(255,214,167,0.12) !important; }
+			.email-step-td { color: rgba(255,214,167,0.58) !important; }
+			.email-step-num1, .email-step-num2, .email-step-num3 { color: #bdff00 !important; }
+			.email-code-box {
+				background-color: #00111d !important;
+				border-color: #ffd6a7 !important;
+				box-shadow: 6px 6px 0 #bdff00 !important;
+			}
+			.email-code-label { color: rgba(255,214,167,0.52) !important; }
+			.email-code { color: #ffd6a7 !important; }
+			.email-code-ttl { color: rgba(255,214,167,0.52) !important; }
+			.email-note-box { background-color: #00111d !important; border-color: rgba(255,214,167,0.12) !important; }
+			.email-note-text { color: rgba(255,214,167,0.7) !important; }
+			.email-note-text strong { color: #ffd6a7 !important; }
+			.email-footer-td { background-color: #00111d !important; border-color: rgba(255,214,167,0.12) !important; }
+			.email-footer-text { color: rgba(255,214,167,0.46) !important; }
+			.email-status-dot { background-color: #bdff00 !important; }
 		}
 	</style>
 </head>
-<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;-webkit-font-smoothing:antialiased;">
-	<div class="email-root" style="background-color:#f1f5f9;padding:32px 0;">
-		<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" align="center">
-			<tr>
-				<td align="center" style="padding:0;">
-					<table role="presentation" class="email-card" width="500" cellpadding="0" cellspacing="0" border="0" style="max-width:500px;width:100%;background-color:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-						<!-- Hero -->
-						<tr>
-							<td class="email-hero" style="padding:36px 40px 28px;text-align:center;background:linear-gradient(135deg,#6366f1,#8b5cf6);">
-								<img src="data:image/svg+xml,%3Csvg %20width%3D%2248%22%20height%3D%2248%22%20viewBox%3D%220%200%2048%2048%22%20fill%3D%22none%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Crect%20width%3D%2248%22%20height%3D%2248%22%20rx%3D%2212%22%20fill%3D%22white%22%20fill-opacity%3D%220.2%22/%3E%3Cpath%20d%3D%22M24%2012L36%2018V30L24%2036L12%2030V18L24%2012Z%22%20stroke%3D%22white%22%20stroke-width%3D%222.5%22%20stroke-linejoin%3D%22round%22/%3E%3Cpath%20d%3D%22M19%2024L23%2028L30%2020%22%20stroke%3D%22white%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E" alt="" width="48" height="48" style="display:block;margin:0 auto 10px;border:0;outline:none;text-decoration:none;">
-								<h1 style="margin:0;color:#ffffff;font-size:21px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">{{.BrandName}}</h1>
-							</td>
-						</tr>
-						<!-- Body -->
-						<tr>
-							<td class="email-body" style="padding:32px 40px 16px;">
-								<p class="email-body-text" style="margin:0 0 6px;color:#1e293b;font-size:16px;line-height:1.7;font-weight:500;">您好，</p>
-								<p class="email-body-text" style="margin:0 0 26px;color:#475569;font-size:15px;line-height:1.7;">
-									您正在进行<strong style="color:#6366f1;">{{.SceneLabel}}</strong>操作，请使用下方验证码完成验证。
-								</p>
-								<!-- Code -->
-								<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 26px;">
-									<tr>
-										<td class="email-code-box" style="text-align:center;background-color:#eef2ff;border-radius:12px;padding:22px 16px;border:2px solid #6366f1;">
-											<span class="email-code" style="font-size:34px;font-weight:800;letter-spacing:9px;color:#6366f1;font-family:'SF Mono','Fira Code','JetBrains Mono','Courier New',monospace;">{{.Code}}</span>
-										</td>
-									</tr>
-								</table>
-								<!-- Info -->
-								<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-									<tr>
-										<td style="background-color:#f8fafc;border-radius:8px;padding:12px 16px;">
-											<p class="email-muted" style="margin:0 0 4px;color:#64748b;font-size:13px;line-height:1.5;">
-												验证码有效期：<strong style="color:#ef4444;">{{.TTL}}</strong>
-											</p>
-											<p class="email-muted" style="margin:0;color:#64748b;font-size:13px;line-height:1.5;">
-												过期后请重新获取验证码。
-											</p>
-										</td>
-									</tr>
-								</table>
-							</td>
-						</tr>
-						<!-- Security note -->
-						<tr>
-							<td style="padding:0 40px 20px;">
-								<p class="email-muted" style="margin:0;color:#94a3b8;font-size:13px;line-height:1.6;">
-									如果这不是您本人的操作，请忽略此邮件，您的账号安全不会受到影响。
-								</p>
-							</td>
-						</tr>
-						<!-- Divider -->
-						<tr>
-							<td style="padding:0 40px;">
-								<hr class="email-divider" style="border:none;border-top:1px solid #e2e8f0;margin:0;">
-							</td>
-						</tr>
-						<!-- Footer -->
-						<tr>
-							<td class="email-footer" style="padding:20px 40px 32px;text-align:center;">
-								<p style="margin:0 0 3px;color:#94a3b8;font-size:12px;line-height:1.5;">此邮件由系统自动发送，请勿直接回复。</p>
-								<p style="margin:0;color:#cbd5e1;font-size:12px;line-height:1.5;">&copy; {{.Year}} {{.BrandName}}. All rights reserved.</p>
-							</td>
-						</tr>
-					</table>
-				</td>
-			</tr>
-		</table>
+<body class="email-body" style="margin:0;padding:0;background-color:#eeeeee;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;mso-line-height-rule:exactly;">
+	<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:transparent;">
+		您的 {{.SceneLabel}} 验证码：{{.Code}}（{{.TTL}} 内有效）
 	</div>
+
+	<table role="presentation" class="email-body email-bg" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#eeeeee;background-image:linear-gradient(to right,rgba(0,0,0,0.05) 1px,transparent 1px),linear-gradient(to bottom,rgba(0,0,0,0.05) 1px,transparent 1px);background-size:44px 44px;">
+		<tr>
+			<td class="email-shell-cell" align="center" style="padding:48px 16px;">
+				<!--[if mso]>
+				<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td>
+				<![endif]-->
+
+				<table role="presentation" class="email-card" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background-color:#ffffff;border:1px solid rgba(0,0,0,0.12);border-radius:16px;overflow:hidden;box-shadow:0 20px 40px rgba(0,0,0,0.10);">
+					<tr>
+						<td class="email-header-td" style="padding:34px 36px 30px;background-color:#ffffff;background-image:radial-gradient(circle,rgba(0,0,0,0.05) 1.5px,transparent 1.6px);background-size:16px 16px;">
+							<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+								<tr>
+									<td style="width:40px;">
+										<table role="presentation" cellpadding="0" cellspacing="0" border="0">
+											<tr>
+												<td class="email-logo" align="center" valign="middle" style="width:40px;height:40px;background-color:#c8ff00;border-radius:10px;">
+													<span class="email-logo-g" style="font-size:22px;font-weight:900;line-height:1;color:#000000;">G</span>
+												</td>
+											</tr>
+										</table>
+									</td>
+									<td style="padding-left:12px;vertical-align:middle;">
+										<span class="email-brand-tag" style="font-family:'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace;font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#999999;">Self-Hosted Voice</span>
+									</td>
+									<td align="right" style="vertical-align:middle;">
+										<span class="email-brand-tag" style="font-family:'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace;font-size:10px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:#999999;">AUTH / 01</span>
+									</td>
+								</tr>
+							</table>
+
+							<div class="email-title" style="margin-top:26px;font-size:36px;font-weight:800;line-height:1.1;letter-spacing:-0.5px;color:#000000;">
+								您的验证码
+							</div>
+
+							<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:18px;">
+								<tr>
+									<td style="padding-right:5px;vertical-align:bottom;"><div class="email-eq-bar" style="width:5px;height:12px;background-color:#ff00ff;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+									<td style="padding-right:5px;vertical-align:bottom;"><div class="email-eq-bar" style="width:5px;height:22px;background-color:#ff00ff;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+									<td style="padding-right:5px;vertical-align:bottom;"><div class="email-eq-bar" style="width:5px;height:32px;background-color:#ff00ff;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+									<td style="padding-right:5px;vertical-align:bottom;"><div class="email-eq-bar" style="width:5px;height:34px;background-color:#ff00ff;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+									<td style="padding-right:5px;vertical-align:bottom;"><div class="email-eq-bar" style="width:5px;height:26px;background-color:#ff00ff;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+									<td style="padding-right:5px;vertical-align:bottom;"><div class="email-eq-bar" style="width:5px;height:18px;background-color:#ff00ff;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+									<td style="vertical-align:bottom;"><div class="email-eq-bar" style="width:5px;height:10px;background-color:#ff00ff;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td>
+								</tr>
+							</table>
+
+							<div class="email-subtitle" style="margin-top:17px;font-size:14px;font-weight:500;line-height:1.5;color:#666666;">
+								请在 {{.TTL}} 内使用，逾期自动失效。
+							</div>
+						</td>
+					</tr>
+
+					<tr>
+						<td class="email-divider" style="border-top:1px solid rgba(0,0,0,0.10);font-size:0;line-height:0;">&nbsp;</td>
+					</tr>
+
+					<tr>
+						<td class="email-card-td" style="padding:28px 36px 8px;background-color:#ffffff;">
+							<table role="presentation" class="email-greeting" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f7f7f7;border:1px solid rgba(0,0,0,0.08);border-radius:10px;">
+								<tr>
+									<td class="email-greeting-td" style="padding:14px 16px;font-size:14px;line-height:1.6;color:#555555;">
+										<strong class="email-scene-strong" style="color:#ff00ff;font-weight:700;">{{.BrandName}}</strong> 正在处理你的「{{.SceneLabel}}」请求。
+									</td>
+								</tr>
+							</table>
+
+							<table role="presentation" class="email-code-box" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;background-color:#ffffff;border:2px solid #000000;border-radius:12px;box-shadow:6px 6px 0 #ff00ff;">
+								<tr>
+									<td align="center" style="padding:26px 20px 24px;">
+										<div class="email-code-label" style="font-family:'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace;font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#999999;">Verification Code</div>
+										<div class="email-code" style="margin-top:12px;font-family:'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace;font-size:44px;font-weight:800;letter-spacing:8px;line-height:1.1;color:#000000;">{{.Code}}</div>
+										<div class="email-code-ttl" style="margin-top:12px;font-size:12px;font-weight:500;color:#999999;">{{.TTL}} 内有效</div>
+									</td>
+								</tr>
+							</table>
+
+							<table role="presentation" class="email-step" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:26px;border-top:1px solid rgba(0,0,0,0.10);border-bottom:1px solid rgba(0,0,0,0.10);">
+								<tr>
+									<td class="email-step-td" style="width:33.333%;padding:14px 4px 13px;font-size:11px;line-height:1.4;color:#999999;">
+										<span class="email-step-num1" style="font-family:'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace;color:#ff00ff;font-weight:700;">01</span>&nbsp; 输入邮箱
+									</td>
+									<td class="email-step-td" align="center" style="width:33.333%;padding:14px 4px 13px;font-size:11px;line-height:1.4;color:#999999;">
+										<span class="email-step-num2" style="font-family:'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace;color:#ff00ff;font-weight:700;">02</span>&nbsp; 输入验证码
+									</td>
+									<td class="email-step-td" align="right" style="width:33.333%;padding:14px 4px 13px;font-size:11px;line-height:1.4;color:#999999;">
+										<span class="email-step-num3" style="font-family:'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace;color:#ff00ff;font-weight:700;">03</span>&nbsp; 完成验证
+									</td>
+								</tr>
+							</table>
+
+							<table role="presentation" class="email-note-box" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;background-color:#f4f4f4;border:1px solid rgba(0,0,0,0.08);border-radius:10px;">
+								<tr>
+									<td class="email-note-text" style="padding:14px 16px;font-size:13px;line-height:1.6;color:#666666;">
+										<strong style="color:#000000;font-weight:700;">安全提示：</strong>如果您没有发起此操作，请忽略本邮件。验证码请勿分享给任何人。
+									</td>
+								</tr>
+							</table>
+						</td>
+					</tr>
+
+					<tr>
+						<td class="email-footer-td" style="padding:20px 36px 28px;background-color:#fafafa;border-top:1px solid rgba(0,0,0,0.08);">
+							<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+								<tr>
+									<td class="email-footer-text" style="font-size:12px;color:#999999;">{{.BrandName}} · 自托管游戏语音平台</td>
+									<td align="right" style="white-space:nowrap;">
+										<span class="email-status-dot" style="display:inline-block;width:6px;height:6px;background-color:#ff00ff;border-radius:50%;vertical-align:middle;"></span>
+										<span class="email-footer-text" style="font-family:'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#999999;vertical-align:middle;">&nbsp;Server Online</span>
+									</td>
+								</tr>
+							</table>
+							<div class="email-footer-text" style="margin-top:8px;font-size:11px;color:#b3b3b3;">© {{.Year}} {{.BrandName}}. All rights reserved.</div>
+						</td>
+					</tr>
+				</table>
+
+				<!--[if mso]></td></tr></table><![endif]-->
+			</td>
+		</tr>
+	</table>
 </body>
 </html>

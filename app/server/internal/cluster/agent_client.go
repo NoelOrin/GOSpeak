@@ -51,15 +51,16 @@ func (c *AgentClient) Register(ctx context.Context, req RegisterRequest) error {
 	return c.do(ctx, "/api/v1/cluster/nodes/register", req)
 }
 
-// Heartbeat 上报节点运行时状态。
+// Heartbeat 上报节点运行时状态；附带 node_secret 供 Agent 校验身份。
 func (c *AgentClient) Heartbeat(ctx context.Context, report HeartbeatReport) error {
+	report.NodeSecret = c.nodeSecret
 	return c.do(ctx, "/api/v1/cluster/nodes/heartbeat", report)
 }
 
 // Deregister 注销当前节点。
 func (c *AgentClient) Deregister(ctx context.Context, nodeID string) error {
 	return c.do(ctx, "/api/v1/cluster/nodes/deregister", map[string]string{
-		"node_id": nodeID,
+		"node_id": nodeID, "node_secret": c.nodeSecret,
 	})
 }
 

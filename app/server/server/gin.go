@@ -1,6 +1,8 @@
 package server
 
 import (
+	"errors"
+
 	"GOSpeak/internal/audit"
 	"GOSpeak/internal/authstate"
 	"GOSpeak/internal/bus"
@@ -11,6 +13,7 @@ import (
 	"GOSpeak/internal/logger"
 	"GOSpeak/internal/metrics"
 	"GOSpeak/internal/middleware"
+	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/plugin"
 	"GOSpeak/internal/plugin/builtin"
@@ -110,12 +113,26 @@ func StartGin(env EnvEnum) error {
 	if err := permSvc.UseCasbin(repository.NewCasbinAdapter(db)); err != nil {
 		return fmt.Errorf("failed to init casbin: %w", err)
 	}
+	if err := domainSvc.UseCasbin(repository.NewDomainCasbinAdapter(db)); err != nil {
+		return fmt.Errorf("failed to init domain casbin: %w", err)
+	}
 
 	roleSvc := service.NewRoleService(roleRepo)
+	// 角色改名/删除后连锁重载权限缓存与 Casbin 策略（角色名是两者共用的 key）。
+	roleSvc.SetOnRoleChanged(func() {
+		if err := permSvc.LoadCache(); err != nil {
+			logger.WithComponent("Permission").WithError(err).Warn("role change: permission cache reload failed")
+		}
+	})
+	roleSvc.SetOnRoleRenamed(func(oldName, newName string) error {
+		return permSvc.RenameRole(oldName, newName)
+	})
 	emailConfigSvc := service.NewEmailConfigService(emailConfigRepo, cfg)
 	emailSvc := service.NewEmailService(emailConfigSvc.ResolveConfig)
 	emailVerificationSvc := service.NewEmailVerificationService(emailVerificationRepo, userRepo, emailSvc, emailConfigSvc.ResolveConfig)
 	authSvc := service.NewAuthService(userRepo, emailConfigSvc, emailVerificationSvc)
+	service.SetBcryptCost(cfg.BcryptCost)
+	guestSvc := service.NewGuestService(db, userRepo, domainRepo, repository.NewGuestBanRepo(db), authSvc, nil)
 	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
 	userSvc := service.NewUserService(userRepo, storageSvc)
 	userGroupSvc := service.NewUserGroupService(userGroupRepo)
@@ -225,6 +242,57 @@ func StartGin(env EnvEnum) error {
 		StateNotifier:           eventBus,
 	})
 	signalHub.StartMembershipHeartbeat()
+	signalHub.SetGuestSpeakPolicy(func(domainUUID, userUUID string) (bool, error) {
+		if !guestSvc.IsGuest(userUUID) {
+			return true, nil
+		}
+		_, speak, _ := guestSvc.GuestCaps(domainUUID)
+		return speak, nil
+	})
+	signalHub.SetGuestJoinGuard(func(domainUUID, userUUID string) error {
+		// user_uuid 缺失时按机器名前缀快速识别访客，避免 fallback 到 Username 后
+		// 因 UUID 查询不到而让访客守卫 fail-open 被跳过。
+		if userUUID == "" {
+			return nil
+		}
+		if !model.IsGuestName(userUUID) && !guestSvc.IsGuest(userUUID) {
+			return nil
+		}
+		// 访客只能进入其已加入的域；无域平台房间对访客关闭。
+		if domainUUID == "" {
+			return errors.New("guest can only join a domain room")
+		}
+		if listen, _, _ := guestSvc.GuestCaps(domainUUID); !listen {
+			return errors.New("guest listening disabled")
+		}
+		if banned, banErr := guestSvc.IsGuestBanned(domainUUID, userUUID); banErr != nil {
+			return errors.New("guest ban check failed")
+		} else if banned {
+			return errors.New("guest has been banned")
+		}
+		if guestSvc.GuestLimitReached(domainUUID, signalHub.DomainOnlineIdentities(domainUUID)) {
+			return errors.New("guest limit reached")
+		}
+		return nil
+	})
+	guestSvc.SetOnlineGuestResolver(func(domainUUID string) []string {
+		var names []string
+		for _, ident := range signalHub.DomainOnlineIdentities(domainUUID) {
+			if model.IsGuestName(ident) {
+				names = append(names, ident)
+			}
+		}
+		return names
+	})
+	guestSvc.SetOnlineCounter(func(domainUUID string) int {
+		count := 0
+		for _, identity := range signalHub.DomainOnlineIdentities(domainUUID) {
+			if model.IsGuestName(identity) {
+				count++
+			}
+		}
+		return count
+	})
 	if nb, ok := eventBus.(*bus.NATSBus); ok {
 		nb.SetRemoteHook(func(event string, payload interface{}) {
 			if event == cluster.EventControlCommand {
@@ -308,6 +376,7 @@ func StartGin(env EnvEnum) error {
 	// MediaSoup 专用信号初始化已禁用保留：SetSFUSignalHandler 不再调用。
 	signalHub.SetupFanout(wsFanout, wsHandler)
 	sfuSvc := service.NewSFUService(sfuProvider, signalHub)
+	sfuSvc.SetGuestPolicy(guestSvc.IsGuest, guestSvc.GuestCaps)
 	sfuSvc.SetDomainMemberChecker(domainSvc.IsMember)
 	signalH := handler.NewSignalHandler(sfuSvc)
 	signalH.SetLiveKitSecretResolver(func() string {
@@ -347,6 +416,8 @@ func StartGin(env EnvEnum) error {
 
 	authCookieCfg := handler.NewAuthCookieConfig(cfg)
 	authH := handler.NewAuthHandler(authSvc, authCookieCfg)
+	guestH := handler.NewGuestHandler(guestSvc, domainSvc, permSvc, authCookieCfg)
+	guestH.SetOnDomainKick(signalHub.KickUserFromDomain)
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)
 	emailConfigH := handler.NewEmailConfigHandler(emailConfigSvc)
 	userH := handler.NewUserHandler(userSvc, permSvc, storageSvc)
@@ -386,6 +457,7 @@ func StartGin(env EnvEnum) error {
 	roomH.SetControlPublisher(clusterSvc)
 	roomH.SetAuditor(auditSvc)
 	msgH := handler.NewMessageHandler(messageSvc, permSvc, roomSvc, domainSvc)
+	msgH.SetGuestPolicy(guestSvc.IsGuest, guestSvc.GuestCaps)
 	permH := handler.NewPermissionHandler(permSvc)
 	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
 	muteH.SetControlPublisher(clusterSvc)
@@ -417,6 +489,7 @@ func StartGin(env EnvEnum) error {
 		TokenVersionChecker: authSvc,
 		BotTokenChecker:     botSvc,
 		DomainChecker:       domainSvc.IsMember,
+		GuestChecker:        guestSvc,
 		BlacklistChecker:    authstate.IsBlacklistedErr,
 		AuthCookieName:      cfg.AccessCookieName,
 	})
@@ -536,6 +609,7 @@ func StartGin(env EnvEnum) error {
 			return nil
 		},
 		Auth:         authH,
+		Guest:        guestH,
 		User:         userH,
 		UserGroup:    userGroupH,
 		Signal:       signalH,

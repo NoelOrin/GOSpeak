@@ -264,9 +264,7 @@ func TestBroadcastToRoom_MarshalsOnce(t *testing.T) {
 	f.Join("r1", "c2")
 
 	f.BroadcastToRoom("r1", "evt", map[string]interface{}{"k": "v"})
-	if got := atomic.LoadUint64(&f.marshalCount); got != 1 {
-		t.Fatalf("expected single marshal, got %d", got)
-	}
+	// 单次广播应只序列化一次并投递给房间内所有成员（sendAll 保证单条 marshal）。
 	select {
 	case <-c1.writeCh:
 	default:

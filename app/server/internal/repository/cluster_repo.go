@@ -25,6 +25,26 @@ func (r *ClusterNodeRepository) Update(node *model.ClusterNode) error {
 	return r.db.Save(node).Error
 }
 
+// UpdateRuntimeIfNotOffline 条件更新心跳运行时字段；节点已被并发注销（offline）时不覆盖，
+// 返回 RowsAffected=0，由调用方判定为节点已不存在。
+func (r *ClusterNodeRepository) UpdateRuntimeIfNotOffline(node *model.ClusterNode) (int64, error) {
+	res := r.db.Model(&model.ClusterNode{}).
+		Where("uuid = ? AND status <> ?", node.UUID, model.ClusterNodeOffline).
+		Updates(map[string]interface{}{
+			"status":                  node.Status,
+			"advertise_url":           node.AdvertiseURL,
+			"serving_servers":         node.ServingServers,
+			"rooms":                   node.Rooms,
+			"connections":             node.Connections,
+			"load_percent":            node.LoadPercent,
+			"sfu_healthy":             node.SFUHealthy,
+			"db_replica_lag_ms":       node.DBReplicaLagMs,
+			"db_replica_lag_degraded": node.DBReplicaLagDegraded,
+			"last_seen_at":            node.LastSeenAt,
+		})
+	return res.RowsAffected, res.Error
+}
+
 func (r *ClusterNodeRepository) GetByUUID(uuid string) (*model.ClusterNode, error) {
 	var node model.ClusterNode
 	err := r.db.Where("uuid = ?", uuid).First(&node).Error

@@ -2,7 +2,7 @@
 
 ## 发布前 Checklist
 
-- [ ] **修改默认密钥**：`JWT_KEY`、`SRS_SECRET`、DB 密码、MinIO 密码
+- [ ] **修改默认密钥**：`JWT_KEY`、`SRS_SECRET`、DB 密码、RustFS 密码
 - [ ] **设置公网地址**：`SRS_CANDIDATE` 设为公网 IP（SRS 模式）
 - [ ] **配置 HTTPS**：Nginx 配置 TLS 证书
 - [ ] **选择数据库**：生产环境推荐 PostgreSQL
@@ -21,7 +21,7 @@
 | 7880-7882 | LiveKit | ✅ 视情况 | 控制/媒体 |
 | 3478/udp | LiveKit TURN | ✅ 视情况 | TURN 中继 |
 | 5432 | PostgreSQL | ❌ 不暴露 | 数据库 |
-| 9000/9001 | MinIO | ❌ 按需 | 对象存储 |
+| 9000/9001 | RustFS | ❌ 按需 | 对象存储 |
 
 ## HTTPS 配置
 

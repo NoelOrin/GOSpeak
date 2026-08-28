@@ -39,7 +39,7 @@ pnpm install
 docker compose -f deploy/docker-compose.example.yml up -d
 ```
 
-默认启动: LiveKit + MinIO。SRS 见文件内注释启用。
+默认启动: LiveKit + RustFS。SRS 见文件内注释启用。
 
 ### 2.3 启动后端
 
@@ -123,11 +123,11 @@ pnpm start:dev
 | 变量 | 说明 | 示例 |
 |------|------|------|
 | `STORAGE_TYPE` | `local` / `s3` | `local` |
-| `STORAGE_ENDPOINT` | S3 端点 (MinIO/R2) | `http://localhost:9000` |
+| `STORAGE_ENDPOINT` | S3 端点 (RustFS/R2) | `http://localhost:9000` |
 | `STORAGE_BUCKET` | 桶名 | `gospeak` |
 | `STORAGE_REGION` | 区域 | `us-east-1` |
-| `STORAGE_ACCESS_KEY` | 访问密钥 | `minioadmin` |
-| `STORAGE_SECRET_KEY` | 密钥 | `minioadmin` |
+| `STORAGE_ACCESS_KEY` | 访问密钥 | `rustfsadmin` |
+| `STORAGE_SECRET_KEY` | 密钥 | `rustfsadmin` |
 | `STORAGE_PATH_PREFIX` | 路径前缀 | `uploads/` |
 | `STORAGE_PUBLIC_BASE_URL` | 公开域名 (CDN) | `https://cdn.example.com` |
 | `STORAGE_ENCRYPT_KEY` | 凭证加密密钥，64 位 hex（生产必设） | `a1b2...` |
@@ -255,7 +255,7 @@ docker logs -f gospeak
 
 - **SQLite:** 备份 `app/server/db/*.db` 文件
 - **PostgreSQL:** `pg_dump`
-- **MinIO:** 桶同步至异地
+- **RustFS:** 桶同步至异地
 - **NATS:** JetStream stream/KV bucket 数据备份（如多副本需要）
 
 ### 6.4 升级
@@ -276,7 +276,7 @@ docker run -d ... gospeak:latest  # 同 5.2 step 4
 | 前端无音视频 | 检查 `SFU_PROVIDER` + LiveKit/SRS 服务状态 + WebRTC UDP 端口开放 |
 | 信令连不上 | 检查 WebSocket WebSocket 升级，Nginx 配置 |
 | JWT 无法刷新 | 检查 NATS 连接（`NATS_URL`）与共享 auth KV |
-| 上传失败 | 检查 `STORAGE_TYPE` + MinIO/S3 凭证 + `STORAGE_ENCRYPT_KEY` |
+| 上传失败 | 检查 `STORAGE_TYPE` + RustFS/S3 凭证 + `STORAGE_ENCRYPT_KEY` |
 | DB 连接失败 | `DB_TYPE` 不匹配，PostgreSQL/MySQL 需 `DB_HOST` 等填全 |
 
 ---

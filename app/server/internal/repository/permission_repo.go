@@ -45,9 +45,17 @@ func (r *PermissionRepository) GetRolePermissions(roleName string) ([]string, er
 }
 
 func (r *PermissionRepository) HasRolePermissions(roleName string) (bool, error) {
+
 	var count int64
 	err := r.db.Model(&model.RolePermission{}).Where("role_name = ?", roleName).Count(&count).Error
 	return count > 0, err
+}
+
+// RenameRolePermissions 角色改名时把权限关联行迁移到新角色名。
+func (r *PermissionRepository) RenameRolePermissions(oldName, newName string) error {
+	return r.db.Model(&model.RolePermission{}).
+		Where("role_name = ?", oldName).
+		Update("role_name", newName).Error
 }
 
 func (r *PermissionRepository) SeedRolePermissionsIfEmpty(roleName string, permCodes []string) error {

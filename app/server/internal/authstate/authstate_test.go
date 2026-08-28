@@ -119,6 +119,9 @@ func resetAuthState(t *testing.T) {
 	Configure(&config.Config{JWTKey: "static-key", JWTKeyTTL: "24h"})
 	production = false
 	SetBackend(nil)
+	memoryBlacklist.Lock()
+	memoryBlacklist.m = make(map[string]time.Time)
+	memoryBlacklist.Unlock()
 }
 
 func TestGetSigningKey_DevUsesStaticKey(t *testing.T) {
@@ -180,11 +183,11 @@ func TestBlacklistAndRefreshFamily_MemoryFallback(t *testing.T) {
 	if err := BlacklistToken("jti-1", time.Minute); err != nil {
 		t.Fatalf("blacklist: %v", err)
 	}
-	if IsBlacklisted("jti-1") {
-		t.Fatal("memory backend has no blacklist; must stay not blacklisted")
+	if !IsBlacklisted("jti-1") {
+		t.Fatal("memory fallback must blacklist the jti")
 	}
-	if revoked, err := IsBlacklistedErr("jti-1"); err != nil || revoked {
-		t.Fatalf("IsBlacklistedErr = %v, %v; want false, nil", revoked, err)
+	if revoked, err := IsBlacklistedErr("jti-1"); err != nil || !revoked {
+		t.Fatalf("IsBlacklistedErr = %v, %v; want true, nil", revoked, err)
 	}
 
 	marked, err := MarkRefreshFamilyUsed("fam-1")

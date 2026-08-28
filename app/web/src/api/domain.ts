@@ -10,6 +10,11 @@ export interface Domain {
 	invite_code: string;
 	is_public: boolean;
 	created_at: string;
+	allow_guest?: boolean;
+	guest_can_listen?: boolean;
+	guest_can_speak?: boolean;
+	guest_can_message?: boolean;
+	guest_limit?: number;
 }
 
 export interface DomainDetail extends Domain {

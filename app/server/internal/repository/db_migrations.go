@@ -263,6 +263,7 @@ func autoMigrate() error {
 		&model.ServerAssignment{},
 		&model.ClusterLeaderFence{},
 		&model.AuditLog{},
+		&model.DomainGuestBan{},
 	); err != nil {
 		return err
 	}

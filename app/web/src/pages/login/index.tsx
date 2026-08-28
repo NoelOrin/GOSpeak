@@ -1,5 +1,10 @@
 import { createForm } from "@tanstack/solid-form";
-import { createFileRoute, redirect, useNavigate } from "@tanstack/solid-router";
+import {
+	Link,
+	createFileRoute,
+	redirect,
+	useNavigate,
+} from "@tanstack/solid-router";
 import {
 	createResource,
 	createSignal,
@@ -14,6 +19,7 @@ import {
 	login as loginApi,
 } from "@/api/auth";
 import { getEnabledProviders, getOAuthLoginURL } from "@/api/oauth";
+import { listPublicDomains } from "@/api/domain";
 import { Form } from "@/components/form";
 import ProviderIcon from "@/components/oauth/ProviderIcon";
 import userStore from "@/stores/userStore";
@@ -47,7 +53,17 @@ function LoginPage() {
 	const [codeSending, setCodeSending] = createSignal(false);
 
 	const [oauthProviders] = createResource(getEnabledProviders);
+	const [publicGuestDomains] = createResource(async () => {
+		try {
+			const page = await listPublicDomains(1, 50);
+			return (page.domains ?? []).filter((d) => d.allow_guest).length;
+		} catch {
+			return 0;
+		}
+	});
 	const [oauthLoading, setOauthLoading] = createSignal(false);
+
+	let shellRef!: HTMLDivElement;
 
 	function completeOAuthLogin() {
 		void (async () => {
@@ -104,6 +120,39 @@ function LoginPage() {
 	onCleanup(() => {
 		window.removeEventListener("message", handleOAuthMessage);
 	});
+
+	// 鼠标视差：目标点做 lerp 缓动，写入 --px/--py，各层按 --depth 取位移
+	const reducedMotion =
+		typeof window !== "undefined" &&
+		window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+	if (!reducedMotion) {
+		let targetX = 0;
+		let targetY = 0;
+		let curX = 0;
+		let curY = 0;
+		let raf = 0;
+		const onMove = (e: MouseEvent) => {
+			targetX = e.clientX / window.innerWidth - 0.5;
+			targetY = e.clientY / window.innerHeight - 0.5;
+		};
+		const tick = () => {
+			curX += (targetX - curX) * 0.08;
+			curY += (targetY - curY) * 0.08;
+			if (shellRef) {
+				shellRef.style.setProperty("--px", curX.toFixed(4));
+				shellRef.style.setProperty("--py", curY.toFixed(4));
+			}
+			raf = requestAnimationFrame(tick);
+		};
+		window.addEventListener("mousemove", onMove);
+		raf = requestAnimationFrame(tick);
+		onCleanup(() => {
+			window.removeEventListener("mousemove", onMove);
+			cancelAnimationFrame(raf);
+		});
+	}
+
 	const [showChangeModal, setShowChangeModal] = createSignal(false);
 
 	let forgotDialogRef!: HTMLDialogElement;
@@ -149,121 +198,299 @@ function LoginPage() {
 		},
 	}));
 
+	const depth = (n: number) =>
+		({ "--depth": String(n) }) as unknown as Record<string, string>;
+
 	return (
-		<div class="flex items-center justify-center w-screen min-h-screen h-screen bg-base-200 p-4 overflow-y-auto">
-			<div class="card w-full max-w-sm sm:max-w-md bg-base-100 shadow-xl">
-				<div class="card-body p-5 sm:p-8">
-					<div class="text-center mb-2">
-						<h1 class="text-2xl sm:text-3xl font-bold tracking-tight">
-							GOSpeak
+		<div ref={shellRef} class="login-shell">
+			<style>
+				{`				.login-shell {
+					--px: 0;
+					--py: 0;
+					position: relative;
+					min-height: 100vh;
+					overflow-y: auto;
+					background: var(--b2);
+				}
+				/* 网格纹理：中心清晰、四周淡出，鼠标移动时反向漂移 */
+				.login-shell::before {
+					content: "";
+					position: fixed;
+					inset: -60px;
+					background-image:
+						linear-gradient(to right, rgb(127 127 127 / 0.07) 1px, transparent 1px),
+						linear-gradient(to bottom, rgb(127 127 127 / 0.07) 1px, transparent 1px);
+					background-size: 44px 44px;
+					mask-image: radial-gradient(ellipse 90% 80% at 50% 45%, black 20%, transparent 80%);
+					transform: translate3d(calc(var(--px) * -22px), calc(var(--py) * -22px), 0);
+					pointer-events: none;
+				}
+				/* 视差层：位移 = 鼠标偏移 × 深度系数 */
+				.plx {
+					transform: translate3d(
+						calc(var(--px) * var(--depth, 0) * 1px),
+						calc(var(--py) * var(--depth, 0) * 1px),
+						0
+					);
+					will-change: transform;
+				}
+				/* 登录卡片：3D 微倾 + 轻微位移 */
+				.card-tilt {
+					transform: perspective(1100px)
+						rotateX(calc(var(--py) * -4deg))
+						rotateY(calc(var(--px) * 4deg))
+						translate3d(calc(var(--px) * 8px), calc(var(--py) * 8px), 0);
+					will-change: transform;
+					transform-style: preserve-3d;
+				}
+				.brand-word {
+					font-size: 3.5rem;
+					line-height: 1;
+					font-weight: 800;
+					text-transform: uppercase;
+				}
+				@media (min-width: 1024px) {
+					.brand-word {
+						font-size: 4.5rem;
+					}
+				}
+				.brand-word em {
+					font-style: normal;
+					color: var(--p);
+				}
+				/* 均衡器：7 根音柱错相起伏 */
+				.eq {
+					display: flex;
+					align-items: center;
+					height: 40px;
+					gap: 5px;
+				}
+				.eq span {
+					width: 4px;
+					height: 100%;
+					border-radius: 2px;
+					background: var(--p);
+					transform-origin: center;
+					animation: login-eq 1.2s ease-in-out infinite;
+				}
+				.eq span:nth-child(1) { animation-delay: 0s; opacity: 0.55; }
+				.eq span:nth-child(2) { animation-delay: -0.15s; opacity: 0.75; }
+				.eq span:nth-child(3) { animation-delay: -0.3s; opacity: 0.95; }
+				.eq span:nth-child(4) { animation-delay: -0.45s; opacity: 1; }
+				.eq span:nth-child(5) { animation-delay: -0.6s; opacity: 0.9; }
+				.eq span:nth-child(6) { animation-delay: -0.75s; opacity: 0.7; }
+				.eq span:nth-child(7) { animation-delay: -0.9s; opacity: 0.5; }
+				@keyframes login-eq {
+					0%, 100% { transform: scaleY(0.25); }
+					50% { transform: scaleY(1); }
+				}
+				@media (prefers-reduced-motion: reduce) {
+					.eq span {
+						animation: none;
+						transform: scaleY(0.6);
+					}
+					.plx,
+					.card-tilt,
+					.login-shell::before {
+						transform: none;
+					}
+				}`}
+			</style>
+			<div class="relative mx-auto flex min-h-screen w-full max-w-7xl">
+				{/* 品牌区：桌面端左半屏，移动端只显示 logo 头部 */}
+				<aside class="relative hidden w-1/2 flex-col justify-between gap-12 border-r border-base-content/10 p-12 md:flex lg:p-16">
+					<div class="plx flex items-center gap-3" style={depth(10)}>
+						<img
+							src="/favicon-256.png"
+							alt="GOSpeak"
+							class="size-10 rounded-lg border border-base-content/10"
+						/>
+						<span class="font-mono text-xs uppercase text-base-content/50">
+							Self-hosted Voice
+						</span>
+					</div>
+					<div>
+						<h1 class="brand-word plx" style={depth(16)}>
+							GO<em>Speak</em>
 						</h1>
-						<p class="text-base-content/50 text-sm mt-1">登录你的账号</p>
-					</div>
-
-					<Form
-						form={form}
-						fields={[
-							{
-								name: "username",
-								label: "用户名",
-								type: "text",
-								placeholder: "请输入用户名",
-								required: true,
-							},
-							{
-								name: "password",
-								label: "密码",
-								type: "password",
-								placeholder: "请输入密码",
-								required: true,
-							},
-						]}
-						submitButtonText="登录"
-					/>
-
-					<div class="text-center mt-1">
-						<button
-							type="button"
-							class="link link-primary text-sm inline-flex items-center justify-center px-2 min-h-11"
-							onClick={openForgotModal}
-						>
-							忘记密码?
-						</button>
-					</div>
-
-					{/* 已启用的第三方登录：按提供商显示品牌 icon 按钮 */}
-					<Show
-						when={!oauthProviders.error && (oauthProviders()?.length || 0) > 0}
-					>
-						<div class="divider text-xs text-base-content/40 my-3">
-							或使用第三方登录
+						<p class="mt-4 text-base text-base-content/60 plx" style={depth(8)}>
+							自托管游戏语音平台。房间、路由与数据，全部在你手里。
+						</p>
+						<div class="eq mt-10 plx" style={depth(22)} aria-hidden="true">
+							<span />
+							<span />
+							<span />
+							<span />
+							<span />
+							<span />
+							<span />
 						</div>
-						<div class="flex flex-wrap items-center justify-center gap-3">
-							<For each={oauthProviders() ?? []}>
-								{(p) => {
-									const label = p.display_name || p.name;
-									return (
+						<ul
+							class="mt-10 space-y-2 text-sm text-base-content/50 plx"
+							style={depth(6)}
+						>
+							<li>实时发言检测 · 成员独立音量</li>
+							<li>多 SFU 运行时切换</li>
+							<li>语音数据不经第三方</li>
+						</ul>
+					</div>
+					<div
+						class="plx flex items-center gap-2 font-mono text-xs text-base-content/40"
+						style={depth(4)}
+					>
+						<span class="size-1.5 rounded-full bg-primary animate-pulse" />
+						Server Online
+					</div>
+				</aside>
+				<main class="flex flex-1 items-center justify-center p-4 sm:p-8">
+					<div class="w-full max-w-sm">
+						<div class="mb-8 text-center plx md:hidden" style={depth(10)}>
+							<div class="flex items-center justify-center gap-3">
+								<img
+									src="/favicon-256.png"
+									alt="GOSpeak"
+									class="size-12 rounded-xl border border-base-content/10"
+								/>
+								<h1 class="text-2xl font-extrabold uppercase">
+									GO<span class="text-primary">Speak</span>
+								</h1>
+							</div>
+							<p class="mt-2 text-sm text-base-content/50">登录你的账号</p>
+						</div>
+						<div class="card-tilt">
+							<div class="card border border-base-content/10 bg-base-100 shadow-xl shadow-black/20">
+								<div class="card-body p-6 sm:p-8">
+									<div class="mb-6 hidden items-center justify-between md:flex">
+										<h2 class="text-lg font-semibold">登录账号</h2>
+										<span class="font-mono text-[11px] uppercase text-base-content/40">
+											Login
+										</span>
+									</div>
+
+									<Form
+										form={form}
+										fields={[
+											{
+												name: "username",
+												label: "用户名",
+												type: "text",
+												placeholder: "请输入用户名",
+												required: true,
+											},
+											{
+												name: "password",
+												label: "密码",
+												type: "password",
+												placeholder: "请输入密码",
+												required: true,
+											},
+										]}
+										submitButtonText="登录"
+									/>
+
+									<div class="text-center mt-1">
 										<button
 											type="button"
-											class="btn btn-outline btn-square size-12"
-											title={`使用 ${label} 登录`}
-											aria-label={`使用 ${label} 登录`}
-											disabled={oauthLoading()}
-											onClick={() => {
-												setOauthLoading(true);
-												const win = window.open(
-													getOAuthLoginURL(p.name),
-													"gospeak-oauth",
-													"popup,width=560,height=640",
-												);
-												if (!win) {
-													setOauthLoading(false);
-													showToast("请允许弹窗后重试 OAuth 登录", {
-														type: "error",
-													});
-												}
-											}}
+											class="link link-primary text-sm inline-flex items-center justify-center px-2 min-h-11"
+											onClick={openForgotModal}
 										>
-											<ProviderIcon
-												name={p.name}
-												iconUrl={p.icon_url}
-												size={22}
-											/>
+											忘记密码?
 										</button>
-									);
-								}}
-							</For>
-						</div>
-					</Show>
+									</div>
 
-					<Show when={oauthLoading()}>
-						<div class="flex items-center justify-center gap-2 mt-3 text-sm text-base-content/60">
-							<span class="loading loading-spinner loading-xs" />
-							正在完成第三方登录…
-						</div>
-					</Show>
+									{/* 已启用的第三方登录：按提供商显示品牌 icon 按钮 */}
+									<Show
+										when={
+											!oauthProviders.error &&
+											(oauthProviders()?.length || 0) > 0
+										}
+									>
+										<div class="divider text-xs text-base-content/40 my-3">
+											或使用第三方登录
+										</div>
+										<div class="flex flex-wrap items-center justify-center gap-3">
+											<For each={oauthProviders() ?? []}>
+												{(p) => {
+													const label = p.display_name || p.name;
+													return (
+														<button
+															type="button"
+															class="btn btn-outline btn-square size-12"
+															title={`使用 ${label} 登录`}
+															aria-label={`使用 ${label} 登录`}
+															disabled={oauthLoading()}
+															onClick={() => {
+																setOauthLoading(true);
+																const win = window.open(
+																	getOAuthLoginURL(p.name),
+																	"gospeak-oauth",
+																	"popup,width=560,height=640",
+																);
+																if (!win) {
+																	setOauthLoading(false);
+																	showToast("请允许弹窗后重试 OAuth 登录", {
+																		type: "error",
+																	});
+																}
+															}}
+														>
+															<ProviderIcon
+																name={p.name}
+																iconUrl={p.icon_url}
+																size={22}
+															/>
+														</button>
+													);
+												}}
+											</For>
+										</div>
+									</Show>
 
-					<Show when={banned()}>
-						<div class="alert alert-error mt-2">
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								class="stroke-current shrink-0 h-5 w-5"
-								fill="none"
-								viewBox="0 0 24 24"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
-								/>
-							</svg>
-							<span class="text-sm">
-								您的账号已被封禁，无法登录。如有疑问请联系管理员。
-							</span>
+									<Show when={oauthLoading()}>
+										<div class="flex items-center justify-center gap-2 mt-3 text-sm text-base-content/60">
+											<span class="loading loading-spinner loading-xs" />
+											正在完成第三方登录…
+										</div>
+									</Show>
+
+									<Show when={(publicGuestDomains() ?? 0) > 0}>
+										<div class="divider my-2 text-xs text-base-content/50">
+											或
+										</div>
+										<Link
+											to="/guest"
+											search={{ code: undefined, domain: undefined }}
+											class="btn btn-ghost btn-block"
+										>
+											访客登录
+										</Link>
+									</Show>
+
+									<Show when={banned()}>
+										<div class="alert alert-error mt-2">
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												class="stroke-current shrink-0 h-5 w-5"
+												fill="none"
+												viewBox="0 0 24 24"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
+												/>
+											</svg>
+											<span class="text-sm">
+												您的账号已被封禁，无法登录。如有疑问请联系管理员。
+											</span>
+										</div>
+									</Show>
+								</div>
+							</div>
 						</div>
-					</Show>
-				</div>
+					</div>
+				</main>
 			</div>
 
 			{/* 忘记密码 Modal */}

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/casbin/casbin/v2"
 	"gorm.io/gorm"
 )
 
@@ -41,6 +42,9 @@ type DomainService struct {
 
 	memberCache   map[string]domainMemberCacheEntry
 	memberCacheMu sync.RWMutex
+
+	authEnforcer *casbin.SyncedEnforcer
+	useCasbin    bool
 }
 
 type domainMemberCacheEntry struct {
@@ -365,6 +369,20 @@ func (s *DomainService) TransferOwnership(domainUUID, currentOwnerUUID, newOwner
 }
 
 func (s *DomainService) HasDomainPermission(domainUUID, userUUID, permCode string) bool {
+	if domainUUID == "" || userUUID == "" || permCode == "" {
+		return false
+	}
+	s.memberCacheMu.RLock()
+	enforcer := s.authEnforcer
+	useCasbin := s.useCasbin
+	s.memberCacheMu.RUnlock()
+	if useCasbin && !s.reloadDomainCasbin(enforcer) {
+		return false
+	}
+	if useCasbin && enforcer != nil {
+		allowed, err := enforcer.Enforce(userUUID, domainUUID, permCode)
+		return err == nil && allowed
+	}
 	member, err := s.domainRepo.GetMember(domainUUID, userUUID)
 	if err != nil {
 		return false

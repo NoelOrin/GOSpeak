@@ -14,6 +14,7 @@ import (
 	domainRoutes "GOSpeak/internal/router/routes/domain"
 	emailRoutes "GOSpeak/internal/router/routes/email"
 	emailConfigRoutes "GOSpeak/internal/router/routes/email_config"
+	guestRoutes "GOSpeak/internal/router/routes/guest"
 	messageRoutes "GOSpeak/internal/router/routes/message"
 	muteRoutes "GOSpeak/internal/router/routes/mute"
 	oauthRoutes "GOSpeak/internal/router/routes/oauth"
@@ -48,6 +49,7 @@ type Handlers struct {
 	// ReadyCheck 探测 DB 等基础依赖，nil 时 /readyz 返回不可用。
 	ReadyCheck   func() error
 	Auth         *handler.AuthHandler
+	Guest        *handler.GuestHandler
 	User         *handler.UserHandler
 	Signal       *handler.SignalHandler
 	UserGroup    *handler.UserGroupHandler
@@ -112,6 +114,9 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	isWorker := role == "worker"
 	if !isWorker {
 		authRoutes.Register(api.Group("/auth"), h.Auth)
+		if h.Guest != nil {
+			guestRoutes.Register(api.Group("/auth"), h.Guest)
+		}
 		emailRoutes.Register(api.Group("/email"), h.Email)
 		oauthRoutes.Register(api.Group("/oauth"), h.OAuth)
 	}
@@ -130,6 +135,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	protected := api.Group("")
 	protected.Use(middleware.JWTAuth())
 	protected.Use(middleware.BanCheck())
+	protected.Use(middleware.GuestGuard())
 	if h != nil && h.FenceCheck != nil {
 		protected.Use(middleware.RequireAgentFence(h.FenceCheck))
 	}
@@ -161,6 +167,9 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	}
 	if h.Domain != nil {
 		domainRoutes.Register(protected.Group("/domain"), h.Domain)
+	}
+	if h.Guest != nil {
+		guestRoutes.RegisterProtected(protected.Group(""), h.Guest)
 	}
 	if h.Cluster != nil {
 		clusterRoutes.RegisterProtected(protected.Group("/cluster"), h.Cluster)
