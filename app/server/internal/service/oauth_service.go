@@ -218,6 +218,7 @@ func (s *OAuthService) buildAuthResponse(user *model.User) (*AuthResponse, error
 		Token:        token,
 		RefreshToken: refreshToken,
 		User:         *user,
+		ExpiresIn:    pkg.AccessTokenExpiresIn(),
 	}, nil
 }
 

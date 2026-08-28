@@ -100,6 +100,11 @@ func TestAuthHandler_Login_SetsHttpOnlyCookies(t *testing.T) {
 	if code := intCode(resp["code"]); code != 0 {
 		t.Fatalf("expected code 0, got %d", code)
 	}
+	if data, ok := resp["data"].(map[string]interface{}); !ok {
+		t.Fatalf("expected data object, got %T", resp["data"])
+	} else if expiresIn, ok := data["expires_in"].(float64); !ok || expiresIn != 900 {
+		t.Fatalf("expires_in = %v, want 900 (default 15m)", data["expires_in"])
+	}
 
 	cookies := rec.Result().Cookies()
 	var access, refresh *http.Cookie
@@ -165,6 +170,11 @@ func TestAuthHandler_GetRefreshToken_ReadsRefreshCookie(t *testing.T) {
 	}
 	if code := intCode(resp["code"]); code != 0 {
 		t.Fatalf("expected code 0 from refresh cookie, got %d: %s", code, rec.Body.String())
+	}
+	if data, ok := resp["data"].(map[string]interface{}); !ok {
+		t.Fatalf("expected data object, got %T", resp["data"])
+	} else if expiresIn, ok := data["expires_in"].(float64); !ok || expiresIn != 900 {
+		t.Fatalf("expires_in = %v, want 900 (default 15m)", data["expires_in"])
 	}
 
 	var gotAccess, gotRefresh bool

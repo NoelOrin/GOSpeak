@@ -86,12 +86,14 @@ type AuthResponse struct {
 	RefreshToken       string     `json:"refresh_token"`
 	User               model.User `json:"user"`
 	NeedChangePassword bool       `json:"need_change_password"`
+	ExpiresIn          int64      `json:"expires_in"`
 }
 
 // RefreshResponse refresh 成功后返回的新双 Token。
 type RefreshResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"`
 }
 
 // Login 用户名密码登录：查用户 → bcrypt 比对密码 → 生成 Token 对。
@@ -125,6 +127,7 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		RefreshToken:       tokens.Refresh,
 		User:               *user,
 		NeedChangePassword: needChange,
+		ExpiresIn:          pkg.AccessTokenExpiresIn(),
 	}, nil
 }
 
@@ -192,6 +195,7 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 		Token:        tokens.Access,
 		RefreshToken: tokens.Refresh,
 		User:         *user,
+		ExpiresIn:    pkg.AccessTokenExpiresIn(),
 	}, nil
 }
 
@@ -300,7 +304,7 @@ func (s *AuthService) RefreshFromToken(refreshToken string) (*RefreshResponse, e
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	return &RefreshResponse{AccessToken: access, RefreshToken: nextRefresh}, nil
+	return &RefreshResponse{AccessToken: access, RefreshToken: nextRefresh, ExpiresIn: pkg.AccessTokenExpiresIn()}, nil
 }
 
 // Logout 将 access（及可选 refresh）加入黑名单；黑名单写失败必须上抛，
@@ -405,6 +409,7 @@ func (s *AuthService) FirstChangePassword(username, newPassword string, name *st
 		Token:        tokens.Access,
 		RefreshToken: tokens.Refresh,
 		User:         *updatedUser,
+		ExpiresIn:    pkg.AccessTokenExpiresIn(),
 	}, nil
 }
 
