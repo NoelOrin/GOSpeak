@@ -130,6 +130,10 @@ func (s *DomainService) Create(name, description, ownerUUID string, isPublic boo
 	if err := s.domainRepo.CreateWithOwner(domain, member); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
+	// 同步播种系统角色（owner/admin/member/guest），否则加入后查 member 角色权限会报 domain role not found。
+	if err := s.roleRepo.SeedDefaults(domain.UUID); err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
 	return domain, nil
 }
 
