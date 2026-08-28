@@ -54,6 +54,20 @@ func TestOAuthHandler_Callback_BadState(t *testing.T) {
 	}
 }
 
+func TestOAuthHandler_CallbackPayloadCarriesExpiresIn(t *testing.T) {
+	payload, err := oauthSuccessPayload()
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	html := oauthBridgeHTML(payload)
+	if !strings.Contains(html, `"ok":true`) {
+		t.Errorf("payload should carry ok=true, got: %s", html)
+	}
+	if !strings.Contains(html, `"expires_in":900`) {
+		t.Errorf("payload should carry expires_in=900 (default 15m), got: %s", html)
+	}
+}
+
 func TestOAuthHandler_Login_IgnoresClientState(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := newTestOAuthHandler(t)

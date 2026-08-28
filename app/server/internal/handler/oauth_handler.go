@@ -109,10 +109,15 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 
 	// 浏览器回调：token 已写入 HttpOnly Cookie，同源 postMessage 只通知 opener 成功，
 	// 避免 token 出现在 URL fragment、浏览器历史、代理日志或跨窗口消息中。
-	payload, _ := json.Marshal(map[string]bool{"ok": true})
+	payload, _ := oauthSuccessPayload()
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'")
 	_, _ = c.Writer.Write([]byte(oauthBridgeHTML(payload)))
+}
+
+// oauthSuccessPayload 通知 opener 登录成功并附带 access token 有效期（秒）。
+func oauthSuccessPayload() ([]byte, error) {
+	return json.Marshal(map[string]any{"ok": true, "expires_in": pkg.AccessTokenExpiresIn()})
 }
 
 // oauthBridgeHTML 返回 OAuth 回调落地页：同源窗口通过 postMessage 单次交付 token。
