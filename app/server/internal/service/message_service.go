@@ -149,6 +149,18 @@ func (s *MessageService) SetEventBus(b MessageEventBus) {
 	s.bus = b
 }
 
+// enrichAuthorDTO fills a single DTO's author display fields in place, so
+// live broadcasts (message:created / message:updated) match the enriched
+// history payloads.
+func (s *MessageService) enrichAuthorDTO(dto *MessageDTO) {
+	if dto == nil {
+		return
+	}
+	items := []MessageDTO{*dto}
+	s.enrichAuthorInfo(items)
+	*dto = items[0]
+}
+
 // SetJobQueue sets the job queue for async persistence.
 
 // SetJobQueue sets the job queue for async persistence.
@@ -233,6 +245,7 @@ func (s *MessageService) Send(roomUUID string, actor MessageActor, content, repl
 	}
 
 	// 1) broadcast first；广播失败时立即同步落库，避免消息仅存在于易失广播面。
+	s.enrichAuthorDTO(dto)
 	if s.bus != nil {
 		if err := s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:created", dto); err != nil {
 			if !s.syncWriteAllowed {

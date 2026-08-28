@@ -72,6 +72,7 @@ func (s *MessageService) Edit(roomUUID, messageUUID string, actor MessageActor, 
 	}
 
 	// 1) broadcast first
+	s.enrichAuthorDTO(dto)
 	if s.bus != nil {
 		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:updated", dto)
 	}
