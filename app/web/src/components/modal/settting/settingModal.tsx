@@ -2,6 +2,7 @@ import Mic from "lucide-solid/icons/mic";
 import Palette from "lucide-solid/icons/palette";
 import User from "lucide-solid/icons/user";
 import Volume2 from "lucide-solid/icons/volume-2";
+import X from "lucide-solid/icons/x";
 import { type Component, createSignal, For, type JSX } from "solid-js";
 import { TABS } from "./tab_item";
 import type { SettingTabConfig } from "./tab_item/types";
@@ -40,7 +41,7 @@ const SettingModal: Component<SearchModalProps> = (props) => {
 						onClick={props.onClose}
 						aria-label="关闭设置"
 					>
-						✕
+						<X size={16} />
 					</button>
 				</div>
 				<div class="min-h-0 flex-1">

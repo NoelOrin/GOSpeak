@@ -1,4 +1,6 @@
+import CornerDownRight from "lucide-solid/icons/corner-down-right";
 import Paperclip from "lucide-solid/icons/paperclip";
+import X from "lucide-solid/icons/x";
 import { createSignal, For, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import { useUpload } from "@/hooks/useUpload";
@@ -219,21 +221,21 @@ export default function MessageInput(props: MessageInputProps) {
 
 			<Show when={props.replyTo}>
 				<div class="flex items-center gap-2 mb-2 text-xs text-base-content/60 bg-base-200 rounded-lg px-3 py-1.5">
-					<span class="i-lucide-corner-down-right shrink-0" />
+					<CornerDownRight size={14} class="shrink-0" />
 					<span class="truncate">回复中...</span>
 					<button
 						type="button"
 						class="ml-auto shrink-0 text-base-content/40 hover:text-base-content transition-colors"
 						onClick={() => props.onCancelReply?.()}
 					>
-						✕
+						<X size={14} />
 					</button>
 				</div>
 			</Show>
 
 			<Show when={props.threadParent && !props.replyTo}>
 				<div class="mb-2 flex items-center gap-2 rounded-lg bg-primary/5 px-3 py-1.5 text-xs text-primary">
-					<span class="i-lucide-corner-down-right shrink-0" />
+					<CornerDownRight size={14} class="shrink-0" />
 					<span class="truncate">回复到线程</span>
 				</div>
 			</Show>

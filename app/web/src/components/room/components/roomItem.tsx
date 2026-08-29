@@ -1,7 +1,9 @@
 import { Portal } from "solid-js/web";
 import clsx from "clsx";
 import Hash from "lucide-solid/icons/hash";
+import Lock from "lucide-solid/icons/lock";
 import LogOut from "lucide-solid/icons/log-out";
+import Mic from "lucide-solid/icons/mic";
 import Pencil from "lucide-solid/icons/pencil";
 import Trash2 from "lucide-solid/icons/trash-2";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
@@ -252,41 +254,7 @@ export const RoomItem = (props: RoomItemPropsType) => {
 							<span>
 								<Show
 									when={props.room.type === "text"}
-									fallback={
-										<svg
-											width="16"
-											height="16"
-											viewBox="0 0 48 48"
-											fill="none"
-											xmlns="http://www.w3.org/2000/svg"
-										>
-											<rect
-												x="17"
-												y="4"
-												width="14"
-												height="27"
-												rx="7"
-												fill="none"
-												stroke="currentColor"
-												stroke-width="3"
-												stroke-linejoin="round"
-											/>
-											<path
-												d="M9 23C9 31.2843 15.7157 38 24 38C32.2843 38 39 31.2843 39 23"
-												stroke="currentColor"
-												stroke-width="3"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-											/>
-											<path
-												d="M24 38V44"
-												stroke="currentColor"
-												stroke-width="3"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-											/>
-										</svg>
-									}
+									fallback={<Mic size={16} strokeWidth={2.5} />}
 								>
 									<Hash size={16} strokeWidth={2.5} />
 								</Show>
@@ -299,19 +267,7 @@ export const RoomItem = (props: RoomItemPropsType) => {
 							</span>
 							<Show when={props.room.hasPassword}>
 								<span class="shrink-0 text-base-content/50">
-									<svg
-										width="14"
-										height="14"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-									>
-										<rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-										<path d="M7 11V7a5 5 0 0 1 10 0v4" />
-									</svg>
+									<Lock size={14} />
 								</span>
 							</Show>
 						</div>

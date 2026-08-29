@@ -2,6 +2,7 @@ import { createForm } from "@tanstack/solid-form";
 import { useNavigate } from "@tanstack/solid-router";
 import { type Component, createMemo, Show } from "solid-js";
 import { showToast } from "solid-notifications";
+import X from "lucide-solid/icons/x";
 import { createRoom as createRoomApi } from "@/api/room";
 import { Form, type FormFieldConfig } from "@/components/form";
 import { socketStore } from "@/stores/socketStore";
@@ -196,7 +197,7 @@ const CreateRoomModal: Component<CreateRoomModalProps> = (props) => {
 					class="top-2 right-2 absolute border-0 z-10 btn btn-sm btn-circle"
 					onClick={props.onClose}
 				>
-					✕
+					<X size={16} />
 				</button>
 				<div class="border-base-300 border-b px-6 py-5">
 					<h3 class="text-lg font-semibold">新建房间</h3>

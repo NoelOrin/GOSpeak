@@ -7,7 +7,7 @@ import {
 	Show,
 } from "solid-js";
 import Avatar from "@/components/common/avatar";
-import SvgIcon from "@/components/svgIcon";
+import Ellipsis from "lucide-solid/icons/ellipsis";
 import { setMutedByIdentity, setVolumeByIdentity } from "@/handler_audio";
 import { speakingIdentities } from "@/handler_audio/speakingStore";
 import { type MemberInfo, socketStore } from "@/stores/socketStore";
@@ -219,7 +219,7 @@ const MemberCard = ({ member }: { member: MemberInfo }) => {
 				<Show when={!isMe()}>
 					<div class="dropdown dropdown-end">
 						<button class="dark:text-white btn-square btn btn-xs" tabIndex={0}>
-							<SvgIcon name="more" />
+							<Ellipsis size={16} />
 						</button>
 						<div tabIndex={-1} class="z-1 px-0 py-1 w-24 dropdown-content menu">
 							<div class="flex flex-col bg-base-100 shadow-sm rounded-lg overflow-hidden join">

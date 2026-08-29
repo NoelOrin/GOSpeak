@@ -13,6 +13,7 @@ import {
 	Show,
 } from "solid-js";
 import { showToast } from "solid-notifications";
+import CircleX from "lucide-solid/icons/circle-x";
 import {
 	firstChangePassword as firstChangePasswordApi,
 	login as loginApi,
@@ -518,19 +519,7 @@ function LoginPage() {
 
 									<Show when={banned()}>
 										<div class="alert alert-error mt-2">
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												class="stroke-current shrink-0 h-5 w-5"
-												fill="none"
-												viewBox="0 0 24 24"
-											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													stroke-width="2"
-													d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
-												/>
-											</svg>
+											<CircleX class="shrink-0 size-5" />
 											<span class="text-sm">
 												您的账号已被封禁，无法登录。如有疑问请联系管理员。
 											</span>

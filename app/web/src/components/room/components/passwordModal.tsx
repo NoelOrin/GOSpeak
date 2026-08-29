@@ -1,3 +1,4 @@
+import Lock from "lucide-solid/icons/lock";
 import { createSignal } from "solid-js";
 import { chatStore } from "@/stores/chatStore";
 import { type RoomInfo, socketStore } from "@/stores/socketStore";
@@ -31,7 +32,10 @@ const PasswordModal = ({ room, onClose }: PasswordModalProps) => {
 	return (
 		<dialog class="modal modal-open">
 			<div class="modal-box">
-				<h3 class="font-bold text-lg mb-4">🔒 房间需要密码</h3>
+				<h3 class="font-bold text-lg mb-4">
+					<Lock size={18} class="inline-block align-[-3px] mr-1.5" />
+					房间需要密码
+				</h3>
 				<p class="text-sm text-base-content/60 mb-4">
 					房间「{room.name}」需要密码才能加入
 				</p>

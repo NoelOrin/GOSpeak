@@ -1,10 +1,12 @@
 import { useNavigate } from "@tanstack/solid-router";
+import Check from "lucide-solid/icons/check";
+import LogOut from "lucide-solid/icons/log-out";
+import User from "lucide-solid/icons/user";
 import { createSignal, Show } from "solid-js";
 import { showToast } from "solid-notifications";
 import { updateProfile } from "@/api/user";
 import Avatar from "@/components/common/avatar";
 import userStore from "@/stores/userStore";
-import SvgIcon from "../svgIcon";
 
 interface UserCardProps {
 	onClose: () => void;
@@ -53,13 +55,13 @@ const UserCard = (props: UserCardProps) => {
 	const menuItems = [
 		{
 			label: "个人资料",
-			icon: "profile" as const,
+			icon: User,
 			action: () => {
 				props.onClose();
 				navigate({ to: "/profile" });
 			},
 		},
-		{ label: "退出登录", icon: "logout" as const, action: handleLogout },
+		{ label: "退出登录", icon: LogOut, action: handleLogout },
 	];
 
 	return (
@@ -96,7 +98,7 @@ const UserCard = (props: UserCardProps) => {
 									onClick={saveEdit}
 									disabled={saving()}
 								>
-									<SvgIcon name="check" width={14} height={14} />
+									<Check size={14} />
 								</button>
 							</div>
 						}
@@ -126,12 +128,7 @@ const UserCard = (props: UserCardProps) => {
 							class="flex items-center gap-2 rounded-none"
 							onClick={item.action}
 						>
-							<SvgIcon
-								name={item.icon}
-								width={16}
-								height={16}
-								class="shrink-0"
-							/>
+							<item.icon size={16} class="shrink-0" />
 							<span>{item.label}</span>
 						</button>
 					</li>
