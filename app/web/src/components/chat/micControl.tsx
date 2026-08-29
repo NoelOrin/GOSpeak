@@ -4,6 +4,7 @@ import AudioControl from "./audioControl";
 
 interface MicControlProps {
 	name?: string;
+	class?: string;
 	volume: () => number;
 	isMute: () => boolean;
 	onChange: (volume: number) => void;

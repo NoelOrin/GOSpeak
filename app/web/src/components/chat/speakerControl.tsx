@@ -1,9 +1,10 @@
-import Volume2 from "lucide-solid/icons/volume-2";
-import VolumeX from "lucide-solid/icons/volume-x";
+import HeadphoneOff from "lucide-solid/icons/headphone-off";
+import Headphones from "lucide-solid/icons/headphones";
 import AudioControl from "./audioControl";
 
 interface SpeakerControlProps {
 	name?: string;
+	class?: string;
 	volume: () => number;
 	isMute: () => boolean;
 	onChange: (volume: number) => void;
@@ -14,8 +15,8 @@ const SpeakerControl = ({ name, ...props }: SpeakerControlProps) => {
 	return (
 		<AudioControl
 			name={name || "output"}
-			MutedIcon={VolumeX}
-			UnmutedIcon={Volume2}
+			MutedIcon={HeadphoneOff}
+			UnmutedIcon={Headphones}
 			muteLabel="扬声器静音"
 			unmuteLabel="取消扬声器静音"
 			volumeLabel="扬声器音量"

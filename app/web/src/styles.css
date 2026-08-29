@@ -27,3 +27,44 @@
 	--radius-field: 0.25rem;
 	--radius-box: 0.5rem;
 }
+
+.volume-slider {
+	appearance: none;
+	-webkit-appearance: none;
+	writing-mode: vertical-lr;
+	direction: rtl;
+	width: 6px;
+	border-radius: 9999px;
+	outline: none;
+	cursor: pointer;
+}
+
+.volume-slider::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: var(--color-base-100);
+	border: none;
+	box-shadow:
+		0 0 0 1px color-mix(in oklab, var(--color-primary) 50%, transparent),
+		0 1px 3px rgb(0 0 0 / 0.25);
+}
+
+.volume-slider::-moz-range-thumb {
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: var(--color-base-100);
+	border: none;
+	box-shadow:
+		0 0 0 1px color-mix(in oklab, var(--color-primary) 50%, transparent),
+		0 1px 3px rgb(0 0 0 / 0.25);
+}
+
+.dropdown.audio-control:not(:hover) .dropdown-content {
+	transform-origin: top;
+	opacity: 0;
+	display: none;
+	scale: 0.95;
+}

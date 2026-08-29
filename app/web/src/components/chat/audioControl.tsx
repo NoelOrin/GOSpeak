@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import type { Component } from "solid-js";
 import { Show } from "solid-js";
 
@@ -8,6 +9,7 @@ export interface ControlIconProps {
 
 interface AudioControlProps {
 	name: string;
+	class?: string;
 	/** 静音态图标（daisyUI swap-on） */
 	MutedIcon: Component<ControlIconProps>;
 	/** 非静音态图标（daisyUI swap-off） */
@@ -26,6 +28,7 @@ interface AudioControlProps {
 
 const AudioControl = ({
 	name,
+	class: className,
 	MutedIcon,
 	UnmutedIcon,
 	muteLabel,
@@ -39,7 +42,12 @@ const AudioControl = ({
 	disabledTip,
 }: AudioControlProps) => {
 	return (
-		<div class="dropdown dropdown-top dropdown-hover">
+		<div
+			class={clsx(
+				"dropdown dropdown-top dropdown-hover dropdown-center audio-control",
+				className,
+			)}
+		>
 			<label
 				class="swap swap-flip size-11 cursor-pointer"
 				classList={{
@@ -61,7 +69,7 @@ const AudioControl = ({
 			</label>
 
 			<Show when={disabled?.() && disabledTip}>
-				<div class="z-1 px-2 pb-3 -translate-x-1/3 dropdown-content menu">
+				<div class="z-1 px-2 pb-3 dropdown-content menu">
 					<div class="px-2 py-1 text-xs text-warning bg-base-100 shadow-sm border rounded-box whitespace-nowrap">
 						{disabledTip}
 					</div>
@@ -69,10 +77,7 @@ const AudioControl = ({
 			</Show>
 
 			<Show when={!disabled?.()}>
-				<div
-					tabIndex="-1"
-					class="z-1 px-2 pb-3 -translate-x-1/3 dropdown-content menu"
-				>
+				<div tabIndex="-1" class="z-1 px-2 pb-3 dropdown-content menu">
 					<div
 						data-tip={volume()}
 						class="flex flex-col justify-center items-center bg-base-100 shadow-sm border rounded-box w-6 h-25 tooltip"
@@ -84,7 +89,10 @@ const AudioControl = ({
 							max="100"
 							value={volume()}
 							onInput={(e) => onChange(Number(e.target.value))}
-							class="w-22 rotate-270 origin-right -translate-x-1/2 -translate-y-11 range range-xs"
+							class="volume-slider h-20"
+							style={{
+								background: `linear-gradient(to top, var(--color-primary) ${volume()}%, var(--color-base-300) ${volume()}%)`,
+							}}
 						/>
 					</div>
 				</div>

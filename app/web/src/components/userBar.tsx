@@ -88,7 +88,7 @@ const UserBar = ({ ...props }: UserBarPropsType) => {
 					</Show>
 				</div>
 
-				<div class="flex space-x-3">
+				<div class="flex">
 					<SpeakerControl
 						volume={() => data.outputVolume}
 						onChange={(v) => {
@@ -102,6 +102,7 @@ const UserBar = ({ ...props }: UserBarPropsType) => {
 						}}
 					/>
 					<MicControl
+						class="-ml-3"
 						volume={() => data.inputVolume}
 						onChange={setInputVolume}
 						isMute={() => data.isInputMute}
