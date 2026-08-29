@@ -10,28 +10,36 @@ GOSpeak 是一个自托管的**游戏语音平台**，类似自部署版 Discord
 - 语音房间管理（创建/加入/密码保护/踢人）
 - 实时发言检测 + 成员独立音量控制
 - 多 SFU 运行时切换（LiveKit / SRS / Agora / Cloudflare）
-- 渐进式数据库（SQLite 开箱即用 → PostgreSQL → MySQL）
-- JWT + OAuth2 三端登录（GitHub / Google / QQ）
-- Domain（语音服务器）多租户隔离
+- 渐进式数据库（SQLite 开箱即用 → PostgreSQL → MySQL → Turso 远程库）
+- JWT + OAuth2 三端登录（GitHub / Google / QQ），HttpOnly Cookie 会话 + 惰性续期
+- Domain（语音服务器）多租户隔离 + 访客访问体系
 - 文字房间消息（房间消息 + 私聊）
 - 插件系统（内置 Bot + 外部插件）
 - 多实例部署（NATS 事件总线 + JetStream KV 状态共享）
+- 集群编排（Agent 控制面 / Worker 数据面，节点注册与心跳）
 
 ```
 GOSpeak/
 ├── app/
 │   ├── server/          # Go 后端 (Gin + GORM + multi-provider SFU abstraction)
-│   └── web/             # SolidJS 前端 (TypeScript + Vite + TanStack Router)
+│   ├── web/             # SolidJS 前端 (TypeScript + Vite + TanStack Router)
+│   └── docs/            # 文档站 (architecture / deployment / guide / sfu)
 ├── packages/
 │   ├── bot/             # Bot 运行时与插件框架
-│   ├── mediasoup-worker/ # MediaSoup Worker 独立进程
+│   ├── mediasoup-worker/ # MediaSoup Worker 独立进程（保留，当前未接入）
 │   └── sfu-client/      # 共享 SFU 客户端类型与工厂
-├── test/                # API 集成测试 (Node.js)
-├── docs/                # Swagger 生成文档
+├── test/                # API 集成测试 (Vitest + Node)
+├── docs/                # 设计/运维文档（design、review、superpowers specs/plans）
+├── deploy/              # docker-compose、nginx、livekit/srs/mediasoup 配置、observability
+├── scripts/             # changelog 生成等辅助脚本
+├── .github/             # CI workflows（build/ci/release-please 等）+ dependabot
 ├── agent_test_logs/     # Agent 测试日志输出目录
 ├── pnpm-workspace.yaml  # Workspace 配置
+├── turbo.json           # 任务编排（dev/build/lint 走 turbo）
 └── AGENTS.md            # ← This file
 ```
+
+> Swagger 生成产物在 `app/server/docs/`（由 swag 生成，`/swagger/*any` 托管），顶层 `docs/` 是设计与运维文档。
 
 ---
 
@@ -43,7 +51,8 @@ app/server/
 ├── cmd/
 │   └── root.go             # CLI (cobra): `server`, `version` commands
 ├── server/
-│   └── gin.go              # DI container, initializes all layers
+│   ├── gin.go                    # DI container, initializes all layers
+│   └── control_plane_bootstrap.go # Agent 控制面启动装配（种子、fence、插件等）
 ├── internal/
 │   ├── config/             # Config reading from env (DB, SFU, JWT, NATS, Storage)
 │   ├── model/              # Data models (GORM entities)
@@ -64,7 +73,7 @@ app/server/
 │   │       ├── agora/      # Agora REST
 │   │       └── cloudflare/ # Cloudflare Realtime (WHIP/WHEP)
 │   ├── signal/             # WebSocket signaling hub
-│   │   ├── events.go       # 44 event name constants
+│   │   ├── events.go       # 46 event name constants
 │   │   ├── types.go        # RoomRequest, MemberInfo, RoomInfo
 │   │   ├── hub.go          # Hub (room registry + all event handlers)
 │   │   ├── state_sync.go   # Domain 命名空间 + 跨实例状态同步
@@ -73,7 +82,7 @@ app/server/
 │   ├── ws/                 # WebSocket 基础设施（nhooyr.io/websocket）
 │   │   ├── client.go       # Client (read loop, goroutine-safe write)
 │   │   ├── fanout.go       # Fanout Broadcaster (room-based fan-out)
-│   │   ├── upgrader.go     # HTTP→WS upgrade + JWT 鉴权 + origin 校验
+│   │   ├── upgrader.go     # HTTP→WS upgrade + access cookie 鉴权 + origin 校验
 │   │   └── handler.go      # HandlerRegistry (event dispatch + panic recover)
 │   ├── bus/                # Multi-instance event bus (NATS embedded/external)
 │   │   ├── bus.go          # EventBus interface + Envelope
@@ -171,8 +180,8 @@ pkg.Fail(c, pkg.INVALID_PARAMS, "custom message")  // msg is optional
 | 1001 | `TOKEN_NOT_EXIST` | token does not exist | 401 |
 | 1002 | `TOKEN_WRONG` | token is wrong | 401 |
 | 1003 | `TOKEN_EXPIRED` | token has expired | 401 |
-| 1010 | `INVALID_PASSWORD` | invalid password | 400 |
-| 1011 | `USER_NOT_FOUND` | user not found | 400 |
+| 1010 | `INVALID_PASSWORD` | invalid password | 401（登录失败统一 401 防用户名枚举） |
+| 1011 | `USER_NOT_FOUND` | user not found | 401（同上） |
 | 1012 | `USERNAME_EXISTS` | username already exists | 400 |
 | 1013 | `FORBIDDEN` | forbidden | 403 |
 | 1014 | `TOKEN_REVOKED` | token has been revoked | 401 |
@@ -254,36 +263,44 @@ if err := c.ShouldBindJSON(&req); err != nil {
 ## API Route Conventions
 
 - **All routes** are prefixed with `/api/v1/`
-- Grouped by module: `auth`, `user`, `signal`, `oauth`, `role`, `permission`, `mute`, `room`, `storage`, `bot`, `email`, `sfu`, `srs`, `system`, `domain`, `conversation`, `message`, `plugin`
-- The `protected` group applies `middleware.JWTAuth()` + `middleware.BanCheck()` to every route
+- Grouped by module: `auth`, `guest`, `user`, `user-group`, `signal`, `oauth`, `role`, `permission`, `mute`, `room`, `message`(挂 `/room`), `storage`, `bot`, `email`, `email_config`, `sfu`, `srs`, `system`, `domain`, `conversation`, `cluster`, `audit`, `plugin`
+- The `protected` group applies `middleware.JWTAuth()` + `middleware.BanCheck()` + `middleware.GuestGuard()` to every route；配置了 Agent 写面 fence 时（外置总线）再挂 `middleware.RequireAgentFence()`
 - Permission-gated routes additionally use `middleware.RequirePermission(permcode.X)` (permission-based RBAC)
-- Public routes (login, register, oauth, signal exchange, srs callback, system stream) are outside the protected group
-- Bot tokens use `Claims.Permissions` directly; users resolve permissions via `role → role_permissions`
-- `RequireOwnerOrPermission(ownerContextKey, permCode)` allows resource owner or permission holder
+- Public routes (login/register/refresh_token/reset_password、guest 签发、email 验证码、oauth、signal exchange、srs callback) are outside the protected group；登录/注册/重置 10 次/分、refresh_token 60 次/分、email 验证码 5 次/分、guest 签发 60 次/时限流
+- Bot tokens use `Claims.Permissions` directly（外加 DB `Revoked/ExpiresAt` 双源校验）; users resolve permissions via `role → role_permissions`
+- `GOSPEAK_ROLE=worker` 时仅注册 signal protected + system 子集；未注册的业务写路径由 fallback 拦截（写 403 / 读 404）
 
 ### Current Route Table
 
-| Method | Path | Auth | Permission | Handler |
+> 「Guard」列的 `RequireDomainMember()` 等为域成员校验型中间件；`—` 表示仅 protected 组默认鉴权，无额外权限门。限流标注在 Auth 列。
+
+| Method | Path | Auth | Guard / Permission | Handler |
 |--------|------|------|-----------|---------|
-| POST | `/api/v1/auth/login` | No | — | AuthHandler.Login |
-| POST | `/api/v1/auth/register` | No | — | AuthHandler.Register |
-| POST | `/api/v1/auth/refresh_token` | No | — | AuthHandler.GetRefreshToken |
-| POST | `/api/v1/auth/reset_password` | No | — | AuthHandler.ResetPassword |
+| POST | `/api/v1/auth/login` | No（限流 10/min） | — | AuthHandler.Login |
+| POST | `/api/v1/auth/register` | No（限流 10/min） | — | AuthHandler.Register |
+| POST | `/api/v1/auth/refresh_token` | No（限流 60/min） | — | AuthHandler.GetRefreshToken |
+| POST | `/api/v1/auth/reset_password` | No（限流 10/min） | — | AuthHandler.ResetPassword |
+| POST | `/api/v1/auth/guest` | No（限流 60/h） | — | GuestHandler.Join |
 | POST | `/api/v1/auth/logout` | JWT | — | AuthHandler.Logout |
 | POST | `/api/v1/auth/refresh` | JWT | — | AuthHandler.RefreshToken |
 | POST | `/api/v1/auth/change_password` | JWT | — | AuthHandler.ChangePassword |
 | POST | `/api/v1/auth/first_change_password` | JWT | — | AuthHandler.FirstChangePassword |
-| POST | `/api/v1/auth/guest` | No | — | GuestHandler.Join（限流） |
 | POST | `/api/v1/auth/guest/renew` | JWT(guest) | — | GuestHandler.Renew |
 | POST | `/api/v1/user/profile` | JWT | — | UserHandler.GetProfile |
 | POST | `/api/v1/user/info` | JWT | — | UserHandler.GetByName |
+| GET/POST | `/api/v1/user/preset-avatars` | JWT | — | UserHandler.PresetAvatars |
 | POST | `/api/v1/user/update-profile` | JWT | — | UserHandler.UpdateProfile |
 | POST | `/api/v1/user/upload-avatar` | JWT | — | UserHandler.UploadAvatar |
 | POST | `/api/v1/user/list` | JWT | `user:read` | UserHandler.List |
 | POST | `/api/v1/user/get` | JWT | `user:read` | UserHandler.GetByID |
 | POST | `/api/v1/user/delete` | JWT | `user:delete` | UserHandler.Delete |
 | POST | `/api/v1/user/update-role` | JWT | `user:update` | UserHandler.UpdateRole |
+| POST | `/api/v1/user-group/list` | JWT | — | UserGroupHandler.List |
+| POST | `/api/v1/user-group/create` | JWT | — | UserGroupHandler.Create |
+| POST | `/api/v1/user-group/update` | JWT | — | UserGroupHandler.Update |
+| POST | `/api/v1/user-group/delete` | JWT | — | UserGroupHandler.Delete |
 | POST | `/api/v1/signal/token` | JWT | — | SignalHandler.GetJoinToken |
+| GET | `/api/v1/signal/ws-endpoint` | JWT | — | SignalHandler.GetWSEndpoint |
 | POST | `/api/v1/signal/signal` | No | — | SignalHandler.Signal |
 | GET | `/api/v1/signal/rooms` | JWT | — | SignalHandler.ListRooms |
 | GET | `/api/v1/signal/participants` | JWT | — | SignalHandler.ListParticipants |
@@ -310,28 +327,30 @@ if err := c.ShouldBindJSON(&req); err != nil {
 | POST | `/api/v1/mute/cancel` | JWT | `mute:manage` | MuteHandler.CancelMute |
 | POST | `/api/v1/mute/status` | JWT | `mute:manage` | MuteHandler.GetMuteStatus |
 | POST | `/api/v1/mute/list` | JWT | `mute:manage` | MuteHandler.ListMutes |
-| POST | `/api/v1/room/create` | JWT | `room:create` | RoomHandler.Create |
-| POST | `/api/v1/room/list` | JWT | `room:read` | RoomHandler.List |
-| POST | `/api/v1/room/get` | JWT | `room:read` | RoomHandler.Get |
-| POST | `/api/v1/room/update` | JWT | `room:update` | RoomHandler.Update |
-| POST | `/api/v1/room/delete` | JWT | `room:delete` | RoomHandler.Delete |
-| POST | `/api/v1/room/messages/list` | JWT | `message:read` | MessageHandler.List |
-| POST | `/api/v1/room/messages/send` | JWT | `message:send` | MessageHandler.Send |
-| POST | `/api/v1/room/messages/edit` | JWT | `message:send` | MessageHandler.Edit |
-| POST | `/api/v1/room/messages/delete` | JWT | `message:send` | MessageHandler.Delete |
-| POST | `/api/v1/room/messages/react` | JWT | `message:send` | MessageHandler.React |
-| POST | `/api/v1/room/messages/unreact` | JWT | `message:send` | MessageHandler.Unreact |
+| POST | `/api/v1/room/create` | JWT | `RequirePlatformAdminOrDomainMember()` | RoomHandler.Create |
+| POST | `/api/v1/room/list` | JWT | `RequirePlatformAdminOrDomainMemberIfProvided()` | RoomHandler.List |
+| POST | `/api/v1/room/get` | JWT | — | RoomHandler.Get |
+| POST | `/api/v1/room/update` | JWT | — | RoomHandler.Update |
+| POST | `/api/v1/room/delete` | JWT | — | RoomHandler.Delete |
+| POST | `/api/v1/room/messages/list` | JWT | — | MessageHandler.List |
+| POST | `/api/v1/room/messages/search` | JWT | — | MessageHandler.Search |
+| POST | `/api/v1/room/messages/send` | JWT | — | MessageHandler.Send |
+| POST | `/api/v1/room/messages/edit` | JWT | — | MessageHandler.Edit |
+| POST | `/api/v1/room/messages/delete` | JWT | — | MessageHandler.Delete |
+| POST | `/api/v1/room/messages/react` | JWT | — | MessageHandler.React |
+| POST | `/api/v1/room/messages/unreact` | JWT | — | MessageHandler.Unreact |
 | POST | `/api/v1/storage/presign` | JWT | — | StorageHandler.PresignUpload |
 | POST | `/api/v1/storage/confirm` | JWT | — | StorageHandler.ConfirmUpload |
 | POST | `/api/v1/storage/upload` | JWT | — | StorageHandler.Upload |
 | POST | `/api/v1/storage/delete` | JWT | `storage:delete` | StorageHandler.DeleteObject |
 | POST | `/api/v1/storage/config` | JWT | `storage:read` | StorageHandler.GetConfig |
 | POST | `/api/v1/storage/update-config` | JWT | `storage:manage` | StorageHandler.UpdateConfig |
+| POST | `/api/v1/storage/test-config` | JWT | `storage:read` | StorageHandler.TestConfig |
 | POST | `/api/v1/bot/create` | JWT | `bot:manage` | BotHandler.Create |
 | POST | `/api/v1/bot/list` | JWT | `bot:manage` | BotHandler.List |
 | POST | `/api/v1/bot/revoke` | JWT | `bot:manage` | BotHandler.Revoke |
-| POST | `/api/v1/email/send_code` | JWT | — | EmailVerificationHandler.SendCode |
-| POST | `/api/v1/email/verify_code` | JWT | — | EmailVerificationHandler.VerifyCode |
+| POST | `/api/v1/email/send_code` | No（限流 5/min） | — | EmailVerificationHandler.SendCode |
+| POST | `/api/v1/email/verify_code` | No（限流 5/min） | — | EmailVerificationHandler.VerifyCode |
 | POST | `/api/v1/email/config` | JWT | `email_config:read` | EmailConfigHandler.Get |
 | POST | `/api/v1/email/update-config` | JWT | `email_config:manage` | EmailConfigHandler.Update |
 | POST | `/api/v1/sfu/config` | JWT | `sfu:manage` | SFUConfigHandler.Get |
@@ -340,46 +359,71 @@ if err := c.ShouldBindJSON(&req); err != nil {
 | POST | `/api/v1/sfu/switch-provider` | JWT | `sfu:manage` | SFUConfigHandler.SwitchProvider |
 | POST | `/api/v1/sfu/providers` | JWT | `sfu:manage` | SFUConfigHandler.ListProviders |
 | POST | `/api/v1/srs/callback` | No | — | SRSCallbackHandler.HandleCallback |
-| GET | `/api/v1/system/stream` | No | — | MonitorHandler.HealthStream |
-| POST | `/api/v1/domain/guest/config` | JWT | `domain:manage` | GuestHandler.Config |
-| POST | `/api/v1/domain/guest/ban` | JWT | `domain:kick` | GuestHandler.Ban |
-| POST | `/api/v1/domain/guest/unban` | JWT | `domain:kick` | GuestHandler.Unban |
-| POST | `/api/v1/domain/guest/ban-list` | JWT | `domain:manage` | GuestHandler.BanList |
-| POST | `/api/v1/domain/guest/cleanup` | JWT | `domain:manage` | GuestHandler.Cleanup |
-| POST | `/api/v1/domain/create` | JWT | `domain:create` | DomainHandler.Create |
-| POST | `/api/v1/domain/get` | JWT | — | DomainHandler.Get |
+| GET | `/api/v1/system/stream` | JWT | `RequireRole("admin")` | MonitorHandler.HealthStream |
+| POST | `/api/v1/domain/guest/config` | JWT | — | GuestHandler.Config |
+| POST | `/api/v1/domain/guest/ban` | JWT | — | GuestHandler.Ban |
+| POST | `/api/v1/domain/guest/unban` | JWT | — | GuestHandler.Unban |
+| POST | `/api/v1/domain/guest/ban-list` | JWT | — | GuestHandler.BanList |
+| POST | `/api/v1/domain/guest/cleanup` | JWT | — | GuestHandler.Cleanup |
+| POST | `/api/v1/domain/create` | JWT（限流 10/min） | `domain:create` | DomainHandler.Create |
+| POST | `/api/v1/domain/get` | JWT | `RequireDomainMember()` | DomainHandler.Get |
 | POST | `/api/v1/domain/list` | JWT | `domain:read` | DomainHandler.List |
 | POST | `/api/v1/domain/list-public` | JWT | — | DomainHandler.ListPublic |
 | POST | `/api/v1/domain/my-domains` | JWT | — | DomainHandler.MyDomains |
-| POST | `/api/v1/domain/update` | JWT | — | DomainHandler.Update |
-| POST | `/api/v1/domain/delete` | JWT | — | DomainHandler.Delete |
+| POST | `/api/v1/domain/update` | JWT | `RequireDomainMember()` | DomainHandler.Update |
+| POST | `/api/v1/domain/reset-invite` | JWT | `RequireDomainMember()` | DomainHandler.ResetInvite |
+| POST | `/api/v1/domain/delete` | JWT | `RequireDomainMember()` | DomainHandler.Delete |
 | POST | `/api/v1/domain/join` | JWT | — | DomainHandler.Join |
 | POST | `/api/v1/domain/preview` | JWT | — | DomainHandler.Preview |
-| POST | `/api/v1/domain/leave` | JWT | — | DomainHandler.Leave |
-| POST | `/api/v1/domain/kick` | JWT | — | DomainHandler.Kick |
-| POST | `/api/v1/domain/members` | JWT | — | DomainHandler.Members |
+| POST | `/api/v1/domain/leave` | JWT | `RequireDomainMember()` | DomainHandler.Leave |
+| POST | `/api/v1/domain/kick` | JWT | `RequireDomainMember()` | DomainHandler.Kick |
+| POST | `/api/v1/domain/members` | JWT | `RequireDomainMember()` | DomainHandler.Members |
+| POST | `/api/v1/domain/members/update-role` | JWT | `RequireDomainMember()` | DomainHandler.UpdateMemberRole |
+| POST | `/api/v1/domain/roles/list` | JWT | `RequireDomainMember()` | DomainHandler.ListRoles |
+| POST | `/api/v1/domain/roles/create` | JWT | `RequireDomainMember()` | DomainHandler.CreateRole |
+| POST | `/api/v1/domain/roles/update` | JWT | `RequireDomainMember()` | DomainHandler.UpdateRole |
+| POST | `/api/v1/domain/roles/delete` | JWT | `RequireDomainMember()` | DomainHandler.DeleteRole |
+| POST | `/api/v1/domain/my-permissions` | JWT | `RequireDomainMember()` | DomainHandler.MyPermissions |
 | GET | `/api/v1/conversation/list` | JWT | — | ConversationHandler.List |
 | POST | `/api/v1/conversation/messages` | JWT | — | ConversationHandler.Messages |
 | POST | `/api/v1/conversation/mark-read` | JWT | — | ConversationHandler.MarkRead |
+| POST | `/api/v1/conversation/send` | JWT | — | ConversationHandler.Send |
+| POST | `/api/v1/cluster/nodes/register` | JWT | `cluster:manage` | ClusterHandler.Register |
+| POST | `/api/v1/cluster/nodes/heartbeat` | JWT | `cluster:manage` | ClusterHandler.Heartbeat |
+| POST | `/api/v1/cluster/nodes/deregister` | JWT | `cluster:manage` | ClusterHandler.Deregister |
+| POST | `/api/v1/cluster/nodes/drain` | JWT | `cluster:manage` | ClusterHandler.Drain |
+| POST | `/api/v1/cluster/nodes/undrain` | JWT | `cluster:manage` | ClusterHandler.Undrain |
+| POST | `/api/v1/cluster/nodes/list` | JWT | `cluster:read` | ClusterHandler.List |
+| POST | `/api/v1/cluster/stats` | JWT | `cluster:read` | ClusterHandler.Stats |
+| POST | `/api/v1/cluster/servers/scale` | JWT | `cluster:manage` | ClusterHandler.Scale |
+| POST | `/api/v1/cluster/servers/resolve` | JWT | `cluster:read` | ClusterHandler.Resolve |
+| POST | `/api/v1/cluster/servers/list` | JWT | `cluster:read` | ClusterHandler.ListAssignments |
+| POST | `/api/v1/cluster/servers/drain` | JWT | `cluster:manage` | ClusterHandler.DrainServer |
+| POST | `/api/v1/cluster/servers/autoscale` | JWT | `cluster:manage` | ClusterHandler.AutoScaleServer |
+| POST | `/api/v1/audit/list` | JWT | `audit:read` | AuditHandler.List |
 | POST | `/api/v1/plugins/list` | JWT | `plugin:read` | PluginHandler.List |
 | POST | `/api/v1/plugins/get` | JWT | `plugin:read` | PluginHandler.Get |
 | POST | `/api/v1/plugins/update` | JWT | `plugin:manage` | PluginHandler.Update |
-| WS | `/ws` | No | — | WebSocket signaling (subprotocol: gospeak + token) |
+| * | `/api/v1/plugins/:name/*` | JWT | `plugin:manage` | 插件自定义路由（PluginHost.MountRoutes） |
+| WS | `/ws` | Cookie（access token） | — | WebSocket signaling（子协议仅传协议名 `gospeak`，不携带 token） |
 | GET | `/ping` | No | — | Health check |
+| GET | `/readyz` | No | — | Readiness probe（探测 DB 等依赖） |
 | GET | `/swagger/*any` | No | — | Swagger UI |
 | GET | `/uploads/*filepath` | No | — | Static avatar/uploads (safe path traversal) |
+
+> SPA 托管：`STATIC_DIR` > `/app/static` > `./static` > go:embed 内嵌资源，由 NoRoute fallback 提供。
 
 ---
 
 ## Configuration
 
-All configuration is injected via environment variables (`.env.dev` for dev, `deploy/env/app.*.env` for Docker). Startup loads env files without overriding process env (`process > .env.<env> > .env > defaults`), then `config.Load()` parses into a typed `Config` via `caarlos0/env`, normalizes aliases (e.g. `PostgresSQL` → `PostgreSQL`), validates. 配置已通过 `server/gin.go` 装配时以显式 `config.Config` 注入到各内部包；全局 `config.Current()` 当前代码库无任何包使用，保留仅为历史兼容占位，新代码不要依赖它。
+All configuration is injected via environment variables (`APP_ENV` selects dev/prod；`.env.dev` for dev, `deploy/env/app.*.env` for Docker). Startup loads env files without overriding process env (`process > .env.<env> > .env > defaults`), then `config.Load()` parses into a typed `Config` via `caarlos0/env`, normalizes aliases (e.g. `PostgresSQL` → `PostgreSQL`), validates. 配置已通过 `server/gin.go` 装配时以显式 `config.Config` 注入到各内部包；全局 `config.Current()` 当前代码库无任何包使用，保留仅为历史兼容占位，新代码不要依赖它。
 
 ### Database
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DB_TYPE` | `SQLite` | `SQLite` / `PostgresSQL` / `MYSQL` |
+| `DB_TYPE` | `SQLite` | `SQLite` / `PostgreSQL` / `MySQL`（`PostgresSQL` / `MYSQL` 为兼容别名）|
 | `DB_HOST` | `localhost` | DB host (PostgreSQL/MySQL) |
 | `DB_PORT` | — | DB port |
 | `DB_USER` | — | DB user |
@@ -387,6 +431,7 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | `DB_PATH` | `db/app.db` | SQLite file path |
 | `DB_DSN` | — | Custom DSN (overrides the field-by-field settings) |
 | `DB_WAL` | `false` | SQLite WAL mode（并发读建议开启）|
+| `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | — | Turso (libSQL) 远程库；`TURSO_DATABASE_URL` 优先于 `DB_DSN`，token 亦可用 `DB_DSN?authToken=` 传入 |
 | `DB_READ_DSN` | — | Worker 只读副本 DSN（优先于 `DB_READ_*` 字段）|
 | `DB_READ_HOST` / `DB_READ_PORT` / `DB_READ_USER` / `DB_READ_PASSWORD` / `DB_READ_DBNAME` | 回退主库字段 | Worker 只读副本连接参数 |
 | `DB_READ_ONLY` | `true` | Worker 会话强制只读（PG `default_transaction_read_only`，MySQL `transaction_read_only`）|
@@ -400,6 +445,19 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | `JWT_KEY_TTL` | `24h` | Signing-key rotation interval (NATS KV) |
 | `JWT_ACCESS_TTL` | `15m` | Access token TTL（login/refresh 响应 `expires_in` 同源） |
 | `JWT_REFRESH_TTL` | `168h` | Refresh token TTL |
+| `BCRYPT_COST` | `12` | 密码哈希工作因子 |
+
+### Auth Cookies（HttpOnly Cookie 承载 token）
+
+access/refresh token 均以 HttpOnly Cookie 下发（HTTP 与 WS 握手统一走 cookie 鉴权）：
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ACCESS_COOKIE_NAME` | `gospeak_token` | access token cookie 名 |
+| `REFRESH_COOKIE_NAME` | `gospeak_refresh_token` | refresh token cookie 名 |
+| `COOKIE_DOMAIN` / `COOKIE_PATH` | — / `/` | Cookie 作用域 |
+| `COOKIE_SECURE` | `auto` | `auto`\|`true`\|`false` |
+| `COOKIE_SAMESITE` | `lax` | `lax`\|`strict`\|`none` |
 
 ### SFU Provider
 
@@ -415,7 +473,9 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | `SRS_PUBLIC_HOST` | — | Browser-side serverUrl prefix |
 | `CF_APP_ID` / `CF_APP_SECRET` / `CF_STUN_URL` | — / — / `stun.cloudflare.com:3478` | Cloudflare Realtime credentials |
 
-> Base SFU config is loaded from env; persistent per-provider config is managed through `/api/v1/sfu/*` and resolved at runtime by `sfu.NewDynamicProvider(...)`.
+> MediaSoup / Daily 已禁用保留：实现文件仍在仓库（`MEDIASOUP_BRIDGE_URL`、`MEDIASOUP_HOST`、`DAILY_API_KEY`、`DAILY_DOMAIN`），但 `SFU_PROVIDER` 不再接受这两个值。
+
+> Base SFU config is loaded from env; persistent per-provider config is managed through `/api/v1/sfu/*` and resolved at runtime by `factory.NewDynamicProvider(...)`.
 
 ### NATS / Bus (Multi-Instance)
 
@@ -429,6 +489,7 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | `NATS_USER` / `NATS_PASSWORD` / `NATS_TOKEN` | — | Auth credentials |
 | `NATS_CREDS_FILE` | — | NATS JWT creds file |
 | `NATS_TLS` | `false` | Enable TLS |
+| `NATS_WAL_PATH` | — | 断线事件磁盘 WAL 路径（空 = 禁用持久化） |
 | `STATE_STORE` | `auto` | NATS 层 KV store 按需降级（见下方「Bus 模式」）；Bus 连接模式为硬判定 |
 
 ### Email / SMTP (optional)
@@ -461,10 +522,25 @@ All configuration is injected via environment variables (`.env.dev` for dev, `de
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SERVER_PORT` | `8998` | HTTP listen port |
-| `STATIC_DIR` | — | Frontend static dir (SPA hosting in prod) |
-| `GIN_MODE` | `debug` | Gin mode (`release` in prod) |
-| `CORS_ORIGIN` | `*` | CORS allowed origin |
+| `STATIC_DIR` | — | Frontend static dir (SPA hosting in prod; 回退 `/app/static` > `./static` > go:embed) |
+| `GIN_MODE` | — | Gin mode（空 = gin 默认 `debug`，prod 强制 `release`） |
+| `CORS_ORIGIN` | `*` | CORS allowed origin（逗号分隔白名单，`*` 放行任意来源） |
 | `WS_ALLOWED_ORIGINS` | — | WebSocket origin whitelist (empty = same-origin) |
+| `TRUSTED_PROXIES` | — | 信任的代理 IP/CIDR（逗号分隔），用于 ClientIP 解析 |
+| `TLS_CERT` / `TLS_KEY` | — | 同时配置时直跑 HTTPS + HTTP/2 |
+| `OAUTH_AUTO_CREATE_USER` | `true` | OAuth 回调时是否自动创建未绑定用户（关闭后仅允许已绑定账号登录） |
+
+### Cluster（Agent/Worker 编排）
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GOSPEAK_ROLE` | `all` | `all` / `agent`（控制面）/ `worker`（数据面） |
+| `CLUSTER_NODE_ID` / `CLUSTER_ADVERTISE_URL` | — | 节点标识与对外地址 |
+| `CLUSTER_AGENT_URL` / `CLUSTER_AGENT_TOKEN` / `CLUSTER_NODE_SECRET` | — | Worker→Agent 上报通道 |
+| `CLUSTER_HEARTBEAT_INTERVAL` / `CLUSTER_HEARTBEAT_TIMEOUT` | `5s` / `30s` | 心跳间隔与离线判定 |
+| `CLUSTER_MAX_SERVERS` / `CLUSTER_MAX_ROOMS` | `100` / `1000` | 节点容量上限 |
+| `CLUSTER_LABELS` / `CLUSTER_ENTRY_URL` | — | 节点标签 / 入口地址 |
+| `METRICS_TOKEN` | — | Metrics 访问令牌 |
 
 ### Logging
 
@@ -509,6 +585,18 @@ type ClientInfoProvider interface {
     Provider
     ClientInfo() map[string]interface{}
 }
+
+// PublishControlProvider — 由支持发布控制的 Provider 实现：
+// 签发 token 时显式声明是否允许发布媒体流（访客说权限等场景）
+type PublishControlProvider interface {
+    GenerateTokenWithPublish(room, identity string, canPublish bool) (string, error)
+}
+
+// TimedMuteProvider — 支持带 TTL 的定时禁言；Hub 优先于 MuteParticipant 使用
+type TimedMuteProvider interface {
+    Provider
+    MuteParticipantTimed(room, identity, trackSid string, muted bool, ttlSeconds int) error
+}
 ```
 
 ### Capabilities & Enforcement Levels (`internal/sfu/types.go`)
@@ -538,7 +626,7 @@ type Capabilities struct {
 | `soft` | Signal/policy + client cooperation only |
 | `none` | Capability absent |
 
-`sfu.AllProviderCapabilities()` returns the full matrix for all providers. `CapabilitiesFor(name)` returns a single provider's matrix.
+`sfu.AllProviderCapabilities()` returns the full matrix for all providers (`livekit` / `srs` / `agora` / `cloudflare`，另含保留未接入的 `daily` / `mediasoup`). `CapabilitiesFor(name)` returns a single provider's matrix.
 
 ### Provider Capability Summary
 
@@ -549,11 +637,11 @@ type Capabilities struct {
 | Cloudflare | ✅ | ✅ | degraded | hard |
 | Agora | ✅ | ✅ | degraded | degraded |
 
-### Factory (`internal/sfu/factory/factory.go`)
+### Factory (`internal/sfu/factory/`)
 
 `factory.NewProvider(cfg)` reads `cfg.SFUProvider` and returns the matching implementation. Registered providers: `livekit`, `agora`, `srs`, `cloudflare`.
 
-`sfu.NewDynamicProvider(resolve)` is the runtime entry used by server wiring. It resolves config via `SFUConfigService.ResolveConfig()` and delegates each call to the current provider.
+`factory.NewDynamicProvider(resolve)` is the runtime entry used by server wiring. It resolves config via `SFUConfigService.ResolveConfig()`（配置缓存 TTL 2s）and delegates each call to the current provider；另提供 `SetRoomRegistry` / `SetStreamRoomResolver` / `SetMuteRuleStore` 等注入点。
 
 ---
 
@@ -563,7 +651,7 @@ Package `internal/authstate/` manages JWT auth state (blacklist, refresh-family 
 
 ### Token Blacklist
 
-Logout marks the token's JTI revoked with TTL = remaining token lifetime. Middleware checks blacklist via `authstate.IsBlacklistedErr(jti)`. Without a shared backend, blacklist writes are no-ops (best-effort strategy).
+Logout marks the token's JTI revoked with TTL = remaining token lifetime. Middleware checks blacklist via `authstate.IsBlacklistedErr(jti)`. 无共享后端时写入**进程内内存黑名单**（单机生效、跨实例不共享），非 no-op。
 
 ### JWT Key Rotation
 
@@ -596,6 +684,7 @@ bus, cleanup, err := bus.Init(bus.InitConfig{
     Name:           instanceID,
     ConnectTimeout: 2 * time.Second,
     EmbeddedPort:   0,             // 0 = random port
+    WALPath:        walPath,       // 断线事件磁盘持久化（空 = 禁用）
     Deliverer:      wsDeliverer,
     RemoteHook:     onRemoteEvent,
 })
@@ -625,28 +714,30 @@ Pure WebSocket infrastructure layer using `nhooyr.io/websocket`.
 |------|------|
 | `client.go` | Client struct: read loop, goroutine-safe write queue (64 chan), close |
 | `fanout.go` | Fanout Broadcaster: room-based broadcast, namespace broadcast, per-room iteration |
-| `upgrader.go` | HTTP→WS upgrade: origin check, JWT extract (header/cookie/subprotocol), client creation |
+| `broadcaster.go` | `Broadcaster` 接口（Fanout 的抽象，含 `CloseAll`） |
+| `messenger.go` | `ClientMessenger` / `StatefulMessenger` 接口 |
+| `upgrader.go` | HTTP→WS upgrade: origin check + **access cookie 鉴权** + client creation |
 | `handler.go` | HandlerRegistry: event dispatch + panic recover + ACK/ErrorACK |
+| `types.go` | Message / ACK / ACKError |
 
 ### WS Client Lifecycle
 
 ```
 HTTP GET /ws
-  → Upgrader.originAllowed()  (checks Origin header)
-  → extractToken()            (Bearer / cookie / subprotocol)
-  → VerifyToken()             (middleware.VerifyToken shared logic)
+  → Upgrader.originAllowed()      (checks Origin header)
+  → accessTokenFromCookie(r)      (HttpOnly access cookie，空则 401)
+  → VerifyToken()                 (middleware.VerifyToken shared logic + 必须为 access token 类型)
   → NewClient(conn, id, claims)
   → Fanout.Add(client)
   → client.StartReadLoop(HandlerRegistry.Dispatch)
     → on close: Fanout.Remove → Hub.OnDisconnect (room cleanup)
 ```
 
-### Token extraction priority
+### WS 握手鉴权
 
-1. `Authorization: Bearer <token>` header
-2. Raw `Authorization` header value
-3. `gospeak_token` cookie
-4. `Sec-WebSocket-Protocol` subprotocol (only accepted as token, not as protocol name)
+- **只读 HttpOnly access cookie**（名字取自 `ACCESS_COOKIE_NAME`，默认 `gospeak_token`）；缺失直接 401。不再支持 Authorization header / subprotocol token。
+- `Sec-WebSocket-Protocol` 只接受协议名 `gospeak`，不再承载 token。
+- token 必须为 access 类型（refresh/bot 类型拒绝）。
 
 ### Fanout Broadcaster
 
@@ -675,7 +766,7 @@ WebSocket signaling hub built on `internal/ws/`.
 
 | File | Role |
 |------|------|
-| `events.go` | 44 event name constants |
+| `events.go` | 46 event name constants |
 | `types.go` | `RoomRequest`, `MemberInfo`, `RoomInfo` structs |
 | `hub.go` | Hub (global room registry + all event handlers + Domain state sync) |
 | `state_sync.go` | Domain namespace isolation + cross-instance state synchronization |
@@ -709,9 +800,9 @@ type Hub struct {
 | provider | SFU RemoveParticipant | 状态 |
 |----------|----------------------|------|
 | livekit | ✅ LiveKit gRPC | 完整实现 |
-| srs | ✅ SRS REST `DELETE /clients/{id}` | 完整实现 |
-| agora | ❌ `ErrSFUNotSupported` | 未实现（无单用户 REST API）|
-| cloudflare | ❌ `ErrSFUNotSupported` | 未实现（WHIP/WHEP 无单用户踢人 REST）|
+| srs | ✅ SRS REST `KickByStreams` | 完整实现 |
+| agora | ✅ Agora kicking-rule（join_channel，degraded） | 完整实现 |
+| cloudflare | ✅ DeleteSession（整会话踢除） | 完整实现 |
 
 ### Mute/ListParticipants 分工
 
@@ -753,7 +844,7 @@ Built-in providers: `GitHubProvider`, `GoogleProvider`, `QQProvider`. Factory: `
 
 | Model | Table | Description |
 |-------|-------|-------------|
-| `OAuthProvider` | `oauth_providers` | Platform config (name, client_id, secret, endpoints, enabled) |
+| `OAuthProvider` | `oauth_providers` | Platform config (name, display_name, icon_url, client_id, secret, endpoints, field mappings, enabled) |
 | `OAuthAccount` | `oauth_accounts` | User ↔ platform binding (user_id, provider, provider_uid) |
 
 ---
@@ -766,8 +857,11 @@ GOSpeak 支持多 Server（类 Discord 服务器）架构，即多租户语音�
 
 | 表 | 说明 |
 |----|------|
-| `domains` | 语音服务器：UUID、名称、Owner、邀请码、公开/私有 |
-| `domain_members` | 用户-Domain 多对多关系：RoleName (owner/admin/member/guest) |
+| `domains` | 语音服务器：UUID、名称、IconURL、描述、Owner、邀请码、公开/私有、访客能力开关（AllowGuest / GuestCanListen / GuestCanSpeak / GuestCanMessage / GuestLimit） |
+| `domain_members` | 用户-Domain 多对多关系：Nickname、RoleName (owner/admin/member/guest)、JoinedAt |
+| `domain_roles` | 域内角色（唯一约束 domain+name），系统角色 IsSystem |
+| `domain_role_permissions` | 域角色 → 域权限码（domain_permcode）关联 |
+| `domain_guest_bans` | 域级访客封禁（domain+user 唯一，支持过期时间） |
 
 ### Domain 角色层级
 
@@ -775,47 +869,60 @@ GOSpeak 支持多 Server（类 Discord 服务器）架构，即多租户语音�
 owner (4) > admin (3) > member (2) > guest (1)
 ```
 
+系统角色权限由 `SeedDefaultDomainRoles` 播种（owner=全部域权限；admin/member/guest 各自收敛），域角色权限码定义在 `internal/permcode/domain_permcode.go`。
+
 ### Room 归属
 
-`Room.DomainUUID` 外键关联到 Domain。空值表示平台级房间（向后兼容存量数据）。
-新增房间可指定 `domain_uuid` 将其归属到特定 Domain。
+`Room.DomainUUID` 外键关联到 Domain，**not null**（`room` 表 Name 唯一约束为 domain+name 复合）。
+新增房间必须归属特定 Domain；存量 `domain_uuid` 为空的房间由启动迁移归入 "Default Server"。
 
 ### Signal 命名空间隔离
 
 Signal Hub 中使用 `roomKey(domainUUID, roomName)` 复合键隔离不同 Domain 的同名房间。
-平台级房间（DomainUUID 为空）使用纯 roomName 作为 Map Key（向后兼容）。
 
 ### 中间件
 
-- `RequireDomainMember()` — 校验当前用户是指定 Domain 的成员。
+- `RequireDomainMember()` / `RequireDomainMemberIfProvided()` — 校验当前用户是目标 Domain 的成员（后者仅在请求携带 domain 参数时校验）。
+- `RequirePlatformAdminOrDomainMember()` / `...IfProvided()` — 平台管理员或域成员放行（room create/list 使用）。
+- `IsDomainMember` / `IsPlatformAdmin` — 供 handler/service 层复用的判定函数。
 
 ### 迁移策略
 
-启动时若不存在任何 Domain，自动创建 "Default Server" 并将存量 `domain_uuid` 为空的房间归入其中。
+- 启动时若不存在任何 Domain，自动创建 "Default Server" 并将存量 `domain_uuid` 为空的房间归入其中。
+- 创建 Domain 时播种系统角色（`SeedDefaultDomainRoles`）。
+- 启动时执行 `BackfillDomainRoleDefaults`（幂等）为所有存量域补播系统角色，覆盖域角色体系上线前创建的域。
 
 ---
 
-## Middleware (`internal/middleware/auth.go`)
+## Middleware (`internal/middleware/`)
 
 | Function | Description |
 |----------|-------------|
-| `VerifyToken(tokenStr)` | Shared token verification: signature → expiry → blacklist → version. Returns `*Claims, ErrCode`. Used by both HTTP and WS paths. |
-| `JWTAuth()` | Validates Bearer token, injects context |
+| `VerifyToken(tokenStr)` | Shared token verification: signature → token 类型白名单 → UserUUID 非空 → expiry → blacklist → version（→ bot token 额外 DB 校验）. Returns `*Claims, ErrCode`. Used by both HTTP and WS paths. |
+| `JWTAuth()` | Validates Bearer token（缺失时回退 HttpOnly access cookie）, injects context |
 | `RequireRole(roles ...string)` | Legacy role check against the `role` claim |
 | `RequirePermission(permCode)` | Permission-based gate. Bot tokens use `Claims.Permissions`; users map `role` → permissions |
 | `RequireOwnerOrPermission(ownerContextKey, permCode)` | Allows if caller owns the resource or holds the permission |
 | `PermissionGranted(claims, role, permCode, checker)` | Unified permission check for HTTP and WS paths |
-| `BanCheck()` | Blocks any user whose `role` is `ban`; returns `FORBIDDEN` (1015) |
-| `CORS()` | Sets CORS headers, handles OPTIONS preflight |
+| `BanCheck()` | Blocks any user whose `role` is `ban`; returns `USER_BANNED` (1015) |
+| `GuestGuard()` / `GuestGuardWith(whitelist)` | 访客守卫：白名单外接口对 `is_guest` 用户返回 1013（挂在 protected 组全局生效） |
+| `RequireDomainMember()`（及 IfProvided 变体） | 校验当前用户是目标 Domain 成员 |
+| `RequirePlatformAdminOrDomainMember()`（及 IfProvided 变体） | 平台管理员或域成员放行 |
+| `RequireAgentFence(checker)` | Agent 写面 fence：写请求先校验 DB 写面归属（仅外置总线时挂载，防多 Agent 互抢写面） |
+| `RateLimit(max, window)` | 固定窗口限流（登录/注册/验证码/guest 签发等） |
+| `RequestID()` | 请求 ID 注入 |
+| `CORS(origins []string)` | 基于显式白名单的 CORS（`*` 放行任意来源），处理 OPTIONS preflight |
 
 ### JWTAuth check order
 
-1. Header exists → `TOKEN_NOT_EXIST` (1001)
-2. Signature valid → `TOKEN_WRONG` (1002)
-3. Not expired → `TOKEN_EXPIRED` (1003)
-4. `TokenVersion` matches current user → `TOKEN_REVOKED` (1014)
-5. JTI not blacklisted → `TOKEN_REVOKED` (1014)
-6. Inject `username`, `display_name`, `user_uuid`, `role`, `permissions`, `claims`, `auth_type` into context
+1. `Authorization` header；缺失时回退 HttpOnly access cookie（默认 `gospeak_token`）→ 都没有则 `TOKEN_NOT_EXIST` (1001)
+2. 签名合法 → `TOKEN_WRONG` (1002)
+3. token 类型在白名单内（access / bot）且 UserUUID 非空 → 否则 `TOKEN_WRONG` (1002)
+4. 未过期 → `TOKEN_EXPIRED` (1003)
+5. JTI 不在黑名单 → `TOKEN_REVOKED` (1014)
+6. `TokenVersion` 匹配当前用户 → 否则 `TOKEN_REVOKED` (1014)
+7. Bot token 额外通过 DB `IsBotTokenValid`（Revoked / ExpiresAt）双源校验 → 失败 `TOKEN_REVOKED` (1014)
+8. Inject `username`, `display_name`, `user_uuid`, `role`, `claims`, `auth_type` into context
 
 ---
 
@@ -859,6 +966,9 @@ Access control is **permission-based**, layered on top of roles.
 | `message:send` | 发送消息 |
 | `message:read` | 查看历史消息 |
 | `message:delete_others` | 删除他人消息 |
+| `cluster:read` | 查看集群节点与分配 |
+| `cluster:manage` | 集群节点注册/心跳/排水/扩缩容 |
+| `audit:read` | 查询审计日志（注意：未进入默认权限种子，需手工授予） |
 
 ### Bot Scoped Permissions
 
@@ -876,7 +986,7 @@ var BotScopedPermissions = []string{
 
 | Role | Permissions |
 |------|------------|
-| `admin` | All platform permissions |
+| `admin` | 显式枚举全部平台权限（含 `cluster:read` / `cluster:manage`；不含 `audit:read`） |
 | `user` | `room:create`, `room:read`, `domain:create`, `user:read`, `role:read`, `message:send`, `message:read` |
 | `ban` | (none — intercepted by `BanCheck()`) |
 
@@ -894,13 +1004,27 @@ First boot seeds user `admin` / `admin123` when missing. Login returns `need_cha
 
 | Model | Table | Key Fields |
 |-------|-------|------------|
-| `User` | `users` | ID, UUID (auto-gen), Name, DisplayName, Avatar, Email, EmailVerified, IsBot, Password (`json:"-"`), Role, TokenVersion, timestamps |
-| `Room` | `room` | ID, UUID (auto-gen), Name, Password, Description, Limit, AudioOnly, AllowAudience, CreatedBy, DomainUUID, timestamps |
+| `User` | `users` | ID, UUID (auto-gen), Name, DisplayName, Avatar, Email, EmailVerified, IsBot, IsGuest, Status (`active`/`banned`/`disabled`), Password (`json:"-"`), Role, TokenVersion, timestamps |
+| `Room` | `room` | ID, UUID (auto-gen), Name（domain 内唯一）, Password (`json:"-"`), Description, Limit, AudioOnly, AllowAudience, Type (`voice`/`text`), CreatedBy, DomainUUID (not null), timestamps |
 | `Role` | `roles` | ID, Name (seeds: `admin` / `user` / `ban`), timestamps |
 | `Permission` | `permissions` | ID, Code (unique `permcode`), Name, Description, timestamps |
 | `RolePermission` | `role_permissions` | ID, RoleName, PermissionID |
 | `Mute` | `mutes` | ID, UUID, UserID, MuterID, Duration, Permanent, ExpiresAt, Reason, timestamps |
-| `OAuthProvider` | `oauth_providers` | ID, Name, DisplayName, ClientID, ClientSecret, AuthURL, TokenURL, UserInfoURL, RedirectURL, Scopes, field mappings, Enabled, timestamps |
+| `Domain` | `domains` | UUID, Name, IconURL, Description, OwnerUUID, InviteCode, IsPublic, AllowGuest, GuestCanListen/Speak/Message, GuestLimit, timestamps |
+| `DomainMember` | `domain_members` | DomainUUID, UserUUID, Nickname, RoleName, JoinedAt |
+| `DomainRole` | `domain_roles` | DomainUUID, Name（domain 内唯一）, IsSystem, timestamps |
+| `DomainRolePermission` | `domain_role_permissions` | DomainUUID, RoleName, PermissionCode |
+| `DomainGuestBan` | `domain_guest_bans` | DomainUUID, UserUUID（联合唯一）, Reason, BannedBy, ExpiresAt, timestamps |
+| `AuditLog` | `audit_logs` | UUID, ActorID/ActorUUID/ActorName, Action, TargetType/TargetID, Detail, IP, Success, timestamps |
+| `UserGroup` | `user_groups` | UserID, GroupName（联合唯一）, timestamps |
+| `ClusterNode` | `cluster_nodes` | NodeID, Role, Status (pending/ready/busy/draining/offline/unhealthy), 心跳与容量字段, timestamps |
+| `ServerAssignment` | `server_assignments` | Domain/Server 分配状态（assigned/draining），timestamps |
+| `ClusterLeaderFence` | `cluster_leader_fences` | Agent leader 写面 fence 记录 |
+| `Message` | `messages` | UUID, RoomUUID, AuthorID, AuthorUUID, Content, ReplyTo, ConversationType (`room`/`private`), ConversationID, TargetIdentity, EditedAt, Status (`active`/`deleted`), DeletedAt (软删), timestamps |
+| `MessageMention` | `message_mentions` | MessageUUID, UserID |
+| `MessageReaction` | `message_reactions` | MessageUUID, UserID, Emoji (unique per user+message+emoji) |
+| `ConversationParticipant` | `conversation_participants` | ConversationID (PK), IdentityA/IdentityB（字典序）, LastMessageID/LastContent/LastSenderIdentity/LastMessageAt, UnreadCountA/B, timestamps |
+| `OAuthProvider` | `oauth_providers` | ID, Name, DisplayName, IconURL, ClientID, ClientSecret, AuthURL, TokenURL, UserInfoURL, RedirectURL, Scopes, field mappings, Enabled, timestamps |
 | `OAuthAccount` | `oauth_accounts` | ID, UserID, Provider, ProviderUID; AccessToken & RefreshToken stored but hidden (`json:"-"`), timestamps |
 | `BotToken` | `bot_tokens` | ID, UUID, Name, UserUUID, Permissions `[]string`, Revoked, ExpiresAt, timestamps |
 | `EmailConfig` | `email_configs` | ID, Enabled, SMTP host/port/user/pass/from/name, EmailCodeTTL, EmailSendCooldown, EmailCodeSecret (hidden, `json:"-"`), timestamps |
@@ -908,15 +1032,9 @@ First boot seeds user `admin` / `admin123` when missing. Login returns `need_cha
 | `StorageConfig` | `storage_configs` | ID, ProviderType (`local`/`s3`), Endpoint, Bucket, Region, AccessKey & SecretKey (hidden), PublicBaseURL, PathPrefix, MaxFileSize, AllowedTypes, timestamps |
 | `SFUConfig` | `sfu_configs` | Provider (PK), per-provider config fields, timestamps |
 | `SFUActiveProvider` | `sfu_active_provider` | ID, Provider |
-| `Domain` | `domains` | UUID, Name, OwnerUUID, InviteCode, IsPublic, timestamps |
-| `DomainMember` | `domain_members` | DomainUUID, UserUUID, RoleName, timestamps |
-| `Message` | `messages` | UUID, RoomID, SenderUUID, Content, Type, EditHistory, ReplyTo, timestamps |
-| `MessageMention` | `message_mentions` | MessageID, UserID, ReadAt |
-| `MessageReaction` | `message_reactions` | MessageID, UserID, Emoji (unique per user+message+emoji) |
-| `ConversationParticipant` | `conversation_participants` | UserID, ConversationID, LastReadAt |
 | `PluginConfig` | `plugin_configs` | Name, Enabled, Config JSON |
 
-> Auto-migration (`repository/db.go`) syncs all of the above on startup.
+> Auto-migration (`repository/db_migrations.go`) syncs all of the above on startup.
 
 ---
 
@@ -936,7 +1054,7 @@ type Plugin interface {
 
 type Host interface {
     Logger(component string) *logrus.Entry
-    DB() *gorm.DB
+    DB() HostDB                                  // 受限接口（Ping/Stats），刻意不暴露 *gorm.DB
     AppConfig() *config.Config
     RegisterHTTP(fn func(r *gin.RouterGroup))      // /api/v1/plugins/:name/*
     StartSideServer(name, addr string, handler http.Handler) (SideServer, error)
@@ -955,7 +1073,7 @@ type Configurable interface {
 
 ### Registration
 
-Plugins are registered via `plugin.Registry.Register(pluginName, pluginFactory)`. The server initializes all registered plugins in `server/gin.go` after DB setup. Plugins can mount HTTP routes under `/api/v1/plugins/:name/*` via `Host.RegisterHTTP()`.
+Plugins are registered via `plugin.Registry.Register(p Plugin)`. The server initializes all registered plugins in `server/gin.go` after DB setup. Plugins can mount HTTP routes under `/api/v1/plugins/:name/*` via `Host.RegisterHTTP()`（该组统一要求 `plugin:manage` 权限）。
 
 ---
 
@@ -964,39 +1082,48 @@ Plugins are registered via `plugin.Registry.Register(pluginName, pluginFactory)`
 ```
 app/web/src/
 ├── api/                # apiClient (axios wrapper) + typed API modules
-│   ├── apiClient.ts    # Axios instance with auth interceptor
-│   ├── apiClientAuth.ts
+│   ├── apiClient.ts    # Axios instance with auth interceptor（401 时触发会话续期）
+│   ├── authTransport.ts# 会话惰性续期：401 拦截 + refresh + expires_in 学习
 │   ├── auth.ts         # Login/register/refresh/logout
 │   ├── user.ts         # Profile/info/update
 │   ├── room.ts         # Room CRUD
 │   ├── sfu.ts          # SFU config + token fetch
-│   ├── ws.ts           # WS ticket
-│   ├── domain.ts      # Domain CRUD + join/leave/kick
+│   ├── sfuProfiles.ts  # SFU provider 能力画像
+│   ├── ws.ts           # WS endpoint（握手鉴权由 HttpOnly access cookie 自动携带）
+│   ├── domain.ts       # Domain CRUD + join/leave/kick/roles
+│   ├── guest.ts        # 访客加入/续约/管理
 │   ├── message.ts      # Message send/edit/delete/react
-│   ├── conversation.ts # Conversation list/messages/mark-read
+│   ├── conversation.ts # Conversation list/messages/mark-read/send
 │   ├── mute.ts         # Mute create/cancel/status/list
 │   ├── oauth.ts        # OAuth login
 │   ├── permission.ts   # Role/permission APIs
+│   ├── role.ts         # 平台角色管理
 │   ├── plugin.ts       # Plugin list/update
 │   ├── storage.ts      # Storage presign/confirm
 │   ├── email.ts        # Email send/verify
+│   ├── userGroup.ts    # 用户分组
+│   ├── cluster.ts      # 集群控制面
 │   └── apikey.ts       # Bot token management
 ├── socket/             # WebSocket client
 │   ├── wsClient.ts     # WebSocket connection manager (reconnect, ACK, fire-and-forget)
-│   ├── events.ts       # Event name constants (44)
+│   ├── events.ts       # EVENTS 常量对象（42 个事件键）
+│   ├── socketEvents.ts # 服务端推送事件绑定
 │   ├── types.ts        # RoomInfo, MemberInfo, MuteEvent, etc.
 │   ├── roomState.ts    # Room list/members state merge helpers
 │   ├── providerReload.ts   # SFU hot-swap handler (disconnect + reload)
+│   ├── mediasoupSignal.ts  # mediasoup 信令绑定（保留，当前未接入）
 │   ├── tabLock.ts      # Single-tab socket owner (BroadcastChannel)
 │   └── *.test.ts       # Unit tests
 ├── stores/             # SolidJS reactive stores (IndexedDB persistence)
 │   ├── socketStore.ts  # WebSocket connection + room/member state + SFU events
 │   ├── userStore.ts    # Auth state (persisted to IndexedDB)
+│   ├── guestStore.ts   # 访客能力（listen/speak/message）
 │   ├── themeStore.ts   # Light/dark theme (localStorage)
 │   ├── audioDeviceStore.ts  # Audio device enumeration (IndexedDB)
 │   ├── voiceChatStore.ts    # Mute/volume state (IndexedDB)
 │   ├── chatStore.ts    # Chat/conversation state (IndexedDB)
 │   └── domainStore.ts # Domain state (内存 store)
+├── pages/              # TanStack Router 文件路由：(app)/ index、chat、discover、domain、link、manage、profile；login/、register/、guest/、invite/
 ├── hooks/              # Reusable SolidJS hooks
 │   ├── media.ts        # Audio device enumeration utility
 │   ├── useBreakpoint.ts
@@ -1008,37 +1135,39 @@ app/web/src/
 │   ├── room/
 │   │   ├── roomList.tsx   # Room list page
 │   │   ├── roomDetail.tsx # Room detail page
+│   │   ├── components/    # memberItemButton, passwordModal, roomItem, userInfoPopover, memberSidebar
 │   │   ├── hooks/         # useVoiceSession, useRoomAudioBridge, useRoomSounds
 │   │   ├── services/      # loadSfuClient, sfuSession
-│   │   └── session/       # providers.ts, runVoiceJoin.ts, voiceSessionTypes.ts
-│   ├── domain/            # CreateDomainModal, DomainIcon, InviteShareModal
-│   ├── chat/              # chatPage, chatWindow, conversationList, memberSidebar
+│   │   └── session/       # providers.ts, runVoiceJoin.ts, voiceSessionTypes.ts, voiceSessionUi.ts
+│   ├── domain/            # CreateDomainModal, DomainIcon, InviteShareModal, GuestAccessSettings 等
+│   ├── chat/              # chatPage, chatWindow, conversationList, memberSidebar；micControl / speakerControl 共用 audioControl.tsx 通用壳
+│   ├── discover/          # 发现页（DiscoverDomainCard/Grid/JoinPanel/MyDomains）
 │   ├── dashboard/         # Dashboard components
 │   ├── manage/            # Admin management views
 │   ├── modal/             # modals (search, settings with tabs)
-│   ├── oauth/             # OAuth login views
+│   ├── oauth/             # OAuth login views + ProviderIcon（品牌图标）
 │   ├── profile/           # Profile views
-│   ├── storage/           # Storage management
 │   ├── textRoom/          # Text room components
 │   ├── home/              # Home page
-│   ├── funcButton.tsx     # FAB action button
-│   ├── svgIcon.tsx        # SVG icon component (sprite)
 │   └── userBar.tsx        # User status bar with audio controls
 ├── layouts/
 │   ├── layout.tsx         # Root layout
 │   ├── ErrorComponent.tsx # Error boundary
-│   ├── common/            # header, footer, main, sidebar
+│   ├── common/            # header, main, sidebar, domainWorkspace
 │   └── container/         # ContextProvider (theme)
 ├── handler_audio/         # Audio handling
-│   └── speakingStore.ts   # Speaking identities state
-├── types/                 # Shared TypeScript types
-│   ├── room.ts            # RoomInfo, MemberInfo, RoomItemType
-│   └── userInfo.ts        # UserInfo, Token types
+│   ├── index.ts           # 音频事件装配入口
+│   ├── speakingStore.ts   # Speaking identities state
+│   └── notificationSounds.ts # 通知音效
+├── protocol/              # WS 协议类型（ws.ts, conversation.ts）
+├── types/                 # Shared TypeScript types（message.ts）
 ├── utils/                 # Utility functions
 ├── main.tsx               # App entry point
 ├── styles.css             # Root CSS
 └── routeTree.gen.ts       # TanStack Router generated route tree
 ```
+
+**图标约定**：一律使用 `lucide-solid` 按需导入；`cui-solid-icons` 仅作 cui-solid 的 dist 硬依赖保留，新代码不要直接引用；品牌图标（GitHub/Google/QQ 等）用 `components/oauth/ProviderIcon.tsx`（lucide 不提供品牌图标）。旧的雪碧图组件 `svgIcon.tsx` / `assets/svg.tsx` 已删除。
 
 ### socketStore (`src/stores/socketStore.ts`)
 
@@ -1065,9 +1194,9 @@ Global singleton (createRoot). Manages WebSocket connection, room/member state, 
 | `connect()` | Open WS connection (single-tab enforced via BroadcastChannel tabLock) |
 | `disconnect()` | Close connection |
 | `createRoom(name, password?)` | Emit `room:create` |
-| `joinRoom(room, identity, password?)` | Emit `room:join` (await ack) |
-| `joinRoomSFU(room, identity, stream?)` | Emit `room:join:sfu` (await ack) |
-| `leaveRoom(room)` | Emit `room:leave` (await ack) |
+| `joinRoom(room, identity, password?, domain_uuid?)` | Emit `room:join` (await ack) |
+| `joinRoomSFU(room, identity, stream?, domain_uuid?)` | Emit `room:join:sfu` (await ack) |
+| `leaveRoom(room, domain_uuid?)` | Emit `room:leave` (await ack) |
 | `listRooms()` | Emit `room:list` |
 | `kickMember(room, targetIdentity)` | Emit `room:kick` |
 
@@ -1078,10 +1207,11 @@ Global singleton (createRoot). Manages WebSocket connection, room/member state, 
 | `onActivity(cb)` | Activity events (room_joined, member_joined, etc.) |
 | `onPresence(cb)` | Presence events (member_joined, member_left) |
 | `onRoomKicked(cb)` | Room kick events |
+| `setPrivateNewHandler(cb)` | 私聊新消息推送处理 |
 
 ### WS Client (`src/socket/wsClient.ts`)
 
-- Token passed via subprotocol: `["gospeak", token]`
+- 握手鉴权由 HttpOnly access cookie 自动携带；子协议只传协议名 `["gospeak"]`，不携带 token
 - Auto-reconnect with exponential backoff + jitter
 - Two emit modes: `emitFireAndForget` (no ack) and `emitAck` (returns Promise, 10s timeout)
 - Server push events: `onServerEvent(event, cb)` returns unsubscribe function
@@ -1109,35 +1239,50 @@ The voice session is coordinated through `providers.ts` / `runVoiceJoin.ts` / `v
 
 ## Testing
 
-Node.js-based API integration tests in `test/`:
+三层测试：
 
 ```bash
-# Start the server first, then:
-cd app/server
-pnpm test
+# Go 单元测试（app/server 内 pnpm test 即 go test ./...）
+cd app/server && pnpm test
+# 或从 monorepo 根：
+pnpm test:server:go
 
-# Or from monorepo root:
-pnpm test:server
+# API 集成测试（顶层 test/，Vitest，先启动 server）
+pnpm test:server        # 等价于 pnpm test:integration
+
+# Web 单元测试（Vitest）
+cd app/web && pnpm test
 ```
 
-Tests send real HTTP requests and validate responses. Add new test files under `test/<module>/<module>.test.js`.
+API 集成测试发送真实 HTTP 请求并校验响应，新增测试文件放 `test/<module>/<module>.test.ts`；Web 单测与源码同目录（`*.test.ts` / `*.spec.ts`）。
 
 ---
 
 ## Common Commands
 
+根 package.json 的 `dev` / `build` / `lint` 走 turbo 编排：
+
 ```bash
 # Dev
-cd app/server && pnpm dev
-cd app/web && pnpm dev
+cd app/server && pnpm dev    # air 热重载
+cd app/web && pnpm dev       # vite --force
+# 或同时起前后端：
+pnpm start:dev
 
 # Build
 pnpm build:server
 pnpm build:web
 
 # Test
-pnpm test:server
-pnpm test:web
+pnpm test:server             # API 集成测试（test/，vitest）
+pnpm test:server:go          # Go 单测（go test ./...）
+cd app/web && pnpm test      # web 单测
+
+# 其他
+pnpm lint                    # turbo lint（biome + go vet）
+pnpm format                  # biome format（递归）
+pnpm typecheck               # web/bot/sfu-client tsc --noEmit
+pnpm changelog               # 生成 changelog
 
 # From monorepo root
 pnpm dev:server
@@ -1180,8 +1325,8 @@ pnpm build
 5. Create route file in `internal/router/routes/<module>/routes.go`
 6. Register route group in `internal/router/router.go`
 7. Wire dependencies in `server/gin.go`
-8. Add tests in `test/`
-9. Regenerate Swagger docs
+8. Add tests（Go 单测放 app/server 同包 `*_test.go`，API 集成测试放 `test/<module>/<module>.test.ts`）
+9. Regenerate Swagger docs（`app/server/docs/`）
 
 ---
 
