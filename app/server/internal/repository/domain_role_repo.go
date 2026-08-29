@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"fmt"
+
 	"GOSpeak/internal/model"
 
 	"gorm.io/gorm"
@@ -134,4 +136,19 @@ func SeedDefaultDomainRoles(db *gorm.DB, domainUUID string) error {
 // 复用包级 SeedDefaultDomainRoles 作为单一来源，避免逻辑分叉。
 func (r *DomainRoleRepository) SeedDefaults(domainUUID string) error {
 	return SeedDefaultDomainRoles(r.db, domainUUID)
+}
+
+// BackfillDomainRoleDefaults 为所有存量域补播系统角色，幂等。
+// 覆盖域角色体系上线前创建的域与 EnsureDefaultDomain 建出的默认域。
+func BackfillDomainRoleDefaults(db *gorm.DB) error {
+	var uuids []string
+	if err := db.Model(&model.Domain{}).Order("created_at ASC").Pluck("uuid", &uuids).Error; err != nil {
+		return err
+	}
+	for _, uuid := range uuids {
+		if err := SeedDefaultDomainRoles(db, uuid); err != nil {
+			return fmt.Errorf("seed domain roles for %s: %w", uuid, err)
+		}
+	}
+	return nil
 }

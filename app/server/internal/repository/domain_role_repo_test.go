@@ -124,3 +124,44 @@ func TestDomainRoleRepository_SyncPermissions(t *testing.T) {
 		t.Fatalf("expected 2 codes after sync, got %v", codes)
 	}
 }
+
+func TestBackfillDomainRoleDefaults(t *testing.T) {
+	db := newDomainRoleTestDB(t)
+	repo := NewDomainRoleRepository(db)
+
+	legacy := &model.Domain{Name: "Legacy", OwnerUUID: "owner-1"}
+	seeded := &model.Domain{Name: "Seeded", OwnerUUID: "owner-2"}
+	if err := db.Create(legacy).Error; err != nil {
+		t.Fatalf("seed legacy domain: %v", err)
+	}
+	if err := db.Create(seeded).Error; err != nil {
+		t.Fatalf("seed seeded domain: %v", err)
+	}
+	if err := SeedDefaultDomainRoles(db, seeded.UUID); err != nil {
+		t.Fatalf("pre-seed: %v", err)
+	}
+
+	if err := BackfillDomainRoleDefaults(db); err != nil {
+		t.Fatalf("BackfillDomainRoleDefaults: %v", err)
+	}
+	if err := BackfillDomainRoleDefaults(db); err != nil {
+		t.Fatalf("BackfillDomainRoleDefaults repeat: %v", err)
+	}
+
+	var total int64
+	if err := db.Model(&model.DomainRole{}).Count(&total).Error; err != nil {
+		t.Fatalf("count roles: %v", err)
+	}
+	if total != 8 {
+		t.Fatalf("expected 8 roles across 2 domains, got %d", total)
+	}
+	for _, domainUUID := range []string{legacy.UUID, seeded.UUID} {
+		roles, err := repo.ListRoles(domainUUID)
+		if err != nil {
+			t.Fatalf("ListRoles(%s): %v", domainUUID, err)
+		}
+		if len(roles) != 4 {
+			t.Fatalf("domain %s expected 4 roles, got %d", domainUUID, len(roles))
+		}
+	}
+}
