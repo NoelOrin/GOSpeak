@@ -1,6 +1,10 @@
 import { createSignal } from "solid-js";
 import { getProfile, logout as logoutApi } from "@/api/auth";
-import { refreshSession } from "@/api/authTransport";
+import {
+	readSessionExpiry,
+	recordSessionExpiry,
+	refreshSession,
+} from "@/api/authTransport";
 
 export interface UserInfo {
 	id: number;
@@ -14,7 +18,6 @@ export interface UserInfo {
 }
 
 const STORAGE_USER = "user";
-const STORAGE_EXPIRES_AT = "gospeak_session_expires_at";
 const EXPIRE_MARGIN_MS = 60_000;
 const UNVERIFIED_GRACE_MS = 10 * 60_000;
 
@@ -23,24 +26,16 @@ const [userStale, setUserStale] = createSignal(false);
 
 let ensureSessionPromise: Promise<boolean> | null = null;
 
-function readExpiresAt(): number | null {
-	const raw = localStorage.getItem(STORAGE_EXPIRES_AT);
-	if (!raw) return null;
-	const n = Number(raw);
-	return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-let sessionExpiresAt: number | null = readExpiresAt();
+let sessionExpiresAt: number | null = readSessionExpiry();
 let lastVerifiedAt = 0;
 
+function syncSessionExpiry() {
+	sessionExpiresAt = readSessionExpiry();
+}
+
 function recordSessionExpiryAction(expiresIn: number | null | undefined) {
-	if (typeof expiresIn === "number" && expiresIn > 0) {
-		sessionExpiresAt = Date.now() + expiresIn * 1000;
-		localStorage.setItem(STORAGE_EXPIRES_AT, String(sessionExpiresAt));
-		return;
-	}
-	sessionExpiresAt = null;
-	localStorage.removeItem(STORAGE_EXPIRES_AT);
+	recordSessionExpiry(expiresIn);
+	sessionExpiresAt = readSessionExpiry();
 }
 
 // 只缓存非敏感 user 元数据；access/refresh token 完全由 HttpOnly Cookie 承载。
@@ -76,7 +71,7 @@ async function fetchProfileAction(): Promise<boolean> {
 
 async function clearAuthAction() {
 	localStorage.removeItem(STORAGE_USER);
-	localStorage.removeItem(STORAGE_EXPIRES_AT);
+	recordSessionExpiry(null);
 	setUser(null);
 	setUserStale(false);
 	sessionExpiresAt = null;
@@ -109,11 +104,12 @@ function isRateLimitedError(e: unknown): boolean {
 
 async function ensureSessionAction(): Promise<boolean> {
 	if (ensureSessionPromise) return ensureSessionPromise;
-	// 注意：快速路径（未过期同步放行）会让 async IIFE 同步跑完，
+	// 注意：快速路径（未过期同步放行）会让 async IIFE 同步完成，
 	// IIFE 内部的 finally 会在赋值完成前执行并被覆盖，导致 promise 永不清空——
 	// 清理必须挂在外层 promise 的 .finally（微任务时机必然晚于赋值）。
 	const attempt = (async () => {
 		try {
+			syncSessionExpiry();
 			if (user()) {
 				if (sessionExpiresAt) {
 					if (Date.now() < sessionExpiresAt - EXPIRE_MARGIN_MS) return true;
@@ -131,6 +127,13 @@ async function ensureSessionAction(): Promise<boolean> {
 			}
 			if (await fetchProfileAction()) {
 				lastVerifiedAt = Date.now();
+				if (!sessionExpiresAt) {
+					// 后台学习真实过期时间（如 401 已被拦截器消化，这里感知不到 expires_in），
+					// 不阻塞导航；失败静默，宽限窗口兜底。
+					void refreshSession()
+						.then(() => syncSessionExpiry())
+						.catch(() => {});
+				}
 				return true;
 			}
 			recordSessionExpiryAction(await refreshSession());

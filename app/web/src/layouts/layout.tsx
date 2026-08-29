@@ -31,6 +31,7 @@ import { chatStore } from "@/stores/chatStore";
 import domainStore from "@/stores/domainStore";
 import { socketStore } from "@/stores/socketStore";
 import { hasManageAccess } from "@/utils/permissions";
+import { firstAccessibleManagePath } from "@/components/manage/manageNav";
 
 type MobileStageTab = "voice" | "text" | "members";
 
@@ -126,7 +127,7 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 				<button
 					type="button"
 					class={itemClass(isHome())}
-					onClick={() => navigate({ to: "/" })}
+					onClick={() => navigate({ to: "/discover" })}
 				>
 					<Home size={20} strokeWidth={2.1} />
 					<span>首页</span>
@@ -155,7 +156,11 @@ const Layout = ({ children }: { children: JSX.Element }) => {
 					<button
 						type="button"
 						class={itemClass(isManage())}
-						onClick={() => navigate({ to: "/manage" })}
+						onClick={() =>
+							navigate({
+								to: `/manage/${firstAccessibleManagePath() ?? "users"}`,
+							})
+						}
 					>
 						<ShieldCheck size={20} strokeWidth={2.1} />
 						<span>管理</span>

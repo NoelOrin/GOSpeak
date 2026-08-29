@@ -9,6 +9,21 @@ vi.mock("@/api/auth", () => ({
 }));
 vi.mock("@/api/authTransport", () => ({
 	refreshSession: (...args: unknown[]) => refreshSessionMock(...args),
+	readSessionExpiry: () => {
+		const raw = localStorage.getItem("gospeak_session_expires_at");
+		const n = raw ? Number(raw) : NaN;
+		return Number.isFinite(n) && n > 0 ? n : null;
+	},
+	recordSessionExpiry: (expiresIn: number | null | undefined) => {
+		if (typeof expiresIn === "number" && expiresIn > 0) {
+			localStorage.setItem(
+				"gospeak_session_expires_at",
+				String(Date.now() + expiresIn * 1000),
+			);
+			return;
+		}
+		localStorage.removeItem("gospeak_session_expires_at");
+	},
 }));
 
 import userStore from "./userStore";
@@ -34,14 +49,17 @@ describe("userStore.ensureSession", () => {
 		refreshSessionMock.mockReset();
 	});
 
-	it("缓存用户 + profile 成功：true，且不发 refresh", async () => {
+	it("缓存用户 + profile 成功：true，过期时间后台学习不阻塞", async () => {
 		await userStore.login(fakeUser);
 		getProfileMock.mockResolvedValue(fakeProfile);
-		refreshSessionMock.mockRejectedValue(new Error("refresh should not fire"));
+		refreshSessionMock.mockResolvedValue(900);
 
 		await expect(userStore.ensureSession()).resolves.toBe(true);
 		expect(getProfileMock).toHaveBeenCalledTimes(1);
-		expect(refreshSessionMock).not.toHaveBeenCalled();
+		// profile 先行返回（导航不阻塞），随后后台 refresh 学习过期时间
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(refreshSessionMock).toHaveBeenCalledTimes(1);
 	});
 
 	it("access 过期且 refresh 被限流(1017)：沿用缓存会话返回 true，不清会话", async () => {
@@ -147,5 +165,47 @@ describe("userStore 懒续期（expires_in 驱动）", () => {
 
 		await userStore.logout();
 		expect(localStorage.getItem("gospeak_session_expires_at")).toBeNull();
+	});
+
+	it("冷启动探测成功且无过期时间：后台 refresh 学习过期时间且不阻塞", async () => {
+		getProfileMock.mockResolvedValue(fakeProfile);
+		refreshSessionMock.mockImplementation(async () => {
+			localStorage.setItem(
+				"gospeak_session_expires_at",
+				String(Date.now() + 900_000),
+			);
+			return 900;
+		});
+
+		await expect(userStore.ensureSession()).resolves.toBe(true);
+		expect(getProfileMock).toHaveBeenCalledTimes(1);
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(refreshSessionMock).toHaveBeenCalledTimes(1);
+		expect(
+			Number(localStorage.getItem("gospeak_session_expires_at")),
+		).toBeGreaterThan(Date.now());
+
+		// 过期时间学到手：后续导航走快速路径，零请求
+		getProfileMock.mockClear();
+		refreshSessionMock.mockClear();
+		await expect(userStore.ensureSession()).resolves.toBe(true);
+		expect(getProfileMock).not.toHaveBeenCalled();
+		expect(refreshSessionMock).not.toHaveBeenCalled();
+	});
+
+	it("拦截器路径 refresh 写入的过期时间：ensureSession 能读到并快速放行", async () => {
+		await userStore.login(fakeUser);
+		// 模拟 apiClient 拦截器内部 refreshSession 写入持久化（mock 不经过 ensureSession）
+		localStorage.setItem(
+			"gospeak_session_expires_at",
+			String(Date.now() + 900_000),
+		);
+		getProfileMock.mockRejectedValue(new Error("profile should not fire"));
+		refreshSessionMock.mockRejectedValue(new Error("refresh should not fire"));
+
+		await expect(userStore.ensureSession()).resolves.toBe(true);
+		expect(getProfileMock).not.toHaveBeenCalled();
+		expect(refreshSessionMock).not.toHaveBeenCalled();
 	});
 });

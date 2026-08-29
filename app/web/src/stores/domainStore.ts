@@ -61,7 +61,13 @@ export function createDomainStore() {
 		try {
 			const uuids = await myDomains();
 			if (version === myDomainsVersion) {
-				setState("myDomainUUIDs", uuids);
+				// 内容未变化时保留原数组引用：下游 createResource 以数组为 source，
+				// 引用变化会触发重新请求并挂起（全仓无 Suspense 边界时整树空白闪烁）
+				setState("myDomainUUIDs", (prev) =>
+					prev.length === uuids.length && prev.every((u, i) => u === uuids[i])
+						? prev
+						: uuids,
+				);
 			}
 		} catch (error) {
 			console.error("loadMyDomains failed:", error);
