@@ -6,6 +6,14 @@
   "packages": {
     ".": {
       "package-name": "gospeak",
+      "version-file": "VERSION",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "package.json",
+          "jsonpath": "$.version"
+        }
+      ],
       "changelog-path": "CHANGELOG.md",
       "changelog-sections": [
         {

@@ -16,6 +16,9 @@
 
 name: Docs
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [release]
@@ -174,30 +177,7 @@ jobs:
           # workflow_dispatch 可指定 tag/sha；push 使用当前触发提交
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref != '' && inputs.source_ref || github.sha }}
 
-      - uses: pnpm/action-setup@v6
-        # version 由 package.json 的 packageManager 字段自动获取
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Cache pnpm store
-        id: pnpm-cache
-        shell: bash
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-            node_modules
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/pnpm-install
 
       - name: Build VitePress
         env:

@@ -1,5 +1,5 @@
 # GOSpeak CI — 质量门禁（按路径精准触发，聚合 JS 构建）
-# 由原 build.yml 重做而来，对外仍暴露 workflow_call 供 release 复用。
+# 保留 workflow_call 兼容外部调用；仓库内正式发布由 release.yml 独立负责。
 name: CI
 
 on:
@@ -73,8 +73,6 @@ jobs:
       - uses: ./.github/actions/pnpm-install
       - name: Biome CI
         run: npx @biomejs/biome ci --files-ignore-unknown=true ./app/web ./packages
-      - name: Biome Check
-        run: npx @biomejs/biome check --files-ignore-unknown=true ./app/web ./packages || true
       - uses: actions/setup-go@v6
         with:
           go-version-file: app/server/go.mod
@@ -160,3 +158,34 @@ jobs:
         env:
           CGO_ENABLED: 1
         run: go test ./... -race -v -count=1
+
+  version-check:
+    name: Version Consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check product version
+        run: node scripts/check-version.mjs
+
+  gate:
+    name: CI Gate
+    if: always()
+    needs: [lint, typecheck, build-js, build-server, test-server, version-check]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required checks
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          TYPECHECK_RESULT: ${{ needs.typecheck.result }}
+          BUILD_JS_RESULT: ${{ needs.build-js.result }}
+          BUILD_SERVER_RESULT: ${{ needs.build-server.result }}
+          TEST_SERVER_RESULT: ${{ needs.test-server.result }}
+          VERSION_RESULT: ${{ needs.version-check.result }}
+        run: |
+          set -euo pipefail
+          for result in "$LINT_RESULT" "$TYPECHECK_RESULT" "$BUILD_JS_RESULT" "$BUILD_SERVER_RESULT" "$TEST_SERVER_RESULT" "$VERSION_RESULT"; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "required CI job failed: $result" >&2; exit 1 ;;
+            esac
+          done
