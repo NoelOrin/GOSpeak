@@ -39,8 +39,8 @@ describe("shared + private KV", () => {
 		await b.set("y", 2);
 		await shared.set("z", 3);
 
-		expect(await a.keys!()).toEqual(["x"]);
-		await a.clear!();
+		expect(await a.keys?.()).toEqual(["x"]);
+		await a.clear?.();
 		expect(await a.get("x")).toBeUndefined();
 		expect(await b.get("y")).toBe(2);
 		expect(await shared.get("z")).toBe(3);

@@ -45,7 +45,7 @@ export default function ForgotPasswordModal(props: ForgotPasswordModalProps) {
 										await resetPassword(props.email, props.code, pwd);
 										props.onClose();
 										showToast("密码已重置，请登录", { type: "success" });
-									} catch (err: any) {}
+									} catch {}
 								}}
 							>
 								<fieldset class="fieldset mb-3">
@@ -92,7 +92,7 @@ export default function ForgotPasswordModal(props: ForgotPasswordModalProps) {
 									});
 									props.setStep("code");
 									showToast("验证码已发送", { type: "success" });
-								} catch (err: any) {
+								} catch {
 								} finally {
 									props.setCodeSending(false);
 								}
