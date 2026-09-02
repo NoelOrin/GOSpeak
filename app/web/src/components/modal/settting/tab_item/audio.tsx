@@ -56,7 +56,9 @@ const AudioForm = () => {
 	const stopMicTest = () => {
 		if (raf) cancelAnimationFrame(raf);
 		raf = 0;
-		testStream?.getTracks().forEach((t) => t.stop());
+		testStream?.getTracks().forEach((t) => {
+			t.stop();
+		});
 		testStream = null;
 		void audioCtx?.close();
 		audioCtx = null;

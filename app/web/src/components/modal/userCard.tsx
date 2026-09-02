@@ -39,7 +39,7 @@ const UserCard = (props: UserCardProps) => {
 			await updateProfile({ display_name: name, avatar: user()?.avatar || "" });
 			await userStore.fetchProfile();
 			showToast("昵称已更新", { type: "success" });
-		} catch (err: any) {
+		} catch {
 		} finally {
 			setSaving(false);
 			setEditing(false);

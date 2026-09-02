@@ -100,7 +100,7 @@ const ProfileForm = (props: ProfileFormProps) => {
 			const result = await upload(file);
 			setAvatar(result.public_url);
 			showToast("头像上传成功", { type: "success" });
-		} catch (err: any) {
+		} catch {
 			setPreview(null);
 		} finally {
 			target.value = "";
@@ -126,7 +126,7 @@ const ProfileForm = (props: ProfileFormProps) => {
 			showToast("资料已保存", { type: "success" });
 			setMode("view");
 			props.onSaved?.();
-		} catch (err: any) {
+		} catch {
 		} finally {
 			setSaving(false);
 		}
@@ -157,7 +157,7 @@ const ProfileForm = (props: ProfileFormProps) => {
 						"size-24": !isCompact(),
 					}}
 				>
-					<img src={displayAvatar()!} alt="头像" />
+					<img src={displayAvatar() ?? ""} alt="头像" />
 				</div>
 			</div>
 		</Show>
