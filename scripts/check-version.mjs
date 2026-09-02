@@ -48,7 +48,13 @@ export function checkVersionState(rootDir, releaseTag = "") {
 
 function main() {
 	const rootDir = process.argv[2] ?? process.cwd();
-	const releaseTag = process.argv[3] ?? process.env.RELEASE_TAG ?? process.env.GITHUB_REF_NAME ?? "";
+	const isTagEvent = process.env.GITHUB_REF_TYPE === "tag";
+	// 仅在显式传入 RELEASE_TAG 或当前为 tag 事件时，才把 ref 当作发布标签校验。
+	// push 到分支时 GITHUB_REF_NAME 是分支名（如 "release"），并非合法 SemVer，
+	// 此时不应把它当作发布标签去校验，否则会出现假阳性失败。
+	const releaseTag = isTagEvent
+		? (process.argv[3] ?? process.env.RELEASE_TAG ?? process.env.GITHUB_REF_NAME ?? "")
+		: (process.argv[3] ?? process.env.RELEASE_TAG ?? "");
 	const result = checkVersionState(rootDir, releaseTag);
 
 	if (result.issues.length > 0) {

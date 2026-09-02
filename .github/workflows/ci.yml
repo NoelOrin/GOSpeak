@@ -161,6 +161,9 @@ jobs:
 
   version-check:
     name: Version Consistency
+    # 版本一致性仅在打 tag 发版时校验；push 到分支（如 release/dev）时跳过，
+    # 避免把分支名当 SemVer 导致的假阳性失败（Gate 将 skipped 视为通过）。
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
