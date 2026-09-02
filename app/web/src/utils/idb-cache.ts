@@ -160,7 +160,7 @@ export const chatCache = {
 		});
 	},
 
-	async prependMessages(convID: string, msgs: CachedMessage[]): Promise<void> {
+	async prependMessages(_convID: string, msgs: CachedMessage[]): Promise<void> {
 		const db = await openDB();
 		return new Promise((resolve, reject) => {
 			const tx = db.transaction("messages", "readwrite");

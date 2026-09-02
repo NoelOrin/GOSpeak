@@ -103,7 +103,7 @@ export class LiveKitPublishAdapter implements SFUPublishAdapter {
 		sampleRate = 16000,
 	): Promise<void> {
 		const state = this.rooms.get(room);
-		if (!state || !state.room.isConnected) {
+		if (!state?.room.isConnected) {
 			throw new Error(`not joined for publish: ${room}`);
 		}
 		const rtc = await this.loadRtc();
