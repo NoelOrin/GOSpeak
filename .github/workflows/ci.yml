@@ -103,7 +103,7 @@ jobs:
       - name: Build JS
         run: pnpm turbo run build --filter=@gospeak/web --filter=@gospeak/sfu-client --filter=@gospeak/mediasoup-worker
       - name: Upload web dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: web-dist
           path: app/web/dist
@@ -123,7 +123,7 @@ jobs:
           cache-dependency-path: app/server/go.sum
           cache: true
       - name: Download web dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: web-dist
           path: app/web/dist
