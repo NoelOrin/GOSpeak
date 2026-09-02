@@ -36,7 +36,7 @@ jobs:
     name: pnpm Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/pnpm-install
       - name: Audit production dependencies
         env:
@@ -49,8 +49,8 @@ jobs:
     continue-on-error: true
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: app/server/go.mod
           cache-dependency-path: app/server/go.sum
