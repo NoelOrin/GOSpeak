@@ -84,11 +84,48 @@ jobs:
           RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: node scripts/check-version.mjs . "$RELEASE_TAG"
 
+  # ── Create Release (auto-generate notes) ───────────────────────────────────
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [resolve-tag, version-check]
+    if: >-
+      ${{ !(inputs.dry_run == true) && !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.resolve-tag.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Create or update GitHub release (auto notes)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} already exists; leaving it unchanged."
+            exit 0
+          fi
+          target_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          release_args=(
+            "${RELEASE_TAG}"
+            --target "${target_sha}"
+            --title "${RELEASE_TAG}"
+            --generate-notes
+          )
+          # 预发布版本（含 - 的语义化预发版）自动标记 prerelease
+          if [[ "$RELEASE_VERSION" == *-* ]]; then
+            release_args+=(--prerelease --latest=false)
+          fi
+          gh release create "${release_args[@]}"
+
   # ── Cross-Platform Binaries ───────────────────────────────────────────────
   build-release-binaries:
     name: Build ${{ matrix.target }}
     runs-on: ubuntu-latest
-    needs: [resolve-tag, version-check]
+    needs: [resolve-tag, version-check, create-release]
     if: >-
       ${{ !(inputs.dry_run == true) && !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
     permissions:
@@ -195,7 +232,7 @@ jobs:
   checksums:
     name: Generate & Upload SHA256SUMS
     runs-on: ubuntu-latest
-    needs: [resolve-tag, version-check, build-release-binaries]
+    needs: [resolve-tag, version-check, create-release, build-release-binaries]
     if: >-
       ${{ !(inputs.dry_run == true) && !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
     permissions:
