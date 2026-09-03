@@ -46,7 +46,7 @@ jobs:
   # ── Auto publish on `release: publish release X.Y.Z` push ──────────────────
   publish-release:
     name: Publish Release from Commit
-    if: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: publish release ') }}
+    if: "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: publish release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: write
