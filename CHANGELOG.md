@@ -1,5 +1,12 @@
 # Changelog / 更新日志
 
+## [0.5.1](https://github.com/NoelOrin/GOSpeak/compare/0.5.0...v0.5.1) (2026-09-03)
+
+
+### CI/CD
+
+* **release-please:** 授予 PR 创建权限并支持 [skip rp] 手动跳过 ([2063042](https://github.com/NoelOrin/GOSpeak/commit/2063042c8e0c4b07dcb89ab858edbaca23a12fb6))
+
 ## [0.5.0](https://github.com/NoelOrin/GOSpeak/compare/v0.4.0...v0.5.0) (2026-09-02)
 
 
