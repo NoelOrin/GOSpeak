@@ -129,6 +129,7 @@ jobs:
   # ── Resolve Tag ─────────────────────────────────────────────────────────
   resolve-tag:
     name: Resolve Tag
+    if: ${{ github.event_name != 'push' }}
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
