@@ -83,6 +83,11 @@ jobs:
           node scripts/build-changelog.mjs "$VERSION" --no-write > /tmp/release-notes.md
           test -s /tmp/release-notes.md
 
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       - name: Create tag
         env:
           VERSION: ${{ steps.version.outputs.version }}
