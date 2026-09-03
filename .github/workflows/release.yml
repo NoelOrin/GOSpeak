@@ -3,9 +3,9 @@
 # GOSpeak Release — 发版自动化
 #   路径 A（自动发版 / 零 PR）：push 到 release 分支，且 HEAD commit message
 #     匹配 `release: publish release X.Y.Z` → publish-release job 自动：
-#       生成 CHANGELOG 段落 → 回写 CHANGELOG.md → 打 tag X.Y.Z → 建 GitHub Release
-#       → 触发本 workflow 的 release: published 产物链。
-#   路径 B（产物发布）：release: published 触发，交叉编译 10 平台二进制 + SHA256SUMS。
+#       生成 Release notes → 打 tag X.Y.Z → 建 GitHub Release
+#       → 在同一次 workflow 中继续执行产物链。
+#   路径 B（外部 Release）：release: published 触发，交叉编译 10 平台二进制 + SHA256SUMS。
 #   路径 C（手动预览）：workflow_dispatch（dry_run 预览，skip_build 跳过构建）。
 #
 # 普通 push（非发布提交）不触发任何发版动作。
@@ -48,6 +48,9 @@ jobs:
     name: Publish Release from Commit
     if: "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: publish release ') }}"
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
     permissions:
       contents: write
     steps:
@@ -69,35 +72,16 @@ jobs:
             exit 1
           fi
           echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "tag=$ver" >> "$GITHUB_OUTPUT"
           echo "::notice::Publishing version $ver"
 
-      - name: Configure git
-        run: |
-          git config user.name "gospeak-bot"
-          git config user.email "bot@gospeak.local"
-
-      - name: Generate & insert CHANGELOG section
-        id: changelog
+      - name: Generate Release notes
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          node scripts/build-changelog.mjs "$VERSION"
-          if ! git diff --quiet CHANGELOG.md; then
-            git add CHANGELOG.md
-            git commit -m "docs: 更新 CHANGELOG for $VERSION"
-            # best-effort：分支保护可能禁止 GITHUB_TOKEN 直推 release，
-            # 失败仅警告不阻断发版（tag + Release 仍会创建）。
-            if git push origin release; then
-              echo "updated=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "updated=false" >> "$GITHUB_OUTPUT"
-              echo "::warning::CHANGELOG 回写被分支保护拦截；可在仓库设置给 github-actions 开 bypass，或发版前本地准备好 CHANGELOG"
-            fi
-          else
-            echo "updated=false" >> "$GITHUB_OUTPUT"
-            echo "CHANGELOG already contains $VERSION; nothing to commit."
-          fi
+          node scripts/build-changelog.mjs "$VERSION" --no-write > /tmp/release-notes.md
+          test -s /tmp/release-notes.md
 
       - name: Create tag
         env:
@@ -127,15 +111,15 @@ jobs:
           if [[ "$VERSION" == *-* ]] || [[ "$VERSION" == *+* ]]; then
             prerelease="--prerelease --latest=false"
           fi
-          # Release notes 复用脚本生成的 CHANGELOG 段落（与文件一致）
-          node scripts/build-changelog.mjs "$VERSION" > /tmp/release-notes.md
           gh release create "$VERSION" --title "$VERSION" --notes-file /tmp/release-notes.md $prerelease
           echo "::notice::Created GitHub Release $VERSION"
 
   # ── Resolve Tag ─────────────────────────────────────────────────────────
   resolve-tag:
     name: Resolve Tag
-    if: ${{ github.event_name != 'push' }}
+    needs: [publish-release]
+    if: >-
+      ${{ always() && (github.event_name != 'push' || needs.publish-release.result == 'success') }}
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
@@ -146,12 +130,16 @@ jobs:
         env:
           EVENT_TAG: ${{ github.event.release.tag_name }}
           INPUT_TAG: ${{ inputs.tag }}
+          PUBLISHED_TAG: ${{ needs.publish-release.outputs.tag }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           tag="${EVENT_TAG:-}"
           if [ -z "$tag" ]; then
             tag="${INPUT_TAG:-}"
+          fi
+          if [ -z "$tag" ]; then
+            tag="${PUBLISHED_TAG:-}"
           fi
           if [ -z "$tag" ]; then
             echo "::error::No tag from release event or inputs.tag"

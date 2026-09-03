@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // 生成指定版本的 CHANGELOG 段落，并幂等地插入到 CHANGELOG.md 顶部（标题之下）。
-// 用法：node scripts/build-changelog.mjs <version> [lastTag] [date]
+// 用法：node scripts/build-changelog.mjs <version> [lastTag] [date] [--no-write]
 //   version  必填，形如 X.Y.Z（可带 -pre/+build）
 //   lastTag  可选，比较基线；缺省取 git describe --tags --abbrev=0 的最近 tag
 //   date     可选，段落日期；缺省今天（YYYY-MM-DD）
-// 输出：插入后的 CHANGELOG.md 路径（便于 CI 回写）；同时把生成的段落打印到 stdout。
+// 默认写回 CHANGELOG.md 并把生成的段落打印到 stdout；--no-write 只打印段落。
 
 import fs from "node:fs";
 import { execSync as ex } from "node:child_process";
@@ -115,14 +115,14 @@ function buildSection(version, lastTag, date, commits) {
   return lines.join("\n").replace(/\n+$/, "\n");
 }
 
-function insertChangelog(newBlock) {
+function insertChangelog(newBlock, version) {
   if (!fs.existsSync(CHANGELOG_PATH)) {
     fs.writeFileSync(CHANGELOG_PATH, `# Changelog / 更新日志\n\n${newBlock}`);
     return CHANGELOG_PATH;
   }
   let content = fs.readFileSync(CHANGELOG_PATH, "utf-8");
   // 幂等：若已含该版本标题则跳过插入
-  if (content.includes(`## [${process.argv[2]}]`)) {
+  if (content.includes(`## [${version}]`)) {
     return CHANGELOG_PATH;
   }
   const headerMatch = content.match(/^#\s+Changelog[^\n]*\n/);
@@ -137,19 +137,26 @@ function insertChangelog(newBlock) {
 }
 
 function main() {
-  const version = process.argv[2];
+  const args = process.argv.slice(2);
+  const write = !args.includes("--no-write");
+  const positional = args.filter((arg) => arg !== "--no-write");
+  const version = positional[0];
   if (!version) {
-    console.error("usage: node scripts/build-changelog.mjs <version> [lastTag] [date]");
+    console.error("usage: node scripts/build-changelog.mjs <version> [lastTag] [date] [--no-write]");
     process.exit(1);
   }
-  const lastTag = process.argv[3] || latestTag();
-  const date = process.argv[4] || new Date().toISOString().slice(0, 10);
+  const lastTag = positional[1] || latestTag();
+  const date = positional[2] || new Date().toISOString().slice(0, 10);
   const range = lastTag ? `${lastTag}..HEAD` : "HEAD";
   const commits = collectCommits(range);
   const block = buildSection(version, lastTag, date, commits);
-  const path = insertChangelog(block);
+  if (write) {
+    insertChangelog(block, version);
+  }
   process.stdout.write(block);
-  console.error(`\n[build-changelog] wrote ${path} (version=${version}, base=${lastTag || "none"}, commits=${commits.length})`);
+  console.error(
+    `\n[build-changelog] generated (write=${write}, version=${version}, base=${lastTag || "none"}, commits=${commits.length})`,
+  );
 }
 
 main();
