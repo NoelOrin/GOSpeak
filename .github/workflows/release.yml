@@ -86,8 +86,14 @@ jobs:
           if ! git diff --quiet CHANGELOG.md; then
             git add CHANGELOG.md
             git commit -m "docs: 更新 CHANGELOG for $VERSION"
-            git push origin release
-            echo "updated=true" >> "$GITHUB_OUTPUT"
+            # best-effort：分支保护可能禁止 GITHUB_TOKEN 直推 release，
+            # 失败仅警告不阻断发版（tag + Release 仍会创建）。
+            if git push origin release; then
+              echo "updated=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "updated=false" >> "$GITHUB_OUTPUT"
+              echo "::warning::CHANGELOG 回写被分支保护拦截；可在仓库设置给 github-actions 开 bypass，或发版前本地准备好 CHANGELOG"
+            fi
           else
             echo "updated=false" >> "$GITHUB_OUTPUT"
             echo "CHANGELOG already contains $VERSION; nothing to commit."

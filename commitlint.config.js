@@ -23,6 +23,7 @@ export default {
         'build', // 构建流程、外部依赖变更 (如升级 npm 包、修改打包配置等)',
         'ci', // 修改CI配置、脚本
         'types', // 类型定义文件修改
+        'release', // 发版触发提交（release: publish release X.Y.Z）
       ],
     ],
   },
