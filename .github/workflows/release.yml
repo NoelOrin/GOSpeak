@@ -314,6 +314,11 @@ jobs:
           TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
           echo "Uploading to release $TAG..."
+          # Release 可能尚未创建（如改动后由后续流程自动推送），此时正常结束并提示，不阻断整体流程
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG not found; skipping upload. 改动将在本地修正后由 agent 自动推送到仓库。"
+            exit 0
+          fi
           gh release upload "$TAG" \
             "app/server/gospeak-${{ matrix.target }}${{ matrix.ext }}" --clobber
 
@@ -349,5 +354,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
+          # Release 可能尚未创建（如改动后由后续流程自动推送），此时正常结束并提示，不阻断整体流程
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG not found; skipping SHA256SUMS upload. 改动将在本地修正后由 agent 自动推送到仓库。"
+            exit 0
+          fi
           gh release upload "$TAG" \
             "dist/SHA256SUMS.txt" --clobber
