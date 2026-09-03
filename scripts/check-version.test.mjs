@@ -6,11 +6,10 @@ import test from "node:test";
 
 import { checkVersionState } from "./check-version.mjs";
 
-function createVersionRoot({ version = "0.2.3", packageVersion = version, manifestVersion = version } = {}) {
+function createVersionRoot({ version = "0.2.3", packageVersion = version } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "gospeak-version-"));
 	writeFileSync(join(root, "VERSION"), `${version}\n`);
 	writeFileSync(join(root, "package.json"), JSON.stringify({ version: packageVersion }));
-	writeFileSync(join(root, ".release-please-manifest.json"), JSON.stringify({ ".": manifestVersion }));
 	return root;
 }
 
@@ -24,14 +23,13 @@ test("accepts synchronized product version and release tag", () => {
 });
 
 test("reports mismatched release metadata", () => {
-	const root = createVersionRoot({ packageVersion: "1.0.0", manifestVersion: "0.2.2" });
+	const root = createVersionRoot({ packageVersion: "1.0.0" });
 
 	const result = checkVersionState(root, "v0.2.4");
 
 	assert.equal(result.version, "0.2.3");
 	assert.deepEqual(result.issues, [
 		"package.json version 1.0.0 does not match VERSION 0.2.3",
-		".release-please-manifest.json version 0.2.2 does not match VERSION 0.2.3",
 		"release tag v0.2.4 does not match VERSION 0.2.3",
 	]);
 });

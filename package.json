@@ -21,8 +21,8 @@
     "prepare": "lefthook install",
     "typecheck": "pnpm --filter @gospeak/web --filter @gospeak/bot --filter @gospeak/sfu-client exec tsc --noEmit",
     "version:check": "node scripts/check-version.mjs",
-    "changelog": "node scripts/generate-changelog.mjs",
-    "changelog:0.2.1": "node scripts/generate-changelog.mjs 0.2.1 2026-08-19"
+    "changelog": "node scripts/build-changelog.mjs",
+    "changelog:version": "node scripts/build-changelog.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",

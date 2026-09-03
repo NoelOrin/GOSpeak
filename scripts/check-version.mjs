@@ -23,16 +23,11 @@ function normalizeTag(tag) {
 export function checkVersionState(rootDir, releaseTag = "") {
 	const version = parseVersion(readFileSync(`${rootDir}/VERSION`, "utf8"), "VERSION");
 	const packageJson = readJson(`${rootDir}/package.json`);
-	const manifest = readJson(`${rootDir}/.release-please-manifest.json`);
 	const packageVersion = parseVersion(packageJson.version, "package.json version");
-	const manifestVersion = parseVersion(manifest["."], ".release-please-manifest.json version");
 	const issues = [];
 
 	if (packageVersion !== version) {
 		issues.push(`package.json version ${packageVersion} does not match VERSION ${version}`);
-	}
-	if (manifestVersion !== version) {
-		issues.push(`.release-please-manifest.json version ${manifestVersion} does not match VERSION ${version}`);
 	}
 
 	const tag = String(releaseTag ?? "").trim();
