@@ -299,13 +299,13 @@ jobs:
             -ldflags="-s -w \
               -X 'GOSpeak/cmd.version=${RELEASE_VERSION}' \
               -X 'GOSpeak/cmd.commit=${RELEASE_COMMIT}'" \
-            -o "gospeak-${{ matrix.target }}${matrix.ext}" main.go
+            -o "gospeak-${{ matrix.target }}${{ matrix.ext }}" main.go
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: gospeak-${{ matrix.target }}
-          path: app/server/gospeak-${{ matrix.target }}${matrix.ext}
+          path: app/server/gospeak-${{ matrix.target }}${{ matrix.ext }}
           retention-days: 14
 
       - name: Upload to release assets
@@ -315,7 +315,7 @@ jobs:
         run: |
           echo "Uploading to release $TAG..."
           gh release upload "$TAG" \
-            "app/server/gospeak-${{ matrix.target }}${matrix.ext}" --clobber
+            "app/server/gospeak-${{ matrix.target }}${{ matrix.ext }}" --clobber
 
   # ── SHA256SUMS ──────────────────────────────────────────────────────────────
   checksums:
