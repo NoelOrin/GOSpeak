@@ -1,6 +1,6 @@
 # Changelog / 更新日志
 
-## [0.5.0](https://github.com/NoelOrin/GOSpeak/compare/v0.4.0...v0.5.0) (2026-09-02)
+## [0.4.0](https://github.com/NoelOrin/GOSpeak/compare/v0.3.2...0.4.0) (2026-09-03)
 
 
 ### Features
