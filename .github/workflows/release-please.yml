@@ -12,13 +12,12 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      # 手动发版时，在发布提交信息中带 [skip rp] 即可跳过 release-please 自动发布逻辑
+      # 手动发版时，在发布提交信息中带 [skip rp] 即可整体跳过 release-please 自动发布逻辑
       - name: Skip check
         if: ${{ contains(github.event.head_commit.message, '[skip rp]') }}
-        run: |
-          echo "skip rp marker detected, skipping release-please"
-          exit 0
+        run: echo "skip rp marker detected, skipping release-please"
       - uses: googleapis/release-please-action@v4
+        if: ${{ !contains(github.event.head_commit.message, '[skip rp]') }}
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
