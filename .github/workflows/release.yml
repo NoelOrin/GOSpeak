@@ -161,7 +161,8 @@ jobs:
     name: Check Release Version
     runs-on: ubuntu-latest
     needs: [resolve-tag]
-    if: always()
+    if: >-
+      ${{ needs.resolve-tag.result == 'success' && needs.resolve-tag.outputs.tag != '' }}
     permissions:
       contents: read
     steps:
@@ -179,7 +180,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [resolve-tag, version-check]
     if: >-
-      ${{ always() && !(inputs.dry_run == true) && !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
+      ${{ needs.resolve-tag.result == 'success' && needs.resolve-tag.outputs.tag != '' &&
+          needs.version-check.result == 'success' &&
+          !(inputs.dry_run == true) && !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
     permissions:
       contents: write
     env:
@@ -188,6 +191,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
       - name: Create or update GitHub release (auto notes)
         shell: bash
         env:
@@ -210,13 +215,44 @@ jobs:
           fi
           gh release create "${release_args[@]}"
 
+  # ── Build Web Once ────────────────────────────────────────────────────────
+  build-web:
+    name: Build Web Artifact
+    runs-on: ubuntu-latest
+    needs: [resolve-tag, version-check]
+    if: >-
+      ${{ needs.resolve-tag.result == 'success' && needs.resolve-tag.outputs.tag != '' &&
+          needs.version-check.result == 'success' &&
+          !(inputs.dry_run == true) && !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+
+      - uses: ./.github/actions/pnpm-install
+
+      - name: Build web dist
+        run: pnpm --filter @gospeak/web build
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-web-dist
+          path: app/web/dist
+          retention-days: 3
+
   # ── Cross-Platform Binaries ───────────────────────────────────────────────
   build-release-binaries:
     name: Build ${{ matrix.target }}
     runs-on: ubuntu-latest
-    needs: [resolve-tag, version-check, create-release]
+    needs: [resolve-tag, version-check, create-release, build-web]
     if: >-
-      ${{ always() && !(inputs.dry_run == true) && !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
+      ${{ needs.resolve-tag.result == 'success' && needs.resolve-tag.outputs.tag != '' &&
+          needs.version-check.result == 'success' && needs.create-release.result == 'success' &&
+          needs.build-web.result == 'success' && !(inputs.dry_run == true) &&
+          !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
     permissions:
       contents: write
     strategy:
@@ -266,6 +302,14 @@ jobs:
             ext: ".exe"
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+
+      - name: Download web artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: release-web-dist
+          path: app/web/dist
 
       - uses: actions/setup-go@v7
         with:
@@ -273,17 +317,17 @@ jobs:
           cache-dependency-path: app/server/go.sum
           cache: true
 
-      - uses: ./.github/actions/pnpm-install
-
-      - name: Build web dist
-        run: pnpm --filter @gospeak/web build
-
       - name: Embed frontend into server
         run: |
           rm -rf app/server/internal/webui/dist
           mkdir -p app/server/internal/webui/dist
           cp -R app/web/dist/. app/server/internal/webui/dist/
           test -f app/server/internal/webui/dist/index.html
+
+      - name: Resolve checked out commit
+        id: source
+        shell: bash
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build binary
         working-directory: app/server
@@ -293,7 +337,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm }}
           RELEASE_VERSION: ${{ needs.resolve-tag.outputs.version }}
-          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_COMMIT: ${{ steps.source.outputs.commit }}
         run: |
           go build \
             -ldflags="-s -w \
@@ -328,7 +372,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: [resolve-tag, version-check, create-release, build-release-binaries]
     if: >-
-      ${{ always() && !(inputs.dry_run == true) && !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
+      ${{ needs.resolve-tag.result == 'success' && needs.resolve-tag.outputs.tag != '' &&
+          needs.version-check.result == 'success' && needs.create-release.result == 'success' &&
+          needs.build-release-binaries.result == 'success' && !(inputs.dry_run == true) &&
+          !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
     permissions:
       contents: write
     steps:
