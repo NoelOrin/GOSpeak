@@ -6,6 +6,7 @@ on:
     paths:
       - "**/package.json"
       - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - "app/server/go.mod"
       - "app/server/go.sum"
       - ".github/workflows/**"
@@ -16,6 +17,7 @@ on:
     paths:
       - "**/package.json"
       - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - "app/server/go.mod"
       - "app/server/go.sum"
       - ".github/workflows/**"
