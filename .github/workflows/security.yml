@@ -12,6 +12,13 @@ on:
       - ".github/dependabot.yml"
   push:
     branches: [release, dev]
+    paths:
+      - "**/package.json"
+      - "pnpm-lock.yaml"
+      - "app/server/go.mod"
+      - "app/server/go.sum"
+      - ".github/workflows/**"
+      - ".github/dependabot.yml"
   schedule:
     - cron: "30 3 * * 1"
   workflow_dispatch:
@@ -38,6 +45,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/pnpm-install
+        with:
+          install: false
       - name: Audit production dependencies
         env:
           npm_config_registry: https://registry.npmjs.org

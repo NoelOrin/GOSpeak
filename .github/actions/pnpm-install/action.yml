@@ -1,5 +1,10 @@
 name: pnpm install
 description: Setup pnpm + Node.js and install workspace dependencies with caching
+inputs:
+  install:
+    description: Install workspace dependencies after setting up pnpm and Node.js
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
@@ -8,16 +13,8 @@ runs:
       with:
         node-version: 22
         cache: pnpm
-    - name: Restore pnpm store path
-      id: pnpm-cache
-      shell: bash
-      run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-    - uses: actions/cache@v6
-      with:
-        path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
-        restore-keys: |
-          ${{ runner.os }}-pnpm-store-
+        cache-dependency-path: pnpm-lock.yaml
     - name: Install dependencies
+      if: inputs.install == 'true'
       shell: bash
       run: pnpm install --frozen-lockfile --prefer-offline
