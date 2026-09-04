@@ -51,6 +51,10 @@ jobs:
             js:
               - 'app/web/**'
               - 'packages/**'
+              - 'test/**'
+              - 'package.json'
+              - '**/tsconfig*.json'
+              - '.npmrc'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'turbo.json'
@@ -58,6 +62,7 @@ jobs:
               - '.github/**'
               - 'lefthook.yml'
               - 'commitlint.config.js'
+              - 'scripts/**'
             docs:
               - 'docs/**'
               - '**/*.md'
@@ -66,25 +71,41 @@ jobs:
   lint:
     name: Lint (Biome + go vet)
     needs: changes
-    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true'
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+          needs.changes.outputs.go == 'true' || needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/pnpm-install
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
       - name: Biome CI
-        run: npx @biomejs/biome ci --files-ignore-unknown=true ./app/web ./packages
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
+        run: pnpm exec biome ci --files-ignore-unknown=true ./app/web ./packages
       - uses: actions/setup-go@v7
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true' }}
         with:
           go-version-file: app/server/go.mod
           cache-dependency-path: app/server/go.sum
           cache: true
       - name: Vet
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true' }}
         run: cd app/server && go vet ./...
 
   typecheck:
     name: Typecheck
     needs: changes
-    if: needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true'
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+          needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -95,7 +116,9 @@ jobs:
   build-js:
     name: Build JS (turbo)
     needs: changes
-    if: needs.changes.outputs.js == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true'
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+          needs.changes.outputs.js == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -113,7 +136,9 @@ jobs:
     name: Build Server (Go)
     needs: [changes, build-js]
     if: >-
-      ${{ !cancelled() && (needs.changes.outputs.go == 'true' || needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true') }}
+      ${{ !cancelled() &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+           needs.changes.outputs.go == 'true' || needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -143,7 +168,9 @@ jobs:
     name: Test Server (Go)
     needs: changes
     if: >-
-      ${{ !cancelled() && (needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true') &&
+      ${{ !cancelled() &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+           needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true') &&
           (github.event_name != 'workflow_dispatch' && github.event_name != 'workflow_call' || inputs.run_tests) }}
     runs-on: ubuntu-latest
     steps:
