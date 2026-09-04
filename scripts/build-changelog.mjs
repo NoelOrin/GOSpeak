@@ -18,7 +18,6 @@ const SECTION_OF = {
   fix: "Bug Fixes",
   perf: "Performance",
   docs: "Documentation",
-  ci: "CI/CD",
   refactor: "Refactoring",
   style: "Styles",
   test: "Tests",
@@ -31,7 +30,6 @@ const SECTION_ORDER = [
   "Bug Fixes",
   "Performance",
   "Documentation",
-  "CI/CD",
   "Refactoring",
   "Styles",
   "Tests",
@@ -41,6 +39,39 @@ const SECTION_ORDER = [
 ];
 
 const CC_PATTERN = /^(?<type>[a-zA-Z]+)(?:\((?<scope>[^)]*)\))?(?<break>!)?:[ \t]+(?<desc>.*)$/;
+const CI_SUBJECT_PATTERNS = [
+  /\bci(?:\/cd)?\b/i,
+  /\brelease-please\b/i,
+  /\bgithub actions?\b/i,
+  /\bworkflows?\b/i,
+  /\bcross[- ]compile(?:d)?\b/i,
+  /\bversion consistency\b/i,
+  /\brelease workflow\b/i,
+  /\bcreate-release\b/i,
+  /\bpublish release\b/i,
+  /\bdependabot\b/i,
+  /发版流程|发布流程|发版|发布时|版本一致性/,
+];
+
+function isCIRelated(commit, match) {
+  const type = match?.groups?.type?.toLowerCase();
+  const scope = match?.groups?.scope?.toLowerCase();
+  if (type === "ci" || type === "release" || scope === "ci" || scope === "release") return true;
+  if (CI_SUBJECT_PATTERNS.some((pattern) => pattern.test(commit.subject))) return true;
+
+  const changedFiles = sh(
+    `git diff-tree --no-commit-id --name-only -r --root ${commit.hash}`,
+  )
+    .split("\n")
+    .filter(Boolean);
+  return changedFiles.some(
+    (file) =>
+      file.startsWith(".github/workflows/") ||
+      file.startsWith(".github/actions/") ||
+      file === "lefthook.yml" ||
+      file === "commitlint.config.js",
+  );
+}
 
 function sh(cmd) {
   try {
@@ -75,6 +106,7 @@ function classify(commits) {
 
   for (const c of commits) {
     const m = c.subject.match(CC_PATTERN);
+    if (isCIRelated(c, m)) continue;
     let section = "Chores";
     let scope = "";
     let desc = c.subject;
@@ -115,14 +147,26 @@ function buildSection(version, lastTag, date, commits) {
   return lines.join("\n").replace(/\n+$/, "\n");
 }
 
-function insertChangelog(newBlock, version) {
+function insertChangelog(newBlock, version, replaceExisting = false) {
   if (!fs.existsSync(CHANGELOG_PATH)) {
     fs.writeFileSync(CHANGELOG_PATH, `# Changelog / 更新日志\n\n${newBlock}`);
     return CHANGELOG_PATH;
   }
   let content = fs.readFileSync(CHANGELOG_PATH, "utf-8");
+  const versionHeading = `## [${version}]`;
+  if (replaceExisting) {
+    const sections = content.split(/(?=^## )/m);
+    const filtered = sections.filter((section) => !section.startsWith(versionHeading));
+    const firstVersionIndex = filtered.findIndex((section) => section.startsWith("## "));
+    filtered.splice(firstVersionIndex < 0 ? filtered.length : firstVersionIndex, 0, newBlock);
+    const replaced = filtered.join("");
+    if (replaced !== content) {
+      fs.writeFileSync(CHANGELOG_PATH, replaced);
+      return CHANGELOG_PATH;
+    }
+  }
   // 幂等：若已含该版本标题则跳过插入
-  if (content.includes(`## [${version}]`)) {
+  if (content.includes(versionHeading)) {
     return CHANGELOG_PATH;
   }
   const headerMatch = content.match(/^#\s+Changelog[^\n]*\n/);
@@ -139,7 +183,8 @@ function insertChangelog(newBlock, version) {
 function main() {
   const args = process.argv.slice(2);
   const write = !args.includes("--no-write");
-  const positional = args.filter((arg) => arg !== "--no-write");
+  const replaceExisting = args.includes("--replace");
+  const positional = args.filter((arg) => arg !== "--no-write" && arg !== "--replace");
   const version = positional[0];
   if (!version) {
     console.error("usage: node scripts/build-changelog.mjs <version> [lastTag] [date] [--no-write]");
@@ -151,7 +196,7 @@ function main() {
   const commits = collectCommits(range);
   const block = buildSection(version, lastTag, date, commits);
   if (write) {
-    insertChangelog(block, version);
+    insertChangelog(block, version, replaceExisting);
   }
   process.stdout.write(block);
   console.error(
