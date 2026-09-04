@@ -9,6 +9,7 @@ on:
       - "app/server/go.mod"
       - "app/server/go.sum"
       - ".github/workflows/**"
+      - ".github/actions/**"
       - ".github/dependabot.yml"
   push:
     branches: [release, dev]
@@ -18,6 +19,7 @@ on:
       - "app/server/go.mod"
       - "app/server/go.sum"
       - ".github/workflows/**"
+      - ".github/actions/**"
       - ".github/dependabot.yml"
   schedule:
     - cron: "30 3 * * 1"
