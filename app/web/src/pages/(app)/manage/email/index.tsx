@@ -1,0 +1,286 @@
+import { createFileRoute, redirect } from "@tanstack/solid-router";
+import Mail from "lucide-solid/icons/mail";
+import RefreshCcw from "lucide-solid/icons/refresh-ccw";
+import Save from "lucide-solid/icons/save";
+import { createEffect, createResource, createSignal, Show } from "solid-js";
+import { showToast } from "solid-notifications";
+import {
+	type EmailConfigInput,
+	getEmailConfig,
+	updateEmailConfig,
+} from "@/api/email";
+import {
+	ManageHeader,
+	ManageLoading,
+	ManageNotice,
+	ManagePage,
+	ManageSection,
+} from "@/components/manage/ManageShell";
+import { hasPermission } from "@/utils/permissions";
+
+export const Route = createFileRoute("/(app)/manage/email/")({
+	beforeLoad: () => {
+		if (!hasPermission("email_config:read")) {
+			throw redirect({ to: "/" });
+		}
+	},
+	component: EmailPage,
+	staticData: {
+		title: "邮箱",
+		icon: "icon-manage",
+	},
+});
+
+function EmailPage() {
+	const [config, { refetch }] = createResource(getEmailConfig);
+	const [enabled, setEnabled] = createSignal(false);
+	const [smtpHost, setSmtpHost] = createSignal("");
+	const [smtpPort, setSmtpPort] = createSignal("587");
+	const [smtpUsername, setSmtpUsername] = createSignal("");
+	const [smtpPassword, setSmtpPassword] = createSignal("");
+	const [smtpFrom, setSmtpFrom] = createSignal("");
+	const [smtpFromName, setSmtpFromName] = createSignal("GoSpeak");
+	const [emailCodeTTL, setEmailCodeTTL] = createSignal("10m");
+	const [emailSendCooldown, setEmailSendCooldown] = createSignal("60s");
+	const [emailCodeSecret, setEmailCodeSecret] = createSignal("");
+	const [smtpPasswordSet, setSmtpPasswordSet] = createSignal(false);
+	const [emailCodeSecretSet, setEmailCodeSecretSet] = createSignal(false);
+	const [saving, setSaving] = createSignal(false);
+
+	createEffect(() => {
+		const data = config();
+		if (!data) return;
+		setEnabled(data.enabled);
+		setSmtpHost(data.smtp_host || "");
+		setSmtpPort(data.smtp_port || "587");
+		setSmtpUsername(data.smtp_username || "");
+		setSmtpFrom(data.smtp_from || "");
+		setSmtpFromName(data.smtp_from_name || "GoSpeak");
+		setEmailCodeTTL(data.email_code_ttl || "10m");
+		setEmailSendCooldown(data.email_send_cooldown || "60s");
+		setSmtpPasswordSet(!!data.smtp_password_set);
+		setEmailCodeSecretSet(!!data.email_code_secret_set);
+	});
+
+	const handleSave = async () => {
+		if (saving()) return;
+		setSaving(true);
+		try {
+			const input: EmailConfigInput = {
+				enabled: enabled(),
+				smtp_host: smtpHost(),
+				smtp_port: smtpPort(),
+				smtp_username: smtpUsername(),
+				smtp_from: smtpFrom(),
+				smtp_from_name: smtpFromName(),
+				email_code_ttl: emailCodeTTL(),
+				email_send_cooldown: emailSendCooldown(),
+			};
+			if (smtpPassword()) input.smtp_password = smtpPassword();
+			if (emailCodeSecret()) input.email_code_secret = emailCodeSecret();
+
+			const saved = await updateEmailConfig(input);
+			setSmtpPasswordSet(!!saved.smtp_password_set);
+			setEmailCodeSecretSet(!!saved.email_code_secret_set);
+			showToast("邮箱配置已保存", { type: "success" });
+			setSmtpPassword("");
+			setEmailCodeSecret("");
+			await refetch();
+		} catch {
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	return (
+		<ManagePage>
+			<ManageHeader
+				icon={<Mail size={18} />}
+				title="邮箱配置"
+				description="SMTP 与邮箱验证码参数"
+				actions={
+					<button
+						class="btn btn-ghost btn-sm btn-square"
+						onClick={() => void refetch()}
+						disabled={saving() || config.loading}
+						title="重新加载"
+					>
+						<RefreshCcw size={16} />
+					</button>
+				}
+			/>
+
+			<Show when={config.loading}>
+				<ManageLoading />
+			</Show>
+
+			<Show when={!config.loading && config.error}>
+				<div class="alert alert-error text-sm">
+					{config.error instanceof Error ? config.error.message : "加载失败"}
+				</div>
+			</Show>
+
+			<Show when={!config.loading && !!config()}>
+				<Show when={config()}>
+					{(data) => (
+						<ManageNotice tone={data().available ? "info" : "warning"}>
+							{data().available
+								? "邮箱验证能力已就绪，注册和重置密码均使用验证码流程。"
+								: "邮箱验证未就绪。配置完整 SMTP 并开启启用开关后，注册将要求邮箱验证码，重置密码将切换为邮箱验证码流程。"}
+						</ManageNotice>
+					)}
+				</Show>
+
+				<section class="flex items-center justify-between gap-4 rounded-2xl border border-base-300/80 bg-base-100 px-4 py-3 shadow-sm md:px-5">
+					<div class="min-w-0">
+						<div class="text-sm font-semibold text-base-content">
+							启用邮箱验证
+						</div>
+						<p class="mt-0.5 text-xs text-base-content/50">
+							关闭时保持现有注册与登录行为，重置密码将被禁用
+						</p>
+					</div>
+					<input
+						type="checkbox"
+						class="toggle toggle-sm shrink-0"
+						aria-label="启用邮箱验证"
+						checked={enabled()}
+						onChange={(e) => setEnabled(e.currentTarget.checked)}
+					/>
+				</section>
+
+				<ManageSection title="SMTP 配置" description="发信服务器与身份">
+					<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
+						<Field label="SMTP Host">
+							<input
+								type="text"
+								class="input input-bordered input-sm w-full"
+								placeholder="smtp.qq.com"
+								value={smtpHost()}
+								onInput={(e) => setSmtpHost(e.currentTarget.value)}
+								disabled={saving()}
+							/>
+						</Field>
+						<Field label="SMTP Port">
+							<input
+								type="text"
+								class="input input-bordered input-sm w-full"
+								placeholder="587"
+								value={smtpPort()}
+								onInput={(e) => setSmtpPort(e.currentTarget.value)}
+								disabled={saving()}
+							/>
+						</Field>
+						<Field label="用户名">
+							<input
+								type="text"
+								class="input input-bordered input-sm w-full"
+								placeholder="example@qq.com"
+								value={smtpUsername()}
+								onInput={(e) => setSmtpUsername(e.currentTarget.value)}
+								disabled={saving()}
+							/>
+						</Field>
+						<Field label="密码 / 授权码">
+							<input
+								type="password"
+								class="input input-bordered input-sm w-full"
+								placeholder={
+									smtpPasswordSet() ? "已配置，留空保留" : "SMTP 密码"
+								}
+								value={smtpPassword()}
+								onInput={(e) => setSmtpPassword(e.currentTarget.value)}
+								disabled={saving()}
+							/>
+						</Field>
+						<Field label="发件地址">
+							<input
+								type="text"
+								class="input input-bordered input-sm w-full"
+								placeholder="example@qq.com"
+								value={smtpFrom()}
+								onInput={(e) => setSmtpFrom(e.currentTarget.value)}
+								disabled={saving()}
+							/>
+						</Field>
+						<Field label="发件人名称">
+							<input
+								type="text"
+								class="input input-bordered input-sm w-full"
+								placeholder="GoSpeak"
+								value={smtpFromName()}
+								onInput={(e) => setSmtpFromName(e.currentTarget.value)}
+								disabled={saving()}
+							/>
+						</Field>
+					</div>
+				</ManageSection>
+
+				<ManageSection
+					title="验证码参数"
+					description="有效期、冷却与签名密钥"
+					actions={
+						<button
+							type="button"
+							class="btn btn-sm border border-base-300 bg-base-100 text-base-content shadow-none hover:bg-base-200"
+							disabled={saving()}
+							onClick={handleSave}
+						>
+							<Show when={saving()} fallback={<Save size={16} />}>
+								<span class="loading loading-spinner loading-xs" />
+							</Show>
+							{saving() ? "保存中..." : "保存配置"}
+						</button>
+					}
+				>
+					<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
+						<Field label="验证码有效期">
+							<input
+								type="text"
+								class="input input-bordered input-sm w-full"
+								placeholder="10m"
+								value={emailCodeTTL()}
+								onInput={(e) => setEmailCodeTTL(e.currentTarget.value)}
+								disabled={saving()}
+							/>
+						</Field>
+						<Field label="发送冷却时间">
+							<input
+								type="text"
+								class="input input-bordered input-sm w-full"
+								placeholder="60s"
+								value={emailSendCooldown()}
+								onInput={(e) => setEmailSendCooldown(e.currentTarget.value)}
+								disabled={saving()}
+							/>
+						</Field>
+						<Field label="验证码签名密钥">
+							<input
+								type="password"
+								class="input input-bordered input-sm w-full"
+								placeholder={
+									emailCodeSecretSet() ? "已配置，留空保留" : "验证码签名密钥"
+								}
+								value={emailCodeSecret()}
+								onInput={(e) => setEmailCodeSecret(e.currentTarget.value)}
+								disabled={saving()}
+							/>
+						</Field>
+					</div>
+				</ManageSection>
+			</Show>
+		</ManagePage>
+	);
+}
+
+interface FieldProps {
+	label: string;
+	children: any;
+}
+
+const Field = (props: FieldProps) => (
+	<fieldset class="fieldset">
+		<legend class="fieldset-legend text-[14px]">{props.label}</legend>
+		{props.children}
+	</fieldset>
+);

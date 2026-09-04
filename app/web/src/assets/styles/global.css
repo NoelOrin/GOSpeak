@@ -1,0 +1,152 @@
+html {
+	line-height: 1.5;
+	-webkit-text-size-adjust: 100%;
+	-moz-tab-size: 4;
+	-o-tab-size: 4;
+	tab-size: 4;
+	/* macOS / iOS */ font-family:
+		-apple-system, BlinkMacSystemFont,
+		/* Windows */ "Segoe UI",
+		/* Android / Chrome OS */ Roboto,
+		/* 老系统通用 sans-serif */ "Helvetica Neue", Arial,
+		/* 中文优先 */ "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+		/* 兜底 */ sans-serif,
+		/* Emoji */ "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji" !important;
+	font-feature-settings: normal;
+	font-variation-settings: normal;
+}
+
+.iconpark-icon {
+	width: 1em;
+	height: 1em;
+}
+
+.cm-split-handler-v {
+	user-select: none;
+	transform: translateX(-3px);
+	background-color: transparent !important;
+	transition: background-color 0.15s ease-out;
+	border: none !important;
+}
+
+.cm-split-handler-v:hover {
+	background-color: rgba(0, 0, 0, 0.317) !important;
+}
+:is(.dark .cm-split-handler-v:hover) {
+	background-color: rgba(255, 255, 255, 0.317) !important;
+}
+
+/* 可覆写 */
+:root {
+	--border-color: #c9c9c9;
+}
+
+.dark {
+	--border-color-alpha: 0.22;
+}
+
+.border-color {
+	border-spacing: 0;
+	border-collapse: collapse;
+	border-color: rgb(from var(--border-color) r g b / 0.38);
+}
+
+.dark .border-color,
+:is(.dark .border-color) {
+	border-color: rgb(
+		from var(--border-color) r g b /
+		var(--border-color-alpha, 0.22)
+	);
+}
+
+/* 统一提升低透明度辅助文本对比度，避免 Tailwind alpha 低于 WCAG AA */
+.text-base-content\/40,
+.text-base-content\/45,
+.text-base-content\/50,
+.text-base-content\/55 {
+	color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+}
+
+.list-item {
+	@apply border-0 btn btn-sm btn-ghost;
+}
+
+/* 管理后台子页切换：仅保留滚动容器配置，已移除首帧透明的入场动画以避免路由切换闪烁 */
+.manage-shell-scroll {
+	scroll-behavior: auto;
+	overscroll-behavior: contain;
+}
+
+/* iOS 底部安全区：底栏不被 Home Indicator 遮住 */
+.safe-bottom {
+	padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* 移动端触摸目标与滚动惯性 */
+@media (max-width: 767px) {
+	html,
+	body {
+		overscroll-behavior: none;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.cm-split-handler-v {
+		display: none !important;
+	}
+
+	/* 移动端最小触控目标：统一覆盖管理表格、导航、时长选择等小按钮 */
+	.btn-xs,
+	.btn-sm {
+		min-height: 2.75rem;
+		height: 2.75rem;
+	}
+	.btn-xs.btn-square,
+	.btn-sm.btn-square {
+		width: 2.75rem;
+		min-width: 2.75rem;
+	}
+	.select-xs,
+	.select-sm,
+	.input-sm,
+	.textarea-sm {
+		min-height: 2.75rem;
+	}
+	.toggle-sm {
+		min-height: 2.75rem;
+		min-width: 3.25rem;
+	}
+	.input:not(.input-xs):not(.input-sm),
+	.btn:not(.btn-xs):not(.btn-sm) {
+		min-height: 2.75rem;
+	}
+	.sn-dismiss-button {
+		min-width: 2.75rem;
+		min-height: 2.75rem;
+	}
+}
+
+/* mobile modal full-bleed */
+@media (max-width: 767px) {
+	.modal {
+		align-items: stretch;
+		justify-content: stretch;
+		padding: 0;
+	}
+	.modal-box {
+		max-width: 100% !important;
+		width: 100% !important;
+		margin: 0 !important;
+		border-radius: 0 !important;
+		max-height: 100dvh !important;
+		height: 100dvh !important;
+	}
+}
+
+/* 隐藏滚动条但保留滚动能力 */
+.scrollbar-none {
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+	display: none;
+}

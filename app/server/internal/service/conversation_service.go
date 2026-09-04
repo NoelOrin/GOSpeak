@@ -1,0 +1,342 @@
+package service
+
+import (
+	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"sort"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"GOSpeak/internal/bus"
+	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/repository"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+)
+
+const (
+	DefaultListLimit = 50
+	MaxListLimit     = 200
+)
+
+type MessageListResult struct {
+	Messages    []MessageDTO `json:"messages"`
+	NextCursor  string       `json:"next_cursor,omitempty"`
+	UnreadCount int          `json:"unread_count,omitempty"` // 离线拉取时返回该会话当前未读数
+}
+
+type ConversationService struct {
+	convRepo         *repository.ConversationRepository
+	messageRepo      *repository.MessageRepository
+	eventBus         bus.EventBus
+	queue            MessageJobQueue
+	syncWriteAllowed bool
+}
+
+func NewConversationService(
+	convRepo *repository.ConversationRepository,
+	messageRepo *repository.MessageRepository,
+) *ConversationService {
+	return &ConversationService{convRepo: convRepo, messageRepo: messageRepo, syncWriteAllowed: true}
+}
+
+// SetEventBus injects the event bus used to broadcast private-message events.
+func (s *ConversationService) SetEventBus(b bus.EventBus) {
+	s.eventBus = b
+}
+
+// SetJobQueue injects the durable queue used for private-message persistence.
+func (s *ConversationService) SetJobQueue(q MessageJobQueue) {
+	s.queue = q
+}
+
+// SetSyncWriteAllowed controls whether queue-unavailable fallbacks may write
+// the database synchronously. Worker data-plane instances must disable this.
+func (s *ConversationService) SetSyncWriteAllowed(allowed bool) {
+	s.syncWriteAllowed = allowed
+}
+
+// ConversationDTO is the client-facing view of a conversation.
+type ConversationDTO struct {
+	ConversationID     string `json:"conversation_id"`
+	OtherIdentity      string `json:"other_identity"`
+	OtherDisplayName   string `json:"other_display_name"`
+	OtherAvatar        string `json:"other_avatar,omitempty"`
+	LastContent        string `json:"last_content"`
+	LastSenderIdentity string `json:"last_sender_identity"`
+	LastMessageAt      int64  `json:"last_message_at"`
+	UnreadCount        int    `json:"unread_count"`
+}
+
+// List returns all conversations involving the given identity.
+func (s *ConversationService) List(identity string, limit int) ([]ConversationDTO, error) {
+	if identity == "" {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "identity required")
+	}
+	rows, err := s.convRepo.ListByIdentity(identity, limit)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	out := make([]ConversationDTO, 0, len(rows))
+	for _, cp := range rows {
+		other := cp.IdentityB
+		unread := cp.UnreadCountA
+		if cp.IdentityA != identity {
+			other = cp.IdentityA
+			unread = cp.UnreadCountB
+		}
+		lat := int64(0)
+		if cp.LastMessageAt != nil {
+			lat = cp.LastMessageAt.UnixMilli()
+		}
+		out = append(out, ConversationDTO{
+			ConversationID:     cp.ConversationID,
+			OtherIdentity:      other,
+			LastContent:        cp.LastContent,
+			LastSenderIdentity: cp.LastSenderIdentity,
+			LastMessageAt:      lat,
+			UnreadCount:        unread,
+		})
+	}
+	return out, nil
+}
+
+// toMessageDTO converts a model.Message to a MessageDTO.
+func toMessageDTO(m *model.Message) MessageDTO {
+	return MessageDTO{
+		UUID:       m.UUID,
+		RoomUUID:   m.RoomUUID,
+		AuthorID:   m.AuthorID,
+		AuthorUUID: m.AuthorUUID,
+		Content:    m.Content,
+		ReplyTo:    m.ReplyTo,
+		EditedAt:   m.EditedAt,
+		Deleted:    m.DeletedAt.Valid,
+		CreatedAt:  m.CreatedAt,
+	}
+}
+
+// 私聊字段从持久化模型回填，方便前端直接插入会话。
+func toPrivateMessageDTO(m *model.Message) MessageDTO {
+	dto := toMessageDTO(m)
+	if m.ConversationID != nil {
+		dto.ConversationID = *m.ConversationID
+	}
+	if m.TargetIdentity != nil {
+		dto.TargetIdentity = *m.TargetIdentity
+	}
+	return dto
+}
+
+// GetMessages returns paginated messages for a conversation.
+// The caller must be a participant (checked against IdentityA / IdentityB).
+func (s *ConversationService) GetMessages(conversationID, identity, before string, limit int) (*MessageListResult, error) {
+	if conversationID == "" || identity == "" {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "conversation_id and identity required")
+	}
+	cp, err := s.convRepo.GetByID(conversationID)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.NOT_FOUND, "conversation not found")
+	}
+	if cp.IdentityA != identity && cp.IdentityB != identity {
+		return nil, pkg.NewAppError(pkg.FORBIDDEN, "not a conversation participant")
+	}
+
+	if limit <= 0 {
+		limit = DefaultListLimit
+	}
+	if limit > MaxListLimit {
+		limit = MaxListLimit
+	}
+
+	rows, hasMore, err := s.messageRepo.ListBeforeConversation(conversationID, before, limit)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+
+	unread := cp.UnreadCountB
+	if cp.IdentityA == identity {
+		unread = cp.UnreadCountA
+	}
+	out := &MessageListResult{UnreadCount: unread, Messages: make([]MessageDTO, 0, len(rows))}
+	for i := range rows {
+		out.Messages = append(out.Messages, toPrivateMessageDTO(&rows[i]))
+	}
+	if hasMore && len(rows) > 0 {
+		out.NextCursor = rows[0].UUID
+	}
+	return out, nil
+}
+
+// MarkRead resets the unread count for a conversation for the given identity.
+func (s *ConversationService) MarkRead(conversationID, identity string) error {
+	if conversationID == "" || identity == "" {
+		return pkg.NewAppError(pkg.INVALID_PARAMS, "conversation_id and identity required")
+	}
+	cp, err := s.convRepo.GetByID(conversationID)
+	if err != nil {
+		return pkg.NewAppError(pkg.NOT_FOUND, "conversation not found")
+	}
+	if cp.IdentityA != identity && cp.IdentityB != identity {
+		return pkg.NewAppError(pkg.FORBIDDEN, "not a conversation participant")
+	}
+	if err := s.convRepo.ResetUnread(conversationID, identity); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return nil
+}
+
+// SendDirect creates and broadcasts a private message, then enqueues async persistence.
+// Data-plane instances never fall back to a synchronous DB write.
+func (s *ConversationService) SendDirect(senderIdentity, targetIdentity, content, clientNonce string) (*MessageDTO, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "content is required")
+	}
+	if utf8.RuneCountInString(content) > MaxMessageRunes {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "content too long")
+	}
+	if senderIdentity == "" || targetIdentity == "" {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "sender and target required")
+	}
+	if senderIdentity == targetIdentity {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "cannot send to self")
+	}
+
+	identities := []string{senderIdentity, targetIdentity}
+	sort.Strings(identities)
+	hashBytes := md5.Sum([]byte(identities[0] + ":" + identities[1]))
+	convID := hex.EncodeToString(hashBytes[:])
+
+	now := time.Now().UTC()
+	msgUUID := uuid.New().String()
+	dto := &MessageDTO{
+		UUID:           msgUUID,
+		AuthorID:       senderIdentity,
+		Content:        content,
+		Deleted:        false,
+		CreatedAt:      now,
+		ClientNonce:    clientNonce,
+		ConversationID: convID,
+		TargetIdentity: targetIdentity,
+	}
+
+	// 定向投递到双方的个人房间，避免 private:new 广播给所有在线连接。
+	// Hub.OnConnect 会把每个已认证连接加入 __user:{identity}。
+	if s.eventBus != nil {
+		payload, _ := json.Marshal(dto)
+		if err := s.eventBus.PublishRoom(context.Background(), "__user:"+senderIdentity, "private:new", payload); err != nil {
+			log.Printf("[Conversation] publish private:new to sender %s failed: %v", senderIdentity, err)
+		}
+		if err := s.eventBus.PublishRoom(context.Background(), "__user:"+targetIdentity, "private:new", payload); err != nil {
+			log.Printf("[Conversation] publish private:new to receiver %s failed: %v", targetIdentity, err)
+		}
+	}
+
+	payload, _ := json.Marshal(map[string]interface{}{
+		"uuid":            msgUUID,
+		"sender_identity": senderIdentity,
+		"target_identity": targetIdentity,
+		"content":         content,
+		"client_nonce":    clientNonce,
+		"created_at":      now,
+	})
+	enqueued := false
+	if s.queue != nil {
+		if err := s.queue.Publish(context.Background(), bus.JobEnvelope{
+			ID:      msgUUID,
+			Type:    "chat.private.persist",
+			Payload: payload,
+		}); err == nil {
+			enqueued = true
+		}
+	}
+	if !enqueued {
+		if !s.syncWriteAllowed {
+			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "message persistence unavailable on data-plane instance")
+		}
+		if err := s.persistPrivate(msgUUID, senderIdentity, targetIdentity, content, clientNonce, now); err != nil {
+			return nil, err
+		}
+	}
+	return dto, nil
+}
+
+// PersistPrivateFromJob applies a private-message persistence job idempotently.
+func (s *ConversationService) PersistPrivateFromJob(payload []byte) error {
+	if !s.syncWriteAllowed {
+		return errors.New("private message persistence is not allowed on data-plane instance")
+	}
+	var data struct {
+		UUID           string    `json:"uuid"`
+		SenderIdentity string    `json:"sender_identity"`
+		TargetIdentity string    `json:"target_identity"`
+		Content        string    `json:"content"`
+		ClientNonce    string    `json:"client_nonce"`
+		CreatedAt      time.Time `json:"created_at"`
+	}
+	if err := json.Unmarshal(payload, &data); err != nil {
+		return err
+	}
+	if data.UUID == "" || data.SenderIdentity == "" || data.TargetIdentity == "" || data.Content == "" {
+		return fmt.Errorf("invalid private message job")
+	}
+	ts := data.CreatedAt
+	if ts.IsZero() {
+		ts = time.Now().UTC()
+	}
+	return s.persistPrivate(data.UUID, data.SenderIdentity, data.TargetIdentity, data.Content, data.ClientNonce, ts)
+}
+
+func (s *ConversationService) persistPrivate(msgUUID, senderIdentity, targetIdentity, content, clientNonce string, now time.Time) error {
+	identities := []string{senderIdentity, targetIdentity}
+	sort.Strings(identities)
+	hashBytes := md5.Sum([]byte(identities[0] + ":" + identities[1]))
+	convID := hex.EncodeToString(hashBytes[:])
+
+	if _, err := s.messageRepo.GetByUUID(msgUUID); err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+		}
+		convIDPtr := convID
+		targetPtr := targetIdentity
+		msg := &model.Message{
+			UUID:             msgUUID,
+			AuthorID:         senderIdentity,
+			Content:          content,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+			ConversationType: model.ConversationTypePrivate,
+			ConversationID:   &convIDPtr,
+			TargetIdentity:   &targetPtr,
+			Status:           model.MessageStatusActive,
+		}
+		if err := s.messageRepo.Create(msg); err != nil {
+			return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+		}
+	}
+
+	cp := &model.ConversationParticipant{
+		ConversationID:     convID,
+		IdentityA:          identities[0],
+		IdentityB:          identities[1],
+		LastContent:        content,
+		LastSenderIdentity: senderIdentity,
+		LastMessageAt:      &now,
+	}
+	if err := s.convRepo.Upsert(cp); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if err := s.convRepo.IncrementUnread(convID, senderIdentity); err != nil {
+		log.Printf("[Conversation] increment unread %s failed: %v", convID, err)
+	}
+	return nil
+}

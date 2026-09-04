@@ -1,0 +1,21 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [".env"],
+  "tasks": {
+    "gen:icons": {
+      "cache": false,
+      "inputs": ["node_modules/cui-solid/dist/cui.min.esm.js", "src/**/*.{ts,tsx}", "scripts/gen-icon-shims.mjs", "vendor/**"]
+    },
+    "build": {
+      "dependsOn": ["^build", "gen:icons"],
+      "outputs": ["dist/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["^dev", "gen:icons"]
+    },
+    "lint": {},
+    "test": {}
+  }
+}

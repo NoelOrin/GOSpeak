@@ -1,0 +1,132 @@
+# ========================
+# 通用
+# ========================
+node_modules
+.DS_Store
+*.local
+.idea
+.vscode
+
+# 本地工具缓存
+.pnpm-store/
+.superpowers/
+.cache/
+.turbo/
+
+# ========================
+# 前端 (app/web)
+# ========================
+# Vite/TS package build outputs (not go embed dir)
+**/dist/
+!app/server/internal/webui/dist/
+!app/server/internal/webui/dist/**
+dist-ssr
+.nitro
+.tanstack
+.wrangler
+*.tsbuildinfo
+
+# 子包独立 lockfile（根 workspace 统一管理）
+app/web/pnpm-lock.yaml
+
+# VitePress 构建缓存
+app/docs/.vitepress/cache/
+
+# TanStack Router 自动生成
+app/web/src/routeTree.gen.ts
+
+# Vite 临时文件
+vite.config.ts.timestamp*
+
+# ========================
+# 后端 (app/server)
+# ========================
+
+# 环境变量（真实配置，模板 .env.example 保留追踪）
+app/server/.env
+app/server/.env.dev
+app/server/.env.prod
+
+# 编译输出
+app/server/tmp/
+app/server/build-errors.log
+
+# SQLite 数据库
+app/server/db/
+*.db
+*.db-shm
+*.db-wal
+
+# 日志
+app/server/logs/
+app/server/gin.log
+*.log
+
+# Go 编译产物
+gospeak
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go 工作区
+go.work
+go.work.sum
+
+# Swagger 自动生成（可选，如需保留则注释掉）
+# app/server/docs/docs.go
+# app/server/docs/swagger.json
+# app/server/docs/swagger.yaml
+
+# ========================
+# 测试日志
+# ========================
+agent_test_logs/*
+!agent_test_logs/AGENTS.md
+
+# Playwright/Vitest 运行产物
+test-results/
+.last-run.json
+
+# review 产物
+findings.json
+
+# 存储 handler 测试产生的上传文件
+app/server/internal/handler/uploads/
+
+# ========================
+# Agents 配置
+# ========================
+.agents/*
+!.agents/skills/
+!.agents/AGENTS.md
+
+# 临时/构建目录
+tmp/
+build/
+
+# Vitest 集成测试运行目录
+test/.runtime/
+
+# ========================
+# 部署运行时密钥
+# ========================
+deploy/.env
+deploy/env/app.srs.env
+deploy/env/app.livekit.env
+deploy/env/*.local.env
+
+# 顶层 dist 规则会忽略整个目录，需先反忽略目录再保留 .gitkeep
+!app/server/internal/webui/dist/
+
+# go:embed frontend bundle (build overwrites contents, keep placeholder tracked)
+app/server/internal/webui/dist/*
+!app/server/internal/webui/dist/EMBED_PLACEHOLDER
+!app/server/internal/webui/dist/.gitkeep
+.worktrees/
+.agents/skills/room-voice-e2e/scripts/artifacts
+app/server/docs/swagger.json
+app/server/docs/swagger.yaml

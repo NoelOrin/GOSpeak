@@ -1,0 +1,8 @@
+packages:
+  - "packages/*"
+  - "app/*"
+  - "test"
+allowBuilds:
+  esbuild: true
+  lefthook: true
+  mediasoup: true

@@ -1,0 +1,221 @@
+# GOSpeak CI — 质量门禁（按路径精准触发，聚合 JS 构建）
+# 保留 workflow_call 兼容外部调用；仓库内正式发布由 release.yml 独立负责。
+name: CI
+
+on:
+  pull_request:
+    branches: [release, dev, main, master]
+  push:
+    branches: [release, dev]
+  workflow_dispatch:
+    inputs:
+      run_tests:
+        description: "Run server tests (Go)"
+        required: false
+        default: true
+        type: boolean
+  workflow_call:
+    inputs:
+      run_tests:
+        description: "Run server tests (Go)"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/release' }}
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      js: ${{ steps.filter.outputs.js }}
+      ci: ${{ steps.filter.outputs.ci }}
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            go:
+              - 'app/server/**'
+              - 'app/server/go.mod'
+              - 'app/server/go.sum'
+            js:
+              - 'app/web/**'
+              - 'packages/**'
+              - 'test/**'
+              - 'package.json'
+              - '**/tsconfig*.json'
+              - '.npmrc'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+            ci:
+              - '.github/**'
+              - 'lefthook.yml'
+              - 'commitlint.config.js'
+              - 'scripts/**'
+            docs:
+              - 'docs/**'
+              - '**/*.md'
+              - 'app/docs/**'
+
+  lint:
+    name: Lint (Biome + go vet)
+    needs: changes
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+          needs.changes.outputs.go == 'true' || needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm-install
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
+      - name: Biome CI
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
+        run: pnpm exec biome ci --files-ignore-unknown=true ./app/web ./packages
+      - uses: actions/setup-go@v7
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true' }}
+        with:
+          go-version-file: app/server/go.mod
+          cache-dependency-path: app/server/go.sum
+          cache: true
+      - name: Vet
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true' }}
+        run: cd app/server && go vet ./...
+
+  typecheck:
+    name: Typecheck
+    needs: changes
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+          needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm-install
+      - name: Typecheck
+        run: pnpm typecheck
+
+  build-js:
+    name: Build JS (turbo)
+    needs: changes
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+          needs.changes.outputs.js == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm-install
+      - name: Build JS
+        run: pnpm turbo run build --filter=@gospeak/web --filter=@gospeak/sfu-client --filter=@gospeak/mediasoup-worker
+      - name: Upload web dist
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-dist
+          path: app/web/dist
+          retention-days: 3
+
+  build-server:
+    name: Build Server (Go)
+    needs: [changes, build-js]
+    if: >-
+      ${{ !cancelled() &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+           needs.changes.outputs.go == 'true' || needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: app/server/go.mod
+          cache-dependency-path: app/server/go.sum
+          cache: true
+      - name: Download web dist
+        uses: actions/download-artifact@v8
+        with:
+          name: web-dist
+          path: app/web/dist
+      - name: Embed frontend into server
+        run: |
+          rm -rf app/server/internal/webui/dist
+          mkdir -p app/server/internal/webui/dist
+          cp -R app/web/dist/. app/server/internal/webui/dist/
+          test -f app/server/internal/webui/dist/index.html
+      - name: Build
+        working-directory: app/server
+        env:
+          CGO_ENABLED: 0
+        run: go build -ldflags="-s -w" -o gospeak .
+
+  test-server:
+    name: Test Server (Go)
+    needs: changes
+    if: >-
+      ${{ !cancelled() &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+           needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true') &&
+          (github.event_name != 'workflow_dispatch' && github.event_name != 'workflow_call' || inputs.run_tests) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: app/server/go.mod
+          cache-dependency-path: app/server/go.sum
+          cache: true
+      - name: Test
+        working-directory: app/server
+        env:
+          CGO_ENABLED: 1
+        run: go test ./... -race -v -count=1
+
+  version-check:
+    name: Version Consistency
+    # 版本一致性仅在打 tag 发版时校验；push 到分支（如 release/dev）时跳过，
+    # 避免把分支名当 SemVer 导致的假阳性失败（Gate 将 skipped 视为通过）。
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check product version
+        run: node scripts/check-version.mjs
+
+  gate:
+    name: CI Gate
+    if: always()
+    needs: [lint, typecheck, build-js, build-server, test-server, version-check]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required checks
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          TYPECHECK_RESULT: ${{ needs.typecheck.result }}
+          BUILD_JS_RESULT: ${{ needs.build-js.result }}
+          BUILD_SERVER_RESULT: ${{ needs.build-server.result }}
+          TEST_SERVER_RESULT: ${{ needs.test-server.result }}
+          VERSION_RESULT: ${{ needs.version-check.result }}
+        run: |
+          set -euo pipefail
+          for result in "$LINT_RESULT" "$TYPECHECK_RESULT" "$BUILD_JS_RESULT" "$BUILD_SERVER_RESULT" "$TEST_SERVER_RESULT" "$VERSION_RESULT"; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "required CI job failed: $result" >&2; exit 1 ;;
+            esac
+          done

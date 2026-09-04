@@ -1,0 +1,20 @@
+# 已合并到 deploy/docker-compose.yml
+# 请使用:
+#   docker compose -f deploy/docker-compose.yml --profile srs --profile app up -d --build
+# 说明: deploy/DEPLOY.md
+#
+# 本文件保留兼容旧文档引用:
+include:
+  - path: docker-compose.yml
+
+  # NATS — optional multi-instance signal bus (single node uses embedded by default)
+  nats:
+    image: nats:2-alpine
+    container_name: gospeak-nats
+    restart: unless-stopped
+    profiles: ["nats"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: ["-m", "8222"]
+

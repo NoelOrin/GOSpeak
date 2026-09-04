@@ -1,0 +1,34 @@
+{
+  "name": "gospeak-monorepo",
+  "version": "0.4.0",
+  "private": true,
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "dev:web": "pnpm --filter @gospeak/web dev",
+    "build:web": "pnpm --filter @gospeak/web build",
+    "dev:server": "pnpm --filter @gospeak/server dev",
+    "prod:server": "pnpm --filter @gospeak/server prod",
+    "build:server": "pnpm --filter @gospeak/server build",
+    "test:server": "pnpm --filter @gospeak/test test",
+    "test:server:go": "cd app/server && go test ./...",
+    "test:integration": "pnpm --filter @gospeak/test test",
+    "start:dev": "pnpm run dev:server & pnpm run dev:web",
+    "start:prod": "pnpm run prod:server",
+    "format": "pnpm -r format",
+    "prepare": "lefthook install",
+    "typecheck": "pnpm --filter @gospeak/web --filter @gospeak/bot --filter @gospeak/sfu-client exec tsc --noEmit",
+    "version:check": "node scripts/check-version.mjs",
+    "changelog": "node scripts/build-changelog.mjs",
+    "changelog:version": "node scripts/build-changelog.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.1",
+    "@commitlint/cli": "^17.7.2",
+    "@commitlint/config-conventional": "^17.7.0",
+    "lefthook": "1.8.5",
+    "turbo": "^2.10.0"
+  }
+}

@@ -1,0 +1,253 @@
+// Package service — 房间业务逻辑：房间的 CRUD 操作。
+package service
+
+import (
+	"errors"
+	"strings"
+	"sync"
+	"time"
+
+	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/repository"
+
+	"gorm.io/gorm"
+)
+
+// ErrRoomNotFound is returned when a room query finds no matching row.
+// Cause 保留 gorm.ErrRecordNotFound，便于 signal 等调用方用 errors.Is 区分“未找到”和真实 DB 故障。
+var ErrRoomNotFound = pkg.NewAppErrorWithCause(pkg.NOT_FOUND, gorm.ErrRecordNotFound, "room not found")
+
+// RoomService 房间服务，提供房间的增删改查能力。
+type RoomService struct {
+	roomRepo    *repository.RoomRepository
+	mu          sync.Mutex
+	domainLocks map[string]*sync.Mutex
+}
+
+func NewRoomService(roomRepo *repository.RoomRepository) *RoomService {
+	return &RoomService{roomRepo: roomRepo, domainLocks: make(map[string]*sync.Mutex)}
+}
+
+// lockDomain 返回按 domain 分片的互斥锁：同一 Domain 串行，不同 Domain 并行。
+func (s *RoomService) lockDomain(domainUUID string) func() {
+	s.mu.Lock()
+	lock, ok := s.domainLocks[domainUUID]
+	if !ok {
+		lock = &sync.Mutex{}
+		s.domainLocks[domainUUID] = lock
+	}
+	s.mu.Unlock()
+	lock.Lock()
+	return lock.Unlock
+}
+
+// RoomDTO 是房间对外 API 的传输对象，避免持久层 model 直接泄漏到接口。
+type RoomDTO struct {
+	ID            uint      `json:"id"`
+	UUID          string    `json:"uuid"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	Limit         uint      `json:"limit"`
+	AudioOnly     bool      `json:"audio_only"`
+	AllowAudience bool      `json:"allow_audience"`
+	Type          string    `json:"type"`
+	CreatedBy     string    `json:"created_by"`
+	DomainUUID    string    `json:"domain_uuid"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// RoomToDTO 转换单个房间模型为 API DTO。
+func RoomToDTO(room *model.Room) RoomDTO {
+	if room == nil {
+		return RoomDTO{}
+	}
+	return RoomDTO{
+		ID:            room.ID,
+		UUID:          room.UUID,
+		Name:          room.Name,
+		Description:   room.Description,
+		Limit:         room.Limit,
+		AudioOnly:     room.AudioOnly,
+		AllowAudience: room.AllowAudience,
+		Type:          room.Type,
+		CreatedBy:     room.CreatedBy,
+		DomainUUID:    room.DomainUUID,
+		CreatedAt:     room.CreatedAt,
+		UpdatedAt:     room.UpdatedAt,
+	}
+}
+
+// RoomsToDTOs 批量转换房间列表为 API DTO。
+func RoomsToDTOs(rooms []model.Room) []RoomDTO {
+	out := make([]RoomDTO, 0, len(rooms))
+	for i := range rooms {
+		out = append(out, RoomToDTO(&rooms[i]))
+	}
+	return out
+}
+
+// Create 创建房间，并保证同一 Domain 内房间名唯一。
+func (s *RoomService) Create(room *model.Room) error {
+	if strings.TrimSpace(room.DomainUUID) == "" {
+		return pkg.NewAppError(pkg.INVALID_PARAMS, "domain_uuid is required")
+	}
+	unlock := s.lockDomain(room.DomainUUID)
+	defer unlock()
+
+	_, err := s.roomRepo.GetByDomainAndName(room.DomainUUID, room.Name)
+	if err == nil {
+		return pkg.NewAppError(pkg.ALREADY_EXISTS, "room already exists")
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if err := s.roomRepo.Create(room); err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return pkg.NewAppError(pkg.ALREADY_EXISTS, "room already exists")
+		}
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return nil
+}
+
+// CreateRoom creates a room from primitive parameters so the handler
+// layer does not need to import model.
+func (s *RoomService) CreateRoom(name, password, description string, limit uint, audioOnly, allowAudience bool, createdBy, roomType, domainUUID string) (*model.Room, error) {
+	hashedPassword, err := pkg.HashPassword(password)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	room := &model.Room{
+		Name:          name,
+		Password:      hashedPassword,
+		Description:   description,
+		Limit:         limit,
+		AudioOnly:     audioOnly,
+		AllowAudience: allowAudience,
+		CreatedBy:     createdBy,
+		Type:          model.NormalizeRoomType(roomType),
+		DomainUUID:    domainUUID,
+	}
+	// text rooms: force audio_only true / no SFU expectations
+	if room.Type == model.RoomTypeText {
+		room.AudioOnly = true
+	}
+	if err := s.Create(room); err != nil {
+		return nil, err
+	}
+	return room, nil
+}
+
+// GetByID 按主键 ID 查询房间。
+func (s *RoomService) GetByID(id uint) (*model.Room, error) {
+	room, err := s.roomRepo.GetByID(id)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrRoomNotFound
+		}
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return room, nil
+}
+
+// GetByUUID 按 UUID 查询房间。
+func (s *RoomService) GetByUUID(uuid string) (*model.Room, error) {
+	room, err := s.roomRepo.GetByUUID(uuid)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrRoomNotFound
+		}
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return room, nil
+}
+
+// GetByName 按名称查询房间。
+func (s *RoomService) GetByName(name string) (*model.Room, error) {
+	room, err := s.roomRepo.GetByName(name)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrRoomNotFound
+		}
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return room, nil
+}
+
+// GetByDomainAndName 按域和房间名精确查询。
+func (s *RoomService) GetByDomainAndName(domainUUID, name string) (*model.Room, error) {
+	room, err := s.roomRepo.GetByDomainAndName(domainUUID, name)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, pkg.ErrNotFound
+		}
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return room, nil
+}
+
+// List 分页查询房间列表，默认每页 20 条。
+func (s *RoomService) List(page, pageSize int, roomType, domainUUID string) ([]model.Room, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	if roomType != "" && roomType != model.RoomTypeText && roomType != model.RoomTypeVoice {
+		return nil, 0, pkg.NewAppError(pkg.INVALID_PARAMS, "type must be text, voice, or empty")
+	}
+	rooms, total, err := s.roomRepo.List(page, pageSize, roomType, domainUUID)
+	if err != nil {
+		return nil, 0, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return rooms, total, nil
+}
+
+// ListPlatform 分页查询历史遗留的无归属房间；新数据不得再创建空 domain_uuid。
+func (s *RoomService) ListPlatform(page, pageSize int, roomType string) ([]model.Room, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	if roomType != "" && roomType != model.RoomTypeText && roomType != model.RoomTypeVoice {
+		return nil, 0, pkg.NewAppError(pkg.INVALID_PARAMS, "type must be text, voice, or empty")
+	}
+	rooms, total, err := s.roomRepo.ListPlatform(page, pageSize, roomType)
+	if err != nil {
+		return nil, 0, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return rooms, total, nil
+}
+
+// Update 更新房间信息。
+func (s *RoomService) Update(room *model.Room) error {
+	if err := s.roomRepo.Update(room); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return nil
+}
+
+// Delete 删除房间，先检查是否存在。
+func (s *RoomService) Delete(id uint) error {
+	if _, err := s.roomRepo.GetByID(id); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return ErrRoomNotFound
+		}
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if err := s.roomRepo.Delete(id); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return nil
+}

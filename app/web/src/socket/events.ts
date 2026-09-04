@@ -1,0 +1,51 @@
+// 事件常量（与后端 signal/events.go 一致）
+export const EVENTS = {
+	ROOM_CREATE: "room:create",
+	ROOM_JOIN: "room:join",
+	ROOM_LEAVE: "room:leave",
+	ROOM_LIST: "room:list",
+	ROOM_CREATED: "room:created",
+	ROOM_LEFT: "room:left",
+	ROOM_UPDATED: "room:updated",
+	MEMBER_JOINED: "member:joined",
+	MEMBER_LEFT: "member:left",
+	ROOM_LIST_RESULT: "room:list:result",
+	ROOM_JOIN_SFU: "room:join:sfu",
+	MEMBER_MIC_STATE: "member:mic-state",
+	MEMBER_UPDATED: "member:updated",
+	ROOM_KICK: "room:kick",
+	ROOM_KICKED: "room:kicked",
+	USER_MUTED: "user:muted",
+	USER_UNMUTED: "user:unmuted",
+	MEMBER_MUTED: "member:muted",
+	MEMBER_UNMUTED: "member:unmuted",
+	// 发言检测（无 SFU 原生 active speaker 的 provider：SRS / Cloudflare）
+	MEMBER_SPEAKING: "member:speaking",
+	ROOM_ACTIVE_SPEAKERS: "room:active-speakers",
+	// 已禁用保留：mediasoup 信令常量保留，socketStore 不再使用。
+	SFU_GET_ROUTER_CAPABILITIES: "sfu:get-router-capabilities",
+	SFU_CREATE_TRANSPORT: "sfu:create-transport",
+	SFU_CONNECT_TRANSPORT: "sfu:connect-transport",
+	SFU_PRODUCE: "sfu:produce",
+	SFU_CONSUME: "sfu:consume",
+	SFU_PRODUCER_READY: "sfu:producer-ready",
+	SFU_PRODUCER_CLOSED: "sfu:producer-closed",
+	// SFU 热切换：强制断连并刷新
+	SFU_PROVIDER_CHANGED: "sfu:provider-changed",
+	// 文字聊天消息事件
+	MESSAGE_SEND: "message:send",
+	MESSAGE_EDIT: "message:edit",
+	MESSAGE_DELETE: "message:delete",
+	MESSAGE_REACT: "message:react",
+	MESSAGE_UNREACT: "message:unreact",
+	MESSAGE_CREATED: "message:created",
+	MESSAGE_UPDATED: "message:updated",
+	MESSAGE_DELETED: "message:deleted",
+	MESSAGE_REACTION: "message:reaction",
+	MESSAGE_ACK: "message:ack",
+	MESSAGE_ERROR: "message:error",
+	// 私聊消息事件（客户端 → 服务端）
+	PRIVATE_SEND: "private:send",
+	// 私聊消息事件（服务端推送）
+	PRIVATE_NEW: "private:new",
+} as const;

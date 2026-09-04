@@ -1,0 +1,111 @@
+package signal
+
+import (
+	"context"
+	"sync"
+	"testing"
+)
+
+type captureBus struct {
+	mu    sync.Mutex
+	rooms []string
+	ns    []string
+}
+
+func (c *captureBus) PublishNamespace(ctx context.Context, event string, payload interface{}) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ns = append(c.ns, event)
+	return nil
+}
+func (c *captureBus) PublishRoom(ctx context.Context, room, event string, payload interface{}) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.rooms = append(c.rooms, room+":"+event)
+	return nil
+}
+func (c *captureBus) Mode() string       { return "test" }
+func (c *captureBus) IsConnected() bool  { return true }
+func (c *captureBus) InstanceID() string { return "test" }
+func (c *captureBus) Close() error       { return nil }
+
+func TestHub_BroadcastToRoom_UsesEventBus(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	bus := &captureBus{}
+	hub.SetEventBus(bus)
+	// 即使 server 为 nil，也应走 bus
+	hub.BroadcastToRoom("lobby", EventMemberJoined, map[string]string{"id": "1"})
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+	if len(bus.rooms) != 1 || bus.rooms[0] != "lobby:"+EventMemberJoined {
+		t.Fatalf("bus rooms = %v", bus.rooms)
+	}
+}
+
+func TestHub_BroadcastMute_UsesEventBus(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	bus := &captureBus{}
+	hub.SetEventBus(bus)
+	hub.BroadcastMute(9, &MuteInfo{Permanent: true, Reason: "x"})
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+	if len(bus.ns) != 1 || bus.ns[0] != EventUserMuted {
+		t.Fatalf("bus ns = %v", bus.ns)
+	}
+}
+
+func TestHub_BroadcastRoomList_LocalOnly(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	bus := &captureBus{}
+	hub.SetEventBus(bus)
+	// server nil -> broadcastRoomList no-ops, but must NOT hit event bus
+	hub.broadcastRoomList("")
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+	if len(bus.ns) != 0 {
+		t.Fatalf("room list must stay local, bus ns=%v", bus.ns)
+	}
+}
+
+type clearingHubBus struct {
+	captureBus
+	hub *Hub
+}
+
+func TestHub_HandleRemoteEvent_ClearsLocalRooms(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.mu.Lock()
+	hub.rooms["r1"] = &Room{
+		Name:     "r1",
+		Members:  map[string]*MemberInfo{"s1": {Identity: "alice"}},
+		MicMuted: map[string]bool{},
+		Speaking: map[string]bool{},
+	}
+	hub.mu.Unlock()
+
+	hub.HandleRemoteEvent(EventSFUProviderChanged, map[string]interface{}{"provider": "srs"})
+
+	hub.mu.RLock()
+	defer hub.mu.RUnlock()
+	if len(hub.rooms) != 0 {
+		t.Fatalf("rooms should be cleared, got %d", len(hub.rooms))
+	}
+}
+
+func TestHub_ClearLocalRoomsForSFUSwitch_BroadcastsKnownDomains(t *testing.T) {
+	hub := NewHub(nil, nil, nil, nil)
+	hub.fanout = newMockBroadcaster()
+	hub.mu.Lock()
+	hub.clientDomains["socket-1"] = "domain-a"
+	hub.mu.Unlock()
+
+	hub.clearLocalRoomsForSFUSwitch()
+
+	fanout := hub.fanout.(*mockBroadcaster)
+	if len(fanout.roomCasts["__domain:domain-a"][EventRoomListResult]) != 1 {
+		t.Fatal("expected SFU switch to broadcast room list to domain scope")
+	}
+	if len(fanout.roomCasts["__platform"][EventRoomListResult]) != 0 {
+		t.Fatal("SFU switch must not only broadcast platform scope")
+	}
+}

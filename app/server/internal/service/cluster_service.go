@@ -1,0 +1,490 @@
+package service
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"context"
+
+	"GOSpeak/internal/cluster"
+	"GOSpeak/internal/config"
+	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/repository"
+
+	"gorm.io/gorm"
+)
+
+var (
+	ErrClusterNodeNotFound     = pkg.NewAppError(pkg.NOT_FOUND, "cluster node not found")
+	ErrClusterServerUnassigned = pkg.NewAppError(pkg.NOT_FOUND, "no healthy worker assigned to server")
+)
+
+// ClusterService 是 Agent 控制面的节点与 Server 分配服务。
+
+// ClusterService 是 Agent 控制面的节点与 Server 分配服务。
+type ClusterService struct {
+	mu            sync.RWMutex
+	nodeRepo      *repository.ClusterNodeRepository
+	assignRepo    *repository.ServerAssignmentRepository
+	notifier      ClusterNotifier
+	serverRepo    *repository.DomainRepository
+	controlQueue  MessageJobQueue
+	roomMetaStore RoomMetaReader
+}
+
+func NewClusterService(
+	nodeRepo *repository.ClusterNodeRepository,
+	assignRepo *repository.ServerAssignmentRepository,
+) *ClusterService {
+	return &ClusterService{nodeRepo: nodeRepo, assignRepo: assignRepo}
+}
+
+// ClusterNotifier 发布跨实例控制面事件。
+
+// ClusterNotifier 发布跨实例控制面事件。
+type ClusterNotifier interface {
+	PublishInternal(ctx context.Context, event string, payload interface{}) error
+}
+
+// SetNotifier 注入 NATS/EventBus internal 发布器。
+
+// SetNotifier 注入 NATS/EventBus internal 发布器。
+func (s *ClusterService) SetNotifier(n ClusterNotifier) {
+	s.notifier = n
+}
+
+// SetServerRepo 注入 Domain 仓库，用于节点上线后补调度未分配的 Server。
+
+// SetServerRepo 注入 Domain 仓库，用于节点上线后补调度未分配的 Server。
+func (s *ClusterService) SetServerRepo(repo *repository.DomainRepository) {
+	s.serverRepo = repo
+}
+
+// SetControlQueue injects the durable JetStream queue used for control commands.
+func (s *ClusterService) SetControlQueue(q MessageJobQueue) {
+	s.controlQueue = q
+}
+
+// EnsureLocalNode 在 all/agent 模式下注册当前进程对应的本地节点。
+
+// EnsureLocalNode 在 all/agent 模式下注册当前进程对应的本地节点。
+func (s *ClusterService) EnsureLocalNode(cfg *config.Config, instanceID string) (*model.ClusterNode, error) {
+	if cfg == nil {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "config is nil")
+	}
+	nodeID := strings.TrimSpace(cfg.ClusterNodeID)
+	if nodeID == "" {
+		nodeID = "node-" + sanitizeClusterID(instanceID)
+	}
+	host, _ := os.Hostname()
+	if host == "" {
+		host = "localhost"
+	}
+
+	node := &model.ClusterNode{
+		UUID:         nodeID,
+		Name:         instanceID,
+		Host:         host,
+		AdvertiseURL: localAdvertiseURL(cfg, host),
+		Role:         cfg.ClusterRole,
+		Status:       model.ClusterNodePending,
+		SFUProvider:  cfg.SFUProvider,
+		MaxServers:   cfg.ClusterMaxServers,
+		MaxRooms:     cfg.ClusterMaxRooms,
+		SFUHealthy:   true,
+		LastSeenAt:   time.Now(),
+	}
+	node.SetLabels(cluster.ParseLabels(cfg.ClusterLabels))
+
+	existing, err := s.nodeRepo.GetByUUID(nodeID)
+	if err == nil {
+		existing.Host = host
+		existing.AdvertiseURL = localAdvertiseURL(cfg, host)
+		existing.Role = cfg.ClusterRole
+		existing.SFUProvider = cfg.SFUProvider
+		existing.MaxServers = cfg.ClusterMaxServers
+		existing.MaxRooms = cfg.ClusterMaxRooms
+		existing.SFUHealthy = true
+		existing.SetLabels(cluster.ParseLabels(cfg.ClusterLabels))
+		if existing.Status == "" {
+			existing.Status = model.ClusterNodePending
+		}
+		if err := s.nodeRepo.Update(existing); err != nil {
+			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+		}
+		if err := s.publishClusterEvent(cluster.EventNodeRegistered, map[string]interface{}{
+			"node_id": existing.UUID, "status": existing.Status, "advertise_url": existing.AdvertiseURL,
+		}); err != nil {
+			return nil, pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish node registered event failed")
+		}
+		return existing, nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if err := s.nodeRepo.Create(node); err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return node, nil
+}
+
+// RegisterNodeParams 将 HTTP 请求参数映射为节点模型，handler 不再直接构造持久层实体。
+func (s *ClusterService) RegisterNodeParams(uuid, name, host, advertiseURL, role, status, sfuProvider string, maxServers, maxRooms int, labels map[string]string, nodeSecret string) (*model.ClusterNode, error) {
+	node := model.ClusterNode{
+		UUID:         uuid,
+		Name:         name,
+		Host:         host,
+		AdvertiseURL: advertiseURL,
+		Role:         role,
+		Status:       status,
+		SFUProvider:  sfuProvider,
+		MaxServers:   maxServers,
+		MaxRooms:     maxRooms,
+	}
+	node.SetLabels(labels)
+	return s.RegisterNodeWithSecret(node, nodeSecret)
+}
+
+// RegisterNode 创建或更新 Worker 节点。
+// RegisterNode 创建或更新 Worker 节点。
+func (s *ClusterService) RegisterNode(req model.ClusterNode) (*model.ClusterNode, error) {
+	return s.RegisterNodeWithSecret(req, "")
+}
+
+// RegisterNodeWithSecret 创建或更新 Worker 节点，并用节点 secret 校验既有节点身份。
+func (s *ClusterService) RegisterNodeWithSecret(req model.ClusterNode, nodeSecret string) (*model.ClusterNode, error) {
+	if strings.TrimSpace(req.UUID) == "" {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "node uuid is required")
+	}
+	if req.Name == "" {
+		req.Name = req.UUID
+	}
+	if req.Status == "" {
+		req.Status = model.ClusterNodePending
+	}
+	if !validClusterNodeStatus(req.Status) {
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "invalid node status: "+req.Status)
+	}
+	if req.MaxServers <= 0 {
+		req.MaxServers = 100
+	}
+	if req.MaxRooms <= 0 {
+		req.MaxRooms = 1000
+	}
+
+	existing, err := s.nodeRepo.GetByUUID(req.UUID)
+	if err == nil {
+		if existing.SecretHash != "" {
+			if nodeSecret == "" || !pkg.VerifyPassword(existing.SecretHash, nodeSecret) {
+				return nil, pkg.NewAppError(pkg.FORBIDDEN, "invalid node secret")
+			}
+		}
+		// 已存在但未设 secret 的节点不允许在 re-register 时补植 SecretHash：
+		// 否则任意持 token 方可抢先植入并锁死合法节点的后续心跳/注销。
+		existing.Name = req.Name
+		existing.Host = req.Host
+		existing.AdvertiseURL = req.AdvertiseURL
+		existing.Role = req.Role
+		existing.SFUProvider = req.SFUProvider
+		existing.MaxServers = req.MaxServers
+		existing.MaxRooms = req.MaxRooms
+		if existing.Status != model.ClusterNodeDraining {
+			existing.Status = req.Status
+		}
+		existing.LastSeenAt = time.Now()
+		existing.SetLabels(req.LabelMap())
+		if err := s.nodeRepo.Update(existing); err != nil {
+			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+		}
+		return existing, nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+
+	if nodeSecret != "" {
+		hash, hashErr := pkg.HashPassword(nodeSecret)
+		if hashErr != nil {
+			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "hash node secret failed")
+		}
+		req.SecretHash = hash
+	}
+	req.LastSeenAt = time.Now()
+	if err := s.nodeRepo.Create(&req); err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if err := s.publishClusterEvent(cluster.EventNodeRegistered, map[string]interface{}{
+		"node_id": req.UUID, "status": req.Status, "advertise_url": req.AdvertiseURL,
+	}); err != nil {
+		return nil, pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish node registered event failed")
+	}
+	return &req, nil
+}
+
+// Heartbeat 更新节点运行时快照并刷新 last_seen。
+
+// Heartbeat 更新节点运行时快照并刷新 last_seen。
+func (s *ClusterService) Heartbeat(nodeID string, report cluster.HeartbeatReport) (*model.ClusterNode, error) {
+	node, err := s.nodeRepo.GetByUUID(nodeID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrClusterNodeNotFound
+		}
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if err := verifyClusterNodeSecret(node, report.NodeSecret); err != nil {
+		return nil, err
+	}
+
+	status := report.Status
+	if status == "" {
+		status = model.ClusterNodeReady
+	}
+	switch status {
+	case model.ClusterNodeReady, model.ClusterNodeBusy, model.ClusterNodeUnhealthy:
+	default:
+		status = model.ClusterNodeReady
+	}
+	// draining 由控制面操作驱动，不能被心跳覆盖。
+	if node.Status == model.ClusterNodeDraining {
+		status = model.ClusterNodeDraining
+	} else if report.SFUHealthy != nil && !*report.SFUHealthy {
+		status = model.ClusterNodeUnhealthy
+	}
+	node.Status = status
+	if report.AdvertiseURL != "" {
+		node.AdvertiseURL = report.AdvertiseURL
+	}
+	node.Rooms = report.Rooms
+	node.Connections = report.Connections
+	node.LoadPercent = report.LoadPercent
+	if report.SFUHealthy != nil {
+		node.SFUHealthy = *report.SFUHealthy
+	}
+	node.DBReplicaLagMs = report.DBReplicaLagMs
+	node.DBReplicaLagDegraded = report.DBReplicaLagDegraded
+	if report.ServingServers > 0 {
+		node.ServingServers = report.ServingServers
+	} else if count, countErr := s.assignRepo.CountByNode(nodeID); countErr == nil {
+		node.ServingServers = int(count)
+	}
+	node.LastSeenAt = time.Now()
+
+	rows, err := s.nodeRepo.UpdateRuntimeIfNotOffline(node)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if rows == 0 {
+		return nil, ErrClusterNodeNotFound
+	}
+	if err := s.publishClusterEvent(cluster.EventNodeHeartbeat, map[string]interface{}{
+		"node_id": node.UUID, "status": node.Status, "rooms": node.Rooms, "connections": node.Connections,
+	}); err != nil {
+		// 心跳本身已成功写入 DB；事件发布失败不应让整次心跳请求 5xx，否则 worker 端会重试放大并误以为注册失效。
+		log.Printf("[cluster] publish node heartbeat event failed node=%s: %v", node.UUID, err)
+	}
+	s.reconcilePendingServers(node.UUID)
+	return node, nil
+}
+
+// DeregisterNode 注销节点并标记为 offline。
+func (s *ClusterService) DeregisterNode(nodeID, nodeSecret string) error {
+	node, err := s.nodeRepo.GetByUUID(nodeID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return ErrClusterNodeNotFound
+		}
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if err := verifyClusterNodeSecret(node, nodeSecret); err != nil {
+		return err
+	}
+	node.Status = model.ClusterNodeOffline
+	node.LastSeenAt = time.Now()
+	if err := s.nodeRepo.Update(node); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if err := s.publishClusterEvent(cluster.EventNodeDeregistered, map[string]interface{}{
+		"node_id": node.UUID, "status": node.Status,
+	}); err != nil {
+		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish node deregistered event failed")
+	}
+	return nil
+}
+
+// verifyClusterNodeSecret 校验节点身份：节点设置了 SecretHash 时，操作方必须提供匹配的 node_secret，
+// 防止持有 cluster:manage token 的任一 worker 伪造/注销他人节点。
+func verifyClusterNodeSecret(node *model.ClusterNode, nodeSecret string) error {
+	if node.SecretHash == "" {
+		return nil
+	}
+	if nodeSecret == "" || !pkg.VerifyPassword(node.SecretHash, nodeSecret) {
+		return pkg.NewAppError(pkg.FORBIDDEN, "invalid node secret")
+	}
+	return nil
+}
+
+// DrainNode 标记节点 draining，停止新的 Server 分配。
+
+// DrainNode 标记节点 draining，停止新的 Server 分配。
+func (s *ClusterService) DrainNode(nodeID string) error {
+	node, err := s.nodeRepo.GetByUUID(nodeID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return ErrClusterNodeNotFound
+		}
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	node.Status = model.ClusterNodeDraining
+	if err := s.nodeRepo.Update(node); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if err := s.publishClusterEvent(cluster.EventNodeDraining, map[string]interface{}{
+		"node_id": node.UUID, "status": node.Status,
+	}); err != nil {
+		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish node draining event failed")
+	}
+
+	// 迁移该节点上在线 Server 的副本，并在旧节点广播重连事件。
+	assignments, listErr := s.assignRepo.ListByNode(nodeID)
+	if listErr != nil {
+		log.Printf("[cluster] drain list assignments node=%s: %v", nodeID, listErr)
+	}
+	seenServers := map[string]bool{}
+	for _, assignment := range assignments {
+		if seenServers[assignment.ServerUUID] {
+			continue
+		}
+		seenServers[assignment.ServerUUID] = true
+		current, countErr := s.assignRepo.ListByServer(assignment.ServerUUID)
+		if countErr != nil {
+			log.Printf("[cluster] drain list server=%s: %v", assignment.ServerUUID, countErr)
+			continue
+		}
+		// 目标副本数 = 当前总数扣除本节点上的分配，避免把即将下线的节点
+		// 算进目标而变成 no-op；其余在线节点原地保留，缺额补到新节点。
+		onNode := 0
+		for _, a := range current {
+			if a.NodeUUID == nodeID {
+				onNode++
+			}
+		}
+		target := len(current) - onNode
+		if target < 0 {
+			target = 0
+		}
+		if _, err := s.ScaleServer(assignment.ServerUUID, target, ""); err != nil {
+			log.Printf("[cluster] drain migrate server=%s node=%s: %v", assignment.ServerUUID, nodeID, err)
+		}
+	}
+	if err := s.PublishControl(cluster.ControlCommand{
+		Command: cluster.CommandDrainNode,
+		NodeID:  nodeID,
+	}); err != nil {
+		log.Printf("[cluster] publish drain reconnect node=%s: %v", nodeID, err)
+	}
+	return nil
+}
+
+// UndrainNode 恢复节点为 ready，允许继续调度。
+
+// UndrainNode 恢复节点为 ready，允许继续调度。
+// 节点必须仍在心跳窗口内且 SFU 健康，避免把失联节点直接放回调度池。
+func (s *ClusterService) UndrainNode(nodeID string, timeout time.Duration) error {
+	node, err := s.nodeRepo.GetByUUID(nodeID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return ErrClusterNodeNotFound
+		}
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if timeout > 0 && time.Since(node.LastSeenAt) > timeout {
+		return pkg.NewAppError(pkg.FORBIDDEN, "node heartbeat is stale; cannot undrain")
+	}
+	if !node.SFUHealthy {
+		return pkg.NewAppError(pkg.FORBIDDEN, "node SFU is unhealthy; cannot undrain")
+	}
+	node.Status = model.ClusterNodeReady
+	if err := s.nodeRepo.Update(node); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if err := s.publishClusterEvent(cluster.EventNodeUndrained, map[string]interface{}{
+		"node_id": node.UUID, "status": node.Status,
+	}); err != nil {
+		return pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "publish node undrained event failed")
+	}
+	return nil
+}
+
+// ListNodes 返回全部节点记录。
+
+// ListNodes 返回全部节点记录。
+func (s *ClusterService) ListNodes() ([]model.ClusterNode, error) {
+	nodes, err := s.nodeRepo.List()
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return nodes, nil
+}
+
+// ReapOffline 将超过 timeout 未心跳的节点标记为 offline。
+
+// ReapOffline 将超过 timeout 未心跳的节点标记为 offline。
+func (s *ClusterService) ReapOffline(timeout time.Duration) error {
+	if timeout <= 0 {
+		return nil
+	}
+	if err := s.nodeRepo.MarkOfflineBefore(time.Now().Add(-timeout)); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	return nil
+}
+
+// ScaleServer 调整 Server（Domain）的实例副本数。
+// preferredNode 通常传本地 all 节点 UUID，让单机模式优先把 Server 分配回本节点。
+
+func sanitizeClusterID(s string) string {
+	replacer := strings.NewReplacer(" ", "-", "/", "-", ":", "-")
+	s = replacer.Replace(strings.TrimSpace(s))
+	if s == "" {
+		return fmt.Sprintf("local-%d", os.Getpid())
+	}
+	return s
+}
+
+func localAdvertiseURL(cfg *config.Config, host string) string {
+	if strings.TrimSpace(cfg.ClusterAdvertiseURL) != "" {
+		return cfg.ClusterAdvertiseURL
+	}
+	port := strings.TrimSpace(cfg.ServerPort)
+	if port == "" {
+		port = "8998"
+	}
+	if host == "" {
+		host = "localhost"
+	}
+	return "http://" + host + ":" + port
+}
+
+func (s *ClusterService) publishClusterEvent(event string, payload interface{}) error {
+	if s.notifier == nil {
+		return nil
+	}
+	return s.notifier.PublishInternal(context.Background(), event, payload)
+}
+
+// validClusterNodeStatus 校验节点状态白名单，防止非法状态写入控制面 DB。
+func validClusterNodeStatus(status string) bool {
+	switch status {
+	case model.ClusterNodePending, model.ClusterNodeReady, model.ClusterNodeBusy,
+		model.ClusterNodeDraining, model.ClusterNodeOffline, model.ClusterNodeUnhealthy:
+		return true
+	default:
+		return false
+	}
+}

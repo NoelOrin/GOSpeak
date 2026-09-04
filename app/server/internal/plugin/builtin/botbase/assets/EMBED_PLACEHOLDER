@@ -1,0 +1,1 @@
+Bot base plugin assets are embedded into the server binary via go:embed.

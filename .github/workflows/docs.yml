@@ -1,0 +1,208 @@
+# GOSpeak Docs — VitePress 构建与部署
+#
+# 构建文档站并在文档有更新时部署到 GitHub Pages。
+#
+# 触发:
+#   - push 到 release / feature/** 且含 docs 相关变更
+#   - release 发布 (published / edited)，仅当相对上一版本改到 docs
+#   - workflow_dispatch 手动（可选部署）
+#
+# 部署策略:
+#   - push（paths 已过滤）→ 自动部署
+#   - release → 对比上一 tag，docs 有变更则从 release 分支 redispatch 部署
+#     （Pages 环境通常只允许 branch ref，不允许 tag ref 直接部署）
+#   - workflow_dispatch → 仅当勾选 deploy 时部署
+#   - 预发布标签 / prerelease → 不部署
+
+name: Docs
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [release]
+    paths:
+      - "app/docs/**"
+      - "packages/sfu-client/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/docs.yml"
+
+  release:
+    types: [published, edited]
+
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy to GitHub Pages"
+        required: false
+        default: false
+        type: boolean
+      source_ref:
+        description: "Optional git ref to build (tag/sha). Empty = workflow ref"
+        required: false
+        default: ""
+        type: string
+
+# 同一时间只允许一个部署
+concurrency:
+  group: pages-${{ github.event_name == 'release' && format('release-{0}', github.event.release.tag_name) || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── 是否需要构建 / 部署 ───────────────────────────────────────────────
+  gate:
+    name: Check Docs Changes
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.decide.outputs.should_build }}
+      should_deploy: ${{ steps.decide.outputs.should_deploy }}
+      source_ref: ${{ steps.decide.outputs.source_ref }}
+    steps:
+      - name: Checkout (release only)
+        if: github.event_name == 'release'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Decide
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DEPLOY_INPUT: ${{ inputs.deploy }}
+          SOURCE_REF_INPUT: ${{ inputs.source_ref }}
+          TAG: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+
+          should_build=false
+          should_deploy=false
+          source_ref=""
+
+          is_prerelease_name=false
+          case "$REF_NAME" in
+            *-alpha*|*-beta*|*-rc*) is_prerelease_name=true ;;
+          esac
+
+          docs_path_regex='^(app/docs/|packages/sfu-client/|pnpm-lock\.yaml$|\.github/workflows/docs\.yml$)'
+
+          if [ "$EVENT" = "push" ]; then
+            # paths filter already guarantees docs-related changes
+            should_build=true
+            # 仅 release 分支部署；feature 分支仅构建，不部署
+            if [ "$REF_NAME" = "release" ]; then
+              should_deploy=true
+            fi
+          elif [ "$EVENT" = "workflow_dispatch" ]; then
+            should_build=true
+            source_ref="${SOURCE_REF_INPUT:-}"
+            if [ "${DEPLOY_INPUT:-false}" = "true" ]; then
+              should_deploy=true
+            fi
+          elif [ "$EVENT" = "release" ]; then
+            git fetch --tags --force origin 2>/dev/null || true
+
+            prev="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+            docs_changed=false
+
+            if [ -z "${prev}" ]; then
+              # 首个 tag：仓库里存在 docs 相关文件则视为有变更
+              if git ls-tree -r --name-only "$TAG" | grep -Eq "$docs_path_regex"; then
+                docs_changed=true
+              fi
+            elif git diff --name-only "$prev" "$TAG" | grep -Eq "$docs_path_regex"; then
+              docs_changed=true
+            fi
+
+            echo "release tag=$TAG prev=${prev:-<none>} docs_changed=$docs_changed prerelease=$IS_PRERELEASE"
+
+            if [ "$docs_changed" = true ]; then
+              # release 事件的 github.ref 是 tag；Pages 环境常禁 tag 部署。
+              # 这里只做门禁，真正的 build/deploy 由 redispatch 在 release 分支执行。
+              should_build=false
+              should_deploy=true
+              source_ref="$TAG"
+            fi
+
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              should_deploy=false
+            fi
+          fi
+
+          if [ "$is_prerelease_name" = true ]; then
+            should_deploy=false
+          fi
+
+          echo "should_build=$should_build" >> "$GITHUB_OUTPUT"
+          echo "should_deploy=$should_deploy" >> "$GITHUB_OUTPUT"
+          echo "source_ref=$source_ref" >> "$GITHUB_OUTPUT"
+          echo "decision: build=$should_build deploy=$should_deploy source_ref=${source_ref:-<default>}"
+
+  # ── release 事件：从 release 分支 redispatch，绕过 tag 环境限制 ─────
+  redispatch:
+    name: Redispatch Deploy From Branch
+    runs-on: ubuntu-latest
+    needs: gate
+    if: github.event_name == 'release' && needs.gate.outputs.should_deploy == 'true'
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Trigger docs deploy on release branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ needs.gate.outputs.source_ref }}
+        run: |
+          set -euo pipefail
+          echo "Redispatch docs.yml on ref=release source_ref=${SOURCE_REF}"
+          gh workflow run docs.yml \
+            --repo "${{ github.repository }}" \
+            --ref release \
+            -f deploy=true \
+            -f source_ref="${SOURCE_REF}"
+
+  # ── 构建 ──────────────────────────────────────────────────────────────
+  build:
+    name: Build Docs
+    runs-on: ubuntu-latest
+    needs: gate
+    # release 事件走 redispatch，不在 tag ref 上直接 build/deploy
+    if: needs.gate.outputs.should_build == 'true' && github.event_name != 'release'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # workflow_dispatch 可指定 tag/sha；push 使用当前触发提交
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref != '' && inputs.source_ref || github.sha }}
+
+      - uses: ./.github/actions/pnpm-install
+
+      - name: Build VitePress
+        env:
+          NODE_ENV: production
+        run: pnpm --filter @gospeak/docs build
+
+      - name: Upload static site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: app/docs/.vitepress/dist
+
+  # ── 部署到 GitHub Pages ──────────────────────────────────────────────
+  # push: paths 已过滤；release: redispatch 到 release 分支后部署；手动: 需勾选 deploy
+  deploy:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: [gate, build]
+    if: needs.gate.outputs.should_deploy == 'true' && github.event_name != 'release'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5

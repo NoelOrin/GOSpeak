@@ -1,0 +1,415 @@
+# GOSpeak Auto Release CI
+#
+# GOSpeak Release — 发版自动化
+#   路径 A（自动发版 / 零 PR）：push 到 release 分支，且 HEAD commit message
+#     匹配 `release: publish release X.Y.Z` → publish-release job 自动：
+#       生成 Release notes → 打 tag X.Y.Z → 建 GitHub Release
+#       → 在同一次 workflow 中继续执行产物链。
+#   路径 B（外部 Release）：release: published 触发，交叉编译 10 平台二进制 + SHA256SUMS。
+#   路径 C（手动预览）：workflow_dispatch（dry_run 预览，skip_build 跳过构建）。
+#
+# 普通 push（非发布提交）不触发任何发版动作。
+
+name: Release
+
+on:
+  release:
+    types: [published]
+  push:
+    branches: [release]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (empty = tag_name of release event)"
+        required: false
+        default: ""
+        type: string
+      skip_build:
+        description: "Skip cross-platform binary builds"
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: "Preview tag/changelog without publishing"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── Auto publish on `release: publish release X.Y.Z` push ──────────────────
+  publish-release:
+    name: Publish Release from Commit
+    if: "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: publish release ') }}"
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout (full history for changelog)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Resolve version
+        id: version
+        env:
+          HEAD_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          ver="$(printf '%s' "$HEAD_MSG" | sed -E 's/^release: publish release //')"
+          if ! printf '%s' "$ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+([-/].*)?$'; then
+            echo "::error::Cannot parse version from commit: $HEAD_MSG"
+            exit 1
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "tag=$ver" >> "$GITHUB_OUTPUT"
+          echo "::notice::Publishing version $ver"
+
+      - name: Generate Release notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          changelog_args=("$VERSION" "--no-write")
+          # 仅重发 0.4.0 时排除 CI；后续版本默认保留 CI 更新。
+          if [ "$VERSION" = "0.4.0" ]; then
+            changelog_args+=("--exclude-ci")
+          fi
+          node scripts/build-changelog.mjs "${changelog_args[@]}" > /tmp/release-notes.md
+          test -s /tmp/release-notes.md
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if git rev-parse "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists; skipping."
+            exit 0
+          fi
+          git tag -a "$VERSION" -m "Release $VERSION" "$SHA"
+          git push origin "$VERSION"
+          echo "::notice::Pushed tag $VERSION"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists; nothing to do."
+            exit 0
+          fi
+          prerelease=""
+          if [[ "$VERSION" == *-* ]] || [[ "$VERSION" == *+* ]]; then
+            prerelease="--prerelease --latest=false"
+          fi
+          gh release create "$VERSION" --title "$VERSION" --notes-file /tmp/release-notes.md $prerelease
+          echo "::notice::Created GitHub Release $VERSION"
+
+  # ── Resolve Tag ─────────────────────────────────────────────────────────
+  resolve-tag:
+    name: Resolve Tag
+    needs: [publish-release]
+    if: >-
+      ${{ always() && (github.event_name != 'push' || needs.publish-release.result == 'success') }}
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - name: Resolve tag
+        id: tag
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          PUBLISHED_TAG: ${{ needs.publish-release.outputs.tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          tag="${EVENT_TAG:-}"
+          if [ -z "$tag" ]; then
+            tag="${INPUT_TAG:-}"
+          fi
+          if [ -z "$tag" ]; then
+            tag="${PUBLISHED_TAG:-}"
+          fi
+          if [ -z "$tag" ]; then
+            echo "::error::No tag from release event or inputs.tag"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "::notice::Release tag: $tag dry_run=${DRY_RUN:-false}"
+          if [ "${DRY_RUN:-false}" = "true" ]; then
+            echo "::notice::dry_run enabled — no publish will occur"
+          fi
+
+  version-check:
+    name: Check Release Version
+    runs-on: ubuntu-latest
+    needs: [resolve-tag]
+    if: >-
+      ${{ always() && needs.resolve-tag.result == 'success' && needs.resolve-tag.outputs.tag != '' }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+      - name: Validate release tag
+        env:
+          RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: node scripts/check-version.mjs . "$RELEASE_TAG"
+
+  # ── Create Release (auto-generate notes) ───────────────────────────────────
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [resolve-tag, version-check]
+    if: >-
+      ${{ always() && needs.resolve-tag.result == 'success' && needs.resolve-tag.outputs.tag != '' &&
+          needs.version-check.result == 'success' &&
+          !(inputs.dry_run == true) && !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.resolve-tag.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+      - name: Create or update GitHub release (auto notes)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} already exists; leaving it unchanged."
+            exit 0
+          fi
+          target_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          release_args=(
+            "${RELEASE_TAG}"
+            --target "${target_sha}"
+            --title "${RELEASE_TAG}"
+            --generate-notes
+          )
+          # 预发布版本（含 - 的语义化预发版）自动标记 prerelease
+          if [[ "$RELEASE_VERSION" == *-* ]]; then
+            release_args+=(--prerelease --latest=false)
+          fi
+          gh release create "${release_args[@]}"
+
+  # ── Build Web Once ────────────────────────────────────────────────────────
+  build-web:
+    name: Build Web Artifact
+    runs-on: ubuntu-latest
+    needs: [resolve-tag, version-check]
+    if: >-
+      ${{ always() && needs.resolve-tag.result == 'success' && needs.resolve-tag.outputs.tag != '' &&
+          needs.version-check.result == 'success' &&
+          !(inputs.dry_run == true) && !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+
+      - uses: ./.github/actions/pnpm-install
+
+      - name: Build web dist
+        run: pnpm --filter @gospeak/web build
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-web-dist
+          path: app/web/dist
+          retention-days: 3
+
+  # ── Cross-Platform Binaries ───────────────────────────────────────────────
+  build-release-binaries:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    needs: [resolve-tag, version-check, create-release, build-web]
+    if: >-
+      ${{ always() && needs.resolve-tag.result == 'success' && needs.resolve-tag.outputs.tag != '' &&
+          needs.version-check.result == 'success' && needs.create-release.result == 'success' &&
+          needs.build-web.result == 'success' && !(inputs.dry_run == true) &&
+          !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            goos: linux
+            goarch: amd64
+            ext: ""
+          - target: linux-arm64
+            goos: linux
+            goarch: arm64
+            ext: ""
+          - target: linux-armv7
+            goos: linux
+            goarch: arm
+            goarm: "7"
+            ext: ""
+          - target: darwin-amd64
+            goos: darwin
+            goarch: amd64
+            ext: ""
+          - target: darwin-arm64
+            goos: darwin
+            goarch: arm64
+            ext: ""
+          - target: freebsd-amd64
+            goos: freebsd
+            goarch: amd64
+            ext: ""
+          - target: freebsd-arm64
+            goos: freebsd
+            goarch: arm64
+            ext: ""
+          - target: openbsd-amd64
+            goos: openbsd
+            goarch: amd64
+            ext: ""
+          - target: windows-amd64
+            goos: windows
+            goarch: amd64
+            ext: ".exe"
+          - target: windows-arm64
+            goos: windows
+            goarch: arm64
+            ext: ".exe"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+
+      - name: Download web artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: release-web-dist
+          path: app/web/dist
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: app/server/go.mod
+          cache-dependency-path: app/server/go.sum
+          cache: true
+
+      - name: Embed frontend into server
+        run: |
+          rm -rf app/server/internal/webui/dist
+          mkdir -p app/server/internal/webui/dist
+          cp -R app/web/dist/. app/server/internal/webui/dist/
+          test -f app/server/internal/webui/dist/index.html
+
+      - name: Resolve checked out commit
+        id: source
+        shell: bash
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build binary
+        working-directory: app/server
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          RELEASE_VERSION: ${{ needs.resolve-tag.outputs.version }}
+          RELEASE_COMMIT: ${{ steps.source.outputs.commit }}
+        run: |
+          go build \
+            -ldflags="-s -w \
+              -X 'GOSpeak/cmd.version=${RELEASE_VERSION}' \
+              -X 'GOSpeak/cmd.commit=${RELEASE_COMMIT}'" \
+            -o "gospeak-${{ matrix.target }}${{ matrix.ext }}" main.go
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: gospeak-${{ matrix.target }}
+          path: app/server/gospeak-${{ matrix.target }}${{ matrix.ext }}
+          retention-days: 14
+
+      - name: Upload to release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          echo "Uploading to release $TAG..."
+          # Release 可能尚未创建（如改动后由后续流程自动推送），此时正常结束并提示，不阻断整体流程
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG not found; skipping upload. 改动将在本地修正后由 agent 自动推送到仓库。"
+            exit 0
+          fi
+          gh release upload "$TAG" \
+            "app/server/gospeak-${{ matrix.target }}${{ matrix.ext }}" --clobber
+
+  # ── SHA256SUMS ──────────────────────────────────────────────────────────────
+  checksums:
+    name: Generate & Upload SHA256SUMS
+    runs-on: ubuntu-latest
+    needs: [resolve-tag, version-check, create-release, build-release-binaries]
+    if: >-
+      ${{ always() && needs.resolve-tag.result == 'success' && needs.resolve-tag.outputs.tag != '' &&
+          needs.version-check.result == 'success' && needs.create-release.result == 'success' &&
+          needs.build-release-binaries.result == 'success' && !(inputs.dry_run == true) &&
+          !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: gospeak-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          sha256sum gospeak-* > SHA256SUMS.txt
+          echo "=== SHA256SUMS ==="
+          cat SHA256SUMS.txt
+
+      - name: Upload SHA256SUMS to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          # Release 可能尚未创建（如改动后由后续流程自动推送），此时正常结束并提示，不阻断整体流程
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG not found; skipping SHA256SUMS upload. 改动将在本地修正后由 agent 自动推送到仓库。"
+            exit 0
+          fi
+          gh release upload "$TAG" \
+            "dist/SHA256SUMS.txt" --clobber

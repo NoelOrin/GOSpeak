@@ -1,0 +1,635 @@
+package handler
+
+import (
+	"log"
+
+	"GOSpeak/internal/audit"
+	"GOSpeak/internal/cluster"
+	"GOSpeak/internal/model"
+	"GOSpeak/internal/permcode"
+	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/service"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+)
+
+type DomainHandler struct {
+	domainSvc        *service.DomainService
+	permSvc          *service.PermissionService
+	onDomainDelete   func(string)
+	onDomainCreated  func(string)
+	onDomainKick     func(domainUUID, userUUID string)
+	auditor          *audit.Service
+	onDomainLeave    func(domainUUID, userUUID string)
+	controlPublisher ControlPublisher
+}
+
+func NewDomainHandler(domainSvc *service.DomainService, permSvc *service.PermissionService) *DomainHandler {
+	return &DomainHandler{domainSvc: domainSvc, permSvc: permSvc}
+}
+
+// SetOnDomainCreated 注入创建 Server 后的集群调度回调。
+func (h *DomainHandler) SetOnDomainCreated(fn func(string)) {
+	h.onDomainCreated = fn
+}
+
+// SetOnDomainDelete 注入删除后的信令清理回调（生产环境为 signalHub.OnDomainDelete）。
+func (h *DomainHandler) SetOnDomainDelete(fn func(string)) {
+	h.onDomainDelete = fn
+}
+
+// SetOnDomainKick 注入踢出成员后的信令清理回调（按用户维度清理在线房间）。
+func (h *DomainHandler) SetOnDomainKick(fn func(domainUUID, userUUID string)) {
+	h.onDomainKick = fn
+}
+
+// SetAuditor 注入审计服务，用于记录管理类敏感操作。
+func (h *DomainHandler) SetAuditor(a *audit.Service) { h.auditor = a }
+
+// SetOnDomainLeave 注入成员主动离开后的信令清理回调。
+func (h *DomainHandler) SetOnDomainLeave(fn func(domainUUID, userUUID string)) {
+	h.onDomainLeave = fn
+}
+
+// SetControlPublisher 注入集群控制命令发布器。
+func (h *DomainHandler) SetControlPublisher(p ControlPublisher) {
+	h.controlPublisher = p
+}
+
+func (h *DomainHandler) hasPermission(c *gin.Context, code string) bool {
+	if h.permSvc == nil {
+		return false
+	}
+	roleVal, ok := c.Get("role")
+	if !ok {
+		return false
+	}
+	role, _ := roleVal.(string)
+	return h.permSvc.HasPermission(role, code)
+}
+
+type CreateDomainRequest struct {
+	Name        string `json:"name" binding:"required"`
+	Description string `json:"description"`
+	IsPublic    bool   `json:"is_public"`
+}
+
+// Create 创建语音域。
+func (h *DomainHandler) Create(c *gin.Context) {
+	var req CreateDomainRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	domain, err := h.domainSvc.Create(req.Name, req.Description, userUUID, req.IsPublic)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	if h.onDomainCreated != nil {
+		h.onDomainCreated(domain.UUID)
+	}
+	pkg.Success(c, domain)
+}
+
+type UUIDRequest struct {
+}
+
+// Get 获取语音域详情。
+func (h *DomainHandler) Get(c *gin.Context) {
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	domain, err := h.domainSvc.GetByUUID(domainUUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, domain)
+}
+
+type ListDomainRequest struct {
+	Page     int    `json:"page"`
+	PageSize int    `json:"page_size"`
+	Keyword  string `json:"keyword"`
+}
+
+// List 列出所有语音域。
+func (h *DomainHandler) List(c *gin.Context) {
+	var req ListDomainRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		req.Page = 1
+		req.PageSize = 20
+	}
+	domains, total, err := h.domainSvc.List(req.Page, req.PageSize)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"domains": domains, "total": total})
+}
+
+// ListPublic 列出公开语音域。
+func (h *DomainHandler) ListPublic(c *gin.Context) {
+	var req ListDomainRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		req.Page = 1
+		req.PageSize = 20
+	}
+	domains, total, err := h.domainSvc.ListPublic(req.Page, req.PageSize, strings.TrimSpace(req.Keyword))
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"domains": domains, "total": total})
+}
+
+// MyDomains 返回当前用户加入的 Domain 批量详情（含成员数与房间数）。
+func (h *DomainHandler) MyDomains(c *gin.Context) {
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	domains, err := h.domainSvc.ListUserDomainDetails(userUUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, domains)
+}
+
+type UpdateDomainRequest struct {
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+	IconURL     *string `json:"icon_url"`
+	IsPublic    *bool   `json:"is_public"`
+}
+
+// Update 更新语音域信息。
+func (h *DomainHandler) Update(c *gin.Context) {
+	var req UpdateDomainRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	domain, err := h.domainSvc.GetByUUID(domainUUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	if !h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainManage) &&
+		!h.domainSvc.IsOwner(domainUUID, userUUID) &&
+		!h.hasPermission(c, permcode.PermDomainManage) {
+		pkg.Fail(c, pkg.FORBIDDEN, "not domain owner or missing permission")
+		return
+	}
+	if req.Name != nil {
+		domain.Name = *req.Name
+	}
+	if req.Description != nil {
+		domain.Description = *req.Description
+	}
+	if req.IconURL != nil {
+		domain.IconURL = *req.IconURL
+	}
+	if req.IsPublic != nil {
+		domain.IsPublic = *req.IsPublic
+	}
+	if err := h.domainSvc.Update(domain); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, domain)
+}
+
+type DeleteDomainRequest struct {
+}
+
+// ResetInvite 重置语音域邀请码，使旧邀请链接立即失效。仅 Owner/Admin 或持有 domain:manage 权限的用户可调用。
+func (h *DomainHandler) ResetInvite(c *gin.Context) {
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	roleOK := h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainManage)
+	ownerOK := h.domainSvc.IsOwner(domainUUID, userUUID)
+	permOK := h.hasPermission(c, permcode.PermDomainManage)
+	if !permOK && !roleOK && !ownerOK {
+		pkg.Fail(c, pkg.FORBIDDEN, "not domain owner or missing permission")
+		return
+	}
+	domain, err := h.domainSvc.ResetInviteCode(domainUUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	if h.auditor != nil {
+		aua, aname := auditActor(c)
+		h.auditor.Log(audit.Entry{
+			ActorUUID:  aua,
+			ActorName:  aname,
+			Action:     audit.ActionResetInvite,
+			TargetType: audit.TargetDomain,
+			TargetID:   domainUUID,
+			Detail:     "invite_code reset",
+			IP:         audit.AuditIP(c),
+			Success:    true,
+		})
+	}
+	pkg.Success(c, domain)
+}
+
+// Delete 删除语音域。仅 Owner 和持有 domain:delete 权限的用户可调用。
+func (h *DomainHandler) Delete(c *gin.Context) {
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	permOK := h.hasPermission(c, permcode.PermDomainDelete)
+	ownerOK := h.domainSvc.IsOwner(domainUUID, userUUID)
+	if !permOK && !ownerOK {
+		pkg.Fail(c, pkg.FORBIDDEN, "not domain owner or missing permission")
+		return
+	}
+	if err := h.domainSvc.Delete(domainUUID); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	if h.onDomainDelete != nil {
+		h.onDomainDelete(domainUUID)
+	}
+	// DB 与本地清理已生效；control 失败只告警，由最终一致清理兜底。
+	if h.controlPublisher != nil {
+		if err := h.controlPublisher.PublishControl(cluster.ControlCommand{
+			Command:    cluster.CommandDeleteServer,
+			DomainUUID: domainUUID,
+		}); err != nil {
+			log.Printf("[Domain] publish delete control failed domain=%s err=%v", domainUUID, err)
+		}
+	}
+	pkg.Success(c, nil)
+}
+
+type JoinDomainRequest struct {
+	InviteCode string `json:"invite_code" binding:"required"`
+}
+
+// Join 通过邀请码加入语音域。
+func (h *DomainHandler) Join(c *gin.Context) {
+	var req JoinDomainRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	domain, err := h.domainSvc.Join(req.InviteCode, userUUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, domain)
+}
+
+// Preview 根据邀请码或邀请链接返回 Domain 信息，供加入前确认。
+func (h *DomainHandler) Preview(c *gin.Context) {
+	var req JoinDomainRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	domain, err := h.domainSvc.GetByInviteCode(strings.TrimSpace(req.InviteCode))
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, domain)
+}
+
+type LeaveDomainRequest struct {
+}
+
+// Leave 离开语音域。
+func (h *DomainHandler) Leave(c *gin.Context) {
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	if err := h.domainSvc.Leave(domainUUID, userUUID); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	if h.onDomainLeave != nil {
+		h.onDomainLeave(domainUUID, userUUID)
+	}
+	if h.controlPublisher != nil {
+		if err := h.controlPublisher.PublishControl(cluster.ControlCommand{
+			Command:    cluster.CommandKickDomain,
+			DomainUUID: domainUUID,
+			Payload:    map[string]interface{}{"user_uuid": userUUID},
+		}); err != nil {
+			pkg.HandleError(c, err)
+			return
+		}
+	}
+	pkg.Success(c, nil)
+}
+
+type KickDomainMemberRequest struct {
+	UserUUID string `json:"user_uuid" binding:"required"`
+}
+
+// Kick 踢出成员。仅 Owner/Admin 或持有 domain:kick 权限的用户可调用。
+func (h *DomainHandler) Kick(c *gin.Context) {
+	var req KickDomainMemberRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	userUUID, _ := userUUIDVal.(string)
+	roleOK := h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainKick)
+	permOK := h.hasPermission(c, permcode.PermDomainKick)
+	if !permOK && !roleOK {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain role or permission")
+		return
+	}
+	if err := h.domainSvc.Kick(domainUUID, req.UserUUID); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	if h.auditor != nil {
+		aua, aname := auditActor(c)
+		h.auditor.Log(audit.Entry{
+			ActorUUID:  aua,
+			ActorName:  aname,
+			Action:     audit.ActionKickMember,
+			TargetType: audit.TargetMember,
+			TargetID:   req.UserUUID,
+			IP:         audit.AuditIP(c),
+			Success:    true,
+		})
+	}
+	if h.onDomainKick != nil {
+		h.onDomainKick(domainUUID, req.UserUUID)
+	}
+	if h.controlPublisher != nil {
+		if err := h.controlPublisher.PublishControl(cluster.ControlCommand{
+			Command:    cluster.CommandKickDomain,
+			DomainUUID: domainUUID,
+			Payload:    map[string]interface{}{"user_uuid": req.UserUUID},
+		}); err != nil {
+			pkg.HandleError(c, err)
+			return
+		}
+	}
+	pkg.Success(c, nil)
+}
+
+type DomainMembersRequest struct {
+}
+
+// Members 列出语音域成员。
+func (h *DomainHandler) Members(c *gin.Context) {
+	domainUUID := domainUUIDFromContext(c)
+	if domainUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	members, err := h.domainSvc.ListMembers(domainUUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"members": members})
+}
+
+type DomainRoleListRequest struct {
+}
+
+type CreateDomainRoleRequest struct {
+	Name        string   `json:"name" binding:"required"`
+	Permissions []string `json:"permissions"`
+}
+
+type UpdateDomainRoleRequest struct {
+	RoleName    string   `json:"role_name" binding:"required"`
+	Permissions []string `json:"permissions"`
+}
+
+type DeleteDomainRoleRequest struct {
+	RoleName string `json:"role_name" binding:"required"`
+}
+
+type UpdateMemberRoleRequest struct {
+	UserUUID string `json:"user_uuid" binding:"required"`
+	RoleName string `json:"role_name" binding:"required"`
+}
+
+func (h *DomainHandler) canManageDomainRoles(c *gin.Context, domainUUID, userUUID string) bool {
+	if h.domainSvc.IsOwner(domainUUID, userUUID) {
+		return true
+	}
+	if h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainRoleManage) {
+		return true
+	}
+	return h.hasPermission(c, permcode.PermDomainRoleManage)
+}
+
+func (h *DomainHandler) ListRoles(c *gin.Context) {
+	domainUUID := domainUUIDFromContext(c)
+	userUUID := currentUserUUID(c)
+	if domainUUID == "" || userUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	if !h.canManageDomainRoles(c, domainUUID, userUUID) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain role permission")
+		return
+	}
+	roles, err := h.domainSvc.ListDomainRoles(domainUUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	views := make([]gin.H, 0, len(roles))
+	for _, role := range roles {
+		codes, err := h.domainSvc.GetDomainRolePermissions(domainUUID, role.Name)
+		if err != nil {
+			pkg.HandleError(c, err)
+			return
+		}
+		views = append(views, gin.H{
+			"name":        role.Name,
+			"is_system":   role.IsSystem,
+			"permissions": codes,
+		})
+	}
+	pkg.Success(c, gin.H{
+		"roles":      views,
+		"assignable": model.AssignableDomainPermissions,
+	})
+}
+
+func (h *DomainHandler) CreateRole(c *gin.Context) {
+	var req CreateDomainRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	domainUUID := domainUUIDFromContext(c)
+	userUUID := currentUserUUID(c)
+	if domainUUID == "" || userUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	if !h.canManageDomainRoles(c, domainUUID, userUUID) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain role permission")
+		return
+	}
+	if err := h.domainSvc.CreateDomainRole(domainUUID, req.Name, req.Permissions); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, nil)
+}
+
+func (h *DomainHandler) UpdateRole(c *gin.Context) {
+	var req UpdateDomainRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	domainUUID := domainUUIDFromContext(c)
+	userUUID := currentUserUUID(c)
+	if domainUUID == "" || userUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	if !h.canManageDomainRoles(c, domainUUID, userUUID) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain role permission")
+		return
+	}
+	if err := h.domainSvc.UpdateDomainRolePermissions(domainUUID, req.RoleName, req.Permissions); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, nil)
+}
+
+func (h *DomainHandler) DeleteRole(c *gin.Context) {
+	var req DeleteDomainRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	domainUUID := domainUUIDFromContext(c)
+	userUUID := currentUserUUID(c)
+	if domainUUID == "" || userUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	if !h.canManageDomainRoles(c, domainUUID, userUUID) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain role permission")
+		return
+	}
+	if err := h.domainSvc.DeleteDomainRole(domainUUID, req.RoleName); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, nil)
+}
+
+func (h *DomainHandler) UpdateMemberRole(c *gin.Context) {
+	var req UpdateMemberRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
+		return
+	}
+	domainUUID := domainUUIDFromContext(c)
+	userUUID := currentUserUUID(c)
+	if domainUUID == "" || userUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	if !h.canManageDomainRoles(c, domainUUID, userUUID) {
+		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain role permission")
+		return
+	}
+	if err := h.domainSvc.SetMemberRole(domainUUID, userUUID, req.UserUUID, req.RoleName); err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, nil)
+}
+
+func (h *DomainHandler) MyPermissions(c *gin.Context) {
+	domainUUID := domainUUIDFromContext(c)
+	userUUID := currentUserUUID(c)
+	if domainUUID == "" || userUUID == "" {
+		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
+		return
+	}
+	roleName, codes, err := h.domainSvc.MyDomainPermissions(domainUUID, userUUID)
+	if err != nil {
+		pkg.HandleError(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"role_name": roleName, "permissions": codes})
+}
