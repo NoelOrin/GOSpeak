@@ -159,16 +159,6 @@ export default function ProfileForm({
 	const avatarSize = isCompact ? "size-16" : "size-24";
 	const avatarText = isCompact ? "text-xl" : "text-3xl";
 
-	const AvatarBlock = () => (
-		<Avatar
-			src={displayAvatar || undefined}
-			name={avatarName}
-			alt="头像"
-			className={`ring-foreground/15 ring-offset-background ring-2 ring-offset-2 ${avatarSize}`}
-			textClass={avatarText}
-		/>
-	);
-
 	const btnBase =
 		"inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-sm px-4 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50";
 
@@ -181,7 +171,13 @@ export default function ProfileForm({
 				className={`flex w-full gap-4 ${isCompact ? "items-center" : "flex-col items-center"}`}
 			>
 				{mode === "view" ? (
-					<AvatarBlock />
+					<Avatar
+						src={displayAvatar || undefined}
+						name={avatarName}
+						alt="头像"
+						className={`ring-foreground/15 ring-offset-background ring-2 ring-offset-2 ${avatarSize}`}
+						textClass={avatarText}
+					/>
 				) : (
 					<>
 						<button
@@ -191,7 +187,13 @@ export default function ProfileForm({
 							disabled={uploading}
 							title="点击上传头像"
 						>
-							<AvatarBlock />
+							<Avatar
+								src={displayAvatar || undefined}
+								name={avatarName}
+								alt="头像"
+								className={`ring-foreground/15 ring-offset-background ring-2 ring-offset-2 ${avatarSize}`}
+								textClass={avatarText}
+							/>
 							<div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 opacity-0 transition-opacity group-hover:opacity-100">
 								{uploading ? (
 									<span className="border-primary border-t-primary size-5 animate-spin rounded-full border-2" />

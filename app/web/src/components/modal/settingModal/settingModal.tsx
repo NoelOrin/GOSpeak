@@ -37,9 +37,7 @@ export default function SettingModal({
 		0,
 		TABS.findIndex((t) => t.id === initialTabId),
 	);
-	const [activeTab, setActiveTab] = useState(
-		initialIndex >= 0 ? initialIndex : 0,
-	);
+	const [activeTab, setActiveTab] = useState(initialIndex);
 
 	if (!open) return null;
 

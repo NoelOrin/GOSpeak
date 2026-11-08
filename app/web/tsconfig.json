@@ -36,11 +36,10 @@
 		"types": [
 			"vite/client"
 		],
-		"baseUrl": ".",
 		/* alias */
 		"paths": {
 			"@/*": [
-				"src/*"
+				"./src/*"
 			],
 			"#/*": [
 				"./types/*"
