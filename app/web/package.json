@@ -36,7 +36,7 @@
     "fsevents": "^2.3.3",
     "idb-keyval": "^6.2.2",
     "lodash-es": "^4.17.22",
-    "lucide-react": "^0.561.0",
+    "lucide-react": "^1.69.0",
     "marked": "^18.0.7",
     "qrcode": "^1.5.4",
     "react": "^19.2.0",
