@@ -33,13 +33,29 @@ permissions:
 jobs:
   dependency-review:
     name: Dependency Review
+    # 仓库未启用 Dependency graph 时该 action 必然报 "not supported"，
+    # 与代码无关却让每个依赖 PR 变红。用 API 探测后再决定是否运行。
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
     steps:
+      - name: Check dependency graph availability
+        id: graph
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/$REPO/dependency-graph/sbom" >/dev/null 2>&1; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Dependency graph disabled, skipping dependency review"
+          fi
       - uses: actions/dependency-review-action@v4
+        if: steps.graph.outputs.enabled == 'true'
         with:
           fail-on-severity: moderate
 

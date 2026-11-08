@@ -19,7 +19,9 @@ runs:
     - uses: actions/setup-node@v6
       with:
         node-version: 22
-        cache: pnpm
+        # 不装依赖时跳过 pnpm 缓存：此时 store 目录不会被创建，
+        # setup-node 的 post 步骤保存缓存会报 "Path(s) ... do(es) not exist"。
+        cache: ${{ inputs.install == 'true' && 'pnpm' || '' }}
         cache-dependency-path: pnpm-lock.yaml
     - name: Install dependencies
       if: inputs.install == 'true'
