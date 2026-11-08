@@ -1,0 +1,16 @@
+{
+	"$schema": "https://turbo.build/schema.json",
+	"extends": ["//"],
+	"tasks": {
+		"build": {
+			"outputs": ["gospeak", "build/**"],
+			"env": ["CGO_ENABLED", "GOOS", "GOARCH", "GOFLAGS", "GO111MODULE", "GOTOOLCHAIN"]
+		},
+		"test": {
+			"env": ["CGO_ENABLED", "GOFLAGS", "GO111MODULE"]
+		},
+		"lint": {
+			"env": ["CGO_ENABLED", "GOFLAGS", "GO111MODULE"]
+		}
+	}
+}

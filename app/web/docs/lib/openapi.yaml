@@ -1,0 +1,1216 @@
+openapi: 3.0.3
+info:
+  title: GOSpeak API
+  description: GOSpeak - WebRTC 实时语音聊天服务端 API
+  version: 1.0.0
+  contact:
+    name: NoelOrin
+    url: https://github.com/NoelOrin
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8998/api/v1
+    description: 本地开发
+  - url: /api/v1
+    description: 生产环境（相对路径）
+
+tags:
+  - name: 认证
+    description: 登录、注册、Token 管理
+  - name: 信令
+    description: LiveKit Token、房间参与者、WebRTC 信令
+  - name: 房间
+    description: 房间 CRUD（需要认证 + 权限）
+  - name: 用户
+    description: 用户管理（需要认证）
+  - name: 角色
+    description: 角色管理（需要认证 + 权限）
+  - name: 权限
+    description: 权限管理（需要认证 + 权限）
+  - name: OAuth
+    description: 第三方 OAuth 登录
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "在请求头中添加: Authorization: Bearer <token>"
+
+  schemas:
+    Response:
+      type: object
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrCode'
+        msg:
+          type: string
+        data:
+          description: 业务数据（结构因接口而异）
+
+    ErrCode:
+      type: integer
+      description: 业务状态码，0 表示成功
+      enum:
+        - 0
+        - 1001
+        - 1002
+        - 1003
+        - 1010
+        - 1011
+        - 1012
+        - 1013
+        - 2001
+        - 3001
+        - 3002
+        - 5001
+        - 6001
+        - 6002
+        - 7001
+        - 7002
+        - 7003
+        - 7004
+      x-enum-descriptions:
+        - 成功
+        - Token 不存在
+        - Token 错误
+        - Token 过期
+        - 密码无效
+        - 用户不存在
+        - 用户名已存在
+        - 无权限
+        - 参数无效
+        - 资源不存在
+        - 资源已存在
+        - 内部错误
+        - LiveKit 未配置
+        - LiveKit 错误
+        - OAuth 提供商不存在
+        - OAuth 提供商已禁用
+        - OAuth Token 交换失败
+        - OAuth 获取用户信息失败
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          example: admin
+        password:
+          type: string
+          format: password
+          example: "123456"
+
+    RegisterRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          example: newuser
+        password:
+          type: string
+          format: password
+          example: "123456"
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT 访问 Token
+        refresh_token:
+          type: string
+          description: 刷新 Token
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        username:
+          type: string
+          example: admin
+        role:
+          type: string
+          example: admin
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Room:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        uuid:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: my-room
+        limit:
+          type: integer
+          description: 房间人数上限，0 表示无限制
+          example: 10
+        created_by:
+          type: string
+          example: admin
+        created_at:
+          type: string
+          format: date-time
+
+    CreateRoomRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          example: my-room
+        limit:
+          type: integer
+          description: 人数上限，0 或不传表示无限制
+          example: 10
+
+    UpdateRoomRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: renamed-room
+        limit:
+          type: integer
+          example: 20
+
+    Role:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: admin
+
+    CreateRoleRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          example: moderator
+
+    JoinRoomRequest:
+      type: object
+      required: [room, identity]
+      properties:
+        room:
+          type: string
+          example: my-room
+        identity:
+          type: string
+          example: user-123
+
+    JoinRoomResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: LiveKit 访问 Token
+        serverUrl:
+          type: string
+          description: LiveKit 服务器地址
+          example: wss://your-livekit-server.com
+        room:
+          type: string
+        identity:
+          type: string
+
+    SignalRequest:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [offer, answer, candidate]
+          example: offer
+        room:
+          type: string
+          example: my-room
+        identity:
+          type: string
+          example: user-123
+        data:
+          description: 信令数据（SDP 或 ICE candidate）
+
+    Participant:
+      type: object
+      properties:
+        identity:
+          type: string
+        sid:
+          type: string
+        joined_at:
+          type: integer
+          format: int64
+
+    SyncRolePermissionsRequest:
+      type: object
+      required: [role, permissions]
+      properties:
+        role:
+          type: string
+          example: admin
+        permissions:
+          type: array
+          items:
+            type: string
+          example: ["room:create", "room:read", "room:update", "room:delete"]
+
+    Permission:
+      type: object
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+          example: room:create
+        description:
+          type: string
+          example: 创建房间
+
+    OAuthProvider:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          example: github
+        client_id:
+          type: string
+        auth_url:
+          type: string
+        token_url:
+          type: string
+        user_info_url:
+          type: string
+        enabled:
+          type: boolean
+
+    PaginatedRooms:
+      type: object
+      properties:
+        rooms:
+          type: array
+          items:
+            $ref: '#/components/schemas/Room'
+        total:
+          type: integer
+        page:
+          type: integer
+        size:
+          type: integer
+
+    PaginatedUsers:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        total:
+          type: integer
+        page:
+          type: integer
+        size:
+          type: integer
+
+paths:
+  # ─────────────── 认证 ───────────────
+  /auth/register:
+    post:
+      tags: [认证]
+      summary: 用户注册
+      description: 注册新用户账号
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+
+  /auth/login:
+    post:
+      tags: [认证]
+      summary: 用户登录
+      description: 验证用户凭据，返回 JWT Token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/LoginResponse'
+
+  /auth/refresh_token:
+    post:
+      tags: [认证]
+      summary: 刷新 JWT Token
+      description: 使用 refresh_token 获取新的访问 Token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: 刷新成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/LoginResponse'
+
+  /auth/reset_password:
+    post:
+      tags: [认证]
+      summary: 重置密码
+      description: 通过用户名重置密码（公开接口）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, new_password]
+              properties:
+                username:
+                  type: string
+                new_password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: 重置成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  /auth/logout:
+    post:
+      tags: [认证]
+      summary: 用户登出
+      description: 使当前会话的 JWT Token 失效
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 登出成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  /auth/refresh:
+    post:
+      tags: [认证]
+      summary: 刷新当前 Token
+      description: 为已认证用户刷新 JWT Token（需携带当前有效 Token）
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 刷新成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/LoginResponse'
+
+  /auth/change_password:
+    post:
+      tags: [认证]
+      summary: 修改密码
+      description: 已登录用户修改密码
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [old_password, new_password]
+              properties:
+                old_password:
+                  type: string
+                  format: password
+                new_password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: 修改成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  /auth/first_change_password:
+    post:
+      tags: [认证]
+      summary: 首次修改密码
+      description: 新用户首次登录后强制修改密码
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                new_password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: 修改成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  # ─────────────── 信令 ───────────────
+  /signal/token:
+    post:
+      tags: [信令]
+      summary: 获取 LiveKit 加入 Token
+      description: 生成用于加入房间的 LiveKit 访问 Token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinRoomRequest'
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/JoinRoomResponse'
+
+  /signal/signal:
+    post:
+      tags: [信令]
+      summary: 交换信令消息
+      description: 中继 WebRTC 信令（offer / answer / ICE candidate）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignalRequest'
+      responses:
+        '200':
+          description: 信令已转发
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  /signal/rooms:
+    get:
+      tags: [信令]
+      summary: 获取 LiveKit 房间列表
+      description: 从 LiveKit 获取所有活跃房间
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+
+  /signal/participants:
+    get:
+      tags: [信令]
+      summary: 获取房间参与者
+      description: 获取指定 LiveKit 房间中的所有参与者
+      parameters:
+        - name: room
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 房间名称
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Participant'
+
+  /signal/webhook:
+    post:
+      tags: [信令]
+      summary: LiveKit Webhook
+      description: 接收 LiveKit 服务端推送的事件回调
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: 处理成功
+
+  # ─────────────── 房间 ───────────────
+  /room/create:
+    post:
+      tags: [房间]
+      summary: 创建房间
+      description: 创建新房间，需要 room:create 权限
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoomRequest'
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/Room'
+
+  /room/list:
+    get:
+      tags: [房间]
+      summary: 房间列表
+      description: 分页获取房间列表，需要 room:read 权限
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: 页码
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+          description: 每页条数
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/PaginatedRooms'
+
+  /room/{id}:
+    get:
+      tags: [房间]
+      summary: 获取房间详情
+      description: 根据 ID 获取房间信息，需要 room:read 权限
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 房间 ID
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/Room'
+
+    put:
+      tags: [房间]
+      summary: 更新房间
+      description: 根据 ID 更新房间信息，需要 room:update 权限（非权限持有者仅可编辑自己创建的房间）
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 房间 ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRoomRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/Room'
+
+    delete:
+      tags: [房间]
+      summary: 删除房间
+      description: 根据 ID 删除房间，需要 room:delete 权限
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 房间 ID
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  # ─────────────── 用户 ───────────────
+  /user/profile:
+    get:
+      tags: [用户]
+      summary: 获取当前用户资料
+      description: 获取当前已认证用户的资料信息
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+
+  /user/list:
+    get:
+      tags: [用户]
+      summary: 获取用户列表
+      description: 分页获取用户列表，需要 user:read 权限
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: 页码
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+          description: 每页条数
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/PaginatedUsers'
+
+  /user/{id}:
+    get:
+      tags: [用户]
+      summary: 根据 ID 获取用户
+      description: 通过用户 ID 获取用户信息，需要 user:read 权限
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 用户 ID
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+
+    delete:
+      tags: [用户]
+      summary: 删除用户
+      description: 根据用户 ID 删除用户，需要 user:delete 权限
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 用户 ID
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  /user/{id}/role:
+    put:
+      tags: [用户]
+      summary: 更新用户角色
+      description: 管理员更新用户角色，需要 user:update 权限
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 用户 ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  example: admin
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  # ─────────────── 角色 ───────────────
+  /role/list:
+    get:
+      tags: [角色]
+      summary: 获取角色列表
+      description: 获取所有角色，需要 role:read 权限
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Role'
+
+  /role/create:
+    post:
+      tags: [角色]
+      summary: 创建角色
+      description: 创建新角色，需要 role:manage 权限
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleRequest'
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/Role'
+
+  /role/{id}:
+    delete:
+      tags: [角色]
+      summary: 删除角色
+      description: 根据角色 ID 删除角色，需要 role:manage 权限
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 角色 ID
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  # ─────────────── 权限 ───────────────
+  /permission/list:
+    get:
+      tags: [权限]
+      summary: 获取所有权限定义
+      description: 列出系统中所有可用的权限码，需要 role:read 权限
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Permission'
+
+  /permission/role:
+    get:
+      tags: [权限]
+      summary: 获取角色权限
+      description: 获取指定角色的权限码列表，需要 role:read 权限
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: role
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 角色名称
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          role:
+                            type: string
+                          permissions:
+                            type: array
+                            items:
+                              type: string
+
+  /permission/sync:
+    post:
+      tags: [权限]
+      summary: 同步角色权限
+      description: 全量覆盖指定角色的权限列表，需要 role:manage 权限
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncRolePermissionsRequest'
+      responses:
+        '200':
+          description: 同步成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          role:
+                            type: string
+                          permissions:
+                            type: array
+                            items:
+                              type: string
+
+  # ─────────────── OAuth ───────────────
+  /oauth/login/{provider}:
+    get:
+      tags: [OAuth]
+      summary: 发起 OAuth 登录
+      description: 重定向到第三方 OAuth 授权页面
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+          description: OAuth 提供商名称（如 github, google）
+        - name: state
+          in: query
+          schema:
+            type: string
+          description: CSRF 防护状态码
+      responses:
+        '302':
+          description: 重定向到 OAuth 授权页
+
+  /oauth/callback/{provider}:
+    get:
+      tags: [OAuth]
+      summary: OAuth 回调
+      description: 处理第三方 OAuth 授权回调，返回 JWT Token
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+          description: OAuth 提供商名称
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 授权码
+      responses:
+        '200':
+          description: 授权成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/LoginResponse'
+
+  /oauth/admin/providers:
+    get:
+      tags: [OAuth]
+      summary: 获取 OAuth 提供商列表
+      description: 列出所有已配置的 OAuth 提供商，需要 admin 角色
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/OAuthProvider'
+
+    post:
+      tags: [OAuth]
+      summary: 创建 OAuth 提供商
+      description: 新增 OAuth 提供商配置，需要 admin 角色
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthProvider'
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/OAuthProvider'
+
+    put:
+      tags: [OAuth]
+      summary: 更新 OAuth 提供商
+      description: 更新 OAuth 提供商配置，需要 admin 角色
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthProvider'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/OAuthProvider'
+
+  /oauth/admin/providers/{id}:
+    delete:
+      tags: [OAuth]
+      summary: 删除 OAuth 提供商
+      description: 根据 ID 删除 OAuth 提供商，需要 admin 角色
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 提供商 ID
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  # ─────────────── 通用 ───────────────
+  /ping:
+    get:
+      summary: 健康检查
+      description: 返回 pong 表示服务正常
+      responses:
+        '200':
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: pong

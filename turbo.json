@@ -1,0 +1,39 @@
+{
+	"$schema": "https://turbo.build/schema.json",
+	"globalEnv": ["CI", "NODE_ENV", "VITE_*"],
+	"globalDependencies": [
+		"biome.json",
+		"pnpm-lock.yaml",
+		"pnpm-workspace.yaml",
+		"turbo.json",
+		"app/*/tsconfig*.json",
+		"packages/*/tsconfig*.json",
+		"app/*/.env*",
+		"deploy/.env*",
+		".env*"
+	],
+	"tasks": {
+		"build": {
+			"dependsOn": ["^build"],
+			"outputs": ["dist/**"]
+		},
+		"dev": {
+			"cache": false,
+			"persistent": true,
+			"interruptible": true,
+			"passThroughEnv": ["*"]
+		},
+		"lint": {
+			"outputs": []
+		},
+		"check": {
+			"outputs": []
+		},
+		"typecheck": {
+			"outputs": []
+		},
+		"test": {
+			"outputs": []
+		}
+	}
+}

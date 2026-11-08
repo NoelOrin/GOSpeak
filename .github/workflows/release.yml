@@ -1,0 +1,653 @@
+# GOSpeak Release CI —— 双组件、显式版本声明驱动。
+#
+# 版本号来源：.github/versions/main.yaml（主体）与 .github/versions/desktop.yaml
+# （桌面端）各自显式声明。合入 main 后由 version-bump.yml 自动打 tag；也可手动
+# push tag 或 workflow_dispatch 补跑。
+#
+# 组件与 tag 前缀约定：
+#   主体（server + web）  → v<version>        （如 v0.4.0）
+#   桌面端（app/desktop） → desktop-v<version> （如 desktop-v0.1.0）
+#
+# 发生什么：
+#   v* tag          → 主体发布链：版本校验（以 main.yaml 为准）→ Release notes
+#                     + GitHub Release → 一次性 Web 构建 → 交叉编译 10 平台二进制
+#                     → SHA256SUMS。Docker 镜像由 docker.yml 在同一 tag 并行发布。
+#   desktop-v* tag  → 桌面端发布链：版本校验（以 desktop.yaml 为准）→ Release
+#                     （notes 优先取 yaml 的 notes 字段）→ GOSPEAK_TARGET=desktop
+#                     条件编译构建 Web → go:embed 进桌面宿主 → 5 平台二进制
+#                     → SHA256SUMS-desktop。
+#
+# workflow_dispatch 支持手动补跑（tag 留空则取最新发布 tag），产物幂等覆盖（--clobber）。
+
+name: Release
+
+on:
+  push:
+    tags: ["v*", "desktop-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (empty = latest release tag, v* or desktop-v*)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── Resolve Tag & Component ─────────────────────────────────────────────
+  resolve-tag:
+    name: Resolve Tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+      component: ${{ steps.tag.outputs.component }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${INPUT_TAG:-}"
+          if [ -z "$tag" ] && [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then
+            tag="${GITHUB_REF_NAME:-}"
+          fi
+          if [ -z "$tag" ]; then
+            # 最新发布 tag（v* 与 desktop-v* 混排，按创建时间取最新）
+            tag="$(git for-each-ref --sort=-creatordate \
+              --format='%(refname:short)' refs/tags \
+              | grep -E '^(desktop-)?v[0-9]' | head -n1 || true)"
+          fi
+          case "$tag" in
+            desktop-v*)
+              component="desktop"
+              version="${tag#desktop-v}"
+              ;;
+            v*)
+              component="main"
+              version="${tag#v}"
+              ;;
+            *)
+              echo "::error::No release tag resolved (event=${GITHUB_EVENT_NAME:-} input=${INPUT_TAG:-} resolved=${tag:-})"
+              exit 1
+              ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "component=$component" >> "$GITHUB_OUTPUT"
+          echo "::notice::Release tag: $tag (component=$component version=$version)"
+
+  version-check:
+    name: Check Release Version (${{ needs.resolve-tag.outputs.component }})
+    runs-on: ubuntu-latest
+    needs: [resolve-tag]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+      - name: Validate release tag against declared version
+        env:
+          RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
+          COMPONENT: ${{ needs.resolve-tag.outputs.component }}
+        run: node scripts/check-version.mjs . "$RELEASE_TAG" "$COMPONENT"
+
+  # ── Create Release ───────────────────────────────────────────────────────
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [resolve-tag, version-check]
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.resolve-tag.outputs.version }}
+      COMPONENT: ${{ needs.resolve-tag.outputs.component }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Generate Release notes
+        run: |
+          set -euo pipefail
+          # notes 优先取版本声明 yaml 的 notes 字段（显式声明，支持块标量多行）；
+          # 留空则按 commit 生成：主体以最近任意 tag 为基线；桌面端以最近的
+          # desktop-v* tag 为基线（首个桌面版本无 commit 基线，用简短默认说明，
+          # 避免把主体提交历史错当桌面变更）。
+          cat > /tmp/read-notes.mjs <<'EOF'
+          import { readFileSync } from "node:fs";
+          const src = readFileSync(process.argv[2], "utf8");
+          const block = src.match(/^notes:[ \t]*\|\n((?:[ \t]*[^\n]*\n?)+)/m);
+          if (block) {
+            console.log(
+              block[1].replace(/^[ \t]+/gm, "").replace(/^\n+|\n+$/g, ""),
+            );
+            process.exit(0);
+          }
+          const flow = src.match(/^notes:[ \t]*(?:"([^"]*)"|'([^']*)'|([^#\n]*))/m);
+          const value = (flow ? (flow[1] ?? flow[2] ?? flow[3]) : "").trim();
+          console.log(value);
+          EOF
+          node /tmp/read-notes.mjs ".github/versions/${COMPONENT}.yaml" > /tmp/decl-notes.txt
+          if [ -s /tmp/decl-notes.txt ]; then
+            cp /tmp/decl-notes.txt /tmp/release-notes.md
+          elif [ "$COMPONENT" = "desktop" ]; then
+            last_desktop_tag="$(git for-each-ref --sort=-creatordate \
+              --format='%(refname:short)' refs/tags \
+              | grep -E '^desktop-v[0-9]' | head -n1 || true)"
+            if [ -n "$last_desktop_tag" ]; then
+              node scripts/build-changelog.mjs "$RELEASE_VERSION" "$last_desktop_tag" --no-write > /tmp/release-notes.md
+            else
+              {
+                echo "## GOSpeak Desktop ${RELEASE_VERSION}"
+                echo
+                echo "首个桌面端发布。详见仓库 [README](https://github.com/${GITHUB_REPOSITORY}#readme) 与 [CHANGELOG](https://github.com/${GITHUB_REPOSITORY}/blob/main/CHANGELOG.md)。"
+              } > /tmp/release-notes.md
+            fi
+          else
+            node scripts/build-changelog.mjs "$RELEASE_VERSION" --no-write > /tmp/release-notes.md
+          fi
+          test -s /tmp/release-notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; leaving it unchanged."
+            exit 0
+          fi
+          target_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          release_args=(
+            "$RELEASE_TAG"
+            --target "$target_sha"
+            --title "$RELEASE_TAG"
+            --notes-file /tmp/release-notes.md
+          )
+          # 预发布版本（含 - / + 的语义化版本）自动标记 prerelease
+          if [[ "$RELEASE_VERSION" == *-* ]] || [[ "$RELEASE_VERSION" == *+* ]]; then
+            release_args+=(--prerelease --latest=false)
+          fi
+          gh release create "${release_args[@]}"
+
+  # ── Build Web Once（两个组件共用：desktop 以条件编译目标构建）──────────────
+  build-web:
+    name: Build Web Artifact
+    runs-on: ubuntu-latest
+    needs: [resolve-tag, version-check]
+    permissions:
+      contents: read
+    env:
+      # 桌面端以 GOSPEAK_TARGET=desktop 构建（__GOSPEAK_DESKTOP__=true，
+      # 桌面分支进包）；主体按默认 web 目标构建（桌面分支被裁剪）。
+      GOSPEAK_TARGET: ${{ needs.resolve-tag.outputs.component == 'desktop' && 'desktop' || 'web' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+
+      - uses: ./.github/actions/pnpm-install
+
+      - name: Build web dist
+        run: pnpm --filter @gospeak/web build
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-web-dist
+          path: app/web/dist
+          retention-days: 3
+
+  # ── 主体：Cross-Platform Server Binaries ────────────────────────────────
+  build-release-binaries:
+    name: Build server ${{ matrix.target }}
+    if: needs.resolve-tag.outputs.component == 'main'
+    runs-on: ubuntu-latest
+    needs: [resolve-tag, version-check, create-release, build-web]
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            goos: linux
+            goarch: amd64
+            ext: ""
+          - target: linux-arm64
+            goos: linux
+            goarch: arm64
+            ext: ""
+          - target: linux-armv7
+            goos: linux
+            goarch: arm
+            goarm: "7"
+            ext: ""
+          - target: darwin-amd64
+            goos: darwin
+            goarch: amd64
+            ext: ""
+          - target: darwin-arm64
+            goos: darwin
+            goarch: arm64
+            ext: ""
+          - target: freebsd-amd64
+            goos: freebsd
+            goarch: amd64
+            ext: ""
+          - target: freebsd-arm64
+            goos: freebsd
+            goarch: arm64
+            ext: ""
+          - target: openbsd-amd64
+            goos: openbsd
+            goarch: amd64
+            ext: ""
+          - target: windows-amd64
+            goos: windows
+            goarch: amd64
+            ext: ".exe"
+          - target: windows-arm64
+            goos: windows
+            goarch: arm64
+            ext: ".exe"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+
+      - name: Download web artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: release-web-dist
+          path: app/web/dist
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: app/server/go.mod
+          cache-dependency-path: app/server/go.sum
+          cache: true
+
+      - name: Embed frontend into server
+        run: |
+          rm -rf app/server/internal/webui/dist
+          mkdir -p app/server/internal/webui/dist
+          cp -R app/web/dist/. app/server/internal/webui/dist/
+          test -f app/server/internal/webui/dist/index.html
+
+      - name: Resolve checked out commit
+        id: source
+        shell: bash
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build binary
+        working-directory: app/server
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          RELEASE_VERSION: ${{ needs.resolve-tag.outputs.version }}
+          RELEASE_COMMIT: ${{ steps.source.outputs.commit }}
+        run: |
+          go build \
+            -ldflags="-s -w \
+              -X 'GOSpeak/cmd.version=${RELEASE_VERSION}' \
+              -X 'GOSpeak/cmd.commit=${RELEASE_COMMIT}'" \
+            -o "gospeak-${{ matrix.target }}${{ matrix.ext }}" main.go
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: gospeak-${{ matrix.target }}
+          path: app/server/gospeak-${{ matrix.target }}${{ matrix.ext }}
+          retention-days: 14
+
+      - name: Upload to release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          echo "Uploading to release $TAG..."
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG not found; skipping upload."
+            exit 0
+          fi
+          gh release upload "$TAG" \
+            "app/server/gospeak-${{ matrix.target }}${{ matrix.ext }}" --clobber
+
+  # ── 主体：SHA256SUMS ────────────────────────────────────────────────────
+  checksums:
+    name: Generate & Upload SHA256SUMS
+    if: needs.resolve-tag.outputs.component == 'main'
+    runs-on: ubuntu-latest
+    needs: [resolve-tag, version-check, create-release, build-release-binaries]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: gospeak-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          sha256sum gospeak-* > SHA256SUMS.txt
+          echo "=== SHA256SUMS ==="
+          cat SHA256SUMS.txt
+
+      - name: Upload SHA256SUMS to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG not found; skipping SHA256SUMS upload."
+            exit 0
+          fi
+          gh release upload "$TAG" \
+            "dist/SHA256SUMS.txt" --clobber
+
+  # ── 桌面端：Cross-Platform Desktop Binaries ─────────────────────────────
+  # ── 桌面端：macOS 安装包（DMG，需要 macOS runner 的 hdiutil）──────────────
+  build-desktop-macos:
+    name: Build desktop macOS ${{ matrix.arch }}
+    if: needs.resolve-tag.outputs.component == 'desktop'
+    runs-on: macos-latest
+    needs: [resolve-tag, version-check, create-release, build-web]
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            goarch: arm64
+          - arch: amd64
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+
+      - name: Download web artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: release-web-dist
+          path: app/web/dist
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: app/desktop/go.mod
+          cache: true
+          cache-dependency-path: app/desktop/go.sum
+
+      - name: Embed frontend into desktop host
+        run: |
+          rm -rf app/desktop/webui/dist
+          mkdir -p app/desktop/webui/dist
+          cp -R app/web/dist/. app/desktop/webui/dist/
+          test -f app/desktop/webui/dist/index.html
+
+      - name: Resolve checked out commit
+        id: source
+        shell: bash
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # DMG 安装包：mygo build 产出 .app + dmg，Finder 里是「拖到 Applications」的
+      # 标准安装体验。hdiutil 只有 macOS 有，所以这个作业跑在 macos runner 上。
+      #
+      # 版本号通过 MYGO_LDFLAGS 注入 main.version/main.commit（mygo 会把它们与
+      # packageFlags 合并），保证 --version 与 tag 一致。
+      - name: Build macOS app and DMG
+        working-directory: app/desktop
+        env:
+          CGO_ENABLED: 0
+          GOSPEAK_TARGET: desktop
+          MYGO_LDFLAGS: >-
+            -X 'main.version=${{ needs.resolve-tag.outputs.version }}'
+            -X 'main.commit=${{ steps.source.outputs.commit }}'
+        run: |
+          ./node_modules/.bin/mygo build \
+            -skip-build-command \
+            -platform "darwin/${{ matrix.goarch }}"
+
+      # 用途说明缺失说明打包链路有问题：直接失败，不发一个麦克风不可用的包。
+      - name: Verify bundle metadata
+        working-directory: app/desktop
+        run: |
+          APP="$(ls -d dist/darwin-*/GOSpeak.app | head -n1)"
+          test -n "$APP" -a -d "$APP"
+          plutil -p "$APP/Contents/Info.plist" | grep -q NSMicrophoneUsageDescription
+          plutil -p "$APP/Contents/Info.plist" | grep -q NSCameraUsageDescription
+          DMG="$(ls dist/darwin-*/*.dmg | head -n1)"
+          test -n "$DMG" -a -f "$DMG"
+          # 挂载一次确认镜像可读且包含 .app 与 /Applications 链接。
+          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint /tmp/gospeak-dmg
+          ls /tmp/gospeak-dmg/GOSpeak.app >/dev/null
+          test -L /tmp/gospeak-dmg/Applications
+          hdiutil detach /tmp/gospeak-dmg
+          echo "DMG verified: $DMG"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: gospeak-desktop-darwin-${{ matrix.arch }}
+          path: app/desktop/dist/darwin-*/*.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload to release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG not found; skipping upload."
+            exit 0
+          fi
+          for f in app/desktop/dist/darwin-*/*.dmg; do
+            echo "Uploading $f"
+            gh release upload "$TAG" "$f" --clobber
+          done
+
+  # ── 桌面端：Linux / Windows 安装包 ──────────────────────────────────────
+  build-desktop-others:
+    name: Build desktop ${{ matrix.target }}
+    if: needs.resolve-tag.outputs.component == 'desktop'
+    runs-on: ubuntu-latest
+    needs: [resolve-tag, version-check, create-release, build-web]
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            goos: linux
+            goarch: amd64
+          - target: linux-arm64
+            goos: linux
+            goarch: arm64
+          - target: windows-amd64
+            goos: windows
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+
+      - name: Download web artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: release-web-dist
+          path: app/web/dist
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: app/desktop/go.mod
+          cache: true
+          cache-dependency-path: app/desktop/go.sum
+
+      - name: Embed frontend into desktop host
+        run: |
+          rm -rf app/desktop/webui/dist
+          mkdir -p app/desktop/webui/dist
+          cp -R app/web/dist/. app/desktop/webui/dist/
+          test -f app/desktop/webui/dist/index.html
+
+      - name: Resolve checked out commit
+        id: source
+        shell: bash
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # mygo 只在 Windows 上自动下载 NSIS；Linux runner 必须预装 makensis，
+      # 否则它会跳过安装包只留下裸 exe（构建仍然"成功"，很容易漏掉）。
+      - name: Install NSIS (Windows installer toolchain)
+        if: matrix.goos == 'windows'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nsis
+          makensis -VERSION
+
+      # Linux 出 .deb（双击即装）+ tar.gz + install.sh（一键脚本）；
+      # Windows 出 NSIS 安装包。两者都不需要宿主机是目标平台。
+      - name: Build installers
+        working-directory: app/desktop
+        env:
+          CGO_ENABLED: 0
+          GOSPEAK_TARGET: desktop
+          MYGO_LDFLAGS: >-
+            -X 'main.version=${{ needs.resolve-tag.outputs.version }}'
+            -X 'main.commit=${{ steps.source.outputs.commit }}'
+        run: |
+          ./node_modules/.bin/mygo build \
+            -skip-build-command \
+            -platform "${{ matrix.goos }}/${{ matrix.goarch }}"
+
+      # mygo 在 makensis 缺失时只打一条 warning 并继续，构建仍"成功"，
+      # 产物里没有安装包。这里显式断言，避免静默发出裸 exe。
+      - name: Verify installers were produced
+        working-directory: app/desktop
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            files=(dist/windows-*/*-setup-*.exe)
+            if [ ${#files[@]} -eq 0 ]; then
+              echo "::error::No Windows installer produced (NSIS missing?)"
+              ls -la dist/windows-*/ || true
+              exit 1
+            fi
+            echo "Windows installer: ${files[0]}"
+          else
+            debs=(dist/linux-*/*.deb)
+            tarballs=(dist/linux-*/*.tar.gz)
+            if [ ${#debs[@]} -eq 0 ] || [ ${#tarballs[@]} -eq 0 ]; then
+              echo "::error::Missing Linux packages (.deb / .tar.gz)"
+              ls -la dist/linux-*/ || true
+              exit 1
+            fi
+            echo "Linux packages: ${debs[0]}, ${tarballs[0]}"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: gospeak-desktop-${{ matrix.target }}
+          path: |
+            app/desktop/dist/${{ matrix.goos }}-*/*.deb
+            app/desktop/dist/${{ matrix.goos }}-*/*.tar.gz
+            app/desktop/dist/${{ matrix.goos }}-*/install.sh
+            app/desktop/dist/${{ matrix.goos }}-*/*-setup-*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload to release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG not found; skipping upload."
+            exit 0
+          fi
+          shopt -s nullglob
+          for f in app/desktop/dist/${{ matrix.goos }}-*/*.deb \
+                   app/desktop/dist/${{ matrix.goos }}-*/*.tar.gz \
+                   app/desktop/dist/${{ matrix.goos }}-*/install.sh \
+                   app/desktop/dist/${{ matrix.goos }}-*/*-setup-*.exe; do
+            echo "Uploading $f"
+            gh release upload "$TAG" "$f" --clobber
+          done
+
+  desktop-checksums:
+    name: Generate & Upload desktop SHA256SUMS
+    if: needs.resolve-tag.outputs.component == 'desktop'
+    runs-on: ubuntu-latest
+    needs: [resolve-tag, version-check, create-release, build-desktop-macos, build-desktop-others]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download all desktop artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: gospeak-desktop-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Generate desktop SHA256SUMS
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          # 产物是 dmg / deb / tar.gz / setup.exe / install.sh，名字各不相同，
+          # 逐个列出而不是靠前缀通配。
+          shopt -s nullglob
+          files=(*.dmg *.deb *.tar.gz *.exe install.sh)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::No desktop artifacts found to checksum"
+            ls -la
+            exit 1
+          fi
+          sha256sum "${files[@]}" | sort -k2 > SHA256SUMS-desktop.txt
+          echo "=== SHA256SUMS (desktop) ==="
+          cat SHA256SUMS-desktop.txt
+
+      - name: Upload desktop SHA256SUMS to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG not found; skipping SHA256SUMS upload."
+            exit 0
+          fi
+          gh release upload "$TAG" \
+            "dist/SHA256SUMS-desktop.txt" --clobber

@@ -1,0 +1,210 @@
+package handler
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"GOSpeak/internal/middleware"
+	"GOSpeak/internal/model"
+	"GOSpeak/internal/repository"
+	"GOSpeak/internal/service"
+
+	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+)
+
+func TestRoomHandler_Create_RejectsMissingOrBlankDomainUUID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Room{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	middleware.SetDomainChecker(func(domainUUID, userUUID string) bool { return true })
+	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
+
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("username", "user-1")
+		c.Set("user_uuid", "user-1")
+		c.Next()
+	})
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)
+	r.POST("/api/v1/room/create", h.Create)
+
+	for _, body := range []string{
+		`{"name":"lobby"}`,
+		`{"name":"lobby","domain_uuid":"  "}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/room/create", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			var resp map[string]interface{}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if code := intCode(resp["code"]); code != 2001 {
+				t.Fatalf("expected 2001, got %d: %s", code, resp["msg"])
+			}
+
+			var count int64
+			if err := db.Model(&model.Room{}).Count(&count).Error; err != nil {
+				t.Fatalf("count rooms: %v", err)
+			}
+			if count != 0 {
+				t.Fatalf("expected no room to be created, got %d", count)
+			}
+		})
+	}
+}
+
+func TestRoomHandler_Create_UsesRequestBodyDomainUUID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Room{}, &model.Domain{}, &model.DomainMember{}, &model.DomainRole{}, &model.DomainRolePermission{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	domain := &model.Domain{UUID: "domain-a", Name: "Chat", OwnerUUID: "user-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{DomainUUID: domain.UUID, UserUUID: "user-1", RoleName: model.DomainRoleMember}).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+
+	middleware.SetDomainChecker(func(domainUUID, userUUID string) bool { return true })
+	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
+
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("username", "user-1")
+		c.Set("user_uuid", "user-1")
+		c.Next()
+	})
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+	r.POST("/api/v1/room/create", h.Create)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/create", strings.NewReader(`{"name":"lobby","domain_uuid":"domain-a"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if code := intCode(resp["code"]); code != 0 {
+		t.Fatalf("expected code 0, got %d: %s", code, resp["msg"])
+	}
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected room data")
+	}
+	if data["domain_uuid"] != "domain-a" {
+		t.Fatalf("expected request body domain_uuid, got %v", data["domain_uuid"])
+	}
+}
+
+func TestRoomHandler_Create_RejectsDomainUUIDMismatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Room{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	middleware.SetDomainChecker(func(domainUUID, userUUID string) bool { return true })
+	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
+
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("username", "user-1")
+		c.Set("user_uuid", "user-1")
+		c.Set("domain_uuid", "domain-b")
+		c.Next()
+	})
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)
+	r.POST("/api/v1/room/create", h.Create)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/create", strings.NewReader(`{"name":"lobby","domain_uuid":"domain-a"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if code := intCode(resp["code"]); code != 1013 {
+		t.Fatalf("expected 1013, got %d: %s", code, resp["msg"])
+	}
+}
+
+func TestRoomHandler_Create_DomainPermissionRequired(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Room{}, &model.Domain{}, &model.DomainMember{}, &model.DomainRole{}, &model.DomainRolePermission{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	domain := &model.Domain{Name: "Chat", OwnerUUID: "owner-1"}
+	if err := db.Create(domain).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	if err := repository.SeedDefaultDomainRoles(db, domain.UUID); err != nil {
+		t.Fatalf("seed roles: %v", err)
+	}
+	if err := db.Create(&model.DomainMember{DomainUUID: domain.UUID, UserUUID: "guest-1", RoleName: model.DomainRoleGuest}).Error; err != nil {
+		t.Fatalf("seed guest: %v", err)
+	}
+
+	middleware.SetDomainChecker(func(_, _ string) bool { return true })
+	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
+
+	roomSvc := service.NewRoomService(repository.NewRoomRepository(db))
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
+	h := NewRoomHandler(roomSvc, nil, domainSvc)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("username", "guest-1")
+		c.Set("user_uuid", "guest-1")
+		c.Set("role", "user")
+		c.Next()
+	})
+	r.POST("/create", h.Create)
+
+	body := `{"name":"lobby","domain_uuid":"` + domain.UUID + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/create", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if code := intCode(resp["code"]); code != 1013 {
+		t.Fatalf("guest must not create room: expected 1013, got %d: %s", code, resp["msg"])
+	}
+}

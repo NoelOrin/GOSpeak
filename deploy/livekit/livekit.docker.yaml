@@ -1,0 +1,35 @@
+# =============================================================================
+# 本地 Docker 跑 LiveKit 的配置（单容器，不依赖 compose 里的 gospeak 服务）
+#
+#   docker run -d --name gospeak-livekit --rm \
+#     --add-host=host.docker.internal:host-gateway \
+#     -p 7880:7880 -p 7881:7881 -p 7882:7882 -p 7882:7882/udp \
+#     -v "$PWD/deploy/livekit/livekit.docker.yaml:/etc/livekit.yaml:ro" \
+#     livekit/livekit-server:latest --config /etc/livekit.yaml
+#
+# 与 livekit.local.yaml 的差别：webhook 用 host.docker.internal 指回宿主机
+# 的 Go 后端（容器内的 localhost 是容器自己）。
+# =============================================================================
+
+port: 7880
+bind_addresses:
+  - ""
+
+rtc:
+  tcp_port: 7882
+  udp_port: 7882
+  use_external_ip: false
+  stun_servers:
+    - stun.l.google.com:19302
+
+# 必须与后端 LIVEKIT_KEY / LIVEKIT_SECRET（或管理后台保存的值）一致
+keys:
+  API7ar5gCTyVkfY: xtpW2PGUKPugyVzEvX4OaPaHtNGm5bRUmrIXe6NMIqb
+
+turn:
+  enabled: false
+
+webhook:
+  api_key: API7ar5gCTyVkfY
+  urls:
+    - http://host.docker.internal:8998/api/v1/signal/webhook

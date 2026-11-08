@@ -1,0 +1,27 @@
+name: pnpm install
+description: Setup pnpm + Node.js and install workspace dependencies with caching
+inputs:
+  install:
+    description: Install workspace dependencies after setting up pnpm and Node.js
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    # 显式锁定 pnpm 版本：不可省略。安装器默认会拉到最新的 pnpm 11，
+    # 而 lockfile 与 packageManager 都是 pnpm@10.11.0 生成的，
+    # 版本错配会让 --frozen-lockfile 在依赖更新 PR 上无故失败。
+    # 升级时与 package.json 的 packageManager 字段同步修改。
+    - uses: pnpm/action-setup@v6
+      with:
+        version: 10.11.0
+        run_install: false
+    - uses: actions/setup-node@v6
+      with:
+        node-version: 22
+        cache: pnpm
+        cache-dependency-path: pnpm-lock.yaml
+    - name: Install dependencies
+      if: inputs.install == 'true'
+      shell: bash
+      run: pnpm install --frozen-lockfile --prefer-offline

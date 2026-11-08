@@ -1,0 +1,19 @@
+# GOSpeak 主体（server + web）发布版本 —— 显式声明，CI 的单一事实来源。
+#
+# 发版流程：修改本文件的 version 并合入 main 后，version-bump.yml 会自动打上
+# `v<version>` tag，release.yml / docker.yml 随之构建发布。
+# 同步约束（release.yml 的 version-check 会校验）：根 VERSION 与根 package.json
+# 的 version 必须与本文件一致。
+version: "1.0.0"
+
+# 本次发版说明：优先作为 GitHub Release 的 release notes（块标量 | 多行）。
+# 留空时由 scripts/build-changelog.mjs 按 conventional commits 生成。
+notes: |
+  GOSpeak 1.0.0 —— 首个正式版。
+
+  ## Highlights
+  - 渐进式数据库：SQLite 开箱即用 → PostgreSQL / MySQL / Turso
+  - JWT + OAuth2 三端登录（GitHub / Google / QQ），HttpOnly Cookie 会话
+  - Domain 多租户隔离与访客访问体系，文字房间与私聊
+  - 多 SFU 运行时（LiveKit）与实时发言检测、成员独立音量
+  - 内嵌 NATS 事件总线（JetStream KV 状态共享）

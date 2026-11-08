@@ -1,0 +1,121 @@
+# GOSpeak Version Bump —— push 触发的发版守门员。
+#
+# 主体与桌面端的版本号分别在 .github/versions/main.yaml 与
+# .github/versions/desktop.yaml 中显式声明。**每次 push 到 main 都会触发本
+# workflow**，但对每个组件判断「声明的版本号是否更新」：
+#
+#   当前声明版本对应的 tag（v<version> / desktop-v<version>）已存在
+#     → 版本号没更新 → 什么都不做，不发布 release；
+#   tag 不存在（新版本号 / 版本回退到未发布过的值）
+#     → 打 tag 并推送 → 自动触发 release.yml（以及主体链的 docker.yml）。
+#
+# 也就是：改了 .github/versions/*.yaml 的 version 并合入 main = 发版；
+# 普通提交不碰版本号 = 只跑这个轻量检查，静默跳过。
+#
+# 也可 workflow_dispatch 手动触发一次对账（只补缺失的 tag，不覆盖已有）。
+
+name: Version Bump
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: version-bump-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bump-tags:
+    name: Release declared versions (skip unchanged)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Read declared versions
+        id: versions
+        run: |
+          set -euo pipefail
+          read_version() {
+            node -e '
+              const { readFileSync } = require("node:fs");
+              const src = readFileSync(process.argv[1], "utf8");
+              const m = src.match(/^version:[ \t]*["'"'"']?([^\s#"'"'"']+)["'"'"']?[ \t]*(?:#.*)?$/m);
+              if (!m) { console.error("missing version in " + process.argv[1]); process.exit(1); }
+              console.log(m[1]);
+            ' "$1"
+          }
+          echo "main=$(read_version .github/versions/main.yaml)" >> "$GITHUB_OUTPUT"
+          echo "desktop=$(read_version .github/versions/desktop.yaml)" >> "$GITHUB_OUTPUT"
+
+      - name: Check main release tag
+        id: main-tag
+        env:
+          VERSION: ${{ steps.versions.outputs.main }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::main 版本号未更新：tag ${tag} 已存在，跳过发布。"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::main 版本号已更新：将创建 tag ${tag} 并发布。"
+          fi
+
+      - name: Tag main release if version changed
+        if: steps.main-tag.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.versions.outputs.main }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          sha="$(git rev-parse HEAD)"
+          git tag -a "${tag}" -m "Release ${tag} (declared in .github/versions/main.yaml)" "$sha"
+          git push origin "refs/tags/${tag}"
+          echo "::notice::created tag ${tag} at ${sha}"
+
+      - name: Check desktop release tag
+        id: desktop-tag
+        env:
+          VERSION: ${{ steps.versions.outputs.desktop }}
+        run: |
+          set -euo pipefail
+          tag="desktop-v${VERSION}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::desktop 版本号未更新：tag ${tag} 已存在，跳过发布。"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::desktop 版本号已更新：将创建 tag ${tag} 并发布。"
+          fi
+
+      - name: Tag desktop release if version changed
+        if: steps.desktop-tag.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.versions.outputs.desktop }}
+        run: |
+          set -euo pipefail
+          tag="desktop-v${VERSION}"
+          sha="$(git rev-parse HEAD)"
+          git tag -a "${tag}" -m "Release ${tag} (declared in .github/versions/desktop.yaml)" "$sha"
+          git push origin "refs/tags/${tag}"
+          echo "::notice::created tag ${tag} at ${sha}"
+
+      - name: Summary
+        env:
+          MAIN_VERSION: ${{ steps.versions.outputs.main }}
+          MAIN_EXISTS: ${{ steps.main-tag.outputs.exists }}
+          DESKTOP_VERSION: ${{ steps.versions.outputs.desktop }}
+          DESKTOP_EXISTS: ${{ steps.desktop-tag.outputs.exists }}
+        run: |
+          status() { [ "$1" = "true" ] && echo "skipped（版本未更新）" || echo "released（已打 tag 触发发布）"; }
+          echo "| 组件 | 声明版本 | tag | 结果 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 主体 (main) | ${MAIN_VERSION} | v${MAIN_VERSION} | $(status "${MAIN_EXISTS}") |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 桌面端 (desktop) | ${DESKTOP_VERSION} | desktop-v${DESKTOP_VERSION} | $(status "${DESKTOP_EXISTS}") |" >> "$GITHUB_STEP_SUMMARY"

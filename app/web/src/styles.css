@@ -1,0 +1,9 @@
+@import "tailwindcss";
+@import "@gospeak/components/theme.css";
+@import "./assets/styles/global.css";
+@import "./assets/styles/auth-shell.css";
+@import "./assets/styles/workspace-surface.css";
+@config "../tailwind.config.ts";
+
+/* 音量/滑块统一由 @gospeak/components 的 Radix Slider 渲染，
+   不再保留原生 range 的全局补丁样式（曾让横向滑块被误当竖向处理）。 */

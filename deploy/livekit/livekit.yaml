@@ -1,0 +1,33 @@
+# =============================================================================
+# GOSpeak — LiveKit Server Config 
+# =============================================================================
+
+port: 7880
+bind_addresses:
+  - ""
+
+rtc:
+  tcp_port: 7882
+  udp_port: 7882
+  use_external_ip: false
+  stun_servers:
+    - stun.l.google.com:19302
+
+keys:
+  API7ar5gCTyVkfY: xtpW2PGUKPugyVzEvX4OaPaHtNGm5bRUmrIXe6NMIqb
+
+turn:
+  enabled: true
+  udp_port: 3478
+  external_tls: false
+  # TURN 端口映射：WebRTC 在 NAT 场景下的候选路径
+  # 本地开发不建议直接用 external_ip，TURN relay 走内网即可
+
+webhook:
+  # 房间/参与者等事件回调到 Go 后端（POST /api/v1/signal/webhook）。
+  # LiveKit 默认用 keys 中第一个 key 对请求签名；Go 侧用 LIVEKIT_KEY /
+  # LIVEKIT_SECRET 校验，二者必须与 deploy/.env 保持一致（init.sh 会
+  # 同步轮换 .env 与 livekit.yaml 的 keys）。如需显式指定签名 key，
+  # 可在此加 api_key: <LIVEKIT_KEY>（默认即取 keys 首个 key）。
+  urls:
+    - http://gospeak:8998/api/v1/signal/webhook

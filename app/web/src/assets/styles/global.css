@@ -1,0 +1,41 @@
+/* Tailwind preflight 将 button 光标设为 default，恢复 daisyUI 时代的 pointer 反馈 */
+button:not(:disabled),
+[role="button"]:not(:disabled),
+label:has(input[type="checkbox"]):not(:disabled),
+summary {
+	cursor: pointer;
+}
+
+/* 全局样式：daisyUI 时代的补丁样式已随 _solid-legacy/global.css 归档；
+   新增全局样式在组件移植时按基线截图需要补充。 */
+
+/* 布局高度链：app 壳全屏（h-full 链从 html 开始） */
+html,
+body,
+#app {
+	height: 100%;
+}
+
+/* body 底色跟随主题 token（Solid 版由 daisyUI 在 body 上涂 base-100） */
+body {
+	background: var(--background);
+	color: var(--foreground);
+}
+
+/* 浏览器自动填充会把输入框染成浅蓝，统一回主题色，避免和设计语言冲突。
+   填充行为本身由各表单的 autoComplete 控制（业务表单关闭，登录表单保留）。 */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+	-webkit-text-fill-color: var(--foreground);
+	-webkit-box-shadow: 0 0 0 1000px var(--card) inset;
+	box-shadow: 0 0 0 1000px var(--card) inset;
+	transition: background-color 99999s ease-in-out 0s;
+}
+
+/* 桌面窗口失焦时标题栏跟随原生非活动态（MyGo 在 <html> 上打标记） */
+:root[data-mygo-window-inactive] .app-titlebar {
+	color: var(--faint-foreground);
+}

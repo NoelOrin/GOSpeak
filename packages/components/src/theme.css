@@ -1,0 +1,193 @@
+/*
+ * 主题 token：亮色 = daisyUI acid 实测值（对照 app/web/visual-baseline/baseline/ 截图），
+ * 暗色 = 由亮色派生的变体，不独立选色。
+ *
+ * ── 暗色派生四条规则（改色必须遵守，否则明暗两套会"不像一家人"）──
+ *
+ * 1) 色相一致，明度提升。亮色的语义色一律是"饱和的重色"（红/橙/青柠/黄/蓝），
+ *    暗色不复选新色相，只把同一 H 抬到能在深底上读清的明度区间，并把 C 降到
+ *    约 65%~85%——纯高饱和在深底上会发光、边缘振颤。
+ *    secondary 只从橙（48.25）派生，accent 只从青柠（122.962）派生；
+ *    不要退回旧版那套洋红 354 / 青 181 的配色，那和亮色是两套视觉语言。
+ *
+ * 2) 表面是一条单调亮度阶梯，明暗方向相反：
+ *    亮：sunken(83.4) < muted(95) < background = card(98) = popover(98)
+ *    暗：sunken(16.5) < muted(19.5) < background(21) < card(24) < popover(27) < selected(29.5)
+ *    暗色没有阴影可用，层级只能靠亮度，所以 background / card / popover 必须分开三档；
+ *    `bg-muted` 容器里放 `bg-card` 面板（见 layouts/layout.tsx），muted 必须更低，
+ *    面板才是"浮起来"的，而不是被压进一个洞。
+ *
+ * 3) 描边方向随主题翻转。亮色 border 比表面暗（91 vs 98）；暗色 border 必须比表面亮
+ *    （30.5 vs card 24），否则边框消失。两套的 border↔card 对比度都锁定在 ≈1.23:1。
+ *
+ * 4) 文字三档按"对比度"而不是按 alpha 对齐。暗色底比亮色底亮，同样的 60% alpha
+ *    会算出更弱的对比，所以暗色的 alpha 往下调到 56% / 38%，
+ *    保证 muted≈5.4:1、faint≈3.2:1，与亮色的 5.6:1 / 3.0:1 观感持平。
+ *
+ * --primary 是品牌主色，明暗统一走 indigo 色相（H≈277）：亮色 indigo-600，暗色 56.5%（白字 4.6:1）。
+ *
+ * 文字层级只允许三档（禁止 text-foreground/45 这类任意透明度）：
+ *   text-foreground         主文字：标题、正文、表格内容
+ *   text-muted-foreground   次要文字（亮 60% / 暗 56%）：说明、辅助列、图标按钮默认色
+ *   text-faint-foreground   弱化文字（亮 42% / 暗 38%）：占位符、脚注、空状态提示
+ */
+:root {
+	--background: oklch(98% 0 0);
+	--foreground: oklch(0% 0 0);
+	--card: oklch(98% 0 0);
+	--card-foreground: oklch(0% 0 0);
+	--popover: oklch(98% 0 0);
+	--popover-foreground: oklch(0% 0 0);
+	--primary: oklch(51.1% 0.262 276.966);
+	--primary-foreground: oklch(98% 0.005 277);
+	--secondary: oklch(73.37% 0.224 48.25);
+	--secondary-foreground: oklch(14.674% 0.044 48.25);
+	--muted: oklch(95% 0 0);
+	--muted-foreground: oklch(0% 0 0 / 60%);
+	--faint-foreground: oklch(0% 0 0 / 42%);
+	--accent: oklch(92.78% 0.264 122.962);
+	--accent-foreground: oklch(18.556% 0.052 122.962);
+	--destructive: oklch(64.84% 0.293 29.349);
+	--destructive-foreground: oklch(12.968% 0.058 29.349);
+	--success: oklch(85.72% 0.266 158.53);
+	--success-foreground: oklch(17.144% 0.053 158.53);
+	--warning: oklch(91.01% 0.212 100.5);
+	--warning-foreground: oklch(18.202% 0.042 100.5);
+	--info: oklch(60.72% 0.227 252.05);
+	--info-foreground: oklch(12.144% 0.045 252.05);
+	--neutral: oklch(21.31% 0.128 278.68);
+	--neutral-foreground: oklch(84.262% 0.025 278.68);
+	--border: oklch(91% 0 0);
+	--input: oklch(91% 0 0);
+	--ring: oklch(51.1% 0.262 276.966);
+	/* 下沉面 / 选中面必须按主题分别定值（见文首规则 2）：
+	   亮色 = 原 color-mix(muted 72%, fg 10%) / color-mix(muted 74%, fg 9%) 的解算结果，
+	   保留原值以免亮色基线漂移；暗色不能沿用 color-mix，那样算是"往上浮"。 */
+	--sunken: oklch(83.41% 0 0);
+	--selected: oklch(84.7% 0 0);
+}
+
+.dark {
+	/* 中性底色带 0.006~0.009 的品牌 indigo 色相，肉眼视为中性灰，但与 primary 同族 */
+	--background: oklch(21% 0.006 277);
+	/* 不用纯白：深底上的 100% 白会溢光，94% 留出余地 */
+	--foreground: oklch(94% 0.006 277);
+	--card: oklch(24% 0.008 277);
+	--card-foreground: oklch(94% 0.006 277);
+	--popover: oklch(27% 0.009 277);
+	--popover-foreground: oklch(94% 0.006 277);
+	--primary: oklch(56.5% 0.205 277);
+	--primary-foreground: oklch(98% 0.01 277);
+	--secondary: oklch(74% 0.163 48.25);
+	--secondary-foreground: oklch(22% 0.05 48.25);
+	--muted: oklch(19.5% 0.006 277);
+	--muted-foreground: oklch(94% 0.006 277 / 56%);
+	--faint-foreground: oklch(94% 0.006 277 / 38%);
+	--accent: oklch(82% 0.196 122.962);
+	--accent-foreground: oklch(22% 0.06 122.962);
+	--destructive: oklch(69% 0.185 29.349);
+	--destructive-foreground: oklch(20% 0.06 29.349);
+	--success: oklch(79% 0.185 158.53);
+	--success-foreground: oklch(22% 0.06 158.53);
+	--warning: oklch(85% 0.168 100.5);
+	--warning-foreground: oklch(24% 0.05 100.5);
+	--info: oklch(72% 0.145 252.05);
+	--info-foreground: oklch(20% 0.05 252.05);
+	--neutral: oklch(31% 0.032 278.68);
+	--neutral-foreground: oklch(92% 0.01 278.68);
+	--border: oklch(30.5% 0.008 277);
+	--input: oklch(30.5% 0.008 277);
+	--ring: oklch(66% 0.185 277);
+	--sunken: oklch(16.5% 0.005 277);
+	--selected: oklch(29.5% 0.009 277);
+}
+
+/*
+ * 圆角 token（Design Token 唯一来源）
+ *
+ * 所有圆角都由 --radius 派生，业务代码只允许使用 rounded-* 工具类：
+ * 禁止 rounded-sm、rounded-lg 这类字面量/任意值写法。
+ * 圆角与明暗主题无关，因此不放进 :root / .dark。
+ *
+ * 档位          值        用途
+ * rounded-xs    2px       极细：缩略图、分隔条、微型指示器
+ * rounded-sm    4px       控件：输入框、小按钮、徽章、列表内按钮
+ * rounded-md    6px       紧凑块：列表行、内嵌小面板
+ * rounded-lg    8px       默认：按钮、卡片、下拉面板、对话框内容块
+ * rounded-xl    12px      区块：管理页 section、设置面板
+ * rounded-2xl   16px      大容器：弹窗、页面级浮层
+ * rounded-3xl   24px      特大容器（极少使用）
+ * rounded-full  9999px    胶囊：头像、状态点、标签、圆形按钮
+ *
+ * 语义别名（与上面档位等值，按"用途"选型时优先用它）：
+ * rounded-field   = sm   表单控件
+ * rounded-card    = lg   卡片
+ * rounded-panel   = xl   区块面板
+ * rounded-overlay = 2xl  弹窗/浮层
+ * rounded-pill    = full 胶囊
+ */
+/*
+ * 字号 token（Design Token 唯一来源）
+ *
+ * 全站只允许这 6 档，禁止 text-[13px] 这类任意值：
+ * text-2xs  11px  徽章、极小的辅助标注
+ * text-xs   12px  次要说明、表格辅助列
+ * text-sm   14px  正文默认（表单、列表、聊天内容）
+ * text-base 16px  强调正文
+ * text-lg   18px  页头标题
+ * text-xl   20px  大标题
+ */
+@theme {
+	--text-2xs: 0.6875rem;
+	--text-2xs--line-height: 1rem;
+
+	--radius: 8px;
+	--radius-xs: 2px;
+	--radius-sm: calc(var(--radius) / 2);
+	--radius-md: calc(var(--radius) * 0.75);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) * 1.5);
+	--radius-2xl: calc(var(--radius) * 2);
+	--radius-3xl: calc(var(--radius) * 3);
+	--radius-full: 9999px;
+
+	--radius-field: var(--radius-sm);
+	--radius-card: var(--radius-lg);
+	--radius-panel: var(--radius-xl);
+	--radius-overlay: var(--radius-2xl);
+	--radius-pill: var(--radius-full);
+}
+
+@theme inline {
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-faint-foreground: var(--faint-foreground);
+	/* 下沉表面：语音区背景、覆盖层底；选中面：当前频道/提及项。两者由 :root / .dark 分别定值 */
+	--color-sunken: var(--sunken);
+	--color-selected: var(--selected);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+	--color-success: var(--success);
+	--color-success-foreground: var(--success-foreground);
+	--color-warning: var(--warning);
+	--color-warning-foreground: var(--warning-foreground);
+	--color-info: var(--info);
+	--color-info-foreground: var(--info-foreground);
+	--color-neutral: var(--neutral);
+	--color-neutral-foreground: var(--neutral-foreground);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+}

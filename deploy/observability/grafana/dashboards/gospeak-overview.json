@@ -1,0 +1,199 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["gospeak"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "GOSpeak Overview",
+  "uid": "gospeak-overview",
+  "version": 1,
+  "panels": [
+    {
+      "id": 1,
+      "title": "HTTP Requests",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(gospeak_http_requests_total[5m])) by (status)",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "P99 Latency",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum(rate(gospeak_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Voice Sessions",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "thresholds" } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(gospeak_ws_participants)",
+          "legendFormat": "participants"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(gospeak_ws_rooms)",
+          "legendFormat": "rooms"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(gospeak_ws_online_users)",
+          "legendFormat": "online"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Cluster Nodes",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "thresholds" } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(gospeak_cluster_ready_nodes)",
+          "legendFormat": "ready"
+        },
+        {
+          "refId": "B",
+          "expr": "max(gospeak_cluster_draining_nodes)",
+          "legendFormat": "draining"
+        },
+        {
+          "refId": "C",
+          "expr": "max(gospeak_cluster_offline_nodes)",
+          "legendFormat": "offline"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Dependencies",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": { "0": { "color": "red", "text": "down" }, "1": { "color": "green", "text": "up" } }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(gospeak_db_connected)",
+          "legendFormat": "db"
+        },
+        {
+          "refId": "C",
+          "expr": "max(gospeak_eventbus_connected)",
+          "legendFormat": "eventbus"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Disk Usage",
+      "type": "gauge",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(gospeak_disk_percent)",
+          "legendFormat": "disk"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Application Logs",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 16 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{compose_service=~\"gospeak.*\"} |= \"\"",
+          "queryType": "range"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@gospeak/test",
+  "private": true,
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2",
+    "vitest": "^4.1.9",
+    "ws": "^8.22.1"
+  }
+}
