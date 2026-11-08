@@ -33,7 +33,7 @@
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.1",
 		"@commitlint/cli": "^17.7.2",
-		"@commitlint/config-conventional": "^17.7.0",
+		"@commitlint/config-conventional": "^21.2.4",
 		"lefthook": "1.8.5",
 		"turbo": "^2.10.0"
 	},
