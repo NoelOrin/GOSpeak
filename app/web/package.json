@@ -8,7 +8,7 @@
     "build": "vite build && tsc",
     "build:desktop": "GOSPEAK_TARGET=desktop vite build && tsc",
     "dev:desktop": "GOSPEAK_TARGET=desktop vite",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsr generate && tsc --noEmit",
     "preview": "vite preview",
     "test": "vitest run",
     "format": "biome format --write",
@@ -50,6 +50,7 @@
   },
   "devDependencies": {
     "@tanstack/devtools-vite": "^0.3.11",
+    "@tanstack/router-cli": "1.167.17",
     "@tanstack/router-plugin": "^1.141.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",

@@ -74,7 +74,7 @@ function OverlayHud() {
 						<li
 							key={m.identity}
 							className={clsx(
-								"flex items-center gap-1.5 rounded px-1 py-0.5",
+								"flex items-center gap-1.5 rounded-sm px-1 py-0.5",
 								TEXT_SHADOW,
 							)}
 						>
@@ -84,7 +84,7 @@ function OverlayHud() {
 									isSpeaking ? "text-emerald-300" : "text-white/45",
 								)}
 							>
-								{m.isMicMuted ? <MicOff size={13} /> : <Mic size={13} />}
+								{m.isMicMuted ? <MicOff size={12} /> : <Mic size={12} />}
 							</span>
 							<span
 								className={clsx(

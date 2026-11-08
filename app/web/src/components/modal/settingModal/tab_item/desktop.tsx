@@ -119,7 +119,7 @@ function DesktopForm() {
 					</Select>
 				</Field>
 				{cfg?.policy === "auto" && (
-					<p className="text-foreground/50 text-xs">
+					<p className="text-faint-foreground text-xs">
 						自动模式：全屏应用台前 +
 						语音房间已连接时显示，任一条件消失自动隐藏；
 						显隐快捷键的最后一次操作优先生效，直到条件再次变化。

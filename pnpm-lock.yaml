@@ -141,6 +141,9 @@ importers:
       '@tanstack/devtools-vite':
         specifier: ^0.3.11
         version: 0.3.12(rolldown-vite@7.3.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@25.9.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.22.4))
+      '@tanstack/router-cli':
+        specifier: 1.167.17
+        version: 1.167.17
       '@tanstack/router-plugin':
         specifier: ^1.141.1
         version: 1.168.18(@tanstack/react-router@1.170.46(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(esbuild@0.27.7)(rolldown-vite@7.3.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@25.9.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.22.4))(rolldown@1.1.4)(rollup@4.62.2)(vite-plugin-solid@2.11.12(@testing-library/jest-dom@6.10.0(@testing-library/dom@10.4.2))(rolldown-vite@7.3.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@25.9.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.22.4))(solid-js@1.9.18))
@@ -2700,6 +2703,11 @@ packages:
     peerDependenciesMeta:
       csstype:
         optional: true
+
+  '@tanstack/router-cli@1.167.17':
+    resolution: {integrity: sha512-kws9PNdspkHbeZG6aLDjjpgH/hg7Q565BdSW9hHrjKmXPq/at7OKxQnA76aw9dJiJqy9OmST2RdOKlMEog43+g==}
+    engines: {node: '>=20.19'}
+    hasBin: true
 
   '@tanstack/router-generator@1.167.17':
     resolution: {integrity: sha512-xtB9tB2Ws0tWR6Pi7nc3Qk9IYgoh1mQCKWjHqIl9tf6BNUpKoqniJoPAQ4+LGrK8FeZYU0o0p/qlZEyj9FAulA==}
@@ -7279,6 +7287,14 @@ snapshots:
       goober: 2.1.19(csstype@3.2.3)
     optionalDependencies:
       csstype: 3.2.3
+
+  '@tanstack/router-cli@1.167.17':
+    dependencies:
+      '@tanstack/router-generator': 1.167.17
+      chokidar: 5.0.0
+      yargs: 17.7.3
+    transitivePeerDependencies:
+      - supports-color
 
   '@tanstack/router-generator@1.167.17':
     dependencies:
