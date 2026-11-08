@@ -64,7 +64,7 @@
     "pixelmatch": "^8.0.0",
     "playwright": "^1.61.1",
     "pngjs": "^7.0.0",
-    "rollup-plugin-visualizer": "^6.0.11",
+    "rollup-plugin-visualizer": "^7.1.2",
     "typescript": "~5.9.3",
     "vite": "npm:rolldown-vite@7.3.1",
     "vite-tsconfig-paths": "^5.1.4",
