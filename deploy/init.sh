@@ -85,12 +85,20 @@ check_consistency() {
     echo "  [ok] $LIVEKIT_YAML 的 webhook 不含明文 api_key"
   fi
 
-  if grep -q 'LIVEKIT_KEYS: "\${LIVEKIT_KEY}: \${LIVEKIT_SECRET}"' docker-compose.yml &&
-     grep -q 'LIVEKIT_WEBHOOK_API_KEY: "\${LIVEKIT_KEY}"' docker-compose.yml; then
-    echo "  [ok] docker-compose.yml 已按 .env 的键名注入 LiveKit 密钥"
-  else
-    echo "  [x] docker-compose.yml 的 LiveKit 密钥注入表达式与 .env 不匹配" >&2; rc=1
-  fi
+  # 所有 compose 文件都必须按 .env 的键名注入 LiveKit 密钥，
+  # 避免新增的部署变体（如 docker-compose.simple.yml）漏掉注入。
+  local compose_files=(docker-compose*.yml)
+  local compose_ok=1
+  for cf in "${compose_files[@]}"; do
+    [[ -f "$cf" ]] || continue
+    if grep -q 'LIVEKIT_KEYS: "\${LIVEKIT_KEY}: \${LIVEKIT_SECRET}"' "$cf" &&
+       grep -q 'LIVEKIT_WEBHOOK_API_KEY: "\${LIVEKIT_KEY}"' "$cf"; then
+      echo "  [ok] $cf 已按 .env 的键名注入 LiveKit 密钥"
+    else
+      echo "  [x] $cf 的 LiveKit 密钥注入表达式与 .env 不匹配" >&2; compose_ok=0
+    fi
+  done
+  [[ $compose_ok -eq 1 ]] || rc=1
 
   # ── B. 本地部署就绪（CI 无 .env，跳过）──
   if [[ ! -f "$ENV_FILE" ]]; then
