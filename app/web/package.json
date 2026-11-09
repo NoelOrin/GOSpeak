@@ -49,8 +49,8 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
-    "@tanstack/devtools-vite": "^0.3.11",
-    "@tanstack/router-cli": "1.167.17",
+    "@tanstack/devtools-vite": "^0.8.6",
+    "@tanstack/router-cli": "1.167.46",
     "@tanstack/router-plugin": "^1.141.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
@@ -60,7 +60,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.1.1",
-    "esbuild": "^0.27.7",
+    "esbuild": "^0.28.2",
     "jsdom": "^29.1.1",
     "pixelmatch": "^8.0.0",
     "playwright": "^1.61.1",
