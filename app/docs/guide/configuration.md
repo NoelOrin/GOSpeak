@@ -2,15 +2,15 @@
 
 GOSpeak 全部靠环境变量配置，没有独立的配置文件。改完重启进程生效。
 
-三个地方会出现这些变量：
+只有一份配置文件：**`deploy/.env`**（由 `deploy/.env.example` 复制或 `deploy/init.sh` 生成）。
 
-| 文件 | 谁用 | 什么时候 |
-|------|------|---------|
-| `app/server/.env.dev` | 本地开发的后端 | `pnpm dev:server` |
-| `app/server/.env.prod` | 直接跑二进制 | `server -e prod` |
-| `deploy/.env` | Docker Compose | `docker compose up` |
+| 场景 | 怎么读到 |
+|------|---------|
+| Docker Compose | compose 变量替换 + 应用容器 `env_file` 注入 |
+| 本地开发 `pnpm dev:server` | 启动时自动向上查找仓库根的 `deploy/.env` |
+| 直接跑二进制 `server -e prod` | 同上；也可用 `GOSPEAK_ENV_FILE=/path/to/env` 显式指定 |
 
-`deploy/.env` 比较特殊：它同时给 compose 做变量替换、也作为应用容器的环境变量。所以只需要维护这一个文件。
+不需要再维护 `app/server/.env`、`.env.dev`、`.env.prod`——这些已废弃。
 
 ## 必填项
 
@@ -19,7 +19,8 @@ GOSpeak 全部靠环境变量配置，没有独立的配置文件。改完重启
 | 变量 | 说明 |
 |------|------|
 | `JWT_KEY` | 签发登录令牌的密钥。生产必须换成随机值：`openssl rand -hex 32` |
-| `LIVEKIT_HOST` | LiveKit 地址。自建 `ws://livekit:7880`，云服务 `wss://xxx.livekit.cloud` |
+| `LIVEKIT_HOST` | 后端访问 LiveKit 的地址（admin API）。容器部署 `ws://livekit:7880`，云服务 `wss://xxx.livekit.cloud` |
+| `LIVEKIT_PUBLIC_URL` | 下发给浏览器的连接地址，必须浏览器可达（如 `wss://lk.example.com`）。留空回退到 `LIVEKIT_HOST` |
 | `LIVEKIT_KEY` | LiveKit 的 API Key |
 | `LIVEKIT_SECRET` | LiveKit 的 API Secret，必须和 LiveKit 那边一致 |
 | `STORAGE_ENCRYPT_KEY` | 生产环境必填，64 位十六进制。用来加密存储配置里的敏感字段 |
@@ -45,6 +46,7 @@ GOSpeak 全部靠环境变量配置，没有独立的配置文件。改完重启
 |------|------|------|
 | `SFU_PROVIDER` | `livekit` | 目前只支持这个值 |
 | `LIVEKIT_HOST` | — | 见上 |
+| `LIVEKIT_PUBLIC_URL` | — | 见上 |
 | `LIVEKIT_KEY` | — | 见上 |
 | `LIVEKIT_SECRET` | — | 见上 |
 
@@ -142,7 +144,8 @@ DB_TYPE="SQLite"
 DB_WAL="true"
 JWT_KEY="<openssl rand -hex 32>"
 SFU_PROVIDER="livekit"
-LIVEKIT_HOST="ws://livekit:7880"
+LIVEKIT_HOST="ws://livekit:7880"          # 后端访问，走容器内网
+LIVEKIT_PUBLIC_URL="wss://lk.example.com"  # 下发给浏览器，必须公网可达
 LIVEKIT_KEY="<随机>"
 LIVEKIT_SECRET="<随机>"
 STORAGE_TYPE="local"
@@ -154,6 +157,7 @@ CORS_ORIGIN="https://voice.example.com"
 
 ```ini
 SFU_PROVIDER="livekit"
+# 云服务场景下后端与浏览器访问同一地址，PUBLIC_URL 留空即回退
 LIVEKIT_HOST="wss://your-project.livekit.cloud"
 LIVEKIT_KEY="APIxxxxxxxx"
 LIVEKIT_SECRET="xxxxxxxx"

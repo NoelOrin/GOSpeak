@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
 )
@@ -45,5 +46,30 @@ func TestUnconfiguredOperations(t *testing.T) {
 		t.Fatal("expected DeleteRoom error when unconfigured")
 	} else if appErr, ok := err.(*pkg.AppError); !ok || appErr.Code != pkg.SFU_NOT_CONFIGURED {
 		t.Fatalf("DeleteRoom error = %v, want SFU_NOT_CONFIGURED", err)
+	}
+}
+
+// GetHost 必须返回下发给浏览器的地址，而不是后端 admin API 用的内网地址。
+// 容器部署时二者不同：浏览器无法解析 ws://livekit:7880 这类服务名。
+func TestGetHostReturnsPublicURL(t *testing.T) {
+	svc := NewService(&config.Config{
+		LiveKitHost:      "ws://livekit:7880",
+		LiveKitPublicURL: "wss://lk.example.com",
+		LiveKitKey:       "key",
+		LiveKitSecret:    "secret",
+	})
+	if got := svc.GetHost(); got != "wss://lk.example.com" {
+		t.Fatalf("GetHost = %q, want public url", got)
+	}
+}
+
+// 未单独配置 public url 时回退到 host，兼容单机/裸 IP 部署。
+func TestGetHostFallsBackToHost(t *testing.T) {
+	svc := NewService(&config.Config{
+		LiveKitHost: "ws://1.2.3.4:7880",
+		LiveKitKey:  "key",
+	})
+	if got := svc.GetHost(); got != "ws://1.2.3.4:7880" {
+		t.Fatalf("GetHost = %q, want host fallback", got)
 	}
 }

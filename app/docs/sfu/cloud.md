@@ -26,7 +26,7 @@
 
 ## 配置
 
-`deploy/.env` 或 `app/server/.env.prod`：
+`deploy/.env`：
 
 ```ini
 SFU_PROVIDER=livekit

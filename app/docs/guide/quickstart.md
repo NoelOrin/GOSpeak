@@ -25,10 +25,10 @@ pnpm install
 ## 第二步：准备配置文件
 
 ```bash
-cp app/server/.env.example app/server/.env.dev
+cd deploy && ./init.sh && cd ..
 ```
 
-打开 `app/server/.env.dev`，先只改下面四行就够跑起来：
+打开 `deploy/.env`，先只改下面几行就够跑起来（本地开发浏览器与后端同机，`LIVEKIT_PUBLIC_URL` 留空即可）：
 
 ```ini
 DB_TYPE="SQLite"
@@ -48,7 +48,7 @@ cd deploy
 docker compose up -d
 ```
 
-`init.sh` 会生成 `deploy/.env`（含随机密钥）并把密钥同步写进 LiveKit 配置，所以不用手动对齐。
+`init.sh` 会生成 `deploy/.env`（含随机密钥），compose 会把密钥注入 LiveKit 容器，`livekit.yaml` 不含任何凭据，所以不需要手动对齐两侧 key。
 
 检查一下有没有起来：
 
@@ -96,10 +96,10 @@ pnpm dev
 ## 卡住了看这里
 
 **界面白屏 / 接口全 404**
-后端没起来。看 `pnpm dev` 的输出里 server 那部分有没有报错，多半是 `.env.dev` 里数据库或端口配置有问题。
+后端没起来。看 `pnpm dev` 的输出里 server 那部分有没有报错，多半是 `deploy/.env` 里数据库或端口配置有问题。
 
 **能登录但进语音频道没声音**
-LiveKit 没跑或者密钥对不上。先 `docker compose ps` 看 livekit 容器在不在，再核对 `.env.dev` 里的 `LIVEKIT_KEY` / `LIVEKIT_SECRET` 和 `deploy/.env` 是否一致。
+LiveKit 没跑或地址配错。先 `docker compose ps` 看 livekit 容器在不在，再检查 `deploy/.env` 的 `LIVEKIT_PUBLIC_URL` 是否为浏览器可达地址（容器部署不能填 `ws://livekit:7880`）。
 
 **端口被占用**
 后端默认 8998，前端默认 3000。改后端端口用 `SERVER_PORT`，前端会在 3000 被占时自动顺延到下一个可用端口。

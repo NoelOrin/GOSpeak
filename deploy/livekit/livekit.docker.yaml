@@ -3,12 +3,17 @@
 #
 #   docker run -d --name gospeak-livekit --rm \
 #     --add-host=host.docker.internal:host-gateway \
+#     -e LIVEKIT_KEYS="devkey: devsecret-devsecret-devsecret-devsecret" \
+#     -e LIVEKIT_WEBHOOK_API_KEY="devkey" \
 #     -p 7880:7880 -p 7881:7881 -p 7882:7882 -p 7882:7882/udp \
 #     -v "$PWD/deploy/livekit/livekit.docker.yaml:/etc/livekit.yaml:ro" \
 #     livekit/livekit-server:latest --config /etc/livekit.yaml
 #
 # 与 livekit.local.yaml 的差别：webhook 用 host.docker.internal 指回宿主机
 # 的 Go 后端（容器内的 localhost 是容器自己）。
+#
+# 密钥走环境变量注入（见上面的 -e），本文件不含凭据。
+# 本机后端读仓库根的 deploy/.env，其中 LIVEKIT_KEY / LIVEKIT_SECRET 要与此处一致。
 # =============================================================================
 
 port: 7880
@@ -22,14 +27,14 @@ rtc:
   stun_servers:
     - stun.l.google.com:19302
 
-# 必须与后端 LIVEKIT_KEY / LIVEKIT_SECRET（或管理后台保存的值）一致
-keys:
-  API7ar5gCTyVkfY: xtpW2PGUKPugyVzEvX4OaPaHtNGm5bRUmrIXe6NMIqb
+# 由 LIVEKIT_KEYS 注入，格式 "devkey: devsecret-..."
+keys: {}
 
 turn:
   enabled: false
 
 webhook:
-  api_key: API7ar5gCTyVkfY
+  # LiveKit 1.13 起必填，且必须是 keys 中存在的 key，否则启动即失败。
+  # 由 LIVEKIT_WEBHOOK_API_KEY 注入。
   urls:
     - http://host.docker.internal:8998/api/v1/signal/webhook

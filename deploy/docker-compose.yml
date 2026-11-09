@@ -74,6 +74,12 @@ services:
       - "3478:3478/udp"
     volumes:
       - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    environment:
+      # 密钥只从 deploy/.env 注入，livekit.yaml 里不含任何凭据。
+      # LIVEKIT_KEYS 覆盖 keys，LIVEKIT_WEBHOOK_API_KEY 覆盖 webhook 签名 key
+      # （LiveKit 1.13 起必填，否则启动报 "api_key is required to use webhooks"）。
+      LIVEKIT_KEYS: "${LIVEKIT_KEY}: ${LIVEKIT_SECRET}"
+      LIVEKIT_WEBHOOK_API_KEY: "${LIVEKIT_KEY}"
     command: --config /etc/livekit.yaml
     extra_hosts:
       - "host.docker.internal:host-gateway"

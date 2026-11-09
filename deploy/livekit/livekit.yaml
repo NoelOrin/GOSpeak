@@ -1,5 +1,14 @@
 # =============================================================================
-# GOSpeak — LiveKit Server Config 
+# GOSpeak — LiveKit Server Config
+# =============================================================================
+# 本文件只放与密钥无关的静态配置。
+# 密钥一律通过环境变量注入（compose 从 deploy/.env 读取），避免公开仓库
+# 里出现可用凭据，也避免 .env 与 yaml 两侧 key 不一致：
+#
+#   LIVEKIT_KEYS              = "<LIVEKIT_KEY>: <LIVEKIT_SECRET>"
+#   LIVEKIT_WEBHOOK_API_KEY   = "<LIVEKIT_KEY>"
+#
+# 注意：LiveKit 不对 YAML 做 ${VAR} 插值，只能靠上面两个环境变量覆盖。
 # =============================================================================
 
 port: 7880
@@ -9,25 +18,26 @@ bind_addresses:
 rtc:
   tcp_port: 7882
   udp_port: 7882
-  use_external_ip: false
+  # 生产必须为 true：让 LiveKit 用 STUN 探测到的公网 IP 作为 ICE 候选，
+  # 否则容器内网 IP（10.x）会发给浏览器，NAT 后无法建立媒体连接。
+  # 纯内网/本机开发见 livekit.local.yaml（保持 false）。
+  use_external_ip: true
   stun_servers:
     - stun.l.google.com:19302
 
-keys:
-  API7ar5gCTyVkfY: xtpW2PGUKPugyVzEvX4OaPaHtNGm5bRUmrIXe6NMIqb
+# 由 LIVEKIT_KEYS 注入，格式 "APIxxxx: <secret>"
+keys: {}
 
 turn:
   enabled: true
   udp_port: 3478
   external_tls: false
   # TURN 端口映射：WebRTC 在 NAT 场景下的候选路径
-  # 本地开发不建议直接用 external_ip，TURN relay 走内网即可
 
 webhook:
-  # 房间/参与者等事件回调到 Go 后端（POST /api/v1/signal/webhook）。
-  # LiveKit 默认用 keys 中第一个 key 对请求签名；Go 侧用 LIVEKIT_KEY /
-  # LIVEKIT_SECRET 校验，二者必须与 deploy/.env 保持一致（init.sh 会
-  # 同步轮换 .env 与 livekit.yaml 的 keys）。如需显式指定签名 key，
-  # 可在此加 api_key: <LIVEKIT_KEY>（默认即取 keys 首个 key）。
+  # LiveKit 1.13 起不再自动取 keys 首个 key，必须显式指定签名 key，
+  # 且必须存在于 keys 中，否则启动即失败：
+  #   api_key is required to use webhooks
+  # 由 LIVEKIT_WEBHOOK_API_KEY 注入（= deploy/.env 的 LIVEKIT_KEY）。
   urls:
     - http://gospeak:8998/api/v1/signal/webhook

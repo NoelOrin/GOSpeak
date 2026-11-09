@@ -47,7 +47,7 @@ Playwright/浏览器 UI
 |------|----------|----------|
 | Go 后端 | `http://localhost:8998` | `curl -sS http://localhost:8998/ping` |
 | React 19 前端 | `http://localhost:3000` | `curl -sS -o /dev/null -w "%{http_code}\n" http://localhost:3000/login` |
-| 当前 SFU Provider | 随 `.env.dev` / SFU 配置 | 进入房间后按媒体探针验证 |
+| 当前 SFU Provider | 随 `deploy/.env` / SFU 配置 | 进入房间后按媒体探针验证 |
 
 启动命令：
 

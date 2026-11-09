@@ -1,6 +1,8 @@
 package service
 
 import (
+	"strings"
+
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/logger"
 	"GOSpeak/internal/model"
@@ -203,6 +205,11 @@ func (s *SFUConfigService) ResolveConfig() (*config.Config, error) {
 	}
 	if s.baseCfg.LiveKitSecret == "" {
 		resolved.LiveKitSecret = cfg.LiveKitSecret
+	}
+	// env 未显式给出浏览器侧地址时，回退到本次解析出的访问地址
+	// （可能是 DB 覆盖后的值），避免下发给浏览器空地址。
+	if strings.TrimSpace(s.baseCfg.LiveKitPublicURL) == "" {
+		resolved.LiveKitPublicURL = resolved.LiveKitHost
 	}
 	return &resolved, nil
 }

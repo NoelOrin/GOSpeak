@@ -61,7 +61,7 @@ func fingerprint(cfg *config.Config) string {
 	// Keep field list centralized so provider config additions update the cache key.
 	fields := []string{
 		cfg.SFUProvider,
-		cfg.LiveKitHost, cfg.LiveKitKey, cfg.LiveKitSecret,
+		cfg.LiveKitHost, cfg.LiveKitPublicURL, cfg.LiveKitKey, cfg.LiveKitSecret,
 	}
 	return strings.Join(fields, "|")
 }

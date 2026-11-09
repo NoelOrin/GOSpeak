@@ -13,15 +13,25 @@ import (
 )
 
 type Service struct {
-	host      string
+	// host 是后端 admin API（RoomService）访问地址，容器部署走内网服务名。
+	host string
+	// publicURL 是下发给浏览器的连接地址，必须是浏览器可达的公网地址。
+	publicURL string
 	apiKey    string
 	apiSecret string
 	client    *lksdk.RoomServiceClient
 }
 
 func NewService(cfg *config.Config) *Service {
+	// 浏览器侧地址留空时回退到访问地址，兼容单机/裸 IP 部署；
+	// 不依赖 config.normalize()，避免构造路径不同导致行为不一致。
+	publicURL := cfg.LiveKitPublicURL
+	if publicURL == "" {
+		publicURL = cfg.LiveKitHost
+	}
 	s := &Service{
 		host:      cfg.LiveKitHost,
+		publicURL: publicURL,
 		apiKey:    cfg.LiveKitKey,
 		apiSecret: cfg.LiveKitSecret,
 	}
@@ -185,8 +195,11 @@ func (s *Service) DeleteRoom(room string) error {
 	return nil
 }
 
+// GetHost 返回下发给浏览器的 LiveKit 连接地址。
+// 注意不是 admin API 用的内网地址：容器部署时二者不同，
+// 浏览器无法解析容器内网服务名（如 ws://livekit:7880）。
 func (s *Service) GetHost() string {
-	return s.host
+	return s.publicURL
 }
 
 // ProviderName 返回 SFU provider 标识，用于 hub 的 provider 特性判断（如 kick 踢人）。

@@ -98,6 +98,10 @@ jobs:
         run: |
           node --test scripts/check-desktop-commands.test.mjs
           node scripts/check-desktop-commands.mjs
+      - name: Deploy config guard (env 与 livekit.yaml 一致性)
+        # 防止把 LiveKit 密钥硬编码回 livekit.yaml，或让 .env 与注入表达式脱节。
+        # 校验逻辑单一来源在 deploy/init.sh --check，本地可直接复跑。
+        run: ./deploy/init.sh --check
       - uses: actions/setup-go@v7
         if: >-
           ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||

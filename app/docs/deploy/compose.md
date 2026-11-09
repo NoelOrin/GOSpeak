@@ -98,7 +98,7 @@ pnpm dev:server
 pnpm dev:web
 ```
 
-这时 `app/server/.env.dev` 里的 `LIVEKIT_HOST` 要指向 `ws://localhost:7880`（不是 `livekit`，因为应用在宿主机上跑，不在 Docker 网络里）。
+这时 `deploy/.env` 里的 `LIVEKIT_HOST` 要指向 `ws://localhost:7880`（不是 `livekit`，因为应用在宿主机上跑，不在 Docker 网络里），`LIVEKIT_PUBLIC_URL` 留空即可。
 
 ## 换数据库
 

@@ -47,7 +47,7 @@ docker compose -f deploy/docker-compose.yml up -d
 ```bash
 pnpm dev:server
 # 等价: cd app/server && air
-# air 会热重载，环境由 -e dev 指定 (读 .env.dev)
+# air 会热重载，环境由 -e dev 指定（自动加载仓库根的 deploy/.env）
 ```
 
 ### 2.4 启动前端
@@ -78,9 +78,9 @@ pnpm start:dev
 
 ## 3. 环境变量说明
 
-配置完全通过环境变量驱动，无独立配置文件。开发用 `.env.dev`，生产用 `.env.prod`。
+配置完全通过环境变量驱动，唯一配置文件是仓库根的 **`deploy/.env`**（由 `deploy/.env.example` 复制或 `deploy/init.sh` 生成）。
 
-`app/server/main.go` 启动时 `godotenv.Load()` 读取 `.env`（当前工作目录）。`server -e dev|prod` 切换环境枚举。
+启动时 `config.LoadEnvFiles()` 按顺序查找：`GOSPEAK_ENV_FILE` 显式指定的文件 → 当前工作目录的 `.env.<env>` / `.env` → 逐级向上找到的 `deploy/.env`。已存在的进程环境变量不会被覆盖，因此容器内以 `env_file` 注入的值优先。
 
 ### 3.1 数据库
 
@@ -113,7 +113,8 @@ NATS 总线固定为进程内嵌运行（含 JetStream），承担内部事件�
 | 变量 | 说明 |
 |------|------|
 | `SFU_PROVIDER` | `livekit`（固定值） |
-| `LIVEKIT_HOST` | `wss://<id>.livekit.cloud` (Cloud) 或 `ws://localhost:7880` (自部署) |
+| `LIVEKIT_HOST` | 后端访问 LiveKit 的地址（admin API）。容器部署 `ws://livekit:7880`，Cloud `wss://<id>.livekit.cloud` |
+| `LIVEKIT_PUBLIC_URL` | 下发给浏览器的连接地址，必须浏览器可达。留空回退到 `LIVEKIT_HOST` |
 | `LIVEKIT_KEY` | API Key |
 | `LIVEKIT_SECRET` | API Secret |
 
@@ -174,12 +175,12 @@ docker build -t gospeak:latest .
 ```bash
 docker run -d \
   --name gospeak \
-  --env-file app/server/.env.prod \
+  --env-file deploy/.env \
   -p 8998:8998 \
   gospeak:latest
 ```
 
-应用读 `.env.prod`，默认 `prod` 环境（无需 `-e` flag）。
+应用读 `deploy/.env`，默认 `prod` 环境（无需 `-e` flag）。
 
 ---
 
@@ -187,8 +188,9 @@ docker run -d \
 
 ### 5.1 发布清单 Checklist
 
-- [ ] `.env.prod` 已配置真实密钥（LiveKit、DB、Storage）
+- [ ] `deploy/.env` 已配置真实密钥（LiveKit、DB、Storage）
 - [ ] `STORAGE_ENCRYPT_KEY` 已设（64 位 hex）
+- [ ] `LIVEKIT_PUBLIC_URL` 已设为浏览器可达地址（容器部署不能填 `ws://livekit:7880`）
 - [ ] `DB_TYPE` 生产环境用 PostgreSQL/MySQL，非 SQLite
 - [ ] `JWT_KEY` 已修改为强随机值（默认 `default-secret` 不可上生产）
 - [ ] 端口防火墙开放: 8998 (应用) + SFU WebRTC UDP/TCP
@@ -201,8 +203,8 @@ docker run -d \
 ```bash
 # 1. 克隆 + 配置
 git clone <repo> && cd GOSpeak
-cp app/server/.env.prod app/server/.env.prod.local
-# 编辑 .env.prod.local 填入生产密钥
+cp deploy/.env.example deploy/.env
+# 编辑 deploy/.env 填入生产密钥（或用 deploy/init.sh 自动生成）
 
 # 2. 拉取依赖镜像
 docker compose -f deploy/docker-compose.yml up -d
@@ -213,7 +215,7 @@ docker build -t gospeak:latest .
 # 4. 运行
 docker run -d \
   --name gospeak \
-  --env-file app/server/.env.prod.local \
+  --env-file deploy/.env \
   -p 8998:8998 \
   --restart unless-stopped \
   gospeak:latest

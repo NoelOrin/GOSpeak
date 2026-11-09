@@ -20,7 +20,7 @@
 
 ## 配置
 
-改 `deploy/.env`（或 `app/server/.env.prod`）：
+改 `deploy/.env`：
 
 ```ini
 EMAIL_ENABLED=true

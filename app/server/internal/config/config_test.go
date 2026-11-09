@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -293,5 +294,64 @@ func TestJWTTokenTTLDurations(t *testing.T) {
 	}
 	if got := cfg.JWTRefreshTTLDuration(); got != 7*24*time.Hour {
 		t.Errorf("invalid refresh ttl should fall back to 168h, got %v", got)
+	}
+}
+
+// 统一配置：从 app/server 子目录启动时也能发现仓库根的 deploy/.env，
+// 这样本地开发与容器部署共用同一份配置，无需再维护 app/server/.env。
+func TestFindRepoDeployEnvFindsRepoRoot(t *testing.T) {
+	dir := t.TempDir()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+
+	// 构造 <tmp>/deploy/.env 与 <tmp>/app/server 工作目录
+	if err := os.MkdirAll(filepath.Join(dir, "deploy"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "deploy", ".env"), []byte("JWT_KEY=from-deploy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	workDir := filepath.Join(dir, "app", "server")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatal(err)
+	}
+
+	found := findRepoDeployEnv()
+	if len(found) != 1 {
+		t.Fatalf("findRepoDeployEnv = %v, want 1 entry", found)
+	}
+	if !strings.HasSuffix(found[0], filepath.Join("deploy", ".env")) {
+		t.Fatalf("found %q, want deploy/.env", found[0])
+	}
+}
+
+// GOSPEAK_ENV_FILE 显式指定的文件优先级最高。
+func TestLoadEnvFilesHonorsExplicitFile(t *testing.T) {
+	dir := t.TempDir()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	explicit := filepath.Join(dir, "custom.env")
+	if err := os.WriteFile(explicit, []byte("JWT_KEY=from-explicit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOSPEAK_ENV_FILE", explicit)
+	_ = os.Unsetenv("JWT_KEY")
+
+	LoadEnvFiles("dev")
+	if got := os.Getenv("JWT_KEY"); got != "from-explicit" {
+		t.Fatalf("JWT_KEY = %q, want from-explicit", got)
 	}
 }

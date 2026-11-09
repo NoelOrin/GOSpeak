@@ -6,6 +6,12 @@ func (c *Config) normalize() {
 	c.AppEnv = strings.TrimSpace(c.AppEnv)
 	c.DBType = normalizeDBType(c.DBType)
 	c.SFUProvider = strings.ToLower(strings.TrimSpace(c.SFUProvider))
+	c.LiveKitHost = strings.TrimSpace(c.LiveKitHost)
+	c.LiveKitPublicURL = strings.TrimSpace(c.LiveKitPublicURL)
+	// 未显式配置浏览器侧地址时回退到后端访问地址，兼容单机/裸 IP 部署。
+	if c.LiveKitPublicURL == "" {
+		c.LiveKitPublicURL = c.LiveKitHost
+	}
 	c.StorageType = strings.ToLower(strings.TrimSpace(c.StorageType))
 	c.ServerPort = strings.TrimSpace(c.ServerPort)
 	c.CORSOrigin = strings.TrimSpace(c.CORSOrigin)

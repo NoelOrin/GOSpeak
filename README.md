@@ -84,9 +84,9 @@ cd GOSpeak
 # 2. 安装依赖
 pnpm install
 
-# 3. 复制配置模板
-cp app/server/.env.example app/server/.env
-# 编辑 app/server/.env，填入 LiveKit 凭证（见下方配置说明）
+# 3. 生成配置（唯一配置文件：deploy/.env）
+cd deploy && ./init.sh && cd ..
+# 编辑 deploy/.env，填入 LIVEKIT_PUBLIC_URL 等（见下方配置说明）
 
 # 4. 启动依赖服务（LiveKit / RustFS）
 docker compose -f deploy/docker-compose.yml up -d
@@ -95,7 +95,7 @@ docker compose -f deploy/docker-compose.yml up -d
 pnpm start:dev
 ```
 
-### 最小配置示例（app/server/.env）
+### 最小配置示例（deploy/.env）
 
 ```env
 # 数据库 — SQLite 零依赖
@@ -162,7 +162,7 @@ docker build -t gospeak .
 
 # 运行
 docker run -d \
-  --env-file app/server/.env.prod \
+  --env-file deploy/.env \
   -p 8998:8998 \
   -v gospeak-data:/app/db \
   gospeak

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -40,9 +41,15 @@ type Config struct {
 	BcryptCost int `env:"BCRYPT_COST" envDefault:"12"`
 
 	SFUProvider   string `env:"SFU_PROVIDER" envDefault:"livekit"`
-	LiveKitHost   string `env:"LIVEKIT_HOST" envDefault:""`
-	LiveKitKey    string `env:"LIVEKIT_KEY" envDefault:""`
-	LiveKitSecret string `env:"LIVEKIT_SECRET" envDefault:""`
+	// LiveKitHost 是后端访问 LiveKit 的地址（admin API / RoomService），
+	// 容器部署填内网服务名 ws://livekit:7880 即可。
+	LiveKitHost string `env:"LIVEKIT_HOST" envDefault:""`
+	// LiveKitPublicURL 是下发给浏览器作为 livekit-client 连接目标的地址。
+	// 留空时回退到 LiveKitHost（单机/裸 IP 部署无需设置）。
+	// 容器部署必须显式设置，因为浏览器无法解析容器内网服务名。
+	LiveKitPublicURL string `env:"LIVEKIT_PUBLIC_URL" envDefault:""`
+	LiveKitKey       string `env:"LIVEKIT_KEY" envDefault:""`
+	LiveKitSecret    string `env:"LIVEKIT_SECRET" envDefault:""`
 
 	// OAuthAutoCreateUser 控制 OAuth 回调时自动创建未绑定用户；关闭后仅允许已绑定账号登录。
 	OAuthAutoCreateUser bool `env:"OAUTH_AUTO_CREATE_USER" envDefault:"true"`
@@ -118,18 +125,37 @@ func SetCurrent(cfg *Config) {
 
 // LoadEnvFiles 按优先级加载 env 文件到进程环境。
 // 已存在的进程环境变量不会被覆盖：process > env-specific > .env。
+//
+// 查找顺序（先找到先用，后者只填补前者未设置的键）：
+//  1. GOSPEAK_ENV_FILE 指定的文件（显式覆盖，优先级最高）
+//  2. 当前工作目录下的 .env.<env> / .env（本地开发：app/server/）
+//  3. 仓库根的 deploy/.env（统一配置文件，compose 与应用共用）
+//
+// 统一到 deploy/.env 后，本地 `pnpm dev` 无需再维护 app/server/.env。
 func LoadEnvFiles(appEnv string) {
-	files := make([]string, 0, 2)
+	files := make([]string, 0, 4)
+
+	// 显式指定优先
+	if explicit := strings.TrimSpace(os.Getenv("GOSPEAK_ENV_FILE")); explicit != "" {
+		files = append(files, explicit)
+	}
+
+	var envFile string
 	switch strings.ToLower(strings.TrimSpace(appEnv)) {
 	case "dev", "development":
-		files = append(files, ".env.dev")
+		envFile = ".env.dev"
 	case "prod", "production", "":
-		files = append(files, ".env.prod")
+		envFile = ".env.prod"
 	default:
 		// 允许自定义环境名，优先尝试 .env.<name>
-		files = append(files, ".env."+strings.ToLower(strings.TrimSpace(appEnv)))
+		envFile = ".env." + strings.ToLower(strings.TrimSpace(appEnv))
 	}
-	files = append(files, ".env")
+
+	// 工作目录（app/server 或二进制所在目录）
+	files = append(files, envFile, ".env")
+
+	// 仓库根的 deploy/.env：从工作目录逐级向上找，命中含 deploy/.env 的根即止。
+	files = append(files, findRepoDeployEnv()...)
 
 	for _, path := range files {
 		vals, err := godotenv.Read(path)
@@ -142,6 +168,28 @@ func LoadEnvFiles(appEnv string) {
 			}
 		}
 	}
+}
+
+// findRepoDeployEnv 从当前工作目录向上查找仓库根下的 deploy/.env。
+// 上溯层数按最深场景（app/server/internal/config 等）留足余量，
+// 一旦到达文件系统根即停止，不会无限遍历。
+func findRepoDeployEnv() []string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil
+	}
+	for i := 0; i < 8; i++ {
+		candidate := filepath.Join(dir, "deploy", ".env")
+		if _, err := os.Stat(candidate); err == nil {
+			return []string{candidate}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return nil
 }
 
 // Load 从环境变量解析配置、规范化并校验。
