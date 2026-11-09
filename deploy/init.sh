@@ -87,15 +87,36 @@ check_consistency() {
 
   # 所有 compose 文件都必须按 .env 的键名注入 LiveKit 密钥，
   # 避免新增的部署变体（如 docker-compose.simple.yml）漏掉注入。
+  #
+  # 注意：Dokploy 部署时会重写 compose 文件（剥离注释、去引号、展开数组、
+  # 注入 labels），所以这里只做语义校验——检查键名与变量引用是否出现，
+  # 不依赖引号、缩进或行内格式，否则在 Dokploy 托管的环境里会误报。
   local compose_files=(docker-compose*.yml)
   local compose_ok=1
   for cf in "${compose_files[@]}"; do
     [[ -f "$cf" ]] || continue
-    if grep -q 'LIVEKIT_KEYS: "\${LIVEKIT_KEY}: \${LIVEKIT_SECRET}"' "$cf" &&
-       grep -q 'LIVEKIT_WEBHOOK_API_KEY: "\${LIVEKIT_KEY}"' "$cf"; then
+    local has_keys=0 has_webhook=0
+    # LIVEKIT_KEYS 的值必须同时引用 LIVEKIT_KEY 与 LIVEKIT_SECRET
+    if awk '
+      /^[[:space:]]*LIVEKIT_KEYS:/ {
+        if ($0 ~ /LIVEKIT_KEY/ && $0 ~ /LIVEKIT_SECRET/) { found=1 }
+      }
+      END { exit(found ? 0 : 1) }
+    ' "$cf"; then has_keys=1; fi
+    # LIVEKIT_WEBHOOK_API_KEY 的值必须引用 LIVEKIT_KEY
+    if awk '
+      /^[[:space:]]*LIVEKIT_WEBHOOK_API_KEY:/ {
+        if ($0 ~ /LIVEKIT_KEY/) { found=1 }
+      }
+      END { exit(found ? 0 : 1) }
+    ' "$cf"; then has_webhook=1; fi
+
+    if [[ $has_keys -eq 1 && $has_webhook -eq 1 ]]; then
       echo "  [ok] $cf 已按 .env 的键名注入 LiveKit 密钥"
     else
-      echo "  [x] $cf 的 LiveKit 密钥注入表达式与 .env 不匹配" >&2; compose_ok=0
+      [[ $has_keys -eq 0 ]] && echo "  [x] $cf 缺少 LIVEKIT_KEYS 注入（需引用 LIVEKIT_KEY 与 LIVEKIT_SECRET）" >&2
+      [[ $has_webhook -eq 0 ]] && echo "  [x] $cf 缺少 LIVEKIT_WEBHOOK_API_KEY 注入（需引用 LIVEKIT_KEY）" >&2
+      compose_ok=0
     fi
   done
   [[ $compose_ok -eq 1 ]] || rc=1
