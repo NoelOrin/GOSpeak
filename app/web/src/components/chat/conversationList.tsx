@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import { useEffect } from "react";
+import { Badge } from "@gospeak/components";
 import AsyncState from "@/components/common/AsyncState";
 import Avatar from "@/components/common/avatar";
 import { chatStore, useChatStore } from "@/stores/chatStore";
@@ -63,9 +64,10 @@ export default function ConversationList() {
 										{conv.last_content || "\u200B"}
 									</span>
 									{conv.unread_count > 0 && (
-										<span className="bg-primary text-primary-foreground ml-1 inline-flex shrink-0 items-center rounded-full px-1.5 text-2xs">
-											{conv.unread_count > 99 ? "99+" : conv.unread_count}
-										</span>
+										<Badge
+											count={conv.unread_count}
+											className="ml-1 shrink-0"
+										/>
 									)}
 								</div>
 							</div>

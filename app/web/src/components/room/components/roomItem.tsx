@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { Hash, Lock, LogOut, Mic, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Badge } from "@gospeak/components";
 import { chatStore, useChatStore } from "@/stores/chatStore";
 import { useDomainStore } from "@/stores/domainStore";
 import { type RoomInfo, socketStore } from "@/stores/socketStore";
@@ -254,12 +255,7 @@ export function RoomItem({
 
 						<div className="flex shrink-0 items-center gap-1.5 text-xs">
 							{room.type === "text" && unread > 0 && (
-								<span
-									className="bg-primary text-primary-foreground inline-flex min-w-5 items-center justify-center rounded-full px-1.5 text-2xs font-semibold"
-									title={`${unread} 条未读消息`}
-								>
-									{unread > 99 ? "99+" : unread}
-								</span>
+								<Badge count={unread} title={`${unread} 条未读消息`} />
 							)}
 							<div>
 								{room.count}/{room.limit}

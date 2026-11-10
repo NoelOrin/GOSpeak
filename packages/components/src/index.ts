@@ -3,6 +3,7 @@ export {
 	buttonVariants,
 	type ButtonProps,
 } from "./components/button";
+export { Badge, type BadgeProps } from "./components/badge";
 export { Checkbox } from "./components/checkbox";
 export {
 	Avatar,
