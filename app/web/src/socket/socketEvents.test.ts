@@ -40,6 +40,7 @@ function fakeDeps(): SocketEventDeps {
 		handleProviderChanged: vi.fn(),
 		handlePrivateNew: vi.fn(),
 		handleMessageCreated: vi.fn(),
+		handleAnnouncementNew: vi.fn(),
 		currentUserName: () => "",
 		currentUserID: () => undefined,
 	};
@@ -94,5 +95,28 @@ describe("server mute socket events", () => {
 
 		adapter.emit(EVENTS.MEMBER_UNMUTED, { identity: "bob", muted: true });
 		expect(setServerMutedByIdentity).toHaveBeenCalledWith("bob", true);
+	});
+});
+
+describe("announcement socket events", () => {
+	it("announcement:new is forwarded to the deps handler", async () => {
+		const { bindServerEvents } = await import("@/socket/socketEvents");
+		const adapter = createFakeAdapter();
+		const deps = fakeDeps();
+		bindServerEvents(adapter as any, deps);
+
+		const payload = {
+			uuid: "a-1",
+			scope_type: "platform",
+			title: "维护公告",
+			content: "body",
+			level: "info",
+			pinned: false,
+			created_by_name: "admin",
+			is_read: false,
+			created_at: Date.now(),
+		};
+		adapter.emit(EVENTS.ANNOUNCEMENT_NEW, payload);
+		expect(deps.handleAnnouncementNew).toHaveBeenCalledWith(payload);
 	});
 });

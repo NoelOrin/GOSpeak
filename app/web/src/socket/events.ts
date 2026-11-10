@@ -42,4 +42,6 @@ export const EVENTS = {
 	PRIVATE_NEW: "private:new",
 	// 文字房「正在输入」：上行上报 + 服务端按房间回播（payload 带 identity，前端过滤自己）
 	TYPING: "typing",
+	// 系统公告（服务端推送）：平台公告走 namespace 广播，域公告定向投递到 __user 房间
+	ANNOUNCEMENT_NEW: "announcement:new",
 } as const;

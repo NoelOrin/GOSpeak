@@ -8,6 +8,7 @@ import { EVENTS } from "@/socket/events";
 import { bindServerEvents } from "@/socket/socketEvents";
 import { createProviderReloadHandler } from "@/socket/providerReload";
 import { upsertRoomMembersFromAck } from "@/socket/roomState";
+import { notificationStore } from "@/stores/notificationStore";
 import { createTabLock } from "@/socket/tabLock";
 import type { PrivateMessageDTO } from "@/protocol/conversation";
 import type { MessageDTO } from "@/types/message";
@@ -217,6 +218,8 @@ adapter.onConnected(() => {
 				console.warn("[Socket] text room re-join failed:", err);
 			});
 	}
+	// WS 不重放断线期间的事件：连接（含重连）成功后必须拉一次未读数兜底。
+	void notificationStore.loadUnreadCount();
 	// 语音房重连：把信令面的房间注册补回来。
 	// 媒体（LiveKit）是独立链路，通常仍连着，所以这里只补信令，不重建会话。
 	if (pendingVoiceRejoin) {
@@ -335,6 +338,7 @@ async function connectWithLock(url: string): Promise<string> {
 				handleProviderChanged,
 				handlePrivateNew: (dto) => privateNewHandler?.(dto),
 				handleMessageCreated: (dto) => messageCreatedHandler?.(dto),
+				handleAnnouncementNew: (dto) => notificationStore.handleIncoming(dto),
 				setSpeakingIdentities: (v) =>
 					speakingStore.set(
 						typeof v === "function" ? v(speakingStore.get()) : v,
@@ -393,6 +397,7 @@ function disconnect() {
 	serverEventsBound = false;
 	adapter.disconnect();
 	tabLock.release();
+	notificationStore.reset();
 	setConnecting(false);
 	setConnected(false);
 	pendingTextRejoin = null;
@@ -663,6 +668,7 @@ export const socketStore = {
 	onPresence,
 	onRoomKicked,
 	getSocket,
+	onConnected: (cb: () => void) => adapter.onConnected(cb),
 	listRooms,
 	kickMember,
 	emitMicState,

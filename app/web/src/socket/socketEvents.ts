@@ -1,6 +1,7 @@
 import type { SFUProvider } from "@gospeak/sfu-client/types";
 import { toast } from "@gospeak/components";
 import { setServerMutedByIdentity } from "@/handler_audio";
+import type { AnnouncementDTO } from "@/protocol/announcement";
 import type { PrivateMessageDTO } from "@/protocol/conversation";
 import { EVENTS } from "@/socket/events";
 import type { MessageDTO } from "@/types/message";
@@ -56,6 +57,7 @@ export interface SocketEventDeps {
 	handleProviderChanged: (provider?: string) => void;
 	handlePrivateNew: (dto: PrivateMessageDTO) => void;
 	handleMessageCreated: (dto: MessageDTO) => void;
+	handleAnnouncementNew: (dto: AnnouncementDTO) => void;
 	currentUserName: () => string;
 	currentUserID: () => number | undefined;
 }
@@ -288,5 +290,10 @@ export function bindServerEvents(
 	// 文字房「正在输入」广播：只记状态，由展示层按当前房间过滤 + TTL 清理
 	adapter.onServerEvent(EVENTS.TYPING, (data: TypingEventPayload) => {
 		applyTypingEvent(data);
+	});
+
+	// 系统公告：平台公告走 namespace 广播，域公告定向投递到 __user 房间
+	adapter.onServerEvent(EVENTS.ANNOUNCEMENT_NEW, (dto: AnnouncementDTO) => {
+		deps.handleAnnouncementNew(dto);
 	});
 }
