@@ -34,4 +34,7 @@ const (
 	PermOAuthManage = "oauth:manage"
 
 	PermAuditRead = "audit:read"
+
+	PermAnnouncementRead   = "announcement:read"
+	PermAnnouncementManage = "announcement:manage"
 )

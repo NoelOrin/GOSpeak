@@ -56,6 +56,9 @@ const (
 	PermMessageSend         = permcode.PermMessageSend
 	PermMessageRead         = permcode.PermMessageRead
 	PermMessageDeleteOthers = permcode.PermMessageDeleteOthers
+
+	PermAnnouncementRead   = permcode.PermAnnouncementRead
+	PermAnnouncementManage = permcode.PermAnnouncementManage
 )
 
 // DefaultPermissions 种子权限列表
@@ -97,6 +100,9 @@ var DefaultPermissions = []Permission{
 	{Code: PermMessageSend, Name: "发送消息", Description: "在文字房间发送消息"},
 	{Code: PermMessageRead, Name: "查看消息", Description: "查看文字房间历史消息"},
 	{Code: PermMessageDeleteOthers, Name: "删除他人消息", Description: "删除其他用户的消息"},
+
+	{Code: PermAnnouncementRead, Name: "查看公告", Description: "查看系统公告列表与未读数"},
+	{Code: PermAnnouncementManage, Name: "管理公告", Description: "创建、编辑、删除系统公告"},
 }
 
 // RolePermission 角色-权限关联表
@@ -124,6 +130,7 @@ var DefaultRolePermissions = map[string][]string{
 		PermStorageRead, PermStorageManage, PermStorageDelete,
 		PermOAuthRead, PermOAuthManage,
 		PermMessageSend, PermMessageRead, PermMessageDeleteOthers,
+		PermAnnouncementRead, PermAnnouncementManage,
 	},
 	"user": {
 		PermRoomCreate, PermRoomRead,
@@ -131,6 +138,7 @@ var DefaultRolePermissions = map[string][]string{
 		// PermUserRead / PermRoleRead 属于平台后台只读权限：授予普通用户会让
 		// 侧栏「管理」入口与用户/角色管理页对所有人可见。仅 admin 持有。
 		PermMessageSend, PermMessageRead,
+		PermAnnouncementRead,
 	},
 	"ban": {},
 }

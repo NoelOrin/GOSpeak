@@ -41,6 +41,8 @@ const rolePermissions: Record<string, string[]> = {
 		"message:send",
 		"message:read",
 		"message:delete_others",
+		"announcement:read",
+		"announcement:manage",
 	],
 	user: [
 		"room:create",
@@ -51,6 +53,7 @@ const rolePermissions: Record<string, string[]> = {
 		// 与后端 model.DefaultRolePermissions["user"] 保持一致。
 		"message:send",
 		"message:read",
+		"announcement:read",
 	],
 	ban: [],
 };
@@ -70,6 +73,7 @@ export const MANAGE_ENTRY_PERMISSIONS = [
 	"storage:manage",
 	"oauth:read",
 	"oauth:manage",
+	"announcement:manage",
 ] as const;
 
 export function hasPermission(code: string): boolean {

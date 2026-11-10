@@ -59,3 +59,26 @@ func TestDefaultRolePermissionsContainDomainCodes(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultRolePermissionsContainAnnouncementCodes(t *testing.T) {
+	admin := make(map[string]struct{}, len(DefaultRolePermissions["admin"]))
+	for _, code := range DefaultRolePermissions["admin"] {
+		admin[code] = struct{}{}
+	}
+	for _, code := range []string{permcode.PermAnnouncementRead, permcode.PermAnnouncementManage} {
+		if _, ok := admin[code]; !ok {
+			t.Errorf("admin role missing %q", code)
+		}
+	}
+
+	user := make(map[string]struct{}, len(DefaultRolePermissions["user"]))
+	for _, code := range DefaultRolePermissions["user"] {
+		user[code] = struct{}{}
+	}
+	if _, ok := user[permcode.PermAnnouncementRead]; !ok {
+		t.Error("user role must be able to read announcements")
+	}
+	if _, ok := user[permcode.PermAnnouncementManage]; ok {
+		t.Error("user role must not manage announcements")
+	}
+}
