@@ -6,6 +6,7 @@ import {
 	HardDrive,
 	LogIn,
 	Mail,
+	Megaphone,
 	ShieldCheck,
 	ServerCog,
 	Users,
@@ -22,7 +23,8 @@ type ManagePath =
 	| "storage"
 	| "email"
 	| "monitor"
-	| "oauth";
+	| "oauth"
+	| "announcements";
 
 type ManageTab = {
 	path: ManagePath;
@@ -96,6 +98,13 @@ export const MANAGE_TABS: ManageTab[] = [
 		label: "OAuth",
 		icon: LogIn,
 		permissions: ["oauth:read", "oauth:manage"],
+	},
+	{
+		path: "announcements",
+		to: "/manage/announcements",
+		label: "公告",
+		icon: Megaphone,
+		permissions: ["announcement:manage", "domain:manage"],
 	},
 	{
 		path: "monitor",
