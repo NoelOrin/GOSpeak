@@ -1,6 +1,6 @@
 import { Slider } from "@gospeak/components";
 import { clsx } from "clsx";
-import { Ellipsis, Volume2 } from "lucide-react";
+import { Ellipsis, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import Avatar from "@/components/common/avatar";
 import ConfirmModal from "@/components/common/ConfirmModal";
@@ -103,98 +103,60 @@ export default function RoomDetail() {
 					<Volume2 size={32} strokeWidth={1.5} />
 					<span>请从左侧选择一个语音频道</span>
 				</div>
+			) : !isJoined ? (
+				/* 未加入时状态直接作为面板内容，而不是盖在成员网格上的浮层卡片：
+				   房间页此时还没有成员可看，浮层只会多一层阴影和一块背景。 */
+				<JoinStatus
+					roomName={selectedRoom.name}
+					failed={phase === "failed"}
+					message={failedMessage || phaseLabel}
+					loadingLabel={isLoading ? phaseLabel : "准备加入..."}
+					needsPassword={needsPassword}
+					onRetry={retry}
+					onReenterPassword={() => setReenterPassword(true)}
+				/>
+			) : sharedTrack ? (
+				<div className="bg-sunken relative flex min-h-0 flex-1 items-center justify-center p-3">
+					{/* 直接点画面全屏，不额外加浮层按钮/包裹元素 */}
+					<ScreenShareView
+						ref={shareVideoRef}
+						track={sharedTrack}
+						onClick={toggleShareFullscreen}
+						fullscreen={shareFullscreen}
+						onToggleFullscreen={toggleShareFullscreen}
+						className={`rounded-lg ${
+							shareFullscreen ? "cursor-zoom-out" : "cursor-zoom-in"
+						}`}
+					/>
+					<div className="bg-card border-border text-foreground absolute top-3 left-3 rounded-md border px-2 py-1 text-xs shadow-sm">
+						{sharedLabel}
+					</div>
+				</div>
 			) : (
-				<>
-					{sharedTrack ? (
-						<div className="bg-sunken relative flex min-h-0 flex-1 items-center justify-center p-3">
-							{/* 直接点画面全屏，不额外加浮层按钮/包裹元素 */}
-							<ScreenShareView
-								ref={shareVideoRef}
-								track={sharedTrack}
-								onClick={toggleShareFullscreen}
-								fullscreen={shareFullscreen}
-								onToggleFullscreen={toggleShareFullscreen}
-								className={`rounded-lg ${
-									shareFullscreen ? "cursor-zoom-out" : "cursor-zoom-in"
-								}`}
-							/>
-							<div className="bg-card border-border text-foreground absolute top-3 left-3 rounded-md border px-2 py-1 text-xs shadow-sm">
-								{sharedLabel}
+				<div className="ds-scroll min-h-0 flex-1 overflow-y-auto p-4">
+					<div
+						className="box-border grid h-full min-h-[180px] w-full place-content-center gap-4"
+						style={{
+							gridTemplateColumns:
+								"repeat(auto-fit, minmax(min(100%, 240px), 1fr))",
+						}}
+						ref={containerRef}
+					>
+						{roomMembers.length > 0 ? (
+							sortedMembers.map((member) => (
+								<MemberCard key={member.identity} member={member} />
+							))
+						) : (
+							<div className="text-muted-foreground col-span-full flex h-32 items-center justify-center text-sm">
+								已连接，等待成员加入
 							</div>
-						</div>
-					) : (
-						<div className="ds-scroll min-h-0 flex-1 overflow-y-auto p-4">
-							<div
-								className="box-border grid h-full min-h-[180px] w-full place-content-center gap-4"
-								style={{
-									gridTemplateColumns:
-										"repeat(auto-fit, minmax(min(100%, 240px), 1fr))",
-								}}
-								ref={containerRef}
-							>
-								{roomMembers.length > 0 ? (
-									sortedMembers.map((member) => (
-										<MemberCard key={member.identity} member={member} />
-									))
-								) : (
-									<div className="text-muted-foreground col-span-full flex h-32 items-center justify-center text-sm">
-										已连接，等待成员加入
-									</div>
-								)}
-							</div>
-						</div>
-					)}
-
-					{/* 断开统一在左下语音状态条；麦克风/扬声器在左下用户栏，
-					    文字聊天在频道标题栏，主区内不再重复放置控制按钮 */}
-
-					{!isJoined && (
-						<div className="bg-card absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 px-4">
-							<div className="bg-muted border-border rounded-lg border px-8 py-6 text-center shadow-xl">
-								<div className="text-foreground mb-3 text-lg font-bold">
-									{selectedRoom.name}
-								</div>
-								{phase === "failed" ? (
-									<div className="flex flex-col items-center gap-3">
-										<div className="text-destructive text-sm">
-											{failedMessage || phaseLabel}
-										</div>
-										<div className="flex items-center gap-2">
-											{needsPassword && (
-												<button
-													type="button"
-													className="bg-primary inline-flex h-9 cursor-pointer items-center rounded-sm px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
-													onClick={() => setReenterPassword(true)}
-												>
-													重新输入密码
-												</button>
-											)}
-											<button
-												type="button"
-												className={
-													needsPassword
-														? "border-border hover:bg-muted inline-flex h-9 cursor-pointer items-center rounded-sm border px-4 text-sm transition-colors"
-														: "bg-primary inline-flex h-9 cursor-pointer items-center rounded-sm px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
-												}
-												onClick={retry}
-											>
-												重试
-											</button>
-										</div>
-									</div>
-								) : (
-									<div className="flex flex-col items-center gap-3">
-										<span className="size-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-										<div className="text-muted-foreground text-sm">
-											{isLoading ? phaseLabel : "准备加入..."}
-										</div>
-									</div>
-								)}
-							</div>
-						</div>
-					)}
-				</>
+						)}
+					</div>
+				</div>
 			)}
+
+			{/* 断开统一在左下语音状态条；麦克风/扬声器在左下用户栏，
+			    文字聊天在频道标题栏，主区内不再重复放置控制按钮 */}
 
 			{reenterPassword && selectedRoom && (
 				<PasswordModal
@@ -205,6 +167,68 @@ export default function RoomDetail() {
 						retry();
 					}}
 				/>
+			)}
+		</div>
+	);
+}
+
+/**
+ * 加入中的状态视图：房间名 + 进度 / 失败原因 + 重试。
+ *
+ * 直接铺在房间面板里（0.4.0 的加载样式），不做卡片、不加阴影 —— 它本来就是
+ * 这个面板唯一的内容，而不是盖在内容上的对话框。
+ */
+function JoinStatus({
+	roomName,
+	failed,
+	message,
+	loadingLabel,
+	needsPassword,
+	onRetry,
+	onReenterPassword,
+}: {
+	roomName: string;
+	failed: boolean;
+	message: string;
+	loadingLabel: string;
+	needsPassword: boolean;
+	onRetry: () => void;
+	onReenterPassword: () => void;
+}) {
+	return (
+		<div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+			<div className="text-foreground text-lg font-bold">{roomName}</div>
+			{failed ? (
+				<>
+					<div className="text-destructive max-w-md text-sm">{message}</div>
+					<div className="flex items-center gap-2">
+						{needsPassword && (
+							<button
+								type="button"
+								className="bg-primary text-primary-foreground inline-flex h-9 cursor-pointer items-center rounded-sm px-4 text-sm font-medium hover:opacity-90"
+								onClick={onReenterPassword}
+							>
+								重新输入密码
+							</button>
+						)}
+						<button
+							type="button"
+							className={
+								needsPassword
+									? "border-border hover:bg-muted inline-flex h-9 cursor-pointer items-center rounded-sm border px-4 text-sm transition-colors"
+									: "bg-primary text-primary-foreground inline-flex h-9 cursor-pointer items-center rounded-sm px-4 text-sm font-medium hover:opacity-90"
+							}
+							onClick={onRetry}
+						>
+							重试
+						</button>
+					</div>
+				</>
+			) : (
+				<>
+					<span className="border-primary size-5 animate-spin rounded-full border-2 border-t-transparent" />
+					<div className="text-muted-foreground text-sm">{loadingLabel}</div>
+				</>
 			)}
 		</div>
 	);
@@ -311,13 +335,29 @@ function MemberCard({ member }: { member: MemberInfo }) {
 				</div>
 			)}
 
-			{!isMe && !isMuted && (
-				<div className="bg-sunken absolute top-2 left-2 flex w-28 items-center gap-1.5 rounded-sm px-2 py-1">
-					<span className="text-muted-foreground shrink-0 text-2xs">音量</span>
+			{!isMe && (
+				<div className="bg-sunken absolute top-2 left-2 flex w-40 items-center gap-1.5 rounded-sm px-2 py-1">
+					<button
+						type="button"
+						className={clsx(
+							"flex shrink-0 cursor-pointer items-center transition-colors",
+							isMuted
+								? "text-destructive hover:text-destructive"
+								: "text-muted-foreground hover:text-foreground",
+						)}
+						onClick={() => {
+							setMemberMute(member.identity, !isMuted);
+							setMutedByIdentity(member.identity, !isMuted);
+						}}
+						aria-label={isMuted ? "取消静音" : "静音"}
+					>
+						{isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+					</button>
 					<Slider
 						value={[volume]}
 						max={100}
 						step={1}
+						disabled={isMuted}
 						className="w-full"
 						aria-label={`${displayName} 音量`}
 						onValueChange={(value) => {
@@ -326,6 +366,17 @@ function MemberCard({ member }: { member: MemberInfo }) {
 							setVolumeByIdentity(member.identity, val / 100);
 						}}
 					/>
+					<button
+						type="button"
+						className="text-muted-foreground hover:text-foreground shrink-0 cursor-pointer text-2xs tabular-nums transition-colors"
+						onClick={() => {
+							setMemberOutputVolume(member.identity, 100);
+							setVolumeByIdentity(member.identity, 1);
+						}}
+						aria-label={`${displayName} 音量 ${volume}%，点击恢复 100%`}
+					>
+						{volume}%
+					</button>
 				</div>
 			)}
 

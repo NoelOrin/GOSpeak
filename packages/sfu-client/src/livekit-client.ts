@@ -1,4 +1,5 @@
 import {
+	type LocalVideoTrack,
 	type Participant,
 	type RemoteAudioTrack,
 	type RemoteParticipant,
@@ -13,6 +14,13 @@ import {
 	VideoPresets,
 	setLogLevel,
 } from "livekit-client";
+import {
+	computeScreenShareLayerEncodings,
+	DEFAULT_SCREEN_SHARE_QUALITY,
+	SCREEN_SHARE_CAPTURE_RESOLUTION,
+	type ScreenShareQuality,
+	screenShareQualityPreset,
+} from "./screen-share-quality";
 import type {
 	JoinParams,
 	RemoteTrackInfo,
@@ -34,6 +42,7 @@ export class LiveKitSFUClient implements SFUClient {
 	private onDisconnectedCb?: (info?: SFUDisconnectInfo) => void;
 	private onReconnectingCb?: () => void;
 	private onReconnectedCb?: () => void;
+	private screenShareQuality: ScreenShareQuality = DEFAULT_SCREEN_SHARE_QUALITY;
 	private hasLeft = false;
 
 	constructor(options: SFUClientOptions = {}) {
@@ -214,9 +223,78 @@ export class LiveKitSFUClient implements SFUClient {
 
 	async setScreenShareEnabled(enabled: boolean): Promise<void> {
 		// 只共享画面，不采集系统音频，避免与麦克风链路混在一起
-		await this.room.localParticipant.setScreenShareEnabled(enabled, {
-			audio: false,
-		});
+		const preset = screenShareQualityPreset(this.screenShareQuality);
+		await this.room.localParticipant.setScreenShareEnabled(
+			enabled,
+			{
+				audio: false,
+				contentHint: preset.contentHint,
+				resolution: SCREEN_SHARE_CAPTURE_RESOLUTION,
+			},
+			{ screenShareEncoding: preset.encoding },
+		);
+		if (enabled) {
+			await this.applyScreenShareQuality(this.screenShareQuality);
+		}
+	}
+
+	async setScreenShareQuality(quality: ScreenShareQuality): Promise<void> {
+		this.screenShareQuality = quality;
+		await this.applyScreenShareQuality(quality);
+	}
+
+	getScreenShareQuality(): ScreenShareQuality {
+		return this.screenShareQuality;
+	}
+
+	private localScreenShareVideoTrack(): LocalVideoTrack | null {
+		const publication = this.room.localParticipant.getTrackPublication(
+			Track.Source.ScreenShare,
+		);
+		return publication?.videoTrack ?? null;
+	}
+
+	/**
+	 * 共享中改档：只重设已发布 track 的编码参数，不重新采集。
+	 *
+	 * 重新走 getDisplayMedia 会再弹一次窗口选择框，而且共享会话会断；
+	 * 这里保持采集尺寸不变，用 scaleResolutionDownBy 让编码器输出档位目标高度。
+	 * 失败只降级（保持原画质继续共享），不打断共享。
+	 */
+	private async applyScreenShareQuality(
+		quality: ScreenShareQuality,
+	): Promise<void> {
+		const track = this.localScreenShareVideoTrack();
+		const sender = track?.sender;
+		if (!track || !sender) return;
+		try {
+			const capturedHeight =
+				track.mediaStreamTrack.getSettings?.().height ?? undefined;
+			const params = sender.getParameters();
+			const current = params.encodings ?? [];
+			if (current.length === 0) return;
+			const next = computeScreenShareLayerEncodings(
+				current.length,
+				quality,
+				capturedHeight,
+			);
+			params.encodings = current.map((existing, index) => {
+				const layer = next[index];
+				// dynacast 会把被停用的层标 active=false，改它的参数没有意义
+				if (!layer || existing.active === false) return existing;
+				return {
+					...existing,
+					scaleResolutionDownBy: layer.scaleResolutionDownBy,
+					maxBitrate: layer.maxBitrate,
+					maxFramerate: layer.maxFramerate,
+				};
+			});
+			await sender.setParameters(params);
+			track.mediaStreamTrack.contentHint =
+				screenShareQualityPreset(quality).contentHint;
+		} catch (error) {
+			console.warn("[sfu] apply screen share quality failed:", error);
+		}
 	}
 
 	getLocalScreenShareTrack(): RemoteVideoTrackLike | null {

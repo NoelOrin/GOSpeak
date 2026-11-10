@@ -7,6 +7,11 @@ import {
 	SelectValue,
 	toast,
 } from "@gospeak/components";
+import {
+	normalizeScreenShareQuality,
+	SCREEN_SHARE_QUALITY_ORDER,
+	SCREEN_SHARE_QUALITY_PRESETS,
+} from "@gospeak/sfu-client";
 import { useEffect, useRef, useState } from "react";
 import AudioDeviceStore, {
 	useAudioDeviceStore,
@@ -15,6 +20,9 @@ import AudioDeviceStore, {
 	type AudioSampleRate,
 	type AudioSampleSize,
 } from "@/stores/audioDeviceStore";
+import ScreenShareSettingsStore, {
+	useScreenShareSettingsStore,
+} from "@/stores/screenShareSettingsStore";
 import { Field, Page, Section, Toggle } from "./shared";
 import type { SettingTabConfig } from "./types";
 
@@ -67,6 +75,7 @@ function AudioForm() {
 	const rafRef = useRef(0);
 
 	const store = useAudioDeviceStore();
+	const screenShareQuality = useScreenShareSettingsStore((s) => s.quality);
 
 	function stopMicTest() {
 		if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -393,6 +402,36 @@ function AudioForm() {
 					checked={store.red}
 					onChange={AudioDeviceStore.setRed}
 				/>
+			</Section>
+
+			<Section
+				title="屏幕共享"
+				desc="改档即时生效，影响他人看到的清晰度与上传带宽。"
+			>
+				<Field
+					label="共享画质"
+					hint="共享过程中改档不会中断共享，也不会重新弹出窗口选择。"
+				>
+					<Select
+						value={screenShareQuality}
+						onValueChange={(value) =>
+							ScreenShareSettingsStore.setQuality(
+								normalizeScreenShareQuality(value),
+							)
+						}
+					>
+						<SelectTrigger>
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{SCREEN_SHARE_QUALITY_ORDER.map((item) => (
+								<SelectItem key={item} value={item}>
+									{SCREEN_SHARE_QUALITY_PRESETS[item].label}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</Field>
 			</Section>
 
 			<div className="pt-2">

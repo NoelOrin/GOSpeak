@@ -1,5 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RemoteAudioTrackLike } from "@gospeak/sfu-client/types";
+
+const { persistedMemberState } = vi.hoisted(() => ({
+	persistedMemberState: {
+		otherMemberState: {} as Record<
+			string,
+			{ outputVolume: number; isMute: boolean }
+		>,
+	},
+}));
+
+vi.mock("@/stores/voiceChatStore", () => ({
+	useVoiceChatStore: {
+		getState: () => persistedMemberState,
+	},
+}));
+
 import { cleanupAudioHandler, setupAudioHandler } from "./index";
 
 function makeClient(track: RemoteAudioTrackLike) {
@@ -22,6 +38,8 @@ describe("setServerMutedByIdentity", () => {
 	beforeEach(async () => {
 		mod = await import("./index");
 		cleanupAudioHandler();
+		mod.setMemberStateResolver(null);
+		persistedMemberState.otherMemberState = {};
 		document.body.innerHTML = "";
 		track = {
 			attach: vi.fn(() => document.createElement("audio")),
@@ -67,5 +85,75 @@ describe("setServerMutedByIdentity", () => {
 		removeCb("alice");
 
 		expect(mod.getServerMutedIdentities().has("alice")).toBe(false);
+	});
+});
+
+describe("member state resolver", () => {
+	let mod: typeof import("./index");
+
+	beforeEach(async () => {
+		mod = await import("./index");
+		cleanupAudioHandler();
+		mod.setMemberStateResolver(null);
+		persistedMemberState.otherMemberState = {};
+		document.body.innerHTML = "";
+	});
+
+	function subscribeWithResolver(
+		resolver: Parameters<typeof mod.setMemberStateResolver>[0],
+	) {
+		const setVolume = vi.fn();
+		const track = {
+			attach: vi.fn(() => document.createElement("audio")),
+			detach: vi.fn(),
+			setVolume,
+		} as unknown as RemoteAudioTrackLike;
+		mod.setMemberStateResolver(resolver);
+		setupAudioHandler(makeClient(track) as any);
+		return setVolume;
+	}
+
+	it("applies persisted volume on subscribe", () => {
+		const setVolume = subscribeWithResolver(() => ({
+			outputVolume: 40,
+			isMute: false,
+		}));
+
+		expect(setVolume).toHaveBeenCalledTimes(1);
+		expect(setVolume).toHaveBeenCalledWith(0.4);
+	});
+
+	it("applies persisted mute on subscribe", () => {
+		const setVolume = subscribeWithResolver(() => ({
+			outputVolume: 40,
+			isMute: true,
+		}));
+
+		expect(setVolume).toHaveBeenCalledWith(0);
+	});
+
+	it("does not override a later immediate volume change", () => {
+		const resolver = vi.fn(() => ({ outputVolume: 40, isMute: false }));
+		const setVolume = subscribeWithResolver(resolver);
+
+		mod.setVolumeByIdentity("alice", 0.9);
+
+		expect(setVolume).toHaveBeenLastCalledWith(0.9);
+		expect(resolver).toHaveBeenCalledTimes(1);
+	});
+
+	it("falls back to voiceChatStore persisted state without an explicit resolver", () => {
+		persistedMemberState.otherMemberState = {
+			alice: { outputVolume: 40, isMute: false },
+		};
+		const setVolume = vi.fn();
+		const track = {
+			attach: vi.fn(() => document.createElement("audio")),
+			detach: vi.fn(),
+			setVolume,
+		} as unknown as RemoteAudioTrackLike;
+		setupAudioHandler(makeClient(track) as any);
+
+		expect(setVolume).toHaveBeenCalledWith(0.4);
 	});
 });

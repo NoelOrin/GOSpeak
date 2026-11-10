@@ -4,6 +4,7 @@ import type {
 	RemoteTrackInfo,
 	SFUClient,
 } from "@gospeak/sfu-client/types";
+import { useVoiceChatStore } from "@/stores/voiceChatStore";
 import { speakingStore } from "./speakingStore";
 
 const tracks = new Map<string, RemoteAudioTrackLike>();
@@ -11,6 +12,39 @@ const audioElements = new Map<string, HTMLMediaElement>();
 const mutedIdentities = new Set<string>();
 const serverMutedIdentities = new Set<string>();
 const volumes = new Map<string, number>();
+
+export type MemberAudioState = {
+	outputVolume: number;
+	isMute: boolean;
+};
+
+export type MemberStateResolver = (
+	identity: string,
+) => MemberAudioState | undefined;
+
+function defaultMemberStateResolver(
+	identity: string,
+): MemberAudioState | undefined {
+	const state = useVoiceChatStore.getState().otherMemberState[identity];
+	if (!state) return undefined;
+	return { outputVolume: state.outputVolume, isMute: state.isMute };
+}
+
+// null 表示使用默认解析器：读 voiceChatStore 里持久化的成员音量/静音
+let memberStateResolver: MemberStateResolver | null = null;
+
+export function setMemberStateResolver(resolver: MemberStateResolver | null) {
+	memberStateResolver = resolver;
+}
+
+function resolveMemberState(identity: string): MemberAudioState | undefined {
+	return (memberStateResolver ?? defaultMemberStateResolver)(identity);
+}
+
+function clampVolume(volume: number): number {
+	if (!Number.isFinite(volume)) return 1;
+	return Math.max(0, Math.min(1, volume));
+}
 
 // 全局输出：masterVolume 0-1，masterMuted true=静音所有远端音频。
 // 与 per-member volume/mute 叠乘：最终 = masterMuted ? 0 : masterVolume * memberVolume。
@@ -28,9 +62,21 @@ function effectiveVolume(identity: string): number {
 	return masterVolume * (volumes.get(identity) ?? 1);
 }
 
+function applyResolvedMemberState(identity: string) {
+	const state = resolveMemberState(identity);
+	if (!state) return;
+	volumes.set(identity, clampVolume(state.outputVolume / 100));
+	if (state.isMute) {
+		mutedIdentities.add(identity);
+	} else {
+		mutedIdentities.delete(identity);
+	}
+}
+
 function onTrackSubscribed({ identity, track }: RemoteTrackInfo) {
 	if (tracks.get(identity) === track) return;
 	tracks.set(identity, track);
+	applyResolvedMemberState(identity);
 	track.setVolume(effectiveVolume(identity));
 
 	const audioElement = track.attach();

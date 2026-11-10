@@ -7,6 +7,21 @@
  */
 export { createSFUClient } from "./factory";
 export { preloadSFUClient } from "./factory";
+export {
+	computeScreenShareLayerEncodings,
+	DEFAULT_SCREEN_SHARE_QUALITY,
+	normalizeScreenShareQuality,
+	SCREEN_SHARE_CAPTURE_RESOLUTION,
+	SCREEN_SHARE_QUALITY_ORDER,
+	SCREEN_SHARE_QUALITY_PRESETS,
+	type ScreenShareCaptureResolution,
+	type ScreenShareLayerEncoding,
+	type ScreenShareQuality,
+	type ScreenShareQualityPreset,
+	screenShareQualityLabel,
+	screenShareQualityPreset,
+	screenShareScaleDown,
+} from "./screen-share-quality";
 export type {
 	RemoteAudioTrackLike,
 	RemoteTrackInfo,

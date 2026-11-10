@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/stores/voiceChatStore", () => ({
+	useVoiceChatStore: { getState: () => ({ otherMemberState: {} }) },
+}));
+
 import { cleanupAudioHandler, setupAudioHandler } from "./index";
 
 describe("setupAudioHandler", () => {

@@ -1,3 +1,7 @@
+import type { ScreenShareQuality } from "./screen-share-quality";
+
+export type { ScreenShareQuality };
+
 /**
  * Minimal playback surface required by the web app after a remote track has
  * already been subscribed.
@@ -148,6 +152,15 @@ export interface SFUClient {
 	 * 可选：不支持视频的 provider 不实现。
 	 */
 	setScreenShareEnabled?(enabled: boolean): Promise<void>;
+	/**
+	 * 设置本地屏幕共享发送档位。
+	 *
+	 * 未共享时只记录，下次开启共享时生效；共享中调用应立即生效且不中断共享。
+	 * 可选：不支持视频的 provider 不实现。
+	 */
+	setScreenShareQuality?(quality: ScreenShareQuality): Promise<void>;
+	/** 当前发送档位；未设置时返回 undefined，调用方自行回落默认值。 */
+	getScreenShareQuality?(): ScreenShareQuality | undefined;
 	/** 本地屏幕共享的 track，用于自预览；未共享时返回 null。 */
 	getLocalScreenShareTrack?(): RemoteVideoTrackLike | null;
 	/** 本地屏幕共享开始/结束（含浏览器原生「停止共享」按钮触发的情况）。 */

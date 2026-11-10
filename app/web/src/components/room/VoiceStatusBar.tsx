@@ -1,9 +1,25 @@
-import { toast } from "@gospeak/components";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+	toast,
+} from "@gospeak/components";
+import {
+	normalizeScreenShareQuality,
+	SCREEN_SHARE_QUALITY_ORDER,
+	SCREEN_SHARE_QUALITY_PRESETS,
+} from "@gospeak/sfu-client";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
 import { MonitorUp, PhoneOff, Signal } from "lucide-react";
+import { useEffect } from "react";
 import { useDomainStore } from "@/stores/domainStore";
 import { useScreenShareStore } from "@/stores/screenShareStore";
+import ScreenShareSettingsStore, {
+	useScreenShareSettingsStore,
+} from "@/stores/screenShareSettingsStore";
 import { socketStore, useSocketStore } from "@/stores/socketStore";
 import { useWorkspaceUiStore } from "@/stores/workspaceUiStore";
 import { useVoiceSessionContext } from "./VoiceSessionProvider";
@@ -40,8 +56,16 @@ export default function VoiceStatusBar({ className }: { className?: string }) {
 	const requestVoiceView = useWorkspaceUiStore((s) => s.requestVoiceView);
 	const localSharing = useScreenShareStore((s) => s.localSharing);
 	const canShareScreen = !!sfuClient?.setScreenShareEnabled;
+	const quality = useScreenShareSettingsStore((s) => s.quality);
 	const location = useLocation();
 	const navigate = useNavigate();
+
+	useEffect(() => {
+		if (!sfuClient?.setScreenShareQuality) return;
+		void sfuClient.setScreenShareQuality(quality).catch((error: unknown) => {
+			console.warn("[voice] 设置共享画质失败:", error);
+		});
+	}, [sfuClient, quality]);
 
 	/**
 	 * 从任意页面（发现域 / 聊天 / 管理）点状态条，都回到语音房间所在域的房间页。
@@ -101,35 +125,60 @@ export default function VoiceStatusBar({ className }: { className?: string }) {
 				</span>
 			</button>
 			{canShareScreen && (
-				<button
-					type="button"
-					className={clsx(
-						"flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-sm transition-colors",
-						localSharing
-							? "bg-card text-primary"
-							: "text-muted-foreground hover:bg-card hover:text-foreground",
-					)}
-					onClick={() => {
-						if (!sfuClient?.setScreenShareEnabled) return;
-						// 浏览器选择框被取消时 LiveKit 会抛错，保持原来的共享状态即可；
-						// 但真正的采集失败（权限/设备）需要让用户知道
-						void sfuClient
-							.setScreenShareEnabled(!localSharing)
-							.catch((error: unknown) => {
-								const name = (error as { name?: string })?.name;
-								if (name === "NotAllowedError") return;
-								toast.error(
-									error instanceof Error && error.message
-										? `屏幕共享失败：${error.message}`
-										: "屏幕共享失败",
-								);
-							});
-					}}
-					title={localSharing ? "停止共享屏幕" : "共享屏幕"}
-					aria-label={localSharing ? "停止共享屏幕" : "共享屏幕"}
-				>
-					<MonitorUp size={16} />
-				</button>
+				<>
+					<Select
+						value={quality}
+						onValueChange={(value) =>
+							ScreenShareSettingsStore.setQuality(
+								normalizeScreenShareQuality(value),
+							)
+						}
+					>
+						<SelectTrigger
+							className="h-7 w-auto shrink-0 px-2 text-xs"
+							title="共享画质"
+							aria-label="共享画质"
+						>
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{SCREEN_SHARE_QUALITY_ORDER.map((item) => (
+								<SelectItem key={item} value={item}>
+									{SCREEN_SHARE_QUALITY_PRESETS[item].label}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+					<button
+						type="button"
+						className={clsx(
+							"flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-sm transition-colors",
+							localSharing
+								? "bg-card text-primary"
+								: "text-muted-foreground hover:bg-card hover:text-foreground",
+						)}
+						onClick={() => {
+							if (!sfuClient?.setScreenShareEnabled) return;
+							// 浏览器选择框被取消时 LiveKit 会抛错，保持原来的共享状态即可；
+							// 但真正的采集失败（权限/设备）需要让用户知道
+							void sfuClient
+								.setScreenShareEnabled(!localSharing)
+								.catch((error: unknown) => {
+									const name = (error as { name?: string })?.name;
+									if (name === "NotAllowedError") return;
+									toast.error(
+										error instanceof Error && error.message
+											? `屏幕共享失败：${error.message}`
+											: "屏幕共享失败",
+									);
+								});
+						}}
+						title={localSharing ? "停止共享屏幕" : "共享屏幕"}
+						aria-label={localSharing ? "停止共享屏幕" : "共享屏幕"}
+					>
+						<MonitorUp size={16} />
+					</button>
+				</>
 			)}
 			<button
 				type="button"
