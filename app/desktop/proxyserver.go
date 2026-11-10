@@ -6,7 +6,7 @@ package main
 // the page and its API/WS calls share one origin (no CORS, cookies work
 // normally). This server:
 //   - serves the embedded web frontend (webui/dist, SPA history fallback);
-//   - reverse-proxies /api/v1, /uploads, /rtc/v1 and /ws to the configured
+//   - reverse-proxies /api/v1, /uploads, /livekit and /ws to the configured
 //     backend base URL (server-to-server, browser same-origin policy does not
 //     apply);
 //   - rewrites Set-Cookie (strips Secure/Domain) so backend session cookies
@@ -65,6 +65,9 @@ func startProxyServer() (*proxyServer, string, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/", s.handleProxied)
 	mux.HandleFunc("/uploads/", s.handleProxied)
+	// LiveKit 信令同源反代：后端下发的 serverUrl 是 ws://127.0.0.1:<port>/livekit，
+	// 由这里转给用户配置的后端（后端再转发到内部 LiveKit）。
+	mux.HandleFunc("/livekit/", s.handleProxied)
 	mux.HandleFunc("/rtc/v1/", s.handleProxied)
 	// Signal socket (page resolves ws://127.0.0.1:<port>/ws as same origin).
 	mux.HandleFunc("/ws", s.handleProxied)
@@ -104,6 +107,19 @@ func (s *proxyServer) directMain(req *http.Request) {
 	s.mu.RUnlock()
 	if t == nil {
 		return // handled by handleProxied with a 503 before reaching here
+	}
+	// Tell the backend which origin the page actually uses (the loopback one),
+	// so serverUrl comes back as ws://127.0.0.1:<port>/livekit and stays
+	// same-origin instead of pointing the window straight at the remote host.
+	if req.Header.Get("X-Forwarded-Host") == "" {
+		req.Header.Set("X-Forwarded-Host", req.Host)
+	}
+	if req.Header.Get("X-Forwarded-Proto") == "" {
+		proto := "http"
+		if req.TLS != nil {
+			proto = "https"
+		}
+		req.Header.Set("X-Forwarded-Proto", proto)
 	}
 	req.URL.Scheme = t.Scheme
 	req.URL.Host = t.Host

@@ -54,7 +54,7 @@ STORAGE_ENCRYPT_KEY=<64 位十六进制>
 compose 里有个 `rustfs` 档位，是 S3 兼容的本地对象存储：
 
 ```ini
-COMPOSE_PROFILES=postgres,livekit,rustfs,app
+COMPOSE_PROFILES=app,livekit,postgres,rustfs
 STORAGE_TYPE=s3
 STORAGE_ENDPOINT=http://rustfs:9000
 STORAGE_BUCKET=gospeak

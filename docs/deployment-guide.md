@@ -40,7 +40,7 @@ pnpm install
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
-默认启动: LiveKit + 应用 + Nginx（`COMPOSE_PROFILES=livekit,app`，见 `deploy/.env`，由 `deploy/init.sh` 生成）；RustFS 等按 profile 追加启用。
+默认启动：应用 + LiveKit（`COMPOSE_PROFILES=app,livekit`，见 `deploy/.env`，由 `deploy/init.sh` 生成）；PostgreSQL / RustFS / 可观测栈按 profile 追加启用；需要自动 HTTPS 时追加 `edge`（内置 Caddy）。
 
 ### 2.3 启动后端
 
@@ -113,8 +113,8 @@ NATS 总线固定为进程内嵌运行（含 JetStream），承担内部事件�
 | 变量 | 说明 |
 |------|------|
 | `SFU_PROVIDER` | `livekit`（固定值） |
-| `LIVEKIT_HOST` | 后端访问 LiveKit 的地址（admin API）。容器部署 `ws://livekit:7880`，Cloud `wss://<id>.livekit.cloud` |
-| `LIVEKIT_PUBLIC_URL` | 下发给浏览器的连接地址，必须浏览器可达。留空回退到 `LIVEKIT_HOST` |
+| `LIVEKIT_HOST` | 后端访问 LiveKit 的地址（admin API）。容器部署固定 `ws://livekit:7880`，Cloud `wss://<id>.livekit.cloud` |
+| `LIVEKIT_PUBLIC_URL` | **默认留空**。留空时按请求 Host 自动推导 `wss://<域名>/livekit`（应用内置同源反代，LiveKit 无需独立域名/证书）；仅独立域名或 Cloud 时显式填 |
 | `LIVEKIT_KEY` | API Key |
 | `LIVEKIT_SECRET` | API Secret |
 
@@ -141,7 +141,7 @@ NATS 总线固定为进程内嵌运行（含 JetStream），承担内部事件�
 
 ### 4.1 依赖服务 — 渐进式数据库三档
 
-首次部署推荐 `cd deploy && ./init.sh livekit` 自动生成配置。`deploy/docker-compose.yml` 用 Compose `profiles` 提供档位组合，档位写在 `deploy/.env` 的 `COMPOSE_PROFILES`，之后命令都是裸 `docker compose up -d`：
+首次部署推荐 `cd deploy && ./init.sh` 自动生成配置。`deploy/docker-compose.yml` 用 Compose `profiles` 提供档位组合，档位写在 `deploy/.env` 的 `COMPOSE_PROFILES`，之后命令都是裸 `docker compose up -d`：
 
 | 档 | `deploy/.env` 关键项 |
 |----|----------------------|
@@ -157,7 +157,9 @@ NATS 为进程内嵌运行，无需外部部署，也不支持多副本共享外
 
 ### 4.1.1 SFU 配置
 
-与 DB 档正交。`./init.sh livekit` 一步完成档位与密钥配置，或直接改 `deploy/.env`：`COMPOSE_PROFILES` 使用 `livekit` + `SFU_PROVIDER=livekit`。
+与 DB 档正交。`./init.sh` 一步完成档位与密钥配置，或直接改 `deploy/.env`：`COMPOSE_PROFILES` 含 `app,livekit`，`SFU_PROVIDER=livekit`。
+
+LiveKit 不需要独立域名或证书：应用内置同源反代 `/livekit/*` → 内部 LiveKit `7880`（WebSocket 升级自动处理），浏览器侧 `serverUrl` 由请求 Host 推导为 `wss://<域名>/livekit`。因此 compose 不向公网发布 7880 / 7881：7880 只绑宿主机回环（`127.0.0.1:7880`）供本机调试，公网只保留 `7882` tcp/udp（媒体）与 `3478/udp`（TURN）。
 
 ### 4.2 构建应用镜像
 
@@ -190,11 +192,12 @@ docker run -d \
 
 - [ ] `deploy/.env` 已配置真实密钥（LiveKit、DB、Storage）
 - [ ] `STORAGE_ENCRYPT_KEY` 已设（64 位 hex）
-- [ ] `LIVEKIT_PUBLIC_URL` 已设为浏览器可达地址（容器部署不能填 `ws://livekit:7880`）
+- [ ] `LIVEKIT_PUBLIC_URL` 保持留空（仅独立域名 / LiveKit Cloud 时显式填写）
+- [ ] 有域名时 `GOSPEAK_DOMAIN` 已填、`COMPOSE_PROFILES` 含 `edge`；已有反代时不含 `edge`
 - [ ] `DB_TYPE` 生产环境用 PostgreSQL/MySQL，非 SQLite
 - [ ] `JWT_KEY` 已修改为强随机值（默认 `default-secret` 不可上生产）
-- [ ] 端口防火墙开放: 8998 (应用) + SFU WebRTC UDP/TCP
-- [ ] HTTPS 终结已配置（见 Nginx 反代）
+- [ ] 端口防火墙开放: 80/443（Caddy 或自有反代）+ 7882/tcp + 7882/udp + 3478/udp（媒体）；不需要 7880/7881
+- [ ] HTTPS 终结已配置（有域名用 `edge` 档位内置 Caddy；已有反代则指向 `8998`）
 - [ ] 数据库备份策略已就位
 - [ ] 日志收集已配置
 
@@ -224,9 +227,15 @@ docker run -d \
 curl http://localhost:8998/api/v1/health  # (若该端点存在)
 ```
 
-### 5.3 Nginx 反代
+### 5.3 反向代理与 HTTPS
 
-见 `deploy/nginx.conf`。WebSocket 升级用于 WebSocket 信令，`/api/` 代理到 Go 后端。
+只有一个上游 `gospeak:8998`：`/api`、`/ws`、`/uploads`、`/livekit` 全部同源走它。
+
+- **有域名**：`COMPOSE_PROFILES=app,livekit,edge` + `GOSPEAK_DOMAIN=voice.example.com`，内置 Caddy（`deploy/Caddyfile`）自动申请证书并把 HTTP 重定向到 HTTPS。
+- **已有反代**（Nginx / Traefik / Dokploy / 宝塔）：不要开 `edge`，把反代指向 `gospeak:8998` 即可；保留 `Host` 与 `X-Forwarded-Proto` 头、放行 WebSocket 升级。**不需要为 LiveKit 写任何 location。**
+- **局域网 / 无域名**：`GOSPEAK_DOMAIN` 留空，Caddy 只听 `:80`（浏览器麦克风需要 localhost 或 HTTPS）。
+
+详见 [`deploy/DEPLOY.md`](../deploy/DEPLOY.md) 第 2 节。
 
 ### 5.4 停止
 
@@ -275,7 +284,7 @@ docker run -d ... gospeak:latest  # 同 5.2 step 4
 | 症状 | 排查 |
 |------|------|
 | 前端无音视频 | 检查 `SFU_PROVIDER` + LiveKit 服务状态 + WebRTC UDP 端口开放 |
-| 信令连不上 | 检查 WebSocket WebSocket 升级，Nginx 配置 |
+| 信令连不上 | 检查反代是否放行 WebSocket 升级；确认 `/api/v1/signal/token` 返回的 `serverUrl` 是 `wss://<域名>/livekit` |
 | JWT 无法刷新 | 检查内嵌 NATS 启动日志（NATS 不可用会 fail-fast）与 `JWT_KEY` 一致性 |
 | 上传失败 | 检查 `STORAGE_TYPE` + RustFS/S3 凭证 + `STORAGE_ENCRYPT_KEY` |
 | DB 连接失败 | `DB_TYPE` 不匹配，PostgreSQL/MySQL 需 `DB_HOST` 等填全 |
@@ -287,4 +296,6 @@ docker run -d ... gospeak:latest  # 同 5.2 step 4
 - 架构总览: `ARCHITECTURE.md`
 - Agent 指南: `AGENTS.md`
 - 一键编排方案: `deploy/docker-compose.yml`
+- 权威部署入口: `deploy/DEPLOY.md`
+- 反代与 HTTPS: `deploy/Caddyfile` + `app/docs/deploy/nginx.md`
 - 服务成熟度: `docs/sfu-provider-maturity.md`

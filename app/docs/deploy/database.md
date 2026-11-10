@@ -58,7 +58,7 @@ DB_PASSWORD=强密码
 用 Compose 的话，还要把 `postgres` 加进档位：
 
 ```ini
-COMPOSE_PROFILES=postgres,livekit,app
+COMPOSE_PROFILES=app,livekit,postgres
 POSTGRES_PASSWORD=和上面那个DB_PASSWORD一样
 ```
 

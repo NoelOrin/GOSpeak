@@ -63,7 +63,7 @@ packages/
 ├── sfu-client/      # 前端 SFU 客户端
 └── desktop/         # 桌面能力 SDK（MyGo 桥接 + 条件编译）
 test/                # 集成测试 (@gospeak/test)
-deploy/              # docker-compose + 各 SFU 配置
+deploy/              # docker-compose + Caddyfile + LiveKit 配置（入口见 DEPLOY.md）
 docs/                # 设计/运维/历史档案
 ```
 
@@ -87,7 +87,7 @@ Request → Router → Middleware(JWT+RBAC) → Handler → Service → Reposito
 # 安装
 pnpm install
 
-# 启依赖服务 (LiveKit + RustFS 默认)
+# 启依赖服务（档位由 deploy/.env 的 COMPOSE_PROFILES 决定，默认 app,livekit）
 docker compose -f deploy/docker-compose.yml up -d
 
 # 开发 (turbo 并行起后端+前端)

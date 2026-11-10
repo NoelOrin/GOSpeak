@@ -28,7 +28,7 @@ pnpm install
 cd deploy && ./init.sh && cd ..
 ```
 
-打开 `deploy/.env`，先只改下面几行就够跑起来（本地开发浏览器与后端同机，`LIVEKIT_PUBLIC_URL` 留空即可）：
+打开 `deploy/.env`，先只改下面几行就够跑起来（本地开发浏览器与后端同机，`LIVEKIT_PUBLIC_URL` 保持默认留空即可）：
 
 ```ini
 DB_TYPE="SQLite"
@@ -40,11 +40,13 @@ LIVEKIT_SECRET="devsecret"
 
 `LIVEKIT_KEY` / `LIVEKIT_SECRET` 随便填，但要和下一步 LiveKit 那边的配置一致。
 
+> 本地开发时应用跑在宿主机上，要连 `localhost:7880`。compose 里 `livekit` 的 7880 已绑到宿主机回环（`127.0.0.1:7880`），所以直接就能连，**不需要**再改端口映射。它只对本机可见，不对公网开放。
+
 ## 第三步：起语音服务
 
 ```bash
 cd deploy
-./init.sh livekit
+./init.sh
 docker compose up -d
 ```
 
@@ -53,10 +55,10 @@ docker compose up -d
 检查一下有没有起来：
 
 ```bash
-curl -s http://localhost:7880
+docker compose ps livekit
 ```
 
-有响应就说明 LiveKit 在跑了。
+`Up` 状态就说明 LiveKit 在跑了。7880 是信令端口，绑在宿主机回环上，本机 `curl localhost:7880` 能通，公网访问不到——浏览器经应用同源的 `/livekit` 访问它。
 
 ## 第四步：起应用
 
@@ -99,7 +101,7 @@ pnpm dev
 后端没起来。看 `pnpm dev` 的输出里 server 那部分有没有报错，多半是 `deploy/.env` 里数据库或端口配置有问题。
 
 **能登录但进语音频道没声音**
-LiveKit 没跑或地址配错。先 `docker compose ps` 看 livekit 容器在不在，再检查 `deploy/.env` 的 `LIVEKIT_PUBLIC_URL` 是否为浏览器可达地址（容器部署不能填 `ws://livekit:7880`）。
+LiveKit 没跑或连不上。先 `docker compose ps` 看 livekit 容器在不在，再 `docker compose logs livekit` 看有没有报错。`LIVEKIT_PUBLIC_URL` 保持留空即可，应用会自动推导同源的 `/livekit` 地址，不需要手工填。
 
 **端口被占用**
 后端默认 8998，前端默认 3000。改后端端口用 `SERVER_PORT`，前端会在 3000 被占时自动顺延到下一个可用端口。

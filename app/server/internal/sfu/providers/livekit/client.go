@@ -5,6 +5,7 @@ import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
 	"context"
+	"strings"
 	"time"
 
 	"github.com/livekit/protocol/auth"
@@ -23,12 +24,10 @@ type Service struct {
 }
 
 func NewService(cfg *config.Config) *Service {
-	// 浏览器侧地址留空时回退到访问地址，兼容单机/裸 IP 部署；
-	// 不依赖 config.normalize()，避免构造路径不同导致行为不一致。
-	publicURL := cfg.LiveKitPublicURL
-	if publicURL == "" {
-		publicURL = cfg.LiveKitHost
-	}
+	// 浏览器侧地址留空是默认形态：表示由应用内置同源反代（/livekit）承载，
+	// 具体地址在签发 token 时按请求 Host 推导。
+	// 这里绝不回退到 LiveKitHost —— 那是容器内网地址，浏览器解析不了。
+	publicURL := strings.TrimSpace(cfg.LiveKitPublicURL)
 	s := &Service{
 		host:      cfg.LiveKitHost,
 		publicURL: publicURL,

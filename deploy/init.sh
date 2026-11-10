@@ -5,17 +5,17 @@
 # 职责：
 #   1. 以 deploy/.env.example 为模板生成 deploy/.env（含随机密钥）
 #   2. 归一 deploy/livekit/livekit.yaml，使其不含任何密钥
-#   3. 校验 .env 与 livekit.yaml 的一致性，不一致就报错退出
+#   3. 校验 .env / livekit.yaml / Caddyfile 的一致性，不一致就报错退出
 #
 # 用法:
 #   ./init.sh                          # 生成 .env 并归一 livekit.yaml
-#   ./init.sh --force                  # 覆盖已存在的 .env
-#   ./init.sh --check                  # 只做一致性校验，不写任何文件
-#   ./init.sh --livekit-url wss://lk.example.com
-#                                      # 同时设置浏览器侧 LiveKit 地址
+#   ./init.sh --force                  # 覆盖已存在的 .env（保留已填的 GOSPEAK_DOMAIN）
+#   ./init.sh --check                  # 只做一致性校验，不写任何文件（无 .env 也能通过，CI 用）
+#   ./init.sh --domain voice.example.com
+#                                      # 写入 GOSPEAK_DOMAIN（启用 Caddy 自动 HTTPS）
 #
 # 环境变量覆盖（等价于上面的参数）：
-#   LIVEKIT_PUBLIC_URL=wss://lk.example.com ./init.sh
+#   GOSPEAK_DOMAIN=voice.example.com ./init.sh
 # =============================================================================
 set -euo pipefail
 
@@ -23,18 +23,18 @@ cd "$(dirname "$0")"
 
 FORCE=0
 CHECK_ONLY=0
-LIVEKIT_URL_ARG=""
+DOMAIN_ARG=""
 
-usage() { sed -n '2,22p' "$0"; exit 1; }
+usage() { sed -n '10,18p' "$0"; exit 1; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     livekit) shift ;;            # 兼容旧用法：仅 LiveKit 一种档位
     --force) FORCE=1; shift ;;
     --check) CHECK_ONLY=1; shift ;;
-    --livekit-url)
-      [[ $# -ge 2 ]] || { echo "--livekit-url 需要一个值" >&2; exit 1; }
-      LIVEKIT_URL_ARG="$2"; shift 2 ;;
+    --domain)
+      [[ $# -ge 2 ]] || { echo "--domain 需要一个值（如 voice.example.com）" >&2; exit 1; }
+      DOMAIN_ARG="$2"; shift 2 ;;
     -h|--help) usage ;;
     *) echo "未知参数: $1" >&2; usage ;;
   esac
@@ -43,6 +43,7 @@ done
 ENV_FILE=".env"
 ENV_TPL=".env.example"
 LIVEKIT_YAML="livekit/livekit.yaml"
+CADDYFILE="Caddyfile"
 
 [[ -f "$ENV_TPL" ]] || { echo "缺少模板 $ENV_TPL" >&2; exit 1; }
 [[ -f "$LIVEKIT_YAML" ]] || { echo "缺少 $LIVEKIT_YAML" >&2; exit 1; }
@@ -54,15 +55,25 @@ env_get() {
   sed -n "s/^${key}=//p" "$file" | tail -1 | sed -e 's/[[:space:]]*$//' -e 's/^["'\'']//' -e 's/["'\'']$//'
 }
 
+# ── 域名归一：容忍用户填 https://xxx/ 或带路径，只保留主机名 ────────────────
+normalize_domain() {
+  local d="$1"
+  d="${d#http://}"
+  d="${d#https://}"
+  d="${d%%/*}"
+  printf '%s' "$d"
+}
+
 # ── 一致性校验 ──────────────────────────────────────────────────────────────
 # 校验分两类：
 #   A. 仓库结构合规（CI 也跑，不依赖 .env 存在）
 #      - livekit.yaml 的 keys 必须为空（{}），不得硬编码密钥
 #      - livekit.yaml 的 webhook 不得含明文 api_key
+#      - Caddyfile 必须存在且引用 {$GOSPEAK_DOMAIN（edge 档位依赖）
 #      - compose 的注入表达式与 .env 键名匹配
 #   B. 本地部署就绪（仅当 .env 存在时校验）
 #      - .env 的 LIVEKIT_KEY / LIVEKIT_SECRET 非空且非占位值
-#      - LIVEKIT_PUBLIC_URL 建议显式配置
+#      - LIVEKIT_PUBLIC_URL 可留空（同源自动推导）；显式填写时只校验 ws/wss 前缀
 check_consistency() {
   local rc=0
 
@@ -85,8 +96,18 @@ check_consistency() {
     echo "  [ok] $LIVEKIT_YAML 的 webhook 不含明文 api_key"
   fi
 
+  # Caddyfile：edge 档位的唯一入口配置，必须存在且用环境变量拼站点地址，
+  # 否则 GOSPEAK_DOMAIN 为空时会写死一个不存在的域名。
+  if [[ ! -f "$CADDYFILE" ]]; then
+    echo "  [x] 缺少 $CADDYFILE（edge 档位需要它）" >&2; rc=1
+  elif ! grep -qF '{$GOSPEAK_DOMAIN' "$CADDYFILE"; then
+    echo "  [x] $CADDYFILE 未引用 {\$GOSPEAK_DOMAIN，无法随 .env 切换域名" >&2; rc=1
+  else
+    echo "  [ok] $CADDYFILE 存在且按 {\$GOSPEAK_DOMAIN 生成站点地址"
+  fi
+
   # 所有 compose 文件都必须按 .env 的键名注入 LiveKit 密钥，
-  # 避免新增的部署变体（如 docker-compose.simple.yml）漏掉注入。
+  # 避免新增的部署变体漏掉注入。
   #
   # 注意：Dokploy 部署时会重写 compose 文件（剥离注释、去引号、展开数组、
   # 注入 labels），所以这里只做语义校验——检查键名与变量引用是否出现，
@@ -138,12 +159,29 @@ check_consistency() {
     echo "  [ok] $ENV_FILE 已配置 LiveKit 密钥（key=${key:0:12}...）"
   fi
 
+  # 域名：留空是正常形态（Caddy 只听 :80 / 已有反代），非空时打印生效值。
+  local domain
+  domain="$(env_get GOSPEAK_DOMAIN "$ENV_FILE")"
+  if [[ -z "$domain" ]]; then
+    echo "  [-] GOSPEAK_DOMAIN 未设置：Caddy 只监听 80（局域网或已有反代）"
+  else
+    echo "  [ok] GOSPEAK_DOMAIN=$domain（edge 档位将自动申请证书）"
+  fi
+
+  # 浏览器侧地址：默认留空 = 应用按请求 Host 推导 wss://<域名>/livekit。
+  # 仅在显式填写时校验前缀，避免误填成 https:// 或容器内网地址。
   local public_url
   public_url="$(env_get LIVEKIT_PUBLIC_URL "$ENV_FILE")"
-  if [[ -z "$public_url" ]]; then
-    echo "  [!] LIVEKIT_PUBLIC_URL 为空，将回退到 LIVEKIT_HOST；容器部署下浏览器可能连不上"
+  if [[ -z "$public_url" || "$public_url" == "auto" ]]; then
+    echo "  [ok] LIVEKIT_PUBLIC_URL 留空，使用同源 /livekit 自动推导"
   else
-    echo "  [ok] LIVEKIT_PUBLIC_URL=$public_url"
+    case "$public_url" in
+      ws://*|wss://*)
+        echo "  [ok] LIVEKIT_PUBLIC_URL=$public_url（独立域名 / LiveKit Cloud）" ;;
+      *)
+        echo "  [x] LIVEKIT_PUBLIC_URL 必须以 ws:// 或 wss:// 开头（当前: $public_url）" >&2
+        rc=1 ;;
+    esac
   fi
 
   return $rc
@@ -182,7 +220,7 @@ normalize_livekit_yaml() {
 
 # ── --check：只校验 ─────────────────────────────────────────────────────────
 if [[ $CHECK_ONLY -eq 1 ]]; then
-  echo "==> 校验 .env 与 livekit.yaml 一致性"
+  echo "==> 校验 .env / livekit.yaml / Caddyfile 一致性"
   if check_consistency; then
     echo "一致性校验通过。"
     exit 0
@@ -206,10 +244,10 @@ POSTGRES_PASSWORD=$(rand)
 LIVEKIT_KEY="API$(openssl rand -hex 6)"
 LIVEKIT_SECRET=$(openssl rand -base64 48 | tr -d '/+=' | cut -c1-43)
 
-# --force 重新生成时保留已有的浏览器侧地址，避免每次重置都要重填。
-PREV_PUBLIC_URL=""
+# --force 重新生成时保留已填的域名，避免每次重置都要重填。
+PREV_DOMAIN=""
 if [[ -f "$ENV_FILE" ]]; then
-  PREV_PUBLIC_URL="$(env_get LIVEKIT_PUBLIC_URL "$ENV_FILE")"
+  PREV_DOMAIN="$(env_get GOSPEAK_DOMAIN "$ENV_FILE")"
 fi
 
 echo "==> 写出 $ENV_FILE（以 $ENV_TPL 为模板，替换全部密钥）"
@@ -223,12 +261,24 @@ sed \
   -e "s|^LIVEKIT_SECRET=.*|LIVEKIT_SECRET=$LIVEKIT_SECRET|" \
   "$ENV_TPL" > "$ENV_FILE"
 
-# 浏览器侧地址优先级：命令行参数 > 环境变量 > 已有 .env 的值
-PUBLIC_URL="${LIVEKIT_URL_ARG:-${LIVEKIT_PUBLIC_URL:-$PREV_PUBLIC_URL}}"
-if [[ -n "$PUBLIC_URL" ]]; then
-  sed -i.bak "s|^LIVEKIT_PUBLIC_URL=.*|LIVEKIT_PUBLIC_URL=$PUBLIC_URL|" "$ENV_FILE"
+# 域名优先级：命令行参数 > 环境变量 > 已有 .env 的值
+DOMAIN="$(normalize_domain "${DOMAIN_ARG:-${GOSPEAK_DOMAIN:-$PREV_DOMAIN}}")"
+if [[ -n "$DOMAIN" ]]; then
+  sed -i.bak "s|^GOSPEAK_DOMAIN=.*|GOSPEAK_DOMAIN=$DOMAIN|" "$ENV_FILE"
   rm -f "$ENV_FILE.bak"
-  echo "  [ok] LIVEKIT_PUBLIC_URL=$PUBLIC_URL"
+  echo "  [ok] GOSPEAK_DOMAIN=$DOMAIN"
+
+  # 有域名就顺手把 edge 档位加上：少了它，填了域名也不会有人来终结 TLS，
+  # 用户还得再改一次 COMPOSE_PROFILES —— 这正是要消灭的手工步骤。
+  profiles="$(env_get COMPOSE_PROFILES "$ENV_FILE")"
+  if [[ ",${profiles}," != *,edge,* ]]; then
+    profiles="${profiles:+$profiles,}edge"
+    sed -i.bak "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=$profiles|" "$ENV_FILE"
+    rm -f "$ENV_FILE.bak"
+    echo "  [ok] COMPOSE_PROFILES=$profiles（已自动启用内置 Caddy）"
+  fi
+else
+  echo "  [ok] GOSPEAK_DOMAIN 留空（Caddy 只听 80；不开 edge 档位可忽略）"
 fi
 
 echo "==> 归一 $LIVEKIT_YAML"
@@ -245,14 +295,24 @@ echo ""
 echo "完成。后续命令（在 deploy/ 目录下执行，或任意目录加 -f deploy/docker-compose.yml）:"
 cat <<'EOF'
 
+  # 有域名：填 GOSPEAK_DOMAIN，并启用内置 Caddy（自动 HTTPS）
+  #   .env 中: COMPOSE_PROFILES=app,livekit,edge
+  #            GOSPEAK_DOMAIN=voice.example.com
+  #   然后:    docker compose up -d --build
+
+  # 已有反代（Nginx / Traefik / Dokploy）：不要开 edge
+  #   .env 中: COMPOSE_PROFILES=app,livekit
+  #   把反代指向宿主机 8998 即可
+
   docker compose up -d --build     # 首次启动
   docker compose logs -f gospeak   # 看日志
   curl http://localhost:8998/ping  # 健康检查
 
 提示:
-  - 生产环境务必配置 HTTPS（Caddy/Nginx TLS），浏览器麦克风需要安全上下文
-  - LiveKit 浏览器侧地址必须公网可达：./init.sh --livekit-url wss://lk.example.com
-  - WebRTC 媒体走 UDP，反代域名需放通 7882/udp、3478/udp，且不能用只代理 HTTP 的 CDN
+  - 有域名时 Caddy 自动申请/续期证书，浏览器麦克风需要安全上下文（HTTPS）
+  - 不需要为 LiveKit 配置第二个域名或证书：信令走应用同源 /livekit 反代，
+    LIVEKIT_PUBLIC_URL 保持留空即可；仅独立域名或 LiveKit Cloud 时才填
+  - WebRTC 媒体走 UDP 直连，防火墙只需放通 7882/udp、7882/tcp、3478/udp
   - 数据备份: docker run --rm -v gospeak_gospeak-db:/data -v "$PWD":/bak alpine \
       cp /data/app.db /bak/app-backup-$(date +%F).db
 EOF

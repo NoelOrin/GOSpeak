@@ -29,7 +29,7 @@ GOSpeak/
 │   └── desktop/          # 桌面能力 SDK（MyGo 桥接 + 条件编译工具，见「Web / 桌面能力边界」）
 ├── test/                # API 集成测试 (@gospeak/test，Vitest + Node)
 ├── docs/                # 设计/运维/历史档案（design、review、superpowers specs/plans）
-├── deploy/              # docker-compose、nginx、livekit 配置、observability
+├── deploy/              # docker-compose、Caddyfile、livekit 配置、observability（入口 DEPLOY.md）
 ├── scripts/             # changelog 生成等辅助脚本
 ├── .github/             # CI workflows（build/ci/release-please 等）+ dependabot
 ├── agent_test_logs/     # Agent 测试日志输出目录
@@ -376,7 +376,7 @@ if err := c.ShouldBindJSON(&req); err != nil {
 
 ## Configuration
 
-All configuration is injected via environment variables (`APP_ENV` selects dev/prod；`.env.dev` for dev, `deploy/.env` for Docker — 单一配置文件，`deploy/init.sh` 生成). Startup loads env files without overriding process env (`process > .env.<env> > .env > defaults`), then `config.Load()` parses into a typed `Config` via `caarlos0/env`, normalizes aliases (e.g. `PostgresSQL` → `PostgreSQL`), validates. 配置已通过 `server/gin.go` 装配时以显式 `config.Config` 注入到各内部包；全局 `config.Current()` 当前代码库无任何包使用，保留仅为历史兼容占位，新代码不要依赖它。
+All configuration is injected via environment variables (`APP_ENV` selects dev/prod；`.env.dev` for dev, `deploy/.env` for Docker — 单一配置文件，`deploy/init.sh` 生成；`COMPOSE_PROFILES` 默认 `app,livekit`，加 `edge` 启用内置 Caddy). Startup loads env files without overriding process env (`process > .env.<env> > .env > defaults`), then `config.Load()` parses into a typed `Config` via `caarlos0/env`, normalizes aliases (e.g. `PostgresSQL` → `PostgreSQL`), validates. 配置已通过 `server/gin.go` 装配时以显式 `config.Config` 注入到各内部包；全局 `config.Current()` 当前代码库无任何包使用，保留仅为历史兼容占位，新代码不要依赖它。
 
 ### Database
 

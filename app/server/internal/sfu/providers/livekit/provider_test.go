@@ -63,13 +63,15 @@ func TestGetHostReturnsPublicURL(t *testing.T) {
 	}
 }
 
-// 未单独配置 public url 时回退到 host，兼容单机/裸 IP 部署。
-func TestGetHostFallsBackToHost(t *testing.T) {
+// 未配置 public url 时 GetHost 必须返回空，而不是回退到 LIVEKIT_HOST：
+// 容器内网地址（ws://livekit:7880）浏览器解析不了，回退只会让连接失败。
+// 空值由 handler 按请求 Host 推导同源 /livekit 地址。
+func TestGetHostEmptyWithoutPublicURL(t *testing.T) {
 	svc := NewService(&config.Config{
-		LiveKitHost: "ws://1.2.3.4:7880",
+		LiveKitHost: "ws://livekit:7880",
 		LiveKitKey:  "key",
 	})
-	if got := svc.GetHost(); got != "ws://1.2.3.4:7880" {
-		t.Fatalf("GetHost = %q, want host fallback", got)
+	if got := svc.GetHost(); got != "" {
+		t.Fatalf("GetHost = %q, want empty (no fallback to internal host)", got)
 	}
 }

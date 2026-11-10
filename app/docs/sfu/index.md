@@ -24,7 +24,8 @@ GOSpeak 自己不做音频转发，交给 LiveKit 干。
    里面写清楚：能进哪个房间、身份是谁
         │
 4. 前端拿令牌连 LiveKit
-   wss://livekit/rtc?access_token=...
+   wss://<你的域名>/livekit/rtc/v1?access_token=...
+   （同源反代，应用内部再转到 livekit:7880）
         │
 5. 音频在浏览器和 LiveKit 之间直连
    应用完全不参与
@@ -47,25 +48,27 @@ GOSpeak 自己不做音频转发，交给 LiveKit 干。
 
 ## 配置
 
-不管哪种，应用侧就这四个变量：
+不管哪种，应用侧就这几个变量：
 
 ```ini
 SFU_PROVIDER=livekit
-LIVEKIT_HOST=ws://localhost:7880
+LIVEKIT_HOST=ws://livekit:7880
 LIVEKIT_KEY=你的key
 LIVEKIT_SECRET=你的secret
+# LIVEKIT_PUBLIC_URL 默认留空
 ```
 
-`LIVEKIT_HOST` 的写法：
+`LIVEKIT_HOST` 是**后端访问** LiveKit 的地址，走容器内网，和浏览器无关：
 
-| 场景 | 写法 |
-|------|------|
-| 本地开发 | `ws://localhost:7880` |
+| 场景 | `LIVEKIT_HOST` |
+|------|---------------|
+| 本地开发（LiveKit 在宿主机） | `ws://localhost:7880` |
 | Docker Compose 内 | `ws://livekit:7880` |
-| 生产（HTTPS） | `wss://voice.example.com` |
 | LiveKit Cloud | `wss://xxx.livekit.cloud` |
 
-**页面是 HTTPS 的时候，这里必须是 `wss://`**，否则浏览器会拦掉。
+浏览器侧地址由 `LIVEKIT_PUBLIC_URL` 决定，**默认留空**：留空时应用按请求 Host 自动推导出 `wss://<你的域名>/livekit`，信令走应用内置的同源反代，不需要为 LiveKit 准备域名或证书。
+
+只有 LiveKit 用独立域名对外、或使用 LiveKit Cloud 时，才显式填 `LIVEKIT_PUBLIC_URL`。
 
 ## 应用管什么，LiveKit 管什么
 

@@ -86,6 +86,9 @@ func (c *AuthCookieConfig) cookie(g *gin.Context, name, value string, maxAge int
 	}
 }
 
+// secure 决定是否给 Cookie 加 Secure 标记。
+// auto 下除直连 TLS 外还认 X-Forwarded-Proto：反向代理（Caddy/Nginx/Traefik）
+// 终结 TLS 后转发到应用是明文 HTTP，只看 r.TLS 会漏判成非安全连接。
 func (c *AuthCookieConfig) secure(r *http.Request) bool {
 	switch c.Secure {
 	case "true":
@@ -93,7 +96,14 @@ func (c *AuthCookieConfig) secure(r *http.Request) bool {
 	case "false":
 		return false
 	default:
-		return r.TLS != nil
+		if r.TLS != nil {
+			return true
+		}
+		proto := r.Header.Get("X-Forwarded-Proto")
+		if i := strings.IndexByte(proto, ','); i >= 0 {
+			proto = proto[:i]
+		}
+		return strings.EqualFold(strings.TrimSpace(proto), "https")
 	}
 }
 

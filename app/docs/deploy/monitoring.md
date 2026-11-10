@@ -5,7 +5,7 @@
 ## 打开它
 
 ```ini
-COMPOSE_PROFILES=postgres,livekit,observability,app
+COMPOSE_PROFILES=app,livekit,observability
 ```
 
 ```bash
@@ -21,7 +21,7 @@ docker compose up -d
 | Alertmanager | `http://服务器IP:9093` | — |
 | Loki | `http://服务器IP:3100` | — |
 
-**这些端口不要直接暴露到公网。** 要么绑 127.0.0.1 走 SSH 隧道，要么在 Nginx 上加 basic auth。
+**这些端口不要直接暴露到公网。** 要么绑 127.0.0.1 走 SSH 隧道，要么在反代（Caddy / Nginx）上加 basic auth。
 
 Grafana 第一次登录会强制改密码。
 
@@ -84,7 +84,7 @@ METRICS_TOKEN=<随机字符串>
 
 设了之后请求必须带 `Authorization: Bearer <token>`。
 
-更稳妥的做法是在 Nginx 或防火墙层面直接挡掉外网访问：
+更稳妥的做法是在反代或防火墙层面直接挡掉外网访问。用自有 Nginx 时：
 
 ```nginx
 location /metrics {

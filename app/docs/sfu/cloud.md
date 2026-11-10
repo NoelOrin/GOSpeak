@@ -31,11 +31,15 @@
 ```ini
 SFU_PROVIDER=livekit
 LIVEKIT_HOST=wss://你的项目.livekit.cloud
+# Cloud 是外部服务，不经过应用的同源 /livekit 反代，必须显式填浏览器侧地址
+LIVEKIT_PUBLIC_URL=wss://你的项目.livekit.cloud
 LIVEKIT_KEY=APIxxxxxxxx
 LIVEKIT_SECRET=你的secret
 ```
 
 重启应用，语音就能用了。
+
+> `LIVEKIT_PUBLIC_URL` 留空是**自建 LiveKit** 的默认形态（走应用内置的同源 `/livekit` 反代，地址按请求自动推导）。用 Cloud 时请显式填写，否则浏览器会被指到你的站点域名而不是 Cloud。
 
 **本地不用起 Docker。** 这是云服务最直接的好处——开发机上只需要 Go 和 Node。
 
@@ -47,6 +51,7 @@ DB_TYPE=SQLite
 JWT_KEY=dev-secret
 SFU_PROVIDER=livekit
 LIVEKIT_HOST=wss://你的项目.livekit.cloud
+LIVEKIT_PUBLIC_URL=wss://你的项目.livekit.cloud
 LIVEKIT_KEY=APIxxxxxxxx
 LIVEKIT_SECRET=你的secret
 STORAGE_TYPE=local

@@ -118,7 +118,7 @@ ws(s)://你的域名/ws
 ## 常见问题
 
 **一直显示「已断开」**
-Nginx 的 `/ws` location 没配 `Upgrade` 头。见 [Nginx 配置](/deploy/nginx)。
+反代没放行 WebSocket 升级（`Upgrade` / `Connection` 头）。见 [反代与 HTTPS](/deploy/nginx)。
 
 **能连上但收不到事件**
 令牌过期了。WebSocket 连接建立后不会自动刷新令牌，需要重连。

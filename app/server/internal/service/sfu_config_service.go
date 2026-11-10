@@ -206,11 +206,9 @@ func (s *SFUConfigService) ResolveConfig() (*config.Config, error) {
 	if s.baseCfg.LiveKitSecret == "" {
 		resolved.LiveKitSecret = cfg.LiveKitSecret
 	}
-	// env 未显式给出浏览器侧地址时，回退到本次解析出的访问地址
-	// （可能是 DB 覆盖后的值），避免下发给浏览器空地址。
-	if strings.TrimSpace(s.baseCfg.LiveKitPublicURL) == "" {
-		resolved.LiveKitPublicURL = resolved.LiveKitHost
-	}
+	// 浏览器侧地址留空是正常形态：表示走应用内置的同源 /livekit 反代，
+	// 由请求 Host 推导，不再回退到可能只有容器内网可达的 LiveKitHost。
+	resolved.LiveKitPublicURL = strings.TrimSpace(s.baseCfg.LiveKitPublicURL)
 	return &resolved, nil
 }
 

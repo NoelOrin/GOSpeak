@@ -1,0 +1,27 @@
+# =============================================================================
+# GOSpeak — Caddy 边缘入口（profile: edge）
+# =============================================================================
+# 只有部署档位包含 edge 时才会生效（COMPOSE_PROFILES 追加 edge）。
+#
+# 反代只有一个上游 gospeak:8998：
+#   /            → 前端 SPA（镜像内静态资源）
+#   /api         → Go API
+#   /ws          → WebSocket 信令
+#   /uploads     → 本地存储
+#   /livekit     → 应用内置的 LiveKit 同源反代
+# 所以 LiveKit 不需要第二个域名、也不需要单独证书；媒体走 UDP 直连
+# （7882/udp、3478/udp），不经过这里。
+#
+# 域名留空时（GOSPEAK_DOMAIN 为空），站点地址退化为 :80：
+#   只提供纯 HTTP，供局域网访问或"前面已经有反代"的场景使用；
+#   此时 Caddy 不申请证书，也不会重定向到 HTTPS。
+# 填了域名（如 voice.example.com），Caddy 自动申请并续期 Let's Encrypt 证书，
+# 并把 HTTP 重定向到 HTTPS。
+#
+# WebSocket（/ws、/livekit）由 reverse_proxy 自动完成 upgrade，无需额外指令。
+# =============================================================================
+
+{$GOSPEAK_DOMAIN::80} {
+	encode zstd gzip
+	reverse_proxy gospeak:8998
+}

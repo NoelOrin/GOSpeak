@@ -9,6 +9,7 @@ import (
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/jobs"
+	"GOSpeak/internal/livekitproxy"
 	"GOSpeak/internal/logger"
 	"GOSpeak/internal/metrics"
 	"GOSpeak/internal/middleware"
@@ -342,6 +343,16 @@ func StartGin(env EnvEnum) error {
 		}
 		return cfg.LiveKitSecret
 	})
+	signalH.SetLiveKitKeyResolver(func() string {
+		resolved, err := sfuConfigSvc.ResolveConfig()
+		if err != nil || resolved == nil {
+			return cfg.LiveKitKey
+		}
+		if resolved.LiveKitKey != "" {
+			return resolved.LiveKitKey
+		}
+		return cfg.LiveKitKey
+	})
 	if jobQueue != nil {
 		signalH.SetJobs(jobQueue)
 	}
@@ -475,10 +486,25 @@ func StartGin(env EnvEnum) error {
 	}
 	logger.WithComponent("Swagger").Infof("API 文档地址: %s://localhost:%s/swagger/index.html", scheme, port)
 
+	// 同源 LiveKit 反代：浏览器侧 serverUrl 为 wss://<域名>/livekit 时，
+	// 由应用把 /livekit/* 转发到 LIVEKIT_HOST（含 WebSocket 升级）。
+	// 这样 LiveKit 不需要独立域名、证书或反代规则，反代层只面对应用一个上游。
+	livekitProxy := livekitproxy.NewHandler(livekitproxy.Cached(func() string {
+		resolved, err := sfuConfigSvc.ResolveConfig()
+		if err == nil && resolved != nil && strings.TrimSpace(resolved.LiveKitHost) != "" {
+			return resolved.LiveKitHost
+		}
+		return cfg.LiveKitHost
+	}, 2*time.Second))
+
 	// /ws 必须绕过 Gin：nhooyr/websocket 的 hijack 与 gin.ResponseWriter 不兼容。
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if wsUpgrader != nil && req.URL.Path == "/ws" {
 			wsUpgrader.ServeHTTP(w, req)
+			return
+		}
+		if req.URL.Path == livekitproxy.PathPrefix || strings.HasPrefix(req.URL.Path, livekitproxy.PathPrefix+"/") {
+			livekitProxy.ServeHTTP(w, req)
 			return
 		}
 		r.ServeHTTP(w, req)

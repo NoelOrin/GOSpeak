@@ -77,25 +77,41 @@ docker run -d \
 
 **这个镜像里没有 LiveKit。**
 
-`LIVEKIT_HOST` 必须指向一个容器外面能访问到的 LiveKit：
+`LIVEKIT_HOST` 必须指向一个应用容器能访问到的 LiveKit：
 
 - 已经在别的机器上跑着 → 填那台的地址
-- 想在同一台机器上跑 → 另起一个容器：
+- 想在同一台机器上跑 → 另起一个容器，并和应用放进同一个 Docker 网络：
 
 ```bash
+docker network create gospeak
+
 docker run -d \
   --name livekit \
+  --network gospeak \
   --restart unless-stopped \
-  -p 7880:7880 \
-  -p 7881:7881 \
+  -p 7882:7882 \
   -p 7882:7882/udp \
   -p 3478:3478/udp \
   -v $(pwd)/deploy/livekit/livekit.yaml:/etc/livekit.yaml \
   livekit/livekit-server:latest \
   --config /etc/livekit.yaml
+
+docker run -d \
+  --name gospeak \
+  --network gospeak \
+  --restart unless-stopped \
+  -p 8998:8998 \
+  --env-file deploy/.env \
+  -v gospeak-db:/app/db \
+  -v gospeak-uploads:/app/uploads \
+  ghcr.io/noelorin/gospeak:1
 ```
 
-然后应用的 `LIVEKIT_HOST` 填 `ws://宿主机IP:7880`（不是 `localhost`——容器里的 localhost 是容器自己）。
+同一网络内，应用的 `LIVEKIT_HOST` 填 `ws://livekit:7880`（用服务名，不是 `localhost`——容器里的 localhost 是容器自己）。
+
+注意上面**没有映射 7880**。这是有意的：`/livekit` 由应用自己同源反代，LiveKit 的信令端口只需要应用容器能访问，不必暴露到公网（compose 里也只绑回环 `127.0.0.1:7880` 供本机调试）。媒体端口（7882 tcp/udp、3478/udp）仍然要映射，因为浏览器和 LiveKit 是直连的。
+
+`LIVEKIT_PUBLIC_URL` 保持留空，应用会按请求 Host 自动推导出 `wss://<你的域名>/livekit`。
 
 嫌麻烦就用 [Docker Compose](/deploy/compose)，它把这些都串好了。
 
@@ -172,6 +188,9 @@ docker build -t gospeak .
 
 **连不上 LiveKit**
 容器里的 `localhost` 指容器自己。要用宿主机 IP，或者用 `--network host`，或者干脆用 compose。
+
+**语音连不上但页面正常**
+确认浏览器拿到的 `serverUrl` 是 `wss://<你的域名>/livekit`，并且反代放行了 `/livekit` 的 WebSocket 升级。
 
 **端口 8998 被占**
 换一个：`-p 9000:8998`。

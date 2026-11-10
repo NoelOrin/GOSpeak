@@ -23,7 +23,7 @@ curl -v http://localhost:8998/ping
 curl -v http://localhost/ping
 ```
 
-第一条通、第二条不通 → Nginx 的问题。两条都不通 → 应用没起来或端口没映射。
+第一条通、第二条不通 → Caddy / 反代的问题。两条都不通 → 应用没起来或端口没映射。
 
 **报 `bind: address already in use`**
 
@@ -39,20 +39,22 @@ sudo lsof -i :8998
 
 **看浏览器网络面板**
 
-- 请求 404 → 前端和 API 不同源，或者 Nginx 的 `/api/` location 没配对
+- 请求 404 → 前端和 API 不同源，或者反代没把路径完整转发到 `8998`
 - 请求 502 → 应用没起来
 - 请求 200 但返回 `code` 非 0 → 后端业务错误，看 `msg` 字段
 - 请求被重定向到登录页 → 登录成功但 Cookie 没存下来
 
 **Cookie 存不下来**
 
-八成是 HTTPS 配置问题。后端在 HTTPS 下会给 Cookie 加 `Secure` 属性，如果 Nginx 没传 `X-Forwarded-Proto`，后端以为还是 HTTP，行为就对不上。
+八成是 HTTPS 配置问题。后端在 HTTPS 下会给 Cookie 加 `Secure` 属性，如果反代没传 `X-Forwarded-Proto`，后端以为还是 HTTP，行为就对不上。
 
-检查 Nginx 的 `/api/` location 里有没有：
+用内置 Caddy 档位不会有这个问题（`reverse_proxy` 默认会传）。用自有反代就检查有没有这行：
 
 ```nginx
 proxy_set_header X-Forwarded-Proto $scheme;
 ```
+
+`COOKIE_SECURE=auto` 会读这个头判断，所以补上这一行就够了；确实不想依赖该头时再显式设 `COOKIE_SECURE=true`。
 
 **一直提示用户名或密码错误**
 
@@ -75,21 +77,22 @@ docker compose exec postgres psql -U gospeak -d gospeak
 ```bash
 docker compose ps livekit
 docker compose logs --tail=50 livekit
-curl -s http://localhost:7880
+# 从应用容器内部探（7880 只绑宿主机回环，容器内用服务名）
+docker compose exec gospeak wget -qO- http://livekit:7880
 ```
 
 有响应说明活着。
 
 ### 第二步：密钥对得上吗
 
-应用和 LiveKit 的密钥必须完全一致。对一下：
+密钥只在 `deploy/.env` 里有一份，由 compose 注入 LiveKit 容器，`livekit.yaml` 不含任何凭据。先确认两边都对上了：
 
 ```bash
 grep LIVEKIT_KEY deploy/.env
-grep -A3 "^keys:" deploy/livekit/livekit.yaml
+grep -E "LIVEKIT_KEYS|LIVEKIT_WEBHOOK_API_KEY" <(docker compose config)
 ```
 
-不一致的话，重新跑 `./init.sh --force`，或者手动把 `livekit.yaml` 的 keys 改成和 `.env` 一样。
+不一致的话，重新跑 `./init.sh --force`。
 
 ### 第三步：媒体端口通吗
 
@@ -97,8 +100,7 @@ grep -A3 "^keys:" deploy/livekit/livekit.yaml
 
 ```bash
 # TCP 端口
-nc -zv 你的服务器IP 7881
-nc -zv 你的服务器IP 7880
+nc -zv 你的服务器IP 7882
 
 # UDP 端口没法用 nc 测，只能确认防火墙规则
 ```
@@ -107,10 +109,11 @@ UDP 端口没开是语音不通最常见的原因。云服务器除了系统防�
 
 需要开的：
 
-- `7880/tcp` 信令
-- `7881/tcp` 媒体
-- `7882/udp` 媒体
+- `7882/udp` 媒体主通道
+- `7882/tcp` 媒体兜底
 - `3478/udp` TURN
+
+**7880 / 7881 不需要开。** 7880 只绑宿主机回环（`127.0.0.1:7880`）供本机调试，信令对外走应用同源的 `/livekit`；7881 不再发布。
 
 ### 第四步：ICE 候选地址对不对
 
@@ -136,14 +139,24 @@ rtc:
 |------|------|
 | `NotAllowedError` | 没给麦克风权限 |
 | `NotFoundError` | 没有可用的麦克风设备 |
-| `mixed content` | HTTPS 页面连了 `ws://` 的 LiveKit |
+| `mixed content` | HTTPS 页面连了 `ws://` 的地址（反代没传 `X-Forwarded-Proto`） |
 | `ICE connection failed` | 媒体端口不通 |
+
+顺带确认一下 `serverUrl` 推导是否正确：看 Network 面板里 `/api/v1/signal/token` 的响应，正常应该是 `wss://<你的域名>/livekit`。
 
 ## 上传文件失败
 
 **413 错误**
 
-Nginx 的 `client_max_body_size` 太小，默认 20m。调大：
+反代的请求体上限太小。内置 Caddy 默认不限制请求体，所以走 `edge` 档位一般不会遇到；如果你自己给 Caddyfile 加了 `request_body` 限制，调大它即可：
+
+```
+request_body {
+    max_size 100MB
+}
+```
+
+用自有 Nginx 时调大 `client_max_body_size`（默认只有 1m）：
 
 ```nginx
 client_max_body_size 100m;
@@ -161,7 +174,7 @@ docker compose exec gospeak ls -la /app/uploads
 
 **传上去了但图片不显示**
 
-`STORAGE_PUBLIC_BASE_URL` 配错了，或者 Nginx 没转发 `/uploads/`。
+`STORAGE_PUBLIC_BASE_URL` 配错了，或者反代没把 `/uploads/` 转发到 `8998`。
 
 ## 数据库问题
 
@@ -261,4 +274,4 @@ curl -s http://localhost:8998/readyz
 ## 下一步
 
 - [监控](/deploy/monitoring) — 提前发现问题
-- [Nginx 配置](/deploy/nginx) — 反代相关的问题
+- [反代与 HTTPS](/deploy/nginx) — 反代相关的问题

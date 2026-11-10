@@ -20,7 +20,7 @@ GOSpeak 全部靠环境变量配置，没有独立的配置文件。改完重启
 |------|------|
 | `JWT_KEY` | 签发登录令牌的密钥。生产必须换成随机值：`openssl rand -hex 32` |
 | `LIVEKIT_HOST` | 后端访问 LiveKit 的地址（admin API）。容器部署 `ws://livekit:7880`，云服务 `wss://xxx.livekit.cloud` |
-| `LIVEKIT_PUBLIC_URL` | 下发给浏览器的连接地址，必须浏览器可达（如 `wss://lk.example.com`）。留空回退到 `LIVEKIT_HOST` |
+| `LIVEKIT_PUBLIC_URL` | **默认留空即可**。留空时应用按请求 Host 自动推导 `wss://<你的域名>/livekit`，信令走内置同源反代，无需为 LiveKit 配域名或证书 |
 | `LIVEKIT_KEY` | LiveKit 的 API Key |
 | `LIVEKIT_SECRET` | LiveKit 的 API Secret，必须和 LiveKit 那边一致 |
 | `STORAGE_ENCRYPT_KEY` | 生产环境必填，64 位十六进制。用来加密存储配置里的敏感字段 |
@@ -46,7 +46,7 @@ GOSpeak 全部靠环境变量配置，没有独立的配置文件。改完重启
 |------|------|------|
 | `SFU_PROVIDER` | `livekit` | 目前只支持这个值 |
 | `LIVEKIT_HOST` | — | 见上 |
-| `LIVEKIT_PUBLIC_URL` | — | 见上 |
+| `LIVEKIT_PUBLIC_URL` | 空 | 留空 = 同源 `/livekit` 自动推导；仅独立域名 / LiveKit Cloud 时显式填 `wss://...` |
 | `LIVEKIT_KEY` | — | 见上 |
 | `LIVEKIT_SECRET` | — | 见上 |
 
@@ -144,8 +144,8 @@ DB_TYPE="SQLite"
 DB_WAL="true"
 JWT_KEY="<openssl rand -hex 32>"
 SFU_PROVIDER="livekit"
-LIVEKIT_HOST="ws://livekit:7880"          # 后端访问，走容器内网
-LIVEKIT_PUBLIC_URL="wss://lk.example.com"  # 下发给浏览器，必须公网可达
+LIVEKIT_HOST="ws://livekit:7880"   # 后端访问，走容器内网
+LIVEKIT_PUBLIC_URL=""             # 留空 = 自动推导 wss://<你的域名>/livekit
 LIVEKIT_KEY="<随机>"
 LIVEKIT_SECRET="<随机>"
 STORAGE_TYPE="local"
@@ -153,17 +153,27 @@ STORAGE_ENCRYPT_KEY="<64 位 hex>"
 CORS_ORIGIN="https://voice.example.com"
 ```
 
+再配上域名和内置 Caddy：
+
+```ini
+COMPOSE_PROFILES=app,livekit,edge
+GOSPEAK_DOMAIN=voice.example.com
+```
+
 ### 用 LiveKit 云服务
 
 ```ini
 SFU_PROVIDER="livekit"
-# 云服务场景下后端与浏览器访问同一地址，PUBLIC_URL 留空即回退
 LIVEKIT_HOST="wss://your-project.livekit.cloud"
+# Cloud 是外部服务，不经过应用的同源反代，所以要显式填浏览器侧地址
+LIVEKIT_PUBLIC_URL="wss://your-project.livekit.cloud"
 LIVEKIT_KEY="APIxxxxxxxx"
 LIVEKIT_SECRET="xxxxxxxx"
 ```
 
 本地不用跑 Docker，只起应用就行。
+
+注意：`LIVEKIT_PUBLIC_URL` 留空代表「走应用内置的同源 `/livekit` 反代」，那是自建 LiveKit 的形态。用 Cloud 时必须显式填写。
 
 ## 改完不生效？
 

@@ -86,7 +86,7 @@ pnpm install
 
 # 3. 生成配置（唯一配置文件：deploy/.env）
 cd deploy && ./init.sh && cd ..
-# 编辑 deploy/.env，填入 LIVEKIT_PUBLIC_URL 等（见下方配置说明）
+# 一般无需再手改：密钥已随机生成，LIVEKIT_PUBLIC_URL 默认留空（见下方配置说明）
 
 # 4. 启动依赖服务（LiveKit / RustFS）
 docker compose -f deploy/docker-compose.yml up -d
@@ -111,7 +111,9 @@ LIVEKIT_SECRET="<your-secret>"
 STORAGE_TYPE="local"
 ```
 
-> 没有 LiveKit？docker-compose 已在本地跑了一个。`LIVEKIT_KEY` 和 `LIVEKIT_SECRET` 默认值在 `deploy/livekit/livekit.yaml` 中。
+> 没有 LiveKit？docker-compose 已在本地跑了一个。`LIVEKIT_KEY` / `LIVEKIT_SECRET` 的唯一来源是 `deploy/.env`（由 `./init.sh` 随机生成），compose 会注入 LiveKit 容器，`livekit.yaml` 里不含凭据。
+>
+> 本地开发时应用跑在宿主机上，要连 `localhost:7880`。compose 里 `livekit` 的 7880 已绑到宿主机回环（`127.0.0.1:7880`），直接能连，无需再改端口映射；它只对本机可见，不对公网开放。
 
 ### 默认管理员账号
 
@@ -129,30 +131,54 @@ STORAGE_TYPE="local"
 
 ## 部署
 
-完整公网/统一编排见 **[deploy/DEPLOY.md](deploy/DEPLOY.md)**（`deploy/docker-compose.yml`）。
+完整部署入口见 **[deploy/DEPLOY.md](deploy/DEPLOY.md)**（`deploy/docker-compose.yml`）。
 
+部署只需要一个域名、一个上游。**LiveKit 不需要第二个域名、不需要单独证书、也不需要单独的反向代理规则**——应用内置了同源反代 `/livekit`，浏览器信令走你的站点域名，媒体走 UDP 直连。
 
-### 数据库三档渐进
+### 三条命令跑起来
 
 ```bash
-# A. SQLite — 开箱即用，零外部服务
-docker compose -f deploy/docker-compose.yml up -d
-
-# B. PostgreSQL
-docker compose -f deploy/docker-compose.yml --profile postgres up -d
-
+cd deploy
+./init.sh --domain voice.example.com        # 生成 deploy/.env，写入域名并自动启用 edge
+docker compose up -d --build                # 启动，档位由 .env 的 COMPOSE_PROFILES 决定
 ```
 
-对应 `.env` 配置：
+`./init.sh --domain voice.example.com` 会写入域名并自动把 `edge` 加进 `COMPOSE_PROFILES`（已有 `app,livekit` 时追加为 `app,livekit,edge`）。跑完直接 `docker compose up -d --build` 即可，无需手改档位。此时 `.env` 里是：
 
 ```env
-# A 档
+COMPOSE_PROFILES=app,livekit,edge           # edge = 内置 Caddy，自动申请证书
+GOSPEAK_DOMAIN=voice.example.com
+```
+
+浏览器打开 `https://voice.example.com` 即可。Caddy 会自动处理 HTTPS 与 WebSocket 升级。
+
+**不开 `edge` 的场景**：已有反代（Nginx / Traefik / Dokploy / 宝塔），或纯局域网无域名时，**不要传 `--domain`**（或手动把 `edge` 从 `COMPOSE_PROFILES` 里去掉），反代指向宿主机 `8998`。
+
+### 三种场景
+
+| 场景 | 怎么初始化 | 说明 |
+|------|-----------|------|
+| 有域名（推荐） | `./init.sh --domain voice.example.com` | 自动得到 `app,livekit,edge`，内置 Caddy 自动 HTTPS |
+| 已有反代（Nginx / Traefik / Dokploy / 宝塔） | `./init.sh`（**不传 `--domain`**） | 保持 `app,livekit`，不要开 `edge`；反代指向 `gospeak:8998` 一个上游即可，**不需要给 LiveKit 写任何路由** |
+| 局域网 / 无域名测试 | `./init.sh`（不传 `--domain`） | 保持 `app,livekit`，直接访问 `http://<IP>:8998`；想让 Caddy 统一到 80 端口就手动加 `edge`。浏览器麦克风需要 localhost 或 HTTPS |
+
+### 端口与防火墙
+
+只需放行：`80/443`（Caddy 或自有反代）、`7882/tcp` + `7882/udp`（媒体）、`3478/udp`（TURN）。
+
+**不需要 7880 / 7881**：7880 只绑宿主机回环（`127.0.0.1:7880`）供本机调试，不对公网开放；LiveKit 信令经应用同源的 `/livekit` 反代。
+
+### 数据库与可选档位
+
+```env
+# A 档：SQLite（默认，零外部服务）
 DB_TYPE="SQLite"
 
-# B 档
-DB_TYPE="PostgresSQL"  DB_HOST=postgres  DB_PORT=5432  DB_USER=gospeak  DB_PASSWORD=gospeak
-
+# B 档：PostgreSQL（COMPOSE_PROFILES 追加 postgres）
+DB_TYPE="PostgreSQL"  DB_HOST=postgres  DB_PORT=5432  DB_USER=gospeak  DB_PASSWORD=gospeak
 ```
+
+档位可继续叠加 `rustfs`（对象存储）、`observability`（Prometheus + Grafana + Loki）。
 
 ### Docker 生产部署（前端已内嵌）
 
@@ -168,9 +194,11 @@ docker run -d \
   gospeak
 ```
 
-### nginx 反代
+这样跑时容器里没有 LiveKit，`LIVEKIT_HOST` 需要指向一个应用容器能访问到的 LiveKit 实例。
 
-参考 [`deploy/nginx.conf`](./deploy/nginx.conf) 配置 WebSocket 代理和 TLS。
+### 反代与 HTTPS
+
+有域名就用内置 Caddy（`deploy/Caddyfile`）；已有反代就指向 `gospeak:8998`。详见 [`app/docs/deploy/nginx.md`](./app/docs/deploy/nginx.md)。
 
 完整部署指南：[`docs/deployment-guide.md`](./docs/deployment-guide.md)
 

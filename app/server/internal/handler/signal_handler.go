@@ -2,21 +2,22 @@ package handler
 
 import (
 	"context"
-	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
-	"strconv"
+	"net/http"
 	"strings"
-	"time"
 
+	"GOSpeak/internal/livekitproxy"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/livekit/protocol/auth"
 )
 
 type livekitJobPublisher interface {
@@ -24,8 +25,10 @@ type livekitJobPublisher interface {
 }
 
 const (
-	livekitSignatureHeader = "Livekit-Signature"
-	livekitSignatureMaxAge = 5 * time.Minute
+	// LiveKit 用 Authorization: <JWT> 推送 webhook，JWT 内含 body 的 sha256，
+	// 由 verifyLiveKitWebhook 校验。此前按一个 LiveKit 从不发送的
+	// HMAC 头校验，导致所有 webhook 都被判 401。
+	livekitAuthHeader = "Authorization"
 )
 
 type SignalHandler struct {
@@ -34,6 +37,7 @@ type SignalHandler struct {
 	jobs livekitJobPublisher
 
 	resolveLiveKitSecret func() string
+	resolveLiveKitKey    func() string
 }
 
 func NewSignalHandler(sfuSvc *service.SFUService) *SignalHandler {
@@ -49,6 +53,12 @@ func (h *SignalHandler) SetLiveKitSecretResolver(fn func() string) {
 	h.resolveLiveKitSecret = fn
 }
 
+// SetLiveKitKeyResolver 注入当前 LiveKit API key 解析器（env/DB 配置）。
+// webhook JWT 的 iss 是 api key，必须与 secret 配对才能验签。
+func (h *SignalHandler) SetLiveKitKeyResolver(fn func() string) {
+	h.resolveLiveKitKey = fn
+}
+
 func (h *SignalHandler) currentLiveKitSecret() string {
 	if h.resolveLiveKitSecret == nil {
 		return ""
@@ -56,46 +66,54 @@ func (h *SignalHandler) currentLiveKitSecret() string {
 	return strings.TrimSpace(h.resolveLiveKitSecret())
 }
 
-// verifyLiveKitSignature 校验 LiveKit-Signature: t=<unix ts>,v1=<hex hmac-sha256>。
-func verifyLiveKitSignature(header string, body []byte, secret string, now time.Time) bool {
-	if secret == "" {
-		return false
+func (h *SignalHandler) currentLiveKitKey() string {
+	if h.resolveLiveKitKey == nil {
+		return ""
 	}
-	var tsStr, sigHex string
-	for _, part := range strings.Split(header, ",") {
-		key, value, ok := strings.Cut(part, "=")
-		if !ok {
-			continue
-		}
-		switch strings.TrimSpace(key) {
-		case "t":
-			tsStr = strings.TrimSpace(value)
-		case "v1":
-			sigHex = strings.TrimSpace(value)
-		}
-	}
-	if tsStr == "" || sigHex == "" {
-		return false
-	}
-	ts, err := strconv.ParseInt(tsStr, 10, 64)
-	if err != nil || ts <= 0 {
-		return false
-	}
-	diff := now.Unix() - ts
-	if diff < 0 {
-		diff = -diff
-	}
-	if diff > int64(livekitSignatureMaxAge/time.Second) {
-		return false
-	}
-	mac := hmac.New(sha256.New, []byte(secret))
-	_, _ = mac.Write([]byte(tsStr + "." + string(body)))
-	sig, err := hex.DecodeString(sigHex)
-	if err != nil || len(sig) != sha256.Size {
-		return false
-	}
-	return subtle.ConstantTimeCompare(sig, mac.Sum(nil)) == 1
+	return strings.TrimSpace(h.resolveLiveKitKey())
 }
+
+// verifyLiveKitWebhook 校验 LiveKit webhook：Authorization 头是 LiveKit 用
+// API key/secret 签发的 JWT，claims.sha256 是 body 摘要。
+// 与 protocol/webhook.Receive 等价，但只依赖已在用的 auth 包。
+func verifyLiveKitWebhook(r *http.Request, apiKey, apiSecret string) ([]byte, error) {
+	if apiKey == "" || apiSecret == "" {
+		return nil, errLiveKitNotConfigured
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	_ = r.Body.Close()
+
+	token := r.Header.Get(livekitAuthHeader)
+	if token == "" {
+		return nil, errLiveKitNoAuthHeader
+	}
+	verifier, err := auth.ParseAPIToken(token)
+	if err != nil {
+		return nil, err
+	}
+	if verifier.APIKey() != apiKey {
+		return nil, errLiveKitWrongAPIKey
+	}
+	_, claims, err := verifier.Verify(apiSecret)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(body)
+	if subtle.ConstantTimeCompare([]byte(claims.Sha256), []byte(base64.StdEncoding.EncodeToString(sum[:]))) != 1 {
+		return nil, errLiveKitChecksum
+	}
+	return body, nil
+}
+
+var (
+	errLiveKitNotConfigured = errors.New("livekit not configured")
+	errLiveKitNoAuthHeader  = errors.New("webhook authorization header missing")
+	errLiveKitWrongAPIKey   = errors.New("webhook api key mismatch")
+	errLiveKitChecksum      = errors.New("webhook body checksum mismatch")
+)
 
 // GetWSEndpoint
 // @Summary      获取 WebSocket 连接地址
@@ -163,9 +181,16 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 		return
 	}
 
+	// 浏览器侧地址留空 = 走应用内置同源反代：按当前请求推导 wss://<域名>/livekit。
+	// LiveKit 因此不需要独立域名/证书，反代层也只需面对应用一个上游。
+	serverURL := result.ServerURL
+	if strings.TrimSpace(serverURL) == "" {
+		serverURL = livekitproxy.ServerURLForRequest(c.Request)
+	}
+
 	data := gin.H{
 		"token":       result.Token,
-		"serverUrl":   result.ServerURL,
+		"serverUrl":   serverURL,
 		"room":        req.Room,
 		"identity":    req.Identity,
 		"sfuRoom":     result.SFURoom,
@@ -236,17 +261,12 @@ func (h *SignalHandler) ListParticipants(c *gin.Context) {
 // @Success      200  {object}  pkg.Response
 // @Router       /signal/webhook [post]
 func (h *SignalHandler) LivekitWebhook(c *gin.Context) {
-	body, err := io.ReadAll(c.Request.Body)
+	body, err := verifyLiveKitWebhook(c.Request, h.currentLiveKitKey(), h.currentLiveKitSecret())
 	if err != nil {
-		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
-		return
-	}
-	secret := h.currentLiveKitSecret()
-	if secret == "" {
-		pkg.Fail(c, pkg.SFU_NOT_CONFIGURED)
-		return
-	}
-	if !verifyLiveKitSignature(c.GetHeader(livekitSignatureHeader), body, secret, time.Now()) {
+		if errors.Is(err, errLiveKitNotConfigured) {
+			pkg.Fail(c, pkg.SFU_NOT_CONFIGURED)
+			return
+		}
 		pkg.Fail(c, pkg.TOKEN_WRONG, "invalid webhook signature")
 		return
 	}

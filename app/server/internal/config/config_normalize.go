@@ -7,11 +7,7 @@ func (c *Config) normalize() {
 	c.DBType = normalizeDBType(c.DBType)
 	c.SFUProvider = strings.ToLower(strings.TrimSpace(c.SFUProvider))
 	c.LiveKitHost = strings.TrimSpace(c.LiveKitHost)
-	c.LiveKitPublicURL = strings.TrimSpace(c.LiveKitPublicURL)
-	// 未显式配置浏览器侧地址时回退到后端访问地址，兼容单机/裸 IP 部署。
-	if c.LiveKitPublicURL == "" {
-		c.LiveKitPublicURL = c.LiveKitHost
-	}
+	c.LiveKitPublicURL = normalizeLiveKitPublicURL(c.LiveKitPublicURL)
 	c.StorageType = strings.ToLower(strings.TrimSpace(c.StorageType))
 	c.ServerPort = strings.TrimSpace(c.ServerPort)
 	c.CORSOrigin = strings.TrimSpace(c.CORSOrigin)
@@ -94,4 +90,16 @@ func normalizeDBType(raw string) string {
 	default:
 		return strings.TrimSpace(raw)
 	}
+}
+
+// normalizeLiveKitPublicURL 把浏览器侧地址归一为"显式地址或空"。
+// 空 = 同源自动推导（应用内置 /livekit 反代），不再回退到 LIVEKIT_HOST：
+// 容器内网服务名（ws://livekit:7880）浏览器无法解析，回退过去只会造成连接失败。
+func normalizeLiveKitPublicURL(raw string) string {
+	value := strings.TrimSpace(raw)
+	switch strings.ToLower(value) {
+	case "", "auto", "same-origin", "same_origin":
+		return ""
+	}
+	return value
 }

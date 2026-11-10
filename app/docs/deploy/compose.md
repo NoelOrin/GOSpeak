@@ -9,7 +9,7 @@
 GOSpeak 只用一个文件，靠 `COMPOSE_PROFILES` 决定启哪些服务：
 
 ```ini
-COMPOSE_PROFILES=livekit,app
+COMPOSE_PROFILES=app,livekit
 ```
 
 这个值写在 `deploy/.env` 里，所以之后所有命令都是裸的：
@@ -20,12 +20,13 @@ docker compose logs -f
 docker compose down
 ```
 
-## 五个档位
+## 六个档位
 
 | 档位 | 起什么 | 什么时候要 |
 |------|--------|-----------|
 | `app` | GOSpeak 应用 | 永远要 |
 | `livekit` | LiveKit 语音服务 | 自建语音就要 |
+| `edge` | 内置 Caddy 入口 | 有域名、想让 Caddy 自动 HTTPS 时 |
 | `postgres` | PostgreSQL | 人多了换掉 SQLite |
 | `rustfs` | RustFS 对象存储 | 要 CDN 或多实例 |
 | `observability` | Prometheus + Grafana + Loki + Alertmanager | 想看监控 |
@@ -33,18 +34,32 @@ docker compose down
 ### 组合建议
 
 ```ini
-# 最小可用
-COMPOSE_PROFILES=livekit,app
+# 最小可用（默认，局域网或前面已有反代）
+COMPOSE_PROFILES=app,livekit
+
+# 有域名，内置 Caddy 自动 HTTPS（推荐）
+COMPOSE_PROFILES=app,livekit,edge
 
 # 小团队生产
-COMPOSE_PROFILES=postgres,livekit,app
+COMPOSE_PROFILES=app,livekit,edge,postgres
 
 # 完整
-COMPOSE_PROFILES=postgres,livekit,rustfs,app
+COMPOSE_PROFILES=app,livekit,edge,postgres,rustfs
 
 # 再加监控
-COMPOSE_PROFILES=postgres,livekit,rustfs,observability,app
+COMPOSE_PROFILES=app,livekit,edge,postgres,rustfs,observability
 ```
+
+### `edge` 是什么
+
+`edge` 起一个 `caddy:2-alpine` 容器，读 `deploy/Caddyfile`，自动申请证书、自动 HTTPS、自动处理 WebSocket 升级。它唯一的用途就是「有域名时省掉手工配反代」。
+
+两种情况**不要**开 `edge`：
+
+- 前面已经有 Nginx / Traefik / Dokploy / 宝塔在终结 TLS（会抢 80/443）
+- 纯局域网、没有域名
+
+不开 `edge` 时，`app,livekit` 就够了，反代或浏览器直接访问 `8998`。对应做法是 `./init.sh` 时**不传 `--domain`**。
 
 ## 从零到跑起来
 
@@ -58,30 +73,52 @@ docker compose up -d --build
 
 1. 生成 `deploy/.env`（已存在则报错，加 `--force` 覆盖）
 2. 随机生成 `JWT_KEY`、`LIVEKIT_KEY`、`LIVEKIT_SECRET`、`STORAGE_ENCRYPT_KEY`
-3. 探测公网 IP，写进 LiveKit 的 `rtc.use_external_ip` 和 candidate 配置
-4. 把 LiveKit 密钥同步写进 `livekit/livekit.yaml`
+3. 归一 `livekit/livekit.yaml`：剥离硬编码 `keys` 与 `webhook.api_key`
+4. 校验 `.env` / `livekit.yaml` / `Caddyfile` 一致性，不一致直接退出
 
-第 4 步很关键：webhook 签名校验要求应用和 LiveKit 的密钥完全一致。手动改的话容易忘。
+第 3 步很关键：密钥只在 `deploy/.env` 里有一份，由 compose 注入 LiveKit 容器，`livekit.yaml` 不含任何凭据，所以不存在「两边密钥对不上」的问题。
+
+有域名的话加上 `--domain`：
+
+```bash
+./init.sh --domain voice.example.com
+```
+
+`./init.sh --domain voice.example.com` 会写入域名并自动把 `edge` 加进 `COMPOSE_PROFILES`（已有 `app,livekit` 时追加为 `app,livekit,edge`）。跑完直接 `docker compose up -d --build` 即可，无需手改档位。
+
+**不开 `edge` 的场景**：已有反代（Nginx / Traefik / Dokploy / 宝塔），或纯局域网无域名时，**不要传 `--domain`**（或手动把 `edge` 从 `COMPOSE_PROFILES` 里去掉），反代指向宿主机 `8998`。
 
 ## 服务之间怎么连
 
 ```
-        公网
-          │
-      ┌───▼────┐
-      │ nginx  │  :80 / :443
-      └───┬────┘
-          │ /api /ws / → gospeak:8998
-      ┌───▼─────┐        ┌──────────┐
-      │ gospeak │───────►│ postgres │  可选
-      └───┬─────┘        └──────────┘
-          │ LIVEKIT_HOST=ws://livekit:7880
-      ┌───▼─────┐
-      │ livekit │  :7880 信令  :7881/:7882 媒体
-      └─────────┘
+                   公网
+                    │
+            ┌───────▼────────┐
+            │ Caddy（edge）   │  :80 / :443，可选
+            └───────┬────────┘
+                    │ 唯一上游
+            ┌───────▼────────┐        ┌──────────┐
+            │    gospeak     │───────►│ postgres │  可选
+            │     :8998      │        └──────────┘
+            └───┬────────┬───┘
+                │        │ LIVEKIT_HOST=ws://livekit:7880（容器内网）
+                │        ▼
+                │   ┌──────────┐
+                │   │ livekit  │  :7880 信令（仅回环）
+                │   │          │  :7882 tcp/udp 媒体
+                │   └────▲─────┘  :3478/udp TURN
+                │        │
+                └────────┼──── /livekit 同源反代（应用内置）
+                         │
+              浏览器 ──WebRTC(UDP)──► 媒体直连
 ```
 
-关键点：**媒体流量不经过应用和 Nginx**。浏览器和 LiveKit 之间直连 WebRTC，应用只负责签发令牌。这样应用不会被音频流量拖垮。
+关键点：
+
+- **一个上游。** `/api`、`/ws`、`/uploads`、`/livekit` 全在 `gospeak:8998` 里，反代层只面对它。
+- **LiveKit 不需要域名或证书。** 浏览器访问 `https://<你的域名>/livekit`，应用内部转发到 `ws://livekit:7880`，WebSocket 升级由应用处理。
+- **媒体流量不经过应用和反代。** 浏览器和 LiveKit 之间直连 WebRTC（7882/udp 为主），应用只负责签发令牌。这样应用不会被音频流量拖垮。
+- **7880 不对公网开放。** 它只绑宿主机回环（`127.0.0.1:7880`）供本机调试；对外信令走应用同源反代。
 
 ## 只起依赖，应用在本地跑
 
@@ -98,14 +135,18 @@ pnpm dev:server
 pnpm dev:web
 ```
 
-这时 `deploy/.env` 里的 `LIVEKIT_HOST` 要指向 `ws://localhost:7880`（不是 `livekit`，因为应用在宿主机上跑，不在 Docker 网络里），`LIVEKIT_PUBLIC_URL` 留空即可。
+这时应用跑在宿主机上，不在 Docker 网络里，所以 `LIVEKIT_HOST` 要填 `ws://localhost:7880`（不是服务名 `livekit`）。
+
+这能直接工作，因为 compose 里 `livekit` 的 7880 端口绑到了宿主机回环（`127.0.0.1:7880`）：**只供本机调试直连，不对公网开放**。生产上浏览器不碰这个端口，信令走应用同源的 `/livekit`。
+
+`LIVEKIT_PUBLIC_URL` 保持留空即可，本地访问 `http://localhost:3000` 时应用会推导出 `ws://localhost:8998/livekit`。
 
 ## 换数据库
 
 改 `deploy/.env`：
 
 ```ini
-COMPOSE_PROFILES=postgres,livekit,app
+COMPOSE_PROFILES=app,livekit,edge,postgres
 DB_TYPE=PostgreSQL
 DB_HOST=postgres
 DB_PORT=5432
@@ -127,7 +168,7 @@ docker compose up -d
 ## 换对象存储
 
 ```ini
-COMPOSE_PROFILES=postgres,livekit,rustfs,app
+COMPOSE_PROFILES=app,livekit,edge,postgres,rustfs
 STORAGE_TYPE=s3
 STORAGE_ENDPOINT=http://rustfs:9000
 STORAGE_BUCKET=gospeak
@@ -192,25 +233,48 @@ docker compose up -d --build
 
 数据库表结构启动时自动迁移。升级前备份一下是好习惯。
 
+## 端口一览
+
+| 端口 | 服务 | 说明 |
+|------|------|------|
+| 80 / 443 | caddy（`edge`） | 可选；内置 HTTPS 入口 |
+| 8998 | gospeak | 应用端口（`GOSPEAK_PORT` 可改） |
+| 7882 tcp/udp | livekit | 媒体，必须对公网开放 |
+| 3478/udp | livekit | TURN 中继 |
+| 5432 | postgres | 可选，不要暴露公网 |
+| 9000 / 9001 | rustfs | 可选，不要暴露公网 |
+| 9090 / 9093 / 3000 / 3100 | observability | 可选，不要暴露公网 |
+
+**7880 / 7881 不对公网发布。** 7880 只绑宿主机回环（`127.0.0.1:7880`）供本机调试，信令对外走应用同源反代；7881 不再发布。
+
 ## 常见问题
 
 **构建卡在拉基础镜像**
+
 国内网络问题。配 Docker 镜像加速，或者用 `GOSPEAK_IMAGE` 直接拉已构建好的镜像。
 
 **容器起来了但访问 502**
-Nginx 先起来了，应用还没就绪。等一下，或者 `docker compose logs gospeak` 看应用是不是在报错。
+
+Caddy 或反代先起来了，应用还没就绪。等一下，或者 `docker compose logs gospeak` 看应用是不是在报错。
 
 **改了 .env 没生效**
+
 用了 `restart` 而不是 `up -d`。
 
 **`docker compose down -v` 之后数据没了**
+
 `-v` 会删数据卷。这是不可逆的，只在确实想清空时用。
 
+**Caddy 一直申请证书失败**
+
+`edge` 档位和别的反代抢了 80/443，或者域名 A 记录没指到本机。已有反代时不要开 `edge`。
+
 **LiveKit 起来了但连不上**
-先看 `docker compose logs livekit`。常见原因是密钥不一致，或者 `use_external_ip` 探测到的 IP 不对——云服务器有多块网卡时容易探错，手动改 `livekit/livekit.yaml` 里的 `node_ip`。
+
+先看 `docker compose logs livekit`。常见原因是 `use_external_ip` 探测到的 IP 不对——云服务器有多块网卡时容易探错，手动改 `livekit/livekit.yaml` 里的 `node_ip`。
 
 ## 下一步
 
-- [Nginx 配置](/deploy/nginx) — 反代和 HTTPS
+- [反代与 HTTPS](/deploy/nginx) — 内置 Caddy 与已有反代
 - [监控](/deploy/monitoring) — 可观测档位怎么用
 - [故障排查](/deploy/troubleshooting) — 按症状查

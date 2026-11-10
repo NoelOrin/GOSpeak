@@ -10,7 +10,9 @@
 #   docker compose pull && docker compose up -d   # 升级
 #
 # 档位由 deploy/.env 的 COMPOSE_PROFILES 控制:
-#   app / postgres / livekit / rustfs / observability
+#   app / livekit / edge / postgres / rustfs / observability
+#   edge = 内置 Caddy 入口（自动 HTTPS）。有域名时开启；已有反代则不要开。
+#   默认组合 app,livekit 已能跑通语音，无需额外服务。
 # =============================================================================
 
 name: gospeak
@@ -38,6 +40,10 @@ services:
       SERVER_PORT: "8998"
       STATIC_DIR: /app/static
       DB_PATH: ${DB_PATH:-/app/db/app.db}
+      # 前置 Caddy / 自有反代后，应用看到的客户端 IP 是代理的内网地址。
+      # 信任 Docker 私网段才能从 X-Forwarded-For 取回真实 IP（限流/审计依赖它）；
+      # 直接对外暴露时客户端是公网 IP，不会命中这段，因此默认值安全。
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12,10.0.0.0/8,192.168.0.0/16}
     ports:
       - "${GOSPEAK_PORT:-8998}:8998"
     volumes:
@@ -67,11 +73,14 @@ services:
     image: livekit/livekit-server:latest
     container_name: gospeak-livekit
     ports:
-      - "7880:7880"
-      - "7881:7881"
-      - "7882:7882"
-      - "7882:7882/udp"
-      - "3478:3478/udp"
+      # 不再对公网发布 7880（信令）与 7881（RTC over TCP/TLS）：
+      # 浏览器经应用同源反代 /livekit 接入，LiveKit 不需要域名/证书。
+      # 7880 只绑本机回环，供宿主机 `pnpm dev` 直连容器内 LiveKit 调试用，
+      # 不暴露到公网，因此不增加任何对外攻击面。
+      - "127.0.0.1:7880:7880"
+      - "7882:7882"        # RTC over TCP（UDP 不通时的兜底）
+      - "7882:7882/udp"    # RTC over UDP（媒体主通道）
+      - "3478:3478/udp"    # TURN
     volumes:
       - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
     environment:
@@ -83,6 +92,31 @@ services:
     command: --config /etc/livekit.yaml
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  # ── Caddy 边缘入口（profile edge，可选）─────────────────────────────────
+  # 唯一上游就是 gospeak:8998：/api、/ws、/uploads、/livekit 全在里面，
+  # 所以不需要为 LiveKit 单独配置域名、证书或反代规则。
+  # GOSPEAK_DOMAIN 留空时 Caddyfile 站点地址退化为 :80（局域网/已有反代）。
+  caddy:
+    <<: *restart
+    profiles: ["edge"]
+    image: caddy:2-alpine
+    container_name: gospeak-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      GOSPEAK_DOMAIN: ${GOSPEAK_DOMAIN:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      gospeak:
+        condition: service_started
+        required: false
+
   postgres:
     <<: *restart
     profiles: ["postgres"]
@@ -205,6 +239,8 @@ volumes:
   gospeak-db:
   gospeak-logs:
   gospeak-uploads:
+  caddy-data:
+  caddy-config:
   postgres-data:
   rustfs-data:
   prometheus-data:

@@ -45,8 +45,9 @@ type Config struct {
 	// 容器部署填内网服务名 ws://livekit:7880 即可。
 	LiveKitHost string `env:"LIVEKIT_HOST" envDefault:""`
 	// LiveKitPublicURL 是下发给浏览器作为 livekit-client 连接目标的地址。
-	// 留空时回退到 LiveKitHost（单机/裸 IP 部署无需设置）。
-	// 容器部署必须显式设置，因为浏览器无法解析容器内网服务名。
+	// 留空（默认）= 走应用内置的同源反代：按请求 Host 推导 wss://<域名>/livekit，
+	// 因此 LiveKit 无需独立域名、证书或反代规则。
+	// 仅当 LiveKit 有独立对外地址（独立域名 / LiveKit Cloud）时才显式填写。
 	LiveKitPublicURL string `env:"LIVEKIT_PUBLIC_URL" envDefault:""`
 	LiveKitKey       string `env:"LIVEKIT_KEY" envDefault:""`
 	LiveKitSecret    string `env:"LIVEKIT_SECRET" envDefault:""`
