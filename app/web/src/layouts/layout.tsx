@@ -22,6 +22,7 @@ import MemberSidebar from "@/components/room/components/memberSidebar";
 import TextRoomPanel from "@/components/textRoom/TextRoomPanel";
 import UserBar from "@/components/userBar";
 import SettingModal from "@/components/modal/settingModal/settingModal";
+import NotificationModal from "@/components/modal/notificationModal";
 import DeviceChangeNotice from "@/components/modal/deviceChangeNotice";
 import { useChatStore } from "@/stores/chatStore";
 import { useWorkspaceUiStore } from "@/stores/workspaceUiStore";
@@ -50,6 +51,7 @@ interface LayoutState {
 	isMobile: boolean;
 	splitWidth: string;
 	onOpenSettings: () => void;
+	onOpenNotifications: () => void;
 	splitDragRef: React.RefObject<HTMLDivElement | null>;
 	children: ReactNode;
 }
@@ -280,8 +282,14 @@ function ManageNavMobile() {
 }
 
 function DesktopLayout(state: LayoutState) {
-	const { isDomain, onOpenSettings, splitDragRef, splitWidth, children } =
-		state;
+	const {
+		isDomain,
+		onOpenSettings,
+		onOpenNotifications,
+		splitDragRef,
+		splitWidth,
+		children,
+	} = state;
 
 	return (
 		<div className="flex h-full flex-1 overflow-hidden">
@@ -292,7 +300,10 @@ function DesktopLayout(state: LayoutState) {
 					style={{ width: splitWidth }}
 				>
 					<div className="flex min-h-0 flex-1">
-						<Sidebar onOpenSettings={onOpenSettings} />
+						<Sidebar
+							onOpenSettings={onOpenSettings}
+							onOpenNotifications={onOpenNotifications}
+						/>
 						<div className="border-border box-border min-w-0 min-h-0 flex-1 border-t border-l border-solid">
 							<DynamicRender />
 						</div>
@@ -356,6 +367,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 			window.matchMedia("(max-width: 767px)").matches,
 	);
 	const [settingsOpen, setSettingsOpen] = useState(false);
+	const [notificationsOpen, setNotificationsOpen] = useState(false);
 
 	useEffect(() => {
 		settingsOpener = () => setSettingsOpen(true);
@@ -484,6 +496,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 		isMobile,
 		splitWidth,
 		onOpenSettings: () => setSettingsOpen(true),
+		onOpenNotifications: () => setNotificationsOpen(true),
 		splitDragRef,
 		children,
 	};
@@ -513,6 +526,10 @@ export default function Layout({ children }: { children: ReactNode }) {
 				<SettingModal
 					open={settingsOpen}
 					onClose={() => setSettingsOpen(false)}
+				/>
+				<NotificationModal
+					open={notificationsOpen}
+					onClose={() => setNotificationsOpen(false)}
 				/>
 				{/* 设备增删时全局询问是否切换（单例，与设置弹窗互不干扰） */}
 				<DeviceChangeNotice />

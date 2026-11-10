@@ -1,3 +1,4 @@
+import { Badge } from "@gospeak/components";
 import clsx from "clsx";
 import { useState, type ReactNode } from "react";
 
@@ -10,6 +11,8 @@ interface OptionSquareProps {
 	onDoubleClick?: () => void | Promise<void>;
 	requiresDoubleClick?: boolean;
 	actionHint?: string;
+	/** 右上角未读徽章数量；0 或不传则不渲染 */
+	badge?: number;
 }
 
 export default function OptionSquare({
@@ -21,6 +24,7 @@ export default function OptionSquare({
 	onDoubleClick,
 	requiresDoubleClick,
 	actionHint,
+	badge,
 }: OptionSquareProps) {
 	const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
 	const [tooltipText, setTooltipText] = useState<string | undefined>(label);
@@ -69,6 +73,11 @@ export default function OptionSquare({
 				)}
 			>
 				{children}
+				{badge && badge > 0 ? (
+					<span className="absolute -top-1 -right-1">
+						<Badge count={badge} />
+					</span>
+				) : null}
 				{active && (
 					<span
 						aria-hidden="true"
