@@ -235,7 +235,7 @@ export default function MessageInput() {
 					</span>
 					<button
 						type="button"
-						className="text-muted-foreground hover:text-text-foreground ml-auto shrink-0 cursor-pointer transition-colors"
+						className="text-muted-foreground hover:text-foreground ml-auto shrink-0 cursor-pointer transition-colors"
 						onClick={() => setReplyTo(null)}
 						aria-label="取消回复"
 					>

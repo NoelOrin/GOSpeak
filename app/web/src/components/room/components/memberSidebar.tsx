@@ -1,8 +1,8 @@
 import { MicOff } from "lucide-react";
 import { useState } from "react";
 import Avatar from "@/components/common/avatar";
-import { useSocketStore } from "@/stores/socketStore";
 import { useDomainStore } from "@/stores/domainStore";
+import { useSocketStore } from "@/stores/socketStore";
 import { useUserStore } from "@/stores/userStore";
 import UserInfoPopover from "./userInfoPopover";
 
@@ -35,12 +35,18 @@ function MemberListItem(props: MemberItemProps) {
 			}`}
 			onClick={(e) => props.onSelect(props.identity, e.clientX, e.clientY)}
 		>
-			<Avatar
-				className="size-6"
-				textClass="text-2xs"
-				src={props.avatar}
-				name={props.displayName || props.name || props.identity}
-			/>
+			<span className="relative shrink-0">
+				<Avatar
+					className="size-6"
+					textClass="text-2xs"
+					src={props.avatar}
+					name={props.displayName || props.name || props.identity}
+				/>
+				<span
+					className="border-card bg-success absolute -right-0.5 -bottom-0.5 size-2 rounded-full border"
+					aria-hidden="true"
+				/>
+			</span>
 			<span className="flex-1 truncate text-xs font-medium">{displayName}</span>
 			{(props.isMicMuted || props.isMuted) && (
 				<MicOff size={12} className="text-faint-foreground shrink-0" />

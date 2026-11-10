@@ -93,7 +93,7 @@ export default function ChannelHeader({
 						{searchActive ? (
 							<button
 								type="button"
-								className="text-muted-foreground hover:text-text-foreground flex size-4 shrink-0 cursor-pointer items-center justify-center"
+								className="text-muted-foreground hover:text-foreground flex size-4 shrink-0 cursor-pointer items-center justify-center"
 								onClick={clearSearch}
 								aria-label="清除搜索"
 							>

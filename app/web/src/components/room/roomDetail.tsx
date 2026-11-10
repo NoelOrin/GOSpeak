@@ -149,7 +149,7 @@ export default function RoomDetail() {
 					    文字聊天在频道标题栏，主区内不再重复放置控制按钮 */}
 
 					{!isJoined && (
-						<div className="bg-bg-card absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 px-4">
+						<div className="bg-card absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 px-4">
 							<div className="bg-muted border-border rounded-lg border px-8 py-6 text-center shadow-xl">
 								<div className="text-foreground mb-3 text-lg font-bold">
 									{selectedRoom.name}
@@ -184,7 +184,7 @@ export default function RoomDetail() {
 									</div>
 								) : (
 									<div className="flex flex-col items-center gap-3">
-										<span className="size-5 animate-spin rounded-full border-2 border-bg-primary border-t-transparent" />
+										<span className="size-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
 										<div className="text-muted-foreground text-sm">
 											{isLoading ? phaseLabel : "准备加入..."}
 										</div>

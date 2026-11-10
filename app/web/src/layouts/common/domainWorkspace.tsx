@@ -207,7 +207,7 @@ export default function DomainWorkspace({
 								}}
 								className="group relative h-2 shrink-0 cursor-row-resize select-none focus-visible:outline-none"
 							>
-								<div className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border-border transition-colors group-hover:bg-bg-primary" />
+								<div className="bg-border group-hover:bg-primary pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 transition-colors" />
 							</div>
 							<section
 								className="bg-card flex shrink-0 flex-col overflow-hidden"

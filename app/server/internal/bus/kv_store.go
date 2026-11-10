@@ -2,6 +2,7 @@ package bus
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -330,6 +331,7 @@ func (s *StateStore) ListRoomNames(ctx context.Context) ([]string, error) {
 		if name == "" {
 			continue
 		}
+		name = desanitizeKey(name)
 		duplicate := false
 		for _, existing := range out {
 			if existing == name {
@@ -357,6 +359,54 @@ func (s *StateStore) Close() error {
 	return nil
 }
 
+const encodedKeyPrefix = "b64_"
+
+var validKeyBytes = func() [256]bool {
+	var table [256]bool
+	for _, c := range []byte("-/_=.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") {
+		table[c] = true
+	}
+	return table
+}()
+
+// sanitizeKey 把任意字符串编码成 NATS KV 合法 key。
+// NATS 只接受 [-/_=.a-zA-Z0-9]；房间名允许中文/emoji，直接拼 key 会返回
+// "nats: invalid key" 并让成员注册整条链路失败。
+//
+// 先沿用历史上的 `:`/空格 → `_` 映射：只要结果合法就原样返回，
+// 保证既有 ASCII 房间 key（如 domain:room）与升级前的 KV 记录完全一致。
+// 只有映射后仍非法（中文/emoji 等）才编码为 b64_ + base64url，
+// 该字母表是 NATS 合法 key 的子集。
 func sanitizeKey(s string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(s, " ", "_"), ":", "_")
+	legacy := strings.ReplaceAll(strings.ReplaceAll(s, " ", "_"), ":", "_")
+	if isValidNATSKey(legacy) && !strings.HasPrefix(legacy, encodedKeyPrefix) {
+		return legacy
+	}
+	return encodedKeyPrefix + base64.RawURLEncoding.EncodeToString([]byte(s))
+}
+
+// desanitizeKey 还原 sanitizeKey 编码的 key，供 ListRoomNames 取回房间名。
+// 历史映射是有损的（无法逆推），非编码 key 原样返回。
+func desanitizeKey(s string) string {
+	if !strings.HasPrefix(s, encodedKeyPrefix) {
+		return s
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(s, encodedKeyPrefix))
+	if err != nil {
+		return s
+	}
+	return string(raw)
+}
+
+// isValidNATSKey 判断字符串是否只含 NATS KV 合法字符。
+func isValidNATSKey(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if !validKeyBytes[s[i]] {
+			return false
+		}
+	}
+	return true
 }
