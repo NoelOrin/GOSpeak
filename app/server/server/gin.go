@@ -103,6 +103,7 @@ func StartGin(env EnvEnum) error {
 	storageConfigRepo := repository.NewStorageConfigRepository(db)
 	domainRepo := repository.NewDomainRepository(db)
 	domainRoleRepo := repository.NewDomainRoleRepository(db)
+	announcementRepo := repository.NewAnnouncementRepository(db)
 	domainSvc := service.NewDomainService(domainRepo, domainRoleRepo)
 
 	permSvc := service.NewPermissionService(permRepo)
@@ -412,6 +413,10 @@ func StartGin(env EnvEnum) error {
 	domainH.SetOnDomainKick(signalHub.KickUserFromDomain)
 	domainH.SetAuditor(auditSvc)
 	auditH := handler.NewAuditHandler(auditSvc)
+	announcementSvc := service.NewAnnouncementService(announcementRepo, domainRepo, db)
+	announcementSvc.SetEventBus(eventBus)
+	announcementSvc.SetDomainPermissionChecker(domainSvc.HasDomainPermission)
+	announcementH := handler.NewAnnouncementHandler(announcementSvc, permSvc)
 	domainH.SetOnDomainLeave(signalHub.KickUserFromDomain)
 	domainH.SetOnDomainDelete(func(serverUUID string) {
 		signalHub.OnDomainDelete(serverUUID)
@@ -473,6 +478,7 @@ func StartGin(env EnvEnum) error {
 		Domain:       domainH,
 		Conversation: conversationH,
 		Audit:        auditH,
+		Announcement: announcementH,
 	})
 
 	port := cfg.ServerPort

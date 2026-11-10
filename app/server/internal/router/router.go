@@ -4,6 +4,7 @@ import (
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/handler"
 	"GOSpeak/internal/middleware"
+	announcementRoutes "GOSpeak/internal/router/routes/announcement"
 	auditRoutes "GOSpeak/internal/router/routes/audit"
 	authRoutes "GOSpeak/internal/router/routes/auth"
 	conversationRoutes "GOSpeak/internal/router/routes/conversation"
@@ -61,6 +62,7 @@ type Handlers struct {
 	Domain       *handler.DomainHandler
 	Conversation *handler.ConversationHandler
 	Audit        *handler.AuditHandler
+	Announcement *handler.AnnouncementHandler
 }
 
 func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
@@ -129,6 +131,9 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 		guestRoutes.RegisterProtected(protected.Group(""), h.Guest)
 	}
 	auditRoutes.RegisterProtected(protected.Group("/audit"), h.Audit)
+	if h.Announcement != nil {
+		announcementRoutes.RegisterProtected(protected.Group("/announcement"), h.Announcement)
+	}
 	systemRoutes.RegisterProtected(protected.Group("/system"), h.Monitor)
 
 	return r
