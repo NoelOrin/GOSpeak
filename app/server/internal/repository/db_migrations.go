@@ -259,6 +259,8 @@ func autoMigrate() error {
 		&model.DomainRolePermission{},
 		&model.AuditLog{},
 		&model.DomainGuestBan{},
+		&model.Announcement{},
+		&model.AnnouncementRead{},
 	); err != nil {
 		return err
 	}
