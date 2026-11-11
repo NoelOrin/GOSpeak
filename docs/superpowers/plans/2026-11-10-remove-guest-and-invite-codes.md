@@ -905,12 +905,20 @@ import (
 
 const testStorageKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
+// setupInviteService 使用共享缓存的匿名内存库，保证事务与并发用例看到同一份数据。
 func setupInviteService(t *testing.T) (*InviteService, *gorm.DB) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	dsn := fmt.Sprintf("file:invite_svc_%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(8)
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := db.AutoMigrate(&model.Domain{}, &model.DomainMember{}, &model.DomainInvite{}, &model.DomainInviteRedemption{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -1218,12 +1226,15 @@ func (s *InviteService) Create(domainUUID, label string, expiresAt *time.Time, m
 	if err := s.inviteRepo.Create(invite); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	code, err := EncodeInviteCode(s.key, InviteCode{
+	plain := InviteCode{
 		DomainPrefix: DomainPrefixOf(domainUUID),
 		InviteID:     uint32(invite.ID),
-		ExpiresAt:    expiresAt,
 		MaxUses:      uint16(maxUses),
-	})
+	}
+	if expiresAt != nil {
+		plain.ExpiresAt = *expiresAt
+	}
+	code, err := EncodeInviteCode(s.key, plain)
 	if err != nil {
 		return nil, err
 	}
@@ -1290,39 +1301,36 @@ func (s *InviteService) Consume(raw, userUUID string, recordSuccess bool) (*mode
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 
-	var domain *model.Domain
-	txErr := s.db.Transaction(func(tx *gorm.DB) error {
-		repo := repository.NewDomainInviteRepository(tx)
-		ok, err := repo.ConsumeUse(invite.ID)
-		if err != nil {
-			return err
+	// 条件更新本身即并发保护；RowsAffected=0 表示已禁用或次数耗尽。
+	ok, err := s.inviteRepo.ConsumeUse(invite.ID)
+	if err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if !ok {
+		reason := model.InviteFailExhausted
+		if invite.IsDisabled() {
+			reason = model.InviteFailDisabled
 		}
-		if !ok {
-			reason := model.InviteFailExhausted
-			if invite.IsDisabled() {
-				reason = model.InviteFailDisabled
-			}
-			_ = repo.CreateRedemption(&model.DomainInviteRedemption{
-				InviteID: invite.ID, DomainUUID: invite.DomainUUID, UserUUID: userUUID,
-				Code: invite.Code, Success: false, FailReason: reason,
-			})
-			return pkg.NewAppError(pkg.INVALID_PARAMS, "invite code is no longer usable")
-		}
-		d, err := s.domainRepo.GetByUUID(invite.DomainUUID)
-		if err != nil {
-			return err
-		}
-		domain = d
-		return repo.CreateRedemption(&model.DomainInviteRedemption{
+		// 失败记录独立事务写入，避免随主流程回滚而丢失审计。
+		_ = s.inviteRepo.CreateRedemption(&model.DomainInviteRedemption{
 			InviteID: invite.ID, DomainUUID: invite.DomainUUID, UserUUID: userUUID,
-			Code: invite.Code, Success: recordSuccess,
+			Code: invite.Code, Success: false, FailReason: reason,
 		})
-	})
-	if txErr != nil {
-		if appErr, ok := txErr.(*pkg.AppError); ok {
-			return nil, appErr
+		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "invite code is no longer usable")
+	}
+
+	domain, err := s.domainRepo.GetByUUID(invite.DomainUUID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrInviteCodeInvalid
 		}
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, txErr.Error())
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if err := s.inviteRepo.CreateRedemption(&model.DomainInviteRedemption{
+		InviteID: invite.ID, DomainUUID: invite.DomainUUID, UserUUID: userUUID,
+		Code: invite.Code, Success: recordSuccess,
+	}); err != nil {
+		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	return domain, nil
 }

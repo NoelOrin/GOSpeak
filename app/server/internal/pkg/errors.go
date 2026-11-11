@@ -154,3 +154,12 @@ func NewAppErrorWithCause(code ErrCode, cause error, msg ...string) *AppError {
 	e.Cause = cause
 	return e
 }
+
+// IsCode 判断 err 是否为携带指定业务码的 AppError。
+func IsCode(err error, code ErrCode) bool {
+	var appErr *AppError
+	if errors.As(err, &appErr) {
+		return appErr.Code == code
+	}
+	return false
+}
