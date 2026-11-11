@@ -4,7 +4,6 @@ import { useRef, useState } from "react";
 import { useTypingReporter } from "@/hooks/useTypingReporter";
 import { useUpload } from "@/hooks/useUpload";
 import { chatStore, useChatStore } from "@/stores/chatStore";
-import { guestCaps, isGuest } from "@/stores/guestStore";
 import { useSocketStore } from "@/stores/socketStore";
 import { useTextRoomUiStore } from "@/stores/textRoomUiStore";
 
@@ -20,7 +19,6 @@ export default function MessageInput() {
 	const [mentionQuery, setMentionQuery] = useState("");
 	const [mentionIndex, setMentionIndex] = useState(0);
 	const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
-	const guestMsgBlocked = isGuest() && !guestCaps().message;
 	const { upload, uploading, progress } = useUpload("chat");
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -267,12 +265,8 @@ export default function MessageInput() {
 					onInput={handleInput}
 					onKeyDown={handleKeyDown}
 					onBlur={stop}
-					placeholder={
-						guestMsgBlocked
-							? "该域访客不可发送消息"
-							: `发送消息到 #${roomName ?? "文字频道"}`
-					}
-					disabled={guestMsgBlocked}
+					placeholder={`发送消息到 #${roomName ?? "文字频道"}`}
+					disabled={false}
 					className="text-foreground placeholder:text-muted-foreground max-h-36 min-h-[44px] w-full flex-1 resize-none bg-transparent px-1 py-3 text-sm leading-5 outline-none disabled:cursor-not-allowed disabled:opacity-50"
 					rows={1}
 				/>
@@ -292,7 +286,7 @@ export default function MessageInput() {
 					type="button"
 					className="text-foreground hover:text-bg-primary flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-sm transition-colors disabled:pointer-events-none disabled:opacity-30"
 					title="发送"
-					disabled={guestMsgBlocked || !content.trim() || uploading}
+					disabled={false || !content.trim() || uploading}
 					onClick={handleSend}
 				>
 					<Send size={20} />

@@ -122,7 +122,9 @@ export default function AnnouncementsPage() {
 				toast.success(form.publish ? "公告已发布" : "草稿已保存");
 			}
 			reset();
-			await queryClient.invalidateQueries({ queryKey: ["manage-announcements"] });
+			await queryClient.invalidateQueries({
+				queryKey: ["manage-announcements"],
+			});
 		} catch (error) {
 			toastActionError(error, "保存失败");
 		} finally {
@@ -134,7 +136,9 @@ export default function AnnouncementsPage() {
 		try {
 			await deleteAnnouncement(item.uuid);
 			toast.success("公告已删除");
-			await queryClient.invalidateQueries({ queryKey: ["manage-announcements"] });
+			await queryClient.invalidateQueries({
+				queryKey: ["manage-announcements"],
+			});
 		} catch (error) {
 			toastActionError(error, "删除失败");
 		}
@@ -303,7 +307,11 @@ export default function AnnouncementsPage() {
 									<td className="px-2 py-2">{LEVEL_LABELS[item.level]}</td>
 									<td className="px-2 py-2">{statusOf(item)}</td>
 									<td className="px-2 py-2 text-right whitespace-nowrap">
-										<Button variant="ghost" size="xs" onClick={() => edit(item)}>
+										<Button
+											variant="ghost"
+											size="xs"
+											onClick={() => edit(item)}
+										>
 											编辑
 										</Button>
 										<Button

@@ -1,6 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { domainStore } from "@/stores/domainStore";
-import { isGuest } from "@/stores/guestStore";
 import { resolveFirstScreen } from "@/utils/firstScreen";
 
 /**
@@ -12,9 +11,6 @@ import { resolveFirstScreen } from "@/utils/firstScreen";
  */
 export const Route = createFileRoute("/(app)/")({
 	beforeLoad: async () => {
-		// 访客不属于任何域，myDomains 对其没有意义，直接走发现页。
-		if (isGuest()) throw redirect({ to: "/discover" });
-
 		try {
 			await domainStore.loadMyDomains();
 		} catch {

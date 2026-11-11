@@ -9,8 +9,6 @@ import {
 	myDomainPermissions,
 	myDomains,
 } from "@/api/domain";
-import { getGuestConfig } from "@/api/guest";
-import { isGuest, setGuestCaps } from "@/stores/guestStore";
 import {
 	clearBackgroundFailure,
 	reportBackgroundFailure,
@@ -164,29 +162,6 @@ const setCurrentDomain = (uuid: string | null) => {
 		void ensureDomainLoaded(uuid).catch(() => {});
 	}
 };
-
-/** 访客在域内的 听/说/发消息 能力，来自域级访客配置。 */
-function syncGuestCaps(domainUUID: string) {
-	void getGuestConfig(domainUUID)
-		.then((cfg) => {
-			clearBackgroundFailure(`guest-caps:${domainUUID}`);
-			setGuestCaps({
-				listen: cfg.guest_can_listen ?? true,
-				speak: cfg.guest_can_speak ?? true,
-				message: cfg.guest_can_message ?? false,
-			});
-		})
-		.catch((error) => {
-			// 失败会 fail-closed 成「全禁」，用户会突然听不到也说不了，
-			// 必须给出原因，否则会被当成产品坏了。
-			reportBackgroundFailure(
-				`guest-caps:${domainUUID}`,
-				error,
-				"访客权限加载失败，暂时无法使用语音与消息，请刷新重试",
-			);
-			setGuestCaps({ listen: false, speak: false, message: false });
-		});
-}
 
 const loadMembers = async (domainUUID: string) => {
 	if (removedUUIDs.has(domainUUID)) {
@@ -389,7 +364,6 @@ export const domainStore = {
 		void loadMyPermissions(uuid).catch(() => {});
 		// 访客能力必须在"进入域"这一层拉取：原先放在 domain 页组件里，
 		// 而移动端布局不渲染该页 children，导致移动端访客永远拿不到禁说/禁聊配置。
-		if (isGuest()) syncGuestCaps(uuid);
 	},
 	loadMembers,
 	setMemberCache,

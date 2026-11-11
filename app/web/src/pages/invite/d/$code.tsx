@@ -23,14 +23,11 @@ import { toastActionError } from "@/utils/toast";
  * 访客（is_guest）不能成为域成员，同样送回访客页重新以该码进入。
  */
 export const Route = createFileRoute("/invite/d/$code")({
-	beforeLoad: async ({ params }) => {
+	beforeLoad: async () => {
 		const ok = await useUserStore.getState().ensureSession();
 		const user = useUserStore.getState().user;
-		if (!ok || !user || user.is_guest) {
-			throw redirect({
-				to: "/guest",
-				search: { code: params.code, domain: undefined },
-			});
+		if (!ok || !user) {
+			throw redirect({ to: "/login" });
 		}
 	},
 	component: InviteLandingPage,

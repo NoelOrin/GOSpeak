@@ -50,15 +50,12 @@ const MUTE_ERROR_CODES = new Set([1016]);
 /**
  * 这些路径上的 401 属于「尚未登录」的正常状态，不能由拦截器整页硬跳登录：
  * - login / register：避免与 ensureSession 的路由跳转互相触发整页刷新循环
- * - guest / invite：对外公开入口，路由 beforeLoad 会带着邀请码决定去向；
+ * - invite：对外公开入口，路由 beforeLoad 会带着邀请码决定去向；
  *   拦截器硬跳 /login 会吞掉邀请码，让所有分享链接失效
  */
 export function shouldSkipLoginRedirect(path: string): boolean {
 	return (
-		path === "/login" ||
-		path === "/register" ||
-		path === "/guest" ||
-		path.startsWith("/invite/")
+		path === "/login" || path === "/register" || path.startsWith("/invite/")
 	);
 }
 

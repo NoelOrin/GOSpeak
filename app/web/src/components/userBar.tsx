@@ -5,7 +5,6 @@ import MicControl from "@/components/chat/micControl";
 import SpeakerControl from "@/components/chat/speakerControl";
 import UserCard from "@/components/modal/userCard";
 import { setMasterMuted, setMasterVolume } from "@/handler_audio";
-import { guestCaps, isGuest } from "@/stores/guestStore";
 import { useSocketStore, socketStore } from "@/stores/socketStore";
 import { useUserStore } from "@/stores/userStore";
 import {
@@ -25,10 +24,9 @@ export default function UserBar({
 }: UserBarPropsType) {
 	const user = useUserStore((s) => s.user);
 	const displayName = user?.display_name || user?.name || "?";
-	const guestSpeakBlocked = isGuest() && !guestCaps().speak;
 	const speechRestricted = useSocketStore((s) => s.speechRestricted);
 	const speechRestrictionInfo = useSocketStore((s) => s.speechRestrictionInfo);
-	const isSpeechRestricted = speechRestricted || guestSpeakBlocked;
+	const isSpeechRestricted = speechRestricted;
 	const speechRestrictionReason = speechRestrictionInfo?.reason;
 
 	const data = useVoiceChatStore();
@@ -111,11 +109,9 @@ export default function UserBar({
 						isMute={data.isInputMute}
 						disabled={isSpeechRestricted}
 						disabledTip={
-							guestSpeakBlocked
-								? "该域未开放访客发言"
-								: speechRestrictionReason
-									? `已被禁言：${speechRestrictionReason}`
-									: "已被禁言，仅收听模式"
+							speechRestrictionReason
+								? `已被禁言：${speechRestrictionReason}`
+								: "已被禁言，仅收听模式"
 						}
 						onCheck={(checked) => {
 							setIsInputMute(checked);

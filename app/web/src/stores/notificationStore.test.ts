@@ -28,7 +28,11 @@ const dto = (uuid: string, isRead = false) => ({
 describe("notificationStore", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		useNotificationStore.setState({ unreadCount: 0, items: [], loading: false });
+		useNotificationStore.setState({
+			unreadCount: 0,
+			items: [],
+			loading: false,
+		});
 	});
 
 	it("loads unread count", async () => {

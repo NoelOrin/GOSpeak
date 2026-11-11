@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { guestCaps, isGuest } from "@/stores/guestStore";
 import { socketStore, useSocketStore } from "@/stores/socketStore";
 import { useUserStore } from "@/stores/userStore";
 import {
@@ -38,9 +37,8 @@ export function useGlobalShortcuts() {
 			if (e.key.toLowerCase() !== "m") return;
 			// 只在语音房间里有意义：不在房间时静音/取消静音会造成困惑
 			if (!currentRoom) return;
-			// 被禁言 / 访客禁说时不允许用快捷键改麦
-			const guestBlocked = isGuest() && !guestCaps().speak;
-			if (speechRestricted || guestBlocked) return;
+			// 被禁言时不允许用快捷键改麦
+			if (speechRestricted) return;
 
 			const next = !useVoiceChatStore.getState().isInputMute;
 			setIsInputMute(next);

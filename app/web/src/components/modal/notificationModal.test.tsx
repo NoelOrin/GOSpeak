@@ -88,9 +88,7 @@ describe("NotificationModal", () => {
 				created_at: Date.now(),
 			},
 		];
-		const { container } = render(
-			<NotificationModal open onClose={() => {}} />,
-		);
+		const { container } = render(<NotificationModal open onClose={() => {}} />);
 		expect(container.querySelector("img[onerror]")).toBeNull();
 	});
 });
