@@ -49,11 +49,6 @@ func CreateTestUser(db *gorm.DB, name string, opts ...UserOption) *model.User {
 // DomainOption 是 CreateTestDomain 的功能选项。
 type DomainOption func(g *model.Domain)
 
-// WithDomainInviteCode 设置邀请码。
-func WithDomainInviteCode(code string) DomainOption {
-	return func(g *model.Domain) { g.InviteCode = code }
-}
-
 // CreateTestDomain 在测试数据库中创建一个 Domain。
 func CreateTestDomain(db *gorm.DB, name, ownerUUID string, opts ...DomainOption) *model.Domain {
 	domain := &model.Domain{
@@ -73,8 +68,8 @@ func CreateTestDomain(db *gorm.DB, name, ownerUUID string, opts ...DomainOption)
 func AddTestDomainMember(db *gorm.DB, domainUUID, userUUID, role string) *model.DomainMember {
 	member := &model.DomainMember{
 		DomainUUID: domainUUID,
-		UserUUID:  userUUID,
-		RoleName:  role,
+		UserUUID:   userUUID,
+		RoleName:   role,
 	}
 	if err := db.Create(member).Error; err != nil {
 		panic("AddTestDomainMember: " + err.Error())

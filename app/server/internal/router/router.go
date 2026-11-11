@@ -11,7 +11,6 @@ import (
 	domainRoutes "GOSpeak/internal/router/routes/domain"
 	emailRoutes "GOSpeak/internal/router/routes/email"
 	emailConfigRoutes "GOSpeak/internal/router/routes/email_config"
-	guestRoutes "GOSpeak/internal/router/routes/guest"
 	inviteRoutes "GOSpeak/internal/router/routes/invite"
 	messageRoutes "GOSpeak/internal/router/routes/message"
 	muteRoutes "GOSpeak/internal/router/routes/mute"
@@ -45,7 +44,6 @@ type Handlers struct {
 	// ReadyCheck 探测 DB 等基础依赖，nil 时 /readyz 返回不可用。
 	ReadyCheck   func() error
 	Auth         *handler.AuthHandler
-	Guest        *handler.GuestHandler
 	Invite       *handler.InviteHandler
 	User         *handler.UserHandler
 	Signal       *handler.SignalHandler
@@ -99,9 +97,6 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 
 	api := r.Group("/api/v1")
 	authRoutes.Register(api.Group("/auth"), h.Auth)
-	if h.Guest != nil {
-		guestRoutes.Register(api.Group("/auth"), h.Guest)
-	}
 	emailRoutes.Register(api.Group("/email"), h.Email)
 	oauthRoutes.Register(api.Group("/oauth"), h.OAuth)
 	signalRoutes.Register(api.Group("/signal"), h.Signal)
@@ -112,7 +107,6 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	protected := api.Group("")
 	protected.Use(middleware.JWTAuth())
 	protected.Use(middleware.BanCheck())
-	protected.Use(middleware.GuestGuard())
 	userRoutes.Register(protected.Group("/user"), h.User)
 	userGroupRoutes.RegisterProtected(protected.Group("/user-group"), h.UserGroup)
 	authRoutes.RegisterProtected(protected.Group("/auth"), h.Auth)
@@ -131,9 +125,6 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	}
 	if h.Domain != nil {
 		domainRoutes.Register(protected.Group("/domain"), h.Domain)
-	}
-	if h.Guest != nil {
-		guestRoutes.RegisterProtected(protected.Group(""), h.Guest)
 	}
 	auditRoutes.RegisterProtected(protected.Group("/audit"), h.Audit)
 	if h.Announcement != nil {

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type DomainRepository struct {
@@ -56,13 +55,6 @@ func (r *DomainRepository) GetByUUID(uuid string) (*model.Domain, error) {
 	err := r.db.Where("uuid = ?", uuid).First(&domain).Error
 	return &domain, err
 }
-
-func (r *DomainRepository) GetByInviteCode(code string) (*model.Domain, error) {
-	var domain model.Domain
-	err := r.db.Where("invite_code = ?", code).First(&domain).Error
-	return &domain, err
-}
-
 func (r *DomainRepository) List(page, pageSize int) ([]model.Domain, int64, error) {
 	var domains []model.Domain
 	var total int64
@@ -87,33 +79,6 @@ func (r *DomainRepository) ListPublic(page, pageSize int, keyword string) ([]mod
 func (r *DomainRepository) Update(domain *model.Domain) error {
 	return r.db.Save(domain).Error
 }
-
-// ResetInviteCode 重新生成并写入指定域的邀请码，返回更新后的域。
-// 使用 RETURNING 原子读回更新后行，避免主从延迟读到旧 invite_code；不支持时回退二次查询。
-func (r *DomainRepository) ResetInviteCode(domainUUID, code string) (*model.Domain, error) {
-	var domain model.Domain
-	res := r.db.Model(&domain).Clauses(clause.Returning{}).Where("uuid = ?", domainUUID).Update("invite_code", code)
-	if res.Error == nil {
-		if res.RowsAffected == 0 {
-			return nil, gorm.ErrRecordNotFound
-		}
-		if domain.UUID != "" && domain.InviteCode == code {
-			return &domain, nil
-		}
-		// 驱动未填充 RETURNING 结果，回退同连接查询
-		return r.GetByUUID(domainUUID)
-	}
-	// 回退：兼容不支持 RETURNING 的 SQLite / MySQL
-	res2 := r.db.Model(&model.Domain{}).Where("uuid = ?", domainUUID).Update("invite_code", code)
-	if res2.Error != nil {
-		return nil, res2.Error
-	}
-	if res2.RowsAffected == 0 {
-		return nil, gorm.ErrRecordNotFound
-	}
-	return r.GetByUUID(domainUUID)
-}
-
 func (r *DomainRepository) Delete(uuid string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("domain_uuid = ?", uuid).Delete(&model.DomainMember{}).Error; err != nil {
@@ -169,7 +134,7 @@ func (r *DomainRepository) ListUserDomains(userUUID string) ([]string, error) {
 func (r *DomainRepository) ListUserDomainDetails(userUUID string) ([]model.DomainDetail, error) {
 	details := make([]model.DomainDetail, 0)
 	err := r.db.Raw(`
-		SELECT d.id, d.uuid, d.name, d.icon_url, d.description, d.owner_uuid, d.invite_code, d.is_public, d.created_at, d.updated_at,
+		SELECT d.id, d.uuid, d.name, d.icon_url, d.description, d.owner_uuid, d.is_public, d.created_at, d.updated_at,
 		       (SELECT COUNT(*) FROM domain_members m2 WHERE m2.domain_uuid = d.uuid) AS member_count,
 		       (SELECT COUNT(*) FROM room r2 WHERE r2.domain_uuid = d.uuid) AS room_count
 		FROM domains d

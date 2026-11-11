@@ -32,9 +32,6 @@ func TestDomainRepo_Create(t *testing.T) {
 	if domain.UUID == "" {
 		t.Fatal("expected UUID to be set after create")
 	}
-	if domain.InviteCode == "" {
-		t.Fatal("expected InviteCode to be set after create")
-	}
 
 	var saved model.Domain
 	if err := db.First(&saved, "uuid = ?", domain.UUID).Error; err != nil {
@@ -62,37 +59,14 @@ func TestDomainRepo_GetByUUID(t *testing.T) {
 		t.Fatalf("expected name 'Test', got %q", got.Name)
 	}
 }
-
-func TestDomainRepo_GetByInviteCode(t *testing.T) {
-	db := newDomainTestDB(t)
-	repo := NewDomainRepository(db)
-
-	domain := &model.Domain{Name: "Test", OwnerUUID: "owner-1"}
-	if err := repo.Create(domain); err != nil {
-		t.Fatalf("Create error: %v", err)
-	}
-
-	got, err := repo.GetByInviteCode(domain.InviteCode)
-	if err != nil {
-		t.Fatalf("GetByInviteCode error: %v", err)
-	}
-	if got.Name != "Test" {
-		t.Fatalf("expected name 'Test', got %q", got.Name)
-	}
-}
-
 func TestDomainRepo_List(t *testing.T) {
 	db := newDomainTestDB(t)
 	repo := NewDomainRepository(db)
 
-	// explicit invite codes to avoid collision in rapid creation
-	for i, name := range []string{"Domain-A", "Domain-B", "Domain-C", "Domain-D", "Domain-E"} {
-		prefix := string(rune('A' + i))
-		code := prefix + prefix + "ABCDEF"
+	for _, name := range []string{"Domain-A", "Domain-B", "Domain-C", "Domain-D", "Domain-E"} {
 		g := &model.Domain{
-			Name:       name,
-			OwnerUUID:  "owner-1",
-			InviteCode: code,
+			Name:      name,
+			OwnerUUID: "owner-1",
 		}
 		if err := repo.Create(g); err != nil {
 			t.Fatalf("Create error: %v", err)
@@ -398,7 +372,7 @@ func TestCreateWithOwner_SeedsDefaultDomainRoles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRoles: %v", err)
 	}
-	if len(roles) != 4 {
-		t.Fatalf("expected 4 seeded roles, got %d", len(roles))
+	if len(roles) != 3 {
+		t.Fatalf("expected 3 seeded roles, got %d", len(roles))
 	}
 }

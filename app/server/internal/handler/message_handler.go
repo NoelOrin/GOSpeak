@@ -14,18 +14,6 @@ type MessageHandler struct {
 	permSvc   *service.PermissionService
 	roomSvc   *service.RoomService
 	domainSvc *service.DomainService
-
-	guestIs   func(userUUID string) bool
-	guestCaps func(domainUUID string) (listen, speak, message bool)
-}
-
-// SetGuestPolicy 注入访客身份与能力开关；nil 表示不启用访客策略。
-func (h *MessageHandler) SetGuestPolicy(
-	isGuest func(userUUID string) bool,
-	caps func(domainUUID string) (listen, speak, message bool),
-) {
-	h.guestIs = isGuest
-	h.guestCaps = caps
 }
 
 func NewMessageHandler(msgSvc *service.MessageService, permSvc *service.PermissionService, roomSvc *service.RoomService, domainSvc *service.DomainService) *MessageHandler {
@@ -43,15 +31,6 @@ func messageActorFromContext(c *gin.Context) (service.MessageActor, bool) {
 		return service.MessageActor{}, false
 	}
 	return service.MessageActor{Identity: username, UserUUID: userUUID}, true
-}
-
-// guestMessagingAllowed 访客身份下，发消息能力以 GuestCaps 为权威（短路域角色权限）。
-func (h *MessageHandler) guestMessagingAllowed(domainUUID, userUUID string) (bool, bool) {
-	if h.guestIs == nil || !h.guestIs(userUUID) {
-		return false, false
-	}
-	_, _, msg := h.guestCaps(domainUUID)
-	return true, msg
 }
 
 func (h *MessageHandler) roomOf(c *gin.Context, roomUUID string) (*model.Room, bool) {
@@ -184,12 +163,7 @@ func (h *MessageHandler) React(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if guest, allowed := h.guestMessagingAllowed(room.DomainUUID, actor.UserUUID); guest {
-		if !allowed {
-			pkg.Fail(c, pkg.FORBIDDEN, "guest messaging disabled")
-			return
-		}
-	} else if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
+	if !domainPermissionGranted(c, room.DomainUUID, permcode.PermMessageSend, h.domainSvc, h.permSvc) {
 		pkg.Fail(c, pkg.FORBIDDEN, "insufficient domain message permission")
 		return
 	}

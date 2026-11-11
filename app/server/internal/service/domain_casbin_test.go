@@ -48,8 +48,8 @@ func newDomainCasbinTestDB(t *testing.T) (*gorm.DB, *model.Domain, *model.Domain
 	}
 	members := []model.DomainMember{
 		{DomainUUID: domainA.UUID, UserUUID: "moderator", RoleName: "editor"},
-		{DomainUUID: domainA.UUID, UserUUID: "guest", RoleName: model.DomainRoleGuest},
-		{DomainUUID: domainB.UUID, UserUUID: "moderator", RoleName: model.DomainRoleGuest},
+		{DomainUUID: domainA.UUID, UserUUID: "guest", RoleName: model.DomainRoleMember},
+		{DomainUUID: domainB.UUID, UserUUID: "moderator", RoleName: model.DomainRoleMember},
 	}
 	for i := range members {
 		if err := db.Create(&members[i]).Error; err != nil {

@@ -103,14 +103,6 @@ func (h *Hub) checkMessagePerm(c ws.ClientMessenger, roomDomainUUID string) stri
 		}
 	}
 	if roomDomainUUID != "" {
-		if h.guestMessagePolicy != nil {
-			if isGuest, allowed := h.guestMessagePolicy(roomDomainUUID, claims.UserUUID); isGuest {
-				if !allowed {
-					return `{"error":"guest messaging disabled"}`
-				}
-				return ""
-			}
-		}
 		if h.domainPermChecker == nil || claims.UserUUID == "" {
 			return `{"error":"permission denied"}`
 		}

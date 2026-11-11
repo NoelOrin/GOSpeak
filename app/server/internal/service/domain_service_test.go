@@ -98,48 +98,6 @@ func TestDomainService_GetByUUID_Success(t *testing.T) {
 		t.Fatalf("expected 'Test', got %q", got.Name)
 	}
 }
-
-func TestDomainService_GetByInviteCode_NotFound(t *testing.T) {
-	svc, _ := setupDomainServiceTestDB(t)
-	_, err := svc.GetByInviteCode("INVALID")
-	checkAppErrCode(t, err, pkg.NOT_FOUND)
-}
-
-func TestDomainService_Join_AlreadyMember(t *testing.T) {
-	svc, db := setupDomainServiceTestDB(t)
-	g := seedDomainOwner(t, db, "Test", "owner-1")
-
-	_, err := svc.Join(g.InviteCode, "owner-1")
-	checkAppErrCode(t, err, pkg.ALREADY_EXISTS)
-}
-
-func TestDomainService_Join_Success(t *testing.T) {
-	svc, db := setupDomainServiceTestDB(t)
-	g := seedDomainOwner(t, db, "Test", "owner-1")
-
-	domain, err := svc.Join(g.InviteCode, "user-new")
-	if err != nil {
-		t.Fatalf("Join error: %v", err)
-	}
-	if domain.UUID != g.UUID {
-		t.Fatalf("expected same domain UUID")
-	}
-
-	var member model.DomainMember
-	if err := db.Where("domain_uuid = ? AND user_uuid = ?", g.UUID, "user-new").First(&member).Error; err != nil {
-		t.Fatalf("member not found: %v", err)
-	}
-	if member.RoleName != DomainRoleMember {
-		t.Fatalf("expected member role, got %q", member.RoleName)
-	}
-}
-
-func TestDomainService_Join_InvalidCode(t *testing.T) {
-	svc, _ := setupDomainServiceTestDB(t)
-	_, err := svc.Join("BADCODE", "user-new")
-	checkAppErrCode(t, err, pkg.NOT_FOUND)
-}
-
 func TestDomainService_Leave_OwnerCannotLeave(t *testing.T) {
 	svc, db := setupDomainServiceTestDB(t)
 	g := seedDomainOwner(t, db, "Test", "owner-1")
@@ -241,7 +199,6 @@ func TestDomainService_HasDomainRole(t *testing.T) {
 	repo := repository.NewDomainRepository(db)
 	repo.AddMember(&model.DomainMember{DomainUUID: g.UUID, UserUUID: "admin-1", RoleName: DomainRoleAdmin})
 	repo.AddMember(&model.DomainMember{DomainUUID: g.UUID, UserUUID: "member-1", RoleName: DomainRoleMember})
-	repo.AddMember(&model.DomainMember{DomainUUID: g.UUID, UserUUID: "guest-1", RoleName: DomainRoleGuest})
 
 	tests := []struct {
 		userUUID string
@@ -250,14 +207,11 @@ func TestDomainService_HasDomainRole(t *testing.T) {
 	}{
 		{"owner-1", DomainRoleOwner, true},
 		{"owner-1", DomainRoleAdmin, true},
-		{"owner-1", DomainRoleGuest, true},
 		{"admin-1", DomainRoleAdmin, true},
 		{"admin-1", DomainRoleOwner, false},
 		{"member-1", DomainRoleMember, true},
 		{"member-1", DomainRoleAdmin, false},
-		{"guest-1", DomainRoleGuest, true},
-		{"guest-1", DomainRoleMember, false},
-		{"nonexistent", DomainRoleGuest, false},
+		{"nonexistent", DomainRoleMember, false},
 	}
 
 	for _, tt := range tests {
@@ -479,7 +433,7 @@ func TestDomainService_SetMemberRole(t *testing.T) {
 	if member.RoleName != model.DomainRoleAdmin {
 		t.Fatalf("expected admin, got %s", member.RoleName)
 	}
-	if err := svc.SetMemberRole(domain.UUID, "u-2", "u-2", model.DomainRoleGuest); err == nil {
+	if err := svc.SetMemberRole(domain.UUID, "u-2", "u-2", model.DomainRoleMember); err == nil {
 		t.Fatal("must reject changing own role")
 	}
 	if err := svc.SetMemberRole(domain.UUID, "owner-1", "u-2", model.DomainRoleOwner); err == nil {

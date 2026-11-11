@@ -209,47 +209,6 @@ func (h *DomainHandler) Update(c *gin.Context) {
 type DeleteDomainRequest struct {
 }
 
-// ResetInvite 重置语音域邀请码，使旧邀请链接立即失效。仅 Owner/Admin 或持有 domain:manage 权限的用户可调用。
-func (h *DomainHandler) ResetInvite(c *gin.Context) {
-	domainUUID := domainUUIDFromContext(c)
-	if domainUUID == "" {
-		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
-		return
-	}
-	userUUIDVal, ok := c.Get("user_uuid")
-	if !ok {
-		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
-		return
-	}
-	userUUID, _ := userUUIDVal.(string)
-	roleOK := h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainManage)
-	ownerOK := h.domainSvc.IsOwner(domainUUID, userUUID)
-	permOK := h.hasPermission(c, permcode.PermDomainManage)
-	if !permOK && !roleOK && !ownerOK {
-		pkg.Fail(c, pkg.FORBIDDEN, "not domain owner or missing permission")
-		return
-	}
-	domain, err := h.domainSvc.ResetInviteCode(domainUUID)
-	if err != nil {
-		pkg.HandleError(c, err)
-		return
-	}
-	if h.auditor != nil {
-		aua, aname := auditActor(c)
-		h.auditor.Log(audit.Entry{
-			ActorUUID:  aua,
-			ActorName:  aname,
-			Action:     audit.ActionResetInvite,
-			TargetType: audit.TargetDomain,
-			TargetID:   domainUUID,
-			Detail:     "invite_code reset",
-			IP:         audit.AuditIP(c),
-			Success:    true,
-		})
-	}
-	pkg.Success(c, domain)
-}
-
 // Delete 删除语音域。仅 Owner 和持有 domain:delete 权限的用户可调用。
 func (h *DomainHandler) Delete(c *gin.Context) {
 	domainUUID := domainUUIDFromContext(c)
@@ -277,46 +236,6 @@ func (h *DomainHandler) Delete(c *gin.Context) {
 		h.onDomainDelete(domainUUID)
 	}
 	pkg.Success(c, nil)
-}
-
-type JoinDomainRequest struct {
-	InviteCode string `json:"invite_code" binding:"required"`
-}
-
-// Join 通过邀请码加入语音域。
-func (h *DomainHandler) Join(c *gin.Context) {
-	var req JoinDomainRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
-		return
-	}
-	userUUIDVal, ok := c.Get("user_uuid")
-	if !ok {
-		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
-		return
-	}
-	userUUID, _ := userUUIDVal.(string)
-	domain, err := h.domainSvc.Join(req.InviteCode, userUUID)
-	if err != nil {
-		pkg.HandleError(c, err)
-		return
-	}
-	pkg.Success(c, domain)
-}
-
-// Preview 根据邀请码或邀请链接返回 Domain 信息，供加入前确认。
-func (h *DomainHandler) Preview(c *gin.Context) {
-	var req JoinDomainRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
-		return
-	}
-	domain, err := h.domainSvc.GetByInviteCode(strings.TrimSpace(req.InviteCode))
-	if err != nil {
-		pkg.HandleError(c, err)
-		return
-	}
-	pkg.Success(c, domain)
 }
 
 type LeaveDomainRequest struct {

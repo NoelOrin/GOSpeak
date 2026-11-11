@@ -1,7 +1,6 @@
 package model
 
 import (
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,7 +22,6 @@ type User struct {
 	Email         string `gorm:"size:128;index" json:"email"`
 	EmailVerified bool   `gorm:"default:false" json:"email_verified"`
 	IsBot         bool   `gorm:"default:false" json:"is_bot"`
-	IsGuest       bool   `gorm:"default:false;index" json:"is_guest"`
 	Password      string `json:"-"`
 	Role          string `gorm:"default:user" json:"role"`
 	Status        string `gorm:"size:16;default:active;index" json:"status"`
@@ -52,9 +50,3 @@ func (u *User) IsBanned() bool {
 func (u *User) TableName() string {
 	return "users"
 }
-
-// GuestNamePrefix 访客机器名前缀（users.name），用于在线身份快速识别。
-const GuestNamePrefix = "guest_"
-
-// IsGuestName 判断机器名是否为访客命名约定。
-func IsGuestName(name string) bool { return strings.HasPrefix(name, GuestNamePrefix) }

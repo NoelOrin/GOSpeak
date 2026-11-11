@@ -12,9 +12,6 @@ func TestDomain_BeforeCreate(t *testing.T) {
 	if g.UUID == "" {
 		t.Fatal("expected UUID to be auto-generated")
 	}
-	if len(g.InviteCode) != 8 {
-		t.Fatalf("expected InviteCode len=8, got %d (%q)", len(g.InviteCode), g.InviteCode)
-	}
 }
 
 func TestDomain_BeforeCreate_PreservesExistingUUID(t *testing.T) {
@@ -32,18 +29,6 @@ func TestDomainMember_BeforeCreate(t *testing.T) {
 	m := &DomainMember{}
 	if m.ID != 0 {
 		t.Fatal("expected ID=0 for new DomainMember")
-	}
-}
-
-func TestGenerateInviteCode(t *testing.T) {
-	code := GenerateInviteCode()
-	if len(code) != 8 {
-		t.Fatalf("expected len=8, got %d", len(code))
-	}
-	for _, c := range code {
-		if !((c >= 'A' && c <= 'Z') || (c >= '2' && c <= '9')) {
-			t.Fatalf("unexpected char %c in invite code", c)
-		}
 	}
 }
 

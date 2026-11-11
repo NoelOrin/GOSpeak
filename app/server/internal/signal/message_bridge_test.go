@@ -272,64 +272,6 @@ func TestOnMessageSend_UsesDomainScopedRoom(t *testing.T) {
 	}
 }
 
-func TestOnMessageSend_GuestMessagePolicy(t *testing.T) {
-	store := &mockRoomStore{rooms: []model.Room{
-		{UUID: "uuid-domain", Name: "text-chat", Type: model.RoomTypeText, DomainUUID: "domain-a"},
-	}}
-	msgSvc := &mockMessageSvc{}
-
-	setup := func(isGuest, allowed bool) (*Hub, *mockClient) {
-		h := newTestHub()
-		h.roomStore = store
-		h.SetMessageService(msgSvc)
-		h.SetDomainPermissionChecker(func(domainUUID, userUUID, permCode string) bool {
-			return false
-		})
-		h.SetGuestMessagePolicy(func(domainUUID, userUUID string) (bool, bool) {
-			return isGuest, allowed
-		})
-		conn := newAuthedMockClient("conn-1", "alice")
-		if _, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"alice","domain_uuid":"domain-a"}`); err != nil {
-			t.Fatalf("join: %v", err)
-		}
-		return h, conn
-	}
-
-	h, conn := setup(true, true)
-	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","domain_uuid":"domain-a","content":"hello"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if decoded := decodeAck(t, ack); decoded["success"] != true {
-		t.Fatalf("guest with messaging enabled should pass, got %v", decoded)
-	}
-	if msgSvc.sendCalled != 1 {
-		t.Fatalf("expected send call, got %d", msgSvc.sendCalled)
-	}
-
-	h2, conn2 := setup(true, false)
-	ack2, err := h2.OnMessageSend(conn2, `{"room":"text-chat","domain_uuid":"domain-a","content":"hello"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if decoded := decodeAck(t, ack2); decoded["error"] != "guest messaging disabled" {
-		t.Fatalf("guest with messaging disabled should be denied, got %v", decoded)
-	}
-	if msgSvc.sendCalled != 1 {
-		t.Fatalf("send must not be called for denied guest, got %d", msgSvc.sendCalled)
-	}
-
-	// 非访客不受策略短路，走域权限（mock 全拒绝）
-	h3, conn3 := setup(false, true)
-	ack3, err := h3.OnMessageSend(conn3, `{"room":"text-chat","domain_uuid":"domain-a","content":"hello"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if decoded := decodeAck(t, ack3); decoded["error"] != "permission denied" {
-		t.Fatalf("non-guest should fall through to domain perm, got %v", decoded)
-	}
-}
-
 func TestOnMessageSend_RejectsMissingUserUUID(t *testing.T) {
 	store := newMockRoomStoreWithType("text-chat", model.RoomTypeText)
 	h := newTestHub()

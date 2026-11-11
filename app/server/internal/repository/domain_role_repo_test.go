@@ -41,10 +41,10 @@ func TestSeedDefaultDomainRoles_CreatesSystemRoles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRoles: %v", err)
 	}
-	if len(roles) != 4 {
-		t.Fatalf("expected 4 system roles, got %d", len(roles))
+	if len(roles) != 3 {
+		t.Fatalf("expected 3 system roles, got %d", len(roles))
 	}
-	for _, name := range []string{model.DomainRoleAdmin, model.DomainRoleMember, model.DomainRoleGuest} {
+	for _, name := range []string{model.DomainRoleAdmin, model.DomainRoleMember} {
 		codes, err := repo.GetRolePermissions(domain.UUID, name)
 		if err != nil {
 			t.Fatalf("GetRolePermissions(%s): %v", name, err)
@@ -152,16 +152,16 @@ func TestBackfillDomainRoleDefaults(t *testing.T) {
 	if err := db.Model(&model.DomainRole{}).Count(&total).Error; err != nil {
 		t.Fatalf("count roles: %v", err)
 	}
-	if total != 8 {
-		t.Fatalf("expected 8 roles across 2 domains, got %d", total)
+	if total != 6 {
+		t.Fatalf("expected 6 roles across 2 domains, got %d", total)
 	}
 	for _, domainUUID := range []string{legacy.UUID, seeded.UUID} {
 		roles, err := repo.ListRoles(domainUUID)
 		if err != nil {
 			t.Fatalf("ListRoles(%s): %v", domainUUID, err)
 		}
-		if len(roles) != 4 {
-			t.Fatalf("domain %s expected 4 roles, got %d", domainUUID, len(roles))
+		if len(roles) != 3 {
+			t.Fatalf("domain %s expected 3 roles, got %d", domainUUID, len(roles))
 		}
 	}
 }

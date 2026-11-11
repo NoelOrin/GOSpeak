@@ -106,7 +106,7 @@ func TestRoomHandler_Delete_DomainPermissionDoesNotFallBackToGlobal(t *testing.T
 	middleware.SetDomainChecker(func(_, _ string) bool { return true })
 	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
 
-	db, _, domainSvc, roomID := newRoomDomainManageEnv(t, "guest-1", model.DomainRoleGuest, "someone-else", false, nil)
+	db, _, domainSvc, roomID := newRoomDomainManageEnv(t, "guest-1", model.DomainRoleMember, "someone-else", false, nil)
 
 	permRepo := repository.NewPermissionRepository(db)
 	for _, perm := range model.DefaultPermissions {

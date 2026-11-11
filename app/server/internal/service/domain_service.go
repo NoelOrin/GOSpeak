@@ -25,7 +25,6 @@ const (
 	DomainRoleOwner  = model.DomainRoleOwner
 	DomainRoleAdmin  = model.DomainRoleAdmin
 	DomainRoleMember = model.DomainRoleMember
-	DomainRoleGuest  = model.DomainRoleGuest
 
 	// EventDomainMembershipChanged 是 Domain 成员变更的 NATS 内部失效事件。
 	EventDomainMembershipChanged = "cache:domain-membership-changed"
@@ -138,7 +137,7 @@ func (s *DomainService) Create(name, description, ownerUUID string, isPublic boo
 	if err := s.domainRepo.CreateWithOwner(domain, member); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	// 同步播种系统角色（owner/admin/member/guest），否则加入后查 member 角色权限会报 domain role not found。
+	// 同步播种系统角色（owner/admin/member），否则加入后查 member 角色权限会报 domain role not found。
 	if err := s.roleRepo.SeedDefaults(domain.UUID); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
@@ -152,17 +151,6 @@ func (s *DomainService) Create(name, description, ownerUUID string, isPublic boo
 
 func (s *DomainService) GetByUUID(uuid string) (*model.Domain, error) {
 	domain, err := s.domainRepo.GetByUUID(uuid)
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, ErrDomainNotFound
-		}
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	return domain, nil
-}
-
-func (s *DomainService) GetByInviteCode(code string) (*model.Domain, error) {
-	domain, err := s.domainRepo.GetByInviteCode(code)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, ErrDomainNotFound
@@ -196,22 +184,6 @@ func (s *DomainService) Update(domain *model.Domain) error {
 	return s.domainRepo.Update(domain)
 }
 
-// ResetInviteCode 重置指定域的邀请码，使旧链接失效并返回更新后的域。
-func (s *DomainService) ResetInviteCode(domainUUID string) (*model.Domain, error) {
-	if _, err := s.domainRepo.GetByUUID(domainUUID); err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, ErrDomainNotFound
-		}
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	code := model.GenerateInviteCode()
-	domain, err := s.domainRepo.ResetInviteCode(domainUUID, code)
-	if err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	return domain, nil
-}
-
 func (s *DomainService) Delete(uuid string) error {
 	if _, err := s.domainRepo.GetByUUID(uuid); err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -224,27 +196,6 @@ func (s *DomainService) Delete(uuid string) error {
 	}
 	s.invalidateMembership(uuid, "", true)
 	return nil
-}
-
-func (s *DomainService) Join(inviteCode, userUUID string) (*model.Domain, error) {
-	domain, err := s.domainRepo.GetByInviteCode(inviteCode)
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, ErrDomainNotFound
-		}
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	if existing, err := s.domainRepo.GetMember(domain.UUID, userUUID); err == nil && existing != nil {
-		return nil, ErrAlreadyMember
-	}
-	member := &model.DomainMember{
-		DomainUUID: domain.UUID, UserUUID: userUUID, RoleName: DomainRoleMember,
-	}
-	if err := s.domainRepo.AddMember(member); err != nil {
-		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
-	}
-	s.invalidateMembership(domain.UUID, userUUID, true)
-	return domain, nil
 }
 
 func (s *DomainService) Leave(domainUUID, userUUID string) error {
@@ -347,8 +298,6 @@ func domainRoleLevel(role string) int {
 		return 3
 	case DomainRoleMember:
 		return 2
-	case DomainRoleGuest:
-		return 1
 	default:
 		return 0
 	}

@@ -6,7 +6,6 @@ const (
 	DomainRoleOwner  = "owner"
 	DomainRoleAdmin  = "admin"
 	DomainRoleMember = "member"
-	DomainRoleGuest  = "guest"
 )
 
 // DomainRole 每个域独立角色。
@@ -62,14 +61,11 @@ var DefaultDomainRolePermissions = map[string][]string{
 	DomainRoleMember: {
 		PermRoomCreate, PermRoomRead, PermMessageSend, PermMessageRead,
 	},
-	DomainRoleGuest: {
-		PermRoomRead, PermMessageRead,
-	},
 }
 
 func IsSystemDomainRole(name string) bool {
 	switch name {
-	case DomainRoleOwner, DomainRoleAdmin, DomainRoleMember, DomainRoleGuest:
+	case DomainRoleOwner, DomainRoleAdmin, DomainRoleMember:
 		return true
 	default:
 		return false

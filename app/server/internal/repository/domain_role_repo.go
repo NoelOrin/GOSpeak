@@ -102,7 +102,6 @@ func SeedDefaultDomainRoles(db *gorm.DB, domainUUID string) error {
 			model.DomainRoleOwner,
 			model.DomainRoleAdmin,
 			model.DomainRoleMember,
-			model.DomainRoleGuest,
 		} {
 			var count int64
 			if err := tx.Model(&model.DomainRole{}).
@@ -132,7 +131,7 @@ func SeedDefaultDomainRoles(db *gorm.DB, domainUUID string) error {
 	})
 }
 
-// SeedDefaults 为指定域播种系统角色（owner/admin/member/guest），幂等。
+// SeedDefaults 为指定域播种系统角色（owner/admin/member），幂等。
 // 复用包级 SeedDefaultDomainRoles 作为单一来源，避免逻辑分叉。
 func (r *DomainRoleRepository) SeedDefaults(domainUUID string) error {
 	return SeedDefaultDomainRoles(r.db, domainUUID)

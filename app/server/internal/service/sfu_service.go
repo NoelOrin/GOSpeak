@@ -32,8 +32,6 @@ type SFUService struct {
 	provider     sfu.Provider
 	policy       pkg.JoinPolicy
 	domainMember func(domainUUID, userUUID string) bool
-	guestIs      func(userUUID string) bool
-	guestCaps    func(domainUUID string) (listen, speak, message bool)
 }
 
 func NewSFUService(provider sfu.Provider, policy pkg.JoinPolicy) *SFUService {
@@ -45,15 +43,6 @@ func (s *SFUService) SetDomainMemberChecker(checker func(domainUUID, userUUID st
 	s.domainMember = checker
 }
 
-// SetGuestPolicy 注入访客身份与能力开关（听/说/发消息），nil 表示不启用访客策略。
-func (s *SFUService) SetGuestPolicy(
-	isGuest func(userUUID string) bool,
-	caps func(domainUUID string) (listen, speak, message bool),
-) {
-	s.guestIs = isGuest
-	s.guestCaps = caps
-}
-
 // GetJoinToken 编排加入规则校验（禁言/限流/密码）+ token 签发 + stream 信息。
 // 规则失败返 *pkg.AppError，handler 经 HandleError 映射状态码。
 func (s *SFUService) GetJoinToken(domainUUID, room, identity, userUUID, password string) (*JoinTokenResult, error) {
@@ -61,13 +50,6 @@ func (s *SFUService) GetJoinToken(domainUUID, room, identity, userUUID, password
 		return nil, pkg.NewAppError(pkg.FORBIDDEN, "not a member of this domain")
 	}
 	canPublish := true
-	if domainUUID != "" && s.guestIs != nil && s.guestIs(userUUID) {
-		listen, speak, _ := s.guestCaps(domainUUID)
-		if !listen {
-			return nil, pkg.NewAppError(pkg.FORBIDDEN, "guest listening disabled")
-		}
-		canPublish = speak
-	}
 	if s.policy != nil {
 		if muted, err := s.policy.IsMuted(identity); err != nil {
 			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "mute check failed")
@@ -119,7 +101,7 @@ func (s *SFUService) GetJoinToken(domainUUID, room, identity, userUUID, password
 
 // generateTokenWithPublish 在 Provider 支持发布控制（LiveKit）时按 canPublish 签发，
 // 直接反映禁说策略。不支持发布控制的 provider 无法在 token 阶段限制发布，
-// 其禁说降级由信令层（Hub.enforceGuestSpeakPolicyLocked）在 SFU 进房确认后强制。
+// 其禁说降级由信令层在 SFU 进房确认后强制。
 func (s *SFUService) generateTokenWithPublish(room, identity, userUUID string, canPublish bool) (string, error) {
 	if op, ok := s.provider.(sfu.PublishControlProvider); ok {
 		return op.GenerateTokenWithPublish(room, identity, canPublish)
