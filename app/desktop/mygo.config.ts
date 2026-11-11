@@ -32,8 +32,16 @@ export default defineConfig({
 	// constants: __GOSPEAK_DESKTOP__=true, desktop branches included) and sync
 	// it into the Go embed directory consumed by proxyserver.go
 	// (//go:embed all:webui/dist). Web 构建不带该变量即自动剔除桌面分支。
+	//
+	// 最后一步为每个文本资源生成 .gz 边车（gzip -9，保留原文件）：宿主直接
+	// 发送预压缩字节，启动时既不压缩也不读写临时缓冲，首屏 CPU 归零（见
+	// proxyserver.go 的 assetCache）；缺少 .gz 时宿主仍会运行时压缩兜底。
 	buildCommand:
-		"GOSPEAK_TARGET=desktop pnpm --filter @gospeak/web build && rm -rf webui/dist && mkdir -p webui/dist && cp -R ../web/dist/. webui/dist/",
+		"GOSPEAK_TARGET=desktop pnpm --filter @gospeak/web build && " +
+		"rm -rf webui/dist && mkdir -p webui/dist && cp -R ../web/dist/. webui/dist/ && " +
+		"find webui/dist -type f \\( -name '*.js' -o -name '*.css' -o -name '*.html' " +
+		"-o -name '*.json' -o -name '*.svg' -o -name '*.txt' -o -name '*.xml' " +
+		"-o -name '*.map' -o -name '*.wasm' \\) -exec gzip -9 -k -f {} \\;",
 	frontendDist: "webui/dist",
 	// macOS 麦克风/摄像头用途说明必须写进 Info.plist：没有它，系统会直接拒绝
 	// getUserMedia 的请求（界面上表现为"读取音频设备失败"），而不是弹权限框。

@@ -1,12 +1,8 @@
-import {
-	Outlet,
-	createFileRoute,
-	redirect,
-	useLocation,
-} from "@tanstack/react-router";
+import { createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { useEffect } from "react";
 import Layout from "@/layouts/layout";
 import { ErrorBoundary } from "@/components/common/errorBoundary";
+import { KeepAliveOutlet } from "@/components/common/keepAliveOutlet";
 import { useUserStore } from "@/stores/userStore";
 
 export const Route = createFileRoute("/(app)")({
@@ -43,7 +39,7 @@ function RouteComponent() {
 			description="应用界面遇到异常，错误已记录。可以重试或返回首页。"
 		>
 			<Layout>
-				<Outlet />
+				<KeepAliveOutlet />
 			</Layout>
 		</ErrorBoundary>
 	);

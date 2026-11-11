@@ -99,6 +99,26 @@ showNotification({ title: "有人邀请你加入语音房", body: "点击加入"
 | 深链 | `onDeepLink()` | `DeepLink.*` | 无操作 |
 | 文件对话框 | `openFileDialog()` 等 | `Dialog.*` | `<input type=file>` / `confirm` |
 | 自动更新 | `createUpdater()` | `Updater.*` | 无操作 |
+| 服务器地址 | `createServerConfig()` | `ServerConfig.*` | `localStorage` |
+
+## 服务器地址：双持久化
+
+后端地址存**两份**，职责不同（`src/capabilities/server.ts` 与
+`app/desktop/server_config.go`、`app/web/src/utils/publicBaseUrl.ts`）：
+
+| 存储 | 位置 | 角色 |
+| --- | --- | --- |
+| 宿主文件 | 桌面端用户数据目录 `server-config.json` | **权威**。宿主必须先知道它才能起回环代理转发 `/api` `/ws`，所以只能在页面之外 |
+| 本地镜像 | `localStorage["gospeak.server.baseUrl"]` | **同步缓存**。让登录页输入框、分享链接在首帧就拿到地址，不必等一次 IPC；浏览器里它是唯一存储 |
+
+规则：
+
+- 读：`getBaseUrl()` 永远读权威（桌面=宿主，浏览器=镜像）；桌面端发现镜像漂移就修好它
+  （手动改了文件、切换失败等场景）。`getBaseUrlSync()` 只读镜像，可在渲染期同步调用。
+- 写：桌面端**先写镜像再调宿主**——宿主处理 `SetBaseURL` 会切换代理并重载所有窗口，回调
+  可能永远不返回；宿主拒绝（地址非法）则把镜像回滚成旧值，避免 UI 显示一个没生效的地址。
+- 浏览器侧只持久化，不改变 API 落点：页面由后端自己托管，`apiClient` 恒为同源 `/`。
+  要让浏览器真正连到另一台服务器，需要后端 CORS + 跨站 Cookie，是另一件事。
 
 ## 条件编译（构建期裁剪）
 

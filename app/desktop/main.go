@@ -37,11 +37,16 @@ var (
 )
 
 func main() {
+	startupMark("main entered")
 	// One instance only: a second launch hands its command line to the running
 	// app (OnSecondInstance focuses the window) and exits.
 	if !mygo.App.RequestSingleInstanceLock() {
+		startupMark("another instance is running; exiting")
 		return
 	}
+	startupMark("single-instance lock acquired")
+	// Measurement hook (GOSPEAK_STARTUP_EXIT_MS), no-op in normal runs.
+	startupScheduleAutoQuit()
 
 	// Bind the desktop capability services. MyGo turns each exported method into
 	// a typed async call on the generated TypeScript client. The method names
@@ -55,14 +60,18 @@ func main() {
 	mygo.Bind(Updater{})
 	mygo.Bind(Overlay{})
 	mygo.Bind(ServerConfig{})
+	startupMark("services bound")
 
 	// Deep links (gospeak://invite/d/<CODE>) must be wired before Run so the
 	// URL the app was launched with is delivered too.
 	registerDeepLink()
+	startupMark("deep link registered")
 
 	mygo.App.WhenReady(func() {
+		startupMark("app ready")
 		// Load the persisted backend base URL before any window opens.
 		loadServerConfig()
+		startupMark("server config loaded")
 
 		if !isDevMode() {
 			// Release: boot the loopback proxy and load the frontend from it,
@@ -72,25 +81,33 @@ func main() {
 			if _, err := ensureProxyStarted(); err != nil {
 				log.Printf("[GOSpeak] loopback proxy failed to start: %v", err)
 			}
+			startupMark("loopback proxy listening on %s", proxyLoopbackURL)
 		}
 		openMainWindow()
+		startupMark("main window created (page load started)")
+		startupProbeFrontend(mainWindow)
 
 		// Dock / taskbar icon when running from source (a packaged bundle
 		// already carries resources/icon.png).
 		applyAppIcon()
+		startupMark("app icon applied")
 
-		// Floating game-overlay window: disabled by default, created hidden.
-		// Wires config persistence, global hotkeys and the auto policy loop.
+		// Floating game-overlay window: disabled by default, created hidden on
+		// first use. Wires config persistence, global hotkeys and the policy loop.
 		initOverlay()
+		startupMark("overlay subsystem initialised")
 
 		// System tray icon (menu bar / taskbar) with open & quit menu.
 		ensureTray()
+		startupMark("tray ready")
 
 		// Closing the window hides it to the tray; only "quit" ends the app.
 		initLifecycle()
+		startupMark("lifecycle wired")
 	})
 
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
 	}
+	startupMark("app exited")
 }

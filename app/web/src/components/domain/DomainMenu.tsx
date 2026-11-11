@@ -17,6 +17,7 @@ import {
 import { useEffect, useState } from "react";
 import ConfirmModal from "@/components/common/ConfirmModal";
 import { listInvites } from "@/api/invite";
+import TooltipIconButton from "@/components/common/tooltipIconButton";
 import InviteShareModal from "@/components/domain/InviteShareModal";
 import { domainStore, useDomainStore } from "@/stores/domainStore";
 import { useUserStore } from "@/stores/userStore";
@@ -120,16 +121,9 @@ export default function DomainMenu({ domainUUID }: { domainUUID: string }) {
 
 	return (
 		<>
-			<Button
-				variant="ghost"
-				size="sm"
-				className="size-7 p-0"
-				title="域设置"
-				aria-label="域设置"
-				onClick={() => setOpen(true)}
-			>
+			<TooltipIconButton label="域设置" onClick={() => setOpen(true)}>
 				<MoreHorizontal size={16} />
-			</Button>
+			</TooltipIconButton>
 
 			<Dialog open={open} onOpenChange={setOpen}>
 				<DialogContent className="max-w-md">

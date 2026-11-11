@@ -15,7 +15,10 @@ type InitConfig struct {
 	ConnectTimeout time.Duration
 	// EmbeddedPort 内嵌 NATS 监听端口；<=0 表示随机端口。
 	EmbeddedPort int
-	Deliverer    Deliverer
+	// StoreDir JetStream 持久化目录；非空时跨重启保留 KV（签名密钥/黑名单），Shutdown 不删除。
+	// 为空则退化为临时目录（兼容测试与未配置场景）。
+	StoreDir  string
+	Deliverer Deliverer
 	// RemoteHook 可选：peer 事件在本地投递后回调（用于 Hub 控制面清理等）。
 	RemoteHook func(event string, payload interface{})
 	// WALPath 非空时启用断线事件磁盘持久化；为空保持纯内存行为（默认）。
@@ -53,12 +56,12 @@ func Init(cfg InitConfig) (EventBus, func(), error) {
 		name = instanceID
 	}
 
-	es, err := StartEmbeddedServerOnPort(cfg.EmbeddedPort)
+	es, err := StartEmbeddedServerWithStore(cfg.EmbeddedPort, cfg.StoreDir)
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("bus init embedded: %w", err)
 	}
 	url := es.ClientURL()
-	log.Printf("[EventBus] embedded nats started: %s instance=%s", url, instanceID)
+	log.Printf("[EventBus] embedded nats started: %s instance=%s storeDir=%s", url, instanceID, es.StoreDir())
 
 	nb, err := NewNATSBus(NATSBusConfig{
 		URL:           url,

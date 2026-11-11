@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"GOSpeak/internal/logger"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/pkg/oauth"
@@ -137,12 +138,18 @@ func (s *OAuthService) HandleCallback(providerName, code string) (*AuthResponse,
 
 	accessToken, err := p.ExchangeToken(code)
 	if err != nil {
-		return nil, pkg.NewAppError(pkg.OAUTH_TOKEN_EXCHANGE_FAILED, err.Error())
+		// 上游错误（*url.Error / oauth2.RetrieveError）可能携带完整请求 URL 与凭据。
+		// 绝不能写进 AppError.Message：该字段会流经 JSON 响应与 OAuth 302 重定向，
+		// 其中 QQ 的 userinfo URL 把 access_token 放在 query 里。
+		// 日志只记录阶段与 provider，不记录错误原文。
+		logger.WithComponent("OAuth").Warnf("token exchange failed: provider=%s", providerName)
+		return nil, pkg.NewAppError(pkg.OAUTH_TOKEN_EXCHANGE_FAILED)
 	}
 
 	userInfo, err := p.GetUserInfo(accessToken)
 	if err != nil {
-		return nil, pkg.NewAppError(pkg.OAUTH_GET_USER_FAILED, err.Error())
+		logger.WithComponent("OAuth").Warnf("get user info failed: provider=%s", providerName)
+		return nil, pkg.NewAppError(pkg.OAUTH_GET_USER_FAILED)
 	}
 
 	// ProviderUID 为空时拒绝绑定，避免字段映射错误导致所有用户落到同一 OAuth 记录。

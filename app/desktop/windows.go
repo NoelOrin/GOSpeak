@@ -98,8 +98,8 @@ func reloadAllWindows() {
 			_ = p.LoadURL(appPageBase() + "/")
 		}
 	}
-	if overlayCfg.win != nil {
-		if p := overlayCfg.win.Page(); p != nil {
+	if w := overlayWindow(); w != nil {
+		if p := w.Page(); p != nil {
 			_ = p.LoadURL(appPageBase() + "/overlay")
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
 	message "GOSpeak/internal/pkg/message"
+	"GOSpeak/internal/policy"
 	"GOSpeak/internal/ws"
 	"fmt"
 )
@@ -39,9 +40,16 @@ type messageMutatePayload struct {
 	Emoji       string `json:"emoji,omitempty"`
 }
 
+// marshalPolicyAck 把策略判决转成与既有消息 ACK 一致的 {"error","code"} 串。
+func marshalPolicyAck(d policy.Decision) string {
+	ack, _ := marshalAck(map[string]interface{}{"error": d.Message, "code": d.Code})
+	return ack
+}
+
 // resolveMessageRoom looks up a DB room by name, validates the conn slot,
 // and returns (roomUUID, roomType, roomDomainUUID) or an ack error string.
-func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, roomName, domainUUID string) (roomUUID, roomType, roomDomainUUID string, ackErr string) {
+// action 用于按事件复查传输无关策略；roomDomainUUID 来自 DB，是权威域上下文。
+func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, action policy.Action, roomName, domainUUID string) (roomUUID, roomType, roomDomainUUID string, ackErr string) {
 	identity := clientIdentity(c)
 	if identity == "" {
 		return "", "", "", `{"error":"unauthorized"}`
@@ -84,6 +92,12 @@ func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, roomName, domainUUID stri
 	h.mu.RUnlock()
 	if !allowed {
 		return "", "", "", fmt.Sprintf(`{"error":"not in room: %s"}`, roomName)
+	}
+
+	// 用 DB 解析出的真实域复查策略：封禁不失效 JWT，
+	// 且 payload 里的 domain_uuid 是客户端可控值，不能作为判决依据。
+	if d := h.checkWSPolicy(c, action, roomDomainUUID); !d.Allowed {
+		return "", "", "", marshalPolicyAck(d)
 	}
 
 	return roomUUID, roomType, roomDomainUUID, ""
@@ -148,7 +162,7 @@ func (h *Hub) OnMessageSend(c ws.ClientMessenger, data string) (string, error) {
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
+	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, policy.Action(EventMessageSend), req.Room, req.DomainUUID)
 	if ackErr != "" {
 		return ackErr, nil
 	}
@@ -178,7 +192,7 @@ func (h *Hub) OnMessageEdit(c ws.ClientMessenger, data string) (string, error) {
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
+	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, policy.Action(EventMessageEdit), req.Room, req.DomainUUID)
 	if ackErr != "" {
 		return ackErr, nil
 	}
@@ -208,7 +222,7 @@ func (h *Hub) OnMessageDelete(c ws.ClientMessenger, data string) (string, error)
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
+	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, policy.Action(EventMessageDelete), req.Room, req.DomainUUID)
 	if ackErr != "" {
 		return ackErr, nil
 	}
@@ -250,7 +264,7 @@ func (h *Hub) OnMessageReact(c ws.ClientMessenger, data string) (string, error) 
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
+	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, policy.Action(EventMessageReact), req.Room, req.DomainUUID)
 	if ackErr != "" {
 		return ackErr, nil
 	}
@@ -280,7 +294,7 @@ func (h *Hub) OnMessageUnreact(c ws.ClientMessenger, data string) (string, error
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
 	}
 
-	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
+	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, policy.Action(EventMessageUnreact), req.Room, req.DomainUUID)
 	if ackErr != "" {
 		return ackErr, nil
 	}

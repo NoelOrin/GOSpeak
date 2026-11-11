@@ -13,10 +13,24 @@ type handlerEntry struct {
 	Ack   func(ClientMessenger, string) (string, error)
 }
 
+// PolicyDecision 是策略层对一条 WS 消息的判决。
+// Code 为 pkg.SUCCESS 表示放行；Terminate 表示命中封禁，需同时关闭连接。
+type PolicyDecision struct {
+	Code      pkg.ErrCode
+	Message   string
+	Terminate bool
+}
+
+// PolicyGuard 在分发每条上行消息前执行策略判决。
+// 由组合根注入，ws 包不依赖具体业务策略；判决必须每条消息实时执行，
+// 因为域访客封禁不会失效已签发的 JWT，也不会主动断开已有连接。
+type PolicyGuard func(c ClientMessenger, msg Message) PolicyDecision
+
 // HandlerRegistry 管理事件名到处理函数的映射，提供统一分发入口。
 // Hub 通过此注册表注册所有信号事件处理函数。
 type HandlerRegistry struct {
 	handlers map[string]handlerEntry
+	guard    PolicyGuard
 }
 
 // NewHandlerRegistry 创建一个空的事件注册表。
@@ -24,6 +38,12 @@ func NewHandlerRegistry() *HandlerRegistry {
 	return &HandlerRegistry{
 		handlers: make(map[string]handlerEntry),
 	}
+}
+
+// SetPolicyGuard 注入传输无关策略的 WS 适配器。
+// 未注入时保持原有行为（仅测试/嵌入场景使用），生产组合根必须注入。
+func (r *HandlerRegistry) SetPolicyGuard(g PolicyGuard) {
+	r.guard = g
 }
 
 // Handle 注册一个无应答处理函数（fire-and-forget）。
@@ -47,6 +67,27 @@ func (r *HandlerRegistry) Dispatch(c ClientMessenger, msg Message) {
 			}
 		}
 	}()
+
+	// 策略判决先于事件分发，且每条消息都重新执行：封禁不失效 JWT，
+	// 只在建连时查一次会让被封访客凭已建立的长连接继续发消息/私信。
+	if r.guard != nil {
+		d := r.guard(c, msg)
+		if d.Code != pkg.SUCCESS {
+			clientMsg := d.Message
+			if clientMsg == "" {
+				clientMsg = pkg.GetErrMsg(d.Code)
+			}
+			log.Printf("[ws] policy rejected event=%s client=%s code=%d", msg.Event, c.ID(), d.Code)
+			if msg.ID != "" {
+				c.SendErrorACK(msg.ID, msg.Event, int(d.Code), clientMsg)
+			}
+			// 命中封禁时主动断连，同时停止后续上行与房间下行广播。
+			if d.Terminate {
+				c.Close()
+			}
+			return
+		}
+	}
 
 	entry, ok := r.handlers[msg.Event]
 	if !ok {

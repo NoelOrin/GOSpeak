@@ -80,12 +80,12 @@ function RolesPage() {
 
 	const roleList: Role[] = roles ?? [];
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 依赖 roleList.length 是有意的：只在列表增减时校正选中角色，内容更新不应触发重置
 	useEffect(() => {
 		if (!roleList.length) return;
 		if (!roleList.some((r) => r.name === selectedRole)) {
 			setSelectedRole(roleList[0].name);
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [roleList.length]);
 
 	useEffect(() => {

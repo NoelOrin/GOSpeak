@@ -12,6 +12,7 @@ import (
 	"GOSpeak/internal/metrics"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/policy"
 	"GOSpeak/internal/repository"
 	"GOSpeak/internal/router"
 	"GOSpeak/internal/service"
@@ -376,6 +377,7 @@ func StartGin(env EnvEnum) error {
 	conversationH := handler.NewConversationHandler(conversationSvc)
 
 	monitorH := handler.NewMonitorHandler(signalHub, cfg, newServerInfraStats(eventBus))
+	systemUpdateH := handler.NewSystemUpdateHandler(service.NewSystemUpdateService())
 
 	// Prometheus /metrics：业务指标快照 + HTTP 请求指标，可选用 METRICS_TOKEN 保护。
 	metricsSrv := metrics.New(func() metrics.Snapshot { return toMetricsSnapshot(monitorH.Collect()) })
@@ -386,8 +388,9 @@ func StartGin(env EnvEnum) error {
 	// 启动签名密钥轮换检查
 	authstate.StartKeyRotationLoop()
 
-	// WS 升级路由（JWT 鉴权由 Upgrader 内部完成）
-	wsUpgrader := ws.NewUpgrader(ws.UpgraderConfig{
+	// WS 升级路由：JWT 鉴权由 Upgrader 内部完成，BanCheck 等价策略
+	// 由 installWSPolicy 注入（/ws 绕过 Gin，不能依赖中间件链）。
+	wsUpgraderCfg := ws.UpgraderConfig{
 		Fanout:         wsFanout,
 		Handler:        wsHandler,
 		AllowedOrigins: wsAllowedOrigins(cfg),
@@ -401,7 +404,10 @@ func StartGin(env EnvEnum) error {
 		OnDisconnect: func(c *ws.Client) {
 			signalHub.OnDisconnect(c)
 		},
-	})
+	}
+	policyEngine := policy.NewEngine()
+	installWSPolicy(policyEngine, wsHandler, &wsUpgraderCfg, signalHub)
+	wsUpgrader := ws.NewUpgrader(wsUpgraderCfg)
 
 	router.SetupRoutes(r, &router.Handlers{
 		Config: cfg,
@@ -429,6 +435,7 @@ func StartGin(env EnvEnum) error {
 		Email:        emailH,
 		EmailConfig:  emailConfigH,
 		Monitor:      monitorH,
+		SystemUpdate: systemUpdateH,
 		Domain:       domainH,
 		Conversation: conversationH,
 		Audit:        auditH,

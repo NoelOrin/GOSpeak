@@ -50,7 +50,7 @@
 				"useIterableCallbackReturn": "warn"
 			},
 			"correctness": {
-				"useExhaustiveDependencies": "off",
+				"useExhaustiveDependencies": "warn",
 				"noUnusedImports": "error",
 				"noUnusedVariables": "warn",
 				"useHookAtTopLevel": "warn"

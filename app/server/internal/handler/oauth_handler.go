@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
@@ -144,23 +145,52 @@ func oauthBridgeHTML(payload []byte) string {
 </html>`
 }
 
+// maxOAuthRedirectMessage 限制回显到 /login?oauth_error= 的文案长度，
+// 避免上游超长错误描述进入浏览器历史与反代日志。
+const maxOAuthRedirectMessage = 200
+
+// cleanRedirectMessage 剔除控制字符并按 rune 截断（不切断 UTF-8 多字节字符）。
+func cleanRedirectMessage(msg string) string {
+	msg = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, msg)
+	runes := []rune(msg)
+	if len(runes) > maxOAuthRedirectMessage {
+		runes = runes[:maxOAuthRedirectMessage]
+	}
+	return string(runes)
+}
+
 func redirectOAuthError(c *gin.Context, msg string) {
 	q := make(url.Values)
-	q.Set("oauth_error", msg)
+	q.Set("oauth_error", cleanRedirectMessage(msg))
 	c.Redirect(http.StatusFound, "/login?"+q.Encode())
 }
 
+// oauthErrorMessage 把服务层错误映射为**固定**的重定向文案。
+//
+// 绝不回传 appErr.Message：OAUTH_GET_USER_FAILED 的原始错误来自 Go 的
+// *url.Error，其 Error() 会带上完整请求 URL；QQ 等 provider 把 access_token
+// 放在 userinfo URL 的 query 里。OAuth 走 302，任何原文都会写进 Location，
+// 进而进入浏览器历史、反代日志与前端错误展示，绕过 pkg.HandleError 的脱敏。
+// 这里复用 pkg.ClientError 的错误分类，但只取错误码对应的默认安全文案。
 func oauthErrorMessage(err error, fallback string) string {
-	var appErr *pkg.AppError
-	if errors.As(err, &appErr) {
-		if appErr.Message != "" {
-			return appErr.Message
-		}
-		if msg := pkg.GetErrMsg(appErr.Code); msg != "" {
-			return msg
-		}
+	if err == nil {
+		return fallback
 	}
-	return fallback
+	code, _ := pkg.ClientError(err)
+	switch code {
+	case pkg.OAUTH_PROVIDER_NOT_FOUND,
+		pkg.OAUTH_PROVIDER_DISABLED,
+		pkg.OAUTH_TOKEN_EXCHANGE_FAILED,
+		pkg.OAUTH_GET_USER_FAILED:
+		return pkg.GetErrMsg(code)
+	default:
+		return fallback
+	}
 }
 
 func randomState(n int) (string, error) {

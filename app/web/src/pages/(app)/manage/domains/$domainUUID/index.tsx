@@ -357,6 +357,7 @@ function RouteComponent() {
 
 	// 域切换：加载成员/访客/房间/角色（对应 Solid createEffect）
 	const [loadedUUID, setLoadedUUID] = useState("");
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 按 uuid/loadedUUID 触发一次数据加载；内部 fetch 函数每次渲染新建，加入依赖会造成重复请求
 	useEffect(() => {
 		if (loadedUUID === uuid) return;
 		setLoadedUUID(uuid);
@@ -369,7 +370,6 @@ function RouteComponent() {
 			void fetchJoinRequests("pending", "", 1);
 		}
 		void domainStore.loadMyPermissions(uuid).catch(() => {});
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [uuid, loadedUUID]);
 
 	useEffect(() => {
@@ -378,13 +378,13 @@ function RouteComponent() {
 		}
 	}, [domain]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 仅在 domain 对象变化时用非空值初始化表单，setter 稳定且不应覆盖用户已输入内容
 	useEffect(() => {
 		if (!domain || loadedUUID !== domain.uuid) return;
 		setName((prev) => prev || domain.name);
 		setDescription((prev) => prev || domain.description || "");
 		setIsPublic(domain.is_public);
 		setRequireJoinApproval(!!domain.require_join_approval);
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [domain]);
 
 	async function fetchJoinRequests(

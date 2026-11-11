@@ -1,8 +1,8 @@
 package middleware
 
 import (
-	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/policy"
 	"net/http"
 	"strings"
 	"sync"
@@ -282,20 +282,18 @@ func RequireOwnerOrPermission(ownerContextKey, permCode string) gin.HandlerFunc 
 	}
 }
 
+// BanCheck 复用传输无关的 policy.CheckBan，与 WS 建连/分发使用同一份封禁判决。
+// roleCache 未初始化时 policy 层的字面量兜底仍能拦住 ban 角色，避免 fail-open。
 func BanCheck() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		role, exists := c.Get("role")
-		if !exists {
-			c.Next()
-			return
+		var sub policy.Subject
+		if role, exists := c.Get("role"); exists {
+			if roleStr, ok := role.(string); ok {
+				sub.Role = roleStr
+			}
 		}
-		roleStr, ok := role.(string)
-		if !ok {
-			c.Next()
-			return
-		}
-		if model.HasBanRole(roleStr) {
-			pkg.Fail(c, pkg.USER_BANNED)
+		if d := policy.CheckBan(sub); !d.Allowed {
+			pkg.Fail(c, d.Code)
 			c.Abort()
 			return
 		}

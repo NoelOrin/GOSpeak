@@ -998,7 +998,7 @@ app/web/src/
 │   │   ├── roomDetail.tsx # Room detail page
 │   │   ├── components/    # memberItemButton, passwordModal, roomItem, userInfoPopover, memberSidebar
 │   │   ├── hooks/         # useVoiceSession, useRoomAudioBridge, useRoomSounds
-│   │   ├── services/      # loadSfuClient, sfuSession
+│   │   ├── services/      # loadSfuClient（provider chunk 预热/动态加载）
 │   │   └── session/       # providers.ts, runVoiceJoin.ts, voiceSessionTypes.ts, voiceSessionUi.ts
 │   ├── domain/            # CreateDomainModal, DomainIcon, InviteShareModal, GuestAccessSettings 等
 │   ├── chat/              # chatPage, chatWindow, conversationList, memberSidebar；micControl / speakerControl 共用 audioControl.tsx 通用壳
@@ -1133,7 +1133,7 @@ The voice session is coordinated through `providers.ts` / `runVoiceJoin.ts` / `v
   - `serializeJoins`: whether same stream must be sequential
 - `useVoiceSession.ts` is the **unified orchestrator** — do not branch per SFU in this file
 - `loadSfuClient.ts` preloads the SFU client module
-- `sfuSession.ts` manages the SFU client lifecycle
+- `session/providers.ts` resolves provider → connect target; `session/runVoiceJoin.ts` owns the join/teardown lifecycle
 
 ### VoiceChat 加载时机
 

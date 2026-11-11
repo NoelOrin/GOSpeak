@@ -13,9 +13,16 @@ import {
 } from "lucide-react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Button } from "@gospeak/components";
 import { ManageHeader, ManagePage } from "@/components/manage/ManageShell";
 import { denyAccess } from "@/utils/accessDenied";
 import { hasPermission } from "@/utils/permissions";
+import { useUserStore } from "@/stores/userStore";
+import {
+	checkServerUpdate,
+	getServerVersion,
+	type ServerUpdateInfo,
+} from "@/api/system";
 
 interface HealthSnapshot {
 	timestamp: string;
@@ -110,6 +117,106 @@ function SectionTitle({ children }: { children: ReactNode }) {
 	);
 }
 
+type UpdateStatus = "idle" | "checking" | "latest" | "available" | "error";
+
+/**
+ * 服务端更新检查卡片。仅平台管理员（role === "admin"）可见：
+ * 路由本身按 role:manage 门控，但更新检查端点与卡片都只对 admin 开放，
+ * 与后端 /system/update/* 的 RequireRole("admin") 保持一致。
+ */
+function ServerUpdateCard() {
+	const isAdmin = useUserStore((s) => s.user?.role === "admin");
+
+	const [version, setVersion] = useState("");
+	const [status, setStatus] = useState<UpdateStatus>("idle");
+	const [info, setInfo] = useState<ServerUpdateInfo | null>(null);
+	const [error, setError] = useState("");
+
+	useEffect(() => {
+		if (!isAdmin) return;
+		void getServerVersion()
+			.then((v) => setVersion(v.version))
+			.catch(() => {});
+	}, [isAdmin]);
+
+	if (!isAdmin) return null;
+
+	const check = async () => {
+		setStatus("checking");
+		setError("");
+		try {
+			const result = await checkServerUpdate();
+			setInfo(result);
+			if (result.current) setVersion(result.current);
+			setStatus(result.available ? "available" : "latest");
+		} catch (e) {
+			setStatus("error");
+			setError(e instanceof Error ? e.message : String(e));
+		}
+	};
+
+	return (
+		<>
+			<SectionTitle>软件更新</SectionTitle>
+			<div className="border-border/80 bg-card rounded-lg border shadow-sm">
+				<div className="flex items-center justify-between gap-4 p-3">
+					<div className="min-w-0">
+						<div className="text-sm font-medium">
+							当前版本
+							<span className="text-faint-foreground ml-2 font-normal">
+								{version || "…"}
+							</span>
+						</div>
+						{status === "checking" && (
+							<div className="text-faint-foreground text-xs">
+								正在检查 GitHub Releases…
+							</div>
+						)}
+						{status === "latest" && <div className="text-xs">已是最新版本</div>}
+						{status === "error" && (
+							<div className="text-destructive text-xs">
+								检查失败：{error || "网络异常"}
+							</div>
+						)}
+					</div>
+					<Button
+						size="sm"
+						variant="outline"
+						disabled={status === "checking"}
+						onClick={() => void check()}
+					>
+						检查更新
+					</Button>
+				</div>
+
+				{status === "available" && info && (
+					<div className="border-t border-border px-3 py-2">
+						<div className="text-sm">
+							发现新版本
+							<span className="ml-2 font-medium">{info.latest}</span>
+							{info.url && (
+								<a
+									href={info.url}
+									target="_blank"
+									rel="noreferrer"
+									className="text-primary ml-3 text-xs hover:underline"
+								>
+									查看发布页 ↗
+								</a>
+							)}
+						</div>
+						{info.notes ? (
+							<div className="text-faint-foreground mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap text-xs">
+								{info.notes}
+							</div>
+						) : null}
+					</div>
+				)}
+			</div>
+		</>
+	);
+}
+
 function MonitorPage() {
 	const [status, setStatus] = useState("连接中...");
 	const [data, setData] = useState<HealthSnapshot | null>(null);
@@ -173,6 +280,8 @@ function MonitorPage() {
 					{error}
 				</div>
 			)}
+
+			<ServerUpdateCard />
 
 			<SectionTitle>业务实时</SectionTitle>
 			<div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">

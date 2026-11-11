@@ -181,6 +181,8 @@ export function useVoiceSession() {
 	}, [selectedRoom]);
 
 	// token 到达 → 发起 join（对应 Solid effect on(tokenQuery.data)）
+	// 依赖数组已完整覆盖 tokenQuery.data / abortCurrentJoin / teardownClient / teardownSession，
+	// 无需 lint suppression（此处原有的失效 eslint 注释已删除）。
 	useEffect(() => {
 		const data = tokenQuery.data;
 		if (!data) return;
@@ -444,7 +446,6 @@ export function useVoiceSession() {
 				}
 			}
 		})();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [tokenQuery.data, abortCurrentJoin, teardownClient, teardownSession]);
 
 	// token 查询失败（对应 Solid effect on tokenQuery.isError）

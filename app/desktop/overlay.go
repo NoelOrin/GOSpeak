@@ -53,9 +53,9 @@ type OverlayConfig struct {
 	Policy     string  `json:"policy"`
 }
 
-// overlayCfg holds the floating game-overlay window's configuration, handle,
-// and the last relayed snapshot. The window is created once (hidden) by
-// createOverlayWindow and controlled here.
+// overlayCfg holds the floating game-overlay window's configuration and the
+// last relayed snapshot. The window itself lives in overlayWin (created on
+// demand by ensureOverlayWindow, see below).
 //
 // 默认关闭：enabled=false 且窗口创建时 Hidden，只有用户在设置里开启（或策略
 // 判定 + 已连接）后才会显示。窗口本身无边框、透明、无阴影、置顶、不占任务栏。
@@ -75,7 +75,6 @@ var overlayCfg = struct {
 	// currently registered accelerators ("" when none).
 	registeredHotkey     string
 	registeredLockHotkey string
-	win                  *mygo.Window
 	snap                 OverlaySnapshot
 	mu                   sync.Mutex
 }{
@@ -85,12 +84,32 @@ var overlayCfg = struct {
 	locked:  true,
 }
 
+// The floating window is kept out of overlayCfg: it is created on demand (see
+// ensureOverlayWindow) and needs its own lock, so that building it never
+// serializes against the state broadcast paths.
+var (
+	overlayWinMu sync.Mutex
+	overlayWin   *mygo.Window
+)
+
+// overlayWindow returns the floating window, or nil when it has not been built
+// yet (the overlay is off until the user enables it).
+func overlayWindow() *mygo.Window {
+	overlayWinMu.Lock()
+	defer overlayWinMu.Unlock()
+	return overlayWin
+}
+
 // Overlay 事件：类型化 Event[T]（mygo v0.8.3+），Broadcast 发到所有窗口页面，
 // 仅相应订阅方（覆盖层 / 主窗口设置 UI）消费。
 var (
 	overlayStateEvent      = mygo.NewEvent[OverlaySnapshot]("overlay:state")
 	overlayVisibilityEvent = mygo.NewEvent[bool]("overlay.visibility")
 	overlayLockEvent       = mygo.NewEvent[bool]("overlay.lock")
+	// overlayEnabledEvent tells the main window's relay whether the feature is
+	// on, so it can keep the overlay's state warm while the window is hidden
+	// (instant content when it pops up) and stop pushing entirely when off.
+	overlayEnabledEvent = mygo.NewEvent[bool]("overlay.enabled")
 )
 
 const overlayConfigFileName = "overlay-config.json"
@@ -118,12 +137,16 @@ func setOverlayVisible(v bool) {
 	if !changed {
 		return
 	}
-	if overlayCfg.win != nil {
-		if v {
-			overlayCfg.win.Show()
+	if v {
+		if w := overlayWindow(); w != nil {
+			w.Show()
 		} else {
-			overlayCfg.win.Hide()
+			// Nothing to show yet: build the window, whose creation callback
+			// shows it because visible is already true.
+			ensureOverlayWindow()
 		}
+	} else if w := overlayWindow(); w != nil {
+		w.Hide()
 	}
 	broadcastVisibility()
 }
@@ -135,7 +158,9 @@ func (Overlay) SetEnabled(v bool) {
 	overlayCfg.mu.Lock()
 	overlayCfg.enabled = v
 	overlayCfg.mu.Unlock()
-	saveOverlayConfig()
+	scheduleOverlayConfigSave()
+	// Lets the main window start/stop relaying room state (see overlayEnabledEvent).
+	_ = overlayEnabledEvent.Broadcast(v)
 	if !v {
 		setOverlayVisible(false)
 		return
@@ -163,9 +188,9 @@ func (Overlay) SetOpacity(v float64) {
 	overlayCfg.mu.Lock()
 	overlayCfg.opacity = v
 	overlayCfg.mu.Unlock()
-	saveOverlayConfig()
-	if overlayCfg.win != nil {
-		overlayCfg.win.SetOpacity(v)
+	scheduleOverlayConfigSave()
+	if w := overlayWindow(); w != nil {
+		w.SetOpacity(v)
 	}
 }
 
@@ -182,7 +207,7 @@ func (Overlay) SetHotkey(hotkey string) {
 	overlayCfg.mu.Lock()
 	overlayCfg.hotkey = hotkey
 	overlayCfg.mu.Unlock()
-	saveOverlayConfig()
+	scheduleOverlayConfigSave()
 	registerOverlayHotkeys()
 }
 
@@ -200,7 +225,7 @@ func (Overlay) SetLockHotkey(hotkey string) {
 	overlayCfg.mu.Lock()
 	overlayCfg.lockHotkey = hotkey
 	overlayCfg.mu.Unlock()
-	saveOverlayConfig()
+	scheduleOverlayConfigSave()
 	registerOverlayHotkeys()
 }
 
@@ -220,7 +245,7 @@ func (Overlay) SetPolicy(policy string) {
 	overlayCfg.policy = policy
 	overlayCfg.manualOverride = nil
 	overlayCfg.mu.Unlock()
-	saveOverlayConfig()
+	scheduleOverlayConfigSave()
 	// Manual policy never shows on its own; auto re-evaluates right away.
 	if policy == overlayPolicyManual {
 		setOverlayVisible(false)
@@ -418,9 +443,51 @@ func registerOverlayHotkeys() {
 	}
 }
 
-// saveOverlayConfig persists the current configuration to the user-data dir.
+// overlayConfigSaveDelay is how long configuration writes are coalesced.
+//
+// The settings UI drives opacity from a range input: every step of a drag calls
+// Overlay.SetOpacity, and writing the JSON file synchronously on each of them
+// means dozens of fsync-less-but-still-syscall-heavy writes per drag. A short
+// quiet period collapses a drag into one write; flushOverlayConfig covers the
+// case where the app quits before it fires.
+const overlayConfigSaveDelay = 500 * time.Millisecond
+
+var overlaySaveTimer struct {
+	sync.Mutex
+	t *time.Timer
+}
+
+// scheduleOverlayConfigSave persists the configuration after a quiet period,
+// coalescing bursts of changes into a single write.
+func scheduleOverlayConfigSave() {
+	overlaySaveTimer.Lock()
+	defer overlaySaveTimer.Unlock()
+	if overlaySaveTimer.t != nil {
+		overlaySaveTimer.t.Stop()
+	}
+	overlaySaveTimer.t = time.AfterFunc(overlayConfigSaveDelay, func() {
+		overlaySaveTimer.Lock()
+		overlaySaveTimer.t = nil
+		overlaySaveTimer.Unlock()
+		writeOverlayConfig()
+	})
+}
+
+// flushOverlayConfig writes a pending configuration immediately. Called on quit
+// so a change made right before closing is not lost.
+func flushOverlayConfig() {
+	overlaySaveTimer.Lock()
+	t := overlaySaveTimer.t
+	overlaySaveTimer.t = nil
+	overlaySaveTimer.Unlock()
+	if t != nil && t.Stop() {
+		writeOverlayConfig()
+	}
+}
+
+// writeOverlayConfig persists the current configuration to the user-data dir.
 // Callers may hold overlayCfg.mu; this function re-locks as needed.
-func saveOverlayConfig() {
+func writeOverlayConfig() {
 	overlayCfg.mu.Lock()
 	cfg := OverlayConfig{
 		Enabled:    overlayCfg.enabled,
@@ -475,7 +542,7 @@ func loadOverlayConfig() {
 	overlayCfg.mu.Unlock()
 }
 
-// createOverlayWindow opens the floating overlay window (always hidden at
+// createOverlayWindow builds the floating overlay window (always hidden at
 // creation; the display policy and hotkeys decide when it shows) and points it
 // at the web frontend's /overlay route — same origin as the main window
 // (loopback proxy in release, dev server in dev mode).
@@ -483,13 +550,16 @@ func loadOverlayConfig() {
 // Window look: frameless + transparent + DisableShadow — no title bar, no
 // opaque background, no system shadow; the page draws the member list directly
 // over the game. StateKey persists the user-dragged position across restarts.
-func createOverlayWindow() {
+//
+// Main thread only (mygo builds windows there); call it through
+// ensureOverlayWindow unless already inside App.WhenReady.
+func createOverlayWindow() *mygo.Window {
 	overlayCfg.mu.Lock()
 	opacity := overlayCfg.opacity
 	overlayCfg.mu.Unlock()
 
 	base := appPageBase()
-	overlayCfg.win = mygo.NewWindow(mygo.WindowOptions{
+	return mygo.NewWindow(mygo.WindowOptions{
 		Title: "GOSpeak Overlay " + version,
 		URL:   base + "/overlay",
 		Page:  mygo.PageOptions{TrustedOrigins: originOf(base)},
@@ -509,15 +579,53 @@ func createOverlayWindow() {
 		StateKey: "overlay",
 		Hidden:   true,
 	})
-	overlayCfg.mu.Lock()
-	overlayCfg.visible = false
-	overlayCfg.mu.Unlock()
+}
+
+// ensureOverlayWindow builds the floating window the first time it is needed.
+//
+// The overlay is off by default, and its window is a SECOND WebView running the
+// whole frontend: creating it at launch doubles the JS the app parses and keeps
+// resident for a feature most users never turn on. So it is built on the first
+// real use — the switch being turned on, or something showing it — and the
+// creation callback honours a show that was requested in the meantime.
+func ensureOverlayWindow() {
+	overlayWinMu.Lock()
+	exists := overlayWin != nil
+	overlayWinMu.Unlock()
+	if exists {
+		return
+	}
+	// Build inside WhenReady/postMain: window construction must happen on the
+	// main thread, and posting it also keeps this safe when called from the
+	// policy ticker or an IPC handler.
+	mygo.App.WhenReady(func() {
+		overlayWinMu.Lock()
+		if overlayWin == nil {
+			overlayWin = createOverlayWindow()
+		}
+		w := overlayWin
+		overlayWinMu.Unlock()
+
+		overlayCfg.mu.Lock()
+		visible := overlayCfg.visible
+		overlayCfg.mu.Unlock()
+		if visible {
+			w.Show()
+		}
+	})
 }
 
 // initOverlay wires the whole overlay subsystem up during app startup.
 func initOverlay() {
 	loadOverlayConfig()
-	createOverlayWindow()
+	// Only pay for the second WebView when the feature was left enabled; every
+	// other path goes through ensureOverlayWindow.
+	overlayCfg.mu.Lock()
+	enabled := overlayCfg.enabled
+	overlayCfg.mu.Unlock()
+	if enabled {
+		ensureOverlayWindow()
+	}
 	registerOverlayHotkeys()
 	startOverlayPolicyLoop()
 }

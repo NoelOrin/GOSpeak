@@ -311,8 +311,8 @@ jobs:
         run: |
           go build \
             -ldflags="-s -w \
-              -X 'GOSpeak/cmd.version=${RELEASE_VERSION}' \
-              -X 'GOSpeak/cmd.commit=${RELEASE_COMMIT}'" \
+              -X 'GOSpeak/internal/buildinfo.Version=${RELEASE_VERSION}' \
+              -X 'GOSpeak/internal/buildinfo.Commit=${RELEASE_COMMIT}'" \
             -o "gospeak-${{ matrix.target }}${{ matrix.ext }}" main.go
 
       - name: Upload artifact

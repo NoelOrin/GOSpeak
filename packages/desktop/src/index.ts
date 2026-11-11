@@ -80,6 +80,7 @@ export {
 
 export {
 	createServerConfig,
+	SERVER_BASE_URL_KEY,
 	type ServerConfig,
 } from "./capabilities/server";
 

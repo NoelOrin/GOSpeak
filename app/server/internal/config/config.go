@@ -40,7 +40,7 @@ type Config struct {
 	// BcryptCost 密码哈希工作因子，默认 12。
 	BcryptCost int `env:"BCRYPT_COST" envDefault:"12"`
 
-	SFUProvider   string `env:"SFU_PROVIDER" envDefault:"livekit"`
+	SFUProvider string `env:"SFU_PROVIDER" envDefault:"livekit"`
 	// LiveKitHost 是后端访问 LiveKit 的地址（admin API / RoomService），
 	// 容器部署填内网服务名 ws://livekit:7880 即可。
 	LiveKitHost string `env:"LIVEKIT_HOST" envDefault:""`
@@ -86,6 +86,9 @@ type Config struct {
 	NATSConnectTimeout string `env:"NATS_CONNECT_TIMEOUT" envDefault:"2s"`
 	NATSEmbeddedPort   string `env:"NATS_EMBEDDED_PORT" envDefault:""`
 	NATSWAL            string `env:"NATS_WAL_PATH" envDefault:""`
+	// NATSStoreDir 是内嵌 NATS JetStream 的持久化目录，承载 JWT 签名密钥/黑名单/refresh-family。
+	// 留空时由 NATStoreDirPath() 回退到 DB 同级 nats/ 目录；compose 部署显式设为独立卷挂载点。
+	NATSStoreDir string `env:"NATS_STORE_DIR" envDefault:""`
 
 	MetricsToken string `env:"METRICS_TOKEN" envDefault:""`
 
@@ -284,6 +287,20 @@ func (c *Config) NATSConnectTimeoutDuration() (time.Duration, error) {
 // NATSWALPath 返回断线事件 WAL 文件路径；空表示禁用磁盘持久化。
 func (c *Config) NATSWALPath() string {
 	return strings.TrimSpace(c.NATSWAL)
+}
+
+// NATStoreDirPath 返回内嵌 NATS JetStream 的持久化目录（承载签名密钥/黑名单）。
+// 显式配置 NATS_STORE_DIR 时用它；否则回退到 DB 文件同级的 nats/ 目录，
+// 保证单二进制与 compose 部署默认都能跨重启保留 auth 状态，而非落进临时目录。
+func (c *Config) NATStoreDirPath() string {
+	if dir := strings.TrimSpace(c.NATSStoreDir); dir != "" {
+		return dir
+	}
+	db := strings.TrimSpace(c.DBPath)
+	if db == "" {
+		return filepath.Join("db", "nats")
+	}
+	return filepath.Join(filepath.Dir(db), "nats")
 }
 
 // WSAllowedOriginsList 返回 WebSocket Origin 白名单。

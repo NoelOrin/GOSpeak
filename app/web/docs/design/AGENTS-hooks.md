@@ -28,8 +28,7 @@ components/room/
 │   ├── voiceSessionTypes.ts   # Session / VoicePhase / VoiceProviderAdapter 等领域类型
 │   └── voiceSessionUi.ts      # 重连 toast 等 UI 副作用
 └── services/
-    ├── loadSfuClient.ts       # provider chunk 预热 + createSFUClient 动态加载
-    └── sfuSession.ts          # 从 JoinTokenResponse 解析 provider / connectTarget
+    └── loadSfuClient.ts       # provider chunk 预热 + createSFUClient 动态加载
 ```
 
 ## Current state
@@ -55,7 +54,7 @@ Local 模式的中转上传**必须用原生 `fetch`**（见 `api/storage.ts#upl
 ### 语音会话分层职责
 - `useVoiceSession`：`useQuery` 拉 join token、维护会话阶段与 teardown，调用 `runVoiceJoin` 完成进房。
 - `providers.ts` / `runVoiceJoin.ts`：provider 适配与并发进房合并，隔离 provider 差异。
-- `loadSfuClient.ts` / `sfuSession.ts`：动态加载 SFU client、解析连接信息。
+- `loadSfuClient.ts`：动态加载 SFU client（连接信息解析在 `session/providers.ts`）。
 - `useRoomAudioBridge` / `useRoomSounds`：把会话接到音频处理与提示音，属于编排层，不进入 SFU 抽象层。
 
 ## Audio Pipeline

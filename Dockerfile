@@ -26,7 +26,7 @@ RUN go mod download
 COPY app/server/ ./
 # 将前端产物同步到 go:embed 目录，打进二进制
 COPY --from=web-builder /src/app/web/dist/ ./internal/webui/dist/
-RUN CGO_ENABLED=0 go build -ldflags="-s -w -X 'GOSpeak/cmd.version=${VERSION}' -X 'GOSpeak/cmd.commit=${COMMIT}'" -o /gospeak .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w -X 'GOSpeak/internal/buildinfo.Version=${VERSION}' -X 'GOSpeak/internal/buildinfo.Commit=${COMMIT}'" -o /gospeak .
 
 # ── Stage 3: Production ──────────────────────────────────────────────────
 FROM alpine:3.21
@@ -38,16 +38,19 @@ WORKDIR /app
 
 COPY --from=go-builder /gospeak /app/gospeak
 
-RUN mkdir -p /app/db /app/logs /app/uploads \
+RUN mkdir -p /app/db /app/logs /app/uploads /app/nats \
     && chown -R app:app /app
 
 ENV GIN_MODE=release
 ENV SERVER_PORT=8998
 ENV DB_PATH=/app/db/app.db
+# 内嵌 NATS JetStream 的持久化目录：JWT 签名密钥 / 黑名单 / refresh-family 落在这里，
+# 跨重启保留。必须挂卷（compose 已挂 gospeak-nats），否则视为临时数据。
+ENV NATS_STORE_DIR=/app/nats
 
 EXPOSE 8998
 
-VOLUME ["/app/db", "/app/logs", "/app/uploads"]
+VOLUME ["/app/db", "/app/logs", "/app/uploads", "/app/nats"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD wget -qO- http://127.0.0.1:8998/ping || exit 1

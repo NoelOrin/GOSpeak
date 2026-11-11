@@ -55,6 +55,10 @@ func initLifecycle() {
 	// Closing the last window must not quit: the tray keeps the app alive.
 	mygo.App.OnWindowAllClosed(func() {})
 
+	// Overlay configuration writes are debounced (overlay.go); quitting must
+	// flush a change made right before the user closed the app.
+	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { flushOverlayConfig() })
+
 	if mainWindow != nil {
 		mainWindow.OnClose(func(e *mygo.CloseEvent) {
 			if quitting.Load() {

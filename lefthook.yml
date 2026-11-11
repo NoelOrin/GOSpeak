@@ -20,6 +20,10 @@ pre-push:
   commands:
     "biome ci":
       run: npx @biomejs/biome ci --files-ignore-unknown=true ./app/web ./packages
+    "hook dependency ratchet":
+      # biome 的 useExhaustiveDependencies 是 warn，biome ci 不会因此失败；
+      # 棘轮脚本阻止新增告警，与 CI 的 lint job 使用同一基线。
+      run: node scripts/check-hook-deps.mjs
     "go vet":
       run: cd app/server && go vet ./...
     "radius tokens":

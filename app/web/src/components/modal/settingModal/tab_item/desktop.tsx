@@ -1,11 +1,16 @@
 import {
+	Button,
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
 } from "@gospeak/components";
-import type { OverlayConfig, OverlayPolicy } from "@gospeak/desktop";
+import type {
+	OverlayConfig,
+	OverlayPolicy,
+	UpdateInfo,
+} from "@gospeak/desktop";
 import { Field, Page, Section, Toggle } from "./shared";
 import ServerUrlField from "@/components/common/serverUrlField";
 import { createDesktop } from "@gospeak/desktop";
@@ -58,12 +63,166 @@ function HotkeyField({
 	);
 }
 
+type UpdateStatus =
+	| "idle"
+	| "checking"
+	| "latest"
+	| "available"
+	| "downloading"
+	| "restarting"
+	| "unsupported"
+	| "error";
+
+function UpdateSection() {
+	const desktop = createDesktop();
+
+	const [current, setCurrent] = useState("");
+	const [status, setStatus] = useState<UpdateStatus>("idle");
+	const [update, setUpdate] = useState<UpdateInfo | null>(null);
+	const [progress, setProgress] = useState(0);
+	const [error, setError] = useState("");
+
+	// 下载进度事件常驻订阅：Install 期间宿主按已下载/总量广播 0..1。
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 仅在 desktop.isDesktop 变化时订阅更新进度，desktop 门面对象稳定
+	useEffect(() => {
+		if (!desktop.isDesktop) return;
+		return desktop.updater.onProgress(setProgress);
+	}, [desktop.isDesktop]);
+
+	const check = async () => {
+		setStatus("checking");
+		setError("");
+		setUpdate(null);
+		try {
+			const info = await desktop.updater.check();
+			setCurrent(info.current);
+			if (!info.supported) {
+				setStatus("unsupported");
+			} else if (info.available) {
+				setUpdate(info);
+				setStatus("available");
+			} else {
+				setStatus("latest");
+			}
+		} catch (e) {
+			setStatus("error");
+			setError(e instanceof Error ? e.message : String(e));
+		}
+	};
+
+	const install = async () => {
+		setStatus("downloading");
+		setProgress(0);
+		try {
+			await desktop.updater.install();
+			// 安装成功后宿主重启进新版本，页面随之关闭；能走到这里说明重启未发生。
+			setStatus("restarting");
+		} catch (e) {
+			setStatus("error");
+			setError(e instanceof Error ? e.message : String(e));
+		}
+	};
+
+	// 纯浏览器里没有桌面宿主，本区块不渲染（避免误导性的兜底状态）。
+	if (!desktop.isDesktop) return null;
+
+	return (
+		<Section
+			title="软件更新"
+			desc="检查 GitHub Releases 上的新版本；安装会校验签名并替换当前应用后重启。"
+		>
+			<div className="flex flex-col gap-2">
+				<div className="flex items-center justify-between gap-4">
+					<div className="min-w-0">
+						<div className="text-sm font-medium">
+							当前版本
+							<span className="text-faint-foreground ml-2 font-normal">
+								{current || "…"}
+							</span>
+						</div>
+						{status === "checking" && (
+							<div className="text-faint-foreground text-xs">正在检查更新…</div>
+						)}
+						{status === "latest" && <div className="text-xs">已是最新版本</div>}
+						{status === "unsupported" && (
+							<div className="text-faint-foreground text-xs">
+								当前构建不支持自动更新，请前往发布页手动下载。
+							</div>
+						)}
+						{status === "downloading" && (
+							<div className="text-faint-foreground text-xs">
+								正在下载更新… {Math.round(progress * 100)}%
+							</div>
+						)}
+						{status === "restarting" && (
+							<div className="text-xs">更新完成，正在重启…</div>
+						)}
+						{status === "error" && (
+							<div className="text-destructive text-xs" title={error}>
+								检查/安装失败：{error}
+							</div>
+						)}
+					</div>
+					<div className="flex shrink-0 items-center gap-2">
+						{status === "available" ? (
+							<Button size="sm" onClick={() => void install()}>
+								下载并安装
+							</Button>
+						) : status === "downloading" ? null : (
+							<Button
+								size="sm"
+								variant="outline"
+								disabled={status === "checking"}
+								onClick={() => void check()}
+							>
+								检查更新
+							</Button>
+						)}
+						{status === "unsupported" && (
+							<Button
+								size="sm"
+								onClick={() => void desktop.updater.openReleasePage()}
+							>
+								前往发布页
+							</Button>
+						)}
+					</div>
+				</div>
+
+				{status === "downloading" && (
+					<div className="bg-border h-1.5 w-full overflow-hidden rounded-sm">
+						<div
+							className="bg-primary h-full transition-[width]"
+							style={{ width: `${Math.round(progress * 100)}%` }}
+						/>
+					</div>
+				)}
+
+				{status === "available" && update && (
+					<div className="border-border bg-muted/40 rounded-sm border px-3 py-2">
+						<div className="text-sm">
+							发现新版本
+							<span className="ml-2 font-medium">{update.version}</span>
+						</div>
+						{update.notes ? (
+							<div className="text-faint-foreground mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap text-xs">
+								{update.notes}
+							</div>
+						) : null}
+					</div>
+				)}
+			</div>
+		</Section>
+	);
+}
+
 function DesktopForm() {
 	const desktop = createDesktop();
 
 	const [cfg, setCfg] = useState<OverlayConfig | null>(null);
 	const [autostartEnabled, setAutostartEnabled] = useState(false);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 挂载时读取一次自启动与覆盖层配置，后续由 patch 显式刷新，不应随每次渲染重读
 	useEffect(() => {
 		void desktop.overlay
 			.getConfig()
@@ -73,7 +232,6 @@ function DesktopForm() {
 			.isEnabled()
 			.then(setAutostartEnabled)
 			.catch(() => {});
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	const patch = (partial: Partial<OverlayConfig>) =>
@@ -186,6 +344,8 @@ function DesktopForm() {
 					}}
 				/>
 			</Section>
+
+			<UpdateSection />
 
 			<Section
 				title="服务器"

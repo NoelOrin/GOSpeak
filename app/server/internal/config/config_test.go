@@ -252,7 +252,7 @@ func clearConfigEnv(t *testing.T) {
 		"JWT_KEY", "JWT_KEY_TTL", "SFU_PROVIDER", "SERVER_PORT", "STATIC_DIR", "CORS_ORIGIN", "GIN_MODE",
 		"TLS_CERT", "TLS_KEY",
 		"LOG_LEVEL", "LOG_FORMAT", "LOG_OUTPUT", "LOG_FILE", "LOG_CALLER",
-		"NATS_SUBJECT_PREFIX", "NATS_NAME", "NATS_CONNECT_TIMEOUT", "NATS_EMBEDDED_PORT", "STATE_STORE",
+		"NATS_SUBJECT_PREFIX", "NATS_NAME", "NATS_CONNECT_TIMEOUT", "NATS_EMBEDDED_PORT", "NATS_STORE_DIR", "STATE_STORE",
 		"GOSPEAK_ROLE", "CLUSTER_NODE_ID", "CLUSTER_ADVERTISE_URL", "CLUSTER_AGENT_URL", "CLUSTER_AGENT_TOKEN",
 		"CLUSTER_HEARTBEAT_INTERVAL", "CLUSTER_HEARTBEAT_TIMEOUT", "CLUSTER_MAX_SERVERS", "CLUSTER_MAX_ROOMS", "CLUSTER_LABELS",
 		"EMAIL_ENABLED", "SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM", "SMTP_FROM_NAME",
@@ -269,6 +269,27 @@ func clearConfigEnv(t *testing.T) {
 		_ = os.Unsetenv(k)
 	}
 	SetCurrent(nil)
+}
+
+func TestNATStoreDirPath(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  *Config
+		want string
+	}{
+		{name: "default falls back to db sibling", cfg: &Config{DBPath: "db/app.db"}, want: filepath.Join("db", "nats")},
+		{name: "absolute db path", cfg: &Config{DBPath: "/app/db/app.db"}, want: filepath.Join("/app/db", "nats")},
+		{name: "empty db path", cfg: &Config{DBPath: ""}, want: filepath.Join("db", "nats")},
+		{name: "explicit override wins", cfg: &Config{DBPath: "db/app.db", NATSStoreDir: "/data/nats-js"}, want: "/data/nats-js"},
+		{name: "explicit override trims spaces", cfg: &Config{DBPath: "db/app.db", NATSStoreDir: "  /data/nats-js  "}, want: "/data/nats-js"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.NATStoreDirPath(); got != tt.want {
+				t.Fatalf("NATStoreDirPath() = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestJWTTokenTTLDurations(t *testing.T) {

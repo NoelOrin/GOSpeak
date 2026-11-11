@@ -53,6 +53,7 @@ jobs:
               - 'packages/**'
               - 'test/**'
               - 'package.json'
+              - 'biome.json'
               - '**/tsconfig*.json'
               - '.npmrc'
               - 'pnpm-lock.yaml'
@@ -91,6 +92,12 @@ jobs:
           ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
               needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
         run: node scripts/check-ui-tokens.mjs
+      - name: Hook dependency ratchet (useExhaustiveDependencies)
+        # biome 规则为 warn，不会让 biome ci 失败；棘轮脚本保证只许减少、不许新增。
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
+        run: node scripts/check-hook-deps.mjs
       - name: Desktop bridge contract (Go bindings ↔ TS commands)
         if: >-
           ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
@@ -202,6 +209,38 @@ jobs:
           CGO_ENABLED: 1
         run: go test ./... -race -v -count=1
 
+  test-web:
+    name: Test Web (Vitest)
+    needs: changes
+    if: >-
+      ${{ !cancelled() &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+           needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm-install
+      - name: Web unit tests
+        env:
+          CI: "true"
+        run: pnpm --filter @gospeak/web test
+
+  test-packages:
+    name: Test Packages (Vitest)
+    needs: changes
+    if: >-
+      ${{ !cancelled() &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+           needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm-install
+      - name: Package unit tests
+        env:
+          CI: "true"
+        run: pnpm --filter @gospeak/components --filter @gospeak/desktop --filter @gospeak/sfu-client test
+
   version-check:
     name: Version Consistency
     # 版本一致性仅在打 tag 发版时校验；push 到分支（如 release/dev）时跳过，
@@ -216,7 +255,7 @@ jobs:
   gate:
     name: CI Gate
     if: always()
-    needs: [lint, typecheck, build-js, build-server, test-server, version-check]
+    needs: [lint, typecheck, build-js, build-server, test-server, test-web, test-packages, version-check]
     runs-on: ubuntu-latest
     steps:
       - name: Verify required checks
@@ -226,10 +265,12 @@ jobs:
           BUILD_JS_RESULT: ${{ needs.build-js.result }}
           BUILD_SERVER_RESULT: ${{ needs.build-server.result }}
           TEST_SERVER_RESULT: ${{ needs.test-server.result }}
+          TEST_WEB_RESULT: ${{ needs.test-web.result }}
+          TEST_PACKAGES_RESULT: ${{ needs.test-packages.result }}
           VERSION_RESULT: ${{ needs.version-check.result }}
         run: |
           set -euo pipefail
-          for result in "$LINT_RESULT" "$TYPECHECK_RESULT" "$BUILD_JS_RESULT" "$BUILD_SERVER_RESULT" "$TEST_SERVER_RESULT" "$VERSION_RESULT"; do
+          for result in "$LINT_RESULT" "$TYPECHECK_RESULT" "$BUILD_JS_RESULT" "$BUILD_SERVER_RESULT" "$TEST_SERVER_RESULT" "$TEST_WEB_RESULT" "$TEST_PACKAGES_RESULT" "$VERSION_RESULT"; do
             case "$result" in
               success|skipped) ;;
               *) echo "required CI job failed: $result" >&2; exit 1 ;;

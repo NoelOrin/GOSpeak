@@ -62,6 +62,7 @@ type Handlers struct {
 	Email        *handler.EmailVerificationHandler
 	EmailConfig  *handler.EmailConfigHandler
 	Monitor      *handler.MonitorHandler
+	SystemUpdate *handler.SystemUpdateHandler
 	Domain       *handler.DomainHandler
 	Conversation *handler.ConversationHandler
 	Audit        *handler.AuditHandler
@@ -145,7 +146,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	if h.JoinRequest != nil {
 		inviteJoinRoutes.RegisterDomainAdmin(protected.Group("/domain"), h.JoinRequest)
 	}
-	systemRoutes.RegisterProtected(protected.Group("/system"), h.Monitor)
+	systemRoutes.RegisterProtected(protected.Group("/system"), h.Monitor, h.SystemUpdate)
 
 	return r
 }

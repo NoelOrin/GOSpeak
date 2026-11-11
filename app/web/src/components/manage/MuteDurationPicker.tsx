@@ -69,6 +69,7 @@ export default function MuteDurationPicker({
 	})();
 
 	// 外部重置（提交后清空）时同步内部状态
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 仅在 permanent/duration 变化时拆分时长，setter 稳定，不应因父组件渲染反复回写
 	useEffect(() => {
 		if (permanent) {
 			setCustomMode(false);
@@ -90,7 +91,6 @@ export default function MuteDurationPicker({
 			setHours(parts.hours);
 			setMinutes(parts.minutes);
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [permanent, duration]);
 
 	const emitTimed = (seconds: number) => {

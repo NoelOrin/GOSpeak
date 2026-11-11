@@ -9,7 +9,7 @@ export const Route = createFileRoute("/(app)/profile")({
 	},
 });
 
-function ProfilePage() {
+export function ProfilePage() {
 	return (
 		<div className="flex h-full w-full items-start justify-center overflow-auto p-4">
 			<div className="w-full max-w-5xl">

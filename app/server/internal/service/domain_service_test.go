@@ -70,7 +70,6 @@ func TestDomainService_Create_Success(t *testing.T) {
 	if !domain.IsPublic {
 		t.Fatal("expected domain to be public")
 	}
-
 	var member model.DomainMember
 	if err := db.Where("domain_uuid = ? AND user_uuid = ?", domain.UUID, "owner-uuid").First(&member).Error; err != nil {
 		t.Fatalf("owner member not found: %v", err)

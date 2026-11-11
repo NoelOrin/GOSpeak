@@ -53,13 +53,13 @@ export default function ProfileForm({
 	const { upload, uploading } = useUpload("avatars");
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 仅在 user 变化时同步表单初值；内部 setter 稳定，重跑会覆盖用户编辑中的内容
 	useEffect(() => {
 		if (user && mode === "view") {
 			setDisplayName(user.display_name || user.name || "");
 			setAvatar(user.avatar || "");
 			setPreview(null);
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [user]);
 
 	// 释放裁切预览的 Object URL，避免反复上传时累积内存

@@ -69,6 +69,7 @@ export default function MessageList({
 	const [password, setPassword] = useState("");
 	const [retrying, setRetrying] = useState(false);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 仅按消息数量与是否贴底触发滚动；virtualizer/ref 稳定，加入依赖会造成滚动抖动
 	useEffect(() => {
 		const len = visibleMessages.length;
 		if (len > 0 && isAtBottom) {
@@ -76,7 +77,6 @@ export default function MessageList({
 				virtualizer.scrollToIndex(len - 1, { align: "end" });
 			});
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [visibleMessages.length, isAtBottom]);
 
 	function handleScroll() {

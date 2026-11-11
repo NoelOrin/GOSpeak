@@ -143,12 +143,12 @@ function AudioForm() {
 		}
 	}
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 挂载/卸载时启停麦克风测试；stopMicTest 稳定，加入依赖会导致重复启停与设备抢占
 	useEffect(() => {
 		void AudioDeviceStore.fetchAudioDevices();
 		return () => {
 			stopMicTest();
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	return (

@@ -1,11 +1,12 @@
 import { toast, Button } from "@gospeak/components";
 import { useQueryClient } from "@tanstack/react-query";
-import { CirclePlus } from "lucide-react";
+import { CirclePlus, RotateCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { RoomRecord } from "@/api/room";
 import { deleteRoom } from "@/api/room";
 import Divider from "@/components/common/divider";
 import ConfirmModal from "@/components/common/ConfirmModal";
+import TooltipIconButton from "@/components/common/tooltipIconButton";
 import DomainMenu from "@/components/domain/DomainMenu";
 import CreateRoomModal from "@/components/modal/createRoomModal";
 import EditRoomModal from "@/components/modal/editRoomModal";
@@ -77,27 +78,18 @@ function RoomListHeader({ onOpenCreate }: { onOpenCreate: () => void }) {
 			<h3 className="min-w-0 flex-1 truncate font-bold">
 				{currentDomain?.name || "选择域"}
 			</h3>
-			<div className="flex items-center gap-1">
+			<div className="flex items-center gap-0.5">
 				{currentDomain && hasPermission("room:create") && (
-					<Button
-						variant="ghost"
-						size="sm"
-						className="size-7 p-0"
-						onClick={onOpenCreate}
-						title="新建房间"
-						aria-label="新建房间"
-					>
-						<CirclePlus size={14} />
-					</Button>
+					<TooltipIconButton label="新建房间" onClick={onOpenCreate}>
+						<CirclePlus size={16} />
+					</TooltipIconButton>
 				)}
-				<Button
-					variant="ghost"
-					size="sm"
-					className="h-7 min-w-11 px-2 text-xs"
+				<TooltipIconButton
+					label="刷新房间列表"
 					onClick={() => socketStore.listRooms()}
 				>
-					刷新
-				</Button>
+					<RotateCw size={16} />
+				</TooltipIconButton>
 				{currentDomain && <DomainMenu domainUUID={currentDomain.uuid} />}
 			</div>
 		</div>

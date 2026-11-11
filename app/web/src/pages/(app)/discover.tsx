@@ -26,7 +26,7 @@ import { extractDomainInviteCode } from "@/utils/domainInvite";
 import { localizedApiMessage } from "@/utils/errorMessages";
 
 export const Route = createFileRoute("/(app)/discover")({
-	component: RouteComponent,
+	component: DiscoverPage,
 	staticData: {
 		title: "发现域",
 	},
@@ -34,7 +34,7 @@ export const Route = createFileRoute("/(app)/discover")({
 
 const PAGE_SIZE = 12;
 
-function RouteComponent() {
+export function DiscoverPage() {
 	const navigate = useNavigate();
 	const _queryClient = useQueryClient();
 	const [keyword, setKeyword] = useState("");
@@ -189,6 +189,7 @@ function RouteComponent() {
 		};
 	}, [publicDomains]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 挂载时读取一次 URL 邀请码与剪贴板参数，后续加入动作由用户事件触发，不应随渲染重复执行
 	useEffect(() => {
 		domainStore.loadMyDomains();
 		void (async () => {
@@ -203,7 +204,6 @@ function RouteComponent() {
 				// 浏览器未授权读取剪贴板时静默处理，用户可手动输入。
 			}
 		})();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	return (

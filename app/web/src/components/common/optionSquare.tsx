@@ -68,7 +68,13 @@ export default function OptionSquare({
 				aria-label={label}
 				className={clsx(
 					className,
-					"bg-accent text-accent-foreground hover:opacity-90 relative flex size-12 cursor-pointer select-none items-center justify-center rounded-xl p-0 transition-opacity",
+					"bg-accent text-accent-foreground relative flex size-12 cursor-pointer touch-manipulation select-none items-center justify-center rounded-xl p-0",
+					// 位移 / 明度 / 阴影同一条曲线，按下 75ms 收紧、松开 150ms 回弹
+					"transition-[transform,filter,background-color,box-shadow,opacity] duration-150 ease-out",
+					"hover:brightness-95",
+					"active:shadow-none active:scale-[0.94] active:brightness-90 active:duration-75",
+					"focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
+					"motion-reduce:transition-none motion-reduce:active:scale-100",
 					active ? "bg-neutral/15 text-foreground shadow-sm" : "",
 				)}
 			>

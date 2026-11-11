@@ -42,6 +42,10 @@ GOSpeak 桌面端的**本体**：一个用 [MyGo](https://github.com/egoist/mygo
 | `resources/icon.png` | 打包用应用图标（1024×1024），MyGo 生成 .icns / .ico / .desktop 图标 |
 | `assets/` | go:embed 的运行时图标：`icon.png`（Dock/窗口兜底）、`tray.png`（单色托盘模板图） |
 | `assets.go` | 读取内嵌图标并应用到 Dock / 窗口 / 托盘 |
+| `proxyserver.go` | 本地回环反向代理：托管内嵌前端（gzip 边车 / 强缓存 / ETag）+ 转发 `/api` `/livekit` `/ws` 到配置的服务器 |
+| `server_config.go` | 后端地址持久化（`server-config.json`，**权威**）；切换时清 Cookie/会话缓存并重载窗口。页面侧 `localStorage` 只是同步镜像，见 `packages/desktop` 的「服务器地址：双持久化」 |
+| `overlay.go` | 游戏覆盖层窗口：按需创建、全局快捷键、显隐策略、成员状态接力 |
+| `startup.go` | 启动耗时追踪（`GOSPEAK_STARTUP_DEBUG=1`，见「启动耗时」） |
 | `proxyport.go` | 回环代理的稳定端口选择与持久化（`proxy-port.json`） |
 | `lifecycle.go` | 关窗进托盘、Dock 激活、单实例聚焦与退出标记 |
 
@@ -94,6 +98,23 @@ MYGO_LDFLAGS="-X 'main.version=1.2.3' -X 'main.commit=abc1234'" \
 
 发布链（`.github/workflows/release.yml`）就是这么注入 tag 与 commit 的。
 
+### 自动更新
+
+`updater.go` 基于 MyGo 内建的签名更新模块（`mygo.Updater`）：前端设置页的
+「软件更新」区块调用 `Updater.Check` / `Updater.Install`，宿主从更新源拉取
+`update-<target>.json` 清单，下载、ed25519 签名校验后原子替换应用本体并重启
+（进度经 `updater.progress` 事件推给前端）。
+
+默认未启用（`mygo.Updater.Enabled()` 为 false）：此时 Check 返回
+`supported=false`，前端回退为「前往发布页」按钮。启用步骤：
+
+1. `mygo keygen` 生成密钥对（私钥 `mygo-update.key` **不要提交**）。
+2. `mygo.config.ts` 加 `updates: { publicKey, github: "NoelOrin/GOSpeak",
+   tagPrefix: "desktop-v" }` —— 与桌面发布链的 tag 约定一致，发布即自带
+   更新清单。
+3. CI 构建时通过 `MYGO_UPDATER_PRIVATE_KEY` 环境变量（或 config 的
+   `updates.privateKey`）提供私钥，`mygo build` 才会签名产物并生成清单。
+
 ### 常见坑
 
 - **DMG 只能在 macOS 上构建**：`buildDMG` 依赖 `hdiutil` / `ditto` / `diskutil`。
@@ -108,6 +129,65 @@ MYGO_LDFLAGS="-X 'main.version=1.2.3' -X 'main.commit=abc1234'" \
   发布链因此加了显式的产物断言。
 - 产物是 ad-hoc 签名，未公证。要消除 Gatekeeper 提示需配置
   `macos.signingIdentity`（Developer ID）与 `macos.notarize`。
+
+## 性能设计要点
+
+- **静态资源一次读入内存**（`proxyserver.go`）：`webui/dist` 只 ~2 MB，进程启动后在
+  后台把所有文本资源读进内存；页面请求只是内存拷贝 + `ServeContent`。
+- **构建期预压缩**：`mygo.config.ts` 的 `buildCommand` 最后用 `gzip -9 -k` 为每个文本
+  产物生成 `.gz` 边车，宿主直接发送预压缩字节 —— 启动时**不再有任何压缩工作**
+  （实测 warm 从 ~50ms 降到 ~7ms）。缺少 `.gz` 时（`go run` / `mygo dev` / 测试）仍会
+  运行时压缩兜底。首屏引用的 35 个资源：882 KiB → 318 KiB。
+- **缓存策略**：`assets/` `chunks/` `entries/` 是带 hash 的内容寻址产物 → `immutable`
+  长缓存；`index.html` → `no-cache`（否则升级后仍指向旧 chunk 名）；其余非 hash 文件
+  短缓存。每个响应带 ETag，重新加载走 304 —— 实测二次启动时 WebKit 直接命中磁盘缓存，
+  35 个资源请求全部消失。
+- **反向代理连接池**：专用 `Transport`（每主机 16 条空闲连接、90s idle、禁用
+  `HTTP(S)_PROXY`），避免默认的 2 条空闲连接在 API 突发时反复握手，也避免用户机器上
+  的环境代理劫持「回环→自建服务器」的流量。上游不可达时返回统一 JSON 错误（6002）。
+- **覆盖层窗口按需创建**（`overlay.go`）：默认关闭时不再预建第二个 WebView
+  （否则启动就要多解析/驻留一整份前端 JS）。开启开关、快捷键或策略显示时才创建，
+  创建回调会补上期间挂起的"显示"请求。
+- **状态接力节流**（`app/web/src/hooks/useOverlayRelay.ts`）：覆盖层关闭时主窗口
+  完全不推送；开启后按 100ms 尾部合并推送（原为逐帧），并按 JSON key 去重。
+- **配置落盘防抖**：不透明度滑块这类高频变更不再每次同步写 `overlay-config.json`，
+  500ms 静默期后写一次，退出时 flush。
+
+### 启动耗时（本机 macOS/arm64，`GOSPEAK_STARTUP_DEBUG=1` 实测，多次运行取中位）
+
+| 阶段 | 耗时 |
+| --- | --- |
+| 进程启动 → 服务绑定 + 深链注册 | ~13ms |
+| mygo/Cocoa 初始化，到 `WhenReady` | ~125ms |
+| 回环代理就绪 + 资源缓存预热 | ~8ms（`.gz` 边车）/ ~50ms（运行时压缩兜底） |
+| `NewWindow`（WebKit 视图创建） | ~110–170ms |
+| WebView 内容进程起来并发出首个请求 | ~215–440ms |
+| 首个请求 → React 挂载（页面内计时） | ~225ms |
+| **合计：进程启动 → 首屏渲染** | **~0.7–1.0s（中位 ~0.8s）** |
+
+结论：**大头是 mygo/WebKit 的框架与系统开销（约 0.6s），Go 侧自有代码只占 ~250ms，
+且几乎都发生在窗口已经显示之后**（窗口在 ~240ms 就画出页面背景色）。继续优化只能动
+前端首屏 JS，而不是宿主。
+
+已经用实测否定掉的三个「看起来能省」的方向（别再试了）：
+
+- **隐藏窗口先加载再显示**：首字节仍是 888ms vs 显示中的 899ms —— 那 ~500ms 是 WebKit
+  内容进程启动，跟窗口是否可见无关。
+- **推迟麦克风权限到首帧之后**：页面内挂载时间 239ms → 238ms，无变化（`getUserMedia`
+  是异步的，不阻塞渲染）。
+- **推迟 Dock 图标 / 托盘创建**：它们在 ~300ms 完成、首屏在 ~800ms，本来就不在关键路径上。
+
+**留在关键路径上的只有一件事**：启动即创建覆盖层窗口。实测把它改回「启动即建」会让
+`overlay subsystem initialised` 从 ~170ms 推迟到 300–580ms（多占 150–300ms 主线程）。
+所以覆盖层严格按需创建（见上）。
+
+`GOSPEAK_STARTUP_DEBUG=1` 会打印上述时间线；配合 `GOSPEAK_STARTUP_EXIT_MS=4000` 可以
+无人值守跑一次测量：
+
+```bash
+cd app/desktop && go build -o /tmp/gospeak . \
+  && GOSPEAK_STARTUP_DEBUG=1 GOSPEAK_STARTUP_EXIT_MS=4000 /tmp/gospeak
+```
 
 ## 接入新能力
 

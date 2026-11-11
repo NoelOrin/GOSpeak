@@ -3,6 +3,7 @@ package signal
 import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/pkg/message"
+	"GOSpeak/internal/policy"
 	"GOSpeak/internal/ws"
 )
 
@@ -33,6 +34,13 @@ func (h *Hub) OnPrivateMessageSend(c ws.ClientMessenger, data string) (string, e
 	identity := clientIdentity(c)
 	if identity == "" {
 		return marshalAck(map[string]interface{}{"error": "unauthorized"})
+	}
+
+	// 与 HTTP 侧 BanCheck 复用同一份策略判决：/ws 绕过 Gin 中间件链，
+	// 逐事件复查才能拦住封禁后仍持有长连接的身份。
+	// payload 不带 domain_uuid，域上下文取服务端登记的连接当前域。
+	if d := h.checkWSPolicy(c, policy.Action(EventPrivateSend), h.ClientDomain(c.ID())); !d.Allowed {
+		return marshalPolicyAck(d), nil
 	}
 
 	dto, err := h.convSvc.SendDirect(identity, req.TargetIdentity, req.Content, req.ClientNonce)

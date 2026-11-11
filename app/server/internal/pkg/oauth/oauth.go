@@ -109,7 +109,9 @@ func safeOAuthURL(raw string) (string, error) {
 func httpDo(req *http.Request) ([]byte, error) {
 	resp, err := oauthHTTPClient.Do(req)
 	if err != nil {
-		return nil, err
+		// 上游 *url.Error 带完整请求 URL；QQ 的 userinfo URL 含 access_token，
+		// 必须在错误离开本包前脱敏，避免任何上层把它写进响应或日志。
+		return nil, redactURLError(err)
 	}
 	defer resp.Body.Close()
 	return io.ReadAll(io.LimitReader(resp.Body, maxOAuthBody+1))

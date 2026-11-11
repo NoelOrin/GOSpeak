@@ -44,12 +44,16 @@ services:
       # 信任 Docker 私网段才能从 X-Forwarded-For 取回真实 IP（限流/审计依赖它）；
       # 直接对外暴露时客户端是公网 IP，不会命中这段，因此默认值安全。
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12,10.0.0.0/8,192.168.0.0/16}
+      # 内嵌 NATS JetStream 数据目录（JWT 签名密钥/黑名单/refresh-family）。
+      # 固定路径 + 独立卷，确保容器重建后 KV 不丢；镜像内已设为默认值，此处显式声明便于覆盖。
+      NATS_STORE_DIR: /app/nats
     ports:
       - "${GOSPEAK_PORT:-8998}:8998"
     volumes:
       - gospeak-db:/app/db
       - gospeak-logs:/app/logs
       - gospeak-uploads:/app/uploads
+      - gospeak-nats:/app/nats
     depends_on:
       postgres:
         condition: service_healthy
@@ -239,6 +243,7 @@ volumes:
   gospeak-db:
   gospeak-logs:
   gospeak-uploads:
+  gospeak-nats:
   caddy-data:
   caddy-config:
   postgres-data:

@@ -94,11 +94,11 @@ function SFUPage() {
 	};
 
 	// Initialize selectedProvider = activeProvider
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 仅在 providersResponse 变化时初始化默认选中项，回填函数刻意不随草稿变化重跑
 	useEffect(() => {
 		if (providersResponse && !selectedProvider) {
 			setSelectedProvider(providersResponse.active);
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [providersResponse]);
 
 	function populateProvider(
@@ -131,6 +131,7 @@ function SFUPage() {
 	}
 
 	// When selectedProvider changes, load its own draft/config only once unless refreshed.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 仅在 selected/providersResponse 变化时按服务端配置回填表单，避免草稿输入被再次覆盖
 	useEffect(() => {
 		const provider = selected;
 		if (!provider) return;
@@ -152,7 +153,6 @@ function SFUPage() {
 				);
 				populateProvider(provider, { provider }, { preserveDraft: true });
 			});
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [selected, providersResponse]);
 
 	const capabilities = () => {

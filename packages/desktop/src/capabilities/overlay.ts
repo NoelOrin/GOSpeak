@@ -58,6 +58,8 @@ export interface Overlay {
 	isVisible(): Promise<boolean>;
 	/** Fires when the overlay is shown/hidden by the host (hotkey, policy...). */
 	onVisibilityChange(handler: (visible: boolean) => void): () => void;
+	/** Fires when the master switch is toggled (settings UI, host). */
+	onEnabledChange(handler: (enabled: boolean) => void): () => void;
 	/** Fires when dragging is locked/unlocked (hotkey or settings). */
 	onLockChange(handler: (locked: boolean) => void): () => void;
 
@@ -107,6 +109,9 @@ const webFallback: Overlay = {
 	onVisibilityChange() {
 		return noopUnsub;
 	},
+	onEnabledChange() {
+		return noopUnsub;
+	},
 	onLockChange() {
 		return noopUnsub;
 	},
@@ -140,6 +145,8 @@ const native: Overlay = {
 	isVisible: () => bridge.invoke<boolean>(command("Overlay", "IsVisible")),
 	onVisibilityChange: (handler) =>
 		bridge.listen("overlay.visibility", (visible) => handler(Boolean(visible))),
+	onEnabledChange: (handler) =>
+		bridge.listen("overlay.enabled", (enabled) => handler(Boolean(enabled))),
 	onLockChange: (handler) =>
 		bridge.listen("overlay.lock", (locked) => handler(Boolean(locked))),
 	pushState: (snapshot) =>

@@ -2,6 +2,8 @@ package signal
 
 import (
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/policy"
 	"GOSpeak/internal/sfu"
 	"encoding/json"
 	"fmt"
@@ -87,15 +89,18 @@ type Hub struct {
 	streamRoomCache map[string]string
 	// streamByIdentity 维护 room→identity→stream 映射，供 RemoveParticipant
 	// 按 identity 查实际登记的 stream，避免反算命名约定（命名函数变更后旧连接仍可查）。
-	streamByIdentity        map[string]map[string]string
-	participantCleanup      ParticipantCleanupHandler
-	membershipStore         membershipStore
-	instanceID              string
-	cleanupPub              cleanupPublisher
-	stateNotifier           stateNotifier
-	connSlots               map[string]*connRoomSlots // socketID -> slots
-	msgSvc                  messageSender
-	convSvc                 conversationSender
+	streamByIdentity   map[string]map[string]string
+	participantCleanup ParticipantCleanupHandler
+	membershipStore    membershipStore
+	instanceID         string
+	cleanupPub         cleanupPublisher
+	stateNotifier      stateNotifier
+	connSlots          map[string]*connRoomSlots // socketID -> slots
+	msgSvc             messageSender
+	convSvc            conversationSender
+	// accessPolicy 是传输无关策略引擎在 signal 层的适配入口，
+	// 用于 message/typing/private 等事件按服务端权威域做二次判决。
+	accessPolicy            func(policy.Subject, policy.Action, string) policy.Decision
 	domainChecker           func(domainUUID, userUUID string) bool
 	domainPermChecker       func(domainUUID, userUUID, permCode string) bool
 	clientDomains           map[string]string // socketID -> current domain scope (empty = platform)
@@ -181,6 +186,29 @@ func (h *Hub) SetDomainChecker(checker func(domainUUID, userUUID string) bool) {
 
 func (h *Hub) SetDomainPermissionChecker(checker func(domainUUID, userUUID, permCode string) bool) {
 	h.domainPermChecker = checker
+}
+
+// SetAccessPolicy 注入传输无关策略判决（由组合根的 policy.Engine 提供）。
+// signal 层用它按「服务端解析出的真实域」复查 message/typing/private 事件，
+// 避免客户端伪造 payload 里的 domain_uuid 绕过封禁检查。
+func (h *Hub) SetAccessPolicy(fn func(policy.Subject, policy.Action, string) policy.Decision) {
+	h.accessPolicy = fn
+}
+
+// ClientDomain 返回连接当前所处的域（由服务端在 room:join/room:list 时登记）。
+// 相比客户端消息 payload 里的 domain_uuid，这是可信的域上下文。
+func (h *Hub) ClientDomain(clientID string) string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.clientDomains[clientID]
+}
+
+// checkWSPolicy 用权威域上下文复查策略。未注入策略时保持放行（测试/嵌入路径）。
+func (h *Hub) checkWSPolicy(c ws.ClientMessenger, action policy.Action, domainUUID string) policy.Decision {
+	if h.accessPolicy == nil || c == nil || c.Claims() == nil {
+		return policy.Decision{Allowed: true, Code: pkg.SUCCESS}
+	}
+	return h.accessPolicy(policy.SubjectFromClaims(c.Claims()), action, domainUUID)
 }
 
 // ─── 事件注册 ───

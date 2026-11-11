@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"GOSpeak/internal/buildinfo"
 	"GOSpeak/internal/logger"
 	"GOSpeak/server"
 
@@ -14,12 +15,6 @@ var RootCmd = &cobra.Command{
 	Use:   "gospeak",
 	Short: "GoRTC - WebRTC server",
 }
-
-// version 默认 dev，构建时可通过 ldflags 注入。
-var version = "dev"
-
-// commit 默认 unknown，构建时可通过 ldflags 注入。
-var commit = "unknown"
 
 func newServerCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -45,7 +40,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "show version",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(version)
+		fmt.Println(buildinfo.Version)
 	},
 }
 

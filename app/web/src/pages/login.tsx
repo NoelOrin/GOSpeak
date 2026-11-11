@@ -90,6 +90,7 @@ function LoginPage() {
 		})();
 	}
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: OAuth 回调消息监听只在挂载时注册一次；回调只读取稳定的 setState，加入每次渲染新建的函数会反复解绑重绑
 	useEffect(() => {
 		function handleOAuthMessage(event: MessageEvent) {
 			if (event.origin !== window.location.origin) return;
@@ -118,7 +119,6 @@ function LoginPage() {
 
 		window.addEventListener("message", handleOAuthMessage);
 		return () => window.removeEventListener("message", handleOAuthMessage);
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	async function handleLoginSubmit(e?: React.FormEvent) {

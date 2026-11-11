@@ -251,7 +251,18 @@ docker run --rm -v gospeak_gospeak-db:/data -v "$PWD":/backup alpine \
 
 # PostgreSQL
 docker compose exec -T postgres pg_dump -U gospeak gospeak | gzip > backup-$(date +%F).sql.gz
+
+# 内嵌 NATS JetStream（JWT 签名密钥 / 黑名单 / refresh-family）
+# 务必在**应用停止**时整体拷贝，避免运行中拷贝产生不一致快照
+docker compose stop gospeak
+docker run --rm -v gospeak_gospeak-nats:/data -v "$PWD":/backup alpine \
+  tar czf /backup/nats-$(date +%F).tar.gz -C /data .
+docker compose start gospeak
 ```
+
+> **为什么必须备份这个卷**：`gospeak-nats` 保存 JWT 签名密钥、登出黑名单和 refresh-token 重放保护。
+> 它丢了不会波及业务数据，但会导致**全体用户被强制登出**（签名密钥重新生成，旧 token 全部验签失败），
+> 且登出吊销的 token 在过期前可重新使用。升级、迁移、`down -v` 前请一并处理。
 
 上传的文件在 `gospeak-uploads` 卷或你配置的对象存储里，按同样思路备份。设成定时任务，不要手动。
 

@@ -14,6 +14,11 @@ import (
 	"GOSpeak/internal/pkg"
 )
 
+// ConnectPolicy 在 JWT 校验通过后、协议升级前对身份做一次策略判决。
+// 与 HTTP 的 JWTAuth → BanCheck 共用同一份 policy.Engine，
+// 避免 /ws 因绕过 Gin 中间件链而成为策略洼地。
+type ConnectPolicy func(claims *pkg.Claims) (pkg.ErrCode, string)
+
 // UpgraderConfig 控制 WebSocket 升级行为。
 type UpgraderConfig struct {
 	// Fanout 用于注册/注销客户端连接。
@@ -25,6 +30,8 @@ type UpgraderConfig struct {
 	AllowedOrigins []string
 	// AuthCookieName 是承载 access token 的 HttpOnly Cookie 名；为空时使用 gospeak_token。
 	AuthCookieName string
+	// ConnectPolicy 是建连阶段的访问策略；生产组合根必须注入。
+	ConnectPolicy ConnectPolicy
 	// OnConnect 在连接建立后、读取循环开始前调用（Hub 用于设置 OnClose）。
 	OnConnect func(c *Client)
 	// OnDisconnect 在连接关闭并注销 Fanout 后调用（Hub 用于清理房间状态）。
@@ -96,6 +103,17 @@ func newConnID(userUUID, username string) string {
 	return clientID + "-" + uuid.NewString()[:8]
 }
 
+// policyHTTPStatus 把建连策略的业务码映射为握手阶段的 HTTP 状态码，
+// 不复用 pkg.Fail（后者依赖 gin.Context，无法在原生 http.Handler 中使用）。
+func policyHTTPStatus(code pkg.ErrCode) int {
+	switch code {
+	case pkg.USER_BANNED, pkg.FORBIDDEN:
+		return http.StatusForbidden
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
 func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !u.originAllowed(r) {
 		log.Printf("[ws] upgrade rejected: origin=%q client=%s", r.Header.Get("Origin"), r.RemoteAddr)
@@ -114,6 +132,17 @@ func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[ws] upgrade rejected: code=%s client=%s", code.String(), r.RemoteAddr)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
+	}
+
+	// 根 http.Handler 直接把 /ws 交给 Upgrader，不经过 Gin 的 BanCheck。
+	// 这里补上同一份策略判决；域级封禁由 Dispatch 按事件实时复查。
+	if u.cfg.ConnectPolicy != nil {
+		pCode, _ := u.cfg.ConnectPolicy(claims)
+		if pCode != pkg.SUCCESS {
+			log.Printf("[ws] upgrade rejected by policy: code=%s client=%s", pCode.String(), r.RemoteAddr)
+			w.WriteHeader(policyHTTPStatus(pCode))
+			return
+		}
 	}
 
 	conn, err := nhooyrws.Accept(w, r, &nhooyrws.AcceptOptions{

@@ -1,6 +1,7 @@
 package signal
 
 import (
+	"GOSpeak/internal/policy"
 	"GOSpeak/internal/ws"
 	"log"
 	"time"
@@ -50,6 +51,13 @@ func (h *Hub) OnTyping(c ws.ClientMessenger, data string) {
 	}
 	h.mu.RUnlock()
 	if identity == "" {
+		return
+	}
+
+	// 策略复查：key 已通过服务端成员表校验，其域前缀是权威域上下文。
+	// 被封禁的身份不能在保持连接期间继续制造可见活动。
+	domain, _ := splitRoomKey(key)
+	if d := h.checkWSPolicy(c, policy.Action(EventTyping), domain); !d.Allowed {
 		return
 	}
 

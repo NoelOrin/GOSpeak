@@ -9,7 +9,7 @@ export const Route = createFileRoute("/(app)/chat")({
 	staticData: { title: "聊天" },
 });
 
-function ChatPage() {
+export function ChatPage() {
 	// 挂载时接入信令以获取服务器成员列表
 	useEffect(() => {
 		import("@/stores/socketStore").then(({ socketStore }) => {

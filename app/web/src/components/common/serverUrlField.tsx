@@ -19,8 +19,11 @@ import { setPublicBaseUrl } from "@/utils/publicBaseUrl";
  */
 export default function ServerUrlField({ className }: { className?: string }) {
 	const navigate = useNavigate();
-	const [value, setValue] = useState("");
-	const [saved, setSaved] = useState("");
+	// 先用本地镜像（localStorage）填充，首帧就能显示已保存的地址；
+	// 随后 effect 向宿主要权威值校正（桌面端宿主文件才是权威）。
+	const readMirror = () => createServerConfig().getBaseUrlSync();
+	const [value, setValue] = useState(readMirror);
+	const [saved, setSaved] = useState(readMirror);
 	const [status, setStatus] = useState<"idle" | "saving" | "error">("idle");
 	const [invite, setInvite] = useState<ParsedInviteLink | null>(null);
 

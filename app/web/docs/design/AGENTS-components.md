@@ -23,7 +23,7 @@ components/
 │   ├── components/               # 房间私有 UI（roomItem、memberSidebar、userInfoPopover、passwordModal…）
 │   ├── hooks/                    # useVoiceSession / useRoomAudioBridge / useRoomSounds
 │   ├── session/                  # providers / runVoiceJoin / voiceSessionTypes / voiceSessionUi
-│   └── services/                 # loadSfuClient / sfuSession
+│   └── services/                 # loadSfuClient（provider chunk 预热 + 动态加载）
 ├── textRoom/       # 文字房间（TextRoomPanel、MessageList、MessageItem、MessageInput、ReactionBar、MarkdownText）
 ├── chat/           # 聊天（conversationList、chatWindow、audioControl、micControl、speakerControl、memberSidebar）
 ├── discover/       # 发现页（DiscoverDomainGrid / Card / JoinPanel、DiscoverMyDomains）
