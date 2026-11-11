@@ -257,6 +257,7 @@ func autoMigrate() error {
 		&model.DomainMember{},
 		&model.DomainRole{},
 		&model.DomainRolePermission{},
+		&model.DomainJoinRequest{},
 		&model.AuditLog{},
 		&model.DomainInvite{},
 		&model.DomainInviteRedemption{},
