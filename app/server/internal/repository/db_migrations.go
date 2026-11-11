@@ -273,36 +273,60 @@ func autoMigrate() error {
 }
 
 // dropLegacyGuestSchema 删除访客体系与旧邀请码列/表。
-// 这些对象已无任何代码引用，AutoMigrate 不会自动删列，需显式 DROP。
-// 幂等：列/表不存在时静默跳过。
+//
+// 不使用 gorm.Migrator.DropColumn：SQLite 实现会 recreateTable 并按 Go 模型
+// schema 反查该列对应的字段，而这些字段已从模型删除，反查返回 nil 会 panic。
+// 这里直接用原生 ALTER TABLE ... DROP COLUMN。
+//
+// 必须先删引用该列的索引：SQLite 的 DROP COLUMN 在索引仍引用该列时报
+// "error in index ... after drop column"。
+//
+// 幂等：表/列/索引不存在时静默跳过。
 func dropLegacyGuestSchema(db *gorm.DB) error {
-	m := db.Migrator()
-	columns := map[string][]string{
-		"domains": {
-			"allow_guest", "guest_can_listen", "guest_can_speak",
-			"guest_can_message", "guest_limit", "invite_code",
-		},
-		"users": {"is_guest"},
+	type columnDrop struct {
+		table   string
+		column  string
+		indexes []string
 	}
-	for table, cols := range columns {
-		if !m.HasTable(table) {
+	drops := []columnDrop{
+		{table: "domains", column: "allow_guest"},
+		{table: "domains", column: "guest_can_listen"},
+		{table: "domains", column: "guest_can_speak"},
+		{table: "domains", column: "guest_can_message"},
+		{table: "domains", column: "guest_limit"},
+		{table: "domains", column: "invite_code", indexes: []string{"idx_domains_invite_code"}},
+		{table: "users", column: "is_guest", indexes: []string{"idx_users_is_guest"}},
+	}
+
+	for _, drop := range drops {
+		if !db.Migrator().HasTable(drop.table) {
 			continue
 		}
-		for _, col := range cols {
-			if !m.HasColumn(table, col) {
-				continue
-			}
-			if err := m.DropColumn(table, col); err != nil {
-				return fmt.Errorf("drop column %s.%s: %w", table, col, err)
+		if !db.Migrator().HasColumn(drop.table, drop.column) {
+			continue
+		}
+		for _, index := range drop.indexes {
+			if err := db.Exec("DROP INDEX IF EXISTS " + quoteIdent(index)).Error; err != nil {
+				return fmt.Errorf("drop index %s: %w", index, err)
 			}
 		}
+		stmt := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", quoteIdent(drop.table), quoteIdent(drop.column))
+		if err := db.Exec(stmt).Error; err != nil {
+			return fmt.Errorf("drop column %s.%s: %w", drop.table, drop.column, err)
+		}
 	}
-	if m.HasTable("domain_guest_bans") {
-		if err := m.DropTable("domain_guest_bans"); err != nil {
+
+	if db.Migrator().HasTable("domain_guest_bans") {
+		if err := db.Exec("DROP TABLE IF EXISTS " + quoteIdent("domain_guest_bans")).Error; err != nil {
 			return fmt.Errorf("drop table domain_guest_bans: %w", err)
 		}
 	}
 	return nil
+}
+
+// quoteIdent 用双引号包裹标识符，避免保留字与大小写问题。
+func quoteIdent(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
 // migrateConversationQueryIndexes 确保会话列表游标查询依赖的表与复合索引存在。
