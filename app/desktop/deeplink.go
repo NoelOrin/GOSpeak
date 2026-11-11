@@ -20,7 +20,7 @@ const deeplinkScheme = "gospeak"
 // invitePathPattern finds the invite landing path inside a deep link
 // (gospeak://invite/d/<CODE>, whose "invite" is the URL host), an https invite
 // URL or an already normalized path.
-var invitePathPattern = regexp.MustCompile(`(?i)/invite/d/([A-Z2-9]{8})(?:[/?#]|$)`)
+var invitePathPattern = regexp.MustCompile(`(?i)/invite/d/([A-HJ-NP-Z2-9]{36})(?:[/?#]|$)`)
 
 // DeepLink handles gospeak:// URLs that launch or focus the app.
 //

@@ -355,6 +355,7 @@ func StartGin(env EnvEnum) error {
 	announcementSvc.SetDomainPermissionChecker(domainSvc.HasDomainPermission)
 	announcementH := handler.NewAnnouncementHandler(announcementSvc, permSvc)
 	domainH.SetOnDomainLeave(signalHub.KickUserFromDomain)
+	domainH.SetInviteService(inviteSvc)
 	domainH.SetOnDomainDelete(func(serverUUID string) {
 		signalHub.OnDomainDelete(serverUUID)
 	})

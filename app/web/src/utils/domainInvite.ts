@@ -1,7 +1,7 @@
 import { publicBaseUrl } from "./publicBaseUrl";
 
-const INVITE_CODE_PATTERN = /^[A-Z2-9]{8}$/i;
-const INVITE_LINK_PATTERN = /\/invite\/d\/([A-Z2-9]{8})/i;
+const INVITE_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{36}$/i;
+const INVITE_LINK_PATTERN = /\/invite\/d\/([A-HJ-NP-Z2-9]{36})/i;
 
 /** Deep link scheme registered by the desktop host. */
 export const DEEPLINK_SCHEME = "gospeak";

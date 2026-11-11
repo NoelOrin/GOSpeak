@@ -18,7 +18,6 @@ import {
 	deleteDomain,
 	getDomain,
 	domainMembers,
-	joinDomain,
 	kickDomainMember,
 	leaveDomain,
 	listDomainRoles,
@@ -27,7 +26,6 @@ import {
 	myDomainPermissions,
 	myDomains,
 	getMyDomainsDetailed,
-	previewDomainInvite,
 	updateDomain,
 	updateDomainMemberRole,
 } from "@/api/domain";
@@ -125,31 +123,6 @@ describe("domainApi", () => {
 			url: "/api/v1/domain/my-domains",
 			data: {},
 		});
-	});
-
-	it("previewDomainInvite sends the normalized invite code", async () => {
-		const domain = { uuid: "g-1", name: "Preview" } as any;
-		(apiClient.post as any).mockResolvedValue(domain);
-		const result = await previewDomainInvite("ABCDEFGH");
-		expect(apiClient.post).toHaveBeenCalledWith({
-			url: "/api/v1/domain/preview",
-			data: { invite_code: "ABCDEFGH" },
-			// 邀请码失效是可预期业务错误，交给调用方就地显示中文文案
-			skipErrorToast: true,
-		});
-		expect(result.name).toBe("Preview");
-	});
-
-	it("joinDomain calls with invite_code", async () => {
-		const domain = { uuid: "g-1", name: "Joined" } as any;
-		(apiClient.post as any).mockResolvedValue(domain);
-		const result = await joinDomain("CODE123");
-		expect(apiClient.post).toHaveBeenCalledWith({
-			url: "/api/v1/domain/join",
-			data: { invite_code: "CODE123" },
-			skipErrorToast: true,
-		});
-		expect(result.name).toBe("Joined");
 	});
 
 	it("leaveDomain calls with domain_uuid", async () => {

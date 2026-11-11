@@ -8,18 +8,18 @@ func TestInvitePathFromLink(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"deep link host form", "gospeak://invite/d/B2JF5EDV", "/invite/d/B2JF5EDV"},
-		{"deep link path form", "gospeak:///invite/d/B2JF5EDV", "/invite/d/B2JF5EDV"},
-		{"deep link lowercase", "gospeak://invite/d/b2jf5edv", "/invite/d/B2JF5EDV"},
-		{"https link", "https://gospeak.example.com/invite/d/B2JF5EDV", "/invite/d/B2JF5EDV"},
-		{"http loopback link", "http://127.0.0.1:47000/invite/d/B2JF5EDV", "/invite/d/B2JF5EDV"},
-		{"link with query", "https://gospeak.example.com/invite/d/B2JF5EDV?from=share", "/invite/d/B2JF5EDV"},
-		{"plain path", "/invite/d/B2JF5EDV", "/invite/d/B2JF5EDV"},
-		{"plain code", "B2JF5EDV", ""},
+		{"deep link host form", "gospeak://invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD", "/invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD"},
+		{"deep link path form", "gospeak:///invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD", "/invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD"},
+		{"deep link lowercase", "gospeak://invite/d/abcdefghjklmnpqrstuvwxyz23456789abcd", "/invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD"},
+		{"https link", "https://gospeak.example.com/invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD", "/invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD"},
+		{"http loopback link", "http://127.0.0.1:47000/invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD", "/invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD"},
+		{"link with query", "https://gospeak.example.com/invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD?from=share", "/invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD"},
+		{"plain path", "/invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD", "/invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD"},
+		{"plain code", "ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD", ""},
 		{"wrong path", "https://gospeak.example.com/home", ""},
 		{"bad alphabet", "gospeak://invite/d/B2JF5ED1", ""},
 		{"short code", "gospeak://invite/d/ABC", ""},
-		{"other scheme", "https://example.com/invite/d/B2JF5EDV", "/invite/d/B2JF5EDV"},
+		{"other scheme", "https://example.com/invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD", "/invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD"},
 		{"empty", "  ", ""},
 	}
 	for _, tc := range cases {
@@ -37,9 +37,9 @@ func TestDeliverDeepLinkParksUntilReady(t *testing.T) {
 	deepLinkState.ready = false
 	deepLinkState.Unlock()
 
-	deliverDeepLink("gospeak://invite/d/B2JF5EDV")
+	deliverDeepLink("gospeak://invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD")
 
-	if got := (DeepLink{}).Initial(nil); got != "/invite/d/B2JF5EDV" {
+	if got := (DeepLink{}).Initial(nil); got != "/invite/d/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD" {
 		t.Fatalf("Initial() = %q", got)
 	}
 	if got := (DeepLink{}).Initial(nil); got != "" {

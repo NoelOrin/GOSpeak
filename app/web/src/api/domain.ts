@@ -104,7 +104,6 @@ export async function listPublicDomains(
 	if (!result) throw new Error("domain data is missing");
 	return result;
 }
-
 export async function getMyDomainsDetailed(): Promise<DomainDetail[]> {
 	const result = await apiClient.post<DomainDetail[]>({
 		url: "/api/v1/domain/my-domains",
@@ -123,7 +122,7 @@ export async function previewDomainInvite(inviteCode: string): Promise<Domain> {
 	const result = await apiClient.post<Domain>({
 		url: "/api/v1/domain/preview",
 		data: { invite_code: inviteCode },
-		// 邀请码无效是高频可预期错误：调用方在弹窗/页面内就地展示中文提示
+		// 邀请码无效是高频可预期错误：调用方在页面内就地展示中文提示
 		skipErrorToast: true,
 	});
 	if (!result) throw new Error("domain data is missing");
@@ -138,23 +137,6 @@ export async function joinDomain(inviteCode: string): Promise<Domain> {
 	});
 	if (!result) throw new Error("domain data is missing");
 	return result;
-}
-
-export async function resetDomainInviteCode(uuid: string): Promise<Domain> {
-	try {
-		const result = await apiClient.post<Domain>({
-			url: "/api/v1/domain/reset-invite",
-			data: { domain_uuid: uuid },
-		});
-		if (!result) throw new Error("重置邀请码失败：服务端未返回域数据");
-		return result;
-	} catch (e: unknown) {
-		const axiosMsg = (e as { response?: { data?: { msg?: string } } })?.response
-			?.data?.msg;
-		if (axiosMsg) throw new Error(axiosMsg);
-		if (e instanceof Error && e.message) throw e;
-		throw new Error("重置邀请码失败");
-	}
 }
 
 export async function leaveDomain(uuid: string): Promise<void> {

@@ -198,6 +198,21 @@ func (s *DomainService) Delete(uuid string) error {
 	return nil
 }
 
+// AddMember 把用户加入域为普通成员；已是成员时返回 ErrAlreadyMember。
+func (s *DomainService) AddMember(domainUUID, userUUID string) error {
+	if existing, err := s.domainRepo.GetMember(domainUUID, userUUID); err == nil && existing != nil {
+		return ErrAlreadyMember
+	}
+	member := &model.DomainMember{
+		DomainUUID: domainUUID, UserUUID: userUUID, RoleName: DomainRoleMember,
+	}
+	if err := s.domainRepo.AddMember(member); err != nil {
+		return pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	s.invalidateMembership(domainUUID, userUUID, true)
+	return nil
+}
+
 func (s *DomainService) Leave(domainUUID, userUUID string) error {
 	domain, err := s.domainRepo.GetByUUID(domainUUID)
 	if err != nil {
