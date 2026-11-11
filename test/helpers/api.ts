@@ -144,10 +144,46 @@ export async function getAdminToken(): Promise<string> {
   return cachedAdminToken;
 }
 
-export async function createDomain(token: string, name: string): Promise<{ uuid: string; invite_code: string; name: string }> {
-  const result = await api<{ uuid: string; invite_code: string; name: string }>("/api/v1/domain/create", {
+export async function createDomain(token: string, name: string): Promise<{ uuid: string; name: string }> {
+  const result = await api<{ uuid: string; name: string }>("/api/v1/domain/create", {
     token,
     body: { name, description: "integration domain", is_public: false },
+  });
+  return assertSuccess(result);
+}
+
+/** 为域新建一个邀请码（域创建时会自动生成默认码，这里用于需要显式控制的场景）。 */
+export async function createDomainInvite(
+  token: string,
+  domainUUID: string,
+): Promise<{ id: number; code: string; max_uses: number; used_count: number }> {
+  const result = await api<{ id: number; code: string; max_uses: number; used_count: number }>(
+    "/api/v1/domain/invites/create",
+    { token, body: { domain_uuid: domainUUID } },
+  );
+  return assertSuccess(result);
+}
+
+/** 列出域内邀请码，用于取默认邀请码。 */
+export async function listDomainInvites(
+  token: string,
+  domainUUID: string,
+): Promise<Array<{ id: number; code: string; disabled_at?: string | null }>> {
+  const result = await api<{ invites: Array<{ id: number; code: string; disabled_at?: string | null }> }>(
+    "/api/v1/domain/invites/list",
+    { token, body: { domain_uuid: domainUUID } },
+  );
+  return assertSuccess(result).invites ?? [];
+}
+
+/** 已登录用户凭邀请码加入域（返回 status: joined | pending）。 */
+export async function joinViaInvite(
+  token: string,
+  code: string,
+): Promise<{ status: string; domain: { uuid: string } }> {
+  const result = await api<{ status: string; domain: { uuid: string } }>("/api/v1/invite/join", {
+    token,
+    body: { code },
   });
   return assertSuccess(result);
 }
@@ -189,12 +225,12 @@ export async function updateDomainMemberRole(
   return assertSuccess(result);
 }
 
-export async function joinDomain(token: string, inviteCode: string): Promise<{ uuid: string }> {
-  const result = await api<{ uuid: string }>("/api/v1/domain/join", {
-    token,
-    body: { invite_code: inviteCode },
-  });
-  return assertSuccess(result);
+/** 取域的默认邀请码（域创建时自动生成）。 */
+export async function defaultInviteCode(token: string, domainUUID: string): Promise<string> {
+  const invites = await listDomainInvites(token, domainUUID);
+  const usable = invites.find((item) => !item.disabled_at);
+  if (!usable) throw new Error(`domain ${domainUUID} has no usable invite code`);
+  return usable.code;
 }
 
 export async function createRoom(

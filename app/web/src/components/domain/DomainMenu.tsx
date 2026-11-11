@@ -14,12 +14,13 @@ import {
 	Share2,
 	Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ConfirmModal from "@/components/common/ConfirmModal";
+import { listInvites } from "@/api/invite";
 import InviteShareModal from "@/components/domain/InviteShareModal";
 import { domainStore, useDomainStore } from "@/stores/domainStore";
 import { useUserStore } from "@/stores/userStore";
-import { domainInviteUrl, extractDomainInviteCode } from "@/utils/domainInvite";
+import { domainInviteUrl } from "@/utils/domainInvite";
 import { usePublicBaseUrl } from "@/utils/publicBaseUrl";
 import { hasPermission } from "@/utils/permissions";
 import { toastActionError } from "@/utils/toast";
@@ -53,8 +54,26 @@ export default function DomainMenu({ domainUUID }: { domainUUID: string }) {
 	const canManage =
 		isOwner || currentRole === "admin" || hasPermission("domain:manage");
 
-	const inviteCode = extractDomainInviteCode(domain?.invite_code || "") || "";
+	const [inviteCode, setInviteCode] = useState("");
 	const publicBase = usePublicBaseUrl();
+
+	// 邀请码已从 domains 表迁到 domain_invites 表：菜单打开时按需拉取该域第一个可用码。
+	useEffect(() => {
+		if (!open || !domainUUID) return;
+		let cancelled = false;
+		void listInvites(domainUUID)
+			.then((list) => {
+				if (cancelled) return;
+				const usable = list.find((item) => !item.disabled_at);
+				setInviteCode(usable?.code ?? "");
+			})
+			.catch(() => {
+				if (!cancelled) setInviteCode("");
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [open, domainUUID]);
 	const inviteUrl = inviteCode ? domainInviteUrl(inviteCode, publicBase) : "";
 
 	async function copyInvite() {

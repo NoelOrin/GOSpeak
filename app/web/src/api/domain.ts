@@ -7,15 +7,9 @@ export interface Domain {
 	icon_url: string;
 	description: string;
 	owner_uuid: string;
-	invite_code: string;
 	is_public: boolean;
 	require_join_approval?: boolean;
 	created_at: string;
-	allow_guest?: boolean;
-	guest_can_listen?: boolean;
-	guest_can_speak?: boolean;
-	guest_can_message?: boolean;
-	guest_limit?: number;
 }
 
 export interface DomainDetail extends Domain {
@@ -106,6 +100,11 @@ export async function listPublicDomains(
 	if (!result) throw new Error("domain data is missing");
 	return result;
 }
+export async function myDomains(): Promise<string[]> {
+	const details = await getMyDomainsDetailed();
+	return details.map((detail) => detail.uuid);
+}
+
 export async function getMyDomainsDetailed(): Promise<DomainDetail[]> {
 	const result = await apiClient.post<DomainDetail[]>({
 		url: "/api/v1/domain/my-domains",
@@ -114,33 +113,6 @@ export async function getMyDomainsDetailed(): Promise<DomainDetail[]> {
 	if (!result) throw new Error("domain data is missing");
 	return result;
 }
-
-export async function myDomains(): Promise<string[]> {
-	const details = await getMyDomainsDetailed();
-	return details.map((detail) => detail.uuid);
-}
-
-export async function previewDomainInvite(inviteCode: string): Promise<Domain> {
-	const result = await apiClient.post<Domain>({
-		url: "/api/v1/domain/preview",
-		data: { invite_code: inviteCode },
-		// 邀请码无效是高频可预期错误：调用方在页面内就地展示中文提示
-		skipErrorToast: true,
-	});
-	if (!result) throw new Error("domain data is missing");
-	return result;
-}
-
-export async function joinDomain(inviteCode: string): Promise<Domain> {
-	const result = await apiClient.post<Domain>({
-		url: "/api/v1/domain/join",
-		data: { invite_code: inviteCode },
-		skipErrorToast: true,
-	});
-	if (!result) throw new Error("domain data is missing");
-	return result;
-}
-
 export async function leaveDomain(uuid: string): Promise<void> {
 	await apiClient.post({
 		url: "/api/v1/domain/leave",

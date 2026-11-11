@@ -3,12 +3,13 @@ import { Dialog, DialogContent, DialogTitle } from "@gospeak/components";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { CirclePlus, Compass, Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
+import { type Domain, listPublicDomains } from "@/api/domain";
 import {
-	type Domain,
-	listPublicDomains,
-	previewDomainInvite,
-} from "@/api/domain";
-import { getJoinRequest, joinByCode, joinByDomain } from "@/api/inviteJoin";
+	getJoinRequest,
+	joinByCode,
+	joinByDomain,
+	previewInvite,
+} from "@/api/inviteJoin";
 import { joinTarget } from "@/utils/joinTarget";
 import CreateDomainModal from "@/components/domain/CreateDomainModal";
 import DomainInvitePreview from "@/components/domain/DomainInvitePreview";
@@ -84,9 +85,20 @@ function RouteComponent() {
 		setPreviewCode(code);
 		setPreviewDomainUUID(domainUUID);
 		try {
-			setPreviewDomain(await previewDomainInvite(code));
+			const data = await previewInvite(code);
+			setPreviewDomain({
+				id: 0,
+				uuid: data.domain.uuid,
+				name: data.domain.name,
+				icon_url: data.domain.icon_url ?? "",
+				description: data.domain.description ?? "",
+				owner_uuid: "",
+				is_public: true,
+				require_join_approval: data.requires_approval,
+				created_at: "",
+			});
 		} catch (e) {
-			// previewDomainInvite 已设 skipErrorToast，这里是唯一的提示出口
+			// previewInvite 已设 skipErrorToast，这里是唯一的提示出口
 			setPreviewError(localizedApiMessage(e, "邀请码无效"));
 		} finally {
 			setPreviewLoading(false);
@@ -257,9 +269,7 @@ function RouteComponent() {
 							totalPages={totalPages}
 							joinedUUIDs={useDomainStore.getState().myDomainUUIDs}
 							pendingUUIDs={pendingDomainUUIDs}
-							onOpen={(domain) =>
-								void openPreview(domain.invite_code, domain.uuid)
-							}
+							onOpen={(domain) => void openPreview("", domain.uuid)}
 							onEnter={(domain) =>
 								navigate({
 									to: "/domain/$domainUUID",

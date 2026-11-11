@@ -18,12 +18,6 @@ type DomainHandler struct {
 	onDomainKick   func(domainUUID, userUUID string)
 	auditor        *audit.Service
 	onDomainLeave  func(domainUUID, userUUID string)
-	inviteSvc      *service.InviteService
-}
-
-// SetInviteService 注入邀请码服务，供 preview/join 端点验码。
-func (h *DomainHandler) SetInviteService(svc *service.InviteService) {
-	h.inviteSvc = svc
 }
 
 func NewDomainHandler(domainSvc *service.DomainService, permSvc *service.PermissionService) *DomainHandler {
@@ -242,58 +236,6 @@ func (h *DomainHandler) Delete(c *gin.Context) {
 		h.onDomainDelete(domainUUID)
 	}
 	pkg.Success(c, nil)
-}
-
-type JoinDomainRequest struct {
-	InviteCode string `json:"invite_code" binding:"required"`
-}
-
-// Join 通过邀请码加入语音域：验码 → 消耗一次额度 → 写成员关系。
-// 第二部分会用 /invite/join 取代本端点（支持公开域免码与加入审核）。
-func (h *DomainHandler) Join(c *gin.Context) {
-	var req JoinDomainRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
-		return
-	}
-	userUUID := currentUserUUID(c)
-	if userUUID == "" {
-		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
-		return
-	}
-	if h.inviteSvc == nil {
-		pkg.Fail(c, pkg.INTERNAL_ERROR, "invite service unavailable")
-		return
-	}
-	domain, err := h.inviteSvc.Consume(req.InviteCode, userUUID, true)
-	if err != nil {
-		pkg.HandleError(c, err)
-		return
-	}
-	if err := h.domainSvc.AddMember(domain.UUID, userUUID); err != nil {
-		pkg.HandleError(c, err)
-		return
-	}
-	pkg.Success(c, domain)
-}
-
-// Preview 根据邀请码返回 Domain 信息，供加入前确认。
-func (h *DomainHandler) Preview(c *gin.Context) {
-	var req JoinDomainRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
-		return
-	}
-	if h.inviteSvc == nil {
-		pkg.Fail(c, pkg.INTERNAL_ERROR, "invite service unavailable")
-		return
-	}
-	result, err := h.inviteSvc.Validate(req.InviteCode)
-	if err != nil {
-		pkg.HandleError(c, err)
-		return
-	}
-	pkg.Success(c, result.Domain)
 }
 
 type LeaveDomainRequest struct {

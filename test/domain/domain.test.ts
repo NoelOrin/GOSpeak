@@ -4,7 +4,8 @@ import {
   assertSuccess,
   createDomain,
   createDomainRole,
-  joinDomain,
+  defaultInviteCode,
+  joinViaInvite,
   listDomainRoles,
   registerUser,
   unique,
@@ -25,19 +26,15 @@ describe("domain module", () => {
     expect(get.data?.owner_uuid).toBe(owner.user.uuid);
   });
 
-  it("supports preview, join, members, kick, leave and delete", async () => {
+  it("supports join, members, kick, leave and delete", async () => {
     const owner = await registerUser("domain");
     const member = await registerUser("domain");
     const domain = await createDomain(owner.access_token, unique("domain"));
+    const code = await defaultInviteCode(owner.access_token, domain.uuid);
 
-    const preview = await api<{ uuid: string; invite_code: string }>("/api/v1/domain/preview", {
-      token: member.access_token,
-      body: { invite_code: domain.invite_code },
-    });
-    expect(preview.code).toBe(0);
-    expect(preview.data?.uuid).toBe(domain.uuid);
-
-    await joinDomain(member.access_token, domain.invite_code);
+    const joined = await joinViaInvite(member.access_token, code);
+    expect(joined.status).toBe("joined");
+    expect(joined.domain.uuid).toBe(domain.uuid);
 
     const members = await api<{ members: Array<{ user_uuid: string; role_name: string }> }>(
       "/api/v1/domain/members",
@@ -52,7 +49,7 @@ describe("domain module", () => {
     });
     expect(kicked.code).toBe(0);
 
-    await joinDomain(member.access_token, domain.invite_code);
+    await joinViaInvite(member.access_token, code);
 
     const left = await api("/api/v1/domain/leave", {
       token: member.access_token,
@@ -83,7 +80,7 @@ describe("domain module", () => {
   it("lists public and my domains", async () => {
     const owner = await registerUser("domain");
     const name = unique("public_domain");
-    const created = await api<{ uuid: string; invite_code: string; is_public: boolean }>(
+    const created = await api<{ uuid: string; is_public: boolean }>(
       "/api/v1/domain/create",
       { token: owner.access_token, body: { name, is_public: true } },
     );
@@ -115,7 +112,7 @@ describe("domain module", () => {
     expect(roles.assignable).toContain("room:read");
 
     const member = await registerUser("domain_role_member");
-    await joinDomain(member.access_token, domain.invite_code);
+    await joinViaInvite(member.access_token, await defaultInviteCode(owner.access_token, domain.uuid));
     await createDomainRole(owner.access_token, domain.uuid, "moderator", ["room:read", "message:delete_others"]);
     await updateDomainMemberRole(owner.access_token, domain.uuid, member.user.uuid, "moderator");
 

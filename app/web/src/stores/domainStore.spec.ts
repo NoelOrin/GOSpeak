@@ -38,7 +38,6 @@ function makeDomain(overrides: Partial<Domain> = {}): Domain {
 		icon_url: "",
 		description: "",
 		owner_uuid: "u-1",
-		invite_code: "",
 		is_public: false,
 		created_at: "2026-01-01T00:00:00Z",
 		...overrides,
