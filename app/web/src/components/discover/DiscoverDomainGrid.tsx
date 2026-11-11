@@ -10,6 +10,7 @@ interface DiscoverDomainGridProps {
 	page: number;
 	totalPages: number;
 	joinedUUIDs: string[];
+	pendingUUIDs: string[];
 	onOpen: (domain: Domain) => void;
 	onEnter: (domain: Domain) => void;
 	onPageChange: (page: number) => void;
@@ -49,6 +50,7 @@ function DiscoverDomainGrid(props: DiscoverDomainGridProps) {
 								key={domain.uuid}
 								domain={domain}
 								joined={isJoined(domain.uuid)}
+								pending={props.pendingUUIDs.includes(domain.uuid)}
 								onOpen={() => props.onOpen(domain)}
 								onEnter={() => props.onEnter(domain)}
 							/>

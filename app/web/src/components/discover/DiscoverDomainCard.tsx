@@ -1,10 +1,11 @@
-import { ArrowRight, Headphones } from "lucide-react";
+import { ArrowRight, Clock, Headphones } from "lucide-react";
 import type { Domain } from "@/api/domain";
 import DomainIcon from "@/components/domain/DomainIcon";
 
 interface DiscoverDomainCardProps {
 	domain: Domain;
 	joined: boolean;
+	pending: boolean;
 	onOpen: () => void;
 	onEnter: () => void;
 }
@@ -44,6 +45,15 @@ function DiscoverDomainCard(props: DiscoverDomainCardProps) {
 					>
 						<Headphones size={14} />
 						进入
+					</button>
+				) : props.pending ? (
+					<button
+						type="button"
+						disabled
+						className="border-border text-muted-foreground inline-flex h-7 items-center gap-1 rounded-sm border px-2 text-xs"
+					>
+						<Clock size={14} />
+						申请审核中
 					</button>
 				) : (
 					<button

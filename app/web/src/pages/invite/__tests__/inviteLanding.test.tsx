@@ -33,7 +33,7 @@ vi.mock("@/api/inviteJoin", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-	createFileRoute: () => (opts: { component: () => JSX.Element }) => ({
+	createFileRoute: () => (opts: { component: () => React.ReactElement }) => ({
 		component: opts.component,
 		useParams: () => ({ code: "CODE" }),
 	}),

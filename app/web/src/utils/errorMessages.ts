@@ -45,6 +45,25 @@ const SERVER_MESSAGE_ZH: Record<string, string> = {
 	"already exists": "资源已存在",
 	"invalid parameters": "参数不正确",
 	"messages missing": "消息加载失败",
+	// 邀请码 / 加入审核
+	"invite code format is invalid": "邀请链接无效",
+	"invite code has expired": "邀请链接已过期",
+	"invite code is disabled": "邀请链接已停用",
+	"invite code has reached its usage limit": "邀请链接已达使用上限",
+	"invite code is no longer usable": "邀请链接已不可用",
+	"invite code is required": "请填写邀请码",
+	"this domain requires an invite code": "该域需要邀请码才能加入",
+	"missing domain member review permission": "你没有审核权限",
+	"missing domain invite manage permission": "你没有邀请码管理权限",
+	"join request not found": "加入申请不存在",
+	"join request has already been reviewed": "该申请已被其他管理员处理",
+	"join request is not pending": "该申请不在待审核状态",
+	"applicant no longer exists": "申请人账号已不存在",
+	"nickname is too long": "昵称过长",
+	"email and email_code are required":
+		"该服务器已开启邮箱验证，请填写邮箱与验证码",
+	"password must be at least 8 characters": "密码至少 8 位",
+	"domain_uuid and user_uuid are required": "缺少必要的参数",
 };
 
 function normalize(raw: string): string {

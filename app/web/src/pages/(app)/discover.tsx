@@ -5,10 +5,11 @@ import { CirclePlus, Compass, Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
 	type Domain,
-	joinDomain,
 	listPublicDomains,
 	previewDomainInvite,
 } from "@/api/domain";
+import { getJoinRequest, joinByCode, joinByDomain } from "@/api/inviteJoin";
+import { joinTarget } from "@/utils/joinTarget";
 import CreateDomainModal from "@/components/domain/CreateDomainModal";
 import DomainInvitePreview from "@/components/domain/DomainInvitePreview";
 import DiscoverDomainGrid from "@/components/discover/DiscoverDomainGrid";
@@ -44,6 +45,8 @@ function RouteComponent() {
 	const [previewLoading, setPreviewLoading] = useState(false);
 	const [previewDomain, setPreviewDomain] = useState<Domain | null>(null);
 	const [previewCode, setPreviewCode] = useState("");
+	const [previewDomainUUID, setPreviewDomainUUID] = useState("");
+	const [pendingDomainUUIDs, setPendingDomainUUIDs] = useState<string[]>([]);
 	const [previewError, setPreviewError] = useState("");
 	const [joining, setJoining] = useState(false);
 
@@ -72,13 +75,14 @@ function RouteComponent() {
 		return !!domain && isJoined(domain.uuid);
 	};
 
-	async function openPreview(code: string) {
+	async function openPreview(code: string, domainUUID = "") {
 		if (previewLoading) return;
 		setPreviewOpen(true);
 		setPreviewLoading(true);
 		setPreviewError("");
 		setPreviewDomain(null);
 		setPreviewCode(code);
+		setPreviewDomainUUID(domainUUID);
 		try {
 			setPreviewDomain(await previewDomainInvite(code));
 		} catch (e) {
@@ -109,7 +113,8 @@ function RouteComponent() {
 	async function joinPreview() {
 		const domain = previewDomain;
 		const code = previewCode;
-		if (!domain || !code) return;
+		const domainUUID = previewDomainUUID;
+		if (!domain) return;
 		if (joining) return;
 		if (isJoined(domain.uuid)) {
 			setPreviewOpen(false);
@@ -119,16 +124,28 @@ function RouteComponent() {
 			});
 			return;
 		}
+		const target = joinTarget(code, domainUUID);
+		if (!target) {
+			setPreviewError("未识别到邀请码或邀请链接");
+			return;
+		}
 		setJoining(true);
 		setPreviewError("");
 		try {
-			const joined = await joinDomain(code);
-			domainStore.addDomain(joined);
-			domainStore.setCurrentDomain(joined.uuid);
+			const result =
+				"domain_uuid" in target
+					? await joinByDomain(target.domain_uuid)
+					: await joinByCode(target.code);
+			if (result.status === "pending") {
+				setPreviewError("已提交加入申请，等待管理员审核");
+				return;
+			}
+			await domainStore.loadMyDomains().catch(() => {});
+			domainStore.setCurrentDomain(result.domain.uuid);
 			setPreviewOpen(false);
 			navigate({
 				to: "/domain/$domainUUID",
-				params: { domainUUID: joined.uuid },
+				params: { domainUUID: result.domain.uuid },
 			});
 		} catch (e) {
 			setPreviewError(localizedApiMessage(e, "加入失败，请稍后重试"));
@@ -136,6 +153,29 @@ function RouteComponent() {
 			setJoining(false);
 		}
 	}
+
+	// 对当前页的公开域批量查询自己的申请状态，用于卡片三态渲染。
+	useEffect(() => {
+		if (!publicDomains?.domains.length) return;
+		let cancelled = false;
+		void (async () => {
+			const results = await Promise.all(
+				(publicDomains?.domains ?? []).map(async (domain) => {
+					try {
+						const view = await getJoinRequest(domain.uuid);
+						return view.status === "pending" ? domain.uuid : "";
+					} catch {
+						return "";
+					}
+				}),
+			);
+			if (cancelled) return;
+			setPendingDomainUUIDs(results.filter(Boolean));
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [publicDomains]);
 
 	useEffect(() => {
 		domainStore.loadMyDomains();
@@ -216,7 +256,10 @@ function RouteComponent() {
 							page={page}
 							totalPages={totalPages}
 							joinedUUIDs={useDomainStore.getState().myDomainUUIDs}
-							onOpen={(domain) => void openPreview(domain.invite_code)}
+							pendingUUIDs={pendingDomainUUIDs}
+							onOpen={(domain) =>
+								void openPreview(domain.invite_code, domain.uuid)
+							}
 							onEnter={(domain) =>
 								navigate({
 									to: "/domain/$domainUUID",

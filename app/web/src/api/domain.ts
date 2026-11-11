@@ -9,6 +9,7 @@ export interface Domain {
 	owner_uuid: string;
 	invite_code: string;
 	is_public: boolean;
+	require_join_approval?: boolean;
 	created_at: string;
 	allow_guest?: boolean;
 	guest_can_listen?: boolean;
@@ -55,6 +56,7 @@ export async function createDomain(data: {
 	name: string;
 	description?: string;
 	is_public?: boolean;
+	require_join_approval?: boolean;
 }): Promise<Domain> {
 	const result = await apiClient.post<Domain>({
 		url: "/api/v1/domain/create",
@@ -152,6 +154,7 @@ export async function updateDomain(data: {
 	description?: string;
 	icon_url?: string;
 	is_public?: boolean;
+	require_join_approval?: boolean;
 }): Promise<Domain> {
 	const result = await apiClient.post<Domain>({
 		url: "/api/v1/domain/update",

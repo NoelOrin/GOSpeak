@@ -1,5 +1,5 @@
 import { Switch } from "@gospeak/components";
-import { Globe, Lock, Save } from "lucide-react";
+import { Globe, Lock, Save, ShieldCheck } from "lucide-react";
 import type { Domain } from "@/api/domain";
 
 export interface DomainSettingsFormProps {
@@ -13,6 +13,8 @@ export interface DomainSettingsFormProps {
 	setDescription: (value: string) => void;
 	isPublic: boolean;
 	setIsPublic: (value: boolean) => void;
+	requireJoinApproval: boolean;
+	setRequireJoinApproval: (value: boolean) => void;
 	saving: boolean;
 	formError: string;
 	onSave: (event: React.FormEvent) => void;
@@ -38,6 +40,12 @@ export function DomainSettingsForm(props: DomainSettingsFormProps) {
 					<div>
 						<dt className="text-faint-foreground text-xs">公开状态</dt>
 						<dd>{props.domain?.is_public ? "公开" : "私有"}</dd>
+					</div>
+					<div>
+						<dt className="text-faint-foreground text-xs">加入审核</dt>
+						<dd>
+							{props.domain?.require_join_approval ? "需审核" : "无需审核"}
+						</dd>
 					</div>
 				</dl>
 			</div>
@@ -97,6 +105,17 @@ export function DomainSettingsForm(props: DomainSettingsFormProps) {
 					checked={props.isPublic}
 					disabled={props.saving}
 					onCheckedChange={props.setIsPublic}
+				/>
+			</label>
+			<label className="border-border flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2.5">
+				<span className="flex items-center gap-2 text-sm">
+					<ShieldCheck size={16} className="text-warning" />
+					加入需审核
+				</span>
+				<Switch
+					checked={props.requireJoinApproval}
+					disabled={props.saving}
+					onCheckedChange={props.setRequireJoinApproval}
 				/>
 			</label>
 			{props.formError && (

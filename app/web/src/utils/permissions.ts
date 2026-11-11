@@ -29,6 +29,8 @@ const rolePermissions: Record<string, string[]> = {
 		"domain:manage",
 		"domain:delete",
 		"domain:invite",
+		"domain:invite:manage",
+		"domain:member:review",
 		"domain:kick",
 		"domain:role:manage",
 		"email_config:read",

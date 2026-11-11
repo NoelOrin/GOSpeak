@@ -13,7 +13,17 @@ import {
 	updateDomainMemberRole,
 	updateDomainRolePermissions,
 } from "@/api/domain";
+import {
+	type JoinRequestListItem,
+	listJoinRequests,
+	reviewJoinRequest,
+	setJoinApproval,
+} from "@/api/inviteJoin";
 import { deleteRoom, listRooms, type RoomRecord } from "@/api/room";
+import {
+	JoinRequestTable,
+	type JoinRequestStatusFilter,
+} from "@/components/domain/JoinRequestTable";
 import ConfirmModal from "@/components/common/ConfirmModal";
 import DomainMemberTable, {
 	memberDisplayName,
@@ -226,6 +236,12 @@ function RouteComponent() {
 		currentRole === "admin" ||
 		hasPermission("domain:kick") ||
 		hasDomainPermission(uuid, "domain:kick");
+	const canReviewRequests =
+		isOwner ||
+		currentRole === "admin" ||
+		hasPermission("domain:member:review") ||
+		hasDomainPermission(uuid, "domain:member:review");
+
 	const canManageRoles =
 		isOwner ||
 		hasPermission("domain:role:manage") ||
@@ -263,6 +279,22 @@ function RouteComponent() {
 	const [nameError, setNameError] = useState("");
 	const [formError, setFormError] = useState("");
 	const [saving, setSaving] = useState(false);
+	const [requireJoinApproval, setRequireJoinApproval] = useState(false);
+	const [_approvalSaving, setApprovalSaving] = useState(false);
+
+	// ── 加入申请 ──
+	const [joinRequests, setJoinRequests] = useState<JoinRequestListItem[]>([]);
+	const [joinRequestTotal, setJoinRequestTotal] = useState(0);
+	const [joinRequestCounts, setJoinRequestCounts] = useState<
+		Record<string, number>
+	>({ pending: 0, approved: 0, rejected: 0 });
+	const [joinRequestStatus, setJoinRequestStatus] =
+		useState<JoinRequestStatusFilter>("pending");
+	const [joinRequestKeyword, setJoinRequestKeyword] = useState("");
+	const [joinRequestPage, setJoinRequestPage] = useState(1);
+	const [joinRequestLoading, setJoinRequestLoading] = useState(false);
+	const [joinRequestError, setJoinRequestError] = useState("");
+	const [reviewingRequestID, setReviewingRequestID] = useState(0);
 
 	const [kickTarget, setKickTarget] = useState<DomainMember | null>(null);
 	const [kicking, setKicking] = useState(false);
@@ -333,6 +365,9 @@ function RouteComponent() {
 		resetRooms();
 		void fetchRooms(1);
 		void fetchRoles();
+		if (canReviewRequests) {
+			void fetchJoinRequests("pending", "", 1);
+		}
 		void domainStore.loadMyPermissions(uuid).catch(() => {});
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [uuid, loadedUUID]);
@@ -348,8 +383,78 @@ function RouteComponent() {
 		setName((prev) => prev || domain.name);
 		setDescription((prev) => prev || domain.description || "");
 		setIsPublic(domain.is_public);
+		setRequireJoinApproval(!!domain.require_join_approval);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [domain]);
+
+	async function fetchJoinRequests(
+		status: JoinRequestStatusFilter,
+		keyword: string,
+		page: number,
+	) {
+		if (!canReviewRequests) return;
+		setJoinRequestLoading(true);
+		setJoinRequestError("");
+		try {
+			const result = await listJoinRequests({
+				domain_uuid: uuid,
+				status,
+				keyword,
+				page,
+				page_size: 10,
+			});
+			setJoinRequests(result.items);
+			setJoinRequestTotal(result.total);
+			setJoinRequestCounts(result.counts);
+			setJoinRequestPage(page);
+		} catch (error) {
+			setJoinRequestError(toastActionError(error, "加入申请加载失败"));
+		} finally {
+			setJoinRequestLoading(false);
+		}
+	}
+
+	async function handleReviewRequest(requestID: number, approve: boolean) {
+		setReviewingRequestID(requestID);
+		try {
+			await reviewJoinRequest(uuid, requestID, approve);
+			toast.success(approve ? "已通过加入申请" : "已拒绝加入申请");
+			await fetchJoinRequests(
+				joinRequestStatus,
+				joinRequestKeyword,
+				joinRequestPage,
+			);
+			if (approve) {
+				await domainStore.loadMembers(uuid).catch(() => {});
+			}
+		} catch (error) {
+			toastActionError(error, "审核失败，请稍后重试");
+		} finally {
+			setReviewingRequestID(0);
+		}
+	}
+
+	async function handleToggleApproval(next: boolean) {
+		setApprovalSaving(true);
+		try {
+			const result = await setJoinApproval(uuid, next);
+			setRequireJoinApproval(result.require_join_approval);
+			const cached = useDomainStore.getState().domainCache[uuid];
+			if (cached) {
+				domainStore.updateCachedDomain({
+					...cached,
+					require_join_approval: result.require_join_approval,
+				});
+			}
+			toast.success(
+				result.require_join_approval ? "已开启加入审核" : "已关闭加入审核",
+			);
+		} catch (error) {
+			toastActionError(error, "切换加入审核失败");
+		} finally {
+			setApprovalSaving(false);
+		}
+	}
 
 	async function handleSave(e: React.FormEvent) {
 		e.preventDefault();
@@ -476,6 +581,10 @@ function RouteComponent() {
 									setDescription={setDescription}
 									isPublic={isPublic}
 									setIsPublic={setIsPublic}
+									requireJoinApproval={requireJoinApproval}
+									setRequireJoinApproval={(next) =>
+										void handleToggleApproval(next)
+									}
 									saving={saving}
 									formError={formError}
 									onSave={handleSave}
@@ -530,6 +639,49 @@ function RouteComponent() {
 								/>
 							</ManageSection>
 						</div>
+
+						{canReviewRequests && (
+							<ManageSection
+								title="加入申请"
+								description={`${joinRequestCounts.pending ?? 0} 条待审核`}
+								className="min-w-0"
+							>
+								<JoinRequestTable
+									items={joinRequests}
+									total={joinRequestTotal}
+									counts={joinRequestCounts}
+									status={joinRequestStatus}
+									keyword={joinRequestKeyword}
+									page={joinRequestPage}
+									pageSize={10}
+									loading={joinRequestLoading}
+									error={joinRequestError}
+									reviewing={reviewingRequestID}
+									onStatusChange={(status) => {
+										setJoinRequestStatus(status);
+										void fetchJoinRequests(status, joinRequestKeyword, 1);
+									}}
+									onKeywordChange={setJoinRequestKeyword}
+									onSearch={() =>
+										void fetchJoinRequests(
+											joinRequestStatus,
+											joinRequestKeyword,
+											1,
+										)
+									}
+									onPageChange={(page) =>
+										void fetchJoinRequests(
+											joinRequestStatus,
+											joinRequestKeyword,
+											page,
+										)
+									}
+									onReview={(id, approve) =>
+										void handleReviewRequest(id, approve)
+									}
+								/>
+							</ManageSection>
+						)}
 
 						{canManageRoles && (
 							<ManageSection
