@@ -24,13 +24,15 @@ const (
 	PermRoomUpdate = permcode.PermRoomUpdate
 	PermRoomDelete = permcode.PermRoomDelete
 
-	PermDomainCreate     = permcode.PermDomainCreate
-	PermDomainRead       = permcode.PermDomainRead
-	PermDomainManage     = permcode.PermDomainManage
-	PermDomainDelete     = permcode.PermDomainDelete
-	PermDomainInvite     = permcode.PermDomainInvite
-	PermDomainKick       = permcode.PermDomainKick
-	PermDomainRoleManage = permcode.PermDomainRoleManage
+	PermDomainCreate       = permcode.PermDomainCreate
+	PermDomainRead         = permcode.PermDomainRead
+	PermDomainManage       = permcode.PermDomainManage
+	PermDomainDelete       = permcode.PermDomainDelete
+	PermDomainInvite       = permcode.PermDomainInvite
+	PermDomainInviteManage = permcode.PermDomainInviteManage
+	PermDomainMemberReview = permcode.PermDomainMemberReview
+	PermDomainKick         = permcode.PermDomainKick
+	PermDomainRoleManage   = permcode.PermDomainRoleManage
 
 	PermUserRead   = permcode.PermUserRead
 	PermUserUpdate = permcode.PermUserUpdate
@@ -73,6 +75,8 @@ var DefaultPermissions = []Permission{
 	{Code: PermDomainManage, Name: "管理域", Description: "修改语音域设置"},
 	{Code: PermDomainDelete, Name: "删除域", Description: "删除语音域"},
 	{Code: PermDomainInvite, Name: "管理邀请码", Description: "生成和管理语音域邀请码"},
+	{Code: PermDomainInviteManage, Name: "管理邀请码", Description: "创建、禁用邀请码并查看使用记录"},
+	{Code: PermDomainMemberReview, Name: "审核加入申请", Description: "审批或拒绝域加入申请"},
 	{Code: PermDomainKick, Name: "踢出域成员", Description: "将成员移出语音域"},
 	{Code: PermDomainRoleManage, Name: "管理域角色", Description: "管理语音域内角色和权限"},
 
@@ -125,7 +129,7 @@ var DefaultRolePermissions = map[string][]string{
 		PermSignalKick,
 		PermRoomCreate, PermMuteManage, PermSFUManage,
 		PermDomainCreate, PermDomainRead, PermDomainManage, PermDomainDelete,
-		PermDomainInvite, PermDomainKick, PermDomainRoleManage,
+		PermDomainInvite, PermDomainInviteManage, PermDomainMemberReview, PermDomainKick, PermDomainRoleManage,
 		PermEmailConfigRead, PermEmailConfigManage,
 		PermStorageRead, PermStorageManage, PermStorageDelete,
 		PermOAuthRead, PermOAuthManage,

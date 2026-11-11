@@ -82,3 +82,36 @@ func TestDefaultRolePermissionsContainAnnouncementCodes(t *testing.T) {
 		t.Error("user role must not manage announcements")
 	}
 }
+
+func TestInviteManagePermission_Registered(t *testing.T) {
+	for _, want := range []string{PermDomainInviteManage, PermDomainMemberReview} {
+		found := false
+		for _, p := range DefaultPermissions {
+			if p.Code == want {
+				found = true
+				if p.Name == "" || p.Description == "" {
+					t.Fatalf("%s must have name and description", want)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("%s must be in DefaultPermissions seed", want)
+		}
+	}
+}
+
+func TestInviteManagePermission_GrantedToAdmin(t *testing.T) {
+	codes := DefaultRolePermissions["admin"]
+	for _, want := range []string{PermDomainInviteManage, PermDomainMemberReview} {
+		found := false
+		for _, code := range codes {
+			if code == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("admin must hold %s", want)
+		}
+	}
+}
