@@ -14,7 +14,6 @@ export interface UserInfo {
 	display_name: string;
 	avatar: string;
 	role: string;
-	is_guest?: boolean;
 	permissions?: string[];
 }
 
