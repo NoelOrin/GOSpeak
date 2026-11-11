@@ -266,7 +266,43 @@ func autoMigrate() error {
 	); err != nil {
 		return err
 	}
+	if err := dropLegacyGuestSchema(getDB()); err != nil {
+		return err
+	}
 	return migrateConversationQueryIndexes(getDB())
+}
+
+// dropLegacyGuestSchema 删除访客体系与旧邀请码列/表。
+// 这些对象已无任何代码引用，AutoMigrate 不会自动删列，需显式 DROP。
+// 幂等：列/表不存在时静默跳过。
+func dropLegacyGuestSchema(db *gorm.DB) error {
+	m := db.Migrator()
+	columns := map[string][]string{
+		"domains": {
+			"allow_guest", "guest_can_listen", "guest_can_speak",
+			"guest_can_message", "guest_limit", "invite_code",
+		},
+		"users": {"is_guest"},
+	}
+	for table, cols := range columns {
+		if !m.HasTable(table) {
+			continue
+		}
+		for _, col := range cols {
+			if !m.HasColumn(table, col) {
+				continue
+			}
+			if err := m.DropColumn(table, col); err != nil {
+				return fmt.Errorf("drop column %s.%s: %w", table, col, err)
+			}
+		}
+	}
+	if m.HasTable("domain_guest_bans") {
+		if err := m.DropTable("domain_guest_bans"); err != nil {
+			return fmt.Errorf("drop table domain_guest_bans: %w", err)
+		}
+	}
+	return nil
 }
 
 // migrateConversationQueryIndexes 确保会话列表游标查询依赖的表与复合索引存在。
