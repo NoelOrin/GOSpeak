@@ -470,6 +470,7 @@ git commit -m "feat(invite): 自包含签名邀请码的编解码与验签"
 package repository
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -479,12 +480,21 @@ import (
 	"gorm.io/gorm"
 )
 
+// setupInviteRepoDB 使用共享缓存的匿名内存库：普通 :memory: 每个连接是独立库，
+// 并发用例会因连接切换而看不到表。cache=shared 让所有连接共享同一个库。
 func setupInviteRepoDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	dsn := fmt.Sprintf("file:invite_repo_%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(8)
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := db.AutoMigrate(&model.DomainInvite{}, &model.DomainInviteRedemption{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -881,6 +891,7 @@ git commit -m "feat(invite): 邀请码与使用记录数据模型及仓库"
 package service
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
