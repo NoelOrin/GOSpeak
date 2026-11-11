@@ -1,7 +1,10 @@
 package invite
 
 import (
+	"time"
+
 	"GOSpeak/internal/handler"
+	"GOSpeak/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -14,7 +17,8 @@ func Register(r *gin.RouterGroup, h *handler.InviteHandler) {
 	r.POST("/domain/invites/redemptions", h.Redemptions)
 }
 
-// RegisterPublic 注册公开预览端点（无需登录）。
+// RegisterPublic 注册公开预览端点（无需登录），按 IP 限流 20 次/小时，
+// 防止用无效码枚举域存在性。
 func RegisterPublic(r *gin.RouterGroup, h *handler.InviteHandler) {
-	r.POST("/preview", h.Preview)
+	r.POST("/preview", middleware.RateLimit(20, time.Hour), h.Preview)
 }

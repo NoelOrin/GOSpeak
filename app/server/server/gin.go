@@ -129,6 +129,12 @@ func StartGin(env EnvEnum) error {
 	pkg.AccessTokenTTL = cfg.JWTAccessTTLDuration()
 	pkg.RefreshTokenTTL = cfg.JWTRefreshTTLDuration()
 	inviteSvc := service.NewInviteService(db, repository.NewDomainInviteRepository(db), domainRepo, cfg.StorageEncryptKey, cfg.JWTKey)
+	joinRequestSvc := service.NewJoinRequestService(
+		db,
+		repository.NewDomainJoinRequestRepository(db),
+		domainRepo,
+		userRepo,
+	)
 	domainSvc.SetInviteCreator(inviteSvc)
 	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
 	userSvc := service.NewUserService(userRepo)
@@ -299,7 +305,16 @@ func StartGin(env EnvEnum) error {
 
 	authCookieCfg := handler.NewAuthCookieConfig(cfg)
 	authH := handler.NewAuthHandler(authSvc, authCookieCfg)
+	joinRequestSvc.SetMemberAddedHook(domainSvc.OnMemberAdded)
+	inviteJoinSvc := service.NewInviteJoinService(
+		db, inviteSvc, joinRequestSvc,
+		repository.NewDomainInviteRepository(db), domainRepo, userRepo,
+		emailConfigSvc, emailVerificationSvc,
+	)
 	inviteH := handler.NewInviteHandler(inviteSvc)
+	inviteJoinH := handler.NewInviteJoinHandler(inviteJoinSvc, authCookieCfg)
+	joinRequestH := handler.NewJoinRequestHandler(joinRequestSvc, domainSvc)
+	joinRequestH.SetGlobalPermissionChecker(permSvc)
 	inviteH.SetPermissionCheckers(domainSvc, permSvc)
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)
 	emailConfigH := handler.NewEmailConfigHandler(emailConfigSvc)
@@ -399,6 +414,8 @@ func StartGin(env EnvEnum) error {
 		},
 		Auth:         authH,
 		Invite:       inviteH,
+		InviteJoin:   inviteJoinH,
+		JoinRequest:  joinRequestH,
 		User:         userH,
 		UserGroup:    userGroupH,
 		Signal:       signalH,

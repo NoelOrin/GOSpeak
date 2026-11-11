@@ -12,6 +12,7 @@ import (
 	emailRoutes "GOSpeak/internal/router/routes/email"
 	emailConfigRoutes "GOSpeak/internal/router/routes/email_config"
 	inviteRoutes "GOSpeak/internal/router/routes/invite"
+	inviteJoinRoutes "GOSpeak/internal/router/routes/invite_join"
 	messageRoutes "GOSpeak/internal/router/routes/message"
 	muteRoutes "GOSpeak/internal/router/routes/mute"
 	oauthRoutes "GOSpeak/internal/router/routes/oauth"
@@ -45,6 +46,8 @@ type Handlers struct {
 	ReadyCheck   func() error
 	Auth         *handler.AuthHandler
 	Invite       *handler.InviteHandler
+	InviteJoin   *handler.InviteJoinHandler
+	JoinRequest  *handler.JoinRequestHandler
 	User         *handler.UserHandler
 	Signal       *handler.SignalHandler
 	UserGroup    *handler.UserGroupHandler
@@ -103,6 +106,9 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	if h.Invite != nil {
 		inviteRoutes.RegisterPublic(api.Group("/invite"), h.Invite)
 	}
+	if h.InviteJoin != nil {
+		inviteJoinRoutes.RegisterPublic(api.Group("/invite"), h.InviteJoin)
+	}
 
 	protected := api.Group("")
 	protected.Use(middleware.JWTAuth())
@@ -132,6 +138,12 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	}
 	if h.Invite != nil {
 		inviteRoutes.Register(protected.Group(""), h.Invite)
+	}
+	if h.InviteJoin != nil {
+		inviteJoinRoutes.RegisterProtected(protected.Group("/invite"), h.InviteJoin)
+	}
+	if h.JoinRequest != nil {
+		inviteJoinRoutes.RegisterDomainAdmin(protected.Group("/domain"), h.JoinRequest)
 	}
 	systemRoutes.RegisterProtected(protected.Group("/system"), h.Monitor)
 

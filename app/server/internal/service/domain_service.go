@@ -49,6 +49,11 @@ type DomainService struct {
 	inviteCreator *InviteService
 }
 
+// OnMemberAdded 清理成员缓存并广播失效；供加入审核通过后复用。
+func (s *DomainService) OnMemberAdded(domainUUID, userUUID string) {
+	s.invalidateMembership(domainUUID, userUUID, true)
+}
+
 // SetInviteCreator 注入邀请码创建器。
 func (s *DomainService) SetInviteCreator(svc *InviteService) {
 	s.inviteCreator = svc
