@@ -45,6 +45,14 @@ type DomainService struct {
 
 	authEnforcer *casbin.SyncedEnforcer
 	useCasbin    bool
+
+	// inviteCreator 用于新建域时自动生成默认邀请码；nil 表示跳过（测试/降级）。
+	inviteCreator *InviteService
+}
+
+// SetInviteCreator 注入邀请码创建器。
+func (s *DomainService) SetInviteCreator(svc *InviteService) {
+	s.inviteCreator = svc
 }
 
 type domainMemberCacheEntry struct {
@@ -133,6 +141,11 @@ func (s *DomainService) Create(name, description, ownerUUID string, isPublic boo
 	// 同步播种系统角色（owner/admin/member/guest），否则加入后查 member 角色权限会报 domain role not found。
 	if err := s.roleRepo.SeedDefaults(domain.UUID); err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+	}
+	if s.inviteCreator != nil {
+		if _, err := s.inviteCreator.CreateDefaultForDomain(domain.UUID, ownerUUID); err != nil {
+			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
+		}
 	}
 	return domain, nil
 }

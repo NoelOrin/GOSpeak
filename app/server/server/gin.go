@@ -131,6 +131,8 @@ func StartGin(env EnvEnum) error {
 	service.SetBcryptCost(cfg.BcryptCost)
 	pkg.AccessTokenTTL = cfg.JWTAccessTTLDuration()
 	pkg.RefreshTokenTTL = cfg.JWTRefreshTTLDuration()
+	inviteSvc := service.NewInviteService(db, repository.NewDomainInviteRepository(db), domainRepo, cfg.StorageEncryptKey, cfg.JWTKey)
+	domainSvc.SetInviteCreator(inviteSvc)
 	guestSvc := service.NewGuestService(db, userRepo, domainRepo, repository.NewGuestBanRepo(db), authSvc, nil)
 	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
 	userSvc := service.NewUserService(userRepo)
@@ -362,6 +364,8 @@ func StartGin(env EnvEnum) error {
 	authH := handler.NewAuthHandler(authSvc, authCookieCfg)
 	guestH := handler.NewGuestHandler(guestSvc, domainSvc, permSvc, authCookieCfg)
 	guestH.SetOnDomainKick(signalHub.KickUserFromDomain)
+	inviteH := handler.NewInviteHandler(inviteSvc)
+	inviteH.SetPermissionCheckers(domainSvc, permSvc)
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)
 	emailConfigH := handler.NewEmailConfigHandler(emailConfigSvc)
 	userH := handler.NewUserHandler(userSvc, permSvc)
@@ -461,6 +465,7 @@ func StartGin(env EnvEnum) error {
 		},
 		Auth:         authH,
 		Guest:        guestH,
+		Invite:       inviteH,
 		User:         userH,
 		UserGroup:    userGroupH,
 		Signal:       signalH,
