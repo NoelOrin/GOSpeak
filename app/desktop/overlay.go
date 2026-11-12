@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 // OverlayMember is the per-member payload relayed to the overlay HUD. Keep the
@@ -96,6 +97,13 @@ var (
 	overlayWin   *mygo.Window
 )
 
+// overlayHUD is what the native overlay window draws. PushState fills it and
+// the window redraws; the HUD never reads the room itself.
+var overlayHUD = &hudState{
+	speaking: map[string]bool{},
+	avatarOf: func(string) *ui.Bitmap { return nil },
+}
+
 // overlayWindow returns the floating window, or nil when it has not been built
 // yet (the overlay is off until the user enables it).
 func overlayWindow() *mygo.Window {
@@ -107,7 +115,6 @@ func overlayWindow() *mygo.Window {
 // Overlay 事件：类型化 Event[T]（mygo v0.8.3+），Broadcast 发到所有窗口页面，
 // 仅相应订阅方（覆盖层 / 主窗口设置 UI）消费。
 var (
-	overlayStateEvent      = mygo.NewEvent[OverlaySnapshot]("overlay:state")
 	overlayVisibilityEvent = mygo.NewEvent[bool]("overlay.visibility")
 	overlayLockEvent       = mygo.NewEvent[bool]("overlay.lock")
 	// overlayEnabledEvent tells the main window's relay whether the feature is
@@ -328,9 +335,18 @@ func (Overlay) PushState(snapshot OverlaySnapshot) {
 	overlayCfg.mu.Lock()
 	overlayCfg.snap = snapshot
 	overlayCfg.mu.Unlock()
-	// Broadcast reaches every window's pages; only the overlay subscribes to
-	// "overlay:state", so the main window is unaffected.
-	_ = overlayStateEvent.Broadcast(snapshot)
+
+	speaking := make(map[string]bool, len(snapshot.SpeakingIdentities))
+	for _, id := range snapshot.SpeakingIdentities {
+		speaking[id] = true
+	}
+	overlayHUD.members = snapshot.Members
+	overlayHUD.speaking = speaking
+
+	if w := overlayWindow(); w != nil {
+		w.SetContentSize(hudWidth, hudHeight(len(snapshot.Members)))
+		w.Invalidate()
+	}
 	// Connection changes affect the auto policy's decision immediately.
 	evaluateOverlayPolicy()
 }
@@ -555,14 +571,15 @@ func loadOverlayConfig() {
 }
 
 // createOverlayWindow builds the floating overlay window (always hidden at
-// creation; the display policy and hotkeys decide when it shows) and points it
-// at the web frontend's /overlay route — same origin as the main window
-// (loopback proxy in release, dev server in dev mode).
+// creation; the display policy and hotkeys decide when it shows).
 //
 // Panel: a window of launchers and quick entries, floating above every app on
 // every Space and over apps in full screen, out of the taskbar and the window
 // cycle, without activating the app when it shows. That is what makes the
 // overlay sit on a borderless full-screen game.
+//
+// Content: the HUD is drawn by MyGo's own ui package, on the GPU, so the
+// overlay costs no second JavaScript runtime.
 //
 // Window look: frameless + transparent + DisableShadow — no title bar, no
 // opaque background, no system shadow; the content draws the member list
@@ -577,11 +594,9 @@ func createOverlayWindow() *mygo.Window {
 	protect := overlayCfg.contentProtection
 	overlayCfg.mu.Unlock()
 
-	base := appPageBase()
 	w := mygo.NewWindow(mygo.WindowOptions{
-		Title: "GOSpeak Overlay " + version,
-		URL:   base + "/overlay",
-		Page:  mygo.PageOptions{TrustedOrigins: originOf(base)},
+		Title:   "GOSpeak Overlay " + version,
+		Content: ui.View(hudView(overlayHUD)),
 		// Panel 是覆盖层的核心：浮在所有应用之上、跟随 Space、能盖住别人的全屏。
 		Panel: true,
 		// 无边框 + 透明 + 无阴影：覆盖层不是"一个窗口"，而是浮在游戏上的内容。
@@ -593,8 +608,8 @@ func createOverlayWindow() *mygo.Window {
 		SkipTaskbar:   true,
 		DisableResize: true,
 		Opacity:       opacity,
-		Width:         240,
-		Height:        360,
+		Width:         hudWidth,
+		Height:        hudHeight(0),
 		// X/Y 均非零时不居中（mygo 在 X、Y 同时为零时才自动居中）。
 		X:        24,
 		Y:        24,
