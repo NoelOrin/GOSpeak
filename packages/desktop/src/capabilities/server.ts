@@ -37,8 +37,11 @@ export interface ServerConfig {
 	 */
 	getBaseUrlSync(): string;
 	/**
-	 * Persists a new URL ("" clears it). On desktop this also retargets the
-	 * loopback proxy and reloads the windows, so the call may never resolve.
+	 * Persists a new URL ("" clears it). Rejects with an Error for anything
+	 * that is not an absolute http(s) URL, before touching either store.
+	 *
+	 * On desktop this also retargets the loopback proxy and reloads the
+	 * windows, so the call may never resolve.
 	 */
 	setBaseUrl(url: string): Promise<void>;
 }
@@ -53,6 +56,29 @@ function readMirror(): string {
 		return (localStorage.getItem(SERVER_BASE_URL_KEY) ?? "").trim();
 	} catch {
 		return "";
+	}
+}
+
+/**
+ * Rejects anything that is not "" or an absolute http(s) URL.
+ *
+ * The host validates too (`ServerConfig.SetBaseURL` returns an error since the
+ * proxy target and the persisted file must never hold a bad value), but a
+ * desktop build that predates that check accepts and persists *anything*:
+ * MyGo resolves a bound method without an error return as `(nil, nil)`, so the
+ * bridge promise never rejects and the rollback below would be unreachable.
+ * Validating here keeps the failure local to the caller on every host build.
+ */
+function assertBaseUrl(url: string): void {
+	if (url === "") return;
+	let parsed: URL;
+	try {
+		parsed = new URL(url);
+	} catch {
+		throw new Error(`无效的服务器地址（需要完整 URL）：${url}`);
+	}
+	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+		throw new Error(`服务器地址只支持 http/https：${parsed.protocol}`);
 	}
 }
 
@@ -80,7 +106,9 @@ const webStorage: ServerConfig = {
 	},
 	getBaseUrlSync: readMirror,
 	async setBaseUrl(url) {
-		writeMirror(url);
+		const next = url.trim();
+		assertBaseUrl(next);
+		writeMirror(next);
 	},
 };
 
@@ -99,6 +127,9 @@ const native: ServerConfig = {
 	getBaseUrlSync: readMirror,
 	async setBaseUrl(url) {
 		const next = url.trim();
+		// 先校验再落任何一处：非法 URL 绝不能写进镜像，否则下次启动会把一个
+		// 连不上也不该连的地址当成「上次的服务器」显示出来。
+		assertBaseUrl(next);
 		const previous = readMirror();
 		// Write the mirror first: the host reloads every window as part of this
 		// call, so the "after" code below may never run — but the next boot will
