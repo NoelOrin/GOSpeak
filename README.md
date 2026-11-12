@@ -26,10 +26,6 @@ GOSpeak 是一个自托管的游戏语音平台，基于 LiveKit 提供音视频
     <td width="50%"><img src=".github/assets/screenshots/login.jpg" alt="登录页" /><br /><em>登录页 — 自托管实例，无第三方鉴权依赖</em></td>
     <td width="50%"><img src=".github/assets/screenshots/domains.jpg" alt="发现域" /><br /><em>发现域 — 公开域检索、邀请码加入与已加入域快捷入口</em></td>
   </tr>
-  <tr>
-    <td width="50%"><img src=".github/assets/screenshots/settings-voice.jpg" alt="语音设置" /><br /><em>语音设置 — 进房默认静音、提示音与本机音量</em></td>
-    <td width="50%"></td>
-  </tr>
 </table>
 
 ## 特性

@@ -59,8 +59,31 @@ features:
     <figcaption>登录页 — 独立部署，无第三方鉴权依赖</figcaption>
   </figure>
   <figure>
+    <img src="/screenshots/domains.png" alt="发现域" />
+    <figcaption>发现域 — 公开域检索、邀请码加入与已加入域快捷入口</figcaption>
+  </figure>
+  <figure>
+    <img src="/screenshots/chat.png" alt="聊天" />
+    <figcaption>聊天 — 频道与私聊共用一栏，右侧常驻成员列表</figcaption>
+  </figure>
+  <figure>
+    <img src="/screenshots/invite.png" alt="邀请码" />
+    <figcaption>邀请码 — 按域创建、禁用与查看使用记录</figcaption>
+  </figure>
+</div>
+
+<div class="screenshot-pair">
+  <figure>
+    <img src="/screenshots/settings-audio.png" alt="音频设置" />
+    <figcaption>音频设置 — 设备热切换、回声消除与采集质量</figcaption>
+  </figure>
+  <figure>
     <img src="/screenshots/settings-voice.png" alt="语音设置" />
     <figcaption>语音设置 — 进房默认静音、提示音与本机音量</figcaption>
+  </figure>
+  <figure>
+    <img src="/screenshots/settings-appearance.png" alt="外观设置" />
+    <figcaption>外观设置 — 浅色与深色主题分别保存</figcaption>
   </figure>
 </div>
 
@@ -68,7 +91,7 @@ features:
 .screenshot-hero { margin: 24px 0 32px; }
 .screenshot-hero img { width: 100%; border-radius: 10px; border: 1px solid var(--vp-c-divider); }
 .screenshot-hero p { margin-top: 10px; text-align: center; color: var(--vp-c-text-2); font-size: 14px; }
-.screenshot-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.screenshot-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px; }
 .screenshot-pair figure { margin: 0; }
 .screenshot-pair img { width: 100%; border-radius: 10px; border: 1px solid var(--vp-c-divider); }
 .screenshot-pair figcaption { margin-top: 8px; text-align: center; color: var(--vp-c-text-2); font-size: 13px; }
