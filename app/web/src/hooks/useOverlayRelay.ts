@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { useLocation } from "@tanstack/react-router";
 import { inDesktop, createOverlay, type OverlayMember } from "@gospeak/desktop";
 import { useSocketStore, selectMembers } from "@/stores/socketStore";
 import { useSpeakingStore } from "@/handler_audio/speakingStore";
@@ -49,12 +48,8 @@ function toOverlayMember(m: MemberInfo): OverlayMember {
  * isolation.
  */
 export function useOverlayRelay() {
-	const location = useLocation();
-
 	useEffect(() => {
 		if (!inDesktop()) return; // Web 构建且无宿主：无需推送（桌面构建此分支被折叠剔除）
-		// 覆盖层窗口本身停在 /overlay，不应反向推送给自己。
-		if (location.pathname === "/overlay") return;
 
 		const overlay = createOverlay();
 		let timer: ReturnType<typeof setTimeout> | null = null;
@@ -123,16 +118,24 @@ export function useOverlayRelay() {
 		});
 
 		// 挂载时读取当前开关 / 可见性（宿主可能在页面加载期间就被快捷键唤起）。
-		void overlay.getConfig().then((cfg) => {
-			if (disposed || sawEnabledEvent || !cfg.enabled) return;
-			enabled = true;
-			schedule();
-		});
-		void overlay.isVisible().then((v) => {
-			if (disposed || sawVisibilityEvent || !v || visible) return;
-			visible = true;
-			pushNow();
-		});
+		// 桥接失败时保持安全默认（不推送），但必须吞掉 rejection：否则启动期
+		// 会冒出 unhandled rejection，且 relaying() 永远为 false，整个会话静默失效。
+		void overlay
+			.getConfig()
+			.then((cfg) => {
+				if (disposed || sawEnabledEvent || !cfg.enabled) return;
+				enabled = true;
+				schedule();
+			})
+			.catch(() => {});
+		void overlay
+			.isVisible()
+			.then((v) => {
+				if (disposed || sawVisibilityEvent || !v || visible) return;
+				visible = true;
+				pushNow();
+			})
+			.catch(() => {});
 
 		return () => {
 			disposed = true;
@@ -142,5 +145,7 @@ export function useOverlayRelay() {
 			unsubVisibility();
 			if (timer !== null) clearTimeout(timer);
 		};
-	}, [location.pathname]);
+		// 挂载一次即可：这个 hook 只存在于 (app) Layout，整个会话生命周期内不卸载；
+		// 若跟随 pathname 重建，每次导航都会重置 lastKey 并重跑两条启动 IPC。
+	}, []);
 }
