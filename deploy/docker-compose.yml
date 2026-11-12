@@ -30,6 +30,11 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      # 注入 buildinfo.Version/Commit：不传时镜像恒为 dev/unknown，
+      # 系统更新检查的 compareVersion 永远返回 0，永远报不出 available。
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-unknown}
     image: ${GOSPEAK_IMAGE:-gospeak:latest}
     pull_policy: ${GOSPEAK_PULL_POLICY:-missing}
     container_name: gospeak-app
@@ -46,7 +51,7 @@ services:
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12,10.0.0.0/8,192.168.0.0/16}
       # 内嵌 NATS JetStream 数据目录（JWT 签名密钥/黑名单/refresh-family）。
       # 固定路径 + 独立卷，确保容器重建后 KV 不丢；镜像内已设为默认值，此处显式声明便于覆盖。
-      NATS_STORE_DIR: /app/nats
+      NATS_STORE_DIR: ${NATS_STORE_DIR:-/app/nats}
     ports:
       - "${GOSPEAK_PORT:-8998}:8998"
     volumes:
