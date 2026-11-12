@@ -212,15 +212,34 @@ func TestProxyErrorHandlerReturnsUnifiedEnvelope(t *testing.T) {
 	}
 }
 
+// requireBuiltDist skips tests that need the real frontend build. webui/dist is
+// generated (mygo.config.ts buildCommand) and untracked, so a checkout without
+// a build must not fail here. The embed directive still needs the directory to
+// exist at compile time; this covers the directory existing but being empty or
+// holding only a placeholder.
+//
+// index.html is the only file required: the build writes .gz sidecars next to
+// the assets, but the host compresses at runtime when they are absent, and the
+// release chain embeds app/web/dist as-is (no sidecars). The .gz check would
+// therefore skip these tests in CI, where the coverage matters most.
+func requireBuiltDist(t *testing.T) fs.FS {
+	t.Helper()
+	sub, err := fs.Sub(embeddedDist, "webui/dist")
+	if err != nil {
+		t.Skipf("webui/dist is not embedded (%v); run the desktop build", err)
+	}
+	if _, err := fs.Stat(sub, "index.html"); err != nil {
+		t.Skipf("webui/dist/index.html is missing (%v); run the desktop build (mygo build or the mygo.config.ts buildCommand)", err)
+	}
+	return sub
+}
+
 // TestEmbeddedDistEndToEnd exercises the production embed FS: the real
 // index.html must be served gzipped with a revalidating cache policy, and every
 // hashed asset it references must resolve (a build/embed mismatch shows up here
 // instead of as a blank window).
 func TestEmbeddedDistEndToEnd(t *testing.T) {
-	sub, err := fs.Sub(embeddedDist, "webui/dist")
-	if err != nil {
-		t.Fatalf("sub: %v", err)
-	}
+	sub := requireBuiltDist(t)
 	s := &proxyServer{dist: sub, assets: newAssetCache()}
 
 	index := do(s, "/index.html", map[string]string{"Accept-Encoding": "gzip"})
@@ -274,10 +293,7 @@ func TestEmbeddedDistEndToEnd(t *testing.T) {
 // through an actual HTTP server, covering what the WebView sees: the page, an
 // SPA deep link, a hashed chunk, and the API prefix with no backend configured.
 func TestHandlerServesRealDistOverHTTP(t *testing.T) {
-	sub, err := fs.Sub(embeddedDist, "webui/dist")
-	if err != nil {
-		t.Fatalf("sub: %v", err)
-	}
+	sub := requireBuiltDist(t)
 	s := &proxyServer{dist: sub, assets: newAssetCache(), transport: proxyTransport()}
 	s.mainProxy = newTestReverseProxy(s)
 	ts := httptest.NewServer(s.handler())
