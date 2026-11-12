@@ -6,6 +6,7 @@ import {
 	listRedemptions,
 } from "@/api/invite";
 import { toastActionError } from "@/utils/toast";
+import { LoadingRegion, SkeletonListRows } from "@/components/common/Skeletons";
 
 const FAIL_LABEL: Record<string, string> = {
 	expired: "已过期",
@@ -65,7 +66,11 @@ export default function InviteRedemptionsPanel({
 			<p className="text-muted-foreground text-xs">
 				{invite.label || invite.code.slice(0, 8)} · 共 {total} 条
 			</p>
-			{loading && <p className="text-muted-foreground text-xs">加载中…</p>}
+			{loading && (
+				<LoadingRegion label="正在加载使用记录">
+					<SkeletonListRows rows={4} />
+				</LoadingRegion>
+			)}
 			{!loading && items.length === 0 && (
 				<p className="text-muted-foreground text-xs">还没有使用记录</p>
 			)}

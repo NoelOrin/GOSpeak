@@ -8,6 +8,7 @@ import {
 	renameUserGroup,
 	type UserGroup,
 } from "@/api/userGroup";
+import { LoadingRegion, SkeletonListRows } from "@/components/common/Skeletons";
 import ConfirmModal from "@/components/common/ConfirmModal";
 import { toastActionError } from "@/utils/toast";
 
@@ -204,9 +205,13 @@ export default function UserGroupPanel() {
 							</div>
 						))}
 					</div>
+				) : loading ? (
+					<LoadingRegion label="正在加载分组">
+						<SkeletonListRows rows={3} />
+					</LoadingRegion>
 				) : (
 					<div className="bg-muted/70 text-faint-foreground rounded-lg px-4 py-8 text-center text-sm">
-						{loading ? "正在加载分组..." : "还没有用户分组"}
+						还没有用户分组
 					</div>
 				)}
 			</div>
