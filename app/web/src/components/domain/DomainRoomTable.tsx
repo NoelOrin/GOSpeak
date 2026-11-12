@@ -1,3 +1,5 @@
+// biome-ignore-all lint/suspicious/noArrayIndexKey: 骨架占位行数量固定，无业务主键
+import { Skeleton } from "@gospeak/components";
 import { Pencil, Trash2 } from "lucide-react";
 import type { RoomRecord } from "@/api/room";
 import { formatDate } from "./DomainMemberTable";
@@ -79,17 +81,18 @@ export default function DomainRoomTable(props: DomainRoomTableProps) {
 						</tr>
 					</thead>
 					<tbody>
-						{status === "loading" && (
-							<tr>
-								<td
-									colSpan={6}
-									className="text-faint-foreground py-10 text-center text-sm"
-								>
-									<span className="border-primary border-t-primary mr-2 inline-block size-4 animate-spin rounded-full border-2" />
-									正在加载房间
-								</td>
-							</tr>
-						)}
+						{status === "loading" &&
+							Array.from({ length: 5 }).map((_, i) => (
+								<tr key={`sk-${i}`} className="border-border/60 border-b">
+									{Array.from({ length: 6 }).map((__, c) => (
+										<td key={c} className="px-3 py-2.5">
+											<Skeleton
+												className={c === 5 ? "ml-auto h-4 w-16" : "h-4 w-20"}
+											/>
+										</td>
+									))}
+								</tr>
+							))}
 						{rooms.map((room) => {
 							const showActions = canManageRoomAction(
 								room,
