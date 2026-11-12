@@ -10,7 +10,7 @@
 
 ## 一句话结论
 
-**分层主线是健康的，真正的问题不在"某层写错了"，而在三处系统性错配**：① 部署模型（单进程内嵌 NATS）与代码/文档假设（多实例共享状态）错配；② 安全与错误策略在 HTTP / WS / OAuth 三条通道间分叉；③ 前端 server state 被 React Query、zustand、组件 useState 三套容器同时接管。叠加工程闭环缺口（62 个前端测试文件 0 进 CI），当前健康度为 **中等偏弱**。
+**分层主线是健康的，真正的问题不在"某层写错了"，而在三处系统性错配**：① 部署模型（单进程内嵌 NATS）与代码/文档假设（多实例共享状态）错配；② 安全与错误策略在 HTTP / WS / OAuth 三条通道间分叉；③ 前端 server state 被 React Query、zustand、组件 useState 三套容器同时接管。叠加工程闭环缺口（~~62 个前端测试文件 0 进 CI~~ → 已由 f698ce0 修复：CI 新增 `test-web`/`test-packages` 并纳入 Gate），当前健康度为 **中等偏弱**。
 
 ---
 
@@ -28,7 +28,7 @@
 | 安全边界一致性 | 🔴 分叉 | WS 绕过 `BanCheck`/`GuestGuard`；OAuth 错误通道绕过脱敏 |
 | 前端状态管理 | 🟡 混乱 | server state 三套容器；同端点重复请求；god component |
 | 依赖治理 / 可测试性 | 🟡 偏弱 | 包级全局注入；核心 service 绑定具体类型 |
-| 工程闭环 | 🔴 缺口 | CI 不跑前端测试；hook 依赖检查关闭；DTO 手工镜像 |
+| 工程闭环 | 🟡 改善中 | ~~CI 不跑前端测试；hook 依赖检查关闭~~ → 已由 f698ce0 修复（CI 新增 `test-web`/`test-packages`；hook 依赖改为 warn + 棘轮门禁）；DTO 手工镜像仍在 |
 
 ### 三个根本判断
 
@@ -36,7 +36,7 @@
 
 2. **策略与契约是"传输层相关"而非"身份层统一"的**。同一条封禁/访客/脱敏规则，在 HTTP 组、WS 直连、OAuth 重定向三条通道各实现一次且不一致，形成稳定绕过面。SFU 抽象层的 `ErrSFUNotSupported`、Capabilities、EnforcementLevel 也存在"文档声明 vs 实现行为"的系统性漂移。
 
-3. **工程闭环没有兜住已有的质量投入**。前端 62 个测试文件、三层错误边界、条件编译双目标测试都写得很认真，但 CI 从不运行前端测试，hook 依赖检查被完全关闭，前后端 DTO 靠人工镜像——意味着回归几乎只能靠 typecheck 和人工 review 拦截。
+3. **工程闭环没有兜住已有的质量投入**。前端 62 个测试文件、三层错误边界、条件编译双目标测试都写得很认真，但审查时 CI 从不运行前端测试，hook 依赖检查被完全关闭，前后端 DTO 靠人工镜像——意味着回归几乎只能靠 typecheck 和人工 review 拦截。**（G3/G4 已由 f698ce0 修复：CI 新增 `test-web`/`test-packages` 并纳入 Gate；`useExhaustiveDependencies` 改为 warn + `scripts/check-hook-deps.mjs` 棘轮门禁。DTO 镜像（G5）仍未解决。）**
 
 ### P0 清单（建议立即处理）
 
@@ -46,7 +46,7 @@
 | B1 | 安全 | WS 通道绕过 `BanCheck`/`GuestGuard`，域访客封禁可经已建连继续发消息 |
 | B2 | 安全 | OAuth 回调错误通道绕过脱敏，可能把上游 `access_token` 写入重定向 URL |
 | F5 | 回归 | `ListParticipants` 错误时返回空数组（历史 B05 已修项回归） |
-| G3 | 工程 | 前端 62 个测试文件 0 进 CI |
+| G3 | 工程 | ~~前端 62 个测试文件 0 进 CI~~ → 已由 f698ce0 修复（CI 新增 `test-web`/`test-packages` 并纳入 Gate） |
 
 ---
 
@@ -68,6 +68,7 @@
 - **校正（2026-11-10 复核）**：初版标题写"生产回退 `staticKey` 会 panic"过重——panic 实为**条件性**：仅当 backend 为空或 KV 完全不可用、且 `JWT_KEY` 未配或仍是 `default-secret` 时才触发（`jwt_key.go:149-156`）；正常部署 `init.sh:241` 会生成随机 `JWT_KEY` 且 backend 正常，不会 panic，而是静默换新 key → 全量重登。另：`NATS_WAL_PATH`（`config.go:88`）是事件总线断线重放的 JSONL WAL（`bus/wal.go`），**不是** JetStream StoreDir，勿与持久化混淆。
 - **附带洞察**：生产 + backend 正常时签名用的是 KV 里的随机 `jwt.active`，`JWT_KEY` **只在回退分支被读**——即 `init.sh` 生成、文档反复强调"生产必改"的 `JWT_KEY`，正常生产路径里**并不参与签名**；真正的签名 key 由首个启动的进程随机生成、随重启更换，运维既看不见也控不了。
 - **建议**：三选一——① 给内嵌 NATS 配**固定且持久化**的 StoreDir 并在 compose 挂 volume；② 接**外部 NATS**（底层 `OpenAuthStore(cfg.URL)` 等已支持，需给 `bus.Init`/config 加 URL 并让 auth/membership/jobs 共用同一外部连接）；③ 承认单实例，把签名密钥与黑名单落到 **DB / 密钥文件**，让密钥生命周期显式脱离总线。
+- **状态（f698ce0）**：方案① 已落地。`config.NATStoreDirPath()` 新增（显式 `NATS_STORE_DIR` 优先，否则回退 DB 同级 `nats/`），`gin.go` 的 `bus.Init` 调用点已传 `StoreDir`；`deploy/docker-compose.yml` 挂 `gospeak-nats:/app/nats` 并以 `${NATS_STORE_DIR:-/app/nats}` 注入。回归测试 `app/server/server/event_bus_test.go` 断言 InitConfig 带 StoreDir，并复刻调用点验证日志 `storeDir=` 为持久化路径而非 `gospeak-nats-js-*` 临时目录。**A1 的多实例假设问题仍未解决**（仍是单进程内嵌 NATS、固定 StoreDir 只支持单实例）。
 
 ### A3. membership fail-fast 与 authstate 内存降级，两套容错哲学冲突 〔🟡〕
 - **问题**：membership 删除了 `none` 内存后端、缺 NATS 直接启动失败；authstate 在 `SetBackend(nil)` 时静默退化为进程内存黑名单/refresh family。
@@ -272,16 +273,18 @@
 - **影响**：进入 `/discover`/`/link` 首屏同一端点可发 3–4 次请求，三份缓存互不同步。
 - **建议**：确立单一数据源（React Query 承载 UUID + 详情，zustand 只留 `currentDomainUUID`）；`loadMyDomains` 复用 `queryClient.fetchQuery` 并加 in-flight 去重；移除 `queryKey` 里的 UUID join。
 
-### G3. CI 完全不执行前端测试 〔🔴〕
+### G3. CI 完全不执行前端测试 〔🔴〕 → 已由 f698ce0 修复
 - **问题**：仓库有 62 个前端测试文件（web 50 + packages 12）与整套 `test/` 后端 E2E，但所有 GitHub Actions 工作流均无 `vitest`/`pnpm test`/`turbo run test`。
 - **证据**：`.github/workflows/ci.yml:216-237`（Gate `needs: [lint, typecheck, build-js, build-server, test-server, version-check]`）、`:183-203`（唯一 test job 是 `go test ./... -race`）；全 workflows grep `vitest|pnpm test|turbo run test` 零命中。今日工作日志亦印证前端 vitest 为本地手跑（且有 4 个既有 flaky 超时）。
 - **影响**：store/socket/条件编译/桌面能力的回归无法在 PR 拦截，`pnpm test` 形同本地脚本。
 - **建议**：新增 `test-web`/`test-packages` job 并加入 Gate；`@gospeak/test` E2E 按 `needs.changes` 触发；同时顺手治理那 4 个 flaky（否则接入 CI 会红）。
+- **状态（f698ce0）**：已修复。`ci.yml` 新增 `test-web`（`pnpm --filter @gospeak/web test`）与 `test-packages`（components/desktop/sfu-client）两个 job，均按 `needs.changes` 条件触发，并已加入 `gate` 的 `needs` 与结果校验列表。
 
-### G4. React hook 依赖检查关闭，14 条无效 `eslint-disable` 〔🟡〕
+### G4. React hook 依赖检查关闭，14 条无效 `eslint-disable` 〔🟡〕 → 已由 f698ce0 修复
 - **证据**：`biome.json:44-57`（`useExhaustiveDependencies: "off"`、`noExplicitAny: "off"`）；`.github/workflows/ci.yml:84-88`（只跑 `biome ci`）；14 处 `// eslint-disable-next-line react-hooks/exhaustive-deps`（如 `app/web/src/pages/(app)/manage/domains/$domainUUID/index.tsx:472,486`、`app/web/src/components/room/hooks/useVoiceSession.ts:447`）；全仓无 eslint 配置/依赖。
 - **影响**：Biome 不识别 eslint 指令且对应规则本就关闭，这些注释给人"已处理"错觉，实际陈旧 effect 依赖无人把关。
 - **建议**：启用 `useExhaustiveDependencies`（warn/error）；14 处改写为 `// biome-ignore lint/correctness/useExhaustiveDependencies: <理由>`。
+- **状态（f698ce0）**：已修复。`biome.json:53` 改为 `useExhaustiveDependencies: "warn"`，并新增 `scripts/check-hook-deps.mjs` 棘轮门禁：当前 11 处历史告警为基线，新增即失败；同时双向校验（低于基线也失败），避免 Biome reporter 格式漂移时静默放行。14 条 `eslint-disable` 也已全部改写为带理由的 `// biome-ignore lint/correctness/useExhaustiveDependencies: ...`（当前 0 条 eslint-disable）。剩余 11 处历史告警待逐步清理。
 
 ### G5. API/WS 边界类型不安全 + 前后端 DTO 手工镜像且已漂移 〔🟡〕
 - **证据**：`app/web/src/api/apiClient.ts:10-14,188-217`（`Result<T = any>`、`resolve(res.data?.data as T)`）；`app/web/src/socket/wsClient.ts:287`（`emitAck(): Promise<any>`）；`app/web/src/stores/chatStore.ts:444,509,896`（ACK 全 `any`）；`app/web/tsconfig.json:32`（`useUnknownInCatchVariables: false`）。DTO 漂移实例：Go `model/domain.go:18-33`（有 `updated_at`、非空 `AllowGuest`、必填 `GuestLimit`）vs TS `app/web/src/api/domain.ts:3-18`（无 `updated_at`、可选字段）；消息模型 Go `status: string` vs TS `deleted: boolean`（`app/web/src/types/message.ts:1-22`）；共享常量 `DefaultGuestLimit` 在前端写死 `?? 5`（`app/web/src/components/domain/GuestAccessSettings.tsx:86`）。
@@ -337,7 +340,7 @@
 3. **B1 WS 统一策略入口**：把封禁/访客判定抽成传输无关 Policy，建连 + 按事件各执行一次。
 4. **B2 OAuth 错误脱敏**：复用 `pkg.ClientError`，token 改 Header/脱敏。
 5. **F5 + 历史回归防护**：修 `ListParticipants`，为 B01–B09 补回归测试。
-6. **G3 前端测试接入 CI**（先治理 4 个 flaky）。
+6. ~~**G3 前端测试接入 CI**（先治理 4 个 flaky）。~~ 已由 f698ce0 完成：`test-web`/`test-packages` 已进 CI 与 Gate。
 
 ### P1（契约收敛 + 一致性 + 并发可靠性）
 - C1/C2：修正 `ErrSFUNotSupported` 与 Capabilities 契约，加契约测试。
@@ -350,7 +353,7 @@
 ### P2（复杂度清理 + 长期演进）
 - A1 后续：按部署模型决定是删除还是坐实跨实例抽象；清理 cluster/mediasoup 残留。
 - C3/C4/C5、D3、E2/E4/E6、F2/F3/F4/F6：接口化、拆锁、KV 编码、事务边界归一。
-- G4/G5/G6/G7/G8：hook 依赖检查、DTO 生成、god component 拆分、turbo 编排、测试结构。
+- ~~G4~~（已由 f698ce0 完成：warn + 棘轮门禁）/G5/G6/G7/G8：DTO 生成、god component 拆分、turbo 编排、测试结构。
 - H：文档与实现漂移系统性对齐。
 
 ---
