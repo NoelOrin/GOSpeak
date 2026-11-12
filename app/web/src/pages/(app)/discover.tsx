@@ -13,6 +13,7 @@ import {
 import { joinTarget } from "@/utils/joinTarget";
 import CreateDomainModal from "@/components/domain/CreateDomainModal";
 import DomainInvitePreview from "@/components/domain/DomainInvitePreview";
+import InviteCodeManager from "@/components/domain/InviteCodeManager";
 import DiscoverDomainGrid from "@/components/discover/DiscoverDomainGrid";
 import DiscoverJoinPanel from "@/components/discover/DiscoverJoinPanel";
 import DiscoverMyDomains from "@/components/discover/DiscoverMyDomains";
@@ -24,6 +25,7 @@ import {
 import { domainStore, useDomainStore } from "@/stores/domainStore";
 import { extractDomainInviteCode } from "@/utils/domainInvite";
 import { localizedApiMessage } from "@/utils/errorMessages";
+import { useKeepAliveActive } from "@/components/common/keepAliveOutlet";
 
 export const Route = createFileRoute("/(app)/discover")({
 	component: DiscoverPage,
@@ -35,6 +37,7 @@ export const Route = createFileRoute("/(app)/discover")({
 const PAGE_SIZE = 12;
 
 export function DiscoverPage() {
+	const isActive = useKeepAliveActive();
 	const navigate = useNavigate();
 	const _queryClient = useQueryClient();
 	const [keyword, setKeyword] = useState("");
@@ -61,6 +64,9 @@ export function DiscoverPage() {
 	} = useQuery({
 		queryKey: ["public-domains", keyword, page],
 		queryFn: () => listPublicDomains(page, PAGE_SIZE, keyword || undefined),
+		// keep-alive 下隐藏页仍保留 observer；只在页面可见时刷新，避免后台
+		// 窗口聚焦触发的无意义请求。
+		enabled: isActive,
 	});
 
 	const totalPages = Math.max(
@@ -288,6 +294,10 @@ export function DiscoverPage() {
 					padded={false}
 				>
 					<DiscoverMyDomains />
+				</ManageSection>
+
+				<ManageSection title="分享链接" description="为你的域创建并分享邀请码">
+					<InviteCodeManager />
 				</ManageSection>
 			</ManagePage>
 
