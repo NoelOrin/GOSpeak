@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/egoist/mygo"
@@ -53,6 +54,36 @@ var pendingUpdate struct {
 // update-<target>.json manifests are attached.
 type Updater struct{}
 
+// init pins the version mygo compares update manifests against to the version
+// this build reports. mygo.Updater.Check compares against App.Version(), which
+// for a packaged build falls back to packageVersion — the version field of
+// mygo.config.ts, injected by `mygo build` — while UpdateInfo.Current reports
+// the ldflags-injected `version`. Those are bumped by different files
+// (mygo.config.ts vs .github/versions/desktop.yaml), so a build whose two
+// sources drifted would offer its own version as an update forever.
+// scripts/check-version.mjs now keeps both in sync at release time; this keeps
+// a mispackaged build honest at runtime too.
+//
+// TODO(update-feed): if mygo.config.ts ever grows an `updates` key, the
+// release chain must keep packageVersion in lockstep — see the desktop rule in
+// scripts/check-version.mjs.
+func init() {
+	if v := comparisonVersion(version); v != "" {
+		mygo.App.SetVersion(v)
+	}
+}
+
+// comparisonVersion is the version mygo should compare update manifests
+// against: the build's own version when it is a real release, or "" to leave
+// mygo's default (the packaged version) alone for dev builds.
+func comparisonVersion(ldflagsVersion string) string {
+	v := strings.TrimSpace(ldflagsVersion)
+	if v == "" || v == "dev" {
+		return ""
+	}
+	return v
+}
+
 // Check asks the update feed for a version newer than the running one.
 //
 // Returns Supported=false (with Available=false, no error) for builds that
@@ -61,6 +92,13 @@ type Updater struct{}
 // the release page.
 func (Updater) Check(ctx context.Context) (*UpdateInfo, error) {
 	info := &UpdateInfo{Current: version, Supported: mygo.Updater.Enabled()}
+	// mygo.config.ts has no `updates` key, so Enabled is false for every build
+	// today and mygo.Updater.Check would return ErrUpdatesDisabled anyway. Stop
+	// here so the version-source caveat above is enforced at the one place that
+	// compares versions: nothing is compared while the feature is off.
+	if !info.Supported {
+		return info, nil
+	}
 
 	update, err := mygo.Updater.Check(ctx)
 	if err != nil {
