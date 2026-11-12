@@ -202,7 +202,7 @@ export default function ChatWindow() {
 			</div>
 
 			{active && (
-				<div className="bg-card shrink-0 px-4 pt-1 pb-3">
+				<div className="border-border bg-card shrink-0 border-t px-4 pt-2 pb-3">
 					<div className="flex items-end gap-2">
 						<textarea
 							ref={textareaRef}
