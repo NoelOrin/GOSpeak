@@ -51,6 +51,9 @@ type OverlayConfig struct {
 	Hotkey     string  `json:"hotkey"`
 	LockHotkey string  `json:"lockHotkey"`
 	Policy     string  `json:"policy"`
+	// ContentProtection keeps the overlay out of screenshots and screen
+	// recordings (macOS and Windows; Linux has no implementation).
+	ContentProtection bool `json:"contentProtection"`
 }
 
 // overlayCfg holds the floating game-overlay window's configuration and the
@@ -60,13 +63,14 @@ type OverlayConfig struct {
 // 默认关闭：enabled=false 且窗口创建时 Hidden，只有用户在设置里开启（或策略
 // 判定 + 已连接）后才会显示。窗口本身无边框、透明、无阴影、置顶、不占任务栏。
 var overlayCfg = struct {
-	enabled    bool
-	opacity    float64
-	hotkey     string
-	lockHotkey string
-	policy     string
-	visible    bool
-	locked     bool
+	enabled           bool
+	opacity           float64
+	hotkey            string
+	lockHotkey        string
+	policy            string
+	contentProtection bool
+	visible           bool
+	locked            bool
 	// manualOverride is the hotkey's explicit show/hide in "auto" policy; it
 	// wins over the computed decision until the computed decision flips.
 	manualOverride *bool
@@ -139,7 +143,11 @@ func setOverlayVisible(v bool) {
 	}
 	if v {
 		if w := overlayWindow(); w != nil {
-			w.Show()
+			// ShowInactive, never Show: Show activates the window, which on
+			// Windows takes the foreground from the game (and makes the auto
+			// policy hide the overlay again) and on macOS takes the keyboard
+			// from it.
+			w.ShowInactive()
 		} else {
 			// Nothing to show yet: build the window, whose creation callback
 			// shows it because visible is already true.
@@ -199,6 +207,19 @@ func (Overlay) GetOpacity() float64 {
 	overlayCfg.mu.Lock()
 	defer overlayCfg.mu.Unlock()
 	return overlayCfg.opacity
+}
+
+// SetContentProtection keeps the overlay out of screenshots and screen
+// recordings, or lets them show it again. macOS and Windows implement it;
+// Linux ignores it.
+func (Overlay) SetContentProtection(v bool) {
+	overlayCfg.mu.Lock()
+	overlayCfg.contentProtection = v
+	overlayCfg.mu.Unlock()
+	scheduleOverlayConfigSave()
+	if w := overlayWindow(); w != nil {
+		w.SetContentProtection(v)
+	}
 }
 
 // SetHotkey sets the global keyboard shortcut that toggles the overlay.
@@ -280,20 +301,17 @@ func (Overlay) GetLocked() bool {
 	return overlayCfg.locked
 }
 
-// IsFullscreenAppInFront reports whether a full-screen app currently covers a
-// display (diagnostics for the settings UI).
-func (Overlay) IsFullscreenAppInFront() bool { return isFullscreenAppInFront() }
-
 // GetConfig returns the full persisted configuration (settings bootstrap).
 func (Overlay) GetConfig() OverlayConfig {
 	overlayCfg.mu.Lock()
 	defer overlayCfg.mu.Unlock()
 	return OverlayConfig{
-		Enabled:    overlayCfg.enabled,
-		Opacity:    overlayCfg.opacity,
-		Hotkey:     overlayCfg.hotkey,
-		LockHotkey: overlayCfg.lockHotkey,
-		Policy:     overlayCfg.policy,
+		Enabled:           overlayCfg.enabled,
+		Opacity:           overlayCfg.opacity,
+		Hotkey:            overlayCfg.hotkey,
+		LockHotkey:        overlayCfg.lockHotkey,
+		Policy:            overlayCfg.policy,
+		ContentProtection: overlayCfg.contentProtection,
 	}
 }
 
@@ -356,7 +374,8 @@ func toggleOverlayLock() {
 	setOverlayLocked(!locked)
 }
 
-// setOverlayLocked applies a lock change and notifies the overlay page.
+// setOverlayLocked applies a lock change: locked lets the pointer through to
+// the game (SetIgnoreMouseEvents), unlocked makes the HUD a drag handle.
 func setOverlayLocked(locked bool) {
 	overlayCfg.mu.Lock()
 	changed := overlayCfg.locked != locked
@@ -365,18 +384,21 @@ func setOverlayLocked(locked bool) {
 	if !changed {
 		return
 	}
+	if w := overlayWindow(); w != nil {
+		w.SetIgnoreMouseEvents(locked)
+	}
 	_ = overlayLockEvent.Broadcast(locked)
 }
 
-// evaluateOverlayPolicy applies the "auto" policy decision, if any. It runs on
-// a ticker and whenever inputs change (enabled/policy/snapshot).
+// evaluateOverlayPolicy applies the automatic display decision, if any. It
+// runs whenever inputs change (enabled/policy/snapshot/app activation).
 func evaluateOverlayPolicy() {
 	overlayCfg.mu.Lock()
 	if !overlayCfg.enabled || overlayCfg.policy != overlayPolicyAuto {
 		overlayCfg.mu.Unlock()
 		return
 	}
-	want := overlayCfg.snap.Connected && isFullscreenAppInFront()
+	want := overlayCfg.snap.Connected
 	if want != overlayCfg.lastAutoWant {
 		// The underlying condition flipped: drop the user's stale override.
 		overlayCfg.lastAutoWant = want
@@ -390,18 +412,6 @@ func evaluateOverlayPolicy() {
 	}
 	overlayCfg.mu.Unlock()
 	setOverlayVisible(target)
-}
-
-// startOverlayPolicyLoop periodically re-evaluates the auto policy (full-screen
-// detection can only be polled; there is no event source for it).
-func startOverlayPolicyLoop() {
-	go func() {
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			evaluateOverlayPolicy()
-		}
-	}()
 }
 
 // registerOverlayHotkeys (re)binds the two global shortcuts to the persisted
@@ -490,11 +500,12 @@ func flushOverlayConfig() {
 func writeOverlayConfig() {
 	overlayCfg.mu.Lock()
 	cfg := OverlayConfig{
-		Enabled:    overlayCfg.enabled,
-		Opacity:    overlayCfg.opacity,
-		Hotkey:     overlayCfg.hotkey,
-		LockHotkey: overlayCfg.lockHotkey,
-		Policy:     overlayCfg.policy,
+		Enabled:           overlayCfg.enabled,
+		Opacity:           overlayCfg.opacity,
+		Hotkey:            overlayCfg.hotkey,
+		LockHotkey:        overlayCfg.lockHotkey,
+		Policy:            overlayCfg.policy,
+		ContentProtection: overlayCfg.contentProtection,
 	}
 	overlayCfg.mu.Unlock()
 
@@ -536,6 +547,7 @@ func loadOverlayConfig() {
 	}
 	overlayCfg.hotkey = cfg.Hotkey
 	overlayCfg.lockHotkey = cfg.LockHotkey
+	overlayCfg.contentProtection = cfg.ContentProtection
 	if cfg.Policy == overlayPolicyManual || cfg.Policy == overlayPolicyAuto {
 		overlayCfg.policy = cfg.Policy
 	}
@@ -547,24 +559,34 @@ func loadOverlayConfig() {
 // at the web frontend's /overlay route — same origin as the main window
 // (loopback proxy in release, dev server in dev mode).
 //
+// Panel: a window of launchers and quick entries, floating above every app on
+// every Space and over apps in full screen, out of the taskbar and the window
+// cycle, without activating the app when it shows. That is what makes the
+// overlay sit on a borderless full-screen game.
+//
 // Window look: frameless + transparent + DisableShadow — no title bar, no
-// opaque background, no system shadow; the page draws the member list directly
-// over the game. StateKey persists the user-dragged position across restarts.
+// opaque background, no system shadow; the content draws the member list
+// directly over the game. StateKey persists the user-dragged position.
 //
 // Main thread only (mygo builds windows there); call it through
 // ensureOverlayWindow unless already inside App.WhenReady.
 func createOverlayWindow() *mygo.Window {
 	overlayCfg.mu.Lock()
 	opacity := overlayCfg.opacity
+	locked := overlayCfg.locked
+	protect := overlayCfg.contentProtection
 	overlayCfg.mu.Unlock()
 
 	base := appPageBase()
-	return mygo.NewWindow(mygo.WindowOptions{
+	w := mygo.NewWindow(mygo.WindowOptions{
 		Title: "GOSpeak Overlay " + version,
 		URL:   base + "/overlay",
 		Page:  mygo.PageOptions{TrustedOrigins: originOf(base)},
+		// Panel 是覆盖层的核心：浮在所有应用之上、跟随 Space、能盖住别人的全屏。
+		Panel: true,
 		// 无边框 + 透明 + 无阴影：覆盖层不是"一个窗口"，而是浮在游戏上的内容。
 		Frameless:     true,
+		DisableClose:  true,
 		Transparent:   true,
 		DisableShadow: true,
 		AlwaysOnTop:   true,
@@ -579,6 +601,15 @@ func createOverlayWindow() *mygo.Window {
 		StateKey: "overlay",
 		Hidden:   true,
 	})
+	// 覆盖层从不销毁，只隐藏：Escape 关闭 NSPanel 的路径必须在这里拦下，
+	// DisableClose 管不到它（mygo 的 ShouldClose 不看 Closable）。
+	w.OnClose(func(e *mygo.CloseEvent) {
+		e.PreventDefault()
+		w.Hide()
+	})
+	w.SetIgnoreMouseEvents(locked)
+	w.SetContentProtection(protect)
+	return w
 }
 
 // ensureOverlayWindow builds the floating window the first time it is needed.
@@ -610,7 +641,7 @@ func ensureOverlayWindow() {
 		visible := overlayCfg.visible
 		overlayCfg.mu.Unlock()
 		if visible {
-			w.Show()
+			w.ShowInactive()
 		}
 	})
 }
@@ -627,5 +658,4 @@ func initOverlay() {
 		ensureOverlayWindow()
 	}
 	registerOverlayHotkeys()
-	startOverlayPolicyLoop()
 }
