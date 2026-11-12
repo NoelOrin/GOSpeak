@@ -1,6 +1,7 @@
 import { Button } from "@gospeak/components";
 import { Loader2, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
+import { LoadingRegion } from "@/components/common/Skeletons";
 
 export interface AsyncStateProps {
 	loading?: boolean;
@@ -15,6 +16,8 @@ export interface AsyncStateProps {
 	className?: string;
 	/** 紧凑模式：用于表格内、列表内等小空间 */
 	compact?: boolean;
+	/** 加载态的骨架屏；提供时替代默认 spinner 文案区 */
+	skeleton?: ReactNode;
 	children?: ReactNode;
 }
 
@@ -34,6 +37,7 @@ export default function AsyncState({
 	onRetry,
 	className,
 	compact,
+	skeleton,
 	children,
 }: AsyncStateProps) {
 	const box = compact
@@ -41,6 +45,16 @@ export default function AsyncState({
 		: "flex h-full min-h-24 w-full flex-col items-center justify-center gap-2 px-4 py-6 text-sm";
 
 	if (loading) {
+		if (skeleton) {
+			return (
+				<LoadingRegion
+					label={typeof loadingText === "string" ? loadingText : "加载中"}
+					className={className}
+				>
+					{skeleton}
+				</LoadingRegion>
+			);
+		}
 		return (
 			<div
 				className={`${box} text-muted-foreground ${className ?? ""}`}

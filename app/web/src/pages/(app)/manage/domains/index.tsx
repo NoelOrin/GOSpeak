@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { getDomain, myDomains } from "@/api/domain";
 import AsyncState from "@/components/common/AsyncState";
+import { SkeletonCardGrid } from "@/components/common/Skeletons";
 import {
 	ManageHeader,
 	ManagePage,
@@ -57,6 +58,7 @@ function RouteComponent() {
 				<AsyncState
 					loading={uuidsLoading || domainsLoading}
 					loadingText="正在加载你的域…"
+					skeleton={<SkeletonCardGrid cards={4} columns={2} />}
 					error={
 						uuidsError || domainsError
 							? "域列表加载失败，请检查网络后重试"

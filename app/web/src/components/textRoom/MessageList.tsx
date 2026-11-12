@@ -3,9 +3,11 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import AsyncState from "@/components/common/AsyncState";
+import { SkeletonListRows } from "@/components/common/Skeletons";
 import PasswordInput from "@/components/common/passwordInput";
 import { chatStore, useChatStore } from "@/stores/chatStore";
 import type { MessageDTO } from "@/types/message";
+import { dayKey, formatDateLabel } from "@/utils/chatTime";
 import MessageItem from "./MessageItem";
 
 interface MessageListProps {
@@ -14,6 +16,31 @@ interface MessageListProps {
 	threadParent?: string | null;
 	onReply?: (uuid: string) => void;
 	onOpenThread?: (uuid: string) => void;
+}
+
+type Row =
+	| { kind: "date"; key: string; label: string }
+	| { kind: "msg"; key: string; msg: MessageDTO };
+
+/** 在消息序列前按天插入日期分隔条；搜索结果不插。 */
+function buildRows(list: MessageDTO[], withDates: boolean): Row[] {
+	const rows: Row[] = [];
+	let lastKey = "";
+	for (const msg of list) {
+		if (withDates) {
+			const key = dayKey(msg.created_at);
+			if (key && key !== lastKey) {
+				lastKey = key;
+				rows.push({
+					kind: "date",
+					key: `date-${key}`,
+					label: formatDateLabel(msg.created_at),
+				});
+			}
+		}
+		rows.push({ kind: "msg", key: msg.uuid, msg });
+	}
+	return rows;
 }
 
 export default function MessageList({
@@ -54,10 +81,12 @@ export default function MessageList({
 		return useChatStore.getState().messages;
 	})();
 
+	const rows = buildRows(visibleMessages, !searchActive);
+
 	const virtualizer = useVirtualizer({
-		count: visibleMessages.length,
+		count: rows.length,
 		getScrollElement: () => scrollRef.current,
-		estimateSize: () => 72,
+		estimateSize: (index) => (rows[index]?.kind === "date" ? 40 : 76),
 		overscan: 12,
 	});
 
@@ -69,15 +98,15 @@ export default function MessageList({
 	const [password, setPassword] = useState("");
 	const [retrying, setRetrying] = useState(false);
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: 仅按消息数量与是否贴底触发滚动；virtualizer/ref 稳定，加入依赖会造成滚动抖动
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 仅按行数与是否贴底触发滚动；virtualizer/ref 稳定，加入依赖会造成滚动抖动
 	useEffect(() => {
-		const len = visibleMessages.length;
+		const len = rows.length;
 		if (len > 0 && isAtBottom) {
 			requestAnimationFrame(() => {
 				virtualizer.scrollToIndex(len - 1, { align: "end" });
 			});
 		}
-	}, [visibleMessages.length, isAtBottom]);
+	}, [rows.length, isAtBottom]);
 
 	function handleScroll() {
 		const el = scrollRef.current;
@@ -149,38 +178,49 @@ export default function MessageList({
 		>
 			<AsyncState
 				loading={loading && visibleMessages.length === 0}
+				skeleton={<SkeletonListRows rows={6} />}
 				error={visibleMessages.length === 0 ? textRoomError : null}
 				empty={visibleMessages.length === 0 && !searchActive}
 				emptyText={searchActive ? "没有匹配消息" : "暂无消息"}
 				onRetry={() => void chatStore.loadInitial()}
 			>
-				{visibleMessages.length > 0 && (
+				{rows.length > 0 && (
 					<div
 						style={{
 							height: `${virtualizer.getTotalSize()}px`,
 							position: "relative",
 						}}
 					>
-						{items.map((item) => (
-							<div
-								key={item.key}
-								style={{
-									position: "absolute",
-									top: 0,
-									left: 0,
-									width: "100%",
-									transform: `translateY(${item.start}px)`,
-								}}
-							>
-								<div ref={virtualizer.measureElement} data-index={item.index}>
-									<MessageItem
-										msg={visibleMessages[item.index]}
-										onReply={onReply}
-										onOpenThread={onOpenThread}
-									/>
+						{items.map((item) => {
+							const row = rows[item.index];
+							if (!row) return null;
+							return (
+								<div
+									key={item.key}
+									style={{
+										position: "absolute",
+										top: 0,
+										left: 0,
+										width: "100%",
+										transform: `translateY(${item.start}px)`,
+									}}
+								>
+									<div ref={virtualizer.measureElement} data-index={item.index}>
+										{row.kind === "date" ? (
+											<div className="text-faint-foreground flex items-center gap-1.5 px-4 pt-4 pb-1 text-xs font-medium select-none">
+												<span>{row.label}</span>
+											</div>
+										) : (
+											<MessageItem
+												msg={row.msg}
+												onReply={onReply}
+												onOpenThread={onOpenThread}
+											/>
+										)}
+									</div>
 								</div>
-							</div>
-						))}
+							);
+						})}
 					</div>
 				)}
 			</AsyncState>
