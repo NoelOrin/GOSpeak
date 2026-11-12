@@ -1,5 +1,13 @@
 import { Outlet, useLocation } from "@tanstack/react-router";
-import { lazy, type ReactNode, Suspense, useState } from "react";
+import {
+	createContext,
+	lazy,
+	type ReactNode,
+	Suspense,
+	useContext,
+	useState,
+} from "react";
+import { SkeletonPage } from "@/components/common/Skeletons";
 
 /**
  * 路由级 keep-alive：切走再切回时页面不重建，表单、搜索词、展开态和滚动位置
@@ -14,6 +22,10 @@ import { lazy, type ReactNode, Suspense, useState } from "react";
  * 它同样是 display:none）：后者会让滚动容器高度归零，浏览器随即把 scrollTop
  * 清零，恰好毁掉最该保留的东西。绝对定位让每页独立占满并各自滚动，DOM 与
  * 滚动位置都不受影响；inert 负责挡住隐藏页的点击与焦点。
+ *
+ * 常驻挂载的代价是「隐藏页的 effect 仍在跑」（chat 保持信令连接、discover 的
+ * query 仍会聚焦刷新）。页面通过 {@link useKeepAliveActive} 读到自己当前是否
+ * 可见，据此暂停副作用；默认 true，所以在 keep-alive 之外渲染时行为不变。
  *
  * 约束（违反会在开发环境抛 invariant）：
  * - key 必须是精确 pathname，不支持动态段；
@@ -40,6 +52,21 @@ export const KEEP_ALIVE_PAGES: Record<string, ReactNode> = {
 	"/chat": <ChatPage />,
 	"/profile": <ProfilePage />,
 };
+
+/**
+ * 当前页面是否处于前台（可见、可交互）。隐藏页据此暂停轮询 / 订阅等副作用。
+ *
+ * 用法（页面侧尚未接入，见 KeepAliveOutlet 的注释）：
+ *   const isActive = useKeepAliveActive();
+ *   useEffect(() => { if (!isActive) return; ... }, [isActive]);
+ *
+ * 默认 true：页面在 keep-alive 之外渲染（测试、独立路由）时等价于一直活跃。
+ */
+export const KeepAliveActiveContext = createContext(true);
+
+export function useKeepAliveActive(): boolean {
+	return useContext(KeepAliveActiveContext);
+}
 
 export interface KeepAliveOutletProps {
 	/** 可注入的页面表，默认取 KEEP_ALIVE_PAGES；测试与扩展用。 */
@@ -82,7 +109,9 @@ export function KeepAliveOutlet({
 						aria-hidden={!isActive}
 						inert={!isActive}
 					>
-						<Suspense fallback={null}>{pages[path]}</Suspense>
+						<KeepAliveActiveContext.Provider value={isActive}>
+							<Suspense fallback={<SkeletonPage />}>{pages[path]}</Suspense>
+						</KeepAliveActiveContext.Provider>
 					</div>
 				);
 			})}

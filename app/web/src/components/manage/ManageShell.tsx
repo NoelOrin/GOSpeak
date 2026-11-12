@@ -1,5 +1,6 @@
-import { Loader2 } from "lucide-react";
+import { Skeleton } from "@gospeak/components";
 import type { ReactNode } from "react";
+import { LoadingRegion } from "@/components/common/Skeletons";
 
 /** 管理页根容器：由 manage 布局统一滚动，避免子页切换时整壳卸载跳闪 */
 export function ManagePage({
@@ -18,7 +19,7 @@ export function ManagePage({
 	);
 }
 
-/** 页内加载占位：保留页头时使用，避免整页被 spinner 替换造成闪白 */
+/** 页内加载占位：骨架屏而非 spinner，保留页头时使用，避免整页闪白与高度跳变。 */
 export function ManageLoading({
 	className,
 	label,
@@ -27,16 +28,16 @@ export function ManageLoading({
 	label?: string;
 }) {
 	return (
-		<div
-			className={`text-faint-foreground flex min-h-40 flex-1 items-center justify-center py-12 ${className ?? ""}`}
-			aria-busy="true"
-			aria-live="polite"
+		<LoadingRegion
+			label={label ?? "加载中"}
+			className={`py-2 ${className ?? ""}`}
 		>
-			<div className="flex flex-col items-center gap-2">
-				<Loader2 className="size-6 animate-spin" />
-				<span className="text-xs">{label ?? "加载中..."}</span>
+			<div className="flex flex-col gap-3">
+				<Skeleton className="h-5 w-40" />
+				<Skeleton className="h-24 w-full rounded-lg" />
+				<Skeleton className="h-24 w-full rounded-lg" />
 			</div>
-		</div>
+		</LoadingRegion>
 	);
 }
 
