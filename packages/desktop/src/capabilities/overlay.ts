@@ -58,7 +58,6 @@ export interface Overlay {
 	setScale(value: number): Promise<void>;
 	setLocked(locked: boolean): Promise<void>;
 	getLocked(): Promise<boolean>;
-	isFullscreenAppInFront(): Promise<boolean>;
 	/** 一次性读回全部持久化配置（设置页 bootstrap）。 */
 	getConfig(): Promise<OverlayConfig>;
 	isVisible(): Promise<boolean>;
@@ -96,9 +95,6 @@ const webFallback: Overlay = {
 	async setLocked() {},
 	async getLocked() {
 		return true;
-	},
-	async isFullscreenAppInFront() {
-		return false;
 	},
 	async getConfig() {
 		return {
@@ -146,8 +142,6 @@ const native: Overlay = {
 	setScale: (v) => bridge.invoke(command("Overlay", "SetScale"), v),
 	setLocked: (v) => bridge.invoke(command("Overlay", "SetLocked"), v),
 	getLocked: () => bridge.invoke<boolean>(command("Overlay", "GetLocked")),
-	isFullscreenAppInFront: () =>
-		bridge.invoke<boolean>(command("Overlay", "IsFullscreenAppInFront")),
 	getConfig: () =>
 		bridge.invoke<OverlayConfig>(command("Overlay", "GetConfig")),
 	isVisible: () => bridge.invoke<boolean>(command("Overlay", "IsVisible")),
