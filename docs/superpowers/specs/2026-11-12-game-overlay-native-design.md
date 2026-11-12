@@ -45,7 +45,23 @@
 
 语义从"你在全屏玩游戏"放宽到"你不在 GOSpeak 里"——你在刷网页、看视频、写代码时想瞄一眼谁在说话，HUD 同样该在。全屏检测只在你恰好全屏时才显示，反而更窄。
 
-> **物理限制（需在文档中向用户说明）**：**独占全屏（DirectX exclusive fullscreen）任何窗口都盖不住**，这是 OS 层面限制，Discord 同样盖不住。无边框全屏（当前绝大多数游戏）没有问题。
+> **全屏覆盖的真实边界（必须在文档中向用户说明）**
+>
+> Windows 上「全屏」分三种，能不能盖住取决于 DWM 是否在合成：
+>
+> | 模式 | DWM | Panel 能盖住 |
+> |---|---|---|
+> | 无边框窗口 | 合成 | 能 |
+> | FSO（全屏优化） | **合成** | **能** |
+> | 真 FSE（legacy flip） | 合成被挂起 | 不能 |
+>
+> 按微软 [Demystifying Fullscreen Optimizations](https://devblogs.microsoft.com/directx/demystifying-full-screen-optimizations/)：FSO 下「游戏以为自己独占，实际跑在无边框窗口」，且「有 overlay 出现时 DWM 重新接管显示」。**FSO 从 Windows 10 起默认开启**，所以玩家在游戏里选「全屏」的绝大多数场景，Panel 是盖得住的。
+>
+> 盖不住的是：用户手动在 exe 属性里勾了「禁用全屏优化」、老游戏、或特意关闭 FSO 的竞技游戏。此时连 Windows 音量条和 Game Bar 都盖不上去（[PresentMon #212](https://github.com/GameTechDev/PresentMon/issues/212)）。
+>
+> **Discord / Steam 能盖住真 FSE，是因为它们注入 DLL 并 hook `IDXGISwapChain::Present`**，不是靠窗口置顶。本项目不做注入：技术栈冲突（纯 Go 无 cgo vs C++/MinHook），且有反作弊封号风险（Vanguard 尤其严格），对游戏语音产品而言性价比为负。
+>
+> **应对：不检测、不折腾，只引导。** 设置页加一行「若覆盖层未显示，请把游戏显示模式改为无边框窗口」。macOS 无此问题——全屏 App 各占一个 Space，`Panel` 的 `CanJoinAllSpaces | FullScreenAuxiliary` 就是为此设计的。
 
 ## 方案
 
@@ -176,6 +192,7 @@ type avatarCache struct {
 
 - 显示策略改为三选：`自动（离开 GOSpeak 时显示）` / `始终显示` / `手动`
 - 新增「防录屏」开关（默认关），描述说明"开启后直播/录屏/截图看不到覆盖层。仅 macOS / Windows 生效"
+- 覆盖层一节底部加一行提示：「若覆盖层未显示，请把游戏的显示模式改为**无边框窗口**（Windows 独占全屏无法被任何置顶窗口覆盖）」
 - 不透明度、两个热键字段保持不变
 
 ### 6. 前端清理
@@ -217,7 +234,7 @@ type avatarCache struct {
 ### 9. 文档
 
 - `app/desktop/README.md`：更新覆盖层一节（原生渲染、Panel、策略三模式、删除全屏检测的原因）
-- 新增「独占全屏盖不住」的已知限制说明
+- 新增「全屏覆盖的边界」一节：FSO 可覆盖 / 真 FSE 不可覆盖、为什么不做注入、引导用户切无边框
 
 ## 文件变更总览
 
