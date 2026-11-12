@@ -1,0 +1,25 @@
+{
+  "baseUrl": "http://localhost:3000",
+  "accounts": { "admin": { "name": "admin", "password": "Gospeak-2026-Baseline" } },
+  "note": "chat 受 IM P1 影响标 rescheduleAfterP1；/domain/$domainUUID 为动态路由，P1 落地后按实际域补录",
+  "routes": [
+    { "id": "login", "path": "/login", "auth": false, "themes": ["light", "dark"] },
+    { "id": "register", "path": "/register", "auth": false, "themes": ["light", "dark"] },
+    { "id": "guest", "path": "/guest", "auth": false, "themes": ["light", "dark"] },
+    { "id": "home", "path": "/", "auth": true, "themes": ["light", "dark"] },
+    { "id": "chat", "path": "/chat", "auth": true, "themes": ["light", "dark"], "rescheduleAfterP1": true },
+    { "id": "discover", "path": "/discover", "auth": true, "themes": ["light", "dark"] },
+    { "id": "profile", "path": "/profile", "auth": true, "themes": ["light", "dark"] },
+    { "id": "manage-index", "path": "/manage", "auth": true, "themes": ["light", "dark"] },
+    { "id": "manage-users", "path": "/manage/users", "auth": true, "themes": ["light", "dark"] },
+    { "id": "manage-roles", "path": "/manage/roles", "auth": true, "themes": ["light", "dark"] },
+    { "id": "manage-ban", "path": "/manage/ban", "auth": true, "themes": ["light", "dark"] },
+    { "id": "manage-mute", "path": "/manage/mute", "auth": true, "themes": ["light", "dark"] },
+    { "id": "manage-email", "path": "/manage/email", "auth": true, "themes": ["light", "dark"] },
+    { "id": "manage-oauth", "path": "/manage/oauth", "auth": true, "themes": ["light", "dark"] },
+    { "id": "manage-sfu", "path": "/manage/sfu", "auth": true, "themes": ["light", "dark"] },
+    { "id": "manage-storage", "path": "/manage/storage", "auth": true, "themes": ["light", "dark"] },
+    { "id": "manage-domains", "path": "/manage/domains", "auth": true, "themes": ["light", "dark"] },
+    { "id": "manage-monitor", "path": "/manage/monitor", "auth": true, "themes": ["light", "dark"] }
+  ]
+}

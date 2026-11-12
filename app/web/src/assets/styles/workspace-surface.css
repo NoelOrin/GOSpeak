@@ -1,0 +1,87 @@
+/*
+ * 域工作区的作用域样式。
+ *
+ * 历史背景：这里曾经有一整套 --ds-* 语义变量 + .ds-text/.ds-panel/.ds-border 等工具类，
+ * 与 Tailwind 的 foreground/card/muted/border 完全等价，导致同一语义有两套写法。
+ * 现在语义色一律走 theme.css 的 token，本文件只保留「Tailwind 无法表达」的四类作用域样式：
+ *
+ *   .ds-surface  作用域容器（::selection 与 .ds-markdown 后代规则挂靠在这里）
+ *   .ds-icon-btn 32px 工作区图标按钮（含 [data-active] 态）
+ *   .ds-scroll   细滚动条
+ *   .ds-markdown Markdown 正文的局部排版
+ */
+.ds-surface {
+	background: var(--card);
+	color: var(--foreground);
+	font-family: inherit;
+}
+
+/* 频道标题栏 / 消息工具栏图标按钮 */
+.ds-icon-btn {
+	display: inline-flex;
+	size: 32px;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--radius-sm);
+	color: var(--foreground);
+	cursor: pointer;
+	transition:
+		color 120ms ease,
+		background 120ms ease;
+}
+.ds-icon-btn:hover {
+	background: var(--muted);
+	color: var(--foreground);
+}
+.ds-icon-btn[data-active="true"] {
+	color: var(--foreground);
+	background: var(--muted);
+	box-shadow: inset 0 0 0 1px var(--border);
+}
+
+/* 细滚动条 */
+.ds-scroll {
+	scrollbar-width: thin;
+	scrollbar-color: var(--border) transparent;
+}
+.ds-scroll::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+.ds-scroll::-webkit-scrollbar-track {
+	background: transparent;
+}
+.ds-scroll::-webkit-scrollbar-thumb {
+	background: var(--border);
+	border: 2px solid transparent;
+	background-clip: padding-box;
+	border-radius: var(--radius-lg);
+}
+
+.ds-surface ::selection {
+	background: color-mix(in oklab, var(--primary) 45%, transparent);
+}
+
+/* 消息正文里的 Markdown：只补语义色，不写死色值 */
+.ds-surface .ds-markdown {
+	color: var(--foreground);
+	font-size: 1rem;
+	line-height: 1.375rem;
+}
+.ds-surface .ds-markdown a {
+	color: var(--primary);
+	text-decoration: underline;
+}
+.ds-surface .ds-markdown code,
+.ds-surface .ds-markdown pre {
+	background: var(--muted);
+	color: var(--foreground);
+}
+.ds-surface .ds-markdown blockquote {
+	border-left-color: var(--border);
+	color: var(--muted-foreground);
+}
+.ds-surface .ds-markdown img {
+	border-color: var(--border);
+}

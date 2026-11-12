@@ -1,0 +1,24 @@
+packages:
+  - "packages/*"
+  - "app/*"
+  - "test"
+allowBuilds:
+  esbuild: true
+  lefthook: true
+
+# lockfile 需记录全平台可选二进制（biome/esbuild 等），
+# 否则在 macOS 上解析的 lockfile 到 linux CI 会缺包。
+supportedArchitectures:
+  os:
+    - current
+    - linux
+    - darwin
+    - win32
+  cpu:
+    - current
+    - x64
+    - arm64
+  libc:
+    - current
+    - glibc
+    - musl

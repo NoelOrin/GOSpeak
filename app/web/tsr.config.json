@@ -1,0 +1,10 @@
+{
+  "target": "react",
+  "routesDirectory": "./src/pages",
+  "generatedRouteTree": "./src/routeTree.gen.ts",
+  "routeFileIgnorePrefix": "-",
+  "routeFileIgnorePattern": "components",
+  "quoteStyle": "single",
+  "semicolons": false,
+  "autoCodeSplitting": true
+}

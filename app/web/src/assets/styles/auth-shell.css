@@ -1,0 +1,121 @@
+/* 登录/注册页共享外壳：网格纹理 + 鼠标视差 + 均衡器动画。
+   daisyUI 变量已替换为本项目 token（--b2→--muted，--p→--primary）。 */
+.login-shell {
+	--px: 0;
+	--py: 0;
+	position: relative;
+	/* 100% 而非 100vh：桌面构建下页面在标题栏下方，视口高度会多出标题栏那一截 */
+	min-height: 100%;
+	overflow-y: auto;
+	background: var(--muted);
+	display: flex;
+	flex-direction: column;
+}
+/* 网格纹理：中心清晰、四周淡出，鼠标移动时反向漂移 */
+.login-shell::before {
+	content: "";
+	position: fixed;
+	inset: -60px;
+	background-image:
+		linear-gradient(to right, rgb(127 127 127 / 0.07) 1px, transparent 1px),
+		linear-gradient(to bottom, rgb(127 127 127 / 0.07) 1px, transparent 1px);
+	background-size: 44px 44px;
+	mask-image: radial-gradient(
+		ellipse 90% 80% at 50% 45%,
+		black 20%,
+		transparent 80%
+	);
+	transform: translate3d(calc(var(--px) * -22px), calc(var(--py) * -22px), 0);
+	pointer-events: none;
+}
+/* 视差层：位移 = 鼠标偏移 × 深度系数 */
+.plx {
+	transform: translate3d(
+		calc(var(--px) * var(--depth, 0) * 1px),
+		calc(var(--py) * var(--depth, 0) * 1px),
+		0
+	);
+	will-change: transform;
+}
+/* 登录卡片：固定不动（原 3D 微倾随动效果已按需求移除） */
+.card-tilt {
+	transform-style: preserve-3d;
+}
+.brand-word {
+	font-size: 3.5rem;
+	line-height: 1;
+	font-weight: 800;
+	text-transform: uppercase;
+}
+@media (min-width: 1024px) {
+	.brand-word {
+		font-size: 4.5rem;
+	}
+}
+.brand-word em {
+	font-style: normal;
+	color: var(--primary);
+}
+/* 均衡器：7 根音柱错相起伏 */
+.eq {
+	display: flex;
+	align-items: center;
+	height: 40px;
+	gap: 5px;
+}
+.eq span {
+	width: 4px;
+	height: 100%;
+	border-radius: var(--radius-xs);
+	background: var(--primary);
+	transform-origin: center;
+	animation: login-eq 1.2s ease-in-out infinite;
+}
+.eq span:nth-child(1) {
+	animation-delay: 0s;
+	opacity: 0.55;
+}
+.eq span:nth-child(2) {
+	animation-delay: -0.15s;
+	opacity: 0.75;
+}
+.eq span:nth-child(3) {
+	animation-delay: -0.3s;
+	opacity: 0.95;
+}
+.eq span:nth-child(4) {
+	animation-delay: -0.45s;
+	opacity: 1;
+}
+.eq span:nth-child(5) {
+	animation-delay: -0.6s;
+	opacity: 0.9;
+}
+.eq span:nth-child(6) {
+	animation-delay: -0.75s;
+	opacity: 0.7;
+}
+.eq span:nth-child(7) {
+	animation-delay: -0.9s;
+	opacity: 0.5;
+}
+@keyframes login-eq {
+	0%,
+	100% {
+		transform: scaleY(0.25);
+	}
+	50% {
+		transform: scaleY(1);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.eq span {
+		animation: none;
+		transform: scaleY(0.6);
+	}
+	.plx,
+	.card-tilt,
+	.login-shell::before {
+		transform: none;
+	}
+}

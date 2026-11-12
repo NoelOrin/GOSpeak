@@ -1,0 +1,148 @@
+# GOSpeak Version Bump —— push 触发的发版守门员。
+#
+# 版本号在 .github/versions/server.yaml 与 .github/versions/desktop.yaml 中
+# 显式声明。**每次 push 到 release 都会触发本 workflow**，但对每个组件判断
+# 「声明的版本号是否已经发布过」：
+#
+#   当前声明版本对应的 tag（gospeak-server-v<version> /
+#   gospeak-desktop-v<version>）已存在
+#     → 版本号没变 → 本 workflow 成功结束并标记 skipped，不创建任何 tag；
+#   tag 不存在（新版本号 / 版本回退到未发布过的值）
+#     → 打 tag 并推送 → 自动触发 release.yml（以及主体链的 docker.yml）。
+#
+# 也就是：改了 .github/versions/*.yaml 的 version 并合入 release = 发版；
+# 普通提交不碰版本号 = 只跑这个轻量检查，静默跳过。
+#
+# tag 名字一律由 scripts/release-naming.mjs 派生，本文件不手拼字符串。
+#
+# 也可 workflow_dispatch 手动触发一次对账（只补缺失的 tag，不覆盖已有）。
+
+name: Version Bump
+
+on:
+  push:
+    branches: [release]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: version-bump-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bump-tags:
+    name: Release declared versions (skip unchanged)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        # git tag -a 会创建 annotated tag，必须有 committer 身份；
+        # runner 默认没有配置，缺失时会以 "empty ident name" 直接失败。
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Read declared versions
+        id: versions
+        run: |
+          set -euo pipefail
+          read_version() {
+            node -e '
+              const { readFileSync } = require("node:fs");
+              const src = readFileSync(process.argv[1], "utf8");
+              const m = src.match(/^version:[ \t]*["'"'"']?([^\s#"'"'"']+)["'"'"']?[ \t]*(?:#.*)?$/m);
+              if (!m) { console.error("missing version in " + process.argv[1]); process.exit(1); }
+              console.log(m[1]);
+            ' "$1"
+          }
+          {
+            echo "server=$(read_version .github/versions/server.yaml)"
+            echo "desktop=$(read_version .github/versions/desktop.yaml)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Detect published tags
+        id: tags
+        env:
+          SERVER_VERSION: ${{ steps.versions.outputs.server }}
+          DESKTOP_VERSION: ${{ steps.versions.outputs.desktop }}
+        run: |
+          set -euo pipefail
+          # 一次性探测两个组件的 tag 是否已存在于远程，避免逐个 ls-remote。
+          git ls-remote --tags origin > "$RUNNER_TEMP/remote-tags.txt"
+
+          check() {
+            local component="$1" version="$2"
+            local tag
+            tag="$(node scripts/release-naming.mjs tag "$component" "$version")"
+            if grep -qE "refs/tags/${tag}(\^\{\})?$" "$RUNNER_TEMP/remote-tags.txt"; then
+              echo "${component}_exists=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::${component} ${version} 已发布（tag ${tag} 存在），跳过。"
+            else
+              echo "${component}_exists=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::${component} ${version} 尚未发布，将创建 tag ${tag}。"
+            fi
+          }
+
+          check server "$SERVER_VERSION"
+          check desktop "$DESKTOP_VERSION"
+
+      - name: Tag server release if version changed
+        if: steps.tags.outputs.server_exists == 'false'
+        env:
+          VERSION: ${{ steps.versions.outputs.server }}
+        run: |
+          set -euo pipefail
+          tag="$(node scripts/release-naming.mjs tag server "$VERSION")"
+          sha="$(git rev-parse HEAD)"
+          git tag -a "$tag" -m "Release ${tag} (declared in .github/versions/server.yaml)" "$sha"
+          git push origin "refs/tags/${tag}"
+          echo "::notice::created tag ${tag} at ${sha}"
+
+      - name: Tag desktop release if version changed
+        if: steps.tags.outputs.desktop_exists == 'false'
+        env:
+          VERSION: ${{ steps.versions.outputs.desktop }}
+        run: |
+          set -euo pipefail
+          tag="$(node scripts/release-naming.mjs tag desktop "$VERSION")"
+          sha="$(git rev-parse HEAD)"
+          git tag -a "$tag" -m "Release ${tag} (declared in .github/versions/desktop.yaml)" "$sha"
+          git push origin "refs/tags/${tag}"
+          echo "::notice::created tag ${tag} at ${sha}"
+
+      - name: Summary
+        env:
+          SERVER_VERSION: ${{ steps.versions.outputs.server }}
+          SERVER_EXISTS: ${{ steps.tags.outputs.server_exists }}
+          DESKTOP_VERSION: ${{ steps.versions.outputs.desktop }}
+          DESKTOP_EXISTS: ${{ steps.tags.outputs.desktop_exists }}
+        run: |
+          set -euo pipefail
+          status() {
+            if [ "$1" = "true" ]; then
+              echo "skipped（版本未更新，已发布过）"
+            else
+              echo "released（已打 tag 触发发布）"
+            fi
+          }
+          server_tag="$(node scripts/release-naming.mjs tag server "$SERVER_VERSION")"
+          desktop_tag="$(node scripts/release-naming.mjs tag desktop "$DESKTOP_VERSION")"
+          {
+            echo "## Version Bump"
+            echo ""
+            echo "| 组件 | 声明版本 | tag | 结果 |"
+            echo "| --- | --- | --- | --- |"
+            echo "| 服务端 (server) | ${SERVER_VERSION} | \`${server_tag}\` | $(status "${SERVER_EXISTS}") |"
+            echo "| 桌面端 (desktop) | ${DESKTOP_VERSION} | \`${desktop_tag}\` | $(status "${DESKTOP_EXISTS}") |"
+            echo ""
+            if [ "${SERVER_EXISTS}" = "true" ] && [ "${DESKTOP_EXISTS}" = "true" ]; then
+              echo "两个组件版本号均未变化，本次未触发任何发布。"
+              echo "如需发版，请修改 \`.github/versions/*.yaml\` 的 version 后合入 release。"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

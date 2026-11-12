@@ -1,0 +1,46 @@
+{
+	"name": "gospeak-monorepo",
+	"version": "1.0.0",
+	"private": true,
+	"packageManager": "pnpm@10.11.0",
+	"scripts": {
+		"dev": "turbo run dev --filter=@gospeak/server --filter=@gospeak/web",
+		"dev:all": "turbo run dev",
+		"dev:web": "pnpm --filter @gospeak/web dev",
+		"dev:server": "pnpm --filter @gospeak/server dev",
+		"build": "turbo run build",
+		"build:web": "turbo run build --filter=@gospeak/web",
+		"build:server": "pnpm --filter @gospeak/server build",
+		"start:dev": "turbo run dev --filter=@gospeak/server --filter=@gospeak/web",
+		"start:prod": "pnpm run prod:server",
+		"prod:server": "pnpm --filter @gospeak/server prod",
+		"test": "turbo run test",
+		"test:web": "pnpm --filter @gospeak/web test",
+		"test:server": "pnpm --filter @gospeak/test test",
+		"test:integration": "pnpm --filter @gospeak/test test",
+		"test:server:go": "cd app/server && go test ./...",
+		"lint": "turbo run lint",
+		"check": "turbo run check",
+		"typecheck": "turbo run typecheck",
+		"format": "pnpm -r format",
+		"prepare": "lefthook install",
+		"version:check": "node scripts/check-version.mjs",
+		"lint:radius": "node scripts/check-radius-tokens.mjs",
+		"lint:ui": "node scripts/check-ui-tokens.mjs",
+		"changelog": "node scripts/build-changelog.mjs",
+		"changelog:version": "node scripts/build-changelog.mjs"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.6.6",
+		"@commitlint/cli": "^21.2.4",
+		"@commitlint/config-conventional": "^21.2.4",
+		"lefthook": "2.2.2",
+		"turbo": "^2.11.10"
+	},
+	"pnpm": {
+		"overrides": {
+			"proxy-addr": "^2.0.8",
+			"seroval": "^1.7.10"
+		}
+	}
+}

@@ -1,0 +1,17 @@
+{
+	"$schema": "https://turbo.build/schema.json",
+	"extends": ["//"],
+	"tasks": {
+		"test": {
+			"env": ["GOSPEAK_TEST_URL", "GOSPEAK_SERVER_BIN"],
+			"inputs": [
+				"$TURBO_ROOT$/app/server/**/*.go",
+				"$TURBO_ROOT$/app/server/go.mod",
+				"$TURBO_ROOT$/app/server/go.sum",
+				"**/*.ts",
+				"package.json",
+				"vitest.config.ts"
+			]
+		}
+	}
+}

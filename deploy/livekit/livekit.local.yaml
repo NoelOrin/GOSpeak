@@ -1,0 +1,40 @@
+# =============================================================================
+# 本地开发用 LiveKit 配置（macOS / 无 Docker）
+#
+# 启动：
+#   LIVEKIT_KEYS="devkey: devsecret-devsecret-devsecret-devsecret" \
+#   LIVEKIT_WEBHOOK_API_KEY="devkey" \
+#   .local/bin/server --config deploy/livekit/livekit.local.yaml
+# 或：
+#   pnpm dev:livekit
+#
+# 与 deploy/livekit/livekit.yaml 的区别：
+# - webhook 指向本机 Go 后端（localhost:8998），而不是容器名 gospeak
+# - 关闭 TURN，仅保留本机 RTC 端口，避免本地端口冲突
+#
+# 密钥走环境变量注入，本文件不含凭据。
+# 本机后端读仓库根的 deploy/.env，其中 LIVEKIT_KEY / LIVEKIT_SECRET 要与此处一致。
+# =============================================================================
+
+port: 7880
+bind_addresses:
+  - ""
+
+rtc:
+  tcp_port: 7882
+  udp_port: 7882
+  use_external_ip: false
+  stun_servers:
+    - stun.l.google.com:19302
+
+# 由 LIVEKIT_KEYS 注入，格式 "devkey: devsecret-..."
+keys: {}
+
+turn:
+  enabled: false
+
+webhook:
+  # LiveKit 1.13 起必填，且必须是 keys 中存在的 key，否则启动即失败。
+  # 由 LIVEKIT_WEBHOOK_API_KEY 注入。
+  urls:
+    - http://localhost:8998/api/v1/signal/webhook

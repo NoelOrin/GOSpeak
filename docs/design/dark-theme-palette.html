@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GOSpeak 暗色主题配色对照</title>
+<style>
+	:root {
+		color-scheme: light;
+		--page-bg: #fafafa;
+		--page-fg: #111114;
+		--page-muted: #6b6b76;
+		--page-line: #e6e6e9;
+	}
+
+	* { box-sizing: border-box; }
+
+	body {
+		margin: 0;
+		padding: 40px 32px 64px;
+		background: var(--page-bg);
+		color: var(--page-fg);
+		font: 14px/1.6 -apple-system, "SF Pro SC", "PingFang SC", "Segoe UI", sans-serif;
+		-webkit-font-smoothing: antialiased;
+	}
+
+	h1 { margin: 0 0 6px; font-size: 22px; letter-spacing: -0.01em; }
+	h2 { margin: 0 0 14px; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; color: var(--page-muted); text-transform: uppercase; }
+	p.lede { margin: 0 0 32px; color: var(--page-muted); max-width: 74ch; }
+
+	.wrap { max-width: 1200px; margin: 0 auto; }
+	section { margin-bottom: 40px; }
+
+	/* ── 两栏对照 ── */
+	.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+	@media (max-width: 900px) { .compare { grid-template-columns: 1fr; } }
+
+	.pane { border-radius: 14px; overflow: hidden; border: 1px solid var(--page-line); background: #fff; }
+	.pane__label {
+		display: flex; align-items: baseline; gap: 8px;
+		padding: 10px 14px; font-size: 12px; font-weight: 600;
+		border-bottom: 1px solid var(--page-line); background: #fcfcfd;
+	}
+	.pane__label span { font-weight: 400; color: var(--page-muted); font-size: 11px; }
+	.pane__body { padding: 14px; }
+
+	/* ── 主题作用域：所有色值来自各自 token ── */
+	.t-old {
+		--bg: oklch(25.33% 0.016 252.42);
+		--fg: oklch(97.807% 0.029 256.847);
+		--card: oklch(25.33% 0.016 252.42);
+		--popover: oklch(25.33% 0.016 252.42);
+		--primary: oklch(58% 0.233 277.117);
+		--primary-fg: oklch(96% 0.018 272.314);
+		--secondary: oklch(65% 0.241 354.308);
+		--muted: oklch(23.26% 0.014 253.1);
+		--muted-fg: oklch(97.807% 0.029 256.847 / 60%);
+		--faint-fg: oklch(97.807% 0.029 256.847 / 42%);
+		--destructive: oklch(71% 0.194 13.428);
+		--success: oklch(76% 0.177 163.223);
+		--warning: oklch(82% 0.189 84.429);
+		--info: oklch(74% 0.16 232.661);
+		--neutral: oklch(14% 0.005 285.823);
+		--border: oklch(21.15% 0.012 254.09);
+		--sunken: oklch(32.4% 0.016 253.9);
+		--selected: oklch(31.3% 0.016 253.9);
+		--accent: oklch(77% 0.152 181.912);
+	}
+	.t-new {
+		--bg: oklch(21% 0.006 277);
+		--fg: oklch(94% 0.006 277);
+		--card: oklch(24% 0.008 277);
+		--popover: oklch(27% 0.009 277);
+		--primary: oklch(56.5% 0.205 277);
+		--primary-fg: oklch(98% 0.01 277);
+		--secondary: oklch(74% 0.163 48.25);
+		--muted: oklch(19.5% 0.006 277);
+		--muted-fg: oklch(94% 0.006 277 / 56%);
+		--faint-fg: oklch(94% 0.006 277 / 38%);
+		--destructive: oklch(69% 0.185 29.349);
+		--success: oklch(79% 0.185 158.53);
+		--warning: oklch(85% 0.168 100.5);
+		--info: oklch(72% 0.145 252.05);
+		--neutral: oklch(31% 0.032 278.68);
+		--border: oklch(30.5% 0.008 277);
+		--sunken: oklch(16.5% 0.005 277);
+		--selected: oklch(29.5% 0.009 277);
+		--accent: oklch(82% 0.196 122.962);
+	}
+
+	/* ── 模拟工作区 ── */
+	.mock {
+		display: grid; grid-template-columns: 52px 1fr;
+		height: 366px; border-radius: 10px; overflow: hidden;
+		background: var(--bg); color: var(--fg);
+		border: 1px solid var(--border);
+	}
+	.rail {
+		background: var(--muted);
+		display: flex; flex-direction: column; align-items: center;
+		gap: 8px; padding: 10px 0;
+		border-right: 1px solid var(--border);
+	}
+	.rail__dot { width: 32px; height: 32px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); }
+	.rail__dot--active { background: var(--primary); border-color: transparent; }
+
+	.panel { background: var(--card); display: flex; flex-direction: column; min-width: 0; }
+	.panel__head {
+		display: flex; align-items: center; gap: 8px;
+		height: 38px; padding: 0 12px; flex: none;
+		border-bottom: 1px solid var(--border);
+	}
+	.panel__head b { font-size: 13px; font-weight: 600; }
+	.search {
+		margin-left: auto; display: flex; align-items: center; gap: 6px;
+		width: 128px; height: 24px; padding: 0 8px; border-radius: 4px;
+		background: var(--sunken); color: var(--faint-fg); font-size: 11px;
+	}
+	.panel__body { padding: 12px; overflow: hidden; display: flex; flex-direction: column; gap: 10px; }
+
+	.row {
+		display: flex; align-items: center; gap: 8px;
+		padding: 7px 8px; border-radius: 6px; font-size: 13px;
+	}
+	.row--selected { background: var(--selected); }
+	.row--hover { background: var(--muted); }
+	.row small { color: var(--muted-fg); font-size: 11px; }
+	.avatar { width: 22px; height: 22px; border-radius: 999px; background: var(--info); flex: none; }
+
+	.tiers { display: flex; flex-direction: column; gap: 2px; padding: 2px 0; }
+	.tiers div { font-size: 12px; }
+	.t-fg { color: var(--fg); }
+	.t-muted { color: var(--muted-fg); }
+	.t-faint { color: var(--faint-fg); }
+
+	.btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 6px; }
+	.btn {
+		height: 28px; padding: 0 10px; border-radius: 4px;
+		display: inline-flex; align-items: center; font-size: 12px; font-weight: 500;
+		border: 1px solid transparent;
+	}
+	.btn--primary { background: var(--primary); color: var(--primary-fg); }
+	.btn--outline { background: var(--card); color: var(--fg); border-color: var(--border); }
+	.btn--ghost { color: var(--fg); }
+	.btn--destructive { background: var(--destructive); color: oklch(20% 0.06 29.349); }
+	.btn--tint { background: color-mix(in oklab, var(--destructive) 10%, transparent); color: var(--destructive); border-color: color-mix(in oklab, var(--destructive) 50%, transparent); }
+
+	.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+	.chip {
+		font-size: 11px; padding: 2px 7px; border-radius: 999px; font-weight: 500;
+		border: 1px solid;
+	}
+	.chip--success { color: var(--success); border-color: color-mix(in oklab, var(--success) 40%, transparent); background: color-mix(in oklab, var(--success) 10%, transparent); }
+	.chip--warning { color: var(--warning); border-color: color-mix(in oklab, var(--warning) 40%, transparent); background: color-mix(in oklab, var(--warning) 10%, transparent); }
+	.chip--info { color: var(--info); border-color: color-mix(in oklab, var(--info) 40%, transparent); background: color-mix(in oklab, var(--info) 10%, transparent); }
+	.chip--neutral { color: var(--fg); border-color: var(--border); background: var(--neutral); }
+
+	/* ── 表面阶梯 ── */
+	.ramp { display: flex; flex-direction: column; gap: 4px; margin-top: 14px; }
+	.ramp__row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--page-muted); }
+	.ramp__bar { height: 16px; border-radius: 3px; border: 1px solid var(--border); flex: none; }
+	.ramp__name { width: 82px; color: var(--page-fg); font-family: ui-monospace, "SF Mono", monospace; font-size: 10.5px; }
+	.ramp__val { font-family: ui-monospace, "SF Mono", monospace; font-size: 10.5px; margin-left: auto; }
+
+	/* ── 色相谱系 ── */
+	table.hue { width: 100%; border-collapse: collapse; font-size: 12px; }
+	table.hue th, table.hue td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--page-line); }
+	table.hue th { font-weight: 600; color: var(--page-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+	.swatches { display: flex; gap: 5px; }
+	.sw { width: 20px; height: 20px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.12); }
+	code { font-family: ui-monospace, "SF Mono", monospace; font-size: 11.5px; background: #f2f2f4; padding: 1px 5px; border-radius: 4px; }
+	.note { font-size: 12px; color: var(--page-muted); margin: 10px 0 0; }
+	.note b { color: var(--page-fg); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+	<h1>GOSpeak 暗色主题配色对照</h1>
+	<p class="lede">
+		左边是改动前的 <code>.dark</code>，右边是由亮色（acid）派生出的新暗色。两者渲染的是同一套组件结构，
+		可直接对比面板层级、边框可见度、文字层级和语义色。下方附表面阶梯与色相谱系。
+	</p>
+
+	<section>
+		<h2>同一界面 · 改动前后</h2>
+		<div class="compare">
+			<div class="pane">
+				<div class="pane__label">改动前 <span>card = background、border 比底色更暗、语义色各走一套色相</span></div>
+				<div class="pane__body">
+					<div class="mock t-old">
+						<div class="rail">
+							<div class="rail__dot rail__dot--active"></div>
+							<div class="rail__dot"></div>
+							<div class="rail__dot"></div>
+							<div class="rail__dot"></div>
+						</div>
+						<div class="panel">
+							<div class="panel__head">
+								<b>大厅</b>
+								<div class="search">搜索频道</div>
+							</div>
+							<div class="panel__body">
+								<div class="row row--selected"><div class="avatar"></div> 语音大厅 <small>4 / 8</small></div>
+								<div class="row row--hover"><div class="avatar"></div> 开黑一队 <small>2 / 4</small></div>
+								<div class="row"><div class="avatar"></div> 挂机区 <small>空闲</small></div>
+								<div class="tiers">
+									<div class="t-fg">主文字：频道名 / 消息正文</div>
+									<div class="t-muted">次要文字：成员数、时间戳</div>
+									<div class="t-faint">弱化文字：占位符、空状态</div>
+								</div>
+								<div class="chips">
+									<span class="chip chip--success">在线</span>
+									<span class="chip chip--warning">占用高</span>
+									<span class="chip chip--info">同步中</span>
+									<span class="chip chip--neutral">访客</span>
+								</div>
+								<div class="btns">
+									<span class="btn btn--primary">创建房间</span>
+									<span class="btn btn--outline">设置</span>
+									<span class="btn btn--ghost">取消</span>
+									<span class="btn btn--tint">踢出</span>
+								</div>
+							</div>
+						</div>
+					</div>
+					<div class="ramp t-old">
+						<div class="ramp__row"><span class="ramp__name">sunken</span><div class="ramp__bar" style="width:68.6px;background:var(--sunken)"></div><span class="ramp__val">L 32.4%</span></div>
+						<div class="ramp__row"><span class="ramp__name">muted</span><div class="ramp__bar" style="width:55px;background:var(--muted)"></div><span class="ramp__val">L 23.3%</span></div>
+						<div class="ramp__row"><span class="ramp__name">background</span><div class="ramp__bar" style="width:57.9px;background:var(--bg)"></div><span class="ramp__val">L 25.3%</span></div>
+						<div class="ramp__row"><span class="ramp__name">card</span><div class="ramp__bar" style="width:57.9px;background:var(--card)"></div><span class="ramp__val">L 25.3%</span></div>
+						<div class="ramp__row"><span class="ramp__name">popover</span><div class="ramp__bar" style="width:57.9px;background:var(--popover)"></div><span class="ramp__val">L 25.3%</span></div>
+						<div class="ramp__row"><span class="ramp__name">border</span><div class="ramp__bar" style="width:51.8px;background:var(--border)"></div><span class="ramp__val">L 21.2% ↓ 比表面更暗</span></div>
+					</div>
+				</div>
+			</div>
+
+			<div class="pane">
+				<div class="pane__label">改动后 <span>三档表面、border 比表面更亮、语义色沿用亮色色相</span></div>
+				<div class="pane__body">
+					<div class="mock t-new">
+						<div class="rail">
+							<div class="rail__dot rail__dot--active"></div>
+							<div class="rail__dot"></div>
+							<div class="rail__dot"></div>
+							<div class="rail__dot"></div>
+						</div>
+						<div class="panel">
+							<div class="panel__head">
+								<b>大厅</b>
+								<div class="search">搜索频道</div>
+							</div>
+							<div class="panel__body">
+								<div class="row row--selected"><div class="avatar"></div> 语音大厅 <small>4 / 8</small></div>
+								<div class="row row--hover"><div class="avatar"></div> 开黑一队 <small>2 / 4</small></div>
+								<div class="row"><div class="avatar"></div> 挂机区 <small>空闲</small></div>
+								<div class="tiers">
+									<div class="t-fg">主文字：频道名 / 消息正文</div>
+									<div class="t-muted">次要文字：成员数、时间戳</div>
+									<div class="t-faint">弱化文字：占位符、空状态</div>
+								</div>
+								<div class="chips">
+									<span class="chip chip--success">在线</span>
+									<span class="chip chip--warning">占用高</span>
+									<span class="chip chip--info">同步中</span>
+									<span class="chip chip--neutral">访客</span>
+								</div>
+								<div class="btns">
+									<span class="btn btn--primary">创建房间</span>
+									<span class="btn btn--outline">设置</span>
+									<span class="btn btn--ghost">取消</span>
+									<span class="btn btn--tint">踢出</span>
+								</div>
+							</div>
+						</div>
+					</div>
+					<div class="ramp t-new">
+						<div class="ramp__row"><span class="ramp__name">sunken</span><div class="ramp__bar" style="width:44.8px;background:var(--sunken)"></div><span class="ramp__val">L 16.5%</span></div>
+						<div class="ramp__row"><span class="ramp__name">muted</span><div class="ramp__bar" style="width:49.3px;background:var(--muted)"></div><span class="ramp__val">L 19.5%</span></div>
+						<div class="ramp__row"><span class="ramp__name">background</span><div class="ramp__bar" style="width:51.5px;background:var(--bg)"></div><span class="ramp__val">L 21%</span></div>
+						<div class="ramp__row"><span class="ramp__name">card</span><div class="ramp__bar" style="width:56px;background:var(--card)"></div><span class="ramp__val">L 24%</span></div>
+						<div class="ramp__row"><span class="ramp__name">popover</span><div class="ramp__bar" style="width:60.5px;background:var(--popover)"></div><span class="ramp__val">L 27%</span></div>
+						<div class="ramp__row"><span class="ramp__name">border</span><div class="ramp__bar" style="width:65.8px;background:var(--border)"></div><span class="ramp__val">L 30.5% ↑ 比表面更亮</span></div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<section>
+		<h2>色相谱系 · 暗色不再另起一套</h2>
+		<table class="hue">
+			<thead>
+				<tr><th>主题</th><th>primary</th><th>secondary</th><th>accent</th><th>destructive</th><th>success</th><th>warning</th><th>info</th></tr>
+			</thead>
+			<tbody>
+				<tr>
+					<td>亮色（基准）</td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(51.1% 0.262 276.966)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(73.37% 0.224 48.25)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(92.78% 0.264 122.962)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(64.84% 0.293 29.349)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(85.72% 0.266 158.53)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(91.01% 0.212 100.5)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(60.72% 0.227 252.05)"></div></div></td>
+				</tr>
+				<tr>
+					<td>旧暗色</td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(58% 0.233 277.117)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(65% 0.241 354.308)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(77% 0.152 181.912)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(71% 0.194 13.428)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(76% 0.177 163.223)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(82% 0.189 84.429)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(74% 0.16 232.661)"></div></div></td>
+				</tr>
+				<tr>
+					<td>新暗色</td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(56.5% 0.205 277)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(74% 0.163 48.25)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(82% 0.196 122.962)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(69% 0.185 29.349)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(79% 0.185 158.53)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(85% 0.168 100.5)"></div></div></td>
+					<td><div class="swatches"><div class="sw" style="background:oklch(72% 0.145 252.05)"></div></div></td>
+				</tr>
+			</tbody>
+		</table>
+		<p class="note">
+			旧暗色的 secondary 是洋红（H 354）、accent 是青（H 181）、destructive 偏粉（H 13），与亮色的橙 / 青柠 / 正红不是同一套色相，
+			切到深色时整体品牌观感会变。<b>新暗色只改明度与彩度，色相全部沿用亮色。</b>
+		</p>
+	</section>
+
+	<section>
+		<h2>对比度校验（WCAG，暗色底 <code>oklch(21% 0.006 277)</code>）</h2>
+		<table class="hue">
+			<thead><tr><th>组合</th><th>旧暗色</th><th>新暗色</th><th>亮色基准</th></tr></thead>
+			<tbody>
+				<tr><td>主文字 / background</td><td>—</td><td>14.9 : 1</td><td>19.8 : 1</td></tr>
+				<tr><td>主文字 / card</td><td>—</td><td>13.8 : 1</td><td>19.8 : 1</td></tr>
+				<tr><td>次要文字 / background</td><td>—</td><td>5.4 : 1</td><td>5.6 : 1</td></tr>
+				<tr><td>弱化文字 / background</td><td>—</td><td>3.2 : 1</td><td>3.0 : 1</td></tr>
+				<tr><td>primary 上的白字</td><td>—</td><td>4.6 : 1</td><td>6.1 : 1</td></tr>
+				<tr><td>destructive 作为文字（含 /10 底）</td><td>—</td><td>4.8 : 1</td><td>3.2 : 1 ✗</td></tr>
+				<tr><td>border / card（边框可见度）</td><td>1.0 : 1（同色不可见）</td><td>1.23 : 1</td><td>1.23 : 1</td></tr>
+			</tbody>
+		</table>
+		<p class="note">
+			旧暗色的 border 是 <code>L 21.2%</code>，比 card 的 <code>25.3%</code> 更暗 —— 描边方向反了，分隔线基本看不见，
+			表格里显示为 1.0 : 1 是因为两者亮度几乎一样。<b>新暗色把 border↔card 锁在与亮色相同的 1.23 : 1。</b>
+		</p>
+	</section>
+
+</div>
+</body>
+</html>

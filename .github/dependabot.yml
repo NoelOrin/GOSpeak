@@ -1,0 +1,73 @@
+version: 2
+
+# 每个 package-ecosystem + directory 只保留一条配置。
+# 此前 npm / gomod / github-actions 各写了两条完全相同的条目（仅 schedule.day 不同），
+# 同一生态指向同一目录的重复条目会让 Dependabot 行为不可预期，已合并为单条周更。
+# 需要更高频率时改 interval（daily / weekly / monthly），而不是复制条目。
+updates:
+  # pnpm monorepo（根目录）
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "frontend"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    # 小版本/补丁打成一个 PR，major 单独出 PR，避免大版本被塞进批量升级里炸掉
+    groups:
+      frontend:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Go backend
+  - package-ecosystem: "gomod"
+    directory: "/app/server"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "backend"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      go:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      actions:
+        patterns:
+          - "*"

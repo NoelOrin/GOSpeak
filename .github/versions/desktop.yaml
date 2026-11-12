@@ -1,0 +1,28 @@
+# GOSpeak 桌面端（app/desktop）发布版本 —— 显式声明，CI 的单一事实来源。
+#
+# 发版流程：修改本文件的 version 并合入 release 后，version-bump.yml 会自动打上
+# `gospeak-desktop-v<version>` tag，release.yml 的桌面端发布链随之构建发布。
+#
+# 命名规范（scripts/release-naming.mjs）：
+#   tag        gospeak-desktop-v<version>
+#   安装包     gospeak-desktop-v<version>-<os>-<arch>.<dmg|deb|tar.gz|exe>
+#   校验和     SHA256SUMS-gospeak-desktop-v<version>.txt
+#
+# 同步约束（release.yml 的 version-check 会校验）：
+#   app/desktop/package.json 的 version
+#   app/desktop/mygo.config.ts 的 version（决定安装包文件名）
+# 两者都必须与本文件一致。
+version: "1.0.0"
+
+# 本次发版说明：优先作为 GitHub Release 的 release notes（块标量 | 多行）。
+# 留空时以最近的 gospeak-desktop-v* tag 为基线按 commit 生成
+# （首个桌面版本无基线，会使用简短默认说明）。
+notes: |
+  GOSpeak Desktop 1.0.0 —— 首个桌面端正式版。
+
+  ## Highlights
+  - 本地回环反向代理：前端内置，可连接任意自托管服务器，全程同源、无跨域
+  - 登录前即可配置服务器地址，持久化保存在本机，设置页可随时切换
+  - 游戏内覆盖层 HUD：显示房间成员并高亮当前发言人
+  - 构建期条件编译：纯 Web 构建不包含任何桌面能力
+  - 提供 macOS（Intel / Apple Silicon）、Linux、Windows 安装包与 SHA256 校验

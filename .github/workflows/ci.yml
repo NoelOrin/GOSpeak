@@ -1,0 +1,361 @@
+# GOSpeak CI — 质量门禁（按路径精准触发，聚合 JS 构建）
+# 保留 workflow_call 兼容外部调用；仓库内正式发布由 release.yml 独立负责。
+name: CI
+
+on:
+  pull_request:
+    branches: [release, dev]
+  push:
+    branches: [release, dev, dev-1108]
+  workflow_dispatch:
+    inputs:
+      run_tests:
+        description: "Run server tests (Go)"
+        required: false
+        default: true
+        type: boolean
+  workflow_call:
+    inputs:
+      run_tests:
+        description: "Run server tests (Go)"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/release' }}
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      js: ${{ steps.filter.outputs.js }}
+      ci: ${{ steps.filter.outputs.ci }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            go:
+              - 'app/server/**'
+              - 'app/server/go.mod'
+              - 'app/server/go.sum'
+              - 'app/desktop/**/*.go'
+              - 'app/desktop/go.mod'
+              - 'app/desktop/go.sum'
+            js:
+              - 'app/web/**'
+              - 'app/desktop/mygo.config.ts'
+              - 'app/desktop/package.json'
+              - 'packages/**'
+              - 'test/**'
+              - 'package.json'
+              - 'biome.json'
+              - '**/tsconfig*.json'
+              - '.npmrc'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+            ci:
+              - '.github/**'
+              - 'deploy/**'
+              - 'Dockerfile'
+              - 'lefthook.yml'
+              - 'commitlint.config.js'
+              - 'scripts/**'
+
+  lint:
+    name: Lint (Biome + go vet)
+    needs: changes
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+          needs.changes.outputs.go == 'true' || needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm-install
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
+      - name: Biome CI
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
+        run: pnpm exec biome ci --files-ignore-unknown=true ./app/web ./packages ./scripts ./test ./app/desktop
+      - name: UI token guard (圆角 / 字号 / 文字层级 / 图标尺寸)
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
+        run: node scripts/check-ui-tokens.mjs
+      - name: Radius token guard
+        # 此前只在 lefthook pre-push 跑，可被 --no-verify 绕过；CI 补上同一道门禁。
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
+        run: node scripts/check-radius-tokens.mjs
+      - name: Hook dependency ratchet (useExhaustiveDependencies)
+        # biome 规则为 warn，不会让 biome ci 失败；棘轮脚本保证只许减少、不许新增。
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
+        run: node scripts/check-hook-deps.mjs
+      - name: Desktop bridge contract (Go bindings ↔ TS commands)
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
+        run: |
+          node --test scripts/check-desktop-commands.test.mjs
+          node scripts/check-desktop-commands.mjs
+      - name: Deploy config guard (env 与 livekit.yaml 一致性)
+        # 防止把 LiveKit 密钥硬编码回 livekit.yaml，或让 .env 与注入表达式脱节。
+        # 校验逻辑单一来源在 deploy/init.sh --check，本地可直接复跑。
+        run: ./deploy/init.sh --check
+      - uses: actions/setup-go@v7
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true' }}
+        with:
+          go-version-file: app/server/go.mod
+          cache-dependency-path: app/server/go.sum
+          cache: true
+      - name: Vet
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+              needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true' }}
+        run: cd app/server && go vet ./...
+
+  typecheck:
+    name: Typecheck
+    needs: changes
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+          needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm-install
+      - name: Typecheck
+        run: pnpm typecheck
+
+  build-js:
+    name: Build JS (turbo)
+    needs: changes
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+          needs.changes.outputs.js == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm-install
+      - name: Build JS
+        run: pnpm turbo run build --filter=@gospeak/web
+      - name: Upload web dist
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-dist
+          path: app/web/dist
+          retention-days: 3
+
+  build-server:
+    name: Build Server (Go)
+    needs: [changes, build-js]
+    if: >-
+      ${{ !cancelled() &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+           needs.changes.outputs.go == 'true' || needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: app/server/go.mod
+          cache-dependency-path: app/server/go.sum
+          cache: true
+      - name: Download web dist
+        uses: actions/download-artifact@v8
+        with:
+          name: web-dist
+          path: app/web/dist
+      - name: Embed frontend into server
+        run: |
+          rm -rf app/server/internal/webui/dist
+          mkdir -p app/server/internal/webui/dist
+          cp -R app/web/dist/. app/server/internal/webui/dist/
+          test -f app/server/internal/webui/dist/index.html
+      - name: Build
+        working-directory: app/server
+        env:
+          CGO_ENABLED: 0
+        run: go build -ldflags="-s -w" -o gospeak .
+
+  test-server:
+    name: Test Server (Go)
+    needs: changes
+    if: >-
+      ${{ !cancelled() &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+           needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true') &&
+          (github.event_name != 'workflow_dispatch' && github.event_name != 'workflow_call' || inputs.run_tests) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: app/server/go.mod
+          cache-dependency-path: app/server/go.sum
+          cache: true
+      - name: Test
+        working-directory: app/server
+        env:
+          CGO_ENABLED: 1
+        run: go test ./... -race -v -count=1
+
+  test-web:
+    name: Test Web (Vitest)
+    needs: changes
+    if: >-
+      ${{ !cancelled() &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+           needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm-install
+      - name: Web unit tests
+        env:
+          CI: "true"
+        run: pnpm --filter @gospeak/web test
+
+  test-packages:
+    name: Test Packages (Vitest)
+    needs: changes
+    if: >-
+      ${{ !cancelled() &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+           needs.changes.outputs.js == 'true' || needs.changes.outputs.ci == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm-install
+      - name: Package unit tests
+        env:
+          CI: "true"
+        run: pnpm --filter @gospeak/components --filter @gospeak/desktop --filter @gospeak/sfu-client test
+
+  test-scripts:
+    name: Test CI Scripts (node --test)
+    # scripts/ 下的辅助脚本此前没有任何 CI 覆盖，导致 check-version 与
+    # build-changelog 的单测长期处于失效状态却无人发现。
+    needs: changes
+    if: >-
+      ${{ !cancelled() &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+           needs.changes.outputs.ci == 'true' || needs.changes.outputs.js == 'true' ||
+           needs.changes.outputs.go == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/pnpm-install
+      - name: Script unit tests
+        run: node --test scripts/*.test.mjs
+      - name: Release naming self-check
+        run: |
+          set -euo pipefail
+          test "$(node scripts/release-naming.mjs tag server 1.0.0)" = "gospeak-server-v1.0.0"
+          test "$(node scripts/release-naming.mjs tag desktop 1.0.0)" = "gospeak-desktop-v1.0.0"
+          test "$(node scripts/release-naming.mjs artifact desktop 1.0.0 darwin arm64 dmg)" \
+            = "gospeak-desktop-v1.0.0-darwin-arm64.dmg"
+      - name: Version consistency (server)
+        run: node scripts/check-version.mjs . "" server
+      - name: Version consistency (desktop)
+        run: node scripts/check-version.mjs . "" desktop
+
+  desktop-go:
+    name: Desktop Host (Go)
+    # app/desktop 是独立 Go module，go 指令要求 1.27.3，与 server 的 1.26 不同，
+    # 因此单独一个 job 用自己的 setup-go 版本，避免 toolchain 隐式下载。
+    needs: changes
+    if: >-
+      ${{ !cancelled() &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+           needs.changes.outputs.go == 'true' || needs.changes.outputs.ci == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: app/desktop/go.mod
+          cache-dependency-path: app/desktop/go.sum
+          cache: true
+      - name: Seed embed placeholder
+        # proxyserver.go 用 //go:embed all:webui/dist 内嵌前端产物，而该目录
+        # 由 mygo build 生成且被 gitignore。这里放一个占位文件，让 vet/test
+        # 能在没有前端产物的干净 checkout 上编译。
+        run: |
+          mkdir -p app/desktop/webui/dist
+          test -f app/desktop/webui/dist/index.html \
+            || printf '<!doctype html><title>placeholder</title>\n' > app/desktop/webui/dist/index.html
+      - name: Vet
+        working-directory: app/desktop
+        run: go vet ./...
+      # 桌面端的 go test 依赖真实前端产物（proxyserver 的测试会校验 gzip 与
+      # 完整 index.html），占位文件不满足。这里只做编译期门禁；完整测试在
+      # 本地或发布前用真实构建产物跑。
+
+  workflow-lint:
+    name: Workflow Lint (actionlint)
+    needs: changes
+    if: >-
+      ${{ !cancelled() &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' ||
+           needs.changes.outputs.ci == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install actionlint
+        # 固定版本，避免上游发版无声改变门禁结果。
+        env:
+          ACTIONLINT_VERSION: 1.7.7
+        run: |
+          set -euo pipefail
+          url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -sSfL "$url" | tar xz -C /tmp actionlint
+          /tmp/actionlint -version
+      - name: Lint workflows
+        run: /tmp/actionlint -color
+
+  gate:
+    name: CI Gate
+    if: always()
+    needs: [lint, typecheck, build-js, build-server, test-server, test-web, test-packages, test-scripts, desktop-go, workflow-lint]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required checks
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          TYPECHECK_RESULT: ${{ needs.typecheck.result }}
+          BUILD_JS_RESULT: ${{ needs.build-js.result }}
+          BUILD_SERVER_RESULT: ${{ needs.build-server.result }}
+          TEST_SERVER_RESULT: ${{ needs.test-server.result }}
+          TEST_WEB_RESULT: ${{ needs.test-web.result }}
+          TEST_PACKAGES_RESULT: ${{ needs.test-packages.result }}
+          TEST_SCRIPTS_RESULT: ${{ needs.test-scripts.result }}
+          DESKTOP_GO_RESULT: ${{ needs.desktop-go.result }}
+          WORKFLOW_LINT_RESULT: ${{ needs.workflow-lint.result }}
+        run: |
+          set -euo pipefail
+          for result in "$LINT_RESULT" "$TYPECHECK_RESULT" "$BUILD_JS_RESULT" "$BUILD_SERVER_RESULT" "$TEST_SERVER_RESULT" "$TEST_WEB_RESULT" "$TEST_PACKAGES_RESULT" "$TEST_SCRIPTS_RESULT" "$DESKTOP_GO_RESULT" "$WORKFLOW_LINT_RESULT"; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "required CI job failed: $result" >&2; exit 1 ;;
+            esac
+          done
