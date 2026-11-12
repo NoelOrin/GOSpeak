@@ -89,10 +89,12 @@ func (ServerConfig) SetBaseURL(newURL string) {
 
 	// Switching servers must not carry the previous server's session over:
 	// the cookies live on the loopback origin, and the page keeps the cached
-	// user plus the session expiry in localStorage.
+	// user plus the session expiry in localStorage. The overlay's avatars come
+	// from the old server too, so their cache goes with it.
 	if newURL != previous {
 		_ = mygo.Cookies.Clear()
 		clearPageSessionCache()
+		overlayAvatars.clear()
 	}
 
 	// Apply live: swap proxy target, then reload the pages so they re-resolve

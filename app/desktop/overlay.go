@@ -112,6 +112,21 @@ var overlayHUD = &hudState{
 	avatarOf: func(string) *ui.Bitmap { return nil },
 }
 
+// overlayAvatarFor returns the cached avatar of a member, or nil while it loads
+// or when it has none, so the HUD draws the initial instead.
+func overlayAvatarFor(identity string) *ui.Bitmap {
+	overlayCfg.mu.Lock()
+	members := overlayCfg.snap.Members
+	overlayCfg.mu.Unlock()
+	base := appPageBase()
+	for _, m := range members {
+		if m.Identity == identity {
+			return overlayAvatars.lookup(resolveAvatarURL(base, m.Avatar))
+		}
+	}
+	return nil
+}
+
 // overlayWindow returns the floating window, or nil when it has not been built
 // yet (the overlay is off until the user enables it).
 func overlayWindow() *mygo.Window {
@@ -376,6 +391,11 @@ func (Overlay) PushState(snapshot OverlaySnapshot) {
 		width, height := hudWindowSize(len(snapshot.Members))
 		w.SetContentSize(width, height)
 		w.Invalidate()
+		// Avatars arrive later and redraw the HUD when they do.
+		base := appPageBase()
+		for _, m := range snapshot.Members {
+			overlayAvatars.get(m.Identity, resolveAvatarURL(base, m.Avatar), w.Invalidate)
+		}
 	}
 	// Connection changes affect the auto policy's decision immediately.
 	evaluateOverlayPolicy()
@@ -710,6 +730,7 @@ func ensureOverlayWindow() {
 // initOverlay wires the whole overlay subsystem up during app startup.
 func initOverlay() {
 	loadOverlayConfig()
+	overlayHUD.avatarOf = overlayAvatarFor
 	// Only pay for the second WebView when the feature was left enabled; every
 	// other path goes through ensureOverlayWindow.
 	overlayCfg.mu.Lock()
