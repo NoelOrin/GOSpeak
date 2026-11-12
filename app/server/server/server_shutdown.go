@@ -37,6 +37,7 @@ func runGracefulShutdown(deps shutdownDeps) {
 	}
 
 	// 2) stop membership heartbeat, then close websocket connections
+	deps.signalHub.StopEmptyRoomReconciler()
 	deps.signalHub.StopMembershipHeartbeat()
 	if deps.wsUpgrader != nil && deps.wsUpgrader.Fanout() != nil {
 		deps.wsUpgrader.Fanout().CloseAll()
