@@ -24,12 +24,17 @@
 
 | 决策 | 选择 | 理由 |
 |---|---|---|
-| 渲染方式 | mygo `ui` 原生绘制（`WindowOptions.Content`） | 零 JS 运行时、可做逐帧动效、省一份前端解析 |
+| 渲染方式 | mygo `ui` 原生绘制（`WindowOptions.Content`） | 零 JS 运行时、省一份前端解析 |
 | 目标平台 | macOS + Windows（Linux 按 mygo 能力自动降级） | |
 | 全屏检测 | **删除** | `Panel: true` 本身就解决了"盖全屏"，不需要知道前台是不是全屏 |
 | 默认显示策略 | `auto` = 离开 GOSpeak 就显示 | 事件驱动、三平台原生、语义比"前台有全屏应用"更准 |
+| 策略数量 | `auto` / `always` / `manual` 三选 | 用户要求「策略作为可选择的」；`always` 对双屏用户有用（游戏在另一块屏） |
+| HUD 配色 | **跟随系统主题**，描影反向翻转 | 用户要求；浅色模式下深色字配白光晕，避免压在深色游戏上看不见 |
+| HUD 动效 | **不做** | HUD 是余光看的，动效是干扰 |
+| 房间名 | **不显示** | 已在房里，是噪音，且多一行多挡画面 |
 | 头像 | 原生异步加载 | 用户要求 |
 | 防录屏 | 默认**关闭**，可选开关 | 用户要求：开了自己截不到图 |
+| 窗口关闭 | **不可关闭**（无标题栏、`DisableClose`、Escape 拦截） | 覆盖层不是普通窗口，只有「关掉功能」和「隐藏」，没有「关掉窗口」 |
 
 ### 为什么用「离开 GOSpeak」替代「前台有全屏应用」
 
@@ -150,24 +155,40 @@ w.OnClose(func(e *mygo.CloseEvent) {
 
 ```
 ┌────────────────────┐
-│ ◯  🎤 阿伟         │  说话中：头像 emerald 环 + 名字加粗纯白
-│ ◯  🔇 小林  (你)   │  静音：麦克风划掉
-│ ◯  🎤 Kate         │  未说话：white/70
+│ ◉  🎤 阿伟         │  说话中：头像 Success 环 + 名字加粗
+│ ◯  🎤 小林  (你)   │  自己：名字后加 (你)
+│ ◯  🔇 Kate         │  静音：麦克风划掉
 └────────────────────┘
 ```
 
-- **无卡片背景**，白字 + `TextShadow(0, 1, 4, RGBA(0,0,0,0.9))`，保证在任何游戏画面上可读（沿用现有思路，mygo `Element.TextShadow` 已确认支持）
-- **麦克风图标用内嵌 SVG**：`ui.MustParseSVG(...)` 常量 + `ui.Icon(c, mic)`。`ui.Icon` 跟随祖先的 `TextColor`（已核实），所以静音/未静音只改 `TextColor`，不需要两套图标。SVG 路径取自 lucide-react 的 `mic` / `mic-off`（与 Web 端图标同源，视觉一致），24×24 viewBox、`stroke="currentColor"`。
+**跟随系统主题。** `c.Theme()` 由 mygo 提供，它监听系统的 `effectiveAppearance`，变化时自动重建帧（`ui/runtime.go` 的 `themeChanged`），**不需要自己写任何检测代码**。视图里只读 `c.Theme()` 决定配色。
+
+| 元素 | 深色模式 | 浅色模式 |
+|---|---|---|
+| 名字（说话中） | `#f4f4f5` 加粗 | `#18181b` 加粗 |
+| 名字（其他） | `#f4f4f5` 70% | `#18181b` 70% |
+| **文字描影** | `(0, 1, 4, rgba(0,0,0,0.9))` 黑晕 | `(0, 1, 4, rgba(255,255,255,0.9))` 白晕 |
+| 说话高亮 / 头像环 | `Theme.Success`（`#22c55e`） | `Theme.Success`（`#16a34a`） |
+| 静音图标 | 白 45% | 黑 45% |
+| 头像无图 fallback | `Theme.Accent` → `Theme.Success` 渐变 | 同左 |
+| 窗口背景 | 完全透明 | 完全透明 |
+
+> **为什么描影要反向翻转**：HUD 没有卡片背景，直接浮在游戏画面上。浅色模式下 `Theme.Text` 是近黑色（`#18181b`），压在深色游戏上会看不清。深色字配白色光晕、浅色字配黑色光晕——这是字幕的标准做法，既跟随了主题，又不拿可读性去赌游戏画面的明暗。
+
+其余规格：
+
+- **无卡片背景**（不做半透明底，不做毛玻璃）
+- **麦克风图标用内嵌 SVG**：`ui.MustParseSVG(...)` 常量 + `ui.Icon(c, mic)`。`ui.Icon` 跟随祖先的 `TextColor`（已核实），所以静音/未静音只改 `TextColor`，不需要两套图标。SVG 路径取自 lucide-react 的 `mic` / `mic-off`（与 Web 端图标同源），24×24 viewBox、`stroke="currentColor"`。
 - 头像 16px 圆形：有图显示图，无图/加载中/失败显示**首字 + 渐变圆**（与 Web 端 `components/common/avatar.tsx` 的 fallback 一致）
 - 行高 22，内边距 4，窗口宽 200
-- **高度随人数变化**：`height = padding*2 + min(n, 12)*22`，成员变化时调 `win.SetContentSize(200, h)`。人少时窗口就小，不挡游戏
+- **高度随人数变化**：`height = 8 + min(n, 12) × 22`，成员变化时调 `win.SetContentSize(200, h)`。人少时窗口就小，不挡游戏
 - 超过 12 人：显示前 11 行 + 一行 `+N`（穿透窗口里滚动没有意义，不实现滚动）
 - 排序：说话人排前，其余保持原序（沿用现有逻辑）
 - 成员为空时窗口隐藏（而不是画一个空窗口）
 
-> **为什么窗口尺寸要手动维护**：已核实 `fit` 仅在 `opts.Content == nil && opts.FitContent` 时挂载，且 `connectFit` 只对 flyout 调用。原生 UI 窗口不会自动撑高，必须自己 `SetContentSize`。
+**明确不做**：说话状态动效（HUD 是余光看的，动效是干扰）、房间名（已在房里，是噪音）、卡片背景。
 
-**说话状态动效**：用 `Element.AnimateColor` / `Animate` 做颜色与环宽的过渡（mygo 已提供），避免生硬跳变。动效本身不触发额外 `Invalidate`，由 mygo 的动画帧驱动。
+> **为什么窗口尺寸要手动维护**：已核实 `fit` 仅在 `opts.Content == nil && opts.FitContent` 时挂载，且 `connectFit` 只对 flyout 调用。原生 UI 窗口不会自动撑高，必须自己 `SetContentSize`。
 
 ### 4. 头像异步加载（`app/desktop/overlay_avatar.go`）
 
@@ -186,7 +207,9 @@ type avatarCache struct {
 - `ui.DecodeImage(data)` 同时支持位图与 SVG（已核实）
 - goroutine 拉取，完成后 `win.Invalidate()` 重绘
 - 缓存上限 64 条，超出整体重置（覆盖层成员规模远小于此，不需要 LRU）
-- 加载失败缓存为 nil，不重试
+- 加载失败缓存为 nil，**不重试**（同一人反复进出会反复请求坏图；等窗口重建或切服务器时清空再试）
+- **不预缩放**：源图可能是 512×512 而显示只要 16×16，但引入缩放代码的收益不抵复杂度（实际同时在线通常 <10 人，约 10MB）。真出内存问题再优化。
+- **切换服务器必须清空缓存**：`ServerConfig.SetBaseURL` 里调 `overlayAvatarCache.clear()`。否则旧服务器的 `/uploads/...` 在代理已指向新服务器后会 404 或返回别人的头像——这是改成本地缓存后新引入的耦合点，容易漏。
 
 ### 5. 设置页（`app/web/src/components/modal/settingModal/tab_item/desktop.tsx`）
 
@@ -250,7 +273,9 @@ type avatarCache struct {
 | 新 | `app/desktop/overlay_avatar_test.go` |
 | 新 | `app/desktop/overlay_test.go` |
 | 改 | `app/desktop/overlay.go` |
-| 改 | `app/desktop/lifecycle.go`（托盘菜单加锁定/解锁项） |
+| 改 | `app/desktop/lifecycle.go`（托盘菜单加「锁定/解锁覆盖层位置」） |
+| 改 | `app/desktop/windows.go`（`reloadAllWindows` 删掉 `w.Page()` 分支——原生窗口 `Page()` 恒 nil） |
+| 改 | `app/desktop/server_config.go`（`SetBaseURL` 调 `overlayAvatarCache.clear()`） |
 | 改 | `app/desktop/proxyserver_test.go` |
 | 改 | `app/desktop/README.md` |
 | 改 | `packages/desktop/src/capabilities/overlay.ts` |
@@ -260,6 +285,24 @@ type avatarCache struct {
 | 改 | `app/web/src/main.tsx` |
 | 改 | `app/web/src/layouts/layout.tsx` |
 | 重生成 | `app/web/src/routeTree.gen.ts` |
+
+## 实施顺序
+
+**关键约束：步骤 1 和 2 必须连续完成，中间不可发布。**
+
+窗口一旦改成 `Panel: true` + `ShowInactive` + `SetIgnoreMouseEvents`，旧 WebView HUD 就会变成「能看见但完全不能操作」的状态（不接键盘、锁定时不收鼠标）。feature 分支上无所谓，但不能在两步之间切出去。
+
+分五步，每步都能独立验证：
+
+| 步骤 | 内容 | 完成后可验证 |
+|---|---|---|
+| **1. 窗口层** | `Panel: true`、`ShowInactive`、`OnClose` 拦截、`SetIgnoreMouseEvents`、删全屏检测与 ticker；**暂时保留 `URL: /overlay`** | 窗口行为全部生效，HUD 仍是旧 WebView 版：盖全屏、穿透、不抢焦点、Escape 不关闭 |
+| **2. 原生视图** | `overlay_view.go` + 把 `URL` 换成 `Content: ui.View(...)`；删 `pages/overlay.tsx`、`overlayStore.ts` | HUD 变成原生绘制，主题跟随生效 |
+| **3. 策略** | 三模式 + `App.IsActive` 事件接线 | 切 App 自动显隐 |
+| **4. 头像** | `overlay_avatar.go` + 缓存 + 切服务器清缓存 | 头像显示，切服务器刷新 |
+| **5. 收尾** | 设置页、托盘解锁项、SDK 类型、文档、测试 | 完整 |
+
+**为什么第 1 步不直接换 `Content`**：把「窗口行为」和「渲染方式」的变更分开，出问题时能立刻判断是窗口配置错了还是视图画错了。窗口层有 5 个平台相关的坑（Panel、ShowInactive、OnClose、穿透、ContentProtection），视图层是纯逻辑——混在一起会让定位成本翻倍。
 
 ## 验证
 
@@ -271,6 +314,8 @@ pnpm typecheck && pnpm lint
 pnpm test:web
 ```
 
+视图层可**完全无头测试**：`ui.NewTester(view, 200, h)` + 断言 `Texts()` / `Find()` / 窗口高度。头像用 `httptest`。策略求值是纯函数，表驱动。**窗口行为无法自动化**，只能手动验。
+
 **手动（macOS + Windows 各一遍）：**
 
 1. `pnpm dev:web` + `GOSPEAK_DESKTOP_DEV=1 pnpm --filter @gospeak/desktop-app dev`
@@ -280,10 +325,13 @@ pnpm test:web
 5. 开着 HUD 进一个**无边框全屏**游戏/视频 → HUD 仍可见（macOS 验证 Space 切换）
 6. 锁定状态下点 HUD 位置 → 游戏收到点击（穿透生效）
 7. 快捷键解锁 → 拖动 HUD → 位置重启后保留
-8. 成员说话 → 高亮变化；静音 → 图标变化
-9. 3 人 vs 15 人 → 窗口高度正确，15 人显示 `+4`
-10. 开启防录屏 → 系统截图/录屏中 HUD 消失
-11. 关掉覆盖层 → 任务管理器/活动监视器确认没有第二个 WebView 进程
+8. **按 Escape → HUD 不消失**（验证 `OnClose` 拦截）
+9. 成员说话 → 高亮变化；静音 → 图标变化
+10. 3 人 vs 15 人 → 窗口高度正确，15 人显示 `+4`
+11. 系统切深色/浅色 → HUD 配色与描影跟着翻转
+12. 切换服务器 → 头像刷新，不残留旧服务器图片
+13. 开启防录屏 → 系统截图/录屏中 HUD 消失
+14. 关掉覆盖层 → 任务管理器/活动监视器确认没有第二个 WebView 进程
 
 ## 风险
 
