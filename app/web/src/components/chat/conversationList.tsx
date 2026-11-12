@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { useEffect } from "react";
 import { Badge } from "@gospeak/components";
 import AsyncState from "@/components/common/AsyncState";
+import { SkeletonListRows } from "@/components/common/Skeletons";
 import Avatar from "@/components/common/avatar";
 import { chatStore, useChatStore } from "@/stores/chatStore";
 
@@ -23,6 +24,7 @@ export default function ConversationList() {
 				<AsyncState
 					loading={loadingList && conversations.length === 0}
 					loadingText="正在加载会话…"
+					skeleton={<SkeletonListRows rows={6} />}
 					empty={conversations.length === 0 && !loadingList}
 					emptyText="暂无会话"
 					compact

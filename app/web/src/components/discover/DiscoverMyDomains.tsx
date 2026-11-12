@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Headphones } from "lucide-react";
 import { type Domain, getDomain } from "@/api/domain";
 import AsyncState from "@/components/common/AsyncState";
+import { SkeletonCardGrid } from "@/components/common/Skeletons";
 import DomainIcon from "@/components/domain/DomainIcon";
 import { domainStore, useDomainStore } from "@/stores/domainStore";
 
@@ -49,6 +50,7 @@ function DiscoverMyDomains() {
 				compact
 				loading={(loading || domainsLoading) && myUUIDs.length > 0}
 				loadingText="正在加载我的域…"
+				skeleton={<SkeletonCardGrid cards={2} columns={2} />}
 				empty={!loading && !domainsLoading && myUUIDs.length === 0}
 				emptyText={
 					<span className="flex flex-col items-center gap-1 text-center">
