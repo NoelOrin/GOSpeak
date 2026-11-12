@@ -48,3 +48,4 @@ export {
 export { Card, CardContent, CardHeader, CardTitle } from "./components/card";
 export { Toaster, toast } from "./components/toast";
 export { cn } from "./lib/utils";
+export { Skeleton, type SkeletonProps } from "./components/skeleton";
