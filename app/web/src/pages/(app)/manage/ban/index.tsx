@@ -12,6 +12,10 @@ import {
 	manageTableHeadClass,
 	manageTableRowClass,
 } from "@/components/manage/ManageShell";
+import {
+	LoadingRegion,
+	SkeletonTableRows,
+} from "@/components/common/Skeletons";
 import UserSearchSelect from "@/components/manage/UserSearchSelect";
 import ConfirmModal from "@/components/common/ConfirmModal";
 import {
@@ -133,7 +137,9 @@ export default function BanPage() {
 				padded={false}
 			>
 				{isLoading ? (
-					<span className="border-primary border-t-primary m-4 block size-5 animate-spin rounded-full border-2" />
+					<LoadingRegion label="正在加载封禁用户">
+						<SkeletonTableRows rows={4} cols={4} />
+					</LoadingRegion>
 				) : bannedUsers.length === 0 ? (
 					<div className="border-border/60 bg-muted/20 text-muted-foreground m-4 rounded-lg border border-dashed py-10 text-center text-sm">
 						暂无封禁用户
