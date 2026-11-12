@@ -12,8 +12,14 @@
 //           校验：根 VERSION、根 package.json 的 version 必须与 yaml 一致；
 //                 发布 tag（形如 v<version>）必须与 yaml 一致。
 //   desktop 源：.github/versions/desktop.yaml
-//           校验：app/desktop/package.json 的 version 必须与 yaml 一致；
+//           校验：app/desktop/package.json 的 version、app/desktop/mygo.config.ts
+//                 的 version 必须与 yaml 一致；
 //                 发布 tag（形如 desktop-v<version>）必须与 yaml 一致。
+//
+// mygo.config.ts 的 version 不是普通元数据：`mygo build` 把它注入为
+// mygo.packageVersion，而 mygo.Updater.Check 用它比较更新清单（见
+// app/desktop/updater.go）。它与 yaml/ldflags 漂移会让已安装的新版本被
+// 反复推荐为「有更新」，因此必须纳入校验。
 //
 // 保持向后兼容：`node scripts/check-version.mjs` / `. <tag>`（无组件参数）仍按
 // main 组件校验，ci.yml / docker.yml 的既有调用无需修改。
@@ -51,6 +57,22 @@ function readDeclaredVersion(path) {
 	const match = raw.match(/^version:\s*["']?([^\s#"']+)["']?\s*(?:#.*)?$/m);
 	if (!match) {
 		throw new Error(`${path} must declare a top-level "version:" field`);
+	}
+	return parseVersion(match[1], path);
+}
+
+/** 解析 mygo.config.ts 顶层 version 字段（形如 `\tversion: "1.0.0",`）。
+ *  行首锚定，避免匹配到注释里提到的 version。 */
+function readMygoConfigVersion(path) {
+	let raw;
+	try {
+		raw = readFileSync(path, "utf8");
+	} catch {
+		throw new Error(`mygo config not found: ${path}`);
+	}
+	const match = raw.match(/^[ \t]*version:\s*["'`]([^"'`]+)["'`]/m);
+	if (!match) {
+		throw new Error(`${path} must declare a "version:" string field`);
 	}
 	return parseVersion(match[1], path);
 }
@@ -95,6 +117,14 @@ export function checkVersionState(rootDir, releaseTag = "", component) {
 		if (pkgVersion !== declared) {
 			issues.push(
 				`app/desktop/package.json version ${pkgVersion} does not match .github/versions/desktop.yaml ${declared}`,
+			);
+		}
+		const configVersion = readMygoConfigVersion(
+			`${rootDir}/app/desktop/mygo.config.ts`,
+		);
+		if (configVersion !== declared) {
+			issues.push(
+				`app/desktop/mygo.config.ts version ${configVersion} does not match .github/versions/desktop.yaml ${declared}`,
 			);
 		}
 	} else {

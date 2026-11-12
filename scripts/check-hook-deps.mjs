@@ -6,11 +6,15 @@
 // 既有的历史告警作为技术债基线保留可见性，任何新增告警都会让 CI 失败。
 // 每清理一处（补全依赖或写明 biome-ignore 理由），就把 BASELINE 同步下调。
 //
+// 棘轮是双向的：高于基线 = 新增告警；低于基线 = 清理后未下调基线，或
+// Biome reporter 格式/规则分类漂移导致统计失真。两种情况都失败，
+// 避免格式变化时 found.length 变 0 被当成"无新增"而永久静默放行。
+//
 // 依赖 Biome 的 --reporter=json（当前标记为 experimental）；若输出格式变化，
 // 脚本会明确报错而不是静默放行。
 import { execFileSync } from "node:child_process";
 
-const BASELINE = 11;
+const BASELINE = 10;
 const RULE = "lint/correctness/useExhaustiveDependencies";
 const args = [
 	"exec",
@@ -59,6 +63,14 @@ if (found.length > BASELINE) {
 		const loc = d.location?.path ?? "?";
 		console.error(`  - ${loc}: ${d.message ?? ""}`);
 	}
+	process.exit(1);
+}
+if (found.length < BASELINE) {
+	console.error(
+		`hook 依赖告警数低于基线：当前 ${found.length} 处，基线 ${BASELINE} 处。` +
+			"要么是清理了告警（请同步下调 BASELINE 常量），" +
+			"要么是 Biome 的 reporter 输出结构/规则分类已变化导致统计失真（门禁已失效）。",
+	);
 	process.exit(1);
 }
 
