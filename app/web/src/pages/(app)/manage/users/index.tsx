@@ -32,6 +32,10 @@ import {
 	manageTableHeadClass,
 	manageTableRowClass,
 } from "@/components/manage/ManageShell";
+import {
+	LoadingRegion,
+	SkeletonTableRows,
+} from "@/components/common/Skeletons";
 import { useUserStore } from "@/stores/userStore";
 import { formatRemaining } from "@/utils/format";
 import { denyAccess } from "@/utils/accessDenied";
@@ -317,7 +321,9 @@ function UsersPage() {
 				</div>
 				<div className="overflow-x-auto">
 					{usersLoading ? (
-						<span className="border-primary border-t-primary mx-auto block size-5 animate-spin rounded-full border-2 py-10" />
+						<LoadingRegion label="正在加载用户">
+							<SkeletonTableRows rows={8} cols={6} />
+						</LoadingRegion>
 					) : users.length === 0 ? (
 						<div className="border-border/60 bg-muted/20 text-muted-foreground m-4 rounded-lg border border-dashed py-10 text-center text-sm">
 							暂无用户
@@ -563,7 +569,9 @@ function UsersPage() {
 						padded={false}
 					>
 						{mutesLoading ? (
-							<span className="border-primary border-t-primary m-4 block size-5 animate-spin rounded-full border-2" />
+							<LoadingRegion label="正在加载活跃禁言">
+								<SkeletonTableRows rows={4} cols={4} />
+							</LoadingRegion>
 						) : mutes.length === 0 ? (
 							<div className="border-border/60 bg-muted/20 text-muted-foreground m-4 rounded-lg border border-dashed py-10 text-center text-sm">
 								暂无活跃禁言

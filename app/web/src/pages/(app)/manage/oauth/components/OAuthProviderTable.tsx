@@ -6,6 +6,10 @@ import {
 	manageTableHeadClass,
 	manageTableRowClass,
 } from "@/components/manage/ManageShell";
+import {
+	LoadingRegion,
+	SkeletonTableRows,
+} from "@/components/common/Skeletons";
 import ProviderIcon from "@/components/oauth/ProviderIcon";
 import { NATIVE_PROVIDERS } from "./presets";
 
@@ -32,7 +36,9 @@ export default function OAuthProviderTable({
 	return (
 		<ManageSection title="已配置提供商" padded={false}>
 			{loading ? (
-				<span className="border-primary border-t-primary m-4 block size-5 animate-spin rounded-full border-2" />
+				<LoadingRegion label="正在加载 OAuth 提供商">
+					<SkeletonTableRows rows={4} cols={5} />
+				</LoadingRegion>
 			) : providers.length === 0 ? (
 				<div className="border-border/60 bg-muted/20 text-muted-foreground m-4 rounded-lg border border-dashed py-10 text-center text-sm">
 					暂无 OAuth 提供商配置，点击「添加」开始配置

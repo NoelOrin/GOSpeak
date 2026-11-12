@@ -21,6 +21,10 @@ import {
 	manageTableHeadClass,
 	manageTableRowClass,
 } from "@/components/manage/ManageShell";
+import {
+	LoadingRegion,
+	SkeletonTableRows,
+} from "@/components/common/Skeletons";
 import UserSearchSelect from "@/components/manage/UserSearchSelect";
 import { formatRemaining } from "@/utils/format";
 import {
@@ -180,7 +184,9 @@ export default function MutePage() {
 				}
 			>
 				{mutesLoading ? (
-					<span className="border-primary border-t-primary m-4 block size-5 animate-spin rounded-full border-2" />
+					<LoadingRegion label="正在加载禁言列表">
+						<SkeletonTableRows rows={4} cols={6} />
+					</LoadingRegion>
 				) : (mutes?.length || 0) === 0 ? (
 					<div className="border-border/60 bg-muted/20 text-muted-foreground m-4 rounded-lg border border-dashed py-10 text-center text-sm">
 						暂无禁言记录
