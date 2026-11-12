@@ -180,13 +180,42 @@ w.OnClose(func(e *mygo.CloseEvent) {
 - **无卡片背景**（不做半透明底，不做毛玻璃）
 - **麦克风图标用内嵌 SVG**：`ui.MustParseSVG(...)` 常量 + `ui.Icon(c, mic)`。`ui.Icon` 跟随祖先的 `TextColor`（已核实），所以静音/未静音只改 `TextColor`，不需要两套图标。SVG 路径取自 lucide-react 的 `mic` / `mic-off`（与 Web 端图标同源），24×24 viewBox、`stroke="currentColor"`。
 - 头像 16px 圆形：有图显示图，无图/加载中/失败显示**首字 + 渐变圆**（与 Web 端 `components/common/avatar.tsx` 的 fallback 一致）
-- 行高 22，内边距 4，窗口宽 200
-- **高度随人数变化**：`height = 8 + min(n, 12) × 22`，成员变化时调 `win.SetContentSize(200, h)`。人少时窗口就小，不挡游戏
+- 行高 22，内边距 4，窗口宽 200（**基准值，实际按缩放系数放大，见下**）
+- **高度随人数变化**：`height = 8 + min(n, 12) × 22`（基准值），成员变化时调 `win.SetContentSize`
 - 超过 12 人：显示前 11 行 + 一行 `+N`（穿透窗口里滚动没有意义，不实现滚动）
 - 排序：说话人排前，其余保持原序（沿用现有逻辑）
 - 成员为空时窗口隐藏（而不是画一个空窗口）
 
 **明确不做**：说话状态动效（HUD 是余光看的，动效是干扰）、房间名（已在房里，是噪音）、卡片背景。
+
+### 3a. 屏幕自适应缩放
+
+HUD 的尺寸是 DIPs，在高分屏上不会模糊（mygo 原生 UI 按 `backingScaleFactor` 以物理像素渲染）。但**逻辑分辨率不同**：1080p 屏的逻辑宽度是 1920，4K 屏在 100% 缩放下是 3840——同样 12px 的字，在 4K 屏上占的视觉比例只有一半，小到看不见。
+
+**用 `Context.SetZoom(z)` 缩放**，不手算每个尺寸：
+
+> 已核实 `ui/zoom.go` 的语义：内容按 `1/z` 布局、放大 `z` 倍渲染，**文字、图标、矢量、图片都按屏幕分辨率重绘，保持矢量清晰**，不是把画面拉大的位图。`SetZoom` 取值 clamp 到 `[0.25, 5]`。
+
+**关键尺寸换算**（已核实 `ui/zoom.go` 的注释）：
+
+> 「`Window.SetContentSize` 和 `Window.ContentSize` 是**窗口的 DIPs**，是内容 DIPs 的 z 倍。」
+
+所以窗口尺寸必须是 `hudHeight(n) * z`，而视图内部仍用基准值布局。这是最容易写错的地方。
+
+**z 的取值**：默认按覆盖层窗口所在显示器的**逻辑分辨率**自动决定，用户可在设置页手动覆盖。
+
+| 逻辑宽度 | 自动 z |
+|---|---|
+| ≤ 1920 | 1.0 |
+| ≤ 2560 | 1.25 |
+| ≤ 3440 | 1.35 |
+| > 3440 | 1.5 |
+
+显示器逻辑宽度取 `mygo.Screen.DisplayNearestPoint(windowPos).Bounds.Width`。已核实 macOS 的 `NSScreen.frame` 返回的是**逻辑点（DIPs）**而非物理像素，所以 `Bounds.Width` 直接可用，不需要再除以 `ScaleFactor`。
+
+**手动覆盖**：`OverlayConfig` 加 `scale float64` 字段，`0` 表示自动（默认）。设置页给一个「HUD 大小」下拉（自动 / 80% / 100% / 125% / 150%）。用户改动时立即调 `SetZoom` 并重算窗口尺寸。
+
+**显示器变化时重算**：拖动 HUD 到另一块屏，逻辑分辨率变了，`z` 要跟着变。用 `mygo.Screen.OnDisplaysChanged(...)`（已核实存在）重新求值并 `SetZoom` + `SetContentSize`。
 
 > **为什么窗口尺寸要手动维护**：已核实 `fit` 仅在 `opts.Content == nil && opts.FitContent` 时挂载，且 `connectFit` 只对 flyout 调用。原生 UI 窗口不会自动撑高，必须自己 `SetContentSize`。
 
