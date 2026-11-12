@@ -66,6 +66,8 @@ interface WorkspaceUiState {
 	chatHeight: number;
 	/** 成员侧栏是否可见 */
 	membersOpen: boolean;
+	/** 文字聊天区是否全屏（铺满整个主工作区，暂时让出语音舞台） */
+	chatFullscreen: boolean;
 	/**
 	 * 「请回到语音视图」的请求序号。
 	 * 从其它页面点左下状态条时自增，移动端据此重新展开舞台
@@ -79,6 +81,7 @@ interface WorkspaceUiState {
 	toggleChat: () => void;
 	setChatOpen: (open: boolean) => void;
 	setChatHeight: (height: number) => void;
+	toggleChatFullscreen: () => void;
 	toggleMembers: () => void;
 }
 
@@ -88,6 +91,7 @@ export const useWorkspaceUiStore = create<WorkspaceUiState>((set) => ({
 	chatOpen: false,
 	chatHeight: loadChatHeight(),
 	membersOpen: loadMembersOpen(),
+	chatFullscreen: false,
 	voiceFocusNonce: 0,
 	showVoice: () => set({ stage: "voice" }),
 	requestVoiceView: () =>
@@ -95,7 +99,10 @@ export const useWorkspaceUiStore = create<WorkspaceUiState>((set) => ({
 	// 选中文字频道时确保聊天区是展开的，保持语音 + 聊天同屏
 	showText: () => set({ stage: "text", chatOpen: true }),
 	toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
-	setChatOpen: (open) => set({ chatOpen: open }),
+	setChatOpen: (open) =>
+		set(open ? { chatOpen: true } : { chatOpen: false, chatFullscreen: false }),
+	toggleChatFullscreen: () =>
+		set((s) => ({ chatFullscreen: !s.chatFullscreen })),
 	setChatHeight: (height) => {
 		set({ chatHeight: height });
 		try {

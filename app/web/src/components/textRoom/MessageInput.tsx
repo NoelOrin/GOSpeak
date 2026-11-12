@@ -1,11 +1,19 @@
 import { toastActionError } from "@/utils/toast";
-import { CornerDownRight, Plus, Send, Smile, X } from "lucide-react";
+import {
+	CornerDownLeft,
+	CornerDownRight,
+	CirclePlus,
+	Maximize2,
+	Smile,
+	X,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import { useTypingReporter } from "@/hooks/useTypingReporter";
 import { useUpload } from "@/hooks/useUpload";
 import { chatStore, useChatStore } from "@/stores/chatStore";
 import { useSocketStore } from "@/stores/socketStore";
 import { useTextRoomUiStore } from "@/stores/textRoomUiStore";
+import { useWorkspaceUiStore } from "@/stores/workspaceUiStore";
 
 interface UploadingFile {
 	uploadId: string;
@@ -28,6 +36,10 @@ export default function MessageInput() {
 	const setReplyTo = useTextRoomUiStore((s) => s.setReplyTo);
 	const roomName = useChatStore((s) => s.textRoomName);
 	const domainUUID = useChatStore((s) => s.textRoomDomainUUID);
+	const chatFullscreen = useWorkspaceUiStore((s) => s.chatFullscreen);
+	const toggleChatFullscreen = useWorkspaceUiStore(
+		(s) => s.toggleChatFullscreen,
+	);
 	const { notify, stop } = useTypingReporter(roomName, domainUUID);
 
 	const members = (() => {
@@ -181,10 +193,13 @@ export default function MessageInput() {
 		if (fileInputRef.current) fileInputRef.current.value = "";
 	}
 
+	const iconBtn =
+		"ds-icon-btn size-8 text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
+
 	return (
 		<div
 			role="region"
-			className="bg-card relative shrink-0 px-4 pt-1 pb-6"
+			className="border-border bg-card relative shrink-0 border-t px-4 pt-2 pb-3"
 			onDragOver={(e) => e.preventDefault()}
 			onDrop={(e) => {
 				e.preventDefault();
@@ -192,7 +207,7 @@ export default function MessageInput() {
 			}}
 		>
 			{mentionOpen && mentionCandidates().length > 0 && (
-				<div className="bg-card border-border absolute bottom-full left-4 z-20 mb-2 w-56 overflow-hidden rounded-lg border shadow-xl">
+				<div className="bg-popover border-border absolute bottom-full left-4 z-20 mb-2 w-56 overflow-hidden rounded-lg border shadow-xl">
 					{mentionCandidates().map((name, index) => (
 						<button
 							key={name}
@@ -212,7 +227,7 @@ export default function MessageInput() {
 					{uploadingFiles.map((file) => (
 						<div
 							key={file.uploadId}
-							className="bg-sunken text-foreground flex items-center gap-2 rounded-t-lg px-4 py-2 text-xs"
+							className="text-muted-foreground flex items-center gap-2 px-1 py-1 text-xs"
 						>
 							<span className="border-border text-foreground size-3 animate-spin rounded-full border-2 border-t-transparent" />
 							<span className="min-w-0 flex-1 truncate">{file.name}</span>
@@ -223,17 +238,14 @@ export default function MessageInput() {
 			)}
 
 			{replyTarget && (
-				<div className="bg-sunken text-foreground flex items-center gap-2 rounded-t-lg px-4 py-2 text-xs">
-					<CornerDownRight
-						size={14}
-						className="text-muted-foreground shrink-0"
-					/>
+				<div className="text-muted-foreground mb-1 flex items-center gap-2 px-1 text-xs">
+					<CornerDownRight size={14} className="shrink-0" />
 					<span className="truncate">
 						{threadParent ? "回复到线程" : "回复中..."}
 					</span>
 					<button
 						type="button"
-						className="text-muted-foreground hover:text-foreground ml-auto shrink-0 cursor-pointer transition-colors"
+						className="hover:text-foreground ml-auto shrink-0 cursor-pointer transition-colors"
 						onClick={() => setReplyTo(null)}
 						aria-label="取消回复"
 					>
@@ -242,55 +254,64 @@ export default function MessageInput() {
 				</div>
 			)}
 
-			<div
-				className={`bg-muted flex items-center gap-1 px-2 ${replyTarget || uploadingFiles.length > 0 ? "rounded-b-lg" : "rounded-lg"}`}
-			>
-				<button
-					type="button"
-					className="text-muted-foreground hover:text-foreground flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-sm transition-colors"
-					title="上传附件"
-					disabled={uploading}
-					onClick={() => fileInputRef.current?.click()}
-				>
-					{uploading ? (
-						<span className="border-border text-foreground size-4 animate-spin rounded-full border-2 border-t-transparent" />
-					) : (
-						<Plus size={20} />
-					)}
-				</button>
-
+			<div className="flex items-end gap-2">
 				<textarea
 					ref={textareaRef}
 					value={content}
 					onInput={handleInput}
 					onKeyDown={handleKeyDown}
 					onBlur={stop}
-					placeholder={`发送消息到 #${roomName ?? "文字频道"}`}
+					placeholder={`发送至频道 ${roomName ?? "文字频道"}`}
 					disabled={false}
-					className="text-foreground placeholder:text-muted-foreground max-h-36 min-h-[44px] w-full flex-1 resize-none bg-transparent px-1 py-3 text-sm leading-5 outline-none disabled:cursor-not-allowed disabled:opacity-50"
+					className="text-foreground placeholder:text-faint-foreground max-h-36 min-h-[36px] w-full flex-1 resize-none bg-transparent py-2 text-sm leading-5 outline-none disabled:cursor-not-allowed disabled:opacity-50"
 					rows={1}
 				/>
 
-				<button
-					type="button"
-					className="text-muted-foreground hover:text-foreground flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-sm transition-colors"
-					title="插入表情"
-					onClick={() => {
-						setContent((prev) => `${prev}😊`);
-						textareaRef.current?.focus();
-					}}
-				>
-					<Smile size={20} />
-				</button>
-				<button
-					type="button"
-					className="text-foreground hover:text-bg-primary flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-sm transition-colors disabled:pointer-events-none disabled:opacity-30"
-					title="发送"
-					disabled={false || !content.trim() || uploading}
-					onClick={handleSend}
-				>
-					<Send size={20} />
-				</button>
+				<div className="flex shrink-0 items-center gap-0.5 pb-1">
+					<button
+						type="button"
+						className={iconBtn}
+						title="发送"
+						disabled={!content.trim() || uploading}
+						onClick={handleSend}
+					>
+						<CornerDownLeft size={20} />
+					</button>
+					<button
+						type="button"
+						className={iconBtn}
+						title="插入表情"
+						onClick={() => {
+							setContent((prev) => `${prev}😊`);
+							textareaRef.current?.focus();
+						}}
+					>
+						<Smile size={20} />
+					</button>
+					<button
+						type="button"
+						className={iconBtn}
+						title="上传附件"
+						disabled={uploading}
+						onClick={() => fileInputRef.current?.click()}
+					>
+						{uploading ? (
+							<span className="border-border border-t-foreground size-4 animate-spin rounded-full border-2" />
+						) : (
+							<CirclePlus size={20} />
+						)}
+					</button>
+					<button
+						type="button"
+						className={iconBtn}
+						data-active={chatFullscreen}
+						title={chatFullscreen ? "退出全屏" : "全屏"}
+						aria-pressed={chatFullscreen}
+						onClick={toggleChatFullscreen}
+					>
+						<Maximize2 size={20} />
+					</button>
+				</div>
 			</div>
 
 			<input
