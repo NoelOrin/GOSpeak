@@ -2,6 +2,7 @@ import { useSocketStore } from "@/stores/socketStore";
 import { useUserStore } from "@/stores/userStore";
 import { useState } from "react";
 import Avatar from "@/components/common/avatar";
+import { LoadingRegion, SkeletonListRows } from "@/components/common/Skeletons";
 
 interface MemberSidebarProps {
 	onStartChat: (identity: string, displayName: string) => void;
@@ -35,7 +36,11 @@ export default function MemberSidebar({ onStartChat }: MemberSidebarProps) {
 				服务器成员 ({roomMembers.length})
 			</div>
 			<div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
-				{sortedMembers.length > 0 ? (
+				{!connected && sortedMembers.length === 0 ? (
+					<LoadingRegion label="正在加载成员">
+						<SkeletonListRows rows={6} />
+					</LoadingRegion>
+				) : sortedMembers.length > 0 ? (
 					sortedMembers.map((member) => (
 						<button
 							key={member.identity}

@@ -1,8 +1,9 @@
-import { Button, toast } from "@gospeak/components";
+import { Button, Skeleton, toast } from "@gospeak/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { sendEmailCode } from "@/api/email";
+import { LoadingRegion } from "@/components/common/Skeletons";
 import {
 	cancelJoinRequest,
 	getJoinRequest,
@@ -204,10 +205,14 @@ export function InviteLandingPage() {
 				</div>
 
 				{phase === "loading" && (
-					<div className="flex flex-col items-center gap-3 py-10">
-						<Loader2 className="text-muted-foreground size-6 animate-spin" />
-						<p className="text-muted-foreground text-sm">正在打开邀请…</p>
-					</div>
+					<LoadingRegion label="正在打开邀请">
+						<div className="flex flex-col gap-3 py-2">
+							<Skeleton className="h-5 w-32" />
+							<Skeleton className="h-4 w-full" />
+							<Skeleton className="h-4 w-2/3" />
+							<Skeleton className="mt-2 h-10 w-full rounded-sm" />
+						</div>
+					</LoadingRegion>
 				)}
 
 				{phase === "error" && (
