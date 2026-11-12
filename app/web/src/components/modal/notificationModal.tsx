@@ -59,7 +59,7 @@ export default function NotificationModal({
 			>
 				<div className="border-border flex items-center justify-between border-b px-4 py-3">
 					<div className="flex items-center gap-2">
-						<Bell size={18} />
+						<Bell size={20} />
 						<DialogTitle className="text-base font-semibold">通知</DialogTitle>
 					</div>
 					<button
