@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect } from "react";
 import OptionSquare from "@/components/common/optionSquare";
+import { LoadingRegion, SkeletonListRows } from "@/components/common/Skeletons";
 import DomainIcon from "@/components/domain/DomainIcon";
 import { firstAccessibleManagePath } from "@/components/manage/manageNav";
 import { getMyDomainsDetailed } from "@/api/domain";
@@ -116,7 +117,9 @@ export default function Sidebar({
 					)}
 					<div className="bg-border my-1 h-px w-full shrink-0" />
 					{isLoading ? (
-						<span className="border-primary border-t-primary my-2 size-5 animate-spin rounded-full border-2" />
+						<LoadingRegion label="正在加载域">
+							<SkeletonListRows rows={4} className="w-full" />
+						</LoadingRegion>
 					) : (
 						(domains ?? []).map((domain) => (
 							<DomainIcon

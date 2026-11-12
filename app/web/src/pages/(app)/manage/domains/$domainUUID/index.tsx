@@ -1,4 +1,5 @@
-import { toast } from "@gospeak/components";
+import { Skeleton, toast } from "@gospeak/components";
+import { LoadingRegion } from "@/components/common/Skeletons";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, CirclePlus, Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -779,9 +780,13 @@ function RouteComponent() {
 					</div>
 				)}
 				{!domain && !domainError && (
-					<div className="flex justify-center py-16">
-						<span className="border-primary border-t-primary size-6 animate-spin rounded-full border-2" />
-					</div>
+					<LoadingRegion label="正在加载域">
+						<div className="flex flex-col gap-4 p-2">
+							<Skeleton className="h-8 w-56" />
+							<Skeleton className="h-28 w-full rounded-lg" />
+							<Skeleton className="h-28 w-full rounded-lg" />
+						</div>
+					</LoadingRegion>
 				)}
 			</ManagePage>
 

@@ -1,4 +1,4 @@
-import { Slider } from "@gospeak/components";
+import { Skeleton, Slider } from "@gospeak/components";
 import { clsx } from "clsx";
 import { Ellipsis, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -226,7 +226,7 @@ function JoinStatus({
 				</>
 			) : (
 				<>
-					<span className="border-primary size-5 animate-spin rounded-full border-2 border-t-transparent" />
+					<Skeleton className="h-5 w-40" />
 					<div className="text-muted-foreground text-sm">{loadingLabel}</div>
 				</>
 			)}
