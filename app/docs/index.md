@@ -45,3 +45,31 @@ features:
     title: 权限与认证
     details: 完整的角色权限体系，支持 JWT 与 OAuth2（GitHub、Google、QQ）。
 ---
+
+## 界面预览
+
+<div class="screenshot-hero">
+  <img src="/screenshots/room.png" alt="语音房间：频道树、发言检测、成员面板与逐人音量" />
+  <p>语音房间 — 频道树、实时发言检测、成员面板与逐人音量</p>
+</div>
+
+<div class="screenshot-pair">
+  <figure>
+    <img src="/screenshots/login.png" alt="登录页" />
+    <figcaption>登录页 — 独立部署，无第三方鉴权依赖</figcaption>
+  </figure>
+  <figure>
+    <img src="/screenshots/settings-voice.png" alt="语音设置" />
+    <figcaption>语音设置 — 进房默认静音、提示音与本机音量</figcaption>
+  </figure>
+</div>
+
+<style>
+.screenshot-hero { margin: 24px 0 32px; }
+.screenshot-hero img { width: 100%; border-radius: 10px; border: 1px solid var(--vp-c-divider); }
+.screenshot-hero p { margin-top: 10px; text-align: center; color: var(--vp-c-text-2); font-size: 14px; }
+.screenshot-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.screenshot-pair figure { margin: 0; }
+.screenshot-pair img { width: 100%; border-radius: 10px; border: 1px solid var(--vp-c-divider); }
+.screenshot-pair figcaption { margin-top: 8px; text-align: center; color: var(--vp-c-text-2); font-size: 13px; }
+</style>
