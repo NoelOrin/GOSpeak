@@ -24,7 +24,7 @@ export interface OverlaySnapshot {
 }
 
 /** 覆盖层显示策略。 */
-export type OverlayPolicy = "manual" | "auto";
+export type OverlayPolicy = "manual" | "auto" | "always";
 
 /**
  * 持久化的覆盖层配置（宿主存于用户数据目录 overlay-config.json）。
@@ -73,8 +73,6 @@ export interface Overlay {
 	pushState(snapshot: OverlaySnapshot): Promise<void>;
 	/** Request the last pushed snapshot (overlay window bootstrap). */
 	getState(): Promise<OverlaySnapshot | null>;
-	/** Subscribe to relayed snapshots from the main window. */
-	onState(handler: (snapshot: OverlaySnapshot) => void): () => void;
 }
 
 const noopUnsub = () => {};
@@ -129,9 +127,6 @@ const webFallback: Overlay = {
 	async getState() {
 		return null;
 	},
-	onState() {
-		return noopUnsub;
-	},
 };
 
 // 命令名由 command("Overlay", "PushState") 构造，与 app/desktop/overlay.go 中
@@ -166,8 +161,6 @@ const native: Overlay = {
 		bridge.invoke(command("Overlay", "PushState"), snapshot),
 	getState: () =>
 		bridge.invoke<OverlaySnapshot | null>(command("Overlay", "GetState")),
-	onState: (handler) =>
-		bridge.listen("overlay:state", (s) => handler(s as OverlaySnapshot)),
 };
 
 /** Returns native overlay controls inside the desktop host, web fallback otherwise. */

@@ -36,12 +36,16 @@ type OverlaySnapshot struct {
 // Overlay display policy.
 //
 //   - "manual": the overlay is only shown/hidden explicitly (hotkey, settings).
-//   - "auto":   shown only while a full-screen app is in front AND the main
-//     window is connected to a voice room; the hotkey can still override the
+//   - "auto":   shown while the main window is connected to a voice room AND
+//     GOSpeak is not the active app — you are in a game, a browser or anything
+//     else and want to see who talks. The hotkey can still override the
 //     decision until the underlying condition flips.
+//   - "always": shown while connected, whether GOSpeak is active or not, for a
+//     game on another display.
 const (
 	overlayPolicyManual = "manual"
 	overlayPolicyAuto   = "auto"
+	overlayPolicyAlways = "always"
 )
 
 // OverlayConfig is the persisted, UI-facing overlay configuration. Keep the
@@ -290,7 +294,7 @@ func (Overlay) GetLockHotkey() string {
 
 // SetPolicy switches the display policy ("manual" | "auto").
 func (Overlay) SetPolicy(policy string) {
-	if policy != overlayPolicyManual && policy != overlayPolicyAuto {
+	if policy != overlayPolicyManual && policy != overlayPolicyAuto && policy != overlayPolicyAlways {
 		return
 	}
 	overlayCfg.mu.Lock()
@@ -436,11 +440,17 @@ func setOverlayLocked(locked bool) {
 // runs whenever inputs change (enabled/policy/snapshot/app activation).
 func evaluateOverlayPolicy() {
 	overlayCfg.mu.Lock()
-	if !overlayCfg.enabled || overlayCfg.policy != overlayPolicyAuto {
+	if !overlayCfg.enabled || overlayCfg.policy == overlayPolicyManual {
 		overlayCfg.mu.Unlock()
 		return
 	}
-	want := overlayCfg.snap.Connected
+	policy := overlayCfg.policy
+	connected := overlayCfg.snap.Connected
+	overlayCfg.mu.Unlock()
+
+	want := policyWants(policy, connected, overlayAppActive())
+
+	overlayCfg.mu.Lock()
 	if want != overlayCfg.lastAutoWant {
 		// The underlying condition flipped: drop the user's stale override.
 		overlayCfg.lastAutoWant = want
@@ -455,6 +465,11 @@ func evaluateOverlayPolicy() {
 	overlayCfg.mu.Unlock()
 	setOverlayVisible(target)
 }
+
+// overlayAppActive reports whether GOSpeak is the app the user is in. It is a
+// variable so tests can answer without a running app: mygo's App.IsActive
+// waits for the main loop.
+var overlayAppActive = func() bool { return mygo.App.IsActive() }
 
 // registerOverlayHotkeys (re)binds the two global shortcuts to the persisted
 // accelerators. Must run after the app is ready; failures are logged and
@@ -594,7 +609,7 @@ func loadOverlayConfig() {
 	if cfg.Scale >= 0 && cfg.Scale <= 2 {
 		overlayCfg.scale = cfg.Scale
 	}
-	if cfg.Policy == overlayPolicyManual || cfg.Policy == overlayPolicyAuto {
+	if cfg.Policy == overlayPolicyManual || cfg.Policy == overlayPolicyAuto || cfg.Policy == overlayPolicyAlways {
 		overlayCfg.policy = cfg.Policy
 	}
 	overlayCfg.mu.Unlock()
@@ -704,6 +719,10 @@ func initOverlay() {
 		ensureOverlayWindow()
 	}
 	registerOverlayHotkeys()
+	// "auto" shows the overlay while GOSpeak is not the active app, so the app
+	// becoming active or inactive decides it, without polling.
+	mygo.App.OnDidBecomeActive(func() { evaluateOverlayPolicy() })
+	mygo.App.OnDidResignActive(func() { evaluateOverlayPolicy() })
 	// Moving the overlay to a display of another resolution changes its zoom.
 	mygo.Screen.OnDisplaysChanged(func() {
 		if w := overlayWindow(); w != nil {
