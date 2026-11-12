@@ -57,6 +57,7 @@ func orderMembers(members []OverlayMember, speaking map[string]bool) []OverlayMe
 func hudView(s *hudState) func(*ui.Context) {
 	return func(c *ui.Context) {
 		t := c.Theme()
+		c.SetZoom(float32(hudScale()))
 		c.Root().Background(ui.Transparent)
 		if len(s.members) == 0 {
 			return

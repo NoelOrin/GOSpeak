@@ -38,6 +38,10 @@ export interface OverlayConfig {
 	/** 锁定/解锁拖拽的全局快捷键；空串 = 未设置。 */
 	lockHotkey: string;
 	policy: OverlayPolicy;
+	/** 防录屏：开启后直播/录屏/截图看不到覆盖层（仅 macOS / Windows 生效）。 */
+	contentProtection: boolean;
+	/** HUD 缩放；0 = 按显示器分辨率自动决定。 */
+	scale: number;
 }
 
 export interface Overlay {
@@ -50,6 +54,8 @@ export interface Overlay {
 	setHotkey(hotkey: string): Promise<void>;
 	setLockHotkey(hotkey: string): Promise<void>;
 	setPolicy(policy: OverlayPolicy): Promise<void>;
+	setContentProtection(value: boolean): Promise<void>;
+	setScale(value: number): Promise<void>;
 	setLocked(locked: boolean): Promise<void>;
 	getLocked(): Promise<boolean>;
 	isFullscreenAppInFront(): Promise<boolean>;
@@ -87,6 +93,8 @@ const webFallback: Overlay = {
 	async setHotkey() {},
 	async setLockHotkey() {},
 	async setPolicy() {},
+	async setContentProtection() {},
+	async setScale() {},
 	async setLocked() {},
 	async getLocked() {
 		return true;
@@ -101,6 +109,8 @@ const webFallback: Overlay = {
 			hotkey: "",
 			lockHotkey: "",
 			policy: "manual",
+			contentProtection: false,
+			scale: 0,
 		};
 	},
 	async isVisible() {
@@ -136,6 +146,9 @@ const native: Overlay = {
 	setHotkey: (h) => bridge.invoke(command("Overlay", "SetHotkey"), h),
 	setLockHotkey: (h) => bridge.invoke(command("Overlay", "SetLockHotkey"), h),
 	setPolicy: (p) => bridge.invoke(command("Overlay", "SetPolicy"), p),
+	setContentProtection: (v) =>
+		bridge.invoke(command("Overlay", "SetContentProtection"), v),
+	setScale: (v) => bridge.invoke(command("Overlay", "SetScale"), v),
 	setLocked: (v) => bridge.invoke(command("Overlay", "SetLocked"), v),
 	getLocked: () => bridge.invoke<boolean>(command("Overlay", "GetLocked")),
 	isFullscreenAppInFront: () =>

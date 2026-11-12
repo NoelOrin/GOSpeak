@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -101,4 +102,11 @@ func TestHUDThemeShadows(t *testing.T) {
 	if !tt.HasText("阿伟") {
 		t.Fatal("light frame does not show the member")
 	}
+}
+
+// TestMain keeps the HUD tests off mygo's Screen queries, which wait for the
+// main loop that a unit test never runs.
+func TestMain(m *testing.M) {
+	overlayDisplayWidth = func() int { return 1920 }
+	os.Exit(m.Run())
 }

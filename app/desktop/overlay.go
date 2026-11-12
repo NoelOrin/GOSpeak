@@ -55,6 +55,8 @@ type OverlayConfig struct {
 	// ContentProtection keeps the overlay out of screenshots and screen
 	// recordings (macOS and Windows; Linux has no implementation).
 	ContentProtection bool `json:"contentProtection"`
+	// Scale is the HUD zoom; 0 picks one from the display's resolution.
+	Scale float64 `json:"scale"`
 }
 
 // overlayCfg holds the floating game-overlay window's configuration and the
@@ -70,6 +72,8 @@ var overlayCfg = struct {
 	lockHotkey        string
 	policy            string
 	contentProtection bool
+	// scale is the user's HUD zoom override; 0 picks the display's.
+	scale float64
 	visible           bool
 	locked            bool
 	// manualOverride is the hotkey's explicit show/hide in "auto" policy; it
@@ -229,6 +233,26 @@ func (Overlay) SetContentProtection(v bool) {
 	}
 }
 
+// SetScale sets the HUD zoom, 0 to pick one from the display's resolution.
+func (Overlay) SetScale(v float64) {
+	if v < 0 {
+		v = 0
+	}
+	if v > 2 {
+		v = 2
+	}
+	overlayCfg.mu.Lock()
+	overlayCfg.scale = v
+	members := overlayCfg.snap.Members
+	overlayCfg.mu.Unlock()
+	scheduleOverlayConfigSave()
+	if w := overlayWindow(); w != nil {
+		width, height := hudWindowSize(len(members))
+		w.SetContentSize(width, height)
+		w.Invalidate()
+	}
+}
+
 // SetHotkey sets the global keyboard shortcut that toggles the overlay.
 // Accepts mygo accelerator syntax, e.g. "Ctrl+Shift+O".
 func (Overlay) SetHotkey(hotkey string) {
@@ -319,6 +343,7 @@ func (Overlay) GetConfig() OverlayConfig {
 		LockHotkey:        overlayCfg.lockHotkey,
 		Policy:            overlayCfg.policy,
 		ContentProtection: overlayCfg.contentProtection,
+		Scale:             overlayCfg.scale,
 	}
 }
 
@@ -344,7 +369,8 @@ func (Overlay) PushState(snapshot OverlaySnapshot) {
 	overlayHUD.speaking = speaking
 
 	if w := overlayWindow(); w != nil {
-		w.SetContentSize(hudWidth, hudHeight(len(snapshot.Members)))
+		width, height := hudWindowSize(len(snapshot.Members))
+		w.SetContentSize(width, height)
 		w.Invalidate()
 	}
 	// Connection changes affect the auto policy's decision immediately.
@@ -521,6 +547,7 @@ func writeOverlayConfig() {
 		Hotkey:            overlayCfg.hotkey,
 		LockHotkey:        overlayCfg.lockHotkey,
 		Policy:            overlayCfg.policy,
+		Scale:             overlayCfg.scale,
 		ContentProtection: overlayCfg.contentProtection,
 	}
 	overlayCfg.mu.Unlock()
@@ -564,6 +591,9 @@ func loadOverlayConfig() {
 	overlayCfg.hotkey = cfg.Hotkey
 	overlayCfg.lockHotkey = cfg.LockHotkey
 	overlayCfg.contentProtection = cfg.ContentProtection
+	if cfg.Scale >= 0 && cfg.Scale <= 2 {
+		overlayCfg.scale = cfg.Scale
+	}
 	if cfg.Policy == overlayPolicyManual || cfg.Policy == overlayPolicyAuto {
 		overlayCfg.policy = cfg.Policy
 	}
@@ -594,6 +624,7 @@ func createOverlayWindow() *mygo.Window {
 	protect := overlayCfg.contentProtection
 	overlayCfg.mu.Unlock()
 
+	width, height := hudWindowSize(0)
 	w := mygo.NewWindow(mygo.WindowOptions{
 		Title:   "GOSpeak Overlay " + version,
 		Content: ui.View(hudView(overlayHUD)),
@@ -608,8 +639,8 @@ func createOverlayWindow() *mygo.Window {
 		SkipTaskbar:   true,
 		DisableResize: true,
 		Opacity:       opacity,
-		Width:         hudWidth,
-		Height:        hudHeight(0),
+		Width:         width,
+		Height:        height,
 		// X/Y 均非零时不居中（mygo 在 X、Y 同时为零时才自动居中）。
 		X:        24,
 		Y:        24,
@@ -673,4 +704,15 @@ func initOverlay() {
 		ensureOverlayWindow()
 	}
 	registerOverlayHotkeys()
+	// Moving the overlay to a display of another resolution changes its zoom.
+	mygo.Screen.OnDisplaysChanged(func() {
+		if w := overlayWindow(); w != nil {
+			overlayCfg.mu.Lock()
+			n := len(overlayCfg.snap.Members)
+			overlayCfg.mu.Unlock()
+			width, height := hudWindowSize(n)
+			w.SetContentSize(width, height)
+			w.Invalidate()
+		}
+	})
 }
