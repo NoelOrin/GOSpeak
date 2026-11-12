@@ -38,7 +38,7 @@ type errAck struct {
 }
 
 func TestHandlerRegistry_Dispatch_NoAck(t *testing.T) {
-	r := NewHandlerRegistry()
+	r := newPermissiveRegistry()
 	called := false
 	r.Handle("event:noack", func(c ClientMessenger, data string) {
 		called = true
@@ -52,7 +52,7 @@ func TestHandlerRegistry_Dispatch_NoAck(t *testing.T) {
 }
 
 func TestHandlerRegistry_Dispatch_Ack(t *testing.T) {
-	r := NewHandlerRegistry()
+	r := newPermissiveRegistry()
 	r.HandleAck("event:ack", func(c ClientMessenger, data string) (string, error) {
 		return "ok", nil
 	})
@@ -73,7 +73,7 @@ func TestHandlerRegistry_Dispatch_Ack(t *testing.T) {
 }
 
 func TestHandlerRegistry_Dispatch_UnknownEvent(t *testing.T) {
-	r := NewHandlerRegistry()
+	r := newPermissiveRegistry()
 	tc := &testClient{id: "c1"}
 
 	r.Dispatch(tc, Message{ID: "req-1", Event: "unknown:event", Data: []byte(`{}`)})
@@ -91,7 +91,7 @@ func TestHandlerRegistry_Dispatch_UnknownEvent(t *testing.T) {
 }
 
 func TestHandlerRegistry_Dispatch_PanicRecover(t *testing.T) {
-	r := NewHandlerRegistry()
+	r := newPermissiveRegistry()
 	r.HandleAck("event:panic", func(c ClientMessenger, data string) (string, error) {
 		panic("test panic")
 	})
@@ -108,7 +108,7 @@ func TestHandlerRegistry_Dispatch_PanicRecover(t *testing.T) {
 }
 
 func TestHandlerRegistry_Dispatch_AckError(t *testing.T) {
-	r := NewHandlerRegistry()
+	r := newPermissiveRegistry()
 	r.HandleAck("event:fail", func(c ClientMessenger, data string) (string, error) {
 		return "", errors.New("something went wrong")
 	})
@@ -125,7 +125,7 @@ func TestHandlerRegistry_Dispatch_AckError(t *testing.T) {
 }
 
 func TestHandlerRegistry_Dispatch_AckError_Sanitized(t *testing.T) {
-	r := NewHandlerRegistry()
+	r := newPermissiveRegistry()
 	r.HandleAck("event:fail", func(c ClientMessenger, data string) (string, error) {
 		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, "secret sql detail")
 	})
@@ -146,7 +146,7 @@ func TestHandlerRegistry_Dispatch_AckError_Sanitized(t *testing.T) {
 }
 
 func TestHandlerRegistry_Dispatch_NullData(t *testing.T) {
-	r := NewHandlerRegistry()
+	r := newPermissiveRegistry()
 	var receivedData string
 	r.Handle("event:null", func(c ClientMessenger, data string) {
 		receivedData = data
@@ -163,7 +163,7 @@ func TestHandlerRegistry_Dispatch_NullData(t *testing.T) {
 }
 
 func TestHandlerRegistry_Dispatch_EmptyEvent(t *testing.T) {
-	r := NewHandlerRegistry()
+	r := newPermissiveRegistry()
 	tc := &testClient{id: "c1"}
 
 	r.Dispatch(tc, Message{ID: "req-1", Event: "", Data: []byte(`{}`)})

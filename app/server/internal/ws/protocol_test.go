@@ -26,7 +26,7 @@ func (c *protoClient) SendErrorACK(id, event string, code int, msg string) {
 func (c *protoClient) Close() {}
 
 func TestProtocol_Dispatch_AckResponse(t *testing.T) {
-	reg := NewHandlerRegistry()
+	reg := newPermissiveRegistry()
 	var called bool
 	reg.HandleAck("room:join", func(c ClientMessenger, data string) (string, error) {
 		called = true
@@ -49,7 +49,7 @@ func TestProtocol_Dispatch_AckResponse(t *testing.T) {
 }
 
 func TestProtocol_Dispatch_NoAck(t *testing.T) {
-	reg := NewHandlerRegistry()
+	reg := newPermissiveRegistry()
 	reg.Handle("room:updated", func(c ClientMessenger, data string) {})
 
 	pc := &protoClient{id: "c1"}
@@ -64,7 +64,7 @@ func TestProtocol_Dispatch_NoAck(t *testing.T) {
 }
 
 func TestProtocol_Dispatch_ErrorAck(t *testing.T) {
-	reg := NewHandlerRegistry()
+	reg := newPermissiveRegistry()
 	reg.HandleAck("room:create", func(c ClientMessenger, data string) (string, error) {
 		return "", &pkg.AppError{Code: pkg.ALREADY_EXISTS, Message: "room already exists"}
 	})
@@ -82,7 +82,7 @@ func TestProtocol_Dispatch_ErrorAck(t *testing.T) {
 }
 
 func TestProtocol_Dispatch_UnknownEvent(t *testing.T) {
-	reg := NewHandlerRegistry()
+	reg := newPermissiveRegistry()
 	pc := &protoClient{id: "c1"}
 
 	reg.Dispatch(pc, Message{
@@ -98,7 +98,7 @@ func TestProtocol_Dispatch_UnknownEvent(t *testing.T) {
 }
 
 func TestProtocol_Dispatch_NullData(t *testing.T) {
-	reg := NewHandlerRegistry()
+	reg := newPermissiveRegistry()
 	var gotData string
 	reg.Handle("event:null", func(c ClientMessenger, data string) {
 		gotData = data
