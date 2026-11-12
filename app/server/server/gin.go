@@ -165,27 +165,12 @@ func StartGin(env EnvEnum) error {
 	wsFanout := ws.NewFanout()
 	wsHandler := ws.NewHandlerRegistry()
 
-	timeout, err := time.ParseDuration(cfg.NATSConnectTimeout)
-	if err != nil || timeout <= 0 {
-		timeout = 2 * time.Second
-	}
 	deliverer := bus.NewWSDeliverer(wsFanout)
-	embeddedPort := 0
-	if cfg.NATSEmbeddedPort != "" {
-		p, err := strconv.Atoi(cfg.NATSEmbeddedPort)
-		if err != nil {
-			return fmt.Errorf("invalid NATS_EMBEDDED_PORT %q: %w", cfg.NATSEmbeddedPort, err)
-		}
-		embeddedPort = p
+	initCfg, err := eventBusInitConfig(cfg, deliverer)
+	if err != nil {
+		return err
 	}
-	eventBus, closeEventBus, err := bus.Init(bus.InitConfig{
-		Prefix:         cfg.NATSSubjectPrefix,
-		Name:           cfg.NATSName,
-		ConnectTimeout: timeout,
-		EmbeddedPort:   embeddedPort,
-		Deliverer:      deliverer,
-		WALPath:        cfg.NATSWALPath(),
-	})
+	eventBus, closeEventBus, err := bus.Init(initCfg)
 	if err != nil {
 		return fmt.Errorf("failed to init event bus: %w", err)
 	}
@@ -494,6 +479,35 @@ func StartGin(env EnvEnum) error {
 		logger.WithComponent("HTTP").Fatalf("listen error: %v", err)
 	}
 	return nil
+}
+
+// eventBusInitConfig 把进程配置映射为 bus.Init 参数。StoreDir 必须来自
+// cfg.NATStoreDirPath()：漏传时内嵌 NATS 会退回 MkdirTemp 临时目录，
+// JWT 签名密钥/黑名单/refresh-family 随重启丢失。单独抽出便于回归测试。
+func eventBusInitConfig(cfg *config.Config, deliverer bus.Deliverer) (bus.InitConfig, error) {
+	timeout, err := time.ParseDuration(cfg.NATSConnectTimeout)
+	if err != nil || timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+
+	embeddedPort := 0
+	if cfg.NATSEmbeddedPort != "" {
+		p, err := strconv.Atoi(cfg.NATSEmbeddedPort)
+		if err != nil {
+			return bus.InitConfig{}, fmt.Errorf("invalid NATS_EMBEDDED_PORT %q: %w", cfg.NATSEmbeddedPort, err)
+		}
+		embeddedPort = p
+	}
+
+	return bus.InitConfig{
+		Prefix:         cfg.NATSSubjectPrefix,
+		Name:           cfg.NATSName,
+		ConnectTimeout: timeout,
+		EmbeddedPort:   embeddedPort,
+		StoreDir:       cfg.NATStoreDirPath(),
+		Deliverer:      deliverer,
+		WALPath:        cfg.NATSWALPath(),
+	}, nil
 }
 
 // serveHTTP 按 TLS 配置选择监听方式：两者均未配置时保持明文 HTTP/1.1；
