@@ -26,9 +26,10 @@ func bannedPolicy(policy.Subject, policy.Action, string) policy.Decision {
 	}
 }
 
-// signal 层用 DB 解析出的权威域复查策略：payload 不带 domain_uuid 时，
-// 判决仍应拿到房间真实所属域，而不是空域或被伪造的域。
-func TestOnMessageSend_BannedUserRejectedByPolicy(t *testing.T) {
+// message:send 不在 signal 层重复评估策略：ws.HandlerRegistry 的 PolicyGuard
+// 已对每条上行消息判决过一次（通用入口），这里只保留房间/权限检查。
+// 该断言固定住「单点强制」契约，避免策略评估被重新加回产生重复与不一致。
+func TestOnMessageSend_DoesNotReevaluateAccessPolicy(t *testing.T) {
 	store := &mockRoomStore{rooms: []model.Room{{
 		UUID:       "uuid-text-chat",
 		Name:       "text-chat",
@@ -37,12 +38,13 @@ func TestOnMessageSend_BannedUserRejectedByPolicy(t *testing.T) {
 	}}}
 	h := newTestHub()
 	h.roomStore = store
+	h.SetDomainPermissionChecker(func(domainUUID, userUUID, permCode string) bool { return true })
 	msgSvc := &mockMessageSvc{}
 	h.SetMessageService(msgSvc)
 
-	var policyDomain string
+	evaluated := 0
 	h.SetAccessPolicy(func(sub policy.Subject, action policy.Action, domainUUID string) policy.Decision {
-		policyDomain = domainUUID
+		evaluated++
 		return bannedPolicy(sub, action, domainUUID)
 	})
 
@@ -55,18 +57,11 @@ func TestOnMessageSend_BannedUserRejectedByPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	var ackMap map[string]interface{}
-	if err := json.Unmarshal([]byte(ack), &ackMap); err != nil {
-		t.Fatalf("bad ack json: %v", err)
+	if evaluated != 0 {
+		t.Fatalf("message:send must not re-run access policy, got %d evaluations", evaluated)
 	}
-	if ackMap["error"] != "user has been banned" {
-		t.Fatalf("expected policy rejection, got %v", ackMap)
-	}
-	if msgSvc.sendCalled != 0 {
-		t.Fatalf("message service must not be called for banned user, got %d", msgSvc.sendCalled)
-	}
-	if policyDomain != "dom-1" {
-		t.Fatalf("policy must use the DB-resolved domain, got %q", policyDomain)
+	if ack == "" || msgSvc.sendCalled != 1 {
+		t.Fatalf("message must be delivered when handler-level guard allowed it: ack=%q sent=%d", ack, msgSvc.sendCalled)
 	}
 }
 

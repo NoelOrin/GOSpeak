@@ -189,8 +189,9 @@ func (h *Hub) SetDomainPermissionChecker(checker func(domainUUID, userUUID, perm
 }
 
 // SetAccessPolicy 注入传输无关策略判决（由组合根的 policy.Engine 提供）。
-// signal 层用它按「服务端解析出的真实域」复查 message/typing/private 事件，
-// 避免客户端伪造 payload 里的 domain_uuid 绕过封禁检查。
+// signal 层只在 typing / private:send 等没有其他强制入口的事件上调用它；
+// message:* 已由 ws.HandlerRegistry 的 PolicyGuard 统一判决，不在这里重复评估。
+// 当前 policy.Engine 只做身份级封禁，domainUUID 是预留参数，尚无域级规则。
 func (h *Hub) SetAccessPolicy(fn func(policy.Subject, policy.Action, string) policy.Decision) {
 	h.accessPolicy = fn
 }
@@ -204,6 +205,8 @@ func (h *Hub) ClientDomain(clientID string) string {
 }
 
 // checkWSPolicy 用权威域上下文复查策略。未注入策略时保持放行（测试/嵌入路径）。
+// 注意：当前 policy.Engine 只做身份级封禁判决，domainUUID 是预留参数，
+// 尚无域级规则，调用方不要假设域级强制已生效。
 func (h *Hub) checkWSPolicy(c ws.ClientMessenger, action policy.Action, domainUUID string) policy.Decision {
 	if h.accessPolicy == nil || c == nil || c.Claims() == nil {
 		return policy.Decision{Allowed: true, Code: pkg.SUCCESS}

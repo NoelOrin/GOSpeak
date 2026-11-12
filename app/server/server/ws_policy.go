@@ -7,10 +7,13 @@ import (
 	"GOSpeak/internal/ws"
 )
 
-// installWSPolicy 把传输无关的 policy.Engine 装配到 /ws 的三个策略执行点：
+// installWSPolicy 把传输无关的 policy.Engine 装配到 /ws 的两个策略执行点：
 //  1. 握手阶段（ConnectPolicy）——根 http.Handler 直连 Upgrader，补回 Gin 的 BanCheck；
-//  2. 每条上行消息（HandlerRegistry.PolicyGuard）——封禁不失效 JWT，必须实时判决；
-//  3. signal 层用 DB 解析出的权威域做二次判决，防止客户端伪造 domain_uuid。
+//  2. 每条上行消息（HandlerRegistry.PolicyGuard）——封禁不失效 JWT，必须实时判决。
+//
+// 注意：policy.Engine 当前只做身份级封禁判决（role == ban），action/domainUUID
+// 是预留参数，尚无域级规则。signal 层的 accessPolicy 只覆盖 typing/private:send，
+// 不构成域级强制。
 //
 // HTTP 侧由 middleware.BanCheck 调用同一个 Engine，两个通道不再有策略分叉。
 func installWSPolicy(engine *policy.Engine, registry *ws.HandlerRegistry, upgraderCfg *ws.UpgraderConfig, hub *signal.Hub) {

@@ -251,6 +251,35 @@ func (c *Client) SendErrorACK(id, event string, code int, message string) {
 	c.Send(ACK{ID: id, Event: event, Error: &ACKError{Code: code, Message: message}})
 }
 
+// SendErrorACKAndClose 先同步写出错误 ACK，再以 policy violation 关闭连接。
+// 用于封禁命中：只入队再 Close 会丢失 ACK（writeLoop 会先选中 ctx.Done()）。
+// id 为空表示该事件不需要应答，此时只带关闭原因断连。
+func (c *Client) SendErrorACKAndClose(id, event string, code int, message string) {
+	if id != "" {
+		c.writeACKSync(ACK{ID: id, Event: event, Error: &ACKError{Code: code, Message: message}})
+	}
+	c.CloseWithReason(nhooyrws.StatusPolicyViolation, "policy violation")
+}
+
+// writeACKSync 同步写一条 ACK（绕过 writeCh 队列），确保 Close 之前数据已出站。
+// 写失败说明连接已不可用，ACK 必然无法送达，交由随后的 Close 收尾。
+func (c *Client) writeACKSync(ack ACK) {
+	data, err := json.Marshal(ack)
+	if err != nil {
+		log.Printf("[ws] marshal ACK error client=%s: %v", c.id, err)
+		return
+	}
+	if c.conn == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
+	err = c.conn.Write(ctx, nhooyrws.MessageText, data)
+	cancel()
+	if err != nil {
+		log.Printf("[ws] write final ACK error client=%s: %v", c.id, err)
+	}
+}
+
 // DroppedCount 返回因发送队列满被显式降级丢弃的消息总数（统计入口）。
 func (c *Client) DroppedCount() uint64 {
 	return atomic.LoadUint64(&c.dropped)
@@ -258,11 +287,16 @@ func (c *Client) DroppedCount() uint64 {
 
 // Close 实现 ClientMessenger.Close。
 func (c *Client) Close() {
+	c.CloseWithReason(nhooyrws.StatusNormalClosure, "server closing")
+}
+
+// CloseWithReason 以指定状态码与原因关闭连接，让客户端拿到关闭原因。
+func (c *Client) CloseWithReason(code nhooyrws.StatusCode, reason string) {
 	c.setState(ConnStateClosing)
 	c.cancel()
 	c.closeClosed()
 	if c.conn != nil {
-		_ = c.conn.Close(nhooyrws.StatusNormalClosure, "server closing")
+		_ = c.conn.Close(code, reason)
 	}
 	c.setState(ConnStateClosed)
 }

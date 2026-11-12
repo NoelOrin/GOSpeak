@@ -25,3 +25,12 @@ type StatefulMessenger interface {
 	ClientMessenger
 	State() ConnState
 }
+
+// PolicyClosingMessenger 是命中封禁时的可选能力：先把错误 ACK 真正写到对端，
+// 再以 policy violation 状态码关闭连接。
+// 只入队 ACK 后立即 Close 会让 writeLoop 在 writeCh 与 ctx.Done() 之间选中后者，
+// 客户端永远收不到封禁原因。Client 实现该接口；未实现时回退为
+// SendErrorACK + Close（测试替身等场景）。
+type PolicyClosingMessenger interface {
+	SendErrorACKAndClose(id, event string, code int, message string)
+}

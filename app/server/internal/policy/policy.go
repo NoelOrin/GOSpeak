@@ -52,6 +52,7 @@ type Decision struct {
 // Engine 持有策略判决所需的业务依赖。
 // 当前策略只做身份级封禁判决（角色 ban），不需要外部依赖，
 // 保留 Engine 是为了让调用方与未来可能引入的域级策略解耦。
+// 注意：域级策略尚未实现，见 Evaluate 的说明。
 type Engine struct{}
 
 // NewEngine 构造策略引擎。
@@ -75,17 +76,19 @@ func CheckBan(sub Subject) Decision {
 	return allow()
 }
 
-// Evaluate 对 subject 在 domainUUID 下执行 action 做一次完整判决。
+// Evaluate 对 subject 做一次访问判决，供 HTTP 与 WS 两个通道共用。
 //
-// 当前策略只有身份级封禁一条规则，action 与 domainUUID 暂时不参与判决；
-// 保留完整签名是为了让 HTTP 与 WS 两个通道共用同一个调用点，
-// 将来引入域级策略时无需再改调用方。
+// 当前只有身份级封禁一条规则（role == ban），action 与 domainUUID 是预留参数，
+// 尚无任何域级规则参与判决：调用方不得假设域级强制已生效，也不得把
+// payload 里的 domain_uuid 当作已校验的域上下文。
+// 保留完整签名是为了让两个通道共用同一个调用点，将来引入域级策略时无需再改调用方。
 func (e *Engine) Evaluate(sub Subject, _ Action, _ string) Decision {
 	return CheckBan(sub)
 }
 
 // hasBanRole 在 model.HasBanRole（依赖启动期 roleCache）之外补一层字面量判定，
 // 避免未走 bootstrap 的嵌入/测试路径因缓存为空而 fail-open 放行 ban 角色。
+// User.Role 是单列角色名，不解析逗号分隔的多角色串。
 func hasBanRole(role string) bool {
 	if role == "" {
 		return false
@@ -93,10 +96,5 @@ func hasBanRole(role string) bool {
 	if model.HasBanRole(role) {
 		return true
 	}
-	for _, r := range strings.Split(role, ",") {
-		if strings.EqualFold(strings.TrimSpace(r), "ban") {
-			return true
-		}
-	}
-	return false
+	return strings.EqualFold(strings.TrimSpace(role), "ban")
 }

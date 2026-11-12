@@ -200,3 +200,18 @@ func TestValidConnStateTransition(t *testing.T) {
 		}
 	}
 }
+
+// 无 id 的封禁事件不需要 ACK，但必须仍以 policy violation 关闭连接。
+func TestClient_SendErrorACKAndClose_NoIDStillCloses(t *testing.T) {
+	c := NewTestClient("c1", nil)
+	c.SendErrorACKAndClose("", "typing", int(pkg.FORBIDDEN), "forbidden")
+
+	select {
+	case <-c.closed:
+	default:
+		t.Fatal("expected connection to be closed")
+	}
+	if len(c.writeCh) != 0 {
+		t.Fatalf("no-id event must not enqueue an ACK, got %d", len(c.writeCh))
+	}
+}
