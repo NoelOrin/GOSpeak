@@ -2,6 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,12 +63,43 @@ func (ServerConfig) GetBaseURL() string {
 	return currentBaseURL()
 }
 
+// validateBaseURL reports whether raw is acceptable as a backend base URL.
+// An empty value is valid and means "no server configured". Anything else must
+// be an absolute http(s) URL with a host; the message is shown to the user.
+func validateBaseURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid server URL: %v", err)
+	}
+	switch u.Scheme {
+	case "http", "https":
+	default:
+		return errors.New("invalid server URL: must be an absolute http(s) URL")
+	}
+	if u.Host == "" {
+		return errors.New("invalid server URL: must be an absolute http(s) URL")
+	}
+	return nil
+}
+
 // SetBaseURL persists a new backend base URL and immediately connects to it:
 // the loopback proxy target is switched and the windows reload, so the page
 // keeps a single same-origin view of the new server. An empty value clears the
 // stored URL (proxy then answers API calls with 503 until configured).
-func (ServerConfig) SetBaseURL(newURL string) {
+//
+// An invalid URL returns an error and changes nothing: the previous base URL
+// stays in memory and on disk, the proxy target and the pages are untouched.
+// The error return is what makes the TS side's rollback branch reachable —
+// mygo resolves bound calls without an error result to a fulfilled promise.
+func (ServerConfig) SetBaseURL(newURL string) error {
 	newURL = strings.TrimSpace(newURL)
+	if err := validateBaseURL(newURL); err != nil {
+		return err
+	}
 	previous := currentBaseURL()
 
 	// Persist to user data.
@@ -104,6 +138,7 @@ func (ServerConfig) SetBaseURL(newURL string) {
 		loopbackProxy.setProxyTarget(newURL)
 	}
 	reloadAllWindows()
+	return nil
 }
 
 // clearPageSessionCache drops the cached user and session expiry the web app

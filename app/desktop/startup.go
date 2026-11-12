@@ -10,6 +10,8 @@ package main
 // GOSPEAK_STARTUP_EXIT_MS=<ms> quits the app that long after launch, which
 // together with the flag above makes an unattended launch-time measurement
 // possible (`GOSPEAK_STARTUP_DEBUG=1 GOSPEAK_STARTUP_EXIT_MS=8000 ./gospeak-desktop`).
+// It has no effect unless GOSPEAK_STARTUP_DEBUG=1, so a packaged build cannot
+// be made to exit by its environment.
 
 import (
 	"fmt"
@@ -68,7 +70,12 @@ func startupProbeFrontend(w *mygo.Window) {
 }
 
 // startupScheduleAutoQuit quits after GOSPEAK_STARTUP_EXIT_MS (measurement only).
+// It is gated on GOSPEAK_STARTUP_DEBUG: a shipped build must not let the
+// environment force the app to exit.
 func startupScheduleAutoQuit() {
+	if !startupDebug() {
+		return
+	}
 	raw := os.Getenv("GOSPEAK_STARTUP_EXIT_MS")
 	if raw == "" {
 		return
