@@ -1,4 +1,4 @@
-import { toast, Button, ScrollArea } from "@gospeak/components";
+import { toast, Button, ScrollArea, Skeleton } from "@gospeak/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { CirclePlus, RotateCw } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -30,12 +30,12 @@ import { toastActionError } from "@/utils/toast";
 function RoomItemSkeleton() {
 	return (
 		<div className="flex w-full shrink-0 flex-col">
-			<div className="justify-between flex items-center border-0 px-1.5 py-2">
+			<div className="flex items-center justify-between border-0 px-1.5 py-2">
 				<div className="flex w-full items-center space-x-1">
-					<div className="bg-border flex-1 animate-pulse rounded-sm h-4" />
+					<Skeleton className="h-4 flex-1 rounded-sm" />
 				</div>
 				<div className="flex items-center text-xs">
-					<div className="bg-border w-8 animate-pulse rounded-sm h-4" />
+					<Skeleton className="h-4 w-8 rounded-sm" />
 				</div>
 			</div>
 		</div>

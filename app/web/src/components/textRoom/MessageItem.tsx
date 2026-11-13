@@ -5,6 +5,7 @@ import ConfirmModal from "@/components/common/ConfirmModal";
 import { chatStore, useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
 import type { MessageDTO } from "@/types/message";
+import { formatMessageTime } from "@/utils/chatTime";
 import MarkdownText from "./MarkdownText";
 import ReactionBar from "./ReactionBar";
 
@@ -33,16 +34,7 @@ export default function MessageItem({
 		? chatStore.messages().find((m) => m.uuid === msg.reply_to)
 		: undefined;
 
-	const time = (() => {
-		try {
-			return new Date(msg.created_at).toLocaleTimeString([], {
-				hour: "2-digit",
-				minute: "2-digit",
-			});
-		} catch {
-			return "";
-		}
-	})();
+	const time = formatMessageTime(msg.created_at);
 
 	if (msg.deleted) {
 		return (
@@ -57,7 +49,7 @@ export default function MessageItem({
 
 	return (
 		<div
-			className={`hover:bg-muted group relative py-0.5 pr-4 pl-[72px] leading-[1.375rem] ${
+			className={`hover:bg-muted group relative py-1 pr-4 pl-[72px] leading-[1.375rem] ${
 				isFailed ? "bg-destructive/5" : ""
 			}`}
 		>

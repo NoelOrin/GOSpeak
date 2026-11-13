@@ -1,6 +1,6 @@
-import { Button } from "@gospeak/components";
-import { Loader2 } from "lucide-react";
+import { Button, Skeleton } from "@gospeak/components";
 import type { Domain } from "@/api/domain";
+import { LoadingRegion } from "@/components/common/Skeletons";
 import DomainIcon from "./DomainIcon";
 
 export type DomainInvitePreviewStatus =
@@ -72,9 +72,14 @@ export default function DomainInvitePreview({
 	return (
 		<div className="min-w-0">
 			{status === "loading" && (
-				<div className="flex justify-center py-6">
-					<Loader2 className="text-primary size-6 animate-spin" />
-				</div>
+				<LoadingRegion label="正在加载邀请信息">
+					<div className="flex flex-col gap-3 py-2">
+						<Skeleton className="h-6 w-32" />
+						<Skeleton className="h-4 w-full" />
+						<Skeleton className="h-4 w-2/3" />
+						<Skeleton className="mt-2 h-9 w-full rounded-sm" />
+					</div>
+				</LoadingRegion>
 			)}
 
 			{error && (

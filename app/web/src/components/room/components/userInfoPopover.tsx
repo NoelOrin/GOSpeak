@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { fetchUserInfo } from "@/api/user";
 import Avatar from "@/components/common/avatar";
+import { LoadingRegion } from "@/components/common/Skeletons";
+import { Skeleton } from "@gospeak/components";
 
 interface UserInfoPopoverProps {
 	identity: string;
@@ -59,9 +61,13 @@ export default function UserInfoPopover({
 				style={{ left: `${cardPos.left}px`, top: `${cardPos.top}px` }}
 			>
 				{isLoading ? (
-					<div className="flex h-24 items-center justify-center">
-						<span className="border-primary border-t-primary animate-spin size-6 rounded-full border-2" />
-					</div>
+					<LoadingRegion label="正在加载用户信息">
+						<div className="flex flex-col items-center gap-3 p-4">
+							<Skeleton className="size-16 rounded-full" />
+							<Skeleton className="h-4 w-24" />
+							<Skeleton className="h-3 w-16" />
+						</div>
+					</LoadingRegion>
 				) : isError || !userData ? (
 					<div className="text-faint-foreground p-4 text-sm">
 						{isError ? "加载失败" : "用户不存在"}

@@ -69,7 +69,7 @@ export default function ChannelHeader({
 
 				{textRoom && (
 					<form
-						className="bg-sunken focus-within:w-60 flex h-6 w-36 items-center gap-1 rounded-sm px-1.5 transition-all duration-150"
+						className="border border-border bg-muted focus-within:w-60 flex h-6 w-36 items-center gap-1 rounded-sm px-1.5 transition-all duration-150"
 						onSubmit={(e) => {
 							e.preventDefault();
 							void runSearch();

@@ -1,4 +1,13 @@
-import { Hash, Headphones, Lock, Mic, X } from "lucide-react";
+import {
+	Hash,
+	Headphones,
+	Lock,
+	MessageSquareText,
+	Mic,
+	Search,
+	Users,
+	X,
+} from "lucide-react";
 import { useEffect, useRef } from "react";
 import { ErrorBoundary } from "@/components/common/errorBoundary";
 import MemberSidebar from "@/components/room/components/memberSidebar";
@@ -41,11 +50,21 @@ export default function DomainWorkspace({
 	const setChatHeight = useWorkspaceUiStore((s) => s.setChatHeight);
 	const membersOpen = useWorkspaceUiStore((s) => s.membersOpen);
 	const setChatOpen = useWorkspaceUiStore((s) => s.setChatOpen);
+	const chatFullscreen = useWorkspaceUiStore((s) => s.chatFullscreen);
+	const toggleMembers = useWorkspaceUiStore((s) => s.toggleMembers);
 
 	const selectedRoom = useSocketStore((s) => s.selectedRoomInfo);
 	const currentRoom = useSocketStore((s) => s.currentRoom);
 	const textRoom = useChatStore((s) => s.textRoom);
 	const textRoomName = useChatStore((s) => s.textRoomName);
+
+	// 文字频道搜索：合并到面板头部后，此处的搜索即工作区唯一入口
+	const query = useTextRoomUiStore((s) => s.query);
+	const setQuery = useTextRoomUiStore((s) => s.setQuery);
+	const runSearch = useTextRoomUiStore((s) => s.runSearch);
+	const clearSearch = useTextRoomUiStore((s) => s.clearSearch);
+	const searchActive = useTextRoomUiStore((s) => s.searchActive);
+	const searching = useTextRoomUiStore((s) => s.searching);
 
 	// 切换文字频道时清掉上一个房间的搜索 / 线程 / 回复状态
 	useEffect(() => {
@@ -154,15 +173,25 @@ export default function DomainWorkspace({
 		>
 			{/* 主工作区：深色 Discord 表面 */}
 			<div className="ds-surface flex min-w-0 flex-1 flex-col">
-				<ChannelHeader
-					kind={headerKind}
-					name={headerName}
-					description={textRoom ? `# ${textRoomName ?? "文字频道"}` : undefined}
-				/>
+				{/* 纯文字频道（无语音舞台选中）：头部由聊天面板自身承担，避免重复 */}
+				{!(textRoom && !selectedRoom) && (
+					<ChannelHeader
+						kind={headerKind}
+						name={headerName}
+						description={
+							textRoom ? `# ${textRoomName ?? "文字频道"}` : undefined
+						}
+					/>
+				)}
 
 				<div ref={stackRef} className="flex min-h-0 flex-1 flex-col">
-					{/* 语音区：占上方，切换频道只换这里 */}
-					<div className="relative flex min-h-0 flex-1 flex-col">
+					{/* 语音区：占上方，切换频道只换这里；文字全屏时让位 */}
+					<div
+						className="relative flex min-h-0 flex-1 flex-col"
+						style={
+							chatFullscreen && showChatPanel ? { display: "none" } : undefined
+						}
+					>
 						{voiceActive ? (
 							<ErrorBoundary
 								name="voice-stage"
@@ -205,34 +234,84 @@ export default function DomainWorkspace({
 									chatHeightRef.current = next;
 									setChatHeight(next);
 								}}
-								className="group relative h-2 shrink-0 cursor-row-resize select-none focus-visible:outline-none"
+								className={`group relative h-2 shrink-0 cursor-row-resize select-none focus-visible:outline-none ${chatFullscreen ? "hidden" : ""}`}
 							>
 								<div className="bg-border group-hover:bg-primary pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 transition-colors" />
 							</div>
 							<section
-								className="bg-card flex shrink-0 flex-col overflow-hidden"
-								style={{ height: chatHeight }}
+								className={`bg-card flex flex-col overflow-hidden ${chatFullscreen ? "min-h-0 flex-1" : "shrink-0"}`}
+								style={chatFullscreen ? undefined : { height: chatHeight }}
 								aria-label="文字聊天"
 							>
-								<div className="border-border flex h-10 shrink-0 items-center justify-between border-b px-4">
-									<span className="text-foreground flex min-w-0 items-center gap-1.5 text-sm font-semibold">
-										<Hash
-											size={16}
-											className="text-muted-foreground shrink-0"
-										/>
-										<span className="truncate">
-											{textRoomName ?? "文字聊天"}
-										</span>
+								<div className="border-border flex h-12 shrink-0 items-center gap-2 border-b px-3">
+									<span className="bg-muted text-foreground flex size-7 shrink-0 items-center justify-center rounded-sm">
+										<MessageSquareText size={16} />
 									</span>
-									<button
-										type="button"
-										className="ds-icon-btn size-7"
-										onClick={() => setChatOpen(false)}
-										title="收起文字聊天"
-										aria-label="收起文字聊天"
-									>
-										<X size={16} />
-									</button>
+									<span className="text-foreground truncate text-sm font-semibold">
+										{textRoomName ?? "文字聊天"}
+									</span>
+									<div className="ml-auto flex shrink-0 items-center gap-1">
+										<form
+											className="border border-border bg-muted focus-within:w-56 flex h-7 w-32 items-center gap-1 rounded-sm px-2 transition-all duration-150"
+											onSubmit={(e) => {
+												e.preventDefault();
+												void runSearch();
+											}}
+										>
+											<input
+												type="search"
+												value={query}
+												placeholder="搜索"
+												className="text-foreground placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-xs outline-none"
+												onChange={(e) => setQuery(e.currentTarget.value)}
+												onKeyDown={(e) => {
+													if (e.key === "Escape") {
+														e.preventDefault();
+														setQuery("");
+														clearSearch();
+													}
+												}}
+											/>
+											{searchActive ? (
+												<button
+													type="button"
+													className="text-muted-foreground hover:text-foreground flex size-4 shrink-0 cursor-pointer items-center justify-center"
+													onClick={clearSearch}
+													aria-label="清除搜索"
+												>
+													{searching ? (
+														<span className="border-border text-foreground size-3 animate-spin rounded-full border-2 border-t-transparent" />
+													) : (
+														<X size={12} />
+													)}
+												</button>
+											) : (
+												<Search
+													size={14}
+													className="text-muted-foreground shrink-0"
+												/>
+											)}
+										</form>
+										<button
+											type="button"
+											className="ds-icon-btn text-muted-foreground"
+											data-active={membersOpen}
+											onClick={toggleMembers}
+											title="显示成员列表"
+											aria-label="显示成员列表"
+										>
+											<Users size={16} />
+										</button>
+										<button
+											type="button"
+											className="ds-icon-btn text-muted-foreground"
+											onClick={() => setChatOpen(false)}
+											title="收起文字聊天"
+											aria-label="收起文字聊天"
+										>
+											<X size={16} />
+										</button>
+									</div>
 								</div>
 								<div className="min-h-0 flex-1 overflow-hidden">
 									<ErrorBoundary

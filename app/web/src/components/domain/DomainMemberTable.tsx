@@ -1,4 +1,6 @@
+// biome-ignore-all lint/suspicious/noArrayIndexKey: 骨架占位行数量固定，无业务主键
 import {
+	Skeleton,
 	Select,
 	SelectContent,
 	SelectItem,
@@ -151,17 +153,23 @@ export default function DomainMemberTable(props: DomainMemberTableProps) {
 						</tr>
 					</thead>
 					<tbody>
-						{status === "loading" && (
-							<tr>
-								<td
-									colSpan={4}
-									className="text-faint-foreground py-10 text-center text-sm"
-								>
-									<span className="border-primary border-t-primary mr-2 inline-block size-4 animate-spin rounded-full border-2" />
-									正在加载成员
-								</td>
-							</tr>
-						)}
+						{status === "loading" &&
+							Array.from({ length: 5 }).map((_, i) => (
+								<tr key={`sk-${i}`} className="border-border/60 border-b">
+									<td className="px-3 py-2.5">
+										<Skeleton className="h-4 w-24" />
+									</td>
+									<td className="px-3 py-2.5">
+										<Skeleton className="h-4 w-16" />
+									</td>
+									<td className="px-3 py-2.5">
+										<Skeleton className="h-4 w-28" />
+									</td>
+									<td className="px-3 py-2.5">
+										<Skeleton className="ml-auto h-4 w-16" />
+									</td>
+								</tr>
+							))}
 						{members.map((member) => {
 							const canKick = canKickMember(
 								member,

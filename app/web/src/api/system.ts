@@ -40,11 +40,8 @@ export async function checkServerUpdate(): Promise<ServerUpdateInfo> {
 		// 失败（多为 GitHub 网络问题）由调用方在卡片内展示，不走全局 toast。
 		skipErrorToast: true,
 	});
-	return (
-		data || {
-			current: "",
-			latest: "",
-			available: false,
-		}
-	);
+	// data 缺失说明响应异常（网关改写、旧后端、code 0 但 data null）。绝不能兜底成
+	// { available: false }：那会让监控卡片渲染成「已是最新版本」的成功态。
+	if (!data) throw new Error("服务端更新检查返回了空响应");
+	return data;
 }

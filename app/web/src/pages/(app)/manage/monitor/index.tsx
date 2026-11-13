@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Button } from "@gospeak/components";
+import { Button, Skeleton } from "@gospeak/components";
 import { ManageHeader, ManagePage } from "@/components/manage/ManageShell";
 import { denyAccess } from "@/utils/accessDenied";
 import { hasPermission } from "@/utils/permissions";
@@ -97,13 +97,16 @@ function MetricCard({
 					{icon}
 					{label}
 				</div>
-				{badge || (
-					<div
-						className={`text-lg font-bold ${dim ? "text-faint-foreground" : ""}`}
-					>
-						{value}
-					</div>
-				)}
+				{badge ||
+					(value == null || value === "—" ? (
+						<Skeleton className="h-6 w-16" />
+					) : (
+						<div
+							className={`text-lg font-bold ${dim ? "text-faint-foreground" : ""}`}
+						>
+							{value}
+						</div>
+					))}
 			</div>
 		</div>
 	);
@@ -119,6 +122,19 @@ function SectionTitle({ children }: { children: ReactNode }) {
 
 type UpdateStatus = "idle" | "checking" | "latest" | "available" | "error";
 
+/** 只允许 http/https 的发布页链接：后端字段来自 GitHub API，不能直接信任。 */
+export function safeHttpUrl(raw: string | undefined): string | null {
+	if (!raw) return null;
+	try {
+		const url = new URL(raw);
+		return url.protocol === "http:" || url.protocol === "https:"
+			? url.href
+			: null;
+	} catch {
+		return null;
+	}
+}
+
 /**
  * 服务端更新检查卡片。仅平台管理员（role === "admin"）可见：
  * 路由本身按 role:manage 门控，但更新检查端点与卡片都只对 admin 开放，
@@ -128,6 +144,7 @@ function ServerUpdateCard() {
 	const isAdmin = useUserStore((s) => s.user?.role === "admin");
 
 	const [version, setVersion] = useState("");
+	const [versionFailed, setVersionFailed] = useState(false);
 	const [status, setStatus] = useState<UpdateStatus>("idle");
 	const [info, setInfo] = useState<ServerUpdateInfo | null>(null);
 	const [error, setError] = useState("");
@@ -136,10 +153,13 @@ function ServerUpdateCard() {
 		if (!isAdmin) return;
 		void getServerVersion()
 			.then((v) => setVersion(v.version))
-			.catch(() => {});
+			// 拉取失败不能让「当前版本」永远停在「…」：明确回退成「未知」。
+			.catch(() => setVersionFailed(true));
 	}, [isAdmin]);
 
 	if (!isAdmin) return null;
+
+	const releaseUrl = safeHttpUrl(info?.url);
 
 	const check = async () => {
 		setStatus("checking");
@@ -164,7 +184,7 @@ function ServerUpdateCard() {
 						<div className="text-sm font-medium">
 							当前版本
 							<span className="text-faint-foreground ml-2 font-normal">
-								{version || "…"}
+								{version || (versionFailed ? "未知" : "…")}
 							</span>
 						</div>
 						{status === "checking" && (
@@ -194,9 +214,9 @@ function ServerUpdateCard() {
 						<div className="text-sm">
 							发现新版本
 							<span className="ml-2 font-medium">{info.latest}</span>
-							{info.url && (
+							{releaseUrl && (
 								<a
-									href={info.url}
+									href={releaseUrl}
 									target="_blank"
 									rel="noreferrer"
 									className="text-primary ml-3 text-xs hover:underline"

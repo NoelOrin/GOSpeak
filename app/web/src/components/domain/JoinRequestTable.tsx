@@ -1,6 +1,10 @@
 import { Button } from "@gospeak/components";
-import { Loader2, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import type { JoinRequestListItem } from "@/api/inviteJoin";
+import {
+	LoadingRegion,
+	SkeletonTableRows,
+} from "@/components/common/Skeletons";
 
 export type JoinRequestStatusFilter = "pending" | "approved" | "rejected";
 
@@ -88,9 +92,9 @@ export function JoinRequestTable(props: JoinRequestTableProps) {
 			)}
 
 			{props.loading ? (
-				<div className="text-faint-foreground flex items-center justify-center py-8">
-					<Loader2 className="size-5 animate-spin" />
-				</div>
+				<LoadingRegion label="正在加载加入申请">
+					<SkeletonTableRows rows={5} cols={6} />
+				</LoadingRegion>
 			) : props.items.length === 0 ? (
 				<div className="text-faint-foreground flex items-center justify-center py-8 text-sm">
 					暂无加入申请

@@ -94,6 +94,7 @@ function UpdateSection() {
 	const [update, setUpdate] = useState<UpdateInfo | null>(null);
 	const [progress, setProgress] = useState(0);
 	const [error, setError] = useState("");
+	const [releaseError, setReleaseError] = useState("");
 
 	// 下载进度事件常驻订阅：Install 期间宿主按已下载/总量广播 0..1。
 	// biome-ignore lint/correctness/useExhaustiveDependencies: 仅在 desktop.isDesktop 变化时订阅更新进度，desktop 门面对象稳定
@@ -102,13 +103,32 @@ function UpdateSection() {
 		return desktop.updater.onProgress(setProgress);
 	}, [desktop.isDesktop]);
 
+	// 挂载时读一次运行中版本，否则「当前版本」在用户点「检查更新」之前永远是
+	// 「…」。失败（旧宿主没有绑定该方法 / 桥接异常）时回退成「未知」。
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 版本只在挂载时读一次，desktop 门面对象稳定
+	useEffect(() => {
+		if (!desktop.isDesktop) return;
+		let disposed = false;
+		void desktop.updater
+			.currentVersion()
+			.then((version) => {
+				if (!disposed) setCurrent(version || "未知");
+			})
+			.catch(() => {
+				if (!disposed) setCurrent("未知");
+			});
+		return () => {
+			disposed = true;
+		};
+	}, [desktop.isDesktop]);
+
 	const check = async () => {
 		setStatus("checking");
 		setError("");
 		setUpdate(null);
 		try {
 			const info = await desktop.updater.check();
-			setCurrent(info.current);
+			setCurrent(info.current || "未知");
 			if (!info.supported) {
 				setStatus("unsupported");
 			} else if (info.available) {
@@ -133,6 +153,16 @@ function UpdateSection() {
 		} catch (e) {
 			setStatus("error");
 			setError(e instanceof Error ? e.message : String(e));
+		}
+	};
+
+	// 打开发布页同样可能失败（宿主未绑定 / 系统浏览器拒绝），不处理就是死按钮。
+	const openRelease = async () => {
+		setReleaseError("");
+		try {
+			await desktop.updater.openReleasePage();
+		} catch (e) {
+			setReleaseError(e instanceof Error ? e.message : String(e));
 		}
 	};
 
@@ -192,15 +222,18 @@ function UpdateSection() {
 							</Button>
 						)}
 						{status === "unsupported" && (
-							<Button
-								size="sm"
-								onClick={() => void desktop.updater.openReleasePage()}
-							>
+							<Button size="sm" onClick={() => void openRelease()}>
 								前往发布页
 							</Button>
 						)}
 					</div>
 				</div>
+
+				{releaseError && (
+					<div className="text-destructive text-xs" title={releaseError}>
+						无法打开发布页：{releaseError}
+					</div>
+				)}
 
 				{status === "downloading" && (
 					<div className="bg-border h-1.5 w-full overflow-hidden rounded-sm">

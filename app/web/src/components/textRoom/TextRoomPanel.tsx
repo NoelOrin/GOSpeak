@@ -32,7 +32,7 @@ export default function TextRoomPanel() {
 	}
 
 	const showIntro =
-		!hasMore && !searchActive && !threadParent && messageCount <= 20;
+		!hasMore && !searchActive && !threadParent && messageCount === 0;
 
 	return (
 		<div className="bg-card flex h-full min-h-0 flex-col">
