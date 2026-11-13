@@ -143,9 +143,11 @@ jobs:
       RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
       DESKTOP_VERSION: ${{ needs.resolve-version.outputs.desktop_version }}
     steps:
+      # 刻意不 checkout 到 server_tag：正文由本 workflow 的 scripts/ 生成，
+      # 补跑旧版本时 tag 指向的 commit 可能还没有新版本文渲染器。
+      # 构建类 job 仍按 tag 检出，保证产物可复现。
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.resolve-version.outputs.server_tag }}
           fetch-depth: 0
 
       - uses: actions/setup-node@v6
@@ -178,6 +180,7 @@ jobs:
         run: |
           set -euo pipefail
           # 以本组件上一个 tag 为基线生成「贡献者 + 提交明细」，输出为折叠块。
+          # 基线取「本组件上一个已发布 tag」，与当前 checkout 的 revision 无关。
           prefix="$(node scripts/release-naming.mjs prefix server)"
           base="$(git for-each-ref --sort=-creatordate \
             --format='%(refname:short)' refs/tags \
@@ -813,11 +816,16 @@ jobs:
         run: |
           set -euo pipefail
           failed=0
+          # skipped 不算失败：create-release 失败或流程提前中止时，下游 job 会被
+          # 跳过，这里只报真正失败的 job，避免一次故障刷出一片假错误。
           check() {
-            if [ "$2" != "success" ]; then
-              echo "::error::$1 ended with $2"
-              failed=1
-            fi
+            case "$2" in
+              success|skipped) ;;
+              *)
+                echo "::error::$1 ended with $2"
+                failed=1
+                ;;
+            esac
           }
           check "server binaries" "$SERVER_BUILD"
           check "server checksums" "$SERVER_SUMS"
