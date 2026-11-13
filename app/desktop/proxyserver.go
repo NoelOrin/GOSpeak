@@ -289,7 +289,7 @@ func fixCookies(resp *http.Response) error {
 
 // serveDist serves the embedded frontend with an SPA history fallback: any
 // path without a file extension falls back to index.html so routes like
-// /overlay or /login work on deep links. A missing URL *with* an extension is a
+// /domain/test or /login work on deep links. A missing URL *with* an extension is a
 // real 404 — answering it with index.html would hand an HTML page to a <script>
 // tag and turn a build mistake into a confusing MIME error.
 func (s *proxyServer) serveDist(w http.ResponseWriter, r *http.Request) {

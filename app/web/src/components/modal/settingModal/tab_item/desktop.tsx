@@ -21,8 +21,13 @@ const POLICY_OPTIONS: { value: OverlayPolicy; label: string; desc: string }[] =
 	[
 		{
 			value: "auto",
-			label: "自动（全屏 + 通话中）",
-			desc: "仅当前台有全屏应用且已进入语音房间连接时显示；快捷键可临时强制显隐",
+			label: "自动（离开 GOSpeak 时显示）",
+			desc: "已进入语音房间且 GOSpeak 不在前台时显示；切回 GOSpeak 自动隐藏",
+		},
+		{
+			value: "always",
+			label: "始终显示",
+			desc: "只要在语音房间里就一直显示，适合把游戏放在另一块屏幕",
 		},
 		{
 			value: "manual",
@@ -30,6 +35,14 @@ const POLICY_OPTIONS: { value: OverlayPolicy; label: string; desc: string }[] =
 			desc: "只由快捷键或托盘控制显隐",
 		},
 	];
+
+const SCALE_OPTIONS: { value: number; label: string }[] = [
+	{ value: 0, label: "自动（按显示器）" },
+	{ value: 0.8, label: "80%" },
+	{ value: 1, label: "100%" },
+	{ value: 1.25, label: "125%" },
+	{ value: 1.5, label: "150%" },
+];
 
 function HotkeyField({
 	value,
@@ -258,7 +271,7 @@ function DesktopForm() {
 
 				<Field label="显示策略">
 					<Select
-						value={cfg?.policy ?? "manual"}
+						value={cfg?.policy ?? "auto"}
 						onValueChange={(value) => {
 							patch({ policy: value as OverlayPolicy });
 							void desktop.overlay.setPolicy(value as OverlayPolicy);
@@ -278,11 +291,42 @@ function DesktopForm() {
 				</Field>
 				{cfg?.policy === "auto" && (
 					<p className="text-faint-foreground text-xs">
-						自动模式：全屏应用台前 +
-						语音房间已连接时显示，任一条件消失自动隐藏；
-						显隐快捷键的最后一次操作优先生效，直到条件再次变化。
+						自动模式：进入语音房间后，切到其他应用时显示，切回 GOSpeak
+						自动隐藏；显隐快捷键的最后一次操作优先生效，直到条件再次变化。
 					</p>
 				)}
+
+				<Field label="HUD 大小" desc="自动会按显示器分辨率选择合适大小">
+					<Select
+						value={String(cfg?.scale ?? 0)}
+						onValueChange={(value) => {
+							const v = Number(value);
+							patch({ scale: v });
+							void desktop.overlay.setScale(v);
+						}}
+					>
+						<SelectTrigger>
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{SCALE_OPTIONS.map((o) => (
+								<SelectItem key={o.value} value={String(o.value)}>
+									{o.label}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</Field>
+
+				<Toggle
+					label="防录屏"
+					desc="开启后直播、录屏与截图看不到覆盖层；仅 macOS 与 Windows 生效"
+					checked={cfg?.contentProtection ?? false}
+					onChange={(v) => {
+						patch({ contentProtection: v });
+						void desktop.overlay.setContentProtection(v);
+					}}
+				/>
 
 				<Field
 					label="不透明度"
@@ -330,6 +374,11 @@ function DesktopForm() {
 						}}
 					/>
 				</Field>
+
+				<p className="text-faint-foreground text-xs">
+					若覆盖层未显示，请把游戏的显示模式改为「无边框窗口」—— Windows
+					的独占全屏无法被任何置顶窗口覆盖。
+				</p>
 			</Section>
 
 			<Section title="启动与常驻">

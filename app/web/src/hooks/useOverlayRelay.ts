@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { useLocation } from "@tanstack/react-router";
 import { inDesktop, createOverlay, type OverlayMember } from "@gospeak/desktop";
 import { useSocketStore, selectMembers } from "@/stores/socketStore";
 import { useSpeakingStore } from "@/handler_audio/speakingStore";
@@ -28,10 +27,9 @@ function toOverlayMember(m: MemberInfo): OverlayMember {
 /**
  * Relay the live room/member/speaking state to the floating overlay window.
  *
- * Mounted only in the MAIN window (it lives in the app Layout, which the
- * `/overlay` route does not use). It builds a small snapshot from the app's
- * socket/speaking stores and pushes it through the desktop host; the host
- * broadcasts it to the overlay window, which renders it.
+ * Mounted only in the MAIN window (it lives in the app Layout). It builds a
+ * small snapshot from the app's socket/speaking stores and pushes it through
+ * the desktop host; the host draws it in the native overlay HUD.
  *
  * Costs are bounded on three sides:
  * - **throttled** to one push per {@link RELAY_INTERVAL_MS}, coalescing bursts
@@ -49,12 +47,8 @@ function toOverlayMember(m: MemberInfo): OverlayMember {
  * isolation.
  */
 export function useOverlayRelay() {
-	const location = useLocation();
-
 	useEffect(() => {
 		if (!inDesktop()) return; // Web 构建且无宿主：无需推送（桌面构建此分支被折叠剔除）
-		// 覆盖层窗口本身停在 /overlay，不应反向推送给自己。
-		if (location.pathname === "/overlay") return;
 
 		const overlay = createOverlay();
 		let timer: ReturnType<typeof setTimeout> | null = null;
@@ -142,5 +136,5 @@ export function useOverlayRelay() {
 			unsubVisibility();
 			if (timer !== null) clearTimeout(timer);
 		};
-	}, [location.pathname]);
+	}, []);
 }

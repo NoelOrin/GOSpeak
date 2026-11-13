@@ -1,11 +1,13 @@
 package signal
 
 import (
+	"GOSpeak/internal/bus"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/ws"
 	"errors"
 	"log"
+	"time"
 )
 
 // removeParticipantSafe 从 SFU 移除 participant。
@@ -30,10 +32,50 @@ func (h *Hub) removeParticipantSafe(room, identity string) string {
 	return sfu.EnforcementFromLevel(caps.KickLevel)
 }
 
-// deleteRoomSafe 删除 SFU room。provider 不支持时静默降级。
+// roomHasLiveRemoteMember 判断共享成员快照里是否仍有其他实例的存活成员。
+// KV 读失败返回 (true, err)，调用方须 fail-closed：宁可留孤儿房，不可删活人房。
+func (h *Hub) roomHasLiveRemoteMember(room string) (bool, error) {
+	ctx, cancel := kvTimeoutCtx()
+	defer cancel()
+	snap, err := h.membershipStore.GetRoomMembers(ctx, room)
+	if err != nil {
+		if bus.IsMembershipNotFound(err) {
+			return false, nil
+		}
+		return true, err
+	}
+	now := time.Now().UnixMilli()
+	for _, m := range snap.Members {
+		if m.Identity == "" || m.InstanceID == h.instanceID {
+			continue
+		}
+		if m.ExpiresAtMS != 0 && m.ExpiresAtMS < now {
+			continue
+		}
+		return true, nil
+	}
+	return false, nil
+}
 
-// deleteRoomSafe 删除 SFU room。provider 不支持时静默降级。
+// deleteRoomSafe 删除 SFU room，仅在共享成员里没有其他实例存活成员时执行。
+// provider 不支持时静默降级。
 func (h *Hub) deleteRoomSafe(room string) {
+	if h.membershipStore != nil {
+		hasRemote, err := h.roomHasLiveRemoteMember(room)
+		if err != nil {
+			log.Printf("[Signal] skip SFU room delete %s: membership read failed: %v", room, err)
+			return
+		}
+		if hasRemote {
+			log.Printf("[Signal] skip SFU room delete %s: live remote members", room)
+			return
+		}
+	}
+	h.forceDeleteRoom(room)
+}
+
+// forceDeleteRoom 无条件删除 SFU room，用于 Domain/业务房删除与 SFU 热切换。
+func (h *Hub) forceDeleteRoom(room string) {
 	if h.sfuProvider == nil {
 		return
 	}
@@ -136,7 +178,7 @@ func (h *Hub) clearLocalRoomsForSFUSwitch() {
 		}
 	}
 	for _, roomName := range roomsToDelete {
-		h.deleteRoomSafe(roomName)
+		h.forceDeleteRoom(roomName)
 	}
 	h.broadcastRoomListKnownDomains()
 }

@@ -232,6 +232,7 @@ func StartGin(env EnvEnum) error {
 		StateNotifier:           eventBus,
 	})
 	signalHub.StartMembershipHeartbeat()
+	signalHub.StartEmptyRoomReconciler(0)
 	if nb, ok := eventBus.(*bus.NATSBus); ok {
 		nb.SetRemoteHook(func(event string, payload interface{}) {
 			if event == service.EventPermissionsInvalidated {

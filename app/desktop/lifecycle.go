@@ -41,6 +41,10 @@ func trayMenu() *mygo.Menu {
 			Label: "隐藏到托盘",
 			Click: func(*mygo.MenuItem, *mygo.Window) { hideMainWindow() },
 		},
+		{
+			Label: "锁定/解锁覆盖层位置",
+			Click: func(*mygo.MenuItem, *mygo.Window) { toggleOverlayLock() },
+		},
 		mygo.Separator(),
 		{
 			Label: "退出",

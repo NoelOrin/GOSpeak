@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 // OverlayMember is the per-member payload relayed to the overlay HUD. Keep the
@@ -35,12 +36,16 @@ type OverlaySnapshot struct {
 // Overlay display policy.
 //
 //   - "manual": the overlay is only shown/hidden explicitly (hotkey, settings).
-//   - "auto":   shown only while a full-screen app is in front AND the main
-//     window is connected to a voice room; the hotkey can still override the
+//   - "auto":   shown while the main window is connected to a voice room AND
+//     GOSpeak is not the active app — you are in a game, a browser or anything
+//     else and want to see who talks. The hotkey can still override the
 //     decision until the underlying condition flips.
+//   - "always": shown while connected, whether GOSpeak is active or not, for a
+//     game on another display.
 const (
 	overlayPolicyManual = "manual"
 	overlayPolicyAuto   = "auto"
+	overlayPolicyAlways = "always"
 )
 
 // OverlayConfig is the persisted, UI-facing overlay configuration. Keep the
@@ -51,6 +56,11 @@ type OverlayConfig struct {
 	Hotkey     string  `json:"hotkey"`
 	LockHotkey string  `json:"lockHotkey"`
 	Policy     string  `json:"policy"`
+	// ContentProtection keeps the overlay out of screenshots and screen
+	// recordings (macOS and Windows; Linux has no implementation).
+	ContentProtection bool `json:"contentProtection"`
+	// Scale is the HUD zoom; 0 picks one from the display's resolution.
+	Scale float64 `json:"scale"`
 }
 
 // overlayCfg holds the floating game-overlay window's configuration and the
@@ -60,13 +70,16 @@ type OverlayConfig struct {
 // 默认关闭：enabled=false 且窗口创建时 Hidden，只有用户在设置里开启（或策略
 // 判定 + 已连接）后才会显示。窗口本身无边框、透明、无阴影、置顶、不占任务栏。
 var overlayCfg = struct {
-	enabled    bool
-	opacity    float64
-	hotkey     string
-	lockHotkey string
-	policy     string
-	visible    bool
-	locked     bool
+	enabled           bool
+	opacity           float64
+	hotkey            string
+	lockHotkey        string
+	policy            string
+	contentProtection bool
+	// scale is the user's HUD zoom override; 0 picks the display's.
+	scale   float64
+	visible bool
+	locked  bool
 	// manualOverride is the hotkey's explicit show/hide in "auto" policy; it
 	// wins over the computed decision until the computed decision flips.
 	manualOverride *bool
@@ -80,7 +93,7 @@ var overlayCfg = struct {
 }{
 	enabled: false,
 	opacity: 1.0,
-	policy:  overlayPolicyManual,
+	policy:  overlayPolicyAuto,
 	locked:  true,
 }
 
@@ -92,6 +105,29 @@ var (
 	overlayWin   *mygo.Window
 )
 
+// overlayHUD is what the native overlay window draws. PushState fills it and
+// the window redraws; the HUD never reads the room itself.
+var overlayHUD = &hudState{
+	speaking: map[string]bool{},
+	avatarOf: func(string) *ui.Bitmap { return nil },
+	locked:   true,
+}
+
+// overlayAvatarFor returns the cached avatar of a member, or nil while it loads
+// or when it has none, so the HUD draws the initial instead.
+func overlayAvatarFor(identity string) *ui.Bitmap {
+	overlayCfg.mu.Lock()
+	members := overlayCfg.snap.Members
+	overlayCfg.mu.Unlock()
+	base := appPageBase()
+	for _, m := range members {
+		if m.Identity == identity {
+			return overlayAvatars.lookup(resolveAvatarURL(base, m.Avatar))
+		}
+	}
+	return nil
+}
+
 // overlayWindow returns the floating window, or nil when it has not been built
 // yet (the overlay is off until the user enables it).
 func overlayWindow() *mygo.Window {
@@ -101,9 +137,8 @@ func overlayWindow() *mygo.Window {
 }
 
 // Overlay 事件：类型化 Event[T]（mygo v0.8.3+），Broadcast 发到所有窗口页面，
-// 仅相应订阅方（覆盖层 / 主窗口设置 UI）消费。
+// 仅主窗口设置 UI 消费；覆盖层由宿主原生绘制，不订阅页面事件。
 var (
-	overlayStateEvent      = mygo.NewEvent[OverlaySnapshot]("overlay:state")
 	overlayVisibilityEvent = mygo.NewEvent[bool]("overlay.visibility")
 	overlayLockEvent       = mygo.NewEvent[bool]("overlay.lock")
 	// overlayEnabledEvent tells the main window's relay whether the feature is
@@ -139,7 +174,11 @@ func setOverlayVisible(v bool) {
 	}
 	if v {
 		if w := overlayWindow(); w != nil {
-			w.Show()
+			// ShowInactive, never Show: Show activates the window, which on
+			// Windows takes the foreground from the game (and makes the auto
+			// policy hide the overlay again) and on macOS takes the keyboard
+			// from it.
+			w.ShowInactive()
 		} else {
 			// Nothing to show yet: build the window, whose creation callback
 			// shows it because visible is already true.
@@ -153,7 +192,8 @@ func setOverlayVisible(v bool) {
 
 // SetEnabled turns the overlay feature on/off (master switch, default off).
 // Turning it off always hides the window; turning it on hands control to the
-// display policy (manual: stay hidden until told; auto: decided by the poller).
+// display policy (manual: stay hidden until told; auto/always: decided by the
+// policy loop).
 func (Overlay) SetEnabled(v bool) {
 	overlayCfg.mu.Lock()
 	overlayCfg.enabled = v
@@ -201,6 +241,39 @@ func (Overlay) GetOpacity() float64 {
 	return overlayCfg.opacity
 }
 
+// SetContentProtection keeps the overlay out of screenshots and screen
+// recordings, or lets them show it again. macOS and Windows implement it;
+// Linux ignores it.
+func (Overlay) SetContentProtection(v bool) {
+	overlayCfg.mu.Lock()
+	overlayCfg.contentProtection = v
+	overlayCfg.mu.Unlock()
+	scheduleOverlayConfigSave()
+	if w := overlayWindow(); w != nil {
+		w.SetContentProtection(v)
+	}
+}
+
+// SetScale sets the HUD zoom, 0 to pick one from the display's resolution.
+func (Overlay) SetScale(v float64) {
+	if v < 0 {
+		v = 0
+	}
+	if v > 2 {
+		v = 2
+	}
+	overlayCfg.mu.Lock()
+	overlayCfg.scale = v
+	members := overlayCfg.snap.Members
+	overlayCfg.mu.Unlock()
+	scheduleOverlayConfigSave()
+	if w := overlayWindow(); w != nil {
+		width, height := hudWindowSize(len(members))
+		w.SetContentSize(width, height)
+		w.Invalidate()
+	}
+}
+
 // SetHotkey sets the global keyboard shortcut that toggles the overlay.
 // Accepts mygo accelerator syntax, e.g. "Ctrl+Shift+O".
 func (Overlay) SetHotkey(hotkey string) {
@@ -219,8 +292,8 @@ func (Overlay) GetHotkey() string {
 }
 
 // SetLockHotkey sets the global shortcut that locks/unlocks overlay dragging.
-// When unlocked the HUD becomes a drag region (--app-region: drag); when
-// locked it never intercepts the game's mouse input.
+// When unlocked the native HUD is a drag region (ui.Element.DragWindow); when
+// locked the window ignores mouse events so the game keeps the pointer.
 func (Overlay) SetLockHotkey(hotkey string) {
 	overlayCfg.mu.Lock()
 	overlayCfg.lockHotkey = hotkey
@@ -236,9 +309,9 @@ func (Overlay) GetLockHotkey() string {
 	return overlayCfg.lockHotkey
 }
 
-// SetPolicy switches the display policy ("manual" | "auto").
+// SetPolicy switches the display policy ("manual" | "auto" | "always").
 func (Overlay) SetPolicy(policy string) {
-	if policy != overlayPolicyManual && policy != overlayPolicyAuto {
+	if policy != overlayPolicyManual && policy != overlayPolicyAuto && policy != overlayPolicyAlways {
 		return
 	}
 	overlayCfg.mu.Lock()
@@ -262,16 +335,7 @@ func (Overlay) GetPolicy() string {
 }
 
 // SetLocked locks/unlocks overlay dragging (session state, not persisted).
-func (Overlay) SetLocked(v bool) {
-	overlayCfg.mu.Lock()
-	changed := overlayCfg.locked != v
-	overlayCfg.locked = v
-	overlayCfg.mu.Unlock()
-	if !changed {
-		return
-	}
-	_ = overlayLockEvent.Broadcast(v)
-}
+func (Overlay) SetLocked(v bool) { setOverlayLocked(v) }
 
 // GetLocked reports whether dragging is currently locked.
 func (Overlay) GetLocked() bool {
@@ -280,20 +344,18 @@ func (Overlay) GetLocked() bool {
 	return overlayCfg.locked
 }
 
-// IsFullscreenAppInFront reports whether a full-screen app currently covers a
-// display (diagnostics for the settings UI).
-func (Overlay) IsFullscreenAppInFront() bool { return isFullscreenAppInFront() }
-
 // GetConfig returns the full persisted configuration (settings bootstrap).
 func (Overlay) GetConfig() OverlayConfig {
 	overlayCfg.mu.Lock()
 	defer overlayCfg.mu.Unlock()
 	return OverlayConfig{
-		Enabled:    overlayCfg.enabled,
-		Opacity:    overlayCfg.opacity,
-		Hotkey:     overlayCfg.hotkey,
-		LockHotkey: overlayCfg.lockHotkey,
-		Policy:     overlayCfg.policy,
+		Enabled:           overlayCfg.enabled,
+		Opacity:           overlayCfg.opacity,
+		Hotkey:            overlayCfg.hotkey,
+		LockHotkey:        overlayCfg.lockHotkey,
+		Policy:            overlayCfg.policy,
+		ContentProtection: overlayCfg.contentProtection,
+		Scale:             overlayCfg.scale,
 	}
 }
 
@@ -305,24 +367,30 @@ func (Overlay) IsVisible() bool {
 }
 
 // PushState receives a fresh room/member/speaking snapshot from the main window
-// and relays it to the overlay window via a host event.
+// and updates the native HUD directly (no second WebView, no page event).
 func (Overlay) PushState(snapshot OverlaySnapshot) {
 	overlayCfg.mu.Lock()
 	overlayCfg.snap = snapshot
 	overlayCfg.mu.Unlock()
-	// Broadcast reaches every window's pages; only the overlay subscribes to
-	// "overlay:state", so the main window is unaffected.
-	_ = overlayStateEvent.Broadcast(snapshot)
+
+	speaking := make(map[string]bool, len(snapshot.SpeakingIdentities))
+	for _, id := range snapshot.SpeakingIdentities {
+		speaking[id] = true
+	}
+	overlayHUD.setState(snapshot.Members, speaking)
+
+	if w := overlayWindow(); w != nil {
+		width, height := hudWindowSize(len(snapshot.Members))
+		w.SetContentSize(width, height)
+		w.Invalidate()
+		// Avatars arrive later and redraw the HUD when they do.
+		base := appPageBase()
+		for _, m := range snapshot.Members {
+			overlayAvatars.get(resolveAvatarURL(base, m.Avatar), w.Invalidate)
+		}
+	}
 	// Connection changes affect the auto policy's decision immediately.
 	evaluateOverlayPolicy()
-}
-
-// GetState returns the last relayed snapshot (used by the overlay window to
-// bootstrap its HUD before the next push arrives).
-func (Overlay) GetState() OverlaySnapshot {
-	overlayCfg.mu.Lock()
-	defer overlayCfg.mu.Unlock()
-	return overlayCfg.snap
 }
 
 // broadcastVisibility notifies the main window (settings UI) of visibility
@@ -335,12 +403,12 @@ func broadcastVisibility() {
 }
 
 // toggleOverlayVisibility is the visibility hotkey action: an explicit user
-// intent, allowed in both policies. In "auto" it overrides the computed
-// decision until the computed decision flips.
+// intent, allowed in every policy. In the automatic policies it overrides the
+// computed decision until that decision flips.
 func toggleOverlayVisibility() {
 	overlayCfg.mu.Lock()
 	target := !overlayCfg.visible
-	if overlayCfg.policy == overlayPolicyAuto {
+	if overlayCfg.policy != overlayPolicyManual {
 		o := target
 		overlayCfg.manualOverride = &o
 	}
@@ -356,7 +424,9 @@ func toggleOverlayLock() {
 	setOverlayLocked(!locked)
 }
 
-// setOverlayLocked applies a lock change and notifies the overlay page.
+// setOverlayLocked applies a lock change: locked lets the pointer through to
+// the game (SetIgnoreMouseEvents), unlocked makes the native HUD's root a drag
+// handle (ui.Element.DragWindow) so the whole HUD moves the window.
 func setOverlayLocked(locked bool) {
 	overlayCfg.mu.Lock()
 	changed := overlayCfg.locked != locked
@@ -365,18 +435,29 @@ func setOverlayLocked(locked bool) {
 	if !changed {
 		return
 	}
+	overlayHUD.setLocked(locked)
+	if w := overlayWindow(); w != nil {
+		w.SetIgnoreMouseEvents(locked)
+		w.Invalidate()
+	}
 	_ = overlayLockEvent.Broadcast(locked)
 }
 
-// evaluateOverlayPolicy applies the "auto" policy decision, if any. It runs on
-// a ticker and whenever inputs change (enabled/policy/snapshot).
+// evaluateOverlayPolicy applies the automatic display decision, if any. It
+// runs whenever inputs change (enabled/policy/snapshot/app activation).
 func evaluateOverlayPolicy() {
 	overlayCfg.mu.Lock()
-	if !overlayCfg.enabled || overlayCfg.policy != overlayPolicyAuto {
+	if !overlayCfg.enabled || overlayCfg.policy == overlayPolicyManual {
 		overlayCfg.mu.Unlock()
 		return
 	}
-	want := overlayCfg.snap.Connected && isFullscreenAppInFront()
+	policy := overlayCfg.policy
+	connected := overlayCfg.snap.Connected
+	overlayCfg.mu.Unlock()
+
+	want := policyWants(policy, connected, overlayAppActive())
+
+	overlayCfg.mu.Lock()
 	if want != overlayCfg.lastAutoWant {
 		// The underlying condition flipped: drop the user's stale override.
 		overlayCfg.lastAutoWant = want
@@ -392,11 +473,23 @@ func evaluateOverlayPolicy() {
 	setOverlayVisible(target)
 }
 
-// startOverlayPolicyLoop periodically re-evaluates the auto policy (full-screen
-// detection can only be polled; there is no event source for it).
+// overlayAppActive reports whether GOSpeak is the app the user is in. It is a
+// variable so tests can answer without a running app: mygo's App.IsActive
+// waits for the main loop.
+var overlayAppActive = func() bool { return mygo.App.IsActive() }
+
+// overlayPolicyInterval is the fallback poll for "auto". Activation events
+// (OnDidBecomeActive / OnDidResignActive) drive it on macOS, but mygo v0.8.3
+// fires those only on darwin; on Windows/Linux the foreground app has no event
+// source, so a slow ticker keeps "auto" correct without burning CPU.
+const overlayPolicyInterval = time.Second
+
+// startOverlayPolicyLoop re-evaluates the automatic policies periodically. It
+// is cheap: evaluateOverlayPolicy is a no-op for manual or disabled, and
+// setOverlayVisible returns early when the decision is unchanged.
 func startOverlayPolicyLoop() {
 	go func() {
-		ticker := time.NewTicker(time.Second)
+		ticker := time.NewTicker(overlayPolicyInterval)
 		defer ticker.Stop()
 		for range ticker.C {
 			evaluateOverlayPolicy()
@@ -490,11 +583,13 @@ func flushOverlayConfig() {
 func writeOverlayConfig() {
 	overlayCfg.mu.Lock()
 	cfg := OverlayConfig{
-		Enabled:    overlayCfg.enabled,
-		Opacity:    overlayCfg.opacity,
-		Hotkey:     overlayCfg.hotkey,
-		LockHotkey: overlayCfg.lockHotkey,
-		Policy:     overlayCfg.policy,
+		Enabled:           overlayCfg.enabled,
+		Opacity:           overlayCfg.opacity,
+		Hotkey:            overlayCfg.hotkey,
+		LockHotkey:        overlayCfg.lockHotkey,
+		Policy:            overlayCfg.policy,
+		Scale:             overlayCfg.scale,
+		ContentProtection: overlayCfg.contentProtection,
 	}
 	overlayCfg.mu.Unlock()
 
@@ -523,7 +618,7 @@ func loadOverlayConfig() {
 	}
 	data, err := os.ReadFile(filepath.Join(dir, overlayConfigFileName))
 	if err != nil {
-		return // no config yet: keep defaults (disabled, manual)
+		return // no config yet: keep defaults (disabled, auto)
 	}
 	var cfg OverlayConfig
 	if json.Unmarshal(data, &cfg) != nil {
@@ -536,58 +631,81 @@ func loadOverlayConfig() {
 	}
 	overlayCfg.hotkey = cfg.Hotkey
 	overlayCfg.lockHotkey = cfg.LockHotkey
-	if cfg.Policy == overlayPolicyManual || cfg.Policy == overlayPolicyAuto {
+	overlayCfg.contentProtection = cfg.ContentProtection
+	if cfg.Scale >= 0 && cfg.Scale <= 2 {
+		overlayCfg.scale = cfg.Scale
+	}
+	if cfg.Policy == overlayPolicyManual || cfg.Policy == overlayPolicyAuto || cfg.Policy == overlayPolicyAlways {
 		overlayCfg.policy = cfg.Policy
 	}
 	overlayCfg.mu.Unlock()
 }
 
 // createOverlayWindow builds the floating overlay window (always hidden at
-// creation; the display policy and hotkeys decide when it shows) and points it
-// at the web frontend's /overlay route — same origin as the main window
-// (loopback proxy in release, dev server in dev mode).
+// creation; the display policy and hotkeys decide when it shows).
+//
+// Panel: a window of launchers and quick entries, floating above every app on
+// every Space and over apps in full screen, out of the taskbar and the window
+// cycle, without activating the app when it shows. That is what makes the
+// overlay sit on a borderless full-screen game.
+//
+// Content: the HUD is drawn by MyGo's own ui package, on the GPU, so the
+// overlay costs no second WebView or JavaScript runtime.
 //
 // Window look: frameless + transparent + DisableShadow — no title bar, no
-// opaque background, no system shadow; the page draws the member list directly
-// over the game. StateKey persists the user-dragged position across restarts.
+// opaque background, no system shadow; the content draws the member list
+// directly over the game. StateKey persists the user-dragged position.
 //
 // Main thread only (mygo builds windows there); call it through
 // ensureOverlayWindow unless already inside App.WhenReady.
 func createOverlayWindow() *mygo.Window {
 	overlayCfg.mu.Lock()
 	opacity := overlayCfg.opacity
+	locked := overlayCfg.locked
+	protect := overlayCfg.contentProtection
 	overlayCfg.mu.Unlock()
 
-	base := appPageBase()
-	return mygo.NewWindow(mygo.WindowOptions{
-		Title: "GOSpeak Overlay " + version,
-		URL:   base + "/overlay",
-		Page:  mygo.PageOptions{TrustedOrigins: originOf(base)},
+	width, height := hudWindowSize(0)
+	w := mygo.NewWindow(mygo.WindowOptions{
+		Title:   "GOSpeak Overlay " + version,
+		Content: ui.View(hudView(overlayHUD)),
+		// Panel 是覆盖层的核心：浮在所有应用之上、跟随 Space、能盖住别人的全屏。
+		Panel: true,
 		// 无边框 + 透明 + 无阴影：覆盖层不是"一个窗口"，而是浮在游戏上的内容。
 		Frameless:     true,
+		DisableClose:  true,
 		Transparent:   true,
 		DisableShadow: true,
 		AlwaysOnTop:   true,
 		SkipTaskbar:   true,
 		DisableResize: true,
 		Opacity:       opacity,
-		Width:         240,
-		Height:        360,
+		Width:         width,
+		Height:        height,
 		// X/Y 均非零时不居中（mygo 在 X、Y 同时为零时才自动居中）。
 		X:        24,
 		Y:        24,
 		StateKey: "overlay",
 		Hidden:   true,
 	})
+	// 覆盖层从不销毁，只隐藏：Escape 关闭 NSPanel 的路径必须在这里拦下，
+	// DisableClose 管不到它（mygo 的 ShouldClose 不看 Closable）。
+	w.OnClose(func(e *mygo.CloseEvent) {
+		e.PreventDefault()
+		w.Hide()
+	})
+	w.SetIgnoreMouseEvents(locked)
+	w.SetContentProtection(protect)
+	return w
 }
 
 // ensureOverlayWindow builds the floating window the first time it is needed.
 //
-// The overlay is off by default, and its window is a SECOND WebView running the
-// whole frontend: creating it at launch doubles the JS the app parses and keeps
-// resident for a feature most users never turn on. So it is built on the first
-// real use — the switch being turned on, or something showing it — and the
-// creation callback honours a show that was requested in the meantime.
+// The overlay is off by default, and its window holds a native ui view: creating
+// it at launch would add a window and a GPU surface for a feature most users
+// never turn on. So it is built on the first real use — the switch being turned
+// on, or something showing it — and the creation callback honours a show that
+// was requested in the meantime.
 func ensureOverlayWindow() {
 	overlayWinMu.Lock()
 	exists := overlayWin != nil
@@ -610,7 +728,7 @@ func ensureOverlayWindow() {
 		visible := overlayCfg.visible
 		overlayCfg.mu.Unlock()
 		if visible {
-			w.Show()
+			w.ShowInactive()
 		}
 	})
 }
@@ -618,14 +736,34 @@ func ensureOverlayWindow() {
 // initOverlay wires the whole overlay subsystem up during app startup.
 func initOverlay() {
 	loadOverlayConfig()
-	// Only pay for the second WebView when the feature was left enabled; every
-	// other path goes through ensureOverlayWindow.
+	overlayHUD.setAvatarOf(overlayAvatarFor)
 	overlayCfg.mu.Lock()
 	enabled := overlayCfg.enabled
+	locked := overlayCfg.locked
 	overlayCfg.mu.Unlock()
+	// Keep the native HUD's drag handle in sync with the (locked) session state.
+	overlayHUD.setLocked(locked)
+	// Only pay for the overlay window when the feature was left enabled; every
+	// other path goes through ensureOverlayWindow.
 	if enabled {
 		ensureOverlayWindow()
 	}
 	registerOverlayHotkeys()
+	// "auto" shows the overlay while GOSpeak is not the active app. Activation
+	// events cover macOS; the ticker covers Windows/Linux, where mygo fires no
+	// activation event, and any focus change neither source reports.
+	mygo.App.OnDidBecomeActive(func() { evaluateOverlayPolicy() })
+	mygo.App.OnDidResignActive(func() { evaluateOverlayPolicy() })
 	startOverlayPolicyLoop()
+	// Moving the overlay to a display of another resolution changes its zoom.
+	mygo.Screen.OnDisplaysChanged(func() {
+		if w := overlayWindow(); w != nil {
+			overlayCfg.mu.Lock()
+			n := len(overlayCfg.snap.Members)
+			overlayCfg.mu.Unlock()
+			width, height := hudWindowSize(n)
+			w.SetContentSize(width, height)
+			w.Invalidate()
+		}
+	})
 }

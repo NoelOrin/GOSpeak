@@ -106,6 +106,12 @@ type Hub struct {
 	clientDomains           map[string]string // socketID -> current domain scope (empty = platform)
 	membershipHeartbeatStop chan struct{}
 	membershipHeartbeatDone chan struct{}
+	// emptyRoomSeen 记录 SFU 侧观察到空房的首次时间戳，用于两阶段确认后再删。
+	// 由 reconcileMu 保护，避免对账 goroutine 与查询路径并发读写。
+	emptyRoomSeen map[string]int64
+	reconcileMu   sync.Mutex
+	reconcileStop chan struct{}
+	reconcileDone chan struct{}
 	// kickBans 记录 room+identity 的短时踢出冷却，阻止被踢者立即重连同一房间。
 	kickBans map[string]time.Time
 	// muteCache 缓存 OnMemberSpeaking 的禁言查询结果，避免高频发言态上报打爆 DB。
@@ -153,6 +159,7 @@ func NewHubWithOptions(store roomStore, mStore muteStore, uStore userStore, pChe
 		kickBans:         make(map[string]time.Time),
 		muteCache:        make(map[string]muteCacheEntry),
 		typing:           make(map[string]*typingEntry),
+		emptyRoomSeen:    make(map[string]int64),
 	}
 	h.fanout = opts.Fanout
 	h.eventBus = opts.EventBus
