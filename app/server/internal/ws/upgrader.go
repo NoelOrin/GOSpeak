@@ -135,7 +135,7 @@ func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 根 http.Handler 直接把 /ws 交给 Upgrader，不经过 Gin 的 BanCheck。
-	// 这里补上同一份策略判决；域级封禁由 Dispatch 按事件实时复查。
+	// 这里补上同一份策略判决；逐事件复查由 Dispatch 的 PolicyGuard 负责。
 	if u.cfg.ConnectPolicy != nil {
 		pCode, _ := u.cfg.ConnectPolicy(claims)
 		if pCode != pkg.SUCCESS {

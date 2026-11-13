@@ -20,15 +20,15 @@ func TestCheckBan_LiteralFallbackWithoutRoleCache(t *testing.T) {
 	}
 }
 
-// 多角色串里只要含 ban 就必须拒绝，大小写与空白不敏感。
-func TestCheckBan_MultiRoleString(t *testing.T) {
-	for _, role := range []string{"ban", "user,ban", "BAN", " user , Ban "} {
+// 角色名大小写与前后空白不敏感；User.Role 是单列角色名，不存在逗号分隔的多角色串。
+func TestCheckBan_RoleNameNormalization(t *testing.T) {
+	for _, role := range []string{"ban", "BAN", " Ban ", " ban"} {
 		d := CheckBan(Subject{Role: role})
 		if d.Allowed || d.Code != pkg.USER_BANNED {
 			t.Errorf("role %q must be rejected, got %+v", role, d)
 		}
 	}
-	for _, role := range []string{"user", "admin", "banned", ""} {
+	for _, role := range []string{"user", "admin", "banned", "", "user,ban"} {
 		if d := CheckBan(Subject{Role: role}); !d.Allowed {
 			t.Errorf("role %q must pass, got %+v", role, d)
 		}
@@ -41,7 +41,7 @@ func TestEvaluate_MatchesCheckBan(t *testing.T) {
 	cases := []Subject{
 		{Role: "ban"},
 		{Role: "user"},
-		{Role: "user,ban"},
+		{Role: "admin"},
 		{},
 	}
 	for _, sub := range cases {
@@ -61,6 +61,21 @@ func TestEvaluate_ConnectActionRejectsBanRole(t *testing.T) {
 	}
 	if d := e.Evaluate(Subject{UserUUID: "user-1", Role: "user"}, ActionWSConnect, ""); !d.Allowed {
 		t.Fatalf("normal user must connect, got %+v", d)
+	}
+}
+
+// 域级策略尚未实现：action/domainUUID 是预留参数，不参与判决。
+// 该断言固定住「当前只有身份级封禁」的契约，避免调用方误以为域级强制已生效。
+func TestEvaluate_ActionAndDomainDoNotChangeDecision(t *testing.T) {
+	e := NewEngine()
+	sub := Subject{UserUUID: "u1", Username: "alice", Role: "user"}
+	base := e.Evaluate(sub, ActionWSConnect, "")
+	for _, action := range []Action{ActionWSConnect, "message:send", "private:send", "typing"} {
+		for _, domain := range []string{"", "dom-1", "dom-2"} {
+			if got := e.Evaluate(sub, action, domain); got != base {
+				t.Errorf("Evaluate(%q, %q) = %+v, want %+v", action, domain, got, base)
+			}
+		}
 	}
 }
 

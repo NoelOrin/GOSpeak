@@ -20,8 +20,11 @@ import (
 const (
 	githubReleasesAPI = "https://api.github.com/repos/NoelOrin/GOSpeak/releases?per_page=30"
 	githubReleasePage = "https://github.com/NoelOrin/GOSpeak/releases"
-	// maxNotesLen 截断过长的 release notes，避免响应膨胀。
+	// maxNotesLen 按 rune 截断过长的 release notes，避免响应膨胀且不切断 UTF-8。
 	maxNotesLen = 2000
+	// defaultNegativeCacheTTL 是上游限流（403/429）后的短负缓存时长，
+	// 避免管理员每点一次就再打一次已经耗尽配额的 GitHub API。
+	defaultNegativeCacheTTL = time.Minute
 )
 
 // mainTagPattern 匹配主体服务端发布 tag（v1.2.3），排除桌面端 desktop-v*。
@@ -54,15 +57,18 @@ type ServerUpdateInfo struct {
 //
 // 独立于桌面端更新体系：桌面端由 MyGo 内建签名更新模块走 desktop-v* 发布链，
 // 这里只读主体 v* 发布的元信息，供管理员在 Web 控制台比对版本与查看说明。
-// 结果缓存 cacheTTL，避免频繁点击打爆 GitHub API 匿名配额（60 次/小时/IP）。
+// 成功结果缓存 cacheTTL；上游限流（403/429，匿名配额耗尽）另做短负缓存，
+// 避免管理员反复点击继续打爆 GitHub API（匿名 60 次/小时/IP）。
 type SystemUpdateService struct {
 	client   *http.Client
 	apiURL   string
 	cacheTTL time.Duration
+	negTTL   time.Duration
 
 	mu       sync.Mutex
 	cached   *ServerUpdateInfo
 	cachedAt time.Time
+	negUntil time.Time
 }
 
 func NewSystemUpdateService() *SystemUpdateService {
@@ -70,10 +76,19 @@ func NewSystemUpdateService() *SystemUpdateService {
 		client:   &http.Client{Timeout: 10 * time.Second},
 		apiURL:   githubReleasesAPI,
 		cacheTTL: 5 * time.Minute,
+		negTTL:   defaultNegativeCacheTTL,
 	}
 }
 
-// Check 拉取最新发布并与当前版本比较。网络失败返回 AppError（5001）。
+// negativeCacheTTL 返回生效的负缓存时长。
+func (s *SystemUpdateService) negativeCacheTTL() time.Duration {
+	if s.negTTL > 0 {
+		return s.negTTL
+	}
+	return defaultNegativeCacheTTL
+}
+
+// Check 拉取最新发布并与当前版本比较。网络失败返回 AppError（5001/1017）。
 func (s *SystemUpdateService) Check(ctx context.Context) (*ServerUpdateInfo, error) {
 	s.mu.Lock()
 	if s.cached != nil && time.Since(s.cachedAt) < s.cacheTTL {
@@ -81,10 +96,19 @@ func (s *SystemUpdateService) Check(ctx context.Context) (*ServerUpdateInfo, err
 		s.mu.Unlock()
 		return info, nil
 	}
+	if time.Now().Before(s.negUntil) {
+		s.mu.Unlock()
+		return nil, pkg.NewAppError(pkg.RATE_LIMITED)
+	}
 	s.mu.Unlock()
 
 	release, err := s.fetchLatest(ctx)
 	if err != nil {
+		if pkg.IsCode(err, pkg.RATE_LIMITED) {
+			s.mu.Lock()
+			s.negUntil = time.Now().Add(s.negativeCacheTTL())
+			s.mu.Unlock()
+		}
 		return nil, err
 	}
 
@@ -102,6 +126,7 @@ func (s *SystemUpdateService) Check(ctx context.Context) (*ServerUpdateInfo, err
 	s.mu.Lock()
 	s.cached = info
 	s.cachedAt = time.Now()
+	s.negUntil = time.Time{}
 	s.mu.Unlock()
 	return info, nil
 }
@@ -121,7 +146,12 @@ func (s *SystemUpdateService) fetchLatest(ctx context.Context) (*githubRelease, 
 		return nil, pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR, err, "check update failed")
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	switch {
+	case resp.StatusCode == http.StatusOK:
+	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusForbidden:
+		return nil, pkg.NewAppErrorWithCause(pkg.RATE_LIMITED,
+			fmt.Errorf("github api status %d", resp.StatusCode))
+	default:
 		return nil, pkg.NewAppErrorWithCause(pkg.INTERNAL_ERROR,
 			fmt.Errorf("github api status %d", resp.StatusCode), "check update failed")
 	}
@@ -148,12 +178,14 @@ func (s *SystemUpdateService) fetchLatest(ctx context.Context) (*githubRelease, 
 	return latest, nil
 }
 
+// truncateNotes 按 rune 截断，避免切断 UTF-8 多字节字符产生非法文本。
 func truncateNotes(notes string) string {
 	notes = strings.TrimSpace(notes)
-	if len(notes) <= maxNotesLen {
+	runes := []rune(notes)
+	if len(runes) <= maxNotesLen {
 		return notes
 	}
-	return notes[:maxNotesLen] + "\n\n…（发布说明过长已截断，完整内容见发布页）"
+	return string(runes[:maxNotesLen]) + "\n\n…（发布说明过长已截断，完整内容见发布页）"
 }
 
 // compareVersion 比较「去 v 前缀」的点分版本号（1.2.3 与 1.2.3-beta.1）。

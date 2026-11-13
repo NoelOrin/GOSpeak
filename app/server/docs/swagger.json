@@ -17,6 +17,346 @@
     "host": "localhost:8998",
     "basePath": "/api/v1",
     "paths": {
+        "/announcement/admin/create": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "平台公告需 announcement:manage；域公告需该域 domain:manage",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "公告"
+                ],
+                "summary": "创建公告",
+                "parameters": [
+                    {
+                        "description": "公告内容",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "content": {
+                                    "type": "string"
+                                },
+                                "expires_at": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                },
+                                "level": {
+                                    "type": "string"
+                                },
+                                "pinned": {
+                                    "type": "boolean"
+                                },
+                                "publish": {
+                                    "type": "boolean"
+                                },
+                                "scope_id": {
+                                    "type": "string"
+                                },
+                                "scope_type": {
+                                    "type": "string"
+                                },
+                                "title": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/announcement/admin/delete": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "软删除公告",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "公告"
+                ],
+                "summary": "删除公告",
+                "parameters": [
+                    {
+                        "description": "公告 UUID",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "uuid": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/announcement/admin/list": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "平台管理员看全部；域管理员只看自己可管理的域公告与自己的草稿",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "公告"
+                ],
+                "summary": "管理端公告列表",
+                "parameters": [
+                    {
+                        "description": "分页",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/announcement/admin/update": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按公告 scope 判定权限；草稿首次发布时投递",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "公告"
+                ],
+                "summary": "更新公告",
+                "parameters": [
+                    {
+                        "description": "公告内容",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "content": {
+                                    "type": "string"
+                                },
+                                "expires_at": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                },
+                                "level": {
+                                    "type": "string"
+                                },
+                                "pinned": {
+                                    "type": "boolean"
+                                },
+                                "publish": {
+                                    "type": "boolean"
+                                },
+                                "title": {
+                                    "type": "string"
+                                },
+                                "uuid": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/announcement/list": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前用户可见的系统公告，含已读状态",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "公告"
+                ],
+                "summary": "公告列表",
+                "parameters": [
+                    {
+                        "description": "查询条件",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "only_unread": {
+                                    "type": "boolean"
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/announcement/mark-read": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "幂等标记单条公告已读；公告不可见时返回 NOT_FOUND",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "公告"
+                ],
+                "summary": "标记公告已读",
+                "parameters": [
+                    {
+                        "description": "公告 UUID",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "uuid": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/announcement/unread-count": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前用户可见但未读的公告数量",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "公告"
+                ],
+                "summary": "公告未读数",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/audit/list": {
             "post": {
                 "security": [
@@ -174,49 +514,6 @@
                         }
                     }
                 }
-            }
-        },
-        "/auth/guest": {
-            "post": {
-                "description": "以匿名访客身份签发标准 JWT 并加入指定 Domain（邀请码或公开域）",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "认证"
-                ],
-                "summary": "访客加入 Domain",
-                "parameters": [
-                    {
-                        "description": "访客昵称与加入方式",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/service.GuestJoinRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/pkg.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/auth/guest/renew": {
-            "post": {
-                "tags": [
-                    "认证"
-                ],
-                "summary": "已有访客身份加入另一个 Domain",
-                "responses": {}
             }
         },
         "/auth/login": {
@@ -421,49 +718,265 @@
                 }
             }
         },
-        "/domain/guest/ban": {
+        "/domain/join-approval/config": {
             "post": {
-                "tags": [
-                    "Domain"
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
                 ],
-                "summary": "封禁域内访客并踢下线",
-                "responses": {}
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "域加入审核"
+                ],
+                "summary": "加入审核开关",
+                "parameters": [
+                    {
+                        "description": "开关取值",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.joinApprovalConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
             }
         },
-        "/domain/guest/ban-list": {
+        "/domain/join-requests/list": {
             "post": {
-                "tags": [
-                    "Domain"
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
                 ],
-                "summary": "域访客封禁列表",
-                "responses": {}
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "域加入审核"
+                ],
+                "summary": "加入申请列表",
+                "parameters": [
+                    {
+                        "description": "查询条件",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.listJoinRequestsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
             }
         },
-        "/domain/guest/cleanup": {
+        "/domain/join-requests/review": {
             "post": {
-                "tags": [
-                    "Domain"
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
                 ],
-                "summary": "清理 N 天未活跃访客",
-                "responses": {}
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "域加入审核"
+                ],
+                "summary": "审核加入申请",
+                "parameters": [
+                    {
+                        "description": "审核决定",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.reviewJoinRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
             }
         },
-        "/domain/guest/config": {
+        "/invite/cancel-request": {
             "post": {
-                "tags": [
-                    "Domain"
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
                 ],
-                "summary": "读写域访客配置",
-                "responses": {}
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "邀请"
+                ],
+                "summary": "撤销加入申请",
+                "parameters": [
+                    {
+                        "description": "域名 UUID",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.domainUUIDOnlyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
             }
         },
-        "/domain/guest/unban": {
+        "/invite/join": {
             "post": {
-                "tags": [
-                    "Domain"
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
                 ],
-                "summary": "解封域内访客",
-                "responses": {}
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "邀请"
+                ],
+                "summary": "加入域",
+                "parameters": [
+                    {
+                        "description": "邀请码或域名 UUID",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.inviteJoinRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/invite/my-request": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "邀请"
+                ],
+                "summary": "查询加入申请状态",
+                "parameters": [
+                    {
+                        "description": "域名 UUID",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.domainUUIDOnlyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/invite/register": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "邀请"
+                ],
+                "summary": "邀请码内联注册",
+                "parameters": [
+                    {
+                        "description": "邀请码与注册信息",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.InviteRegisterRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
             }
         },
         "/mute/cancel": {
@@ -1661,6 +2174,56 @@
                 }
             }
         },
+        "/system/update/check": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "拉取 GitHub 主体服务端 v* 发布并与当前版本比较，结果缓存 5 分钟；仅 admin 可访问",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统"
+                ],
+                "summary": "检查服务端新版本",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/system/update/current": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回运行中服务端的版本号与 commit（构建时注入，dev 为源码构建），不发网络请求",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统"
+                ],
+                "summary": "查询当前服务端版本",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/user-group/create": {
             "post": {
                 "security": [
@@ -2249,6 +2812,65 @@
                 }
             }
         },
+        "handler.domainUUIDOnlyRequest": {
+            "type": "object",
+            "required": [
+                "domain_uuid"
+            ],
+            "properties": {
+                "domain_uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.inviteJoinRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "domain_uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.joinApprovalConfigRequest": {
+            "type": "object",
+            "required": [
+                "domain_uuid"
+            ],
+            "properties": {
+                "domain_uuid": {
+                    "type": "string"
+                },
+                "require_join_approval": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handler.listJoinRequestsRequest": {
+            "type": "object",
+            "required": [
+                "domain_uuid"
+            ],
+            "properties": {
+                "domain_uuid": {
+                    "type": "string"
+                },
+                "keyword": {
+                    "type": "string"
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "handler.presignUploadRequest": {
             "type": "object",
             "required": [
@@ -2268,6 +2890,24 @@
                     "type": "string"
                 },
                 "file_size": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.reviewJoinRequest": {
+            "type": "object",
+            "required": [
+                "domain_uuid",
+                "request_id"
+            ],
+            "properties": {
+                "approve": {
+                    "type": "boolean"
+                },
+                "domain_uuid": {
+                    "type": "string"
+                },
+                "request_id": {
                     "type": "integer"
                 }
             }
@@ -2363,21 +3003,31 @@
                 }
             }
         },
-        "service.GuestJoinRequest": {
+        "service.InviteRegisterRequest": {
             "type": "object",
             "required": [
-                "nickname"
+                "code",
+                "password",
+                "username"
             ],
             "properties": {
-                "domain_uuid": {
+                "code": {
                     "type": "string"
                 },
-                "invite_code": {
+                "email": {
+                    "type": "string"
+                },
+                "email_code": {
                     "type": "string"
                 },
                 "nickname": {
-                    "type": "string",
-                    "maxLength": 24
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
                 }
             }
         },

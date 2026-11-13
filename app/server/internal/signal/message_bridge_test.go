@@ -384,7 +384,7 @@ func TestResolveMessageRoom_IdentityRequired(t *testing.T) {
 
 	conn := newMockClient("conn-1") // no claims
 
-	_, _, _, ackErr := h.resolveMessageRoom(conn, "message:send", "text-chat", "")
+	_, _, _, ackErr := h.resolveMessageRoom(conn, "text-chat", "")
 	if ackErr == "" {
 		t.Fatal("expected error")
 	}

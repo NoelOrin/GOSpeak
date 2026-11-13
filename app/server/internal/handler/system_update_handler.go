@@ -37,6 +37,13 @@ func (h *SystemUpdateHandler) requireAdmin(c *gin.Context) bool {
 }
 
 // CurrentVersion 返回运行中服务端的版本信息（无网络请求）。
+// @Summary      查询当前服务端版本
+// @Description  返回运行中服务端的版本号与 commit（构建时注入，dev 为源码构建），不发网络请求
+// @Tags         系统
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  pkg.Response
+// @Router       /system/update/current [get]
 func (h *SystemUpdateHandler) CurrentVersion(c *gin.Context) {
 	if !h.requireAdmin(c) {
 		return
@@ -48,6 +55,13 @@ func (h *SystemUpdateHandler) CurrentVersion(c *gin.Context) {
 }
 
 // CheckUpdate 检查主体服务端是否有新版本（读 GitHub Releases，带缓存）。
+// @Summary      检查服务端新版本
+// @Description  拉取 GitHub 主体服务端 v* 发布并与当前版本比较，结果缓存 5 分钟；仅 admin 可访问
+// @Tags         系统
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  pkg.Response
+// @Router       /system/update/check [get]
 func (h *SystemUpdateHandler) CheckUpdate(c *gin.Context) {
 	if !h.requireAdmin(c) {
 		return

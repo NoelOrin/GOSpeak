@@ -41,7 +41,8 @@ func NewHandlerRegistry() *HandlerRegistry {
 }
 
 // SetPolicyGuard 注入传输无关策略的 WS 适配器。
-// 未注入时保持原有行为（仅测试/嵌入场景使用），生产组合根必须注入。
+// 生产组合根必须注入：未注入时 Dispatch 会 fail-closed 拒绝全部上行消息，
+// 而不是静默放行（漏接线就等于恢复 /ws 的绕过面）。
 func (r *HandlerRegistry) SetPolicyGuard(g PolicyGuard) {
 	r.guard = g
 }
@@ -70,23 +71,38 @@ func (r *HandlerRegistry) Dispatch(c ClientMessenger, msg Message) {
 
 	// 策略判决先于事件分发，且每条消息都重新执行：封禁不失效 JWT，
 	// 只在建连时查一次会让被封访客凭已建立的长连接继续发消息/私信。
-	if r.guard != nil {
-		d := r.guard(c, msg)
-		if d.Code != pkg.SUCCESS {
-			clientMsg := d.Message
-			if clientMsg == "" {
-				clientMsg = pkg.GetErrMsg(d.Code)
+	// guard 未注入时 fail-closed：组合根漏接线不能被静默解释为「全部放行」。
+	if r.guard == nil {
+		log.Printf("[ws] policy guard not installed, rejecting event=%s client=%s", msg.Event, c.ID())
+		if msg.ID != "" {
+			c.SendErrorACK(msg.ID, msg.Event, int(pkg.INTERNAL_ERROR), pkg.GetErrMsg(pkg.INTERNAL_ERROR))
+		}
+		return
+	}
+
+	d := r.guard(c, msg)
+	if d.Code != pkg.SUCCESS {
+		clientMsg := d.Message
+		if clientMsg == "" {
+			clientMsg = pkg.GetErrMsg(d.Code)
+		}
+		log.Printf("[ws] policy rejected event=%s client=%s code=%d", msg.Event, c.ID(), d.Code)
+		// 命中封禁时先把 ACK 真正写出去再断连：只入队后 Close 会丢 ACK。
+		if d.Terminate {
+			if m, ok := c.(PolicyClosingMessenger); ok {
+				m.SendErrorACKAndClose(msg.ID, msg.Event, int(d.Code), clientMsg)
+				return
 			}
-			log.Printf("[ws] policy rejected event=%s client=%s code=%d", msg.Event, c.ID(), d.Code)
 			if msg.ID != "" {
 				c.SendErrorACK(msg.ID, msg.Event, int(d.Code), clientMsg)
 			}
-			// 命中封禁时主动断连，同时停止后续上行与房间下行广播。
-			if d.Terminate {
-				c.Close()
-			}
+			c.Close()
 			return
 		}
+		if msg.ID != "" {
+			c.SendErrorACK(msg.ID, msg.Event, int(d.Code), clientMsg)
+		}
+		return
 	}
 
 	entry, ok := r.handlers[msg.Event]

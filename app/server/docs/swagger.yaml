@@ -74,6 +74,44 @@ definitions:
     required:
     - object_key
     type: object
+  handler.domainUUIDOnlyRequest:
+    properties:
+      domain_uuid:
+        type: string
+    required:
+    - domain_uuid
+    type: object
+  handler.inviteJoinRequest:
+    properties:
+      code:
+        type: string
+      domain_uuid:
+        type: string
+    type: object
+  handler.joinApprovalConfigRequest:
+    properties:
+      domain_uuid:
+        type: string
+      require_join_approval:
+        type: boolean
+    required:
+    - domain_uuid
+    type: object
+  handler.listJoinRequestsRequest:
+    properties:
+      domain_uuid:
+        type: string
+      keyword:
+        type: string
+      page:
+        type: integer
+      page_size:
+        type: integer
+      status:
+        type: string
+    required:
+    - domain_uuid
+    type: object
   handler.presignUploadRequest:
     properties:
       category:
@@ -89,6 +127,18 @@ definitions:
     - content_type
     - file_name
     - file_size
+    type: object
+  handler.reviewJoinRequest:
+    properties:
+      approve:
+        type: boolean
+      domain_uuid:
+        type: string
+      request_id:
+        type: integer
+    required:
+    - domain_uuid
+    - request_id
     type: object
   pkg.ErrCode:
     enum:
@@ -174,17 +224,24 @@ definitions:
       msg:
         type: string
     type: object
-  service.GuestJoinRequest:
+  service.InviteRegisterRequest:
     properties:
-      domain_uuid:
+      code:
         type: string
-      invite_code:
+      email:
+        type: string
+      email_code:
         type: string
       nickname:
-        maxLength: 24
+        type: string
+      password:
+        type: string
+      username:
         type: string
     required:
-    - nickname
+    - code
+    - password
+    - username
     type: object
   service.LoginRequest:
     properties:
@@ -246,6 +303,217 @@ info:
   title: GoRTC API
   version: "1.0"
 paths:
+  /announcement/admin/create:
+    post:
+      consumes:
+      - application/json
+      description: 平台公告需 announcement:manage；域公告需该域 domain:manage
+      parameters:
+      - description: 公告内容
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            content:
+              type: string
+            expires_at:
+              format: int64
+              type: integer
+            level:
+              type: string
+            pinned:
+              type: boolean
+            publish:
+              type: boolean
+            scope_id:
+              type: string
+            scope_type:
+              type: string
+            title:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建公告
+      tags:
+      - 公告
+  /announcement/admin/delete:
+    post:
+      consumes:
+      - application/json
+      description: 软删除公告
+      parameters:
+      - description: 公告 UUID
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            uuid:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除公告
+      tags:
+      - 公告
+  /announcement/admin/list:
+    post:
+      consumes:
+      - application/json
+      description: 平台管理员看全部；域管理员只看自己可管理的域公告与自己的草稿
+      parameters:
+      - description: 分页
+        in: body
+        name: request
+        schema:
+          properties:
+            page:
+              type: integer
+            page_size:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 管理端公告列表
+      tags:
+      - 公告
+  /announcement/admin/update:
+    post:
+      consumes:
+      - application/json
+      description: 按公告 scope 判定权限；草稿首次发布时投递
+      parameters:
+      - description: 公告内容
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            content:
+              type: string
+            expires_at:
+              format: int64
+              type: integer
+            level:
+              type: string
+            pinned:
+              type: boolean
+            publish:
+              type: boolean
+            title:
+              type: string
+            uuid:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新公告
+      tags:
+      - 公告
+  /announcement/list:
+    post:
+      consumes:
+      - application/json
+      description: 返回当前用户可见的系统公告，含已读状态
+      parameters:
+      - description: 查询条件
+        in: body
+        name: request
+        schema:
+          properties:
+            only_unread:
+              type: boolean
+            page:
+              type: integer
+            page_size:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 公告列表
+      tags:
+      - 公告
+  /announcement/mark-read:
+    post:
+      consumes:
+      - application/json
+      description: 幂等标记单条公告已读；公告不可见时返回 NOT_FOUND
+      parameters:
+      - description: 公告 UUID
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            uuid:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 标记公告已读
+      tags:
+      - 公告
+  /announcement/unread-count:
+    post:
+      consumes:
+      - application/json
+      description: 返回当前用户可见但未读的公告数量
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 公告未读数
+      tags:
+      - 公告
   /audit/list:
     post:
       consumes:
@@ -343,34 +611,6 @@ paths:
       security:
       - BearerAuth: []
       summary: 首次登录修改密码
-      tags:
-      - 认证
-  /auth/guest:
-    post:
-      consumes:
-      - application/json
-      description: 以匿名访客身份签发标准 JWT 并加入指定 Domain（邀请码或公开域）
-      parameters:
-      - description: 访客昵称与加入方式
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/service.GuestJoinRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/pkg.Response'
-      summary: 访客加入 Domain
-      tags:
-      - 认证
-  /auth/guest/renew:
-    post:
-      responses: {}
-      summary: 已有访客身份加入另一个 Domain
       tags:
       - 认证
   /auth/login:
@@ -501,36 +741,165 @@ paths:
       summary: 重置密码
       tags:
       - 认证
-  /domain/guest/ban:
+  /domain/join-approval/config:
     post:
-      responses: {}
-      summary: 封禁域内访客并踢下线
+      consumes:
+      - application/json
+      parameters:
+      - description: 开关取值
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.joinApprovalConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 加入审核开关
       tags:
-      - Domain
-  /domain/guest/ban-list:
+      - 域加入审核
+  /domain/join-requests/list:
     post:
-      responses: {}
-      summary: 域访客封禁列表
+      consumes:
+      - application/json
+      parameters:
+      - description: 查询条件
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.listJoinRequestsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 加入申请列表
       tags:
-      - Domain
-  /domain/guest/cleanup:
+      - 域加入审核
+  /domain/join-requests/review:
     post:
-      responses: {}
-      summary: 清理 N 天未活跃访客
+      consumes:
+      - application/json
+      parameters:
+      - description: 审核决定
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.reviewJoinRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 审核加入申请
       tags:
-      - Domain
-  /domain/guest/config:
+      - 域加入审核
+  /invite/cancel-request:
     post:
-      responses: {}
-      summary: 读写域访客配置
+      consumes:
+      - application/json
+      parameters:
+      - description: 域名 UUID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.domainUUIDOnlyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 撤销加入申请
       tags:
-      - Domain
-  /domain/guest/unban:
+      - 邀请
+  /invite/join:
     post:
-      responses: {}
-      summary: 解封域内访客
+      consumes:
+      - application/json
+      parameters:
+      - description: 邀请码或域名 UUID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.inviteJoinRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 加入域
       tags:
-      - Domain
+      - 邀请
+  /invite/my-request:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 域名 UUID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.domainUUIDOnlyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 查询加入申请状态
+      tags:
+      - 邀请
+  /invite/register:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 邀请码与注册信息
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.InviteRegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: 邀请码内联注册
+      tags:
+      - 邀请
   /mute/cancel:
     post:
       consumes:
@@ -1270,6 +1639,36 @@ paths:
       summary: 本地模式中转上传
       tags:
       - 存储
+  /system/update/check:
+    get:
+      description: 拉取 GitHub 主体服务端 v* 发布并与当前版本比较，结果缓存 5 分钟；仅 admin 可访问
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 检查服务端新版本
+      tags:
+      - 系统
+  /system/update/current:
+    get:
+      description: 返回运行中服务端的版本号与 commit（构建时注入，dev 为源码构建），不发网络请求
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      security:
+      - BearerAuth: []
+      summary: 查询当前服务端版本
+      tags:
+      - 系统
   /user-group/create:
     post:
       consumes:

@@ -52,7 +52,7 @@ func TestUpgrader_E2E_Lifecycle(t *testing.T) {
 	var receivedData string
 	handlerCalled := make(chan struct{})
 
-	handler := NewHandlerRegistry()
+	handler := newPermissiveRegistry()
 	handler.Handle("ping", func(c ClientMessenger, data string) {
 		mu.Lock()
 		receivedData = data
@@ -237,7 +237,7 @@ func TestUpgrader_E2E_LargeMessageWithin64K(t *testing.T) {
 		t.Fatalf("GenerateToken: %v", err)
 	}
 
-	handler := NewHandlerRegistry()
+	handler := newPermissiveRegistry()
 	handler.Handle("ping", func(c ClientMessenger, data string) {
 		c.SendACK("ack-1", "pong", data)
 	})

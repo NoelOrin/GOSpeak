@@ -12,7 +12,10 @@ package main
 //   - rewrites Set-Cookie (strips Secure/Domain) so backend session cookies
 //     stick to the loopback origin;
 //   - forwards /wsworker?target=<ws-url> to SFU/signaling worker nodes,
-//     carrying the session cookie the page sends (same origin).
+//     carrying the session cookie the page sends (same origin). Only hosts the
+//     trusted backend handed out (or the configured base URL host) are
+//     reachable, the upgrade must come from the loopback origin, and worker
+//     responses never set cookies on the loopback origin.
 //
 // Changing the base URL simply swaps the proxy target — the page never sees a
 // cross-origin request.
@@ -27,6 +30,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"mime"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -56,6 +60,18 @@ type proxyServer struct {
 
 	workerMu    sync.Mutex
 	workerProxy map[string]*httputil.ReverseProxy
+	workerOrder []string
+
+	// workerHosts holds the worker host:port values the backend advertised via
+	// ws-endpoint. Together with the configured base URL host they form the
+	// allowlist for /wsworker.
+	workerHosts *workerHostAllowlist
+
+	// allowedWorkerHosts is injected by the caller and must return only hosts
+	// the trusted backend handed out (the ws-endpoint worker host plus the
+	// configured base URL host). nil means "nothing is allowed": the /wsworker
+	// route is an SSRF primitive without it, so the default is fail-closed.
+	allowedWorkerHosts func() []string
 }
 
 // proxyTransport is the connection pool both reverse proxies share.
@@ -112,10 +128,15 @@ func startProxyServer() (*proxyServer, string, error) {
 		assets:      newAssetCache(),
 		transport:   proxyTransport(),
 		workerProxy: map[string]*httputil.ReverseProxy{},
+		workerHosts: &workerHostAllowlist{},
 	}
+	// The only hosts /wsworker may reach: whatever the trusted backend handed
+	// out (ws-endpoint) plus the host of the server the user configured. Both
+	// are normalized host:port so the allowlist pins the port as well.
+	s.allowedWorkerHosts = s.trustedWorkerHosts
 	s.mainProxy = &httputil.ReverseProxy{
 		Director:       s.directMain,
-		ModifyResponse: fixCookies,
+		ModifyResponse: s.modifyMainResponse,
 		Transport:      s.transport,
 		ErrorHandler:   proxyErrorHandler,
 	}
@@ -142,20 +163,42 @@ func startProxyServer() (*proxyServer, string, error) {
 	return s, fmt.Sprintf("http://127.0.0.1:%d", port), nil
 }
 
+// trustedWorkerHosts is the default allowedWorkerHosts: the hosts the trusted
+// backend advertised via ws-endpoint plus the configured base URL host.
+func (s *proxyServer) trustedWorkerHosts() []string {
+	hosts := s.workerHosts.list()
+	s.mu.RLock()
+	t := s.target
+	s.mu.RUnlock()
+	if t != nil {
+		if hp, ok := normalizedHostPort(t.Scheme, t.Host); ok {
+			hosts = append(hosts, hp)
+		}
+	}
+	return hosts
+}
+
 // setProxyTarget points the proxy at a new backend base URL ("" = unset).
 func (s *proxyServer) setProxyTarget(baseURL string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if strings.TrimSpace(baseURL) == "" {
 		s.target = nil
+		s.mu.Unlock()
+		s.workerHosts.reset()
 		return
 	}
 	u, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || u.Host == "" {
 		s.target = nil
+		s.mu.Unlock()
+		s.workerHosts.reset()
 		return
 	}
 	s.target = u
+	s.mu.Unlock()
+	// Worker hosts were handed out by the previous backend; they must not stay
+	// reachable after switching servers.
+	s.workerHosts.reset()
 }
 
 func (s *proxyServer) directMain(req *http.Request) {
@@ -168,16 +211,14 @@ func (s *proxyServer) directMain(req *http.Request) {
 	// Tell the backend which origin the page actually uses (the loopback one),
 	// so serverUrl comes back as ws://127.0.0.1:<port>/livekit and stays
 	// same-origin instead of pointing the window straight at the remote host.
-	if req.Header.Get("X-Forwarded-Host") == "" {
-		req.Header.Set("X-Forwarded-Host", req.Host)
+	// Overwritten unconditionally: the page is untrusted, and a client-supplied
+	// value would let it steer the backend's serverUrl/cookie-scope decisions.
+	proto := "http"
+	if req.TLS != nil {
+		proto = "https"
 	}
-	if req.Header.Get("X-Forwarded-Proto") == "" {
-		proto := "http"
-		if req.TLS != nil {
-			proto = "https"
-		}
-		req.Header.Set("X-Forwarded-Proto", proto)
-	}
+	req.Header.Set("X-Forwarded-Host", req.Host)
+	req.Header.Set("X-Forwarded-Proto", proto)
 	req.URL.Scheme = t.Scheme
 	req.URL.Host = t.Host
 	req.Host = t.Host
@@ -207,10 +248,19 @@ func (s *proxyServer) handleProxied(w http.ResponseWriter, r *http.Request) {
 
 // handleWorker forwards a WebSocket connection to the node given via the
 // "target" query parameter (an absolute ws/wss URL returned by ws-endpoint).
+//
+// The target is client-supplied, so it is only honoured when its host:port was
+// handed out by the trusted backend (see allowedWorkerHosts) and the upgrade
+// originates from the loopback origin. Without that, any local page could use
+// this route to reach loopback services and the cloud metadata endpoint.
 func (s *proxyServer) handleWorker(w http.ResponseWriter, r *http.Request) {
+	if !loopbackOriginAllowed(r) {
+		http.Error(w, "cross-origin upgrade rejected", http.StatusForbidden)
+		return
+	}
 	raw := r.URL.Query().Get("target")
 	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" {
+	if err != nil || u.Host == "" || u.User != nil {
 		http.Error(w, "invalid target", http.StatusBadRequest)
 		return
 	}
@@ -225,32 +275,187 @@ func (s *proxyServer) handleWorker(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unsupported scheme", http.StatusBadRequest)
 		return
 	}
-	u.RawQuery = "" // target's query belongs to the remote handshake, not here
+	if !s.workerHostAllowed(u.Scheme, u.Host) {
+		http.Error(w, "target host not allowed", http.StatusForbidden)
+		return
+	}
+	// The target's own query belongs to the remote handshake (a worker may
+	// authenticate by query token), so it is kept; the inbound "target"
+	// parameter is dropped so it never leaks the backend topology downstream.
+	inbound := r.URL.Query()
+	inbound.Del("target")
+	for k, vs := range u.Query() {
+		for _, v := range vs {
+			inbound.Add(k, v)
+		}
+	}
+	r.URL.RawQuery = inbound.Encode()
 
 	proxy := s.workerFor(u)
 	proxy.ServeHTTP(w, r)
 }
 
+// loopbackOriginAllowed rejects a cross-origin WebSocket upgrade. Browsers
+// always send Origin; non-browser clients that omit it are left to the host
+// allowlist.
+func loopbackOriginAllowed(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	if !strings.EqualFold(u.Host, r.Host) {
+		return false
+	}
+	want := "http"
+	if r.TLS != nil {
+		want = "https"
+	}
+	return strings.EqualFold(u.Scheme, want)
+}
+
+// workerHostAllowed matches the target against the injected allowlist. Entries
+// are normalized host:port pairs, so an allowed host on one port does not open
+// every other port of that host (the SSRF payloads all relied on that).
+func (s *proxyServer) workerHostAllowed(scheme, hostport string) bool {
+	if s.allowedWorkerHosts == nil {
+		return false
+	}
+	want, ok := normalizedHostPort(scheme, hostport)
+	if !ok {
+		return false
+	}
+	for _, allowed := range s.allowedWorkerHosts() {
+		if allowed == want {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizedHostPort canonicalizes "host[:port]" to a lower-case host:port,
+// filling the scheme's default port. An unparsable value returns false.
+func normalizedHostPort(scheme, hostport string) (string, bool) {
+	h := strings.ToLower(strings.TrimSpace(hostport))
+	if h == "" {
+		return "", false
+	}
+	host, port := h, ""
+	if strings.HasPrefix(h, "[") {
+		end := strings.Index(h, "]")
+		if end < 0 {
+			return "", false
+		}
+		host, port = h[:end+1], strings.TrimPrefix(h[end+1:], ":")
+	} else if i := strings.LastIndexByte(h, ':'); i >= 0 {
+		host, port = h[:i], h[i+1:]
+	}
+	if host == "" {
+		return "", false
+	}
+	if port == "" {
+		switch scheme {
+		case "http", "ws":
+			port = "80"
+		case "https", "wss":
+			port = "443"
+		default:
+			return "", false
+		}
+	}
+	return host + ":" + port, true
+}
+
+// workerHostAllowlist records the worker hosts the trusted backend handed out.
+// It is bounded: a compromised backend response must not grow it without limit.
+type workerHostAllowlist struct {
+	mu    sync.Mutex
+	hosts []string
+}
+
+const maxAllowedWorkerHosts = 16
+
+func (a *workerHostAllowlist) allow(hostport string) {
+	if a == nil || hostport == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, h := range a.hosts {
+		if h == hostport {
+			return
+		}
+	}
+	if len(a.hosts) >= maxAllowedWorkerHosts {
+		a.hosts = a.hosts[1:]
+	}
+	a.hosts = append(a.hosts, hostport)
+}
+
+func (a *workerHostAllowlist) list() []string {
+	if a == nil {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.hosts...)
+}
+
+func (a *workerHostAllowlist) reset() {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	a.hosts = nil
+	a.mu.Unlock()
+}
+
+// maxWorkerProxies bounds the per-target proxy cache: the key derives from a
+// client-supplied URL, so an unbounded map is a memory sink.
+const maxWorkerProxies = 64
+
 func (s *proxyServer) workerFor(u *url.URL) *httputil.ReverseProxy {
 	key := u.Scheme + "://" + u.Host + u.Path
 	s.workerMu.Lock()
 	defer s.workerMu.Unlock()
+	if s.workerProxy == nil {
+		s.workerProxy = map[string]*httputil.ReverseProxy{}
+	}
 	if p, ok := s.workerProxy[key]; ok {
 		return p
+	}
+	if len(s.workerProxy) >= maxWorkerProxies {
+		if len(s.workerOrder) > 0 {
+			delete(s.workerProxy, s.workerOrder[0])
+			s.workerOrder = s.workerOrder[1:]
+		}
 	}
 	p := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = u.Scheme
 			req.URL.Host = u.Host
 			req.URL.Path = u.Path
+			req.URL.RawPath = ""
 			req.Host = u.Host
 		},
-		ModifyResponse: fixCookies,
+		ModifyResponse: stripWorkerCookies,
 		Transport:      s.transport,
 		ErrorHandler:   proxyErrorHandler,
 	}
 	s.workerProxy[key] = p
+	s.workerOrder = append(s.workerOrder, key)
 	return p
+}
+
+// stripWorkerCookies keeps a worker node from planting cookies on the loopback
+// origin: the page talks to us same-origin, so any Set-Cookie here would land
+// on 127.0.0.1:<port> and be replayed to the backend.
+func stripWorkerCookies(resp *http.Response) error {
+	resp.Header.Del("Set-Cookie")
+	return nil
 }
 
 // proxyErrorHandler answers an unreachable backend with the API's unified error
@@ -266,6 +471,69 @@ func proxyErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 		"msg":  "backend unreachable",
 		"data": nil,
 	})
+}
+
+// modifyMainResponse rewrites backend cookies for the loopback origin and, on
+// the ws-endpoint response, records the worker host the backend advertised so
+// /wsworker can reach it. The worker host comes from the trusted backend, never
+// from the page, which is what keeps the allowlist trustworthy.
+func (s *proxyServer) modifyMainResponse(resp *http.Response) error {
+	if err := fixCookies(resp); err != nil {
+		return err
+	}
+	if resp.Request != nil && strings.HasSuffix(resp.Request.URL.Path, "/signal/ws-endpoint") {
+		s.recordWorkerEndpoint(resp)
+	}
+	return nil
+}
+
+// maxWorkerEndpointBody bounds how much of the ws-endpoint response is
+// buffered to read the worker URL. The payload is a few hundred bytes.
+const maxWorkerEndpointBody = 64 << 10
+
+// recordWorkerEndpoint reads the ws-endpoint JSON body and allowlists the host
+// of the returned worker URL. The body is buffered and restored so the page
+// still receives it unchanged.
+func (s *proxyServer) recordWorkerEndpoint(resp *http.Response) {
+	if resp.Body == nil || resp.Header.Get("Content-Encoding") != "" {
+		return
+	}
+	head, err := io.ReadAll(io.LimitReader(resp.Body, maxWorkerEndpointBody))
+	if err != nil {
+		resp.Body = io.NopCloser(bytes.NewReader(head))
+		resp.ContentLength = int64(len(head))
+		return
+	}
+	resp.Body = struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(head), resp.Body), resp.Body}
+	if len(head) >= maxWorkerEndpointBody {
+		return
+	}
+	resp.ContentLength = int64(len(head))
+
+	var payload struct {
+		Data struct {
+			URL string `json:"url"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(head, &payload) != nil {
+		return
+	}
+	u, err := url.Parse(payload.Data.URL)
+	if err != nil || u.Host == "" {
+		return
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme == "ws" {
+		scheme = "http"
+	} else if scheme == "wss" {
+		scheme = "https"
+	}
+	if hp, ok := normalizedHostPort(scheme, u.Host); ok {
+		s.workerHosts.allow(hp)
+	}
 }
 
 // fixCookies rewrites backend Set-Cookie headers so they stick to the loopback
@@ -344,13 +612,20 @@ func (s *proxyServer) serveAsset(w http.ResponseWriter, r *http.Request, name st
 	h := w.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Cache-Control", cacheControlFor(name))
+	// The representation depends on Accept-Encoding in both branches, so Vary
+	// must be set unconditionally or a shared cache can serve gzip bytes to a
+	// client that did not ask for them.
+	h.Set("Vary", "Accept-Encoding")
+	// ServeContent sniffs the Content-Type from the (possibly gzipped) body,
+	// which labels every compressed asset application/x-gzip. The path is the
+	// only trustworthy source, and the .map extension is not in Go's table.
+	h.Set("Content-Type", contentTypeFor(name))
 
 	etag := a.etag
 	body := a.body
 	enc := "identity"
 	if a.gz != nil && r.Header.Get("Range") == "" && acceptsGzip(r.Header.Get("Accept-Encoding")) {
 		h.Set("Content-Encoding", "gzip")
-		h.Set("Vary", "Accept-Encoding")
 		etag = strings.TrimSuffix(a.etag, `"`) + `-gz"`
 		body = a.gz
 		enc = "gzip"
@@ -378,6 +653,20 @@ func cacheControlFor(name string) string {
 		// Unhashed files (favicons, presets/): short cache, revalidate soon.
 		return "public, max-age=3600"
 	}
+}
+
+// contentTypeFor maps a dist path to its media type. Source maps are missing
+// from Go's table, and everything else goes through mime.TypeByExtension so
+// the browser still gets the charset-bearing type it expects.
+func contentTypeFor(name string) string {
+	ext := strings.ToLower(path.Ext(name))
+	if ext == ".map" {
+		return "application/json"
+	}
+	if ct := mime.TypeByExtension(ext); ct != "" {
+		return ct
+	}
+	return "application/octet-stream"
 }
 
 // acceptsGzip reports whether an Accept-Encoding header value allows gzip.

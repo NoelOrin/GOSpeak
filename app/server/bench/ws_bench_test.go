@@ -12,11 +12,11 @@ type mockClient struct {
 }
 
 func (m *mockClient) ID() string                                              { return m.id }
-func (m *mockClient) Claims() *pkg.Claims                                      { return nil }
-func (m *mockClient) Send(v interface{}) bool                                  { return true }
-func (m *mockClient) SendACK(id, event string, data interface{})               {}
-func (m *mockClient) SendErrorACK(id, event string, code int, message string)  {}
-func (m *mockClient) Close()                                                   {}
+func (m *mockClient) Claims() *pkg.Claims                                     { return nil }
+func (m *mockClient) Send(v interface{}) bool                                 { return true }
+func (m *mockClient) SendACK(id, event string, data interface{})              {}
+func (m *mockClient) SendErrorACK(id, event string, code int, message string) {}
+func (m *mockClient) Close()                                                  {}
 
 func BenchmarkBroadcastToRoom(b *testing.B) {
 	fanout := ws.NewFanout()
@@ -59,6 +59,9 @@ func BenchmarkFanoutJoinLeave(b *testing.B) {
 
 func BenchmarkMessageDispatch(b *testing.B) {
 	reg := ws.NewHandlerRegistry()
+	reg.SetPolicyGuard(func(ws.ClientMessenger, ws.Message) ws.PolicyDecision {
+		return ws.PolicyDecision{Code: pkg.SUCCESS}
+	})
 	reg.Handle("event:bench", func(c ws.ClientMessenger, data string) {})
 
 	msg := ws.Message{
