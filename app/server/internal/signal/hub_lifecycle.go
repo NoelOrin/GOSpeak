@@ -65,7 +65,7 @@ func (h *Hub) OnDomainDelete(domainUUID string) {
 
 	// 清理 SFU 侧
 	for _, room := range sfuRooms {
-		h.deleteRoomSafe(room)
+		h.forceDeleteRoom(room)
 	}
 	// 清理共享状态和 stream 映射
 	for _, key := range roomKeys {
@@ -348,7 +348,7 @@ func (h *Hub) DeleteRoomByDomainName(domainUUID, room string) {
 	for _, stream := range deletedStreams {
 		h.syncStreamDelete(stream)
 	}
-	h.deleteRoomSafe(key)
+	h.forceDeleteRoom(key)
 	h.syncRoomToStore(key)
 	h.broadcastRoomList(domainUUID)
 }
