@@ -787,6 +787,9 @@ jobs:
     uses: ./.github/workflows/docker.yml
     with:
       version: ${{ needs.resolve-version.outputs.version }}
+      # 必须显式传：reusable workflow 里 github.event_name 是调用方的事件名，
+      # 靠它判断 workflow_call 永远不成立。
+      publish: true
     secrets: inherit
 
   # ── 完成汇总 ────────────────────────────────────────────────────────────
