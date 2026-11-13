@@ -14,8 +14,9 @@
 
 ## 下载安装
 
-从 [Releases](https://github.com/NoelOrin/GOSpeak/releases) 页面下载 `gospeak-desktop-v` 开头的版本。
-该 release 正文顶部即下载表格，按平台点对应按钮：
+从 [Releases](https://github.com/NoelOrin/GOSpeak/releases) 页面下载 `GOSpeak v<版本>`。
+每个版本只有一个 Release，服务端二进制与桌面端安装包都在同一页；正文顶部即桌面端
+下载表格，按平台点对应按钮：
 
 | 平台 | 文件 | 安装方式 |
 |------|------|----------|

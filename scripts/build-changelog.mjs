@@ -10,6 +10,7 @@
 
 import fs from "node:fs";
 import { execSync as ex } from "node:child_process";
+import { pathToFileURL } from "node:url";
 
 import { tagPrefix } from "./release-naming.mjs";
 
@@ -111,17 +112,23 @@ function latestTag(component) {
 }
 
 function collectCommits(range) {
-	// 每条提交：hash \x1f subject \x1f body \x1e
-	const log = sh(`git log ${range} --pretty=format:'%H%x1f%s%x1f%b%x1e'`);
+	// 每条提交：hash \x1f subject \x1f body \x1f authorName \x1f authorEmail
+	// authorEmail 用于把同一人的多个 Git 身份归并成一行贡献者。
+	const log = sh(
+		`git log ${range} --pretty=format:'%H%x1f%s%x1f%b%x1f%an%x1f%ae%x1e'`,
+	);
 	if (!log) return [];
 	const out = [];
 	for (const entry of log.split("\x1e")) {
 		if (!entry.trim()) continue;
-		const [hash, subject, body = ""] = entry.split("\x1f");
+		const [hash, subject, body = "", authorName = "", authorEmail = ""] =
+			entry.split("\x1f");
 		out.push({
 			hash: hash.trim().slice(0, 7),
 			subject: subject.trim(),
 			body: body.trim(),
+			authorName: authorName.trim(),
+			authorEmail: authorEmail.trim(),
 		});
 	}
 	return out;
@@ -175,6 +182,133 @@ function buildSection(version, lastTag, date, commits, excludeCI = false) {
 	return lines.join("\n").replace(/\n+$/, "\n");
 }
 
+/**
+ * 把同一人的多个 Git 身份归并成一个贡献者。
+ *
+ * 同一个人常见两种身份：本地提交（自定义邮箱）与 GitHub 网页/合并提交
+ * （`<id>+<login>@users.noreply.github.com`）。这里按「noreply 里的 login，
+ * 否则邮箱本地部分，否则作者名」取归并键，大小写不敏感。
+ */
+function contributorKey(commit) {
+	const email = (commit.authorEmail || "").toLowerCase();
+	const noreply = email.match(
+		/^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$/,
+	);
+	if (noreply) return noreply[1];
+	const local = email.split("@")[0];
+	if (local) return local;
+	return (commit.authorName || "").toLowerCase();
+}
+
+/** noreply 邮箱里带出的 GitHub login，用作规范展示名。 */
+function githubLogin(commit) {
+	return (
+		(commit.authorEmail || "").match(
+			/^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$/i,
+		)?.[1] ?? ""
+	);
+}
+
+function titleCase(value) {
+	return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+}
+
+/**
+ * 贡献者汇总：按归并键聚合提交数，按提交数降序。
+ *
+ * 同一人的展示名统一取 GitHub login（首字母大写）；找不到 login 时退回
+ * 该作者最早一次提交的 authorName，避免同一人在不同提交里名字大小写不一
+ * 导致展示跳动。
+ */
+export function collectContributors(commits) {
+	const byKey = new Map();
+	for (const c of commits) {
+		const key = contributorKey(c);
+		const login = githubLogin(c);
+		const prev = byKey.get(key);
+		if (prev) {
+			prev.commits += 1;
+			if (!prev.login && login) prev.login = login;
+			continue;
+		}
+		byKey.set(key, {
+			key,
+			login,
+			authorName: c.authorName || "",
+			commits: 1,
+		});
+	}
+	return [...byKey.values()]
+		.map((c) => ({
+			key: c.key,
+			name: titleCase(c.login) || c.authorName || c.key,
+			commits: c.commits,
+		}))
+		.sort((a, b) => b.commits - a.commits || a.name.localeCompare(b.name));
+}
+
+/** 提交明细里展示的类型标签；未带 Conventional Commits 前缀时留空。 */
+function commitType(subject) {
+	const m = subject.match(CC_PATTERN);
+	return m?.groups?.type ? m.groups.type.toLowerCase() : "";
+}
+
+/**
+ * 可折叠的「提交记录」块。
+ *
+ * GitHub Release 正文里 `<details>` 默认折叠，把 30 行提交明细收起来，
+ * 正文只留贡献者概览，避免把发布说明挤成流水账。
+ * merge commit 与发版自动化提交不列入明细。
+ */
+export function buildDetailsBlock(commits, { excludeCI = false } = {}) {
+	const meaningful = commits.filter((c) => {
+		if (/^Merge (pull request|branch)\b/.test(c.subject)) return false;
+		const m = c.subject.match(CC_PATTERN);
+		if (excludeCI && isCIRelated(c, m)) return false;
+		// 版本号提升提交本身不属于功能变更。
+		if (
+			m?.groups?.type?.toLowerCase() === "chore" &&
+			/release/i.test(m.groups.scope ?? "")
+		) {
+			return false;
+		}
+		return true;
+	});
+
+	const contributors = collectContributors(meaningful);
+	const total = meaningful.length;
+	if (total === 0) return "";
+
+	const lines = [];
+	lines.push("<details>");
+	lines.push(
+		`<summary>提交记录（${total} commits · ${contributors.length} 位贡献者）</summary>`,
+	);
+	lines.push("");
+	lines.push("### 贡献者");
+	lines.push("");
+	for (const c of contributors) {
+		lines.push(`- **${c.name}** — ${c.commits} commits`);
+	}
+	lines.push("");
+	lines.push("### 提交明细");
+	lines.push("");
+	lines.push("| Commit | 类型 | 说明 | 作者 |");
+	lines.push("|:---|:---|:---|:---|");
+	for (const c of meaningful) {
+		const type = commitType(c.subject);
+		const desc = (
+			c.subject.match(CC_PATTERN)?.groups?.desc ?? c.subject
+		).replace(/\|/g, "\\|");
+		const author = (c.authorName || "-").replace(/\|/g, "\\|");
+		lines.push(`| \`${c.hash}\` | ${type || "-"} | ${desc} | ${author} |`);
+	}
+	lines.push("");
+	lines.push("</details>");
+
+	return lines.join("\n");
+}
+
 function insertChangelog(newBlock, version, replaceExisting = false) {
 	if (!fs.existsSync(CHANGELOG_PATH)) {
 		fs.writeFileSync(CHANGELOG_PATH, `# Changelog / 更新日志\n\n${newBlock}`);
@@ -221,11 +355,17 @@ function main() {
 	const write = !args.includes("--no-write");
 	const replaceExisting = args.includes("--replace");
 	const excludeCI = args.includes("--exclude-ci");
+	const emitDetails = args.includes("--details");
+	// --details-only 只输出可折叠的提交记录块（Release 正文用），
+	// 不输出 buildSection 的分类清单、也不写回 CHANGELOG.md。
+	const detailsOnly = args.includes("--details-only");
 	const positional = args.filter(
 		(arg) =>
 			arg !== "--no-write" &&
 			arg !== "--replace" &&
 			arg !== "--exclude-ci" &&
+			arg !== "--details" &&
+			arg !== "--details-only" &&
 			arg !== "--server" &&
 			arg !== "--desktop",
 	);
@@ -245,14 +385,34 @@ function main() {
 	const date = positional[2] || new Date().toISOString().slice(0, 10);
 	const range = lastTag ? `${lastTag}..HEAD` : "HEAD";
 	const commits = collectCommits(range);
+	if (detailsOnly) {
+		const only = buildDetailsBlock(commits, { excludeCI });
+		if (only) process.stdout.write(`${only}\n`);
+		console.error(
+			`\n[build-changelog] details-only (version=${version}, base=${lastTag || "none"}, commits=${commits.length})`,
+		);
+		return;
+	}
+
 	const block = buildSection(version, lastTag, date, commits, excludeCI);
 	if (write) {
 		insertChangelog(block, version, replaceExisting);
 	}
 	process.stdout.write(block);
+	if (emitDetails) {
+		const details = buildDetailsBlock(commits, { excludeCI });
+		if (details) {
+			process.stdout.write(`\n\n${details}\n`);
+		}
+	}
 	console.error(
 		`\n[build-changelog] generated (write=${write}, version=${version}, base=${lastTag || "none"}, commits=${commits.length})`,
 	);
 }
 
-main();
+if (
+	process.argv[1] &&
+	import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+	main();
+}
