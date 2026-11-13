@@ -1,4 +1,4 @@
-# GOSpeak Version Bump —— push 触发的发版守门员。
+# GOSpeak Version Bump —— push 触发的发版守门员 + 发布编排。
 #
 # 版本号在 .github/versions/server.yaml 与 .github/versions/desktop.yaml 中
 # 显式声明。**每次 push 到 release 都会触发本 workflow**，但对每个组件判断
@@ -6,14 +6,17 @@
 #
 #   当前声明版本对应的 tag（gospeak-server-v<version> /
 #   gospeak-desktop-v<version>）已存在
-#     → 版本号没变 → 本 workflow 成功结束并标记 skipped，不创建任何 tag；
-#   tag 不存在（新版本号 / 版本回退到未发布过的值）
-#     → 打 tag 并推送 → 自动触发 release.yml（以及主体链的 docker.yml）。
+#     → 版本号没变 → 打 tag 步骤 skipped，也不触发发布；
+#   服务端 tag 不存在（新版本号）
+#     → 打两个 tag → 直接 workflow_call 调用 release.yml 执行发布。
 #
-# 也就是：改了 .github/versions/*.yaml 的 version 并合入 release = 发版；
-# 普通提交不碰版本号 = 只跑这个轻量检查，静默跳过。
+# 为什么不是「推 tag 后由 release.yml 的 on.push.tags 触发」：
+# GitHub 会抑制由 GITHUB_TOKEN 推送所派生的 workflow（防递归），
+# tag 推上去了但 Release / Docker 都不会跑。workflow_call 是 job 级调用，
+# 不受该限制，也不需要额外的 PAT。
 #
-# tag 名字一律由 scripts/release-naming.mjs 派生，本文件不手拼字符串。
+# 桌面端 tag 仅作为 changelog 基线保留，不再单独建 Release；
+# 两个组件的产物都发布到服务端 tag 下的同一个 Release。
 #
 # 也可 workflow_dispatch 手动触发一次对账（只补缺失的 tag，不覆盖已有）。
 
@@ -35,6 +38,10 @@ jobs:
   bump-tags:
     name: Release declared versions (skip unchanged)
     runs-on: ubuntu-latest
+    outputs:
+      # 服务端 tag 是本次是否发版的唯一判据：桌面端只在服务端发版时跟随。
+      released: ${{ steps.gate.outputs.released }}
+      version: ${{ steps.versions.outputs.server }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -92,6 +99,21 @@ jobs:
           check server "$SERVER_VERSION"
           check desktop "$DESKTOP_VERSION"
 
+      - name: Decide whether to publish
+        id: gate
+        env:
+          SERVER_EXISTS: ${{ steps.tags.outputs.server_exists }}
+        run: |
+          set -euo pipefail
+          # 只以服务端 tag 是否新建为发版判据：它是单一 Release 的锚点。
+          if [ "$SERVER_EXISTS" = "false" ]; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::服务端版本变更，将创建 tag 并触发发布"
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::服务端版本未变更，本次不发布"
+          fi
+
       - name: Tag server release if version changed
         if: steps.tags.outputs.server_exists == 'false'
         env:
@@ -146,3 +168,17 @@ jobs:
               echo "如需发版，请修改 \`.github/versions/*.yaml\` 的 version 后合入 release。"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── 发布编排 ────────────────────────────────────────────────────────────
+  # 直接调用 release.yml，而不是等 tag push 派生 workflow —— GITHUB_TOKEN
+  # 推送的 tag 不会触发 downstream workflow。
+  release:
+    name: Publish release
+    needs: [bump-tags]
+    if: needs.bump-tags.outputs.released == 'true'
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/release.yml
+    with:
+      version: ${{ needs.bump-tags.outputs.version }}

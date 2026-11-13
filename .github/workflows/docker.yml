@@ -7,9 +7,25 @@ on:
       - "docs/**"
       - "app/docs/**"
       - "**/*.md"
+  # 手工推 tag 时仍可直接触发（镜像与 release 并行发布）。
   push:
     tags: ["gospeak-server-v*"]
+  # 自动化路径：release.yml 在发布链末尾显式调用，避免依赖 tag push 派生事件
+  # —— version-bump.yml 用 GITHUB_TOKEN 推 tag，GitHub 会抑制派生 workflow。
+  workflow_call:
+    inputs:
+      version:
+        description: "镜像版本（留空则按当前 ref/声明版本解析）"
+        required: false
+        default: ""
+        type: string
   workflow_dispatch:
+    inputs:
+      version:
+        description: "镜像版本（留空则按声明版本解析）"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -21,7 +37,7 @@ concurrency:
 jobs:
   verify:
     name: Build Image
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -43,7 +59,9 @@ jobs:
 
   publish:
     name: Publish Image
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/gospeak-server-v')
+    if: >-
+      github.event_name == 'workflow_call' ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/gospeak-server-v'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,16 +70,41 @@ jobs:
       - uses: actions/checkout@v7
       - name: Check release version
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+        # workflow_call 时没有触发 tag，显式传空让脚本走「声明版本一致性」校验，
+        # 而不是拿分支名当 tag 导致假阳性。
         run: node scripts/check-version.mjs . "$RELEASE_TAG" server
       - name: Resolve image version
         id: version
-        # tag 形如 gospeak-server-v1.2.3，镜像 tag 只要 1.2.3，
-        # 因此走 release-naming.mjs 解析而不是字符串裁剪。
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        # 三种来源，优先级从高到低：
+        #   1. workflow_call / workflow_dispatch 显式传入的 version
+        #   2. tag push：tag 形如 gospeak-server-v1.2.3，镜像 tag 只要 1.2.3，
+        #      因此走 release-naming.mjs 解析而不是字符串裁剪
+        #   3. 兜底：读 .github/versions/server.yaml 的声明版本
         run: |
           set -euo pipefail
-          parsed="$(node scripts/release-naming.mjs parse "$GITHUB_REF_NAME")"
-          echo "version=${parsed##* }" >> "$GITHUB_OUTPUT"
+          version="${INPUT_VERSION:-}"
+          if [ -z "$version" ]; then
+            if [[ "${GITHUB_REF:-}" == refs/tags/gospeak-server-v* ]]; then
+              parsed="$(node scripts/release-naming.mjs parse "$GITHUB_REF_NAME")"
+              version="${parsed##* }"
+            else
+              version="$(node -e '
+                const { readFileSync } = require("node:fs");
+                const src = readFileSync(".github/versions/server.yaml", "utf8");
+                const m = src.match(/^version:[ \t]*["'"'"']?([^\s#"'"'"']+)["'"'"']?[ \t]*(?:#.*)?$/m);
+                if (m) console.log(m[1]);
+              ')"
+            fi
+          fi
+          if [ -z "$version" ]; then
+            echo "::error::无法确定镜像版本"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "::notice::image version=${version}"
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:

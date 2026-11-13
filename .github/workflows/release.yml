@@ -1,39 +1,45 @@
-# GOSpeak Release CI —— 双组件、显式版本声明驱动。
+# GOSpeak Release CI —— 单一 Release，双组件产物同页发布。
 #
-# 版本号来源：.github/versions/server.yaml（服务端 + Web）与
-# .github/versions/desktop.yaml（桌面端）各自显式声明。合入 release 后由
-# version-bump.yml 自动打 tag；也可手动 push tag 或 workflow_dispatch 补跑。
+# 版本号来源：.github/versions/server.yaml（服务端 + Web，作为发布版本）
+# 与 .github/versions/desktop.yaml（桌面端）各自显式声明。合入 release 后由
+# version-bump.yml 打 tag 并直接调用本 workflow；也可手动 dispatch 补跑。
 #
-# 命名规范（单一事实来源：scripts/release-naming.mjs）：
-#   gospeak-<component>-v<semver>[-<os>-<arch>][.ext]
+# 只创建一个 GitHub Release，挂在服务端 tag（gospeak-server-v<version>）上，
+# 标题为「GOSpeak v<version>」，Assets 同时包含服务端二进制与桌面端安装包：
 #
-#   组件    tag                       二进制
-#   server  gospeak-server-v1.0.0     gospeak-server-v1.0.0-linux-amd64
-#   desktop gospeak-desktop-v1.0.0    gospeak-desktop-v1.0.0-darwin-arm64.dmg
+#   服务端  gospeak-server-v<version>-<os>-<arch>[.exe]     10 个
+#   桌面端  gospeak-desktop-v<version>-<os>-<arch>.<ext>    6 个 + install.sh
+#   校验和  SHA256SUMS-gospeak-{server,desktop}-v<version>.txt
 #
-#   校验和：SHA256SUMS-gospeak-<component>-v<version>.txt
+# gospeak-desktop-v* tag 仍会创建，只用于 changelog 基线，不单独建 Release。
 #
-# 发生什么：
-#   gospeak-server-v*  → 服务端发布链：版本校验（以 server.yaml 为准）→
-#                        Release notes + GitHub Release → 一次性 Web 构建 →
-#                        交叉编译 10 平台二进制 → SHA256SUMS。
-#                        Docker 镜像由 docker.yml 在同一 tag 并行发布。
-#   gospeak-desktop-v* → 桌面端发布链：版本校验（以 desktop.yaml 为准）→
-#                        Release（notes 优先取 yaml 的 notes 字段）→
-#                        GOSPEAK_TARGET=desktop 条件编译构建 Web → go:embed
-#                        进桌面宿主 → 5 平台安装包 → SHA256SUMS-desktop。
+# 正文结构见 scripts/release-notes.mjs：桌面端下载表格 → 服务端部署指引 →
+# 服务端 release notes → 桌面端 release notes → 可折叠的提交记录。
 #
-# workflow_dispatch 支持手动补跑（tag 留空则取最新发布 tag），产物幂等覆盖（--clobber）。
+# Docker 镜像由本 workflow 末尾调用 docker.yml 发布，不依赖 tag push 事件
+# （GITHUB_TOKEN 推的 tag 不会派生 workflow）。
+#
+# workflow_dispatch 支持手动补跑（version 留空则读 server.yaml）。
 
 name: Release
 
 on:
+  # tag push 仍保留：手工 `git push origin gospeak-server-v1.2.3` 可触发。
+  # 但 version-bump.yml 用 GITHUB_TOKEN 推 tag 时 GitHub 会抑制派生 workflow，
+  # 因此自动化路径是 version-bump 直接 workflow_call 调用本文件。
   push:
-    tags: ["gospeak-server-v*", "gospeak-desktop-v*"]
+    tags: ["gospeak-server-v*"]
+  workflow_call:
+    inputs:
+      version:
+        description: "版本号（留空则读 .github/versions/server.yaml）"
+        required: false
+        default: ""
+        type: string
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Release tag (empty = latest release tag)"
+      version:
+        description: "版本号 (empty = 读 .github/versions/server.yaml)"
         required: false
         default: ""
         type: string
@@ -46,92 +52,111 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ── Resolve Tag & Component ─────────────────────────────────────────────
-  resolve-tag:
-    name: Resolve Tag
+  # ── Resolve Version（两个组件共用一个版本号）─────────────────────────
+  resolve-version:
+    name: Resolve Version
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.tag.outputs.tag }}
-      version: ${{ steps.tag.outputs.version }}
-      component: ${{ steps.tag.outputs.component }}
+      version: ${{ steps.version.outputs.version }}
+      server_tag: ${{ steps.version.outputs.server_tag }}
+      desktop_version: ${{ steps.version.outputs.desktop_version }}
+      desktop_tag: ${{ steps.version.outputs.desktop_tag }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Resolve tag
-        id: tag
+      - name: Resolve version
+        id: version
         env:
-          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          tag="${INPUT_TAG:-}"
-          if [ -z "$tag" ] && [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then
-            tag="${GITHUB_REF_NAME:-}"
+
+          read_declared() {
+            node -e '
+              const { readFileSync } = require("node:fs");
+              const src = readFileSync(process.argv[1], "utf8");
+              const m = src.match(/^version:[ \t]*["'"'"']?([^\s#"'"'"']+)["'"'"']?[ \t]*(?:#.*)?$/m);
+              if (m) console.log(m[1]);
+            ' "$1"
+          }
+
+          server_version="$(read_declared .github/versions/server.yaml)"
+          desktop_version="$(read_declared .github/versions/desktop.yaml)"
+          version="${INPUT_VERSION:-}"
+          if [ -z "$version" ]; then
+            # 未显式传入时以服务端声明为发布版本；tag push 时取 tag 里的版本。
+            if [ "${GITHUB_EVENT_NAME:-}" = "push" ] && [[ "${GITHUB_REF_NAME:-}" == gospeak-server-v* ]]; then
+              version="$(node scripts/release-naming.mjs parse "$GITHUB_REF_NAME" | cut -d" " -f2)"
+            else
+              version="$server_version"
+            fi
           fi
-          if [ -z "$tag" ]; then
-            # 最新发布 tag（两个组件混排，按创建时间取最新）
-            tag="$(git for-each-ref --sort=-creatordate \
-              --format='%(refname:short)' refs/tags \
-              | grep -E '^gospeak-(server|desktop)-v[0-9]' | head -n1 || true)"
-          fi
-          parsed="$(node scripts/release-naming.mjs parse "$tag" || true)"
-          if [ -z "$parsed" ]; then
-            echo "::error::Tag '${tag}' does not follow gospeak-<component>-v<semver>"
+          if [ -z "$version" ]; then
+            echo "::error::无法确定发布版本：.github/versions/server.yaml 缺少 version"
             exit 1
           fi
-          component="${parsed%% *}"
-          version="${parsed##* }"
+
+          server_tag="$(node scripts/release-naming.mjs tag server "$version")"
+          desktop_tag="$(node scripts/release-naming.mjs tag desktop "$desktop_version")"
+
           {
-            echo "tag=$tag"
             echo "version=$version"
-            echo "component=$component"
+            echo "server_tag=$server_tag"
+            echo "desktop_version=$desktop_version"
+            echo "desktop_tag=$desktop_tag"
           } >> "$GITHUB_OUTPUT"
-          echo "::notice::Release tag: $tag (component=$component version=$version)"
+
+          echo "::notice::release version=${version} server_tag=${server_tag} desktop=${desktop_version}"
 
   version-check:
-    name: Check Release Version (${{ needs.resolve-tag.outputs.component }})
+    name: Check Release Version (server + desktop)
     runs-on: ubuntu-latest
-    needs: [resolve-tag]
+    needs: [resolve-version]
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.resolve-tag.outputs.tag }}
-      - name: Validate release tag against declared version
+          ref: ${{ needs.resolve-version.outputs.server_tag }}
+      - name: Validate release versions against declared yaml
         env:
-          RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
-          COMPONENT: ${{ needs.resolve-tag.outputs.component }}
-        run: node scripts/check-version.mjs . "$RELEASE_TAG" "$COMPONENT"
-  # ── Create Release ───────────────────────────────────────────────────────
+          SERVER_TAG: ${{ needs.resolve-version.outputs.server_tag }}
+          DESKTOP_TAG: ${{ needs.resolve-version.outputs.desktop_tag }}
+        run: |
+          set -euo pipefail
+          node scripts/check-version.mjs . "$SERVER_TAG" server
+          node scripts/check-version.mjs . "$DESKTOP_TAG" desktop
+
+  # ── Create Release（单一 Release，挂在服务端 tag 上）─────────────────
+  # 两个组件的产物都上传到同一个 Release：用户点一次就拿到服务端二进制与
+  # 桌面端安装包，不必在两个 release 之间跳转。
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [resolve-tag, version-check]
+    needs: [resolve-version, version-check]
     permissions:
       contents: write
     env:
-      RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
-      RELEASE_VERSION: ${{ needs.resolve-tag.outputs.version }}
-      COMPONENT: ${{ needs.resolve-tag.outputs.component }}
+      RELEASE_TAG: ${{ needs.resolve-version.outputs.server_tag }}
+      RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+      DESKTOP_VERSION: ${{ needs.resolve-version.outputs.desktop_version }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.resolve-tag.outputs.tag }}
+          ref: ${{ needs.resolve-version.outputs.server_tag }}
           fetch-depth: 0
 
       - uses: actions/setup-node@v6
         with:
           node-version: 22
 
-      - name: Generate component notes
-        id: component-notes
+      - name: Extract declared notes
         run: |
           set -euo pipefail
-          # notes 优先取版本声明 yaml 的 notes 字段（显式声明，支持块标量多行）；
-          # 留空则按 commit 生成，基线按组件区分（只认本组件的历史 tag），
-          # 避免把一个组件的提交历史错算成另一个的。
+          # notes 取自版本声明 yaml 的 notes 字段（块标量 | 多行）；
+          # 留空时该段退化为「本次发布无额外说明」。
           cat > /tmp/read-notes.mjs <<'EOF'
           import { readFileSync } from "node:fs";
           const src = readFileSync(process.argv[2], "utf8");
@@ -146,79 +171,59 @@ jobs:
           const value = (flow ? (flow[1] ?? flow[2] ?? flow[3]) : "").trim();
           console.log(value);
           EOF
-          node /tmp/read-notes.mjs ".github/versions/${COMPONENT}.yaml" > /tmp/decl-notes.txt
-          if [ -s /tmp/decl-notes.txt ]; then
-            cp /tmp/decl-notes.txt /tmp/component-notes.md
-          else
-            prefix="$(node scripts/release-naming.mjs prefix "$COMPONENT")"
-            base="$(git for-each-ref --sort=-creatordate \
-              --format='%(refname:short)' refs/tags \
-              | grep -F "$prefix" | grep -Fvx "$RELEASE_TAG" | head -n1 || true)"
-            if [ -n "$base" ]; then
-              node scripts/build-changelog.mjs "$RELEASE_VERSION" "$base" --no-write > /tmp/component-notes.md
-            else
-              echo "* 首个 ${COMPONENT} 版本。" > /tmp/component-notes.md
-            fi
-          fi
-          test -s /tmp/component-notes.md
+          node /tmp/read-notes.mjs .github/versions/server.yaml > /tmp/server-notes.md
+          node /tmp/read-notes.mjs .github/versions/desktop.yaml > /tmp/desktop-notes.md
 
-      - name: Resolve desktop release for cross-link
-        id: desktop
-        if: needs.resolve-tag.outputs.component == 'server'
+      - name: Build commit details block
         run: |
           set -euo pipefail
-          # 服务端 release 正文顶部要放桌面端下载表格。只有桌面端 release 真的
-          # 存在时才渲染表格，否则给出 Releases 页链接，避免死链 404。
-          desktop_version="$(node -e '
-            const { readFileSync } = require("node:fs");
-            const src = readFileSync(".github/versions/desktop.yaml", "utf8");
-            const m = src.match(/^version:[ \t]*["'"'"']?([^\s#"'"'"']+)["'"'"']?[ \t]*(?:#.*)?$/m);
-            if (m) console.log(m[1]);
-          ')"
-          echo "version=$desktop_version" >> "$GITHUB_OUTPUT"
-          if [ -n "$desktop_version" ]; then
-            desktop_tag="$(node scripts/release-naming.mjs tag desktop "$desktop_version")"
-            if gh release view "$desktop_tag" >/dev/null 2>&1; then
-              echo "exists=true" >> "$GITHUB_OUTPUT"
-              echo "::notice::found desktop release ${desktop_tag}"
-            else
-              echo "exists=false" >> "$GITHUB_OUTPUT"
-              echo "::notice::desktop release ${desktop_tag} not published yet"
-            fi
+          # 以本组件上一个 tag 为基线生成「贡献者 + 提交明细」，输出为折叠块。
+          prefix="$(node scripts/release-naming.mjs prefix server)"
+          base="$(git for-each-ref --sort=-creatordate \
+            --format='%(refname:short)' refs/tags \
+            | grep -F "$prefix" | grep -Fvx "$RELEASE_TAG" | head -n1 || true)"
+          if [ -n "$base" ]; then
+            node scripts/build-changelog.mjs "$RELEASE_VERSION" "$base" \
+              --no-write --exclude-ci --details-only > /tmp/details.md
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            : > /tmp/details.md
           fi
-        env:
-          GH_TOKEN: ${{ github.token }}
+          echo "=== details block (head) ==="
+          head -5 /tmp/details.md
 
       - name: Render release body
         run: |
           set -euo pipefail
-          node scripts/release-notes.mjs "$COMPONENT" \
+          node scripts/release-notes.mjs \
             --version "$RELEASE_VERSION" \
+            --desktop-version "$DESKTOP_VERSION" \
             --repo "$GITHUB_REPOSITORY" \
-            --notes-file /tmp/component-notes.md \
-            --desktop-version '${{ steps.desktop.outputs.version }}' \
-            ${{ steps.desktop.outputs.exists == 'true' && '--desktop-release-exists' || '' }} \
+            --server-notes-file /tmp/server-notes.md \
+            --desktop-notes-file /tmp/desktop-notes.md \
+            --details-file /tmp/details.md \
             > /tmp/release-notes.md
           test -s /tmp/release-notes.md
           echo "=== rendered release body (head) ==="
           head -20 /tmp/release-notes.md
 
-      - name: Create GitHub Release
+      - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          target_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          # 已存在时只更新正文（补跑场景），不重建 release，避免资产被清空。
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Release $RELEASE_TAG already exists; leaving it unchanged."
+            echo "Release $RELEASE_TAG already exists; updating body only."
+            gh release edit "$RELEASE_TAG" \
+              --title "GOSpeak v${RELEASE_VERSION}" \
+              --notes-file /tmp/release-notes.md
             exit 0
           fi
-          target_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
           release_args=(
             "$RELEASE_TAG"
             --target "$target_sha"
-            --title "$RELEASE_TAG"
+            --title "GOSpeak v${RELEASE_VERSION}"
             --notes-file /tmp/release-notes.md
           )
           # 预发布版本（含 - / + 的语义化版本）自动标记 prerelease
@@ -227,21 +232,21 @@ jobs:
           fi
           gh release create "${release_args[@]}"
 
-  # ── Build Web Once（两个组件共用：desktop 以条件编译目标构建）──────────────
+  # ── Build Web Once（服务端与桌面端共用同一份 desktop 目标产物）──────────
+  # 合并发布后不再按组件二选一：统一用 GOSPEAK_TARGET=desktop 构建，
+  # 桌面分支进包，服务端内嵌同一份前端（功能是超集）。
   build-web:
     name: Build Web Artifact
     runs-on: ubuntu-latest
-    needs: [resolve-tag, version-check]
+    needs: [resolve-version, version-check]
     permissions:
       contents: read
     env:
-      # 桌面端以 GOSPEAK_TARGET=desktop 构建（__GOSPEAK_DESKTOP__=true，
-      # 桌面分支进包）；主体按默认 web 目标构建（桌面分支被裁剪）。
-      GOSPEAK_TARGET: ${{ needs.resolve-tag.outputs.component == 'desktop' && 'desktop' || 'web' }}
+      GOSPEAK_TARGET: desktop
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.resolve-tag.outputs.tag }}
+          ref: ${{ needs.resolve-version.outputs.server_tag }}
 
       - uses: ./.github/actions/pnpm-install
 
@@ -258,9 +263,8 @@ jobs:
   # ── 主体：Cross-Platform Server Binaries ────────────────────────────────
   build-release-binaries:
     name: Build server ${{ matrix.target }}
-    if: needs.resolve-tag.outputs.component == 'server'
     runs-on: ubuntu-latest
-    needs: [resolve-tag, version-check, create-release, build-web]
+    needs: [resolve-version, version-check, create-release, build-web]
     permissions:
       contents: write
     strategy:
@@ -311,7 +315,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.resolve-tag.outputs.tag }}
+          ref: ${{ needs.resolve-version.outputs.server_tag }}
 
       - name: Download web artifact
         uses: actions/download-artifact@v8
@@ -340,7 +344,7 @@ jobs:
       - name: Resolve artifact name
         id: name
         env:
-          VERSION: ${{ needs.resolve-tag.outputs.version }}
+          VERSION: ${{ needs.resolve-version.outputs.version }}
         run: |
           set -euo pipefail
           # 规范名由 release-naming.mjs 派生，workflow 里不手拼。
@@ -356,7 +360,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm }}
-          RELEASE_VERSION: ${{ needs.resolve-tag.outputs.version }}
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
           RELEASE_COMMIT: ${{ steps.source.outputs.commit }}
           ARTIFACT: ${{ steps.name.outputs.artifact }}
         run: |
@@ -376,7 +380,7 @@ jobs:
       - name: Upload to release assets
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.resolve-tag.outputs.tag }}
+          TAG: ${{ needs.resolve-version.outputs.server_tag }}
           ARTIFACT: ${{ steps.name.outputs.artifact }}
         run: |
           echo "Uploading to release $TAG..."
@@ -389,9 +393,8 @@ jobs:
   # ── 主体：SHA256SUMS ────────────────────────────────────────────────────
   checksums:
     name: Generate & Upload SHA256SUMS
-    if: needs.resolve-tag.outputs.component == 'server'
     runs-on: ubuntu-latest
-    needs: [resolve-tag, version-check, create-release, build-release-binaries]
+    needs: [resolve-version, version-check, create-release, build-release-binaries]
     permissions:
       contents: write
     steps:
@@ -407,7 +410,7 @@ jobs:
       - name: Generate SHA256SUMS
         working-directory: dist
         env:
-          VERSION: ${{ needs.resolve-tag.outputs.version }}
+          VERSION: ${{ needs.resolve-version.outputs.version }}
         run: |
           set -euo pipefail
           # 文件名带组件与版本，服务端/桌面端产物不会互相覆盖或混淆。
@@ -421,7 +424,7 @@ jobs:
       - name: Upload SHA256SUMS to release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.resolve-tag.outputs.tag }}
+          TAG: ${{ needs.resolve-version.outputs.server_tag }}
           SUMS: ${{ steps.sums.outputs.checksum_file }}
         run: |
           if ! gh release view "$TAG" >/dev/null 2>&1; then
@@ -434,9 +437,8 @@ jobs:
   # ── 桌面端：macOS 安装包（DMG，需要 macOS runner 的 hdiutil）──────────────
   build-desktop-macos:
     name: Build desktop macOS ${{ matrix.arch }}
-    if: needs.resolve-tag.outputs.component == 'desktop'
     runs-on: macos-latest
-    needs: [resolve-tag, version-check, create-release, build-web]
+    needs: [resolve-version, version-check, create-release, build-web]
     permissions:
       contents: write
     strategy:
@@ -450,7 +452,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.resolve-tag.outputs.tag }}
+          ref: ${{ needs.resolve-version.outputs.desktop_tag }}
 
       - name: Download web artifact
         uses: actions/download-artifact@v8
@@ -490,7 +492,7 @@ jobs:
           CGO_ENABLED: 0
           GOSPEAK_TARGET: desktop
           MYGO_LDFLAGS: >-
-            -X 'main.version=${{ needs.resolve-tag.outputs.version }}'
+            -X 'main.version=${{ needs.resolve-version.outputs.desktop_version }}'
             -X 'main.commit=${{ steps.source.outputs.commit }}'
         run: |
           ./node_modules/.bin/mygo build \
@@ -518,7 +520,7 @@ jobs:
         id: name
         working-directory: app/desktop
         env:
-          VERSION: ${{ needs.resolve-tag.outputs.version }}
+          VERSION: ${{ needs.resolve-version.outputs.desktop_version }}
         run: |
           set -euo pipefail
           # mygo 产出的 dmg 名由 mygo.config.ts 的 version 决定，格式不受我们控制。
@@ -542,7 +544,7 @@ jobs:
       - name: Upload to release assets
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.resolve-tag.outputs.tag }}
+          TAG: ${{ needs.resolve-version.outputs.desktop_tag }}
           ARTIFACT: ${{ steps.name.outputs.artifact }}
         run: |
           if ! gh release view "$TAG" >/dev/null 2>&1; then
@@ -554,9 +556,8 @@ jobs:
   # ── 桌面端：Linux / Windows 安装包 ──────────────────────────────────────
   build-desktop-others:
     name: Build desktop ${{ matrix.target }}
-    if: needs.resolve-tag.outputs.component == 'desktop'
     runs-on: ubuntu-latest
-    needs: [resolve-tag, version-check, create-release, build-web]
+    needs: [resolve-version, version-check, create-release, build-web]
     permissions:
       contents: write
     strategy:
@@ -575,7 +576,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.resolve-tag.outputs.tag }}
+          ref: ${{ needs.resolve-version.outputs.desktop_tag }}
 
       - name: Download web artifact
         uses: actions/download-artifact@v8
@@ -621,7 +622,7 @@ jobs:
           CGO_ENABLED: 0
           GOSPEAK_TARGET: desktop
           MYGO_LDFLAGS: >-
-            -X 'main.version=${{ needs.resolve-tag.outputs.version }}'
+            -X 'main.version=${{ needs.resolve-version.outputs.desktop_version }}'
             -X 'main.commit=${{ steps.source.outputs.commit }}'
         run: |
           ./node_modules/.bin/mygo build \
@@ -658,7 +659,7 @@ jobs:
         id: name
         working-directory: app/desktop
         env:
-          VERSION: ${{ needs.resolve-tag.outputs.version }}
+          VERSION: ${{ needs.resolve-version.outputs.desktop_version }}
           GOOS: ${{ matrix.goos }}
           TARGET: ${{ matrix.target }}
         run: |
@@ -700,7 +701,7 @@ jobs:
       - name: Upload to release assets
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.resolve-tag.outputs.tag }}
+          TAG: ${{ needs.resolve-version.outputs.desktop_tag }}
           GOOS: ${{ matrix.goos }}
         run: |
           if ! gh release view "$TAG" >/dev/null 2>&1; then
@@ -716,9 +717,8 @@ jobs:
 
   desktop-checksums:
     name: Generate & Upload desktop SHA256SUMS
-    if: needs.resolve-tag.outputs.component == 'desktop'
     runs-on: ubuntu-latest
-    needs: [resolve-tag, version-check, create-release, build-desktop-macos, build-desktop-others]
+    needs: [resolve-version, version-check, create-release, build-desktop-macos, build-desktop-others]
     permissions:
       contents: write
     steps:
@@ -735,7 +735,7 @@ jobs:
         id: sums
         working-directory: dist
         env:
-          VERSION: ${{ needs.resolve-tag.outputs.version }}
+          VERSION: ${{ needs.resolve-version.outputs.desktop_version }}
         run: |
           set -euo pipefail
           # 产物是 dmg / deb / tar.gz / setup.exe / install.sh，名字各不相同，
@@ -763,7 +763,7 @@ jobs:
       - name: Upload desktop SHA256SUMS to release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.resolve-tag.outputs.tag }}
+          TAG: ${{ needs.resolve-version.outputs.desktop_tag }}
           SUMS: ${{ steps.sums.outputs.checksum_file }}
         run: |
           if ! gh release view "$TAG" >/dev/null 2>&1; then
@@ -772,79 +772,74 @@ jobs:
           fi
           gh release upload "$TAG" "dist/${SUMS}" --clobber
 
-  # ── 桌面端发布完成后，回填服务端 release 正文 ──────────────────────────
-  # 两个组件是独立发布的：服务端先建 release 时桌面端还不存在，正文里的
-  # 下载表格会退化成一句 Releases 页链接。桌面端发布成功后再重写一次
-  # 服务端正文，让用户点进服务端 release 就能直接下载桌面端安装包。
-  sync-server-notes:
-    name: Sync desktop downloads into server release notes
-    if: needs.resolve-tag.outputs.component == 'desktop'
-    runs-on: ubuntu-latest
-    needs: [resolve-tag, version-check, create-release, build-desktop-macos, build-desktop-others, desktop-checksums]
+  # ── Docker 镜像（与服务端 tag 同步发布）────────────────────────────────
+  # 原先由 docker.yml 的 `on: push: tags` 触发，但 version-bump 用 GITHUB_TOKEN
+  # 推 tag 时 GitHub 会抑制派生 workflow，镜像会漏发。改为在本链路内显式调用。
+  publish-image:
+    name: Publish Docker Image
+    needs: [resolve-version, version-check, create-release]
     permissions:
-      contents: write
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker.yml
+    with:
+      version: ${{ needs.resolve-version.outputs.version }}
+    secrets: inherit
+
+  # ── 完成汇总 ────────────────────────────────────────────────────────────
+  release-summary:
+    name: Release Summary
+    if: always()
+    needs:
+      - resolve-version
+      - create-release
+      - build-release-binaries
+      - checksums
+      - build-desktop-macos
+      - build-desktop-others
+      - desktop-checksums
+      - publish-image
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.resolve-tag.outputs.tag }}
-          fetch-depth: 0
-
-      - name: Resolve server release
-        id: server
+      - name: Verify all release jobs succeeded
         env:
-          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve-version.outputs.server_tag }}
+          SERVER_BUILD: ${{ needs.build-release-binaries.result }}
+          SERVER_SUMS: ${{ needs.checksums.result }}
+          DESKTOP_MACOS: ${{ needs.build-desktop-macos.result }}
+          DESKTOP_OTHERS: ${{ needs.build-desktop-others.result }}
+          DESKTOP_SUMS: ${{ needs.desktop-checksums.result }}
+          IMAGE: ${{ needs.publish-image.result }}
         run: |
           set -euo pipefail
-          # 服务端 release 以 server.yaml 声明的版本为准；未发布则跳过回填。
-          version="$(node -e '
-            const { readFileSync } = require("node:fs");
-            const src = readFileSync(".github/versions/server.yaml", "utf8");
-            const m = src.match(/^version:[ \t]*["'"'"']?([^\s#"'"'"']+)["'"'"']?[ \t]*(?:#.*)?$/m);
-            if (m) console.log(m[1]);
-          ')"
-          if [ -z "$version" ]; then
-            echo "::notice::server.yaml 无 version，跳过"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          tag="$(node scripts/release-naming.mjs tag server "$version")"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::找到服务端 release ${tag}，将回填桌面端下载表格"
-          else
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::服务端 release ${tag} 尚未发布，跳过回填"
+          failed=0
+          check() {
+            if [ "$2" != "success" ]; then
+              echo "::error::$1 ended with $2"
+              failed=1
+            fi
+          }
+          check "server binaries" "$SERVER_BUILD"
+          check "server checksums" "$SERVER_SUMS"
+          check "desktop macOS" "$DESKTOP_MACOS"
+          check "desktop linux/windows" "$DESKTOP_OTHERS"
+          check "desktop checksums" "$DESKTOP_SUMS"
+          check "docker image" "$IMAGE"
+          if [ "$failed" -ne 0 ]; then
+            exit 1
           fi
 
-      - name: Rebuild server body with desktop table
-        if: steps.server.outputs.skip == 'false'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SERVER_TAG: ${{ steps.server.outputs.tag }}
-          SERVER_VERSION: ${{ steps.server.outputs.version }}
-          DESKTOP_VERSION: ${{ needs.resolve-tag.outputs.version }}
-        run: |
-          set -euo pipefail
-          # 服务端原有的 release notes 段落要保留：先取回正文，截取分隔线
-          # 之后的内容作为 notes，再交给渲染器重新排版。
-          gh release view "$SERVER_TAG" --json body -q .body > /tmp/server-body.md
-          awk '/^## 服务端 release notes$/{f=1;next} f' /tmp/server-body.md > /tmp/server-notes.md
-          if [ ! -s /tmp/server-notes.md ]; then
-            echo "* 本次发布无额外说明。" > /tmp/server-notes.md
-          fi
-
-          node scripts/release-notes.mjs server \
-            --version "$SERVER_VERSION" \
-            --repo "$GITHUB_REPOSITORY" \
-            --notes-file /tmp/server-notes.md \
-            --desktop-version "$DESKTOP_VERSION" \
-            --desktop-release-exists > /tmp/server-body-new.md
-
-          if cmp -s /tmp/server-body.md /tmp/server-body-new.md; then
-            echo "::notice::服务端正文已是最新，无需更新"
-            exit 0
-          fi
-          gh release edit "$SERVER_TAG" --notes-file /tmp/server-body-new.md
-          echo "::notice::已回填桌面端下载表格到 ${SERVER_TAG}"
+          {
+            echo "## GOSpeak Release"
+            echo ""
+            echo "Release: \`${RELEASE_TAG}\`"
+            echo ""
+            echo "| 产物 | 结果 |"
+            echo "| --- | --- |"
+            echo "| 服务端二进制 | $SERVER_BUILD |"
+            echo "| 服务端 SHA256SUMS | $SERVER_SUMS |"
+            echo "| 桌面端 macOS | $DESKTOP_MACOS |"
+            echo "| 桌面端 Linux / Windows | $DESKTOP_OTHERS |"
+            echo "| 桌面端 SHA256SUMS | $DESKTOP_SUMS |"
+            echo "| Docker 镜像 | $IMAGE |"
+          } >> "$GITHUB_STEP_SUMMARY"
