@@ -33,6 +33,26 @@ export async function getServerVersion(): Promise<ServerVersionInfo> {
 	);
 }
 
+/**
+ * 当前服务端版本（公开只读端点，无需登录）。
+ *
+ * 与 getServerVersion 的区别只在权限：那个走 /system/update/current（admin），
+ * 这个走 /system/version，供「关于」页给所有用户展示后端版本。
+ */
+export async function getPublicServerVersion(): Promise<ServerVersionInfo> {
+	const data = await apiClient.get<ServerVersionInfo>({
+		url: "/api/v1/system/version",
+		// 版本展示属非关键路径，静默失败由调用方回退成「未知」，不弹全局 toast。
+		skipErrorToast: true,
+	});
+	return (
+		data || {
+			version: "unknown",
+			commit: "unknown",
+		}
+	);
+}
+
 /** 检查服务端更新（读 GitHub Releases，带服务端缓存；仅 admin）。 */
 export async function checkServerUpdate(): Promise<ServerUpdateInfo> {
 	const data = await apiClient.get<ServerUpdateInfo>({

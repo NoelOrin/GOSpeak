@@ -43,30 +43,31 @@ type Handlers struct {
 	// Config 由组合根注入，路由层不再读取全局 config.Current。
 	Config *config.Config
 	// ReadyCheck 探测 DB 等基础依赖，nil 时 /readyz 返回不可用。
-	ReadyCheck   func() error
-	Auth         *handler.AuthHandler
-	Invite       *handler.InviteHandler
-	InviteJoin   *handler.InviteJoinHandler
-	JoinRequest  *handler.JoinRequestHandler
-	User         *handler.UserHandler
-	Signal       *handler.SignalHandler
-	UserGroup    *handler.UserGroupHandler
-	OAuth        *handler.OAuthHandler
-	Role         *handler.RoleHandler
-	Room         *handler.RoomHandler
-	Permission   *handler.PermissionHandler
-	Mute         *handler.MuteHandler
-	Message      *handler.MessageHandler
-	SFUConfig    *handler.SFUConfigHandler
-	Storage      *handler.StorageHandler
-	Email        *handler.EmailVerificationHandler
-	EmailConfig  *handler.EmailConfigHandler
-	Monitor      *handler.MonitorHandler
-	SystemUpdate *handler.SystemUpdateHandler
-	Domain       *handler.DomainHandler
-	Conversation *handler.ConversationHandler
-	Audit        *handler.AuditHandler
-	Announcement *handler.AnnouncementHandler
+	ReadyCheck    func() error
+	Auth          *handler.AuthHandler
+	Invite        *handler.InviteHandler
+	InviteJoin    *handler.InviteJoinHandler
+	JoinRequest   *handler.JoinRequestHandler
+	User          *handler.UserHandler
+	Signal        *handler.SignalHandler
+	UserGroup     *handler.UserGroupHandler
+	OAuth         *handler.OAuthHandler
+	Role          *handler.RoleHandler
+	Room          *handler.RoomHandler
+	Permission    *handler.PermissionHandler
+	Mute          *handler.MuteHandler
+	Message       *handler.MessageHandler
+	SFUConfig     *handler.SFUConfigHandler
+	Storage       *handler.StorageHandler
+	Email         *handler.EmailVerificationHandler
+	EmailConfig   *handler.EmailConfigHandler
+	Monitor       *handler.MonitorHandler
+	SystemUpdate  *handler.SystemUpdateHandler
+	SystemVersion *handler.SystemVersionHandler
+	Domain        *handler.DomainHandler
+	Conversation  *handler.ConversationHandler
+	Audit         *handler.AuditHandler
+	Announcement  *handler.AnnouncementHandler
 }
 
 func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
@@ -104,6 +105,9 @@ func SetupRoutes(r *gin.Engine, h *Handlers) *gin.Engine {
 	emailRoutes.Register(api.Group("/email"), h.Email)
 	oauthRoutes.Register(api.Group("/oauth"), h.OAuth)
 	signalRoutes.Register(api.Group("/signal"), h.Signal)
+	if h.SystemVersion != nil {
+		systemRoutes.RegisterPublic(api.Group("/system"), h.SystemVersion)
+	}
 	if h.Invite != nil {
 		inviteRoutes.RegisterPublic(api.Group("/invite"), h.Invite)
 	}

@@ -6,7 +6,11 @@ vi.mock("./apiClient", () => ({
 	default: { get },
 }));
 
-import { checkServerUpdate, getServerVersion } from "./system";
+import {
+	checkServerUpdate,
+	getPublicServerVersion,
+	getServerVersion,
+} from "./system";
 
 beforeEach(() => {
 	get.mockReset();
@@ -52,6 +56,27 @@ describe("getServerVersion", () => {
 	it("payload 缺失时回退成 unknown（版本展示非关键路径）", async () => {
 		get.mockResolvedValue(null);
 		await expect(getServerVersion()).resolves.toEqual({
+			version: "unknown",
+			commit: "unknown",
+		});
+	});
+});
+
+describe("getPublicServerVersion", () => {
+	it("走公开版本端点，登录前也能展示后端版本", async () => {
+		get.mockResolvedValue({ version: "1.0.1", commit: "abc1234" });
+		await expect(getPublicServerVersion()).resolves.toEqual({
+			version: "1.0.1",
+			commit: "abc1234",
+		});
+		expect(get).toHaveBeenCalledWith(
+			expect.objectContaining({ url: "/api/v1/system/version" }),
+		);
+	});
+
+	it("payload 缺失时回退成 unknown", async () => {
+		get.mockResolvedValue(null);
+		await expect(getPublicServerVersion()).resolves.toEqual({
 			version: "unknown",
 			commit: "unknown",
 		});

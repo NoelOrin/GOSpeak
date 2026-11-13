@@ -3,9 +3,35 @@ import { devtools } from "@tanstack/devtools-vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import net from "node:net";
+import { fileURLToPath } from "node:url";
 import { visualizer } from "rollup-plugin-visualizer";
+
+/**
+ * 前端版本号：取仓库根 package.json 的 version。
+ *
+ * 与 scripts/check-version.mjs 的口径一致（根 package.json / 根 VERSION /
+ * .github/versions/server.yaml 三者由 CI 强制相等），因此前端展示的版本
+ * 与后端 buildinfo.Version 同源。读根 package.json 而不是 VERSION 文件，
+ * 是因为 Dockerfile 的 web-builder 阶段只复制了 package.json，没有复制 VERSION。
+ */
+function readAppVersion(): string {
+	try {
+		const rootPkg = path.resolve(
+			path.dirname(fileURLToPath(import.meta.url)),
+			"../..",
+			"package.json",
+		);
+		const { version } = JSON.parse(readFileSync(rootPkg, "utf8")) as {
+			version?: string;
+		};
+		return version?.trim() || "dev";
+	} catch {
+		return "dev";
+	}
+}
 
 function findAvailablePort(startPort: number): Promise<number> {
   if (startPort >= 65536) {
@@ -32,11 +58,14 @@ export default defineConfig(async ({ mode }) => {
   const gospeakTarget: "web" | "desktop" =
     process.env.GOSPEAK_TARGET === "desktop" ? "desktop" : "web";
 
+  const appVersion = readAppVersion();
+
   return {
     // 条件编译注入常量（app/web/types/gospeak-build.d.ts 提供类型）
     define: {
       __GOSPEAK_TARGET__: JSON.stringify(gospeakTarget),
       __GOSPEAK_DESKTOP__: String(gospeakTarget === "desktop"),
+      __GOSPEAK_APP_VERSION__: JSON.stringify(appVersion),
     },
     base,
     plugins: [

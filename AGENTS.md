@@ -334,7 +334,10 @@ if err := c.ShouldBindJSON(&req); err != nil {
 | POST | `/api/v1/sfu/update-config` | JWT | `sfu:manage` | SFUConfigHandler.Update |
 | POST | `/api/v1/sfu/switch-provider` | JWT | `sfu:manage` | SFUConfigHandler.SwitchProvider |
 | POST | `/api/v1/sfu/providers` | JWT | `sfu:manage` | SFUConfigHandler.ListProviders |
+| GET | `/api/v1/system/version` | — | 公开 | SystemVersionHandler.Version |
 | GET | `/api/v1/system/stream` | JWT | `RequireRole("admin")` | MonitorHandler.HealthStream |
+| GET | `/api/v1/system/update/current` | JWT | `RequireRole("admin")` | SystemUpdateHandler.CurrentVersion |
+| GET | `/api/v1/system/update/check` | JWT | `RequireRole("admin")` | SystemUpdateHandler.CheckUpdate |
 | POST | `/api/v1/domain/guest/config` | JWT | — | GuestHandler.Config |
 | POST | `/api/v1/domain/guest/ban` | JWT | — | GuestHandler.Ban |
 | POST | `/api/v1/domain/guest/unban` | JWT | — | GuestHandler.Unban |

@@ -8,3 +8,5 @@
  */
 declare const __GOSPEAK_TARGET__: "web" | "desktop";
 declare const __GOSPEAK_DESKTOP__: boolean;
+/** 前端构建版本号（打包期从根 package.json 读取，未注入时为 "dev"）。 */
+declare const __GOSPEAK_APP_VERSION__: string;

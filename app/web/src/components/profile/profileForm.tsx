@@ -1,13 +1,15 @@
-import { toast } from "@gospeak/components";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Button, toast } from "@gospeak/components";
+import { useEffect, useRef, useState } from "react";
 import { updateProfile } from "@/api/user";
-import Avatar from "@/components/common/avatar";
+import ConfirmModal from "@/components/common/ConfirmModal";
 import { useUpload } from "@/hooks/useUpload";
 import { useUserStore } from "@/stores/userStore";
 import { localizedApiMessage } from "@/utils/errorMessages";
 import { toastActionError } from "@/utils/toast";
 import AvatarCropperModal from "./AvatarCropperModal";
-import PresetAvatars from "./presetAvatars";
+import AvatarEditor from "./AvatarEditor";
+import ProfileFields from "./ProfileFields";
+import { userRoleLabel } from "./roleLabel";
 
 export type ProfileFormMode = "view" | "edit";
 
@@ -22,12 +24,9 @@ export type ProfileFormProps = {
 	showRole?: boolean;
 	/** 保存成功后回调 */
 	onSaved?: () => void;
-	/** 底部额外内容（如退出登录） */
-	footer?: ReactNode;
 };
 
-const inputClass =
-	"border-input bg-card text-foreground focus-visible:ring-ring flex h-10 w-full rounded-sm border px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50";
+type Snapshot = { displayName: string; avatar: string };
 
 export default function ProfileForm({
 	variant = "page",
@@ -35,7 +34,6 @@ export default function ProfileForm({
 	showUsername = true,
 	showRole = true,
 	onSaved,
-	footer,
 }: ProfileFormProps) {
 	const isCompact = variant === "compact";
 
@@ -45,11 +43,16 @@ export default function ProfileForm({
 		user?.display_name || user?.name || "",
 	);
 	const [avatar, setAvatar] = useState(user?.avatar || "");
+	const [baseline, setBaseline] = useState<Snapshot>({
+		displayName: user?.display_name || user?.name || "",
+		avatar: user?.avatar || "",
+	});
 	const [saving, setSaving] = useState(false);
 	const [saveError, setSaveError] = useState("");
 	const [preview, setPreview] = useState<string | null>(null);
 	const [cropOpen, setCropOpen] = useState(false);
 	const [cropFile, setCropFile] = useState<File | null>(null);
+	const [confirmDiscard, setConfirmDiscard] = useState(false);
 	const { upload, uploading } = useUpload("avatars");
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -68,6 +71,11 @@ export default function ProfileForm({
 		return () => URL.revokeObjectURL(preview);
 	}, [preview]);
 
+	const snapshot = (): Snapshot => ({
+		displayName: user?.display_name || user?.name || "",
+		avatar: user?.avatar || "",
+	});
+
 	const resetFromUser = () => {
 		setDisplayName(user?.display_name || user?.name || "");
 		setAvatar(user?.avatar || "");
@@ -76,10 +84,26 @@ export default function ProfileForm({
 
 	const enterEdit = () => {
 		resetFromUser();
+		setBaseline(snapshot());
+		setSaveError("");
 		setMode("edit");
 	};
 
+	const dirty =
+		displayName !== baseline.displayName || avatar !== baseline.avatar;
+
 	const cancelEdit = () => {
+		if (dirty) {
+			setConfirmDiscard(true);
+			return;
+		}
+		resetFromUser();
+		setMode("view");
+	};
+
+	const discardChanges = () => {
+		setConfirmDiscard(false);
+		setSaveError("");
 		resetFromUser();
 		setMode("view");
 	};
@@ -142,6 +166,7 @@ export default function ProfileForm({
 		try {
 			await updateProfile({ display_name: name, avatar });
 			await useUserStore.getState().fetchProfile();
+			setBaseline({ displayName: name, avatar });
 			toast.success("资料已保存");
 			setMode("view");
 			onSaved?.();
@@ -156,183 +181,103 @@ export default function ProfileForm({
 
 	const displayAvatar = preview || avatar;
 	const avatarName = displayName || user?.display_name || user?.name || "?";
-	const avatarSize = isCompact ? "size-16" : "size-24";
-	const avatarText = isCompact ? "text-xl" : "text-3xl";
-
-	const btnBase =
-		"inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-sm px-4 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50";
+	const role = userRoleLabel(user?.role);
 
 	return (
 		<div
-			className={`flex w-full flex-col gap-5 ${isCompact ? "items-stretch" : "mx-auto max-w-lg items-center p-6"}`}
+			className={`flex w-full flex-col gap-5 ${isCompact ? "items-stretch" : ""}`}
 		>
-			{/* 头像 */}
-			<div
-				className={`flex w-full gap-4 ${isCompact ? "items-center" : "flex-col items-center"}`}
-			>
-				{mode === "view" ? (
-					<Avatar
-						src={displayAvatar || undefined}
-						name={avatarName}
-						alt="头像"
-						className={`ring-foreground/15 ring-offset-background ring-2 ring-offset-2 ${avatarSize}`}
-						textClass={avatarText}
-					/>
-				) : (
-					<>
-						<button
-							type="button"
-							className="group relative shrink-0 cursor-pointer"
-							onClick={() => fileInputRef.current?.click()}
-							disabled={uploading}
-							title="点击上传头像"
-						>
-							<Avatar
-								src={displayAvatar || undefined}
-								name={avatarName}
-								alt="头像"
-								className={`ring-foreground/15 ring-offset-background ring-2 ring-offset-2 ${avatarSize}`}
-								textClass={avatarText}
-							/>
-							<div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 opacity-0 transition-opacity group-hover:opacity-100">
-								{uploading ? (
-									<span className="border-primary border-t-primary size-5 animate-spin rounded-full border-2" />
-								) : (
-									<span className="text-xs text-white sm:text-sm">
-										更换头像
-									</span>
-								)}
-							</div>
-						</button>
-						<input
-							ref={fileInputRef}
-							type="file"
-							accept="image/jpeg,image/png,image/gif,image/webp"
-							className="hidden"
-							onChange={() => void handleAvatarUpload()}
-						/>
-					</>
-				)}
+			<AvatarEditor
+				mode={mode}
+				src={displayAvatar}
+				name={avatarName}
+				size={isCompact ? "compact" : "page"}
+				uploading={uploading}
+				onPickFile={() => fileInputRef.current?.click()}
+				onPresetSelect={handlePresetSelect}
+				presetsVisible
+				selected={avatar}
+				username={user?.name || ""}
+				roleLabel={role}
+			/>
 
-				<AvatarCropperModal
-					open={cropOpen}
-					file={cropFile}
-					onCancel={() => setCropOpen(false)}
-					onConfirm={(blob, name) => void handleCropConfirm(blob, name)}
-				/>
+			<input
+				ref={fileInputRef}
+				type="file"
+				accept="image/jpeg,image/png,image/gif,image/webp"
+				className="hidden"
+				onChange={() => void handleAvatarUpload()}
+			/>
 
-				{isCompact && (
-					<div className="min-w-0 flex-1">
-						<div className="truncate text-base font-semibold">{avatarName}</div>
-						<div className="text-faint-foreground text-xs">@{user?.name}</div>
-						<div className="bg-muted text-foreground mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-xs">
-							{user?.role || "user"}
-						</div>
-					</div>
-				)}
-			</div>
+			<AvatarCropperModal
+				open={cropOpen}
+				file={cropFile}
+				onCancel={() => setCropOpen(false)}
+				onConfirm={(blob, name) => void handleCropConfirm(blob, name)}
+			/>
 
-			{/* 预设头像 */}
-			{mode === "edit" && (
-				<div className="w-full">
-					<PresetAvatars selected={avatar} onSelect={handlePresetSelect} />
-				</div>
-			)}
+			<ProfileFields
+				mode={mode}
+				displayName={displayName}
+				onDisplayNameChange={setDisplayName}
+				onEnter={() => void handleSave()}
+				saving={saving}
+				showUsername={showUsername}
+				showRole={showRole}
+				username={user?.name || ""}
+				roleLabel={role}
+				isCompact={isCompact}
+			/>
 
-			{/* 字段 */}
-			<div className="flex w-full flex-col gap-3">
-				{showUsername && (
-					<label className="w-full">
-						<span className="mb-1 block text-sm">用户名</span>
-						<input
-							type="text"
-							className={inputClass}
-							value={user?.name || ""}
-							disabled
-						/>
-						<p className="text-faint-foreground mt-1 text-xs">用户名不可修改</p>
-					</label>
-				)}
-
-				<label className="w-full">
-					<span className="mb-1 block text-sm">昵称</span>
-					{mode === "view" ? (
-						<div className="bg-muted flex w-full cursor-default rounded-sm px-3 py-2 text-sm">
-							{displayName || "—"}
-						</div>
-					) : (
-						<input
-							type="text"
-							className={inputClass}
-							value={displayName}
-							placeholder="请输入昵称"
-							maxLength={32}
-							onChange={(e) => setDisplayName(e.currentTarget.value)}
-							onKeyDown={(e) => {
-								if (
-									e.key === "Enter" &&
-									!e.nativeEvent.isComposing &&
-									!saving
-								) {
-									e.preventDefault();
-									void handleSave();
-								}
-							}}
-						/>
-					)}
-				</label>
-
-				{showRole && !isCompact && (
-					<label className="w-full">
-						<span className="mb-1 block text-sm">角色</span>
-						<input
-							type="text"
-							className={inputClass}
-							value={user?.role || ""}
-							disabled
-						/>
-					</label>
-				)}
-			</div>
-
-			{/* 操作 */}
 			{saveError && mode === "edit" && (
 				<p className="text-destructive w-full text-sm" role="alert">
 					{saveError}
 				</p>
 			)}
+
 			<div className="flex w-full flex-wrap gap-2">
 				{mode === "view" ? (
-					<button
+					<Button
 						type="button"
-						className={`border-border hover:bg-muted ${btnBase} ${isCompact ? "" : "w-full"}`}
+						variant="outline"
+						className={isCompact ? "" : "w-full"}
 						onClick={enterEdit}
 					>
 						编辑资料
-					</button>
+					</Button>
 				) : (
 					<>
-						<button
+						<Button
 							type="button"
-							className={`hover:bg-muted ${btnBase} ${isCompact ? "" : "flex-1"}`}
+							variant="ghost"
+							className={isCompact ? "" : "flex-1"}
 							onClick={cancelEdit}
 							disabled={saving}
 						>
 							取消
-						</button>
-						<button
+						</Button>
+						<Button
 							type="button"
-							className={`border-border hover:bg-muted ${btnBase} ${isCompact ? "" : "flex-1"}`}
+							variant="outline"
+							className={isCompact ? "" : "flex-1"}
 							onClick={() => void handleSave()}
-							disabled={saving || uploading}
+							disabled={saving || uploading || !dirty}
 						>
 							保存
-						</button>
+						</Button>
 					</>
 				)}
 			</div>
 
-			{footer && <div className="w-full">{footer}</div>}
+			<ConfirmModal
+				open={confirmDiscard}
+				title="放弃修改"
+				message="当前有未保存的修改，确定要放弃吗？"
+				confirmText="放弃修改"
+				cancelText="继续编辑"
+				onClose={() => setConfirmDiscard(false)}
+				onConfirm={discardChanges}
+			/>
 		</div>
 	);
 }

@@ -1669,6 +1669,19 @@ paths:
       summary: 查询当前服务端版本
       tags:
       - 系统
+  /system/version:
+    get:
+      description: 返回运行中服务端的版本号与 commit（构建时注入，dev 为源码构建）；公开端点，无需鉴权
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg.Response'
+      summary: 查询服务端版本
+      tags:
+      - 系统
   /user-group/create:
     post:
       consumes:

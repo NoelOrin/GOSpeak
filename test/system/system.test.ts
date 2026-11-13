@@ -14,4 +14,17 @@ describe("system module", () => {
 			status: "ok",
 		});
 	});
+
+	// 「关于」页要展示后端版本，且登录前就要能看到，所以版本端点必须公开。
+	it("serves the version endpoint without auth", async () => {
+		const res = await fetch(`${getBaseURL()}/api/v1/system/version`);
+		expect(res.status).toBe(200);
+
+		const body = (await res.json()) as {
+			code: number;
+			data: { version: string; commit: string };
+		};
+		expect(body.code).toBe(0);
+		expect(body.data.version).toBeTruthy();
+	});
 });

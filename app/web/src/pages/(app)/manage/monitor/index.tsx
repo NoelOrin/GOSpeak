@@ -122,18 +122,10 @@ function SectionTitle({ children }: { children: ReactNode }) {
 
 type UpdateStatus = "idle" | "checking" | "latest" | "available" | "error";
 
-/** 只允许 http/https 的发布页链接：后端字段来自 GitHub API，不能直接信任。 */
-export function safeHttpUrl(raw: string | undefined): string | null {
-	if (!raw) return null;
-	try {
-		const url = new URL(raw);
-		return url.protocol === "http:" || url.protocol === "https:"
-			? url.href
-			: null;
-	} catch {
-		return null;
-	}
-}
+// 发布页链接来自 GitHub API，校验 scheme 后再放进 href（实现见 utils）。
+import { safeHttpUrl } from "@/utils/safeHttpUrl";
+
+export { safeHttpUrl };
 
 /**
  * 服务端更新检查卡片。仅平台管理员（role === "admin"）可见：

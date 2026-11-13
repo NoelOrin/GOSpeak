@@ -364,6 +364,7 @@ func StartGin(env EnvEnum) error {
 
 	monitorH := handler.NewMonitorHandler(signalHub, cfg, newServerInfraStats(eventBus))
 	systemUpdateH := handler.NewSystemUpdateHandler(service.NewSystemUpdateService())
+	systemVersionH := handler.NewSystemVersionHandler()
 
 	// Prometheus /metrics：业务指标快照 + HTTP 请求指标，可选用 METRICS_TOKEN 保护。
 	metricsSrv := metrics.New(func() metrics.Snapshot { return toMetricsSnapshot(monitorH.Collect()) })
@@ -403,29 +404,30 @@ func StartGin(env EnvEnum) error {
 			}
 			return nil
 		},
-		Auth:         authH,
-		Invite:       inviteH,
-		InviteJoin:   inviteJoinH,
-		JoinRequest:  joinRequestH,
-		User:         userH,
-		UserGroup:    userGroupH,
-		Signal:       signalH,
-		OAuth:        oauthH,
-		Role:         roleH,
-		Room:         roomH,
-		Permission:   permH,
-		Mute:         muteH,
-		Message:      msgH,
-		SFUConfig:    sfuConfigH,
-		Storage:      storageH,
-		Email:        emailH,
-		EmailConfig:  emailConfigH,
-		Monitor:      monitorH,
-		SystemUpdate: systemUpdateH,
-		Domain:       domainH,
-		Conversation: conversationH,
-		Audit:        auditH,
-		Announcement: announcementH,
+		Auth:          authH,
+		Invite:        inviteH,
+		InviteJoin:    inviteJoinH,
+		JoinRequest:   joinRequestH,
+		User:          userH,
+		UserGroup:     userGroupH,
+		Signal:        signalH,
+		OAuth:         oauthH,
+		Role:          roleH,
+		Room:          roomH,
+		Permission:    permH,
+		Mute:          muteH,
+		Message:       msgH,
+		SFUConfig:     sfuConfigH,
+		Storage:       storageH,
+		Email:         emailH,
+		EmailConfig:   emailConfigH,
+		Monitor:       monitorH,
+		SystemUpdate:  systemUpdateH,
+		SystemVersion: systemVersionH,
+		Domain:        domainH,
+		Conversation:  conversationH,
+		Audit:         auditH,
+		Announcement:  announcementH,
 	})
 
 	port := cfg.ServerPort

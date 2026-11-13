@@ -9,6 +9,7 @@
     <a href="https://www.livekit.io" target="_blank"><img src="https://img.shields.io/badge/SFU-LiveKit-0fa5ab?logo=livekit" alt="LiveKit" /></a>
     <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" /></a>
     <a href="https://awesomemygo.dev/apps/gospeak" target="_blank"><img src="https://awesomemygo.dev/badge.svg" alt="Listed on Awesome MyGo" /></a>
+    <a href="https://gospeak.noelorin.top" target="_blank"><img src="https://img.shields.io/badge/演示站-gospeak.noelorin.top-2ea44f" alt="演示站" /></a>
   </p>
 </div>
 
@@ -47,6 +48,10 @@ GOSpeak 是一个自托管的游戏语音平台，基于 LiveKit 提供音视频
 - 前端错误边界：组件、页面、路由三层兜底与全局错误上报。
 
 ## 快速开始
+
+### 在线体验
+
+不想先部署？直接访问演示站 [gospeak.noelorin.top](https://gospeak.noelorin.top) 体验完整功能。
 
 ### 单二进制
 

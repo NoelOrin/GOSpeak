@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { safeHttpUrl } from "./index";
+import { safeHttpUrl } from "./safeHttpUrl";
 
 /**
  * 发布页链接来自后端（其上游是 GitHub API），必须校验 scheme 后再放进 href：
