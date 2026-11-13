@@ -1,14 +1,7 @@
 import { ScrollArea } from "@gospeak/components";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import {
-	Bell,
-	Home,
-	Link,
-	MessageSquare,
-	Settings,
-	ShieldCheck,
-} from "lucide-react";
+import { Bell, Home, MessageSquare, Settings, ShieldCheck } from "lucide-react";
 import { useEffect } from "react";
 import OptionSquare from "@/components/common/optionSquare";
 import { LoadingRegion, SkeletonListRows } from "@/components/common/Skeletons";
@@ -84,14 +77,6 @@ export default function Sidebar({
 					</OptionSquare>
 					<OptionSquare label="聊天" onClick={() => navigate({ to: "/chat" })}>
 						<MessageSquare {...iconProps} />
-					</OptionSquare>
-					<OptionSquare
-						label="分享链接"
-						onClick={() =>
-							navigate({ to: "/link", search: { domain: undefined } })
-						}
-					>
-						<Link {...iconProps} />
 					</OptionSquare>
 					<OptionSquare
 						label="通知"
