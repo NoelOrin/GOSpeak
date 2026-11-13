@@ -14,7 +14,7 @@ export interface OverlayMember {
 /**
  * Lightweight snapshot the main window pushes to the floating overlay so the
  * overlay never needs its own socket / SFU session (which would double-join the
- * voice room). The host relays it to the overlay window via `mygo.Broadcast`.
+ * voice room). The host draws it in the native overlay HUD.
  */
 export interface OverlaySnapshot {
 	roomName: string | null;
@@ -24,7 +24,7 @@ export interface OverlaySnapshot {
 }
 
 /** 覆盖层显示策略。 */
-export type OverlayPolicy = "manual" | "auto";
+export type OverlayPolicy = "manual" | "auto" | "always";
 
 /**
  * 持久化的覆盖层配置（宿主存于用户数据目录 overlay-config.json）。
@@ -38,6 +38,10 @@ export interface OverlayConfig {
 	/** 锁定/解锁拖拽的全局快捷键；空串 = 未设置。 */
 	lockHotkey: string;
 	policy: OverlayPolicy;
+	/** 防录屏：开启后直播/录屏/截图看不到覆盖层（仅 macOS / Windows 生效）。 */
+	contentProtection: boolean;
+	/** HUD 缩放；0 = 按显示器分辨率自动决定。 */
+	scale: number;
 }
 
 export interface Overlay {
@@ -50,9 +54,10 @@ export interface Overlay {
 	setHotkey(hotkey: string): Promise<void>;
 	setLockHotkey(hotkey: string): Promise<void>;
 	setPolicy(policy: OverlayPolicy): Promise<void>;
+	setContentProtection(value: boolean): Promise<void>;
+	setScale(value: number): Promise<void>;
 	setLocked(locked: boolean): Promise<void>;
 	getLocked(): Promise<boolean>;
-	isFullscreenAppInFront(): Promise<boolean>;
 	/** 一次性读回全部持久化配置（设置页 bootstrap）。 */
 	getConfig(): Promise<OverlayConfig>;
 	isVisible(): Promise<boolean>;
@@ -65,10 +70,6 @@ export interface Overlay {
 
 	/** Push a fresh room/member/speaking snapshot to the overlay window. */
 	pushState(snapshot: OverlaySnapshot): Promise<void>;
-	/** Request the last pushed snapshot (overlay window bootstrap). */
-	getState(): Promise<OverlaySnapshot | null>;
-	/** Subscribe to relayed snapshots from the main window. */
-	onState(handler: (snapshot: OverlaySnapshot) => void): () => void;
 }
 
 const noopUnsub = () => {};
@@ -87,12 +88,11 @@ const webFallback: Overlay = {
 	async setHotkey() {},
 	async setLockHotkey() {},
 	async setPolicy() {},
+	async setContentProtection() {},
+	async setScale() {},
 	async setLocked() {},
 	async getLocked() {
 		return true;
-	},
-	async isFullscreenAppInFront() {
-		return false;
 	},
 	async getConfig() {
 		return {
@@ -100,7 +100,9 @@ const webFallback: Overlay = {
 			opacity: 1,
 			hotkey: "",
 			lockHotkey: "",
-			policy: "manual",
+			policy: "auto",
+			contentProtection: false,
+			scale: 0,
 		};
 	},
 	async isVisible() {
@@ -116,12 +118,6 @@ const webFallback: Overlay = {
 		return noopUnsub;
 	},
 	async pushState() {},
-	async getState() {
-		return null;
-	},
-	onState() {
-		return noopUnsub;
-	},
 };
 
 // 命令名由 command("Overlay", "PushState") 构造，与 app/desktop/overlay.go 中
@@ -136,10 +132,11 @@ const native: Overlay = {
 	setHotkey: (h) => bridge.invoke(command("Overlay", "SetHotkey"), h),
 	setLockHotkey: (h) => bridge.invoke(command("Overlay", "SetLockHotkey"), h),
 	setPolicy: (p) => bridge.invoke(command("Overlay", "SetPolicy"), p),
+	setContentProtection: (v) =>
+		bridge.invoke(command("Overlay", "SetContentProtection"), v),
+	setScale: (v) => bridge.invoke(command("Overlay", "SetScale"), v),
 	setLocked: (v) => bridge.invoke(command("Overlay", "SetLocked"), v),
 	getLocked: () => bridge.invoke<boolean>(command("Overlay", "GetLocked")),
-	isFullscreenAppInFront: () =>
-		bridge.invoke<boolean>(command("Overlay", "IsFullscreenAppInFront")),
 	getConfig: () =>
 		bridge.invoke<OverlayConfig>(command("Overlay", "GetConfig")),
 	isVisible: () => bridge.invoke<boolean>(command("Overlay", "IsVisible")),
@@ -151,10 +148,6 @@ const native: Overlay = {
 		bridge.listen("overlay.lock", (locked) => handler(Boolean(locked))),
 	pushState: (snapshot) =>
 		bridge.invoke(command("Overlay", "PushState"), snapshot),
-	getState: () =>
-		bridge.invoke<OverlaySnapshot | null>(command("Overlay", "GetState")),
-	onState: (handler) =>
-		bridge.listen("overlay:state", (s) => handler(s as OverlaySnapshot)),
 };
 
 /** Returns native overlay controls inside the desktop host, web fallback otherwise. */

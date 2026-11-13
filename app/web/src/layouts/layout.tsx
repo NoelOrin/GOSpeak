@@ -341,8 +341,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 	const location = useLocation();
 	// 全局快捷键（M 静音等）：挂在布局层，登录后的所有页面都生效
 	useGlobalShortcuts();
-	// 把主窗口的房间/成员/发言状态接力推给浮窗覆盖层（仅在桌面端、且非覆盖层
-	// 自身时生效；覆盖层路由不走此 Layout，天然不会反向推送）。
+	// 把主窗口的房间/成员/发言状态接力推给原生覆盖层 HUD（仅桌面端生效）。
 	useOverlayRelay();
 
 	const isDomain = location.pathname.startsWith("/domain");

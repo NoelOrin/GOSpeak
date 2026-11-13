@@ -56,10 +56,7 @@ initTheme();
 
 // 启动即申请麦克风权限：授权后 enumerateDevices 才给真实 deviceId / label，
 // 设备变化检测与热切换都依赖它。失败不阻塞应用（拒绝授权时降级为系统默认）。
-// 覆盖层窗口（/overlay）是纯展示、不涉及音频，跳过以免重复弹麦克风权限。
-if (typeof window !== "undefined" && window.location.pathname !== "/overlay") {
-	void requestAudioPermission();
-}
+void requestAudioPermission();
 
 // 桌面端分享链接要用后端服务器地址而不是回环 origin，先预热缓存再渲染。
 void loadPublicBaseUrl();

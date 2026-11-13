@@ -44,7 +44,11 @@ GOSpeak 桌面端的**本体**：一个用 [MyGo](https://github.com/egoist/mygo
 | `assets.go` | 读取内嵌图标并应用到 Dock / 窗口 / 托盘 |
 | `proxyserver.go` | 本地回环反向代理：托管内嵌前端（gzip 边车 / 强缓存 / ETag）+ 转发 `/api` `/livekit` `/ws` 到配置的服务器 |
 | `server_config.go` | 后端地址持久化（`server-config.json`，**权威**）；切换时清 Cookie/会话缓存并重载窗口。页面侧 `localStorage` 只是同步镜像，见 `packages/desktop` 的「服务器地址：双持久化」 |
-| `overlay.go` | 游戏覆盖层窗口：按需创建、全局快捷键、显隐策略、成员状态接力 |
+| `overlay.go` | 游戏覆盖层窗口：Panel 窗口、原生 HUD、全局快捷键、显示策略、成员状态接力 |
+| `overlay_view.go` | 覆盖层 HUD 的原生视图（mygo `ui` 绘制，跟随系统主题） |
+| `overlay_avatar.go` | 覆盖层头像的异步加载与缓存 |
+| `overlay_policy.go` | 覆盖层显示策略的纯函数求值 |
+| `overlay_scale.go` | 覆盖层按显示器分辨率的自适应缩放 |
 | `startup.go` | 启动耗时追踪（`GOSPEAK_STARTUP_DEBUG=1`，见「启动耗时」） |
 | `proxyport.go` | 回环代理的稳定端口选择与持久化（`proxy-port.json`） |
 | `lifecycle.go` | 关窗进托盘、Dock 激活、单实例聚焦与退出标记 |
@@ -149,9 +153,9 @@ MYGO_LDFLAGS="-X 'main.version=1.2.3' -X 'main.commit=abc1234'" \
 - **反向代理连接池**：专用 `Transport`（每主机 16 条空闲连接、90s idle、禁用
   `HTTP(S)_PROXY`），避免默认的 2 条空闲连接在 API 突发时反复握手，也避免用户机器上
   的环境代理劫持「回环→自建服务器」的流量。上游不可达时返回统一 JSON 错误（6002）。
-- **覆盖层窗口按需创建**（`overlay.go`）：默认关闭时不再预建第二个 WebView
-  （否则启动就要多解析/驻留一整份前端 JS）。开启开关、快捷键或策略显示时才创建，
-  创建回调会补上期间挂起的"显示"请求。
+- **覆盖层窗口按需创建**（`overlay.go`）：默认关闭时不建窗口。开启开关、快捷键或
+  策略显示时才创建，创建回调会补上期间挂起的"显示"请求。HUD 用 mygo `ui` 原生绘制，
+  不加载第二个 WebView，因此没有第二份前端 JS 的解析与驻留。
 - **状态接力节流**（`app/web/src/hooks/useOverlayRelay.ts`）：覆盖层关闭时主窗口
   完全不推送；开启后按 100ms 尾部合并推送（原为逐帧），并按 JSON key 去重。
 - **配置落盘防抖**：不透明度滑块这类高频变更不再每次同步写 `overlay-config.json`，
@@ -192,6 +196,52 @@ MYGO_LDFLAGS="-X 'main.version=1.2.3' -X 'main.commit=abc1234'" \
 cd app/desktop && go build -o /tmp/gospeak . \
   && GOSPEAK_STARTUP_DEBUG=1 GOSPEAK_STARTUP_EXIT_MS=4000 /tmp/gospeak
 ```
+
+## 覆盖层（游戏内浮层）
+
+覆盖层是一个 mygo **Panel 窗口**（`Panel: true`）：浮在所有应用之上、跟随 Space 切换、
+能盖住别人的全屏应用、不进 Alt+Tab / Mission Control、不抢键盘焦点。HUD 由 mygo 的
+`ui` 包在 GPU 上原生绘制（`WindowOptions.Content`），不加载第二个 WebView。
+
+显示策略三选（设置页 → 桌面端）：
+
+| 策略 | 行为 |
+| --- | --- |
+| `auto`（默认） | 已进入语音房间且 `mygo.App.IsActive()` 为假（GOSpeak 不在前台）时显示 |
+| `always` | 已进入语音房间就一直显示 |
+| `manual` | 只由快捷键 / 托盘控制 |
+
+`auto` 决策由两条路径触发：macOS 用 `OnDidBecomeActive` / `OnDidResignActive`
+事件即时响应；Windows / Linux 上 mygo 不发激活事件，由 1s 低频轮询兜底
+（`startOverlayPolicyLoop`），决策不变时 `setOverlayVisible` 直接返回。全屏检测
+（Win32 `GetForegroundWindow` 那套）已删除——Panel 本身就解决了盖全屏的问题。
+
+### 屏幕自适应缩放
+
+HUD 尺寸以 DIPs 为基准，通过 `ui.Context.SetZoom(z)` 缩放：内容按 `1/z` 布局、放大
+`z` 倍渲染，文字与图标按屏幕分辨率重绘，**不是位图放大**。默认按覆盖层所在显示器的
+逻辑宽度自动选 z（≤1920 用 1.0，≤2560 用 1.25，≤3440 用 1.35，更大用 1.5），用户可在
+设置页手动覆盖（`OverlayConfig.Scale`，0 = 自动）。
+
+注意窗口尺寸换算：`SetContentSize` 收的是**窗口 DIPs**，是内容 DIPs 的 z 倍，所以
+`hudWindowSize(n)` 已把 `hudHeight(n)` 乘上 z。
+
+### 全屏覆盖的边界
+
+Windows 上「全屏」分三种：
+
+| 模式 | DWM | 能否覆盖 |
+| --- | --- | --- |
+| 无边框窗口 | 合成 | 能 |
+| FSO（全屏优化） | 合成 | 能 |
+| 真 FSE（legacy flip） | 合成被挂起 | 不能 |
+
+FSO 从 Windows 10 起默认开启，所以玩家在游戏里选「全屏」的绝大多数场景都能覆盖。
+盖不住时（用户手动禁用 FSO、老游戏），连 Windows 音量条和 Game Bar 也盖不上去。
+设置页会提示用户改用无边框窗口。
+
+Discord / Steam 能盖住真 FSE，是因为它们注入 DLL 并 hook `IDXGISwapChain::Present`。
+本项目不做注入：纯 Go 无 cgo 的架构不允许，且有反作弊封号风险。
 
 ## 接入新能力
 

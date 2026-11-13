@@ -132,7 +132,7 @@ func TestServeDistRevalidatesWithETag(t *testing.T) {
 
 func TestServeIndexIsNeverCachedBlindly(t *testing.T) {
 	s := newServeTestServer()
-	for _, target := range []string{"/", "/overlay"} {
+	for _, target := range []string{"/", "/domain/test"} {
 		rec := do(s, target, nil)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s: status = %d, want 200", target, rec.Code)
@@ -301,9 +301,9 @@ func TestHandlerServesRealDistOverHTTP(t *testing.T) {
 		t.Error("GET / did not return the frontend")
 	}
 
-	deep, err := client.Get(ts.URL + "/overlay")
+	deep, err := client.Get(ts.URL + "/domain/test")
 	if err != nil {
-		t.Fatalf("GET /overlay: %v", err)
+		t.Fatalf("GET /domain/test: %v", err)
 	}
 	defer func() { _ = deep.Body.Close() }()
 	if deep.StatusCode != http.StatusOK {
