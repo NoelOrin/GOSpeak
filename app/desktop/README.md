@@ -211,9 +211,10 @@ cd app/desktop && go build -o /tmp/gospeak . \
 | `always` | 已进入语音房间就一直显示 |
 | `manual` | 只由快捷键 / 托盘控制 |
 
-`auto` 完全事件驱动（`OnDidBecomeActive` / `OnDidResignActive` + 每次状态接力），
-不做轮询。全屏检测（Win32 `GetForegroundWindow` 那套）已删除——Panel 本身就解决了
-盖全屏的问题。
+`auto` 决策由两条路径触发：macOS 用 `OnDidBecomeActive` / `OnDidResignActive`
+事件即时响应；Windows / Linux 上 mygo 不发激活事件，由 1s 低频轮询兜底
+（`startOverlayPolicyLoop`），决策不变时 `setOverlayVisible` 直接返回。全屏检测
+（Win32 `GetForegroundWindow` 那套）已删除——Panel 本身就解决了盖全屏的问题。
 
 ### 屏幕自适应缩放
 

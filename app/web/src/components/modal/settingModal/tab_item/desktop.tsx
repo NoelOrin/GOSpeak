@@ -271,7 +271,7 @@ function DesktopForm() {
 
 				<Field label="显示策略">
 					<Select
-						value={cfg?.policy ?? "manual"}
+						value={cfg?.policy ?? "auto"}
 						onValueChange={(value) => {
 							patch({ policy: value as OverlayPolicy });
 							void desktop.overlay.setPolicy(value as OverlayPolicy);

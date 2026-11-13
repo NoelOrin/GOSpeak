@@ -25,3 +25,33 @@ func TestPolicyWants(t *testing.T) {
 		}
 	}
 }
+
+func TestToggleVisibilityOverridesAlwaysPolicy(t *testing.T) {
+	overlayCfg.mu.Lock()
+	prevPolicy := overlayCfg.policy
+	prevVisible := overlayCfg.visible
+	prevOverride := overlayCfg.manualOverride
+	prevEnabled := overlayCfg.enabled
+	overlayCfg.policy = overlayPolicyAlways
+	overlayCfg.visible = true
+	overlayCfg.manualOverride = nil
+	overlayCfg.enabled = false
+	overlayCfg.mu.Unlock()
+	defer func() {
+		overlayCfg.mu.Lock()
+		overlayCfg.policy = prevPolicy
+		overlayCfg.visible = prevVisible
+		overlayCfg.manualOverride = prevOverride
+		overlayCfg.enabled = prevEnabled
+		overlayCfg.mu.Unlock()
+	}()
+
+	toggleOverlayVisibility()
+
+	overlayCfg.mu.Lock()
+	override := overlayCfg.manualOverride
+	overlayCfg.mu.Unlock()
+	if override == nil || *override {
+		t.Fatal("hiding via hotkey in always policy must record an override, or the next push shows it again")
+	}
+}

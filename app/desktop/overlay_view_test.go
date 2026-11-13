@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -17,13 +18,15 @@ func testSnapshot(names ...string) OverlaySnapshot {
 
 func newHUD(snap OverlaySnapshot, speaking []string) *hudState {
 	s := &hudState{
-		members:  snap.Members,
-		speaking: make(map[string]bool, len(speaking)),
+		speaking: map[string]bool{},
 		avatarOf: func(string) *ui.Bitmap { return nil },
+		locked:   true,
 	}
+	sp := make(map[string]bool, len(speaking))
 	for _, id := range speaking {
-		s.speaking[id] = true
+		sp[id] = true
 	}
+	s.setState(snap.Members, sp)
 	return s
 }
 
@@ -101,6 +104,48 @@ func TestHUDThemeShadows(t *testing.T) {
 	tt.SetDark(false)
 	if !tt.HasText("阿伟") {
 		t.Fatal("light frame does not show the member")
+	}
+}
+
+func TestHUDDragStateFollowsLock(t *testing.T) {
+	s := newHUD(testSnapshot("阿伟"), nil)
+	if !s.snapshot().locked {
+		t.Fatal("HUD must start locked (no drag handle)")
+	}
+	s.setLocked(false)
+	if s.snapshot().locked {
+		t.Fatal("unlocking must expose the drag handle to the renderer")
+	}
+	// Both lock states must render without panicking (the root is a drag handle
+	// only when unlocked).
+	for _, locked := range []bool{true, false} {
+		s.setLocked(locked)
+		tt := ui.NewTester(hudView(s), hudWidth, hudHeight(1))
+		if !tt.HasText("阿伟") {
+			t.Fatalf("locked=%v: HUD does not render the member", locked)
+		}
+	}
+}
+
+func TestHUDSetStateIsConcurrentSafe(t *testing.T) {
+	s := newHUD(testSnapshot(), nil)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			sp := map[string]bool{"阿伟": true}
+			s.setState(testSnapshot("阿伟", "小林").Members, sp)
+		}()
+		go func() {
+			defer wg.Done()
+			_ = s.snapshot()
+			_ = ui.NewTester(hudView(s), hudWidth, hudHeight(2)).Texts()
+		}()
+	}
+	wg.Wait()
+	if got := len(s.snapshot().members); got != 2 {
+		t.Fatalf("members = %d, want 2", got)
 	}
 }
 

@@ -91,9 +91,6 @@ func openMainWindow() {
 
 // reloadAllWindows reloads the pages in place after a base-URL switch. The
 // page origin is the loopback proxy both before and after, so a reload — not a
-// window rebuild — is all that is needed.
-// reloadAllWindows reloads the pages in place after a base-URL switch. The
-// page origin is the loopback proxy both before and after, so a reload — not a
 // window rebuild — is all that is needed. The overlay draws native UI rather
 // than a page, so it has nothing to reload.
 func reloadAllWindows() {

@@ -41,7 +41,7 @@ func TestAvatarCacheLoadsAndCaches(t *testing.T) {
 	url := srv.URL + "/a.png"
 
 	done := make(chan struct{})
-	c.get("u1", url, func() { close(done) })
+	c.get(url, func() { close(done) })
 	<-done
 
 	if hits.Load() != 1 {
@@ -51,7 +51,7 @@ func TestAvatarCacheLoadsAndCaches(t *testing.T) {
 		t.Fatal("avatar was not cached after a successful load")
 	}
 
-	c.get("u1", url, func() {})
+	c.get(url, func() {})
 	if hits.Load() != 1 {
 		t.Fatalf("server hits after cache hit = %d, want 1", hits.Load())
 	}
@@ -69,7 +69,7 @@ func TestAvatarCacheFailureIsCached(t *testing.T) {
 	url := srv.URL + "/missing.png"
 
 	// A failed load calls no onLoaded, so wait for the failure to be recorded.
-	c.get("u1", url, func() {})
+	c.get(url, func() {})
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		c.mu.Lock()
@@ -84,7 +84,7 @@ func TestAvatarCacheFailureIsCached(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	c.get("u1", url, func() {})
+	c.get(url, func() {})
 	if hits.Load() != 1 {
 		t.Fatalf("server hits for a failed avatar = %d, want 1 (no retry)", hits.Load())
 	}
@@ -96,7 +96,7 @@ func TestAvatarCacheFailureIsCached(t *testing.T) {
 func TestAvatarCacheEmptyURLIsSkipped(t *testing.T) {
 	c := newAvatarCache()
 	called := false
-	c.get("u1", "", func() { called = true })
+	c.get("", func() { called = true })
 	if called {
 		t.Fatal("an empty avatar URL triggered a load")
 	}
@@ -121,5 +121,30 @@ func TestAvatarCacheClear(t *testing.T) {
 	c.clear()
 	if len(c.failed) != 0 {
 		t.Fatal("clear() did not empty the cache")
+	}
+}
+
+func TestAvatarCacheClearInvalidatesInFlightFetch(t *testing.T) {
+	body := pngBytes(t)
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	c := newAvatarCache()
+	url := srv.URL + "/a.png"
+	c.get(url, func() {})
+	c.clear() // server switch while the fetch is blocked in the handler
+	close(release)
+	c.wait() // the stale fetch has settled (and been discarded) by generation
+
+	c.mu.Lock()
+	_, cached := c.images[url]
+	c.mu.Unlock()
+	if cached {
+		t.Fatal("a stale bitmap from the previous server was cached after clear()")
 	}
 }

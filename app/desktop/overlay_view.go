@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -22,12 +23,63 @@ var micIcon = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" vi
 
 var micOffIcon = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><path d="M12 19v3"/></svg>`))
 
-// hudState is what the overlay HUD draws. The main window relays it through
-// Overlay.PushState; the HUD itself never opens a socket or an SFU session.
+// hudState is what the overlay HUD draws. PushState writes it from an IPC
+// goroutine while the ui render frame reads it, so every access goes through mu
+// and a frame draws from an immutable hudSnapshot, never the live fields.
 type hudState struct {
+	mu       sync.RWMutex
 	members  []OverlayMember
 	speaking map[string]bool
 	avatarOf func(identity string) *ui.Bitmap
+	locked   bool
+}
+
+// hudSnapshot is one immutable frame of HUD state. Writers publish fresh
+// slices and maps (never mutate published ones), so a snapshot stays valid
+// after its read lock is released.
+type hudSnapshot struct {
+	members  []OverlayMember
+	speaking map[string]bool
+	avatarOf func(identity string) *ui.Bitmap
+	locked   bool
+}
+
+func (s *hudState) snapshot() hudSnapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return hudSnapshot{
+		members:  s.members,
+		speaking: s.speaking,
+		avatarOf: s.avatarOf,
+		locked:   s.locked,
+	}
+}
+
+// setState publishes a new member list and speaking set. It copies both so a
+// published snapshot is never mutated by a later write or by the caller.
+func (s *hudState) setState(members []OverlayMember, speaking map[string]bool) {
+	ms := make([]OverlayMember, len(members))
+	copy(ms, members)
+	sp := make(map[string]bool, len(speaking))
+	for id, v := range speaking {
+		sp[id] = v
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.members = ms
+	s.speaking = sp
+}
+
+func (s *hudState) setAvatarOf(f func(string) *ui.Bitmap) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.avatarOf = f
+}
+
+func (s *hudState) setLocked(v bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.locked = v
 }
 
 // hudHeight returns the window height in content DIPs for n members: the
@@ -56,17 +108,24 @@ func orderMembers(members []OverlayMember, speaking map[string]bool) []OverlayMe
 // colour, which stays readable on a dark and on a light game alike.
 func hudView(s *hudState) func(*ui.Context) {
 	return func(c *ui.Context) {
+		snap := s.snapshot()
 		t := c.Theme()
 		c.SetZoom(float32(hudScale()))
-		c.Root().Background(ui.Transparent)
-		if len(s.members) == 0 {
+		root := c.Root().Background(ui.Transparent)
+		// Unlocked, the whole HUD is the drag handle that moves the frameless
+		// window. Locked, SetIgnoreMouseEvents already passes the pointer to the
+		// game, so leave the root inert.
+		if !snap.locked {
+			root.DragWindow()
+		}
+		if len(snap.members) == 0 {
 			return
 		}
 		shadow := ui.RGBA(0, 0, 0, 0.9)
 		if !t.Dark {
 			shadow = ui.RGBA(255, 255, 255, 0.9)
 		}
-		ordered := orderMembers(s.members, s.speaking)
+		ordered := orderMembers(snap.members, snap.speaking)
 		shown := ordered
 		overflow := 0
 		if len(shown) > hudMaxRows {
@@ -75,7 +134,7 @@ func hudView(s *hudState) func(*ui.Context) {
 		}
 		ui.Column(c).Padding(hudPadding).Children(func() {
 			for _, m := range shown {
-				hudRow(c, s, m, shadow)
+				hudRow(c, &snap, m, shadow)
 			}
 			if overflow > 0 {
 				ui.Text(c, fmt.Sprintf("+%d", overflow)).
@@ -87,7 +146,7 @@ func hudView(s *hudState) func(*ui.Context) {
 	}
 }
 
-func hudRow(c *ui.Context, s *hudState, m OverlayMember, shadow ui.Color) {
+func hudRow(c *ui.Context, s *hudSnapshot, m OverlayMember, shadow ui.Color) {
 	t := c.Theme()
 	speaking := s.speaking[m.Identity]
 	nameColor := t.TextMuted
@@ -116,7 +175,7 @@ func hudRow(c *ui.Context, s *hudState, m OverlayMember, shadow ui.Color) {
 	})
 }
 
-func hudAvatarView(c *ui.Context, s *hudState, m OverlayMember, speaking bool) {
+func hudAvatarView(c *ui.Context, s *hudSnapshot, m OverlayMember, speaking bool) {
 	t := c.Theme()
 	box := ui.Box(c).Size(hudAvatar, hudAvatar)
 	if speaking {
@@ -131,7 +190,7 @@ func hudAvatarView(c *ui.Context, s *hudState, m OverlayMember, speaking bool) {
 		}
 		ui.Box(c).
 			Size(hudAvatar, hudAvatar).
-			Radius(hudAvatar/2).
+			Radius(hudAvatar / 2).
 			Background(t.Accent).
 			Center().
 			Children(func() {

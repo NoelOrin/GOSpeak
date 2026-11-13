@@ -14,7 +14,7 @@ export interface OverlayMember {
 /**
  * Lightweight snapshot the main window pushes to the floating overlay so the
  * overlay never needs its own socket / SFU session (which would double-join the
- * voice room). The host relays it to the overlay window via `mygo.Broadcast`.
+ * voice room). The host draws it in the native overlay HUD.
  */
 export interface OverlaySnapshot {
 	roomName: string | null;
@@ -70,8 +70,6 @@ export interface Overlay {
 
 	/** Push a fresh room/member/speaking snapshot to the overlay window. */
 	pushState(snapshot: OverlaySnapshot): Promise<void>;
-	/** Request the last pushed snapshot (overlay window bootstrap). */
-	getState(): Promise<OverlaySnapshot | null>;
 }
 
 const noopUnsub = () => {};
@@ -102,7 +100,7 @@ const webFallback: Overlay = {
 			opacity: 1,
 			hotkey: "",
 			lockHotkey: "",
-			policy: "manual",
+			policy: "auto",
 			contentProtection: false,
 			scale: 0,
 		};
@@ -120,9 +118,6 @@ const webFallback: Overlay = {
 		return noopUnsub;
 	},
 	async pushState() {},
-	async getState() {
-		return null;
-	},
 };
 
 // 命令名由 command("Overlay", "PushState") 构造，与 app/desktop/overlay.go 中
@@ -153,8 +148,6 @@ const native: Overlay = {
 		bridge.listen("overlay.lock", (locked) => handler(Boolean(locked))),
 	pushState: (snapshot) =>
 		bridge.invoke(command("Overlay", "PushState"), snapshot),
-	getState: () =>
-		bridge.invoke<OverlaySnapshot | null>(command("Overlay", "GetState")),
 };
 
 /** Returns native overlay controls inside the desktop host, web fallback otherwise. */
