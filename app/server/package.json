@@ -1,6 +1,6 @@
 {
   "name": "@gospeak/server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "scripts": {
     "predev": "[ -f \"$(go env GOPATH)/bin/air\" ] || go install github.com/air-verse/air@latest",

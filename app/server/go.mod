@@ -1,6 +1,6 @@
 module GOSpeak
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/aarondl/authboss/v3 v3.5.3
