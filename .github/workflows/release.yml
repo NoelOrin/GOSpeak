@@ -30,6 +30,16 @@ name: Release
 on:
   push:
     tags: ["gospeak-server-v*", "gospeak-desktop-v*"]
+  # version-bump.yml 打完 tag 后直接调用本 workflow。
+  # 不能只靠上面的 push.tags：version-bump 用 GITHUB_TOKEN 推 tag，
+  # GitHub 会抑制由此派生的 workflow（防递归），tag 推上去了但发布不会跑。
+  # workflow_call 是 job 级调用，不受该限制，也不需要额外 PAT。
+  workflow_call:
+    inputs:
+      tag:
+        description: "要发布的 tag（gospeak-<component>-v<version>）"
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       tag:
