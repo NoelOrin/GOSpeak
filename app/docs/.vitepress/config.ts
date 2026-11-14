@@ -18,6 +18,7 @@ export default defineConfig({
     logo: '/logo.png',
 
     nav: [
+      { text: '下载', link: '/#download' },
       { text: '指南', link: '/guide/quickstart', activeMatch: '/guide/' },
       { text: '部署', link: '/deploy/', activeMatch: '/deploy/' },
       { text: '语音', link: '/sfu/', activeMatch: '/sfu/' },

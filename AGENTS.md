@@ -21,7 +21,6 @@ GOSpeak/
 ├── app/
 │   ├── server/          # Go 后端 (Gin + GORM + SFU abstraction)
 │   ├── web/             # React 19 前端 (TypeScript + rolldown-vite + @tanstack/react-router)
-│   │   └── src/_solid-legacy/   # 迁移暂存的 SolidJS 旧代码，不参与构建
 │   └── docs/            # VitePress 文档站 (architecture / deployment / guide / sfu)
 ├── packages/
 │   ├── components/       # UI 组件库 (Radix 无头组件 + 自有主题 token，shadcn 风格)
@@ -69,7 +68,7 @@ app/server/
 │   │   └── providers/      # SFU provider 实现
 │   │       └── livekit/    # LiveKit gRPC SDK
 │   ├── signal/             # WebSocket signaling hub
-│   │   ├── events.go       # 46 event name constants
+│   │   ├── events.go       # 事件常量（收编自 protocol，别名文件，勿新增）
 │   │   ├── types.go        # RoomRequest, MemberInfo, RoomInfo
 │   │   ├── hub.go          # Hub (room registry + all event handlers)
 │   │   ├── state_sync.go   # Domain 命名空间 + 状态同步
@@ -498,42 +497,27 @@ Standalone package at `internal/sfu/`. Provides a provider interface so multiple
 
 ### Provider Interface (`internal/sfu/provider.go`)
 
+能力方法统一收敛在主接口：调用方直接调用并按 `ErrSFUNotSupported` 降级，禁止类型断言探测能力。`sfu.BaseProvider` 提供"不支持"零实现供测试桩嵌入。
+
 ```go
 type Provider interface {
     ProviderName() string
     Capabilities() Capabilities
     GenerateToken(room, identity string) (string, error)
+    // GenerateTokenWithPublish 显式声明发布权限签发 token；不支持返回 ErrSFUNotSupported
+    GenerateTokenWithPublish(room, identity string, canPublish bool) (string, error)
     ListRooms() ([]RoomSummary, error)
     ListParticipants(room string) ([]ParticipantSummary, error)
     MuteParticipant(room, identity, trackSid string, muted bool) error
+    // MuteParticipantTimed 带 TTL 的定时禁言；不支持返回 ErrSFUNotSupported，调用方降级 MuteParticipant
+    MuteParticipantTimed(room, identity, trackSid string, muted bool, ttlSeconds int) error
     RemoveParticipant(room, identity string) error
     DeleteRoom(room string) error
     GetHost() string
-}
-
-// StreamProvider — stream-based addressing (WHIP/WHEP)
-type StreamProvider interface {
-    Provider
+    SupportsStream() bool
     StreamName(room, identity string) string
     StreamInfo(room, identity string) (stream, token string, err error)
-}
-
-// ClientInfoProvider — exposes provider-specific connection metadata to frontend
-type ClientInfoProvider interface {
-    Provider
     ClientInfo() map[string]interface{}
-}
-
-// PublishControlProvider — 由支持发布控制的 Provider 实现：
-// 签发 token 时显式声明是否允许发布媒体流（访客说权限等场景）
-type PublishControlProvider interface {
-    GenerateTokenWithPublish(room, identity string, canPublish bool) (string, error)
-}
-
-// TimedMuteProvider — 支持带 TTL 的定时禁言；Hub 优先于 MuteParticipant 使用
-type TimedMuteProvider interface {
-    Provider
-    MuteParticipantTimed(room, identity, trackSid string, muted bool, ttlSeconds int) error
 }
 ```
 
@@ -690,6 +674,39 @@ fanout.GetClient(clientID) ClientMessenger
 
 ---
 
+## Wire 字段命名约定（snake_case 单一约定）
+
+**传输字段与表单字段只能用 snake_case**：所有 wire 层字段、前端表单字段/内部状态字段名，前后端一致，全小写下划线分隔，如 `audio_only` / `has_password` / `display_name` / `joined_at`。禁止 camelCase（`audioOnly` ❌）。新增任何字段一律 snake_case（Go json tag 即 wire 字段名）。覆盖范围：
+
+- HTTP 请求/响应体（binding structs + model 序列化 + handler 手写 map）
+- WS payload（`internal/protocol` 全部 struct）
+- bus 内部事件 payload（`internal_events.go`）
+- job queue payload map（`chat.persist` 等）
+- JWT claims（`display_name` / `user_uuid` / `token_version` 等）
+- 前端表单字段与镜像 wire 字段的本地状态（如表单 field、弹窗 form values，命名跟随对应 wire 字段）
+
+**白名单（不属于本约定，不得改动）**：
+
+- OAuth 2.0 规范字段（`error_description` 等）与第三方 provider 字段映射（如 QQ `figureurl_qq_2`）
+- cookie 名（`gospeak_token`）、job Type 枚举字符串（`chat.persist`、`sfu_cleanup`）
+- desktop overlay 快照 `OverlayMember`（`packages/desktop`，MyGo 宿主桥接内部 payload）
+- audit Action 语义码（`kick_member` 等）
+- **repository 包的 DB 列名**（GORM `Updates(map)` / `UpdateColumn` / 原生 SQL）——长得像 wire key 但改了即坏，盘点字段名时必须排除该包
+
+强制机制：纯文档约定（本节），review 时把关；无自动 lint。
+
+## Event Protocol Single Source (`internal/protocol`)
+
+WS 事件协议（事件名 + ACK 约定 + payload 类型）的**单一事实源**在 `internal/protocol`：
+
+- `events.go`：事件常量 + `Catalog` 目录（每事件声明 `Dir`（c2s/s2c/both/internal）、`Ack`、`Payload` struct 名）；bus 内部事件在 `internal_events.go`（`Dir: Internal`，不产出 TS）
+- `payloads.go`：wire payload structs（json tag 即 wire 字段名）
+- `cmd/gen-protocol`（go/ast 静态解析）生成 `app/web/src/protocol/generated/{events,payloads,envelope}.ts`，前端手写 `socket/events.ts` 仅重导出
+- **禁止在任何其他包手工书写 wire 事件名字符串**；notify/bus/signal 一律引用 protocol 常量
+- ACK 约定：Ack handler 返回纯 data，错误一律走 error 返回路径（`SendErrorACK`），data 内嵌 `{error,code}`/`{ok,room}` 的旧旁路已退役
+- 防漂移三防线：`TestGeneratedArtifactsFresh`（内存比对）+ lefthook pre-push gen-diff + CI gen-diff；改 protocol 后必须跑 `pnpm gen:protocol`
+- payload struct 化完成：room/member/typing/speaking/sfu/message/private/announcement 全部 + 全部 bus 内部事件；wire 字段命名遵循上文「Wire 字段命名约定」（snake_case）
+
 ## Signal (WebSocket) Module (`internal/signal/`)
 
 WebSocket signaling hub built on `internal/ws/`.
@@ -698,7 +715,7 @@ WebSocket signaling hub built on `internal/ws/`.
 
 | File | Role |
 |------|------|
-| `events.go` | 46 event name constants |
+| `events.go` | 事件常量别名（单一事实源在 `internal/protocol`） |
 | `types.go` | `RoomRequest`, `MemberInfo`, `RoomInfo` structs |
 | `hub.go` | Hub (global room registry + all event handlers + Domain state sync) |
 | `state_sync.go` | Domain namespace isolation + cross-instance state synchronization |
@@ -885,6 +902,8 @@ Access control is **permission-based**, layered on top of roles.
 | `oauth:read` | 查看 OAuth 配置 |
 | `oauth:manage` | 管理 OAuth 配置 |
 | `message:send` | 发送消息 |
+| `announcement:read` | 查看系统公告 |
+| `announcement:manage` | 管理系统公告 |
 | `message:read` | 查看历史消息 |
 | `message:delete_others` | 删除他人消息 |
 | `audit:read` | 查询审计日志（注意：未进入默认权限种子，需手工授予） |
@@ -893,8 +912,8 @@ Access control is **permission-based**, layered on top of roles.
 
 | Role | Permissions |
 |------|------------|
-| `admin` | 显式枚举全部平台权限（不含 `audit:read`） |
-| `user` | `room:create`, `room:read`, `domain:create`, `user:read`, `role:read`, `message:send`, `message:read` |
+| `admin` | 显式枚举全部平台权限（含 `announcement:read`/`announcement:manage`，不含 `audit:read`） |
+| `user` | `room:create`, `room:read`, `domain:create`, `message:send`, `message:read`, `announcement:read`（`user:read`/`role:read` 为平台后台只读权限，按设计仅 admin 持有） |
 | `ban` | (none — intercepted by `BanCheck()`) |
 
 ### Default admin account
@@ -942,7 +961,7 @@ First boot seeds user `admin` / `admin123` when missing. Login returns `need_cha
 
 ## Frontend Architecture
 
-前端已从 SolidJS 迁移到 React 19：React 19 + react-dom 19，`@tanstack/react-router` 文件路由（`src/pages` → `routeTree.gen.ts`，`vite.config.ts` 内联 `tanstackRouter({ target: "react" })`），`@tanstack/react-query` 管理服务端状态，zustand 管理客户端状态（`useXxxStore` hook + `xxxStore` 命令式门面，组件用 selector 订阅）。UI 组件来自 workspace 包 `packages/components`（Radix 无头组件 + 自有主题 token，shadcn 风格，`theme.css`），配 Tailwind CSS 4；图标 `lucide-react`，toast `sonner`，表单 `react-hook-form` + `zod`，测试 vitest 4 + `@testing-library/react`。构建为 rolldown-vite 7（`@vitejs/plugin-react`、`@tanstack/router-plugin/vite`、`@tailwindcss/vite`、`@tanstack/devtools-vite`），dev 端口 3000，`/api/v1` 与 `/ws` 代理到后端 8998（原生 WebSocket，无 socket.io）。`src/_solid-legacy/` 为不参与构建的迁移暂存旧代码。前端已建立三层错误边界与统一上报：组件级 `ErrorBoundary`、页面级 `PageErrorBoundary`、路由级 `RouteErrorComponent`（HOC `withErrorBoundary()` 便捷包裹）；`hooks/useErrorHandler.ts` 把 Promise.catch / 事件回调里的异步错误重抛到渲染阶段交给最近边界；`utils/errorReport.ts` 统一上报（`registerErrorReporter` 可接 Sentry 等外部日志），并由 `installGlobalErrorHandlers()` 兜底 `window.onerror` 与 `unhandledrejection`，`main.tsx` 注册默认错误组件与全局监听（重试时 `router.invalidate()`）。
+前端已从 SolidJS 迁移到 React 19：React 19 + react-dom 19，`@tanstack/react-router` 文件路由（`src/pages` → `routeTree.gen.ts`，`vite.config.ts` 内联 `tanstackRouter({ target: "react" })`），`@tanstack/react-query` 管理服务端状态，zustand 管理客户端状态（`useXxxStore` hook + `xxxStore` 命令式门面，组件用 selector 订阅）。UI 组件来自 workspace 包 `packages/components`（Radix 无头组件 + 自有主题 token，shadcn 风格，`theme.css`），配 Tailwind CSS 4；图标 `lucide-react`，toast `sonner`，表单 `react-hook-form` + `zod`，测试 vitest 4 + `@testing-library/react`。构建为 rolldown-vite 7（`@vitejs/plugin-react`、`@tanstack/router-plugin/vite`、`@tailwindcss/vite`、`@tanstack/devtools-vite`），dev 端口 3000，`/api/v1` 与 `/ws` 代理到后端 8998（原生 WebSocket，无 socket.io）。前端已建立三层错误边界与统一上报：组件级 `ErrorBoundary`、页面级 `PageErrorBoundary`、路由级 `RouteErrorComponent`（HOC `withErrorBoundary()` 便捷包裹）；`hooks/useErrorHandler.ts` 把 Promise.catch / 事件回调里的异步错误重抛到渲染阶段交给最近边界；`utils/errorReport.ts` 统一上报（`registerErrorReporter` 可接 Sentry 等外部日志），并由 `installGlobalErrorHandlers()` 兜底 `window.onerror` 与 `unhandledrejection`，`main.tsx` 注册默认错误组件与全局监听（重试时 `router.invalidate()`）。
 
 ```
 app/web/src/
@@ -968,7 +987,7 @@ app/web/src/
 │   ├── userGroup.ts    # 用户分组
 ├── socket/             # WebSocket client
 │   ├── wsClient.ts     # WebSocket connection manager (reconnect, ACK, fire-and-forget)
-│   ├── events.ts       # EVENTS 常量对象（42 个事件键）
+│   ├── events.ts       # EVENTS 常量（重导出 protocol/generated）
 │   ├── socketEvents.ts # 服务端推送事件绑定
 │   ├── types.ts        # RoomInfo, MemberInfo, MuteEvent, etc.
 │   ├── roomState.ts    # Room list/members state merge helpers

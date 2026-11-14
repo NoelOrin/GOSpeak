@@ -1,6 +1,6 @@
 # 权限体系文档
 
-**更新时间**: 2026-11-07
+**更新时间**: 2026-11-14
 
 ---
 
@@ -26,8 +26,9 @@
 | `storage:read` / `storage:manage` / `storage:delete` | 对象存储配置读取 / 修改 / 对象删除 | |
 | `email_config:read` / `email_config:manage` | SMTP 配置读取 / 修改 | |
 | `oauth:read` / `oauth:manage` | OAuth 提供商读取 / 管理 | |
+| `announcement:read` / `announcement:manage` | 系统公告读取 / 管理 | |
 | `audit:read` | 查询审计日志（未进入默认权限种子，需手工授予） | |
-| `domain:create` / `domain:read` / `domain:manage` / `domain:delete` / `domain:invite` / `domain:kick` / `domain:role:manage` | 语音服务器（Domain）管理系列 | `internal/permcode/domain_permcode.go` |
+| `domain:create` / `domain:read` / `domain:manage` / `domain:delete` / `domain:invite` / `domain:kick` / `domain:role:manage` / `domain:invite:manage` / `domain:member:review` | 语音服务器（Domain）管理系列 | `internal/permcode/domain_permcode.go` |
 
 ---
 
@@ -36,7 +37,7 @@
 | 角色 | 说明 | 默认权限 |
 |------|------|----------|
 | `admin` | 管理员，拥有全部权限 | 所有权限 |
-| `user` | 普通用户 | `room:create`, `room:read`, `user:read`, `role:read` |
+| `user` | 普通用户 | `room:create`, `room:read`, `domain:create`, `message:send`, `message:read`, `announcement:read` |
 | `ban` | 被封禁用户 | 无任何权限 |
 
 ### 默认管理员账号
@@ -62,12 +63,23 @@
 | `room:read` | ✅ | ✅ | ❌ |
 | `room:update` | ✅ | ❌ | ❌ |
 | `room:delete` | ✅ | ❌ | ❌ |
+| **语音服务器（Domain）** | | | |
+| `domain:create` | ✅ | ✅ | ❌ |
+| `domain:read` | ✅ | ❌ | ❌ |
+| `domain:manage` / `domain:delete` / `domain:invite` / `domain:kick` / `domain:role:manage` | ✅ | ❌ | ❌ |
+| **消息** | | | |
+| `message:send` | ✅ | ✅ | ❌ |
+| `message:read` | ✅ | ✅ | ❌ |
+| `message:delete_others` | ✅ | ❌ | ❌ |
+| **公告** | | | |
+| `announcement:read` | ✅ | ✅ | ❌ |
+| `announcement:manage` | ✅ | ❌ | ❌ |
 | **用户** | | | |
-| `user:read` | ✅ | ✅ | ❌ |
+| `user:read` | ✅ | ❌ | ❌ |
 | `user:update` | ✅ | ❌ | ❌ |
 | `user:delete` | ✅ | ❌ | ❌ |
 | **角色** | | | |
-| `role:read` | ✅ | ✅ | ❌ |
+| `role:read` | ✅ | ❌ | ❌ |
 | `role:manage` | ✅ | ❌ | ❌ |
 | **语音** | | | |
 | `signal:kick` | ✅ | ❌ | ❌ |
@@ -146,11 +158,11 @@ middleware.RequireOwnerOrPermission("room_owner", permcode.PermRoomUpdate)
 | POST | `/api/v1/user/delete` | `user:delete` | 删除用户 |
 | POST | `/api/v1/user/update-role` | `user:update` | 更新用户角色 |
 | **房间** | | | |
-| POST | `/api/v1/room/create` | `room:create` | 创建房间 |
-| POST | `/api/v1/room/list` | `room:read` | 房间列表 |
-| POST | `/api/v1/room/get` | `room:read` | 获取房间详情 |
-| POST | `/api/v1/room/update` | `room:update` | 更新房间 |
-| POST | `/api/v1/room/delete` | `room:delete` | 删除房间 |
+| POST | `/api/v1/room/create` | 平台管理员或域成员 | 创建房间 |
+| POST | `/api/v1/room/list` | 平台管理员或域成员（按需） | 房间列表 |
+| POST | `/api/v1/room/get` | JWT | 获取房间详情 |
+| POST | `/api/v1/room/update` | JWT | 更新房间 |
+| POST | `/api/v1/room/delete` | JWT | 删除房间 |
 | **角色** | | | |
 | POST | `/api/v1/role/list` | `role:read` | 角色列表 |
 | POST | `/api/v1/role/create` | `role:manage` | 创建角色 |
@@ -209,7 +221,7 @@ WebSocket 连接通过 `WSAuth` 中间件鉴权（JWT）。
 | `room:leave` | JWT | 离开房间 |
 | `room:list` | JWT | 房间列表 |
 | `room:kick` | `signal:kick` | 踢出房间 |
-| `member:speaking` | JWT | 上报本端发言状态 |
+| `member:speaking` | JWT | 上报本端发言状态（C→S） |
 
 ---
 

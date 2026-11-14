@@ -24,11 +24,12 @@ GOSpeak 的权限分两层，这两层经常被混淆：
 普通用户只有这几项：
 
 ```
-room:create    建房间
-room:read      看房间
-domain:create  建域
-message:send   发消息
-message:read   看消息
+room:create         建房间
+room:read           看房间
+domain:create       建域
+message:send        发消息
+message:read        看消息
+announcement:read   看公告
 ```
 
 特别注意**没有** `user:read` 和 `role:read`。这是刻意的设计——一旦授予这两项，所有用户的侧栏都会出现「管理」入口。
@@ -49,8 +50,11 @@ message:read   看消息
 | `oauth:read` / `oauth:manage` | 第三方登录配置 |
 | `domain:create` / `domain:read` / `domain:manage` / `domain:delete` | 域增删改查 |
 | `domain:invite` | 生成邀请 |
+| `domain:invite:manage` | 管理邀请码（重置/停用） |
+| `domain:member:review` | 审批加入申请 |
 | `domain:kick` | 从域内移除成员 |
 | `domain:role:manage` | 管理域内角色 |
+| `announcement:read` / `announcement:manage` | 系统公告读取 / 管理 |
 | `audit:read` | 查看审计日志（默认未授予任何角色，需手动授权） |
 
 ### 修改角色权限
@@ -117,7 +121,7 @@ POST /api/v1/permission/sync
 
 改密码会使旧令牌失效。`users.token_version` 存在于 JWT 中，改密码或重置密码会将该值加一，之前签发的所有令牌随之立即作废。
 
-登出是另一套机制：将该次令牌的 JTI 写入 NATS KV 黑名单，到期自动清理。
+登出是另一套机制：将该次令牌的 JTI 写入内嵌 NATS 的 KV 黑名单，到期自动清理。
 
 ## 排查权限问题
 
