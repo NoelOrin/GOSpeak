@@ -7,14 +7,12 @@ import (
 	"GOSpeak/internal/sfu"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
 	"GOSpeak/internal/ws"
+	"GOSpeak/internal/logger"
 )
-
-// roomStore abstracts DB room listing for Hub.
 
 // roomStore abstracts DB room listing for Hub.
 type roomStore interface {
@@ -24,14 +22,10 @@ type roomStore interface {
 }
 
 // muteStore abstracts mute checking for Hub.
-
-// muteStore abstracts mute checking for Hub.
 type muteStore interface {
 	IsMutedByIdentity(identity string) (bool, *model.Mute, error)
 	IsMutedBatch(identities []string) (map[string]bool, error)
 }
-
-// userStore abstracts user lookup for Hub.
 
 // userStore abstracts user lookup for Hub.
 type userStore interface {
@@ -42,31 +36,16 @@ type userStore interface {
 }
 
 // permChecker 抽象权限校验，复用 service.PermissionService 的内存缓存。
-
-// permChecker 抽象权限校验，复用 service.PermissionService 的内存缓存。
 type permChecker interface {
 	HasPermission(roleName, permCode string) bool
 }
 
 // broadcastFn 供 provider 模块广播房间事件，无需依赖 Hub 具体类型。
-
-// broadcastFn 供 provider 模块广播房间事件，无需依赖 Hub 具体类型。
 type BroadcastFn func(room, event string, data interface{})
-
-// StreamNameResolver 计算给定 room+identity 的预期 stream 名，用于服务端覆写客户端提报值。
 
 // StreamNameResolver 计算给定 room+identity 的预期 stream 名，用于服务端覆写客户端提报值。
 type StreamNameResolver interface {
 	StreamName(room, identity string) string
-}
-
-// ParticipantCleanupHandler 处理参与者离开时的 SFU 专属清理(如 mediasoup 广播 producer-closed + 关 transport)。
-// 仅 mediasoup 实现;其它 provider 不实现此接口,Hub OnDisconnect 类型断言跳过。
-
-// ParticipantCleanupHandler 处理参与者离开时的 SFU 专属清理(如 mediasoup 广播 producer-closed + 关 transport)。
-// 仅 mediasoup 实现;其它 provider 不实现此接口,Hub OnDisconnect 类型断言跳过。
-type ParticipantCleanupHandler interface {
-	OnParticipantLeft(room, identity string)
 }
 
 type Hub struct {
@@ -81,17 +60,7 @@ type Hub struct {
 	muteStore       muteStore
 	userStore       userStore
 	permChecker     permChecker
-	activeStreams   map[string]struct{}
-	// roomStreams 维护 room→stream 集合的聚合视图，供需要 room 聚合视图的 provider 查询。
-	// 由 WS join/leave 与推流回调双源同步。
-	roomStreams map[string]map[string]struct{}
-	// streamRoomCache 维护 stream→room 反查，供仅持有 stream 名的回调反查 room 同步 roomStreams。
-	streamRoomCache map[string]string
-	// streamByIdentity 维护 room→identity→stream 映射，供 RemoveParticipant
-	// 按 identity 查实际登记的 stream，避免反算命名约定（命名函数变更后旧连接仍可查）。
-	streamByIdentity   map[string]map[string]string
-	participantCleanup ParticipantCleanupHandler
-	membershipStore    membershipStore
+	membershipStore membershipStore
 	instanceID         string
 	cleanupPub         cleanupPublisher
 	stateNotifier      stateNotifier
@@ -137,7 +106,7 @@ type HubOptions struct {
 	StateNotifier           stateNotifier
 }
 
-// NewHub 保留测试友好的四参构造，生产路径请使用 NewHubWithOptions。
+// NewHub 测试缝四参构造（配合 Set* 后置注入）；生产路径请使用 NewHubWithOptions。
 func NewHub(store roomStore, mStore muteStore, uStore userStore, pChecker permChecker) *Hub {
 	return NewHubWithOptions(store, mStore, uStore, pChecker, HubOptions{})
 }
@@ -150,10 +119,6 @@ func NewHubWithOptions(store roomStore, mStore muteStore, uStore userStore, pChe
 		muteStore:        mStore,
 		userStore:        uStore,
 		permChecker:      pChecker,
-		activeStreams:    make(map[string]struct{}),
-		roomStreams:      make(map[string]map[string]struct{}),
-		streamRoomCache:  make(map[string]string),
-		streamByIdentity: make(map[string]map[string]string),
 		connSlots:        make(map[string]*connRoomSlots),
 		clientDomains:    make(map[string]string),
 		kickBans:         make(map[string]time.Time),
@@ -175,6 +140,7 @@ func NewHubWithOptions(store roomStore, mStore muteStore, uStore userStore, pChe
 	return h
 }
 
+// 以下 Set* 为测试缝（生产路径统一走 NewHubWithOptions + SetupFanout）。
 func (h *Hub) SetFanout(f ws.Broadcaster) {
 	h.fanout = f
 }
@@ -224,10 +190,6 @@ func (h *Hub) checkWSPolicy(c ws.ClientMessenger, action policy.Action, domainUU
 // ─── 事件注册 ───
 
 // SetupFanout registers all signal event handlers with the WS HandlerRegistry.
-
-// ─── 事件注册 ───
-
-// SetupFanout registers all signal event handlers with the WS HandlerRegistry.
 func (h *Hub) SetupFanout(fanout ws.Broadcaster, handler *ws.HandlerRegistry) {
 	h.SetFanout(fanout)
 
@@ -250,16 +212,12 @@ func (h *Hub) SetupFanout(fanout ws.Broadcaster, handler *ws.HandlerRegistry) {
 }
 
 // claimsIdentity 从连接上下文读取 JWT 身份；未鉴权返回空。
-
-// claimsIdentity 从连接上下文读取 JWT 身份；未鉴权返回空。
 func clientIdentity(c ws.ClientMessenger) string {
 	if c == nil || c.Claims() == nil {
 		return ""
 	}
 	return c.Claims().Username
 }
-
-// resolveIdentity 强制使用 JWT 身份，忽略客户端伪造的 identity。
 
 // resolveIdentity 强制使用 JWT 身份，忽略客户端伪造的 identity。
 func resolveIdentity(c ws.ClientMessenger, requested string) (string, error) {
@@ -314,15 +272,8 @@ func (h *Hub) setClientDomain(c ws.ClientMessenger, domainUUID string) {
 // JWT auth is handled by the Upgrader before the client reaches the Hub;
 // this hook is for logging only. The connection is already authenticated
 // and claims are available via c.Claims().
-
-// ─── 连接/断开 ───
-
-// OnConnect is called when a new WS client connects.
-// JWT auth is handled by the Upgrader before the client reaches the Hub;
-// this hook is for logging only. The connection is already authenticated
-// and claims are available via c.Claims().
 func (h *Hub) OnConnect(c ws.ClientMessenger) error {
-	log.Printf("[Signal] client connected: %s", c.ID())
+	logger.WithComponent("Signal").Infof("[Signal] client connected: %s", c.ID())
 	// Join personal room for direct message delivery: __user:{identity}
 	if identity := clientIdentity(c); identity != "" {
 		if h.fanout != nil {
@@ -336,17 +287,12 @@ func (h *Hub) OnConnect(c ws.ClientMessenger) error {
 
 // OnError 兜底处理 WS 层 error（含 OnConnect 返回的 panic error）。
 // 仅记录日志，不做断连等副作用——连接级错误由库自行处理。
-
-// ─── 房间创建 ───
-
-// OnError 兜底处理 WS 层 error（含 OnConnect 返回的 panic error）。
-// 仅记录日志，不做断连等副作用——连接级错误由库自行处理。
 func (h *Hub) OnError(c ws.ClientMessenger, err error) {
 	if c == nil {
-		log.Printf("[Signal] socket error: err=%v", err)
+		logger.WithComponent("Signal").Infof("[Signal] socket error: err=%v", err)
 		return
 	}
-	log.Printf("[Signal] socket error: conn=%s err=%v", c.ID(), err)
+	logger.WithComponent("Signal").Infof("[Signal] socket error: conn=%s err=%v", c.ID(), err)
 }
 
 func parseJSON(data string, v interface{}) error {

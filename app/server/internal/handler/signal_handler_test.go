@@ -23,6 +23,7 @@ import (
 // ─── Mock SFU Provider ───
 
 type mockSFU struct {
+	sfu.BaseProvider
 	tokenFn          func(room, identity string) (string, error)
 	listRoomsFn      func() ([]sfu.RoomSummary, error)
 	listParticipants func(room string) ([]sfu.ParticipantSummary, error)

@@ -114,7 +114,7 @@ describe("domainStore", () => {
 		const store = createDomainStore();
 		const domain = makeDomain();
 		store.addDomain(domain);
-		store.setState("memberCache", domain.uuid, makeMembers());
+		store.setMemberCache(domain.uuid, makeMembers());
 		store.setCurrentDomain(domain.uuid);
 		leaveDomainMock.mockResolvedValue(undefined);
 
@@ -132,7 +132,7 @@ describe("domainStore", () => {
 		const domain = makeDomain();
 		const members = makeMembers();
 		store.addDomain(domain);
-		store.setState("memberCache", domain.uuid, members);
+		store.setMemberCache(domain.uuid, members);
 		store.setCurrentDomain(domain.uuid);
 		leaveDomainMock.mockRejectedValueOnce(new Error("network"));
 
@@ -148,7 +148,7 @@ describe("domainStore", () => {
 		const store = createDomainStore();
 		const domain = makeDomain();
 		store.addDomain(domain);
-		store.setState("memberCache", domain.uuid, makeMembers());
+		store.setMemberCache(domain.uuid, makeMembers());
 		store.setCurrentDomain(domain.uuid);
 		deleteDomainMock.mockResolvedValue(undefined);
 
@@ -166,7 +166,7 @@ describe("domainStore", () => {
 		const domain = makeDomain();
 		const members = makeMembers();
 		store.addDomain(domain);
-		store.setState("memberCache", domain.uuid, members);
+		store.setMemberCache(domain.uuid, members);
 		store.setCurrentDomain(domain.uuid);
 		deleteDomainMock.mockRejectedValueOnce(new Error("network"));
 
@@ -419,7 +419,7 @@ describe("domainStore", () => {
 	});
 	it("updates a cached domain before my domains have loaded", () => {
 		const store = createDomainStore();
-		store.setState("domainCache", "g-1", makeDomain());
+		store.addDomain(makeDomain());
 
 		const updated = makeDomain({ name: "Updated Domain" });
 		store.updateCachedDomain(updated);

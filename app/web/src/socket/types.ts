@@ -23,7 +23,8 @@ export interface RoomInfo {
 	type?: string;
 	members: MemberInfo[];
 	count: number;
-	createdAt: number;
+	/** 服务端房间创建时间；本地未从服务端收到前不伪造（可选，缺省表示未知） */
+	createdAt?: number;
 	/** @internal 临时传递密码，不从服务器获取 */
 	_password?: string;
 }

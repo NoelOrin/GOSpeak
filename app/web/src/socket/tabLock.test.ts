@@ -131,3 +131,98 @@ describe("socket tabLock", () => {
 		expect(seen).toContainEqual({ type: "release", from: "tab-a" });
 	});
 });
+
+class MockLockManager {
+	private held = false;
+	private resolveRelease: (() => void) | null = null;
+
+	request(
+		_name: string,
+		_options: { ifAvailable?: boolean },
+		callback: (lock: { name: string; mode: string } | null) => unknown,
+	): Promise<unknown> {
+		if (this.held) {
+			return Promise.resolve(callback(null));
+		}
+		this.held = true;
+		const released = new Promise<void>((r) => {
+			this.resolveRelease = r;
+		});
+		const granted = Promise.resolve(
+			callback({ name: _name, mode: "exclusive" }),
+		);
+		// request 在回调返回的 promise settle（即锁释放）后才 settle
+		return Promise.all([granted, released]).then(([v]) => v);
+	}
+
+	releaseHeld() {
+		this.held = false;
+		this.resolveRelease?.();
+		this.resolveRelease = null;
+	}
+}
+
+describe("socket tabLock (navigator.locks)", () => {
+	let lockManager: MockLockManager;
+
+	beforeEach(() => {
+		lockManager = new MockLockManager();
+		vi.stubGlobal("navigator", { ...navigator, locks: lockManager });
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
+	});
+
+	it("claims immediately when the lock is free (no probe timeout)", async () => {
+		const { createTabLock } = await import("./tabLock");
+		const lock = createTabLock({
+			channelName: "locks_socket_tab",
+			tabId: "tab-a",
+			probeTimeoutMs: 150,
+		});
+
+		await expect(lock.claim()).resolves.toBe(true);
+		expect(lock.isOwner()).toBe(true);
+	});
+
+	it("fails claim when another tab holds the lock", async () => {
+		const { createTabLock } = await import("./tabLock");
+		const owner = createTabLock({
+			channelName: "locks_socket_tab",
+			tabId: "tab-owner",
+		});
+		await owner.claim();
+
+		const challenger = createTabLock({
+			channelName: "locks_socket_tab",
+			tabId: "tab-b",
+		});
+		await expect(challenger.claim()).resolves.toBe(false);
+		expect(challenger.isOwner()).toBe(false);
+	});
+
+	it("release frees the lock so another tab can claim", async () => {
+		const { createTabLock } = await import("./tabLock");
+		const owner = createTabLock({
+			channelName: "locks_socket_tab",
+			tabId: "tab-owner",
+		});
+		await owner.claim();
+
+		const challenger = createTabLock({
+			channelName: "locks_socket_tab",
+			tabId: "tab-b",
+		});
+		await expect(challenger.claim()).resolves.toBe(false);
+
+		owner.release();
+		// 模拟浏览器侧锁真正释放后回调 promise 才 settle
+		lockManager.releaseHeld();
+
+		await expect(challenger.claim()).resolves.toBe(true);
+		expect(owner.isOwner()).toBe(false);
+	});
+});

@@ -8,6 +8,7 @@ import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
+	"GOSpeak/internal/logger"
 
 	"gorm.io/gorm"
 )
@@ -162,10 +163,12 @@ func (s *InviteService) Consume(raw, userUUID string, recordSuccess bool) (*mode
 			reason = model.InviteFailDisabled
 		}
 		// 失败记录独立事务写入，避免随主流程回滚而丢失审计。
-		_ = s.inviteRepo.CreateRedemption(&model.DomainInviteRedemption{
+		if err := s.inviteRepo.CreateRedemption(&model.DomainInviteRedemption{
 			InviteID: invite.ID, DomainUUID: invite.DomainUUID, UserUUID: userUUID,
 			Code: invite.Code, Success: false, FailReason: reason,
-		})
+		}); err != nil {
+			logger.WithComponent("Invite").WithError(err).Warn("record invite redemption failure")
+		}
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "invite code is no longer usable")
 	}
 

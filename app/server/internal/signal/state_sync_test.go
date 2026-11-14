@@ -117,29 +117,8 @@ func (m *memStateStore) DeleteRoomMembersRev(ctx context.Context, room string, r
 	return nil
 }
 
-func (m *memStateStore) PutStream(ctx context.Context, stream, room, identity string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.strm[stream] = [2]string{room, identity}
-	return nil
-}
 
-func (m *memStateStore) GetStream(ctx context.Context, stream string) (room, identity string, err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	v, ok := m.strm[stream]
-	if !ok {
-		return "", "", errNotFound
-	}
-	return v[0], v[1], nil
-}
 
-func (m *memStateStore) DeleteStream(ctx context.Context, stream string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.strm, stream)
-	return nil
-}
 
 func (m *memStateStore) ListRoomNames(ctx context.Context) ([]string, error) {
 	m.mu.Lock()
@@ -197,19 +176,12 @@ func TestHub_JoinSFU_WritesMembershipKV(t *testing.T) {
 	}
 	hub.mu.Unlock()
 	hub.syncRoomToStore("r1")
-	hub.syncStreamPut("gs-a", "r1", "alice")
 
 	store.mu.Lock()
 	snap, ok := store.rooms["r1"]
 	store.mu.Unlock()
 	if !ok || len(snap.Members) != 1 || snap.Members[0].Identity != "alice" {
 		t.Fatalf("membership not written: %+v ok=%v", snap, ok)
-	}
-	store.mu.Lock()
-	pair, ok := store.strm["gs-a"]
-	store.mu.Unlock()
-	if !ok || pair[0] != "r1" || pair[1] != "alice" {
-		t.Fatalf("stream not written: %+v ok=%v", pair, ok)
 	}
 }
 
@@ -362,13 +334,6 @@ func (s *plainMemStateStore) DeleteRoomMembers(ctx context.Context, room string)
 	return nil
 }
 
-func (s *plainMemStateStore) PutStream(ctx context.Context, stream, room, identity string) error {
-	return nil
-}
-func (s *plainMemStateStore) GetStream(ctx context.Context, stream string) (string, string, error) {
-	return "", "", errNotFound
-}
-func (s *plainMemStateStore) DeleteStream(ctx context.Context, stream string) error { return nil }
 func (s *plainMemStateStore) ListRoomNames(ctx context.Context) ([]string, error)   { return nil, nil }
 
 func TestSyncRoomToStorePlain_HeartbeatRenewalDoesNotNotify(t *testing.T) {

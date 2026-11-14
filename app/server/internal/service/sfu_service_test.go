@@ -9,12 +9,15 @@ import (
 )
 
 type fakeSFUProvider struct {
+	sfu.BaseProvider
 	generatedRoom     string
 	generatedIdentity string
 	streamRoom        string
 }
 
 func (f *fakeSFUProvider) ProviderName() string { return "fake" }
+
+func (f *fakeSFUProvider) SupportsStream() bool { return true }
 func (f *fakeSFUProvider) Capabilities() sfu.Capabilities {
 	return sfu.Capabilities{}
 }
@@ -45,28 +48,6 @@ func (f *fakeSFUProvider) StreamName(room, identity string) string {
 func (f *fakeSFUProvider) StreamInfo(room, identity string) (string, string, error) {
 	f.streamRoom = room
 	return "stream-" + room, "stream-token", nil
-}
-
-type ownerAwareFakeProvider struct {
-	fakeSFUProvider
-	ownerUUID string
-}
-
-func (p *ownerAwareFakeProvider) GenerateTokenForUser(room, identity, ownerUUID string) (string, error) {
-	p.ownerUUID = ownerUUID
-	return "token-" + room, nil
-}
-
-func TestGetJoinToken_ForwardsOwnerToOwnerAwareProvider(t *testing.T) {
-	p := &ownerAwareFakeProvider{}
-	svc := NewSFUService(p, nil)
-
-	if _, err := svc.GetJoinToken("", "lobby", "user-1", "uuid-user-1", ""); err != nil {
-		t.Fatalf("expected success, got %v", err)
-	}
-	if p.ownerUUID != "uuid-user-1" {
-		t.Fatalf("ownerUUID = %q, want uuid-user-1", p.ownerUUID)
-	}
 }
 
 func assertForbidden(t *testing.T, err error) {

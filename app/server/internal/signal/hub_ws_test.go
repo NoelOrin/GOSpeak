@@ -97,16 +97,3 @@ func TestHub_Fanout_ACL_Isolation(t *testing.T) {
 	}
 }
 
-func TestHub_Rooms_DisplayNames(t *testing.T) {
-	hub := newTestHub()
-
-	conn := newAuthedMockClient("sock-1", "user-1")
-
-	hub.OnRoomCreate(conn, `{"room":"lobby","domain_uuid":"domain-a"}`)
-	hub.OnRoomJoinSFU(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"user-1"}`)
-
-	rooms := hub.Rooms()
-	if len(rooms) == 0 {
-		t.Fatal("expected at least 1 room after join")
-	}
-}

@@ -1,7 +1,5 @@
 import { Button, Slider } from "@gospeak/components";
-import AudioDeviceStore, {
-	useAudioDeviceStore,
-} from "@/stores/audioDeviceStore";
+import { useAudioDeviceStore } from "@/stores/audioDeviceStore";
 import {
 	useVoiceChatActions,
 	useVoiceChatStore,
@@ -23,13 +21,15 @@ function VoiceForm() {
 					label="加入房间时静音麦克风"
 					desc="进房后默认不推流，可手动开麦"
 					checked={muteOnJoin}
-					onChange={(v) => AudioDeviceStore.setMuteOnJoin(v)}
+					onChange={(v) => useAudioDeviceStore.getState().setMuteOnJoin(v)}
 				/>
 				<Toggle
 					label="进出房提示音"
 					desc="自己与他人加入/离开时播放短提示音"
 					checked={notificationSounds}
-					onChange={(v) => AudioDeviceStore.setNotificationSounds(v)}
+					onChange={(v) =>
+						useAudioDeviceStore.getState().setNotificationSounds(v)
+					}
 				/>
 			</Section>
 

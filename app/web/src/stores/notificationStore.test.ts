@@ -10,6 +10,16 @@ vi.mock("@gospeak/components", () => ({
 	toast: { info: vi.fn(), error: vi.fn() },
 }));
 
+// notificationStore 模块加载时自注册 socket / 登出订阅，mock 掉避免拉起整条连接链
+vi.mock("@/stores/socketStore", () => ({
+	setAnnouncementHandler: vi.fn(),
+	socketStore: { onConnected: vi.fn(() => () => {}) },
+}));
+
+vi.mock("@/stores/userStore", () => ({
+	useUserStore: { subscribe: vi.fn(() => () => {}) },
+}));
+
 import { getUnreadCount, markAnnouncementRead } from "@/api/announcement";
 import { notificationStore, useNotificationStore } from "./notificationStore";
 

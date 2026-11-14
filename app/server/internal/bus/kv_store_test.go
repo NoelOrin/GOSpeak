@@ -142,42 +142,6 @@ func TestMembershipKV_PutGet(t *testing.T) {
 	}
 }
 
-func TestStreamKV_PutGetDelete(t *testing.T) {
-	es, err := StartEmbeddedServer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(es.Shutdown)
-
-	store, err := OpenStateStore(StateStoreConfig{
-		URL:    es.ClientURL(),
-		Prefix: "gospeak_test_stream",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-
-	if err := store.PutStream(context.Background(), "gs-aaa", "room-a", "bob"); err != nil {
-		t.Fatal(err)
-	}
-	room, identity, err := store.GetStream(context.Background(), "gs-aaa")
-	if err != nil || room != "room-a" || identity != "bob" {
-		t.Fatalf("room=%q identity=%q err=%v", room, identity, err)
-	}
-	if err := store.DeleteStream(context.Background(), "gs-aaa"); err != nil {
-		t.Fatal(err)
-	}
-	_, _, err = store.GetStream(context.Background(), "gs-aaa")
-	if err == nil {
-		t.Fatal("expected miss after delete")
-	}
-	if !errors.Is(err, nats.ErrKeyNotFound) && !errors.Is(err, nats.ErrKeyDeleted) {
-		// nats may wrap; still accept any error on miss
-		t.Logf("delete miss err=%v (ok if key absent)", err)
-	}
-}
-
 func TestOpenStateStore_ReusesConn(t *testing.T) {
 	es, err := StartEmbeddedServer()
 	if err != nil {

@@ -11,7 +11,7 @@ import {
 } from "@/stores/typingStore";
 import {
 	addCreatedRoom,
-	applyMemberJoinedShell,
+	applyMemberJoined,
 	applyMemberLeft,
 	applyMemberUpdated,
 	mergeRoomUpdated,
@@ -97,8 +97,9 @@ export function bindServerEvents(
 			domain_uuid?: string;
 		}) => {
 			console.log("[Socket] member:joined", data.identity);
-			// 即时追加 shell 成员，富化字段由后续 room:updated 覆盖。
-			deps.setRooms((prev) => applyMemberJoinedShell(prev, data));
+			// 只做计数增量：本地不拼装缺 name/avatar 的空壳成员，
+			// 服务端在 member:joined 后紧跟广播 room:updated 全量补齐成员明细。
+			deps.setRooms((prev) => applyMemberJoined(prev, data));
 			deps.emitActivity({
 				type: "member_joined",
 				room: data.room,
@@ -257,11 +258,11 @@ export function bindServerEvents(
 		},
 	);
 
-	// SFU 热切换：强制断连并 0.5s 后刷新；join 中途同样直接刷新
+	// SFU 热切换：先断 socket；rejoin 优先（保留房间意图，handleProviderChanged
+	// 决定原地重连或兜底整页刷新），join 中途同样直接走该流程
 	adapter.onServerEvent(
 		EVENTS.SFU_PROVIDER_CHANGED,
 		(data: { provider?: string }) => {
-			// 先断 socket，再刷新
 			try {
 				adapter.disconnect();
 			} catch {
@@ -269,8 +270,8 @@ export function bindServerEvents(
 			}
 			deps.setConnecting(false);
 			deps.setConnected(false);
-			deps.setCurrentRoom(null);
-			deps.setSelectedRoomInfo(null);
+			// currentRoom / selectedRoomInfo 是「用户想留在房间」的意图，
+			// 不在此清除：providerReload 的 rejoin 路径依赖它派生重连。
 			deps.setActiveSFUProvider(undefined);
 			deps.handleProviderChanged(data?.provider);
 		},

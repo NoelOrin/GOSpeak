@@ -3,8 +3,8 @@ package signal
 import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
+	"GOSpeak/internal/logger"
 	"errors"
-	"log"
 )
 
 // BroadcastMute 广播禁言事件到所有客户端。
@@ -75,6 +75,16 @@ func (h *Hub) enforceUserMediaMuteByIdentity(identity string, muted bool, ttlSec
 	return h.enforceUserMediaMuteInRooms(identity, h.roomsForIdentity(identity), muted, ttlSeconds)
 }
 
+// muteParticipantTimedOrPlain 优先带 TTL 的媒体禁言；provider 不支持定时语义
+// （ErrSFUNotSupported）时降级为普通 mute，由调用方的 TTL 过期扫描兜底解除。
+func (h *Hub) muteParticipantTimedOrPlain(room, identity string, muted bool, ttlSeconds int) error {
+	err := h.sfuProvider.MuteParticipantTimed(room, identity, "", muted, ttlSeconds)
+	if errors.Is(err, pkg.ErrSFUNotSupported) {
+		return h.sfuProvider.MuteParticipant(room, identity, "", muted)
+	}
+	return err
+}
+
 // enforceUserMediaMuteInRooms 对已收集的房间列表做媒体层 mute/unmute。
 // rooms 由调用方一次性计算，避免禁言事件与媒体强制各自触发一轮跨实例扫描。
 func (h *Hub) enforceUserMediaMuteInRooms(identity string, rooms []string, muted bool, ttlSeconds int) string {
@@ -87,7 +97,7 @@ func (h *Hub) enforceUserMediaMuteInRooms(identity string, rooms []string, muted
 	}
 
 	if identity == "" {
-		log.Printf("[Signal] mute media skip: cannot resolve identity")
+		logger.WithComponent("Signal").Infof("[Signal] mute media skip: cannot resolve identity")
 		return sfu.EnforcementSoft
 	}
 	if len(rooms) == 0 {
@@ -97,21 +107,16 @@ func (h *Hub) enforceUserMediaMuteInRooms(identity string, rooms []string, muted
 
 	success := 0
 	for _, room := range rooms {
-		var err error
-		if tp, ok := h.sfuProvider.(sfu.TimedMuteProvider); ok {
-			err = tp.MuteParticipantTimed(room, identity, "", muted, ttlSeconds)
-		} else {
-			err = h.sfuProvider.MuteParticipant(room, identity, "", muted)
-		}
+		err := h.muteParticipantTimedOrPlain(room, identity, muted, ttlSeconds)
 		if err != nil {
 			if errors.Is(err, pkg.ErrSFUNotSupported) {
 				if muted {
-					log.Printf("[Signal] SFU mute unsupported, soft fallback room=%s identity=%s", room, identity)
+					logger.WithComponent("Signal").Infof("[Signal] SFU mute unsupported, soft fallback room=%s identity=%s", room, identity)
 				} else {
-					log.Printf("[Signal] SFU unmute unsupported, soft unmute room=%s identity=%s", room, identity)
+					logger.WithComponent("Signal").Infof("[Signal] SFU unmute unsupported, soft unmute room=%s identity=%s", room, identity)
 				}
 			} else {
-				log.Printf("[Signal] failed SFU mute (soft fallback) room=%s identity=%s err=%v", room, identity, err)
+				logger.WithComponent("Signal").Infof("[Signal] failed SFU mute (soft fallback) room=%s identity=%s err=%v", room, identity, err)
 			}
 			continue
 		}
@@ -122,7 +127,7 @@ func (h *Hub) enforceUserMediaMuteInRooms(identity string, rooms []string, muted
 	}
 	if success < len(rooms) {
 		// Partial multi-room success: do not overclaim full hard/degraded.
-		log.Printf("[Signal] partial SFU mute success %d/%d identity=%s", success, len(rooms), identity)
+		logger.WithComponent("Signal").Infof("[Signal] partial SFU mute success %d/%d identity=%s", success, len(rooms), identity)
 		return sfu.EnforcementSoft
 	}
 	return sfu.EnforcementFromLevel(caps.MuteLevel)
@@ -201,7 +206,7 @@ func (h *Hub) identityForUserID(userID uint) string {
 	}
 	user, err := h.userStore.GetByID(userID)
 	if err != nil || user == nil {
-		log.Printf("[Signal] identityForUserID failed userID=%d err=%v", userID, err)
+		logger.WithComponent("Signal").Infof("[Signal] identityForUserID failed userID=%d err=%v", userID, err)
 		return ""
 	}
 	return user.Name

@@ -239,40 +239,6 @@ func (s *StateStore) DeleteRoomMembersRev(ctx context.Context, room string, rev 
 	})
 }
 
-func (s *StateStore) PutStream(ctx context.Context, stream, room, identity string) error {
-	b, err := json.Marshal(map[string]string{
-		"room":     room,
-		"identity": identity,
-	})
-	if err != nil {
-		return err
-	}
-	return kvDo(ctx, func() error {
-		_, err := s.strm.Put("stream."+sanitizeKey(stream), b)
-		return err
-	})
-}
-
-func (s *StateStore) GetStream(ctx context.Context, stream string) (room, identity string, err error) {
-	entry, err := kvEntry(ctx, func() (nats.KeyValueEntry, error) {
-		return s.strm.Get("stream." + sanitizeKey(stream))
-	})
-	if err != nil {
-		return "", "", err
-	}
-	var m map[string]string
-	if err := json.Unmarshal(entry.Value(), &m); err != nil {
-		return "", "", err
-	}
-	return m["room"], m["identity"], nil
-}
-
-func (s *StateStore) DeleteStream(ctx context.Context, stream string) error {
-	return kvDo(ctx, func() error {
-		return s.strm.Delete("stream." + sanitizeKey(stream))
-	})
-}
-
 func (s *StateStore) PutRoomMeta(ctx context.Context, room string, meta RoomMeta) error {
 	b, err := json.Marshal(meta)
 	if err != nil {

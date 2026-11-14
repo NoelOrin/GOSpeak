@@ -305,23 +305,6 @@ const deleteAndClear = async (uuid: string) => {
 	removeDomain(uuid);
 };
 
-/** 兼容旧细粒度写法的测试辅助：setState("memberCache", uuid, members) */
-function setStateInStore(key: string, a?: unknown, b?: unknown): void {
-	if (b === undefined && a !== undefined) {
-		useDomainStore.setState({ [key]: a } as Partial<DomainState>);
-		return;
-	}
-	useDomainStore.setState(
-		(prev) =>
-			({
-				[key]: {
-					...((prev as unknown as Record<string, unknown>)[key] as object),
-					[a as string]: b,
-				},
-			}) as Partial<DomainState>,
-	);
-}
-
 /**
  * 测试隔离用：重置单例到初始状态并返回门面。
  * 生产代码直接使用 default 导出的 domainStore 单例。
@@ -353,7 +336,6 @@ export const domainStore = {
 	get state() {
 		return useDomainStore.getState();
 	},
-	setState: setStateInStore,
 	loadMyDomains,
 	ensureDomainLoaded,
 	setCurrentDomain,

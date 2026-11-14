@@ -23,12 +23,16 @@ import { toast } from "@gospeak/components";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getJoinToken, resolveSFUProvider } from "@/api/sfu";
 import { cleanupAudioHandler, setupAudioHandler } from "@/handler_audio";
-import AudioDeviceStore from "@/stores/audioDeviceStore";
+import { useAudioDeviceStore } from "@/stores/audioDeviceStore";
 import { socketStore, useSocketStore } from "@/stores/socketStore";
 import { useUserStore } from "@/stores/userStore";
 import { loadSfuClient } from "../services/loadSfuClient";
 import { getVoiceProviderAdapter } from "../session/providers";
-import { runVoiceJoin, VoiceJoinAbortError } from "../session/runVoiceJoin";
+import {
+	createVoiceJoinCoordinator,
+	runVoiceJoin,
+	VoiceJoinAbortError,
+} from "../session/runVoiceJoin";
 import {
 	type Session,
 	clearReconnectingToast,
@@ -40,6 +44,7 @@ import {
 	type VoicePhase,
 	voicePhaseLabel,
 } from "../session/voiceSessionTypes";
+import type { VoiceJoinCoordinator } from "../session/runVoiceJoin";
 
 export function useVoiceSession() {
 	const selectedRoom = useSocketStore((s) => s.selectedRoomInfo);
@@ -48,6 +53,11 @@ export function useVoiceSession() {
 	// refs 保存可变编排状态（与 Solid 版闭包变量一一对应）
 	const joinAbortControllerRef = useRef<AbortController | null>(null);
 	const activeJoinClientRef = useRef<SFUClient | null>(null);
+	// join 状态机片段：生命周期跟随本 session 实例，同目标 join 进行中复用同一 promise
+	const joinCoordinatorRef = useRef<VoiceJoinCoordinator | null>(null);
+	if (!joinCoordinatorRef.current) {
+		joinCoordinatorRef.current = createVoiceJoinCoordinator();
+	}
 	const leavingRef = useRef(new WeakSet<SFUClient>());
 	const reconnectingClientsRef = useRef(new WeakSet<SFUClient>());
 	// session 的镜像 ref：回调里读取最新值，避免闭包过期
@@ -200,7 +210,7 @@ export function useVoiceSession() {
 				_password?: string;
 			} | null
 		)?._password;
-		const audioSettings = AudioDeviceStore.state;
+		const audioSettings = useAudioDeviceStore.getState();
 		const newRoom = data.room;
 		const prev = sessionRef.current;
 		const prevClient = activeJoinClientRef.current;
@@ -246,6 +256,7 @@ export function useVoiceSession() {
 
 				const { client, provider: joinedProvider } = await runVoiceJoin(data, {
 					loadClient: loadSfuClient,
+					coordinator: joinCoordinatorRef.current ?? undefined,
 					setupAudio: setupAudioHandler,
 					joinSignalRoom: (room, identity, password, domain_uuid) =>
 						socketStore.joinRoom(room, identity, password, domain_uuid),
@@ -513,6 +524,23 @@ export function useVoiceSession() {
 		});
 		return dispose;
 	}, [handleManualLeave]);
+
+	// SFU provider 切换的原地重建（providerReload rejoin 路径触发）：
+	// 保持 selectedRoom 意图不清，拆掉旧 provider 的媒体会话并 refetch token，
+	// 走完整 rejoin 在新 provider 上重建；joinSignal 会等 socket 重连完成。
+	useEffect(() => {
+		const dispose = socketStore.onVoiceSessionRebuild(() => {
+			abortCurrentJoin();
+			const cur = sessionRef.current;
+			const toTeardown = cur?.client ?? activeJoinClientRef.current;
+			if (toTeardown) void teardownClient(toTeardown);
+			activeJoinClientRef.current = null;
+			cleanupAudioHandler();
+			setSession(null);
+			void tokenQuery.refetch();
+		});
+		return dispose;
+	}, [abortCurrentJoin, teardownClient, tokenQuery]);
 
 	return {
 		selectedRoom,

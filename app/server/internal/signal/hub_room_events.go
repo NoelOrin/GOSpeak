@@ -1,9 +1,10 @@
 package signal
 
 import (
+	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/ws"
-	"log"
+	"GOSpeak/internal/logger"
 )
 
 // ─── 离开房间 ───
@@ -20,29 +21,13 @@ func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 	h.fanout.Leave(key, c.ID())
 	h.clearConnRoomSlot(c.ID(), key)
 
-	var identity string
-	var stream string
-	wasSpeaking := false
-	roomDeleted := false
 	h.mu.Lock()
-	if room, exists := h.rooms[key]; exists {
-		if member, ok := room.Members[c.ID()]; ok {
-			identity = member.Identity
-			wasSpeaking = room.Speaking[identity]
-			stream = member.Stream
-			roomDelMember(room, c.ID())
-			delete(room.Speaking, identity)
-			delete(room.MicMuted, identity)
-			h.unregisterStreamLocked(key, identity, stream)
-			// 成员清空则删除房间，与 OnDisconnect 行为一致
-			roomDeleted = h.deleteRoomIfEmptyLocked(key)
-		}
-	}
+	removal, ok := h.removeMemberLocked(key, c.ID())
 	h.mu.Unlock()
+	identity := removal.identity
+	wasSpeaking := removal.wasSpeaking
+	roomDeleted := removal.roomDeleted
 	h.syncRoomToStore(key)
-	if stream != "" {
-		h.syncStreamDelete(stream)
-	}
 	if wasSpeaking && !roomDeleted {
 		h.broadcastActiveSpeakers(req.DomainUUID, req.Room)
 	}
@@ -50,9 +35,6 @@ func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 	// 同步清理 SFU 端：移除 participant，空房时删除 SFU room
 	if identity != "" {
 		h.removeParticipantSafe(key, identity)
-		if h.participantCleanup != nil {
-			h.participantCleanup.OnParticipantLeft(key, identity)
-		}
 	}
 	if roomDeleted {
 		h.deleteRoomSafe(key)
@@ -60,14 +42,14 @@ func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 
 	// Member was not in the room: acknowledge but do not broadcast member:left
 	// with a socket ID in the identity field (confuses clients).
-	if identity == "" {
+	if !ok {
 		return marshalAck(map[string]interface{}{
 			"ok":   true,
 			"room": req.Room,
 		})
 	}
 
-	log.Printf("[Signal] %s (%s) left room: %s", c.ID(), identity, req.Room)
+	logger.WithComponent("Signal").Infof("[Signal] %s (%s) left room: %s", c.ID(), identity, req.Room)
 
 	c.Send(map[string]interface{}{"event": EventRoomLeft, "data": map[string]interface{}{
 		"room":        req.Room,
@@ -97,8 +79,6 @@ func (h *Hub) OnRoomLeave(c ws.ClientMessenger, data string) (string, error) {
 
 // ─── 房间列表 ───
 
-// ─── 房间列表 ───
-
 func (h *Hub) OnRoomList(c ws.ClientMessenger, data string) {
 	var req struct {
 		DomainUUID string `json:"domain_uuid"`
@@ -125,8 +105,6 @@ func (h *Hub) OnRoomList(c ws.ClientMessenger, data string) {
 		"count": len(rooms),
 	}})
 }
-
-// ─── 踢出成员 ───
 
 // ─── 踢出成员 ───
 
@@ -178,8 +156,8 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 	// 保护管理员：仅非 bot 的 admin 可踢 admin。Bot 即使持有 signal:kick 也不能踢管理账号。
 	if h.userStore != nil {
 		targetUser, err := h.userStore.GetByName(req.TargetIdentity)
-		if err == nil && targetUser != nil && targetUser.Role == "admin" {
-			callerIsAdminHuman := role == "admin" && (claims == nil || len(claims.Permissions) == 0)
+		if err == nil && targetUser != nil && targetUser.Role == model.RoleAdmin {
+			callerIsAdminHuman := role == model.RoleAdmin && (claims == nil || len(claims.Permissions) == 0)
 			if !callerIsAdminHuman {
 				return
 			}
@@ -194,97 +172,43 @@ func (h *Hub) OnRoomKick(c ws.ClientMessenger, data string) {
 		h.mu.Unlock()
 		return
 	}
-	var targetSocketID string
-	var targetConn ws.ClientMessenger
-	var targetStream string
-	targetWasSpeaking := false
-	roomDeleted := false
-	for sid, m := range room.Members {
-		if m.Identity == req.TargetIdentity {
-			targetSocketID = sid
-			targetStream = m.Stream
-			targetWasSpeaking = room.Speaking[m.Identity]
-			roomDelMember(room, sid)
-			delete(room.Speaking, m.Identity)
-			delete(room.MicMuted, m.Identity)
-			h.unregisterStreamLocked(key, m.Identity, targetStream)
-			// 踢出最后一人也删房，与 OnRoomLeave / OnDisconnect 行为一致
-			roomDeleted = h.deleteRoomIfEmptyLocked(key)
-			break
-		}
-	}
+	removal, ok := h.removeMemberByIdentityLocked(key, req.TargetIdentity)
 	h.mu.Unlock()
 
-	if targetSocketID == "" {
+	if !ok {
 		return
 	}
 	// 记录短时踢出冷却，禁止被踢者立即重连同一房间。
 	h.blockRejoin(key, req.TargetIdentity)
-	h.clearConnRoomSlot(targetSocketID, key)
-	if targetStream != "" {
-		h.syncStreamDelete(targetStream)
-	}
+	h.clearConnRoomSlot(removal.socketID, key)
 
 	// 从 fanout room 移除目标连接，避免继续收事件
+	var targetConn ws.ClientMessenger
 	if h.fanout != nil {
-		h.fanout.ForEach(key, func(conn ws.ClientMessenger) bool {
-			if conn != nil && conn.ID() == targetSocketID {
-				targetConn = conn
-				return false
-			}
-			return true
-		})
+		targetConn = h.fanout.GetClient(removal.socketID)
 		if targetConn != nil {
 			h.fanout.Leave(key, targetConn.ID())
 		}
 	}
 
-	log.Printf("[Signal] %s kicked %s from room: %s", c.ID(), req.TargetIdentity, req.Room)
+	logger.WithComponent("Signal").Infof("[Signal] %s kicked %s from room: %s", c.ID(), req.TargetIdentity, req.Room)
 
 	// 信令层踢人始终先生效；SFU 层按 Capabilities.ServerKick 尽力 hard-enforce。
 	enforcement := h.removeParticipantSafe(key, req.TargetIdentity)
 
 	// 通知被踢者；payload 带 targetIdentity，前端按 identity 过滤避免误伤同房他人
-	h.publishRoom(key, EventRoomKicked, map[string]interface{}{
-		"room":           req.Room,
-		"domain_uuid":    req.DomainUUID,
-		"targetIdentity": req.TargetIdentity,
-		"enforcement":    enforcement,
-	})
-	if targetConn != nil {
-		targetConn.Send(map[string]interface{}{"event": EventRoomKicked, "data": map[string]interface{}{
-			"room":           req.Room,
-			"domain_uuid":    req.DomainUUID,
-			"targetIdentity": req.TargetIdentity,
-			"enforcement":    enforcement,
-		}})
-	}
+	h.notifyKicked(removal, req.DomainUUID, req.Room, enforcement, targetConn)
 
 	// 通知全员成员离开
-	h.publishRoom(key, EventMemberLeft, map[string]interface{}{
-		"room":        req.Room,
-		"domain_uuid": req.DomainUUID,
-		"identity":    req.TargetIdentity,
-		"id":          targetSocketID,
+	h.notifyMemberLeft(removal, req.DomainUUID, req.Room, map[string]interface{}{
 		"enforcement": enforcement,
 	})
 
-	// SFU remove 已在上方 removeParticipantSafe 完成；此处同步房间状态并做 provider 清理。
+	// SFU remove 已在上方 removeParticipantSafe 完成；此处同步房间状态。
 	h.syncRoomToStore(key)
-	if h.participantCleanup != nil {
-		h.participantCleanup.OnParticipantLeft(key, req.TargetIdentity)
-	}
 
 	// 空房删除 SFU room 并广播列表，否则广播单房间更新
-	if roomDeleted {
-		h.deleteRoomSafe(key)
-		h.broadcastRoomList(req.DomainUUID)
-	} else {
-		h.broadcastRoomUpdatedLocal(key)
-		if targetWasSpeaking {
-			h.broadcastActiveSpeakers(req.DomainUUID, req.Room)
-		}
-	}
+	h.broadcastRoomAfterRemoval(removal, req.DomainUUID, req.Room)
 }
 
 func (h *Hub) OnMemberMicState(c ws.ClientMessenger, data string) {
@@ -329,10 +253,6 @@ func (h *Hub) OnMemberMicState(c ws.ClientMessenger, data string) {
 // OnMemberSpeaking 接收成员本地发言态上报（无 SFU 原生
 // active speaker 的 provider）。服务端按 room 聚合后广播 room:active-speakers。
 // 仅持有本地麦克风的成员可上报自身状态，避免伪造他人发言态。
-
-// OnMemberSpeaking 接收成员本地发言态上报（无 SFU 原生
-// active speaker 的 provider）。服务端按 room 聚合后广播 room:active-speakers。
-// 仅持有本地麦克风的成员可上报自身状态，避免伪造他人发言态。
 func (h *Hub) OnMemberSpeaking(c ws.ClientMessenger, data string) {
 	var req struct {
 		Room       string `json:"room"`
@@ -367,7 +287,7 @@ func (h *Hub) OnMemberSpeaking(c ws.ClientMessenger, data string) {
 		} else {
 			muted, _, muteErr := h.muteStore.IsMutedByIdentity(req.Identity)
 			if muteErr != nil {
-				log.Printf("[signal] OnMemberSpeaking IsMutedByIdentity error: identity=%q err=%v", req.Identity, muteErr)
+				logger.WithComponent("Signal").Infof("[signal] OnMemberSpeaking IsMutedByIdentity error: identity=%q err=%v", req.Identity, muteErr)
 				return
 			}
 			h.muteCacheSet(req.Identity, muted)
@@ -402,8 +322,6 @@ func (h *Hub) OnMemberSpeaking(c ws.ClientMessenger, data string) {
 }
 
 // computeActiveSpeakersLocked 在持锁状态下返回房间内正在发言的成员 identity 列表。
-
-// computeActiveSpeakersLocked 在持锁状态下返回房间内正在发言的成员 identity 列表。
 func (h *Hub) computeActiveSpeakersLocked(roomName string) []string {
 	room, ok := h.rooms[roomName]
 	if !ok || room.Speaking == nil {
@@ -417,9 +335,6 @@ func (h *Hub) computeActiveSpeakersLocked(roomName string) []string {
 	}
 	return out
 }
-
-// broadcastActiveSpeakers 向房间广播当前 active speakers 列表（用于无 SFU 原生
-// active speaker 的 provider）。发言人清空（离开/断连）时也同样广播空列表以重置高亮。
 
 // broadcastActiveSpeakers 向房间广播当前 active speakers 列表（用于无 SFU 原生
 // active speaker 的 provider）。发言人清空（离开/断连）时也同样广播空列表以重置高亮。

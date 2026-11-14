@@ -24,9 +24,9 @@ func (c *Config) Validate() error {
 	}
 
 	switch c.SFUProvider {
-	case "livekit":
+	case DefaultSFUProvider:
 	default:
-		errs = append(errs, fmt.Sprintf("SFU_PROVIDER %q unsupported (only livekit)", c.SFUProvider))
+		errs = append(errs, fmt.Sprintf("SFU_PROVIDER %q unsupported (only %s)", c.SFUProvider, DefaultSFUProvider))
 	}
 
 	switch c.StorageType {

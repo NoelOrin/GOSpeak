@@ -12,26 +12,14 @@ import (
 
 type ConfigResolver func() (*config.Config, error)
 
-type ownerAwareProvider interface {
-	GenerateTokenForUser(room, identity, ownerUUID string) (string, error)
-}
-
-type sessionOwnerLookup interface {
-	SessionOwner(sessionID string) (string, bool)
-}
-
-type sessionDomainLookup interface {
-	SessionDomain(sessionID string) (string, bool)
-}
-
+// DynamicProvider 是 SFU 配置热切换门面：按 resolve 出的配置缓存并切换
+// 当前 provider，方法调用全部纯转发（含 ErrSFUNotSupported），降级决策由调用方做。
 type DynamicProvider struct {
-	resolve            ConfigResolver
-	mu                 sync.RWMutex
-	roomRegistry       pkg.RoomRegistry
-	streamRoomResolver pkg.StreamRoomResolver
-	cachedFingerprint  string
-	cachedProvider     sfu.Provider
-	cachedConfig       *cachedConfig
+	resolve           ConfigResolver
+	mu                sync.RWMutex
+	cachedFingerprint string
+	cachedProvider    sfu.Provider
+	cachedConfig      *cachedConfig
 }
 
 // providerCloser 是可选资源释放接口；provider 重建时旧实例若实现则关闭，
@@ -91,29 +79,6 @@ func (p *DynamicProvider) resolveCached() (*config.Config, string, error) {
 	return cfg, fp, nil
 }
 
-func (p *DynamicProvider) SetRoomRegistry(r pkg.RoomRegistry) {
-	p.mu.Lock()
-	p.roomRegistry = r
-	if p.cachedProvider != nil {
-		if rs, ok := p.cachedProvider.(pkg.RoomRegistrySetter); ok {
-			rs.SetRoomRegistry(r)
-		}
-	}
-	p.mu.Unlock()
-}
-
-// SetStreamRoomResolver 注入 stream→room 反查，转发给需要它的 provider。
-func (p *DynamicProvider) SetStreamRoomResolver(r pkg.StreamRoomResolver) {
-	p.mu.Lock()
-	p.streamRoomResolver = r
-	if p.cachedProvider != nil {
-		if rs, ok := p.cachedProvider.(pkg.StreamRoomResolverSetter); ok {
-			rs.SetStreamRoomResolver(r)
-		}
-	}
-	p.mu.Unlock()
-}
-
 func (p *DynamicProvider) GenerateToken(room, identity string) (string, error) {
 	provider, err := p.current()
 	if err != nil {
@@ -122,29 +87,12 @@ func (p *DynamicProvider) GenerateToken(room, identity string) (string, error) {
 	return provider.GenerateToken(room, identity)
 }
 
-// GenerateTokenForUser forwards owner-aware token generation when the
-// active provider supports it, so sessions can be bound to their creator.
-func (p *DynamicProvider) GenerateTokenForUser(room, identity, ownerUUID string) (string, error) {
+func (p *DynamicProvider) GenerateTokenWithPublish(room, identity string, canPublish bool) (string, error) {
 	provider, err := p.current()
 	if err != nil {
 		return "", err
 	}
-	if op, ok := provider.(ownerAwareProvider); ok {
-		return op.GenerateTokenForUser(room, identity, ownerUUID)
-	}
-	return provider.GenerateToken(room, identity)
-}
-
-// SessionOwner returns the user UUID bound to a provider session when supported.
-func (p *DynamicProvider) SessionOwner(sessionID string) (string, bool) {
-	provider, err := p.current()
-	if err != nil {
-		return "", false
-	}
-	if lp, ok := provider.(sessionOwnerLookup); ok {
-		return lp.SessionOwner(sessionID)
-	}
-	return "", false
+	return provider.GenerateTokenWithPublish(room, identity, canPublish)
 }
 
 func (p *DynamicProvider) ListRooms() ([]sfu.RoomSummary, error) {
@@ -171,16 +119,12 @@ func (p *DynamicProvider) MuteParticipant(room, identity, trackSid string, muted
 	return provider.MuteParticipant(room, identity, trackSid, muted)
 }
 
-// MuteParticipantTimed forwards TTL-aware mute when the active provider supports it.
 func (p *DynamicProvider) MuteParticipantTimed(room, identity, trackSid string, muted bool, ttlSeconds int) error {
 	provider, err := p.current()
 	if err != nil {
 		return err
 	}
-	if tp, ok := provider.(sfu.TimedMuteProvider); ok {
-		return tp.MuteParticipantTimed(room, identity, trackSid, muted, ttlSeconds)
-	}
-	return provider.MuteParticipant(room, identity, trackSid, muted)
+	return provider.MuteParticipantTimed(room, identity, trackSid, muted, ttlSeconds)
 }
 
 func (p *DynamicProvider) RemoveParticipant(room, identity string) error {
@@ -219,7 +163,7 @@ func (p *DynamicProvider) ProviderName() string {
 		if cached != nil {
 			return cached.ProviderName()
 		}
-		return "livekit"
+		return sfu.DefaultProviderName
 	}
 
 	p.mu.RLock()
@@ -230,7 +174,7 @@ func (p *DynamicProvider) ProviderName() string {
 		return cached.ProviderName()
 	}
 	if cfg.SFUProvider == "" {
-		return "livekit"
+		return sfu.DefaultProviderName
 	}
 	return cfg.SFUProvider
 }
@@ -243,14 +187,13 @@ func (p *DynamicProvider) Capabilities() sfu.Capabilities {
 	return provider.Capabilities()
 }
 
-// SupportsStream 仅当底层 provider 实现 StreamProvider 时为 true。
+// SupportsStream 仅当底层 provider 支持流寻址时为 true。
 func (p *DynamicProvider) SupportsStream() bool {
 	provider, err := p.current()
 	if err != nil {
 		return false
 	}
-	_, ok := provider.(sfu.StreamProvider)
-	return ok
+	return provider.SupportsStream()
 }
 
 func (p *DynamicProvider) StreamName(room, identity string) string {
@@ -258,10 +201,7 @@ func (p *DynamicProvider) StreamName(room, identity string) string {
 	if err != nil {
 		return ""
 	}
-	if sp, ok := provider.(sfu.StreamProvider); ok {
-		return sp.StreamName(room, identity)
-	}
-	return ""
+	return provider.StreamName(room, identity)
 }
 
 func (p *DynamicProvider) StreamInfo(room, identity string) (stream, token string, err error) {
@@ -269,10 +209,7 @@ func (p *DynamicProvider) StreamInfo(room, identity string) (stream, token strin
 	if err != nil {
 		return "", "", err
 	}
-	if sp, ok := provider.(sfu.StreamProvider); ok {
-		return sp.StreamInfo(room, identity)
-	}
-	return "", "", pkg.NewAppError(pkg.SFU_NOT_CONFIGURED, "stream not supported")
+	return provider.StreamInfo(room, identity)
 }
 
 func (p *DynamicProvider) ClientInfo() map[string]interface{} {
@@ -280,10 +217,7 @@ func (p *DynamicProvider) ClientInfo() map[string]interface{} {
 	if err != nil {
 		return map[string]interface{}{}
 	}
-	if cp, ok := provider.(sfu.ClientInfoProvider); ok {
-		return cp.ClientInfo()
-	}
-	return map[string]interface{}{}
+	return provider.ClientInfo()
 }
 
 // Close 释放当前缓存的 provider 资源（若实现 Close），并清空缓存避免 reuse-after-close。
@@ -328,16 +262,6 @@ func (p *DynamicProvider) current() (sfu.Provider, error) {
 	}
 	if old, ok := p.cachedProvider.(providerCloser); ok && old != nil {
 		_ = old.Close()
-	}
-	if p.roomRegistry != nil {
-		if rs, ok := provider.(pkg.RoomRegistrySetter); ok {
-			rs.SetRoomRegistry(p.roomRegistry)
-		}
-	}
-	if p.streamRoomResolver != nil {
-		if rs, ok := provider.(pkg.StreamRoomResolverSetter); ok {
-			rs.SetStreamRoomResolver(p.streamRoomResolver)
-		}
 	}
 	p.cachedProvider = provider
 	p.cachedFingerprint = fp

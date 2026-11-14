@@ -54,8 +54,8 @@ func TestRoomHandler_List_FiltersDomainUUID(t *testing.T) {
 		c.Set("domain_uuid", "domain-a")
 		c.Next()
 	})
-	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db), nil)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc, nil)
 	r.POST("/api/v1/room/list", h.List)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/list", strings.NewReader(`{"domain_uuid":"domain-a"}`))
@@ -103,7 +103,7 @@ func TestRoomHandler_List_InvalidJSONRejected(t *testing.T) {
 		c.Set("domain_uuid", "domain-a")
 		c.Next()
 	})
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil, nil)
 	r.POST("/api/v1/room/list", h.List)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/list", strings.NewReader(`{invalid`))
@@ -150,8 +150,8 @@ func TestRoomHandler_Create_PersistsDomainUUID(t *testing.T) {
 		c.Set("domain_uuid", "domain-a")
 		c.Next()
 	})
-	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db), nil)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc, nil)
 	r.POST("/api/v1/room/create", h.Create)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/create", strings.NewReader(`{"name":"lobby","domain_uuid":"domain-a"}`))
@@ -216,7 +216,7 @@ func TestRoomHandler_List_NoDomainUUID_OnlyPlatformRooms(t *testing.T) {
 		c.Set("role", "user")
 		c.Next()
 	})
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), permSvc, nil)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), permSvc, nil, nil)
 	r.POST("/api/v1/room/list", h.List)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/list", strings.NewReader(`{}`))
@@ -264,7 +264,7 @@ func TestRoomHandler_Create_RejectsNonDomainMember(t *testing.T) {
 		c.Set("domain_uuid", "domain-a")
 		c.Next()
 	})
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil, nil)
 	r.POST("/api/v1/room/create", h.Create)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/create", strings.NewReader(`{"name":"lobby","domain_uuid":"domain-a"}`))
@@ -300,7 +300,7 @@ func TestRoomHandler_List_RejectsNonDomainMember(t *testing.T) {
 		c.Set("domain_uuid", "domain-a")
 		c.Next()
 	})
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil, nil)
 	r.POST("/api/v1/room/list", h.List)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/list", strings.NewReader(`{"domain_uuid":"domain-a"}`))
@@ -340,7 +340,7 @@ func TestRoomHandler_CRUD_RejectsNonDomainMember(t *testing.T) {
 		c.Set("role", "user")
 		c.Next()
 	})
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil, nil)
 	r.POST("/api/v1/room/get", h.Get)
 	r.POST("/api/v1/room/update", h.Update)
 	r.POST("/api/v1/room/delete", h.Delete)
@@ -398,7 +398,7 @@ func TestRoomHandler_Delete_RequiresManagePermission(t *testing.T) {
 			t.Fatalf("seed room: %v", err)
 		}
 		domainRoleRepo := repository.NewDomainRoleRepository(db)
-		domainSvc := service.NewDomainService(repository.NewDomainRepository(db), domainRoleRepo)
+		domainSvc := service.NewDomainService(repository.NewDomainRepository(db), domainRoleRepo, nil)
 		if err := repository.SeedDefaultDomainRoles(db, g.UUID); err != nil {
 			t.Fatalf("seed roles: %v", err)
 		}
@@ -409,7 +409,7 @@ func TestRoomHandler_Delete_RequiresManagePermission(t *testing.T) {
 			c.Set("role", "user")
 			c.Next()
 		})
-		h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+		h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc, nil)
 		r.POST("/api/v1/room/delete", h.Delete)
 		return r
 	}
@@ -500,7 +500,7 @@ func TestRoomHandler_Delete_AllowsDomainRolePermission(t *testing.T) {
 		t.Fatalf("seed room: %v", err)
 	}
 
-	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db), nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "moderator-1")
@@ -508,7 +508,7 @@ func TestRoomHandler_Delete_AllowsDomainRolePermission(t *testing.T) {
 		c.Set("role", "user")
 		c.Next()
 	})
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc, nil)
 	r.POST("/api/v1/room/delete", h.Delete)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/delete", strings.NewReader(`{"id":1}`))

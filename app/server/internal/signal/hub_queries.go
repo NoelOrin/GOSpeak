@@ -3,9 +3,9 @@ package signal
 import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/logger"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 )
 
@@ -251,7 +251,7 @@ func (h *Hub) enrichMembers(members []MemberInfo) []MemberInfo {
 			for _, id := range identities {
 				muted[id] = true
 			}
-			log.Printf("[Signal] mute batch check failed: %v", err)
+			logger.WithComponent("Signal").Infof("[Signal] mute batch check failed: %v", err)
 		}
 	}
 

@@ -5,8 +5,8 @@ import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
 	"GOSpeak/internal/ws"
+	"GOSpeak/internal/logger"
 	"errors"
-	"log"
 	"time"
 )
 
@@ -23,10 +23,10 @@ func (h *Hub) removeParticipantSafe(room, identity string) string {
 	}
 	if err := h.sfuProvider.RemoveParticipant(room, identity); err != nil {
 		if errors.Is(err, pkg.ErrSFUNotSupported) {
-			log.Printf("[Signal] SFU kick unsupported, soft fallback room=%s identity=%s", room, identity)
+			logger.WithComponent("Signal").Infof("[Signal] SFU kick unsupported, soft fallback room=%s identity=%s", room, identity)
 			return sfu.EnforcementSoft
 		}
-		log.Printf("[Signal] failed to remove participant from SFU (soft fallback): %v", err)
+		logger.WithComponent("Signal").Infof("[Signal] failed to remove participant from SFU (soft fallback): %v", err)
 		return sfu.EnforcementSoft
 	}
 	return sfu.EnforcementFromLevel(caps.KickLevel)
@@ -63,11 +63,11 @@ func (h *Hub) deleteRoomSafe(room string) {
 	if h.membershipStore != nil {
 		hasRemote, err := h.roomHasLiveRemoteMember(room)
 		if err != nil {
-			log.Printf("[Signal] skip SFU room delete %s: membership read failed: %v", room, err)
+			logger.WithComponent("Signal").Infof("[Signal] skip SFU room delete %s: membership read failed: %v", room, err)
 			return
 		}
 		if hasRemote {
-			log.Printf("[Signal] skip SFU room delete %s: live remote members", room)
+			logger.WithComponent("Signal").Infof("[Signal] skip SFU room delete %s: live remote members", room)
 			return
 		}
 	}
@@ -83,7 +83,7 @@ func (h *Hub) forceDeleteRoom(room string) {
 		if errors.Is(err, pkg.ErrSFUNotSupported) {
 			return
 		}
-		log.Printf("[Signal] failed to delete SFU room: %v", err)
+		logger.WithComponent("Signal").Infof("[Signal] failed to delete SFU room: %v", err)
 	}
 }
 
@@ -95,9 +95,6 @@ func (h *Hub) forceDeleteRoom(room string) {
 func (h *Hub) CleanupParticipant(room, identity string, deleteRoom bool) {
 	if identity != "" {
 		h.removeParticipantSafe(room, identity)
-		if h.participantCleanup != nil {
-			h.participantCleanup.OnParticipantLeft(room, identity)
-		}
 	}
 	if deleteRoom {
 		h.deleteRoomSafe(room)
@@ -114,7 +111,7 @@ func (h *Hub) ForceSFUProviderSwitch(provider string) {
 		"provider": provider,
 	})
 	h.clearLocalRoomsForSFUSwitch()
-	log.Printf("[Signal] SFU provider switched to %s, forced all sessions offline", provider)
+	logger.WithComponent("Signal").Infof("[Signal] SFU provider switched to %s, forced all sessions offline", provider)
 }
 
 // OnDomainDelete 清理指定 Domain 下所有信令房间（房间键前缀匹配）。
@@ -141,7 +138,6 @@ func (h *Hub) clearLocalRoomsForSFUSwitch() {
 			if stream != "" {
 				streamsToDelete = append(streamsToDelete, stream)
 			}
-			h.unregisterStreamLocked(roomName, identity, stream)
 			roomDelMember(room, sid)
 			delete(room.Speaking, identity)
 			delete(room.MicMuted, identity)
@@ -159,23 +155,14 @@ func (h *Hub) clearLocalRoomsForSFUSwitch() {
 	for _, roomName := range roomsToDelete {
 		delete(h.rooms, roomName)
 	}
-	h.activeStreams = make(map[string]struct{})
-	h.roomStreams = make(map[string]map[string]struct{})
-	h.streamRoomCache = make(map[string]string)
-	h.streamByIdentity = make(map[string]map[string]string)
 	h.mu.Unlock()
 
-	for _, stream := range streamsToDelete {
-		h.syncStreamDelete(stream)
-	}
+	_ = streamsToDelete
 	for _, roomName := range roomsToDelete {
 		h.syncRoomToStore(roomName)
 	}
 	for _, c := range cleanups {
 		h.removeParticipantSafe(c.room, c.identity)
-		if h.participantCleanup != nil {
-			h.participantCleanup.OnParticipantLeft(c.room, c.identity)
-		}
 	}
 	for _, roomName := range roomsToDelete {
 		h.forceDeleteRoom(roomName)

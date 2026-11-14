@@ -15,6 +15,7 @@ import (
 	"GOSpeak/internal/livekitproxy"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
+	"GOSpeak/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 	"github.com/livekit/protocol/auth"
@@ -124,16 +125,12 @@ var (
 // @Success      200  {object}  pkg.Response
 // @Router       /signal/ws-endpoint [get]
 func (h *SignalHandler) GetWSEndpoint(c *gin.Context) {
-	claimsVal, ok := c.Get("claims")
-	if !ok {
+	claims := middleware.CurrentUser(c)
+	if claims == nil {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return
 	}
-	claims, ok := claimsVal.(*pkg.Claims)
-	if !ok || claims == nil || claims.Username == "" {
-		pkg.Fail(c, pkg.TOKEN_WRONG)
-		return
-	}
+	_ = claims
 	data := gin.H{}
 	pkg.Success(c, data)
 }
@@ -163,14 +160,9 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 	}
 
 	// 身份以 JWT 为准，拒绝客户端伪造他人 identity
-	username, ok := c.Get("username")
-	if !ok {
+	identity := middleware.CurrentUsername(c)
+	if identity == "" {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
-		return
-	}
-	identity, ok := username.(string)
-	if !ok || identity == "" {
-		pkg.Fail(c, pkg.TOKEN_WRONG, "invalid token identity")
 		return
 	}
 	req.Identity = identity
