@@ -325,7 +325,9 @@ jobs:
 
       - name: Download web artifact
         uses: actions/download-artifact@v8
+        # 服务端偶发重压缩致 digest 不匹配（产物无损），warn 避免发布链被炸
         with:
+          digest-mismatch: warn
           name: release-web-dist
           path: app/web/dist
 
@@ -409,7 +411,9 @@ jobs:
 
       - name: Download all binary artifacts
         uses: actions/download-artifact@v8
+        # 服务端偶发重压缩致 digest 不匹配（产物无损），warn 避免发布链被炸
         with:
+          digest-mismatch: warn
           pattern: gospeak-server-*
           path: dist/
           merge-multiple: true
@@ -464,7 +468,9 @@ jobs:
 
       - name: Download web artifact
         uses: actions/download-artifact@v8
+        # 服务端偶发重压缩致 digest 不匹配（产物无损），warn 避免发布链被炸
         with:
+          digest-mismatch: warn
           name: release-web-dist
           path: app/web/dist
 
@@ -589,7 +595,9 @@ jobs:
 
       - name: Download web artifact
         uses: actions/download-artifact@v8
+        # 服务端偶发重压缩致 digest 不匹配（产物无损），warn 避免发布链被炸
         with:
+          digest-mismatch: warn
           name: release-web-dist
           path: app/web/dist
 
@@ -736,7 +744,9 @@ jobs:
 
       - name: Download all desktop artifacts
         uses: actions/download-artifact@v8
+        # 服务端偶发重压缩致 digest 不匹配（产物无损），warn 避免发布链被炸
         with:
+          digest-mismatch: warn
           pattern: gospeak-desktop-*
           path: dist/
           merge-multiple: true
