@@ -37,6 +37,7 @@ GOSpeak 全部靠环境变量配置，没有独立的配置文件。改完重启
 | `DB_USER` | — | 数据库用户 |
 | `DB_PASSWORD` | — | 数据库密码 |
 | `DB_DSN` | — | 自定义完整连接串，设置后覆盖上述各项 |
+| `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | — | Turso (libSQL) 远程库；URL 优先于 `DB_DSN` |
 
 表结构由 GORM 自动迁移，启动时自动建表、加字段，无需手动执行 SQL。
 
@@ -94,6 +95,18 @@ GOSpeak 全部靠环境变量配置，没有独立的配置文件。改完重启
 | `APP_ENV` | — | `dev` / `prod`，影响日志与安全默认值 |
 | `CORS_ORIGIN` | `*` | 允许的跨域来源，生产建议填前端域名 |
 | `STATIC_DIR` | — | 用外部目录的前端文件覆盖二进制内嵌的那份 |
+| `GIN_MODE` | — | Gin 模式（空 = 默认 debug，prod 强制 release） |
+| `CORS_ORIGIN` | `*` | （上行已列） |
+| `WS_ALLOWED_ORIGINS` | — | WebSocket 来源白名单（空 = 同源） |
+| `TRUSTED_PROXIES` | — | 信任的代理 IP/CIDR（逗号分隔），用于 ClientIP 解析 |
+| `TLS_CERT` / `TLS_KEY` | — | 同时配置时直跑 HTTPS + HTTP/2 |
+| `OAUTH_AUTO_CREATE_USER` | `true` | OAuth 回调是否自动创建未绑定用户 |
+| `ACCESS_COOKIE_NAME` | `gospeak_token` | access token cookie 名 |
+| `REFRESH_COOKIE_NAME` | `gospeak_refresh_token` | refresh token cookie 名 |
+| `COOKIE_DOMAIN` / `COOKIE_PATH` | — / `/` | Cookie 作用域 |
+| `COOKIE_SECURE` | `auto` | `auto` / `true` / `false` |
+| `COOKIE_SAMESITE` | `lax` | `lax` / `strict` / `none` |
+| `METRICS_TOKEN` | — | 指标端点访问令牌 |
 
 ## 日志
 
@@ -113,12 +126,19 @@ GOSpeak 全部靠环境变量配置，没有独立的配置文件。改完重启
 |------|------|------|
 | `NATS_SUBJECT_PREFIX` | `gospeak` | 主题与 KV 桶的前缀，多实例共用一个 NATS 时才需要区分 |
 | `NATS_CONNECT_TIMEOUT` | `2s` | 连接超时 |
+| `NATS_NAME` | — | 实例名（空 = 主机名-pid 自动生成） |
+| `NATS_EMBEDDED_PORT` | — | 内嵌 NATS 端口（空 = 随机） |
+| `NATS_WAL_PATH` | — | 断线事件磁盘 WAL 路径（空 = 禁用） |
 
 ## 令牌
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `JWT_KEY_TTL` | `24h` | 签名密钥轮换周期 |
+| `JWT_KEY` | `default-secret` | HMAC 签名密钥（无共享后端时使用，生产必改） |
+| `JWT_KEY_TTL` | `24h` | 签名密钥轮换周期（NATS KV 可用时） |
+| `JWT_ACCESS_TTL` | `15m` | access token 有效期（登录响应 `expires_in` 同源） |
+| `JWT_REFRESH_TTL` | `168h` | refresh token 有效期 |
+| `BCRYPT_COST` | `12` | 密码哈希工作因子 |
 
 ## 常见配置组合
 

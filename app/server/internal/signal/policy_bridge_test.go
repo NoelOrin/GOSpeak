@@ -1,7 +1,6 @@
 package signal
 
 import (
-	"encoding/json"
 	"testing"
 
 	"GOSpeak/internal/model"
@@ -60,7 +59,7 @@ func TestOnMessageSend_DoesNotReevaluateAccessPolicy(t *testing.T) {
 	if evaluated != 0 {
 		t.Fatalf("message:send must not re-run access policy, got %d evaluations", evaluated)
 	}
-	if ack == "" || msgSvc.sendCalled != 1 {
+	if ack != "" || msgSvc.sendCalled != 1 {
 		t.Fatalf("message must be delivered when handler-level guard allowed it: ack=%q sent=%d", ack, msgSvc.sendCalled)
 	}
 }
@@ -73,15 +72,14 @@ func TestOnPrivateMessageSend_BannedUserRejectedByPolicy(t *testing.T) {
 
 	conn := newAuthedMockClient("conn-1", "alice")
 	ack, err := h.OnPrivateMessageSend(conn, `{"target_identity":"bob","content":"hi"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error path")
 	}
-	var ackMap map[string]interface{}
-	if err := json.Unmarshal([]byte(ack), &ackMap); err != nil {
-		t.Fatalf("bad ack json: %v", err)
+	if err.Error() != "user has been banned" {
+		t.Fatalf("expected policy rejection, got %v", err)
 	}
-	if ackMap["error"] != "user has been banned" {
-		t.Fatalf("expected policy rejection, got %v", ackMap)
+	if ack != "" {
+		t.Fatalf("expected empty ack data on error, got %q", ack)
 	}
 	if convSvc.sent != 0 {
 		t.Fatalf("private message must not be delivered, got %d", convSvc.sent)

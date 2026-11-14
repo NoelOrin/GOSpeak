@@ -9,6 +9,7 @@ import (
 )
 
 type capsProvider struct {
+	sfu.BaseProvider
 	caps    sfu.Capabilities
 	kickErr error
 	muteErr error

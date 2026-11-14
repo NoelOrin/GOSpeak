@@ -50,8 +50,8 @@ func TestRoomHandler_Create_RejectsDuplicateNameInSameDomain(t *testing.T) {
 		c.Set("domain_uuid", "domain-a")
 		c.Next()
 	})
-	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db), nil)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc, nil, nil)
 	r.POST("/api/v1/room/create", h.Create)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/create", strings.NewReader(`{"name":"lobby","domain_uuid":"domain-a"}`))

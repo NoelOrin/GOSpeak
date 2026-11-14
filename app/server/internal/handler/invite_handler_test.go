@@ -43,15 +43,13 @@ func newInviteHandlerEnv(t *testing.T) *inviteHandlerEnv {
 		t.Fatalf("migrate: %v", err)
 	}
 	svc := service.NewInviteService(
-		db,
 		repository.NewDomainInviteRepository(db),
 		repository.NewDomainRepository(db),
 		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		"jwt-key",
 	)
-	h := NewInviteHandler(svc)
 	// 管理端点需要权限判决依赖；测试注入「全部放行」的桩。
-	h.SetPermissionCheckers(stubInviteDomainPerm{granted: true}, stubInviteGlobalPerm{granted: true})
+	h := NewInviteHandler(svc, stubInviteDomainPerm{granted: true}, stubInviteGlobalPerm{granted: true})
 	router := gin.New()
 	router.POST("/api/v1/domain/invites/create", h.Create)
 	router.POST("/api/v1/domain/invites/list", h.List)

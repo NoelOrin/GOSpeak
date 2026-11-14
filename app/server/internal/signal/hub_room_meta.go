@@ -3,11 +3,11 @@ package signal
 import (
 	"context"
 	"errors"
-	"log"
 	"time"
 
 	"GOSpeak/internal/bus"
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/logger"
 )
 
 // roomMetaStore 是 membershipStore 可选实现的扩展接口：
@@ -34,7 +34,7 @@ func (h *Hub) syncRoomMeta(key string, meta bus.RoomMeta) {
 	err := s.PutRoomMeta(ctx, key, meta)
 	cancel()
 	if err != nil {
-		log.Printf("[Signal] state store put room meta %s: %v", key, err)
+		logger.WithComponent("Signal").Infof("[Signal] state store put room meta %s: %v", key, err)
 	}
 }
 
@@ -53,7 +53,7 @@ func (h *Hub) getRoomMeta(key string) (bus.RoomMeta, error) {
 		if bus.IsMembershipNotFound(err) {
 			return bus.RoomMeta{}, errRoomMetaNotFound
 		}
-		log.Printf("[Signal] state store get room meta %s: %v", key, err)
+		logger.WithComponent("Signal").Infof("[Signal] state store get room meta %s: %v", key, err)
 		return bus.RoomMeta{}, err
 	}
 	return meta, nil
@@ -71,7 +71,7 @@ func (h *Hub) deleteRoomMeta(key string) {
 	err := s.DeleteRoomMeta(ctx, key)
 	cancel()
 	if err != nil && !bus.IsMembershipNotFound(err) {
-		log.Printf("[Signal] state store delete room meta %s: %v", key, err)
+		logger.WithComponent("Signal").Infof("[Signal] state store delete room meta %s: %v", key, err)
 	}
 }
 

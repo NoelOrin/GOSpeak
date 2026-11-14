@@ -6,10 +6,10 @@ import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
+	"GOSpeak/internal/protocol"
 	"GOSpeak/internal/ws"
 	"encoding/json"
 	"errors"
-	"log"
 	"strings"
 	"time"
 )
@@ -70,7 +70,7 @@ func (h *Hub) OnRoomCreate(c ws.ClientMessenger, data string) {
 	// 通知远端实例重新计算房间列表，临时房间不再只靠主动拉取刷新。
 	h.notifyRoomStateChanged(roomKey(req.DomainUUID, req.Room))
 
-	log.Printf("[Signal] room created: %s by %s", req.Room, c.ID())
+	logger.WithComponent("Signal").Infof("[Signal] room created: %s by %s", req.Room, c.ID())
 
 	c.Send(map[string]interface{}{"event": EventRoomCreated, "data": roomInfo})
 	h.broadcastRoomUpdatedLocal(roomKey(req.DomainUUID, req.Room))
@@ -101,13 +101,12 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 		})
 	}
 
-	identity, err := resolveIdentity(c, req.Identity)
+	identity, err := resolveIdentity(c)
 	if err != nil {
 		return marshalAck(map[string]interface{}{
 			"error": err.Error(),
 		})
 	}
-	req.Identity = identity
 
 	// 被踢冷却：同一房间短时间内禁止重连。
 	if h.isRejoinBlocked(roomKey(req.DomainUUID, req.Room), identity) {
@@ -138,7 +137,7 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 	if h.muteStore != nil {
 		muted, mute, muteErr := h.muteStore.IsMutedByIdentity(identity)
 		if muteErr != nil {
-			log.Printf("[signal] IsMutedByIdentity error: identity=%q err=%v", identity, muteErr)
+			logger.WithComponent("Signal").Infof("[signal] IsMutedByIdentity error: identity=%q err=%v", identity, muteErr)
 			return marshalAck(map[string]interface{}{
 				"error": "mute check failed",
 			})
@@ -162,7 +161,7 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 
 	// 服务端校验房间人数上限（DB/KV 读失败时 fail-closed）
 	if full, limit, count, err := h.CheckRoomLimit(req.DomainUUID, req.Room); err != nil {
-		log.Printf("[signal] room limit check error: room=%q err=%v", req.Room, err)
+		logger.WithComponent("Signal").Infof("[signal] room limit check error: room=%q err=%v", req.Room, err)
 		return marshalAck(map[string]interface{}{"error": "room limit check failed"})
 	} else if full {
 		return marshalAck(map[string]interface{}{
@@ -205,12 +204,7 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 	// 仅语音房 + 黑名单型（degraded）provider 执行；LiveKit 等 hard track 级
 	// mute 离线时随会话自然消失，不需要自愈清理。
 	if roomType == model.RoomTypeVoice && h.sfuProvider != nil && h.sfuProvider.Capabilities().MuteLevel == sfu.EnforcementDegraded {
-		var unmuteErr error
-		if tp, ok := h.sfuProvider.(sfu.TimedMuteProvider); ok {
-			unmuteErr = tp.MuteParticipantTimed(key, identity, "", false, 0)
-		} else {
-			unmuteErr = h.sfuProvider.MuteParticipant(key, identity, "", false)
-		}
+		unmuteErr := h.muteParticipantTimedOrPlain(key, identity, false, 0)
 		if unmuteErr != nil {
 			h.logMuteResidueError("clear mute residue failed", key, identity, unmuteErr)
 		}
@@ -246,12 +240,7 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 					if mute != nil && !mute.Permanent {
 						ttlSeconds = int(remaining)
 					}
-					var muteErr error
-					if tp, ok := h.sfuProvider.(sfu.TimedMuteProvider); ok {
-						muteErr = tp.MuteParticipantTimed(key, identity, "", true, ttlSeconds)
-					} else {
-						muteErr = h.sfuProvider.MuteParticipant(key, identity, "", true)
-					}
+					muteErr := h.muteParticipantTimedOrPlain(key, identity, true, ttlSeconds)
 					if muteErr != nil {
 						h.logMuteResidueError("re-mute new mute failed", key, identity, muteErr)
 					}
@@ -297,7 +286,7 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 	if roomType == model.RoomTypeText {
 		h.setClientDomain(c, req.DomainUUID)
 	}
-	log.Printf("[Signal] %s (%s) signaling ready for room: %s (type=%s)", c.ID(), identity, req.Room, roomType)
+	logger.WithComponent("Signal").Infof("[Signal] %s (%s) signaling ready for room: %s (type=%s)", c.ID(), identity, req.Room, roomType)
 
 	return marshalAck(map[string]interface{}{
 		"room":     req.Room,
@@ -347,11 +336,10 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 		})
 	}
 
-	identity, err := resolveIdentity(c, req.Identity)
+	identity, err := resolveIdentity(c)
 	if err != nil {
 		return marshalAck(map[string]interface{}{"error": err.Error()})
 	}
-	req.Identity = identity
 
 	// 被踢冷却：媒体面加入同样拦截。
 	if h.isRejoinBlocked(roomKey(req.DomainUUID, req.Room), identity) {
@@ -403,7 +391,7 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	full, limit, count, limitErr := h.CheckRoomLimit(req.DomainUUID, req.Room)
 	if limitErr != nil {
 		h.fanout.Leave(roomKey(req.DomainUUID, req.Room), c.ID())
-		log.Printf("[signal] sfu join room limit check error: room=%q err=%v", req.Room, limitErr)
+		logger.WithComponent("Signal").Infof("[signal] sfu join room limit check error: room=%q err=%v", req.Room, limitErr)
 		return marshalAck(map[string]interface{}{"error": "room limit check failed"})
 	}
 	if full {
@@ -522,7 +510,6 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 		h.rooms[newKey] = room
 	}
 	roomSetMember(room, c.ID(), identity, member)
-	h.registerStreamLocked(newKey, identity, req.Stream)
 	memberList := h.memberSnapshotLocked(newKey)
 	h.mu.Unlock()
 
@@ -541,7 +528,7 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 		case errors.Is(regErr, errRoomLimitExceeded):
 			return marshalAck(map[string]interface{}{"error": "room is full", "limit": limit, "count": count})
 		default:
-			log.Printf("[Signal] sfu join registration failed room=%s identity=%s: %v", req.Room, identity, regErr)
+			logger.WithComponent("Signal").Infof("[Signal] sfu join registration failed room=%s identity=%s: %v", req.Room, identity, regErr)
 			return marshalAck(map[string]interface{}{"error": "room join failed"})
 		}
 	}
@@ -570,7 +557,6 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 		if _, ok := oldRoom.Members[c.ID()]; ok {
 			delete(oldRoom.Speaking, old.identity)
 			delete(oldRoom.MicMuted, old.identity)
-			h.unregisterStreamLocked(old.key, old.identity, old.stream)
 		}
 		roomDelMember(oldRoom, c.ID())
 		old.roomDeleted = h.deleteRoomIfEmptyLocked(old.key)
@@ -583,19 +569,15 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	for _, old := range oldCleanups {
 		h.syncRoomToStore(old.key)
 		if old.stream != "" {
-			h.syncStreamDelete(old.stream)
 		}
 		oldDomain, oldRoomName := splitRoomKey(old.key)
-		h.publishRoom(old.key, EventMemberLeft, map[string]interface{}{
-			"room":        oldRoomName,
-			"domain_uuid": oldDomain,
-			"identity":    old.identity,
-			"id":          c.ID(),
+		h.publishRoom(old.key, EventMemberLeft, protocol.MemberLeftPayload{
+			Room:       oldRoomName,
+			DomainUUID: oldDomain,
+			Identity:   old.identity,
+			ID:         c.ID(),
 		})
 		h.removeParticipantSafe(old.key, old.identity)
-		if h.participantCleanup != nil {
-			h.participantCleanup.OnParticipantLeft(old.key, old.identity)
-		}
 		if old.wasSpeaking && !old.roomDeleted {
 			h.broadcastActiveSpeakers(oldDomain, oldRoomName)
 		}
@@ -610,11 +592,10 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	h.ensureRoomOwnership(newKey, req, room)
 	memberList = h.enrichMembers(memberList)
 	if req.Stream != "" {
-		h.syncStreamPut(req.Stream, newKey, identity)
 	}
 	h.setClientDomain(c, req.DomainUUID)
 
-	log.Printf("[Signal] sfu confirmed: %s in %s", c.ID(), req.Room)
+	logger.WithComponent("Signal").Infof("[Signal] sfu confirmed: %s in %s", c.ID(), req.Room)
 
 	h.mu.RLock()
 	_, memberExists := h.rooms[roomKey(req.DomainUUID, req.Room)]
@@ -623,7 +604,7 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 	}
 	h.mu.RUnlock()
 	if !memberExists {
-		log.Printf("[Signal] sfu join rejected: %s not in room %s", c.ID(), req.Room)
+		logger.WithComponent("Signal").Infof("[Signal] sfu join rejected: %s not in room %s", c.ID(), req.Room)
 		// 回退 phase1 的 fanout.Join，避免 socket 残留在 WS room
 		h.fanout.Leave(roomKey(req.DomainUUID, req.Room), c.ID())
 		return marshalAck(map[string]interface{}{
@@ -669,7 +650,6 @@ func (h *Hub) rollbackLocalJoinLocked(newKey, clientID, identity, stream, prevVo
 		roomDelMember(room, clientID)
 		delete(room.Speaking, identity)
 		delete(room.MicMuted, identity)
-		h.unregisterStreamLocked(newKey, identity, stream)
 		if len(room.Members) == 0 {
 			delete(h.rooms, newKey)
 		}

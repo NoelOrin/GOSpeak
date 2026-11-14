@@ -2,35 +2,11 @@ package signal
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"GOSpeak/internal/bus"
+	"GOSpeak/internal/logger"
 )
-
-func (h *Hub) syncStreamPut(stream, key, identity string) {
-	if h.membershipStore == nil || stream == "" {
-		return
-	}
-	ctx, cancel := kvTimeoutCtx()
-	err := h.membershipStore.PutStream(ctx, stream, key, identity)
-	cancel()
-	if err != nil {
-		log.Printf("[Signal] state store put stream %s: %v", stream, err)
-	}
-}
-
-func (h *Hub) syncStreamDelete(stream string) {
-	if h.membershipStore == nil || stream == "" {
-		return
-	}
-	ctx, cancel := kvTimeoutCtx()
-	err := h.membershipStore.DeleteStream(ctx, stream)
-	cancel()
-	if err != nil {
-		log.Printf("[Signal] state store delete stream %s: %v", stream, err)
-	}
-}
 
 // notifyRoomStateChanged tells peer instances to refresh room list/updated from KV.
 // Does not carry membership snapshots (those live in KV).
@@ -46,7 +22,7 @@ func (h *Hub) notifyRoomStateChanged(room string) {
 	err := h.stateNotifier.PublishInternal(ctx, EventStateRoomChanged, payload)
 	cancel()
 	if err != nil {
-		log.Printf("[Signal] publish state room-changed %s: %v", room, err)
+		logger.WithComponent("Signal").Infof("[Signal] publish state room-changed %s: %v", room, err)
 	}
 }
 

@@ -39,7 +39,8 @@ Authorization: Bearer <access_token>
 | `5001` | 服务器内部错误 |
 | `6001`-`6002` | SFU 相关 |
 | `7001`-`7004` | OAuth 相关 |
-| `8001`-`8008` | 邮箱相关 |
+| `8001`-`8010` | 邮箱相关 |
+| `8101`-`8104` | 对象存储相关 |
 
 常用错误码如下：
 
@@ -81,7 +82,7 @@ Authorization: Bearer <access_token>
 |------|------|------|------|
 | POST | `/user/profile` | 登录 | 当前用户的资料 |
 | POST | `/user/info` | 登录 | 按用户名查询 |
-| GET | `/user/preset-avatars` | 登录 | 预置头像列表 |
+| GET/POST | `/user/preset-avatars` | 登录 | 预置头像列表 / 更新预设 |
 | POST | `/user/update-profile` | 登录 | 更新当前用户的资料 |
 | POST | `/user/list` | `user:read` | 用户列表 |
 | POST | `/user/get` | `user:read` | 按 ID 查询 |
@@ -119,13 +120,13 @@ Authorization: Bearer <access_token>
 |------|------|------|------|
 | POST | `/room/messages/list` | `message:read` | 历史消息（游标分页） |
 | POST | `/room/messages/search` | `message:read` | 搜索 |
-| POST | `/room/messages/react` | `message:send` | 添加表情反应 |
+| POST | `/room/messages/react` | — | 添加表情反应 |
 
 ## 私聊
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/conversation/list` | 会话列表 |
+| GET | `/conversation/list` | 会话列表 |
 | POST | `/conversation/messages` | 消息列表 |
 | POST | `/conversation/send` | 发送消息 |
 | POST | `/conversation/mark-read` | 标记已读 |
@@ -137,7 +138,7 @@ Authorization: Bearer <access_token>
 | POST | `/domain/create` | `domain:create` | 创建域（限流 10 次/分钟） |
 | POST | `/domain/get` | 域成员 | 详情 |
 | POST | `/domain/list` | `domain:read` | 全部域 |
-| POST | `/domain/list-public` | 否 | 公开域（无需登录即可查看） |
+| POST | `/domain/list-public` | 是 | 公开域列表（需登录） |
 | POST | `/domain/my-domains` | 登录 | 已加入的域 |
 | POST | `/domain/update` | 域成员 | 修改设置 |
 | POST | `/domain/delete` | 域成员 | 删除 |
@@ -145,7 +146,9 @@ Authorization: Bearer <access_token>
 | POST | `/domain/leave` | 域成员 | 退出 |
 | POST | `/domain/kick` | 域成员 | 移出成员 |
 | POST | `/domain/members` | 域成员 | 成员列表 |
-| POST | `/domain/preview` | 否 | 预览（查询邀请码对应的域） |
+| POST | `/domain/members/update-role` | 域成员 | 更新成员角色 |
+| POST | `/domain/my-permissions` | 域成员 | 我的域权限 |
+| POST | `/domain/preview` | 是 | 预览（查询邀请码对应的域） |
 | POST | `/domain/reset-invite` | 域成员 | 重置邀请码 |
 
 ### 域角色
@@ -256,7 +259,7 @@ Authorization: Bearer <access_token>
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
 | POST | `/audit/list` | `audit:read` | 审计日志 |
-| GET | `/system/stream` | 登录 | 服务状态流（SSE） |
+| GET | `/system/stream` | admin 角色 | 服务状态流（SSE） |
 
 ## 健康检查
 

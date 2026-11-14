@@ -35,6 +35,7 @@ export default function Avatar({
 	const [failed, setFailed] = useState(false);
 
 	// src 变化时重置失败标记，允许换图后重试
+	// biome-ignore lint/correctness/useExhaustiveDependencies: src 为有意触发器（换头像即重置失败态）
 	useEffect(() => {
 		setFailed(false);
 	}, [src]);

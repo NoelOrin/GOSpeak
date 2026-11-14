@@ -395,45 +395,106 @@ Tech Stack:
 │
 ├── /user
 │   ├── POST /profile                  # 获取个人资料 (需认证)
-│   ├── POST /list                     # 列出用户 (需认证)
-│   ├── POST /get                      # 获取用户 (需认证)
-│   ├── POST /delete                   # 删除用户 (admin)
-│   └── POST /update-role              # 更新角色 (admin)
+│   ├── POST /info                     # 按用户名查用户 (需认证)
+│   ├── GET/POST /preset-avatars       # 预设头像 (需认证)
+│   ├── POST /update-profile           # 更新资料 (需认证)
+│   ├── POST /list                     # 列出用户 (user:read)
+│   ├── POST /get                      # 获取用户 (user:read)
+│   ├── POST /delete                   # 删除用户 (user:delete)
+│   └── POST /update-role              # 更新角色 (user:update)
 │
+├── /user-group                        # 用户分组 CRUD (需认证)
+│
+├── /guest                             # 访客 (公开签发 60/h + 受保护管理)
+│   ├── POST /auth/guest               # 访客签发 (公开)
+│   ├── POST /auth/guest/renew         # 访客续约 (guest JWT)
+│   └── POST /domain/guest/*           # 配置/封禁/清理 (需认证)
+│
+├── /domain                            # 语音服务器（多租户）
+│   ├── POST /create                   # 创建域 (domain:create, 10/min)
+│   ├── POST /list /list-public /my-domains /preview
+│   ├── POST /join /leave /kick /members
+│   ├── POST /update /delete /reset-invite
+│   ├── POST /guest/config|ban|unban|ban-list|cleanup
+│   └── POST /roles/* /my-permissions  # 域角色与权限
+│
+├── /room                              # 房间 CRUD
+│   ├── POST /create /list /get /update /delete
+│   └── POST /messages/list|search|react  # 文字房间消息
+│
+├── /conversation                      # 私聊
+│   ├── GET  /list                     # 会话列表
+│   └── POST /messages /mark-read /send
+│
+├── /message                           # 消息（挂 /room）
+│
+├── /mute                              # 全局禁言 (mute:manage)
+│   └── POST /create /cancel /status /list
+│
+├── /role /permission                  # 平台角色与权限 (role:read/manage)
+│
+├── /storage                           # 对象存储 (presign/confirm/upload/delete/config)
+│
+├── /email /email_config               # 邮箱验证码 + SMTP 配置
+│
+├── /audit                             # 审计日志 (audit:read)
+│
+├── /system
+│   └── GET /stream                    # 服务状态流 (admin)
+│
+├── /readyz                            # 就绪探针
+├── /metrics                           # 指标 (METRICS_TOKEN)
 ├── /ping                              # 健康检查
-│
+├── /uploads/*filepath                 # 头像/上传静态服务
 └── /swagger/*any                      # Swagger UI
 ```
 
+> 完整路由表（方法/鉴权/权限门/Handler）见根 `AGENTS.md`「Current Route Table」。
+
 ## WebSocket 事件 (WebSocket)
 
-```
-Client → Server:                              Server → Client:
-───────────────                               ───────────────
+单一事实源在 `internal/protocol`（Catalog 声明事件名/方向/Ack/payload struct），
+由 `cmd/gen-protocol` 生成前端 `src/protocol/generated/`；事件名与 payload 类型
+禁止在任何其他地方手写。payload 字段一律 snake_case。
 
-Lifecycle:
-├── connection                                (内部处理)
-└── disconnect
+```
+Client → Server (Ack 事件返回纯 data，错误走 error ACK):    Server → Client:
+──────────────────────────────────────────────           ────────────────
 
 Room Management:
-├── room:create    { room }           ──►    ├── room:created    RoomInfo
-├── room:join      { room, identity } ──►    ├── room:joined     { room, members[] }
-├── room:leave     { room }           ──►    ├── room:left       { room, identity }
-├── room:list      (无 payload)       ──►    └── room:list:result { rooms[] }
-└── room:kick      { room, target }   ──►
+├── room:create    { room, domain_uuid? }  ──► ack RoomInfo
+├── room:join      { room, domain_uuid?, password? } ──► ack
+├── room:join:sfu  { room, stream?, domain_uuid? }   ──► ack
+├── room:leave     { room, domain_uuid? }            ──► ack
+├── room:list      { domain_uuid? }                  ──► ack { rooms[] }
+└── room:kick      { room, target_identity, domain_uuid? }
 
-Member Events:
-                                            ├── room:updated    RoomInfo (成员数变化)
-                                            ├── member:joined   MemberInfo
-                                            ├── member:left     { identity }
-                                            ├── member:updated  MemberInfo
-                                            └── member:speaking { identity, speaking }
+Member / Presence:
+├── member:speaking   { identity, speaking } (C→S 聚合上报)
+├── member:mic-state  { room, is_mic_muted, domain_uuid? }
+                                            ├── room:updated      RoomInfo
+                                            ├── room:active-speakers { identities[] }
+                                            ├── member:joined / member:left
+                                            ├── member:updated    MemberInfo
+                                            ├── member:muted / member:unmuted
+                                            └── room:kicked       { target_identity }
 
 Mute / Restriction:
-                                            ├── user:muted      MuteEvent
-                                            └── user:unmuted    { identity }
+                                            ├── user:muted        MuteInfo
+                                            └── user:unmuted      MuteInfo
 
-WS Endpoint: /ws
+消息 / 私聊 / 公告：
+├── message:send/edit/delete/react/unreact ──► ack
+│                                          ├── message:created/updated/deleted
+│                                          └── message:reaction
+├── private:send     ──► ack                ├── private:new
+│                                          └── announcement:new
+└── typing           { room, typing }
+
+SFU:
+                                            └── sfu:provider-changed { provider }
+
+WS Endpoint: /ws（HttpOnly access cookie 鉴权，子协议仅传 `gospeak`）
 ```
 
 ## 统一响应格式
@@ -467,6 +528,9 @@ WS Endpoint: /ws
 | 1012 | `USERNAME_EXISTS` | 用户名已存在 |
 | 1013 | `FORBIDDEN` | 禁止访问 |
 | 1014 | `TOKEN_REVOKED` | Token 已撤销 |
+| 1015 | `USER_BANNED` | 用户已被封禁 |
+| 1016 | `USER_MUTED` | 用户已被禁言 |
+| 1017 | `RATE_LIMITED` | 请求过于频繁 |
 | 2001 | `INVALID_PARAMS` | 参数无效 |
 | 3001 | `NOT_FOUND` | 资源不存在 |
 | 3002 | `ALREADY_EXISTS` | 资源已存在 |
@@ -477,6 +541,8 @@ WS Endpoint: /ws
 | 7002 | `OAUTH_PROVIDER_DISABLED` | OAuth 提供商已禁用 |
 | 7003 | `OAUTH_TOKEN_EXCHANGE_FAILED` | OAuth Token 交换失败 |
 | 7004 | `OAUTH_GET_USER_FAILED` | OAuth 获取用户信息失败 |
+| 8001-8010 | `EMAIL_*` | 邮箱验证相关（见 `pkg/errors.go`） |
+| 8101-8104 | `STORAGE_*` | 对象存储相关 |
 
 ## 技术栈总结
 

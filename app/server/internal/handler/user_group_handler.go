@@ -3,6 +3,7 @@ package handler
 import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
+	"GOSpeak/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -127,12 +128,7 @@ func (h *UserGroupHandler) Delete(c *gin.Context) {
 }
 
 func (h *UserGroupHandler) currentUserID(c *gin.Context) (uint, bool) {
-	userUUID, ok := c.Get("user_uuid")
-	if !ok {
-		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
-		return 0, false
-	}
-	uuidStr, _ := userUUID.(string)
+	uuidStr := middleware.CurrentUserUUID(c)
 	if uuidStr == "" {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return 0, false

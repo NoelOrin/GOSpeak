@@ -253,7 +253,6 @@ async function joinTextRoom(room: {
 		try {
 			await socketStore.joinRoom(
 				room.name,
-				useUserStore.getState().user?.name ?? "",
 				room.password,
 				room.domain_uuid ?? socketStore.currentDomainUUID() ?? undefined,
 			);
@@ -315,7 +314,6 @@ async function retryTextRoomWithPassword(password: string) {
 		try {
 			await socketStore.joinRoom(
 				textRoomName,
-				useUserStore.getState().user?.name ?? "",
 				password,
 				textRoomDomainUUID ?? undefined,
 			);
@@ -441,12 +439,9 @@ function send(
 			mentions: opts?.mentions ?? [],
 			client_nonce,
 		})
-		.then((resp: any) => {
-			if (resp?.error) {
-				markMessageFailed(client_nonce, serverAckError(resp.error));
-				return;
-			}
+		.then(() => {
 			// ACK 成功不代表落库广播已完成；保持 pending/sent 直到 message:created 按 nonce 幂等替换。
+			// 服务端错误走 reject（ACK error 通道），由 catch 统一标记失败。
 			pendingNonces.set(client_nonce, "sent");
 		})
 		.catch((err: unknown) => {
@@ -455,14 +450,6 @@ function send(
 				localizedApiMessage(err, "消息发送失败，请检查网络"),
 			);
 		});
-}
-
-/** ack 里的错误是裸字符串（如 "room is full"），统一走一遍中文映射 */
-function serverAckError(raw: string): string {
-	return localizedApiMessage(
-		{ response: { data: { msg: raw } } },
-		"消息发送失败",
-	);
 }
 
 /**
@@ -506,11 +493,8 @@ function retryMessage(uuid: string) {
 			mentions: msg.mentions ?? [],
 			client_nonce: nonce,
 		})
-		.then((resp: any) => {
-			if (resp?.error) {
-				markMessageFailed(nonce, serverAckError(resp.error));
-				return;
-			}
+		.then(() => {
+			// 服务端错误走 reject（ACK error 通道），由 catch 统一标记失败。
 			pendingNonces.set(nonce, "sent");
 		})
 		.catch((err: unknown) =>
@@ -894,10 +878,7 @@ function sendDirect(convID: string, content: string) {
 				client_nonce: clientNonce,
 			})
 			.then((resp: any) => {
-				if (resp?.error) {
-					markFailed();
-					return;
-				}
+				// 服务端错误走 reject（ACK error 通道），由 catch markFailed。
 				const dto = resp as PrivateMessageDTO;
 				if (!dto?.conversation_id) {
 					markFailed();

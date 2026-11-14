@@ -30,7 +30,7 @@ func setupDomainHandlerTestDB(t *testing.T) (*gorm.DB, *service.DomainService) {
 	}
 	domainRepo := repository.NewDomainRepository(db)
 	domainRoleRepo := repository.NewDomainRoleRepository(db)
-	domainSvc := service.NewDomainService(domainRepo, domainRoleRepo)
+	domainSvc := service.NewDomainService(domainRepo, domainRoleRepo, nil)
 	return db, domainSvc
 }
 
@@ -43,7 +43,7 @@ func setupDomainHandlerRouterWithPermSvc(t *testing.T, domainSvc *service.Domain
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 
-	h := NewDomainHandler(domainSvc, permSvc)
+	h := NewDomainHandler(domainSvc, permSvc, nil, nil, nil, nil)
 
 	// Mock JWT auth middleware: inject context keys matching production JWTAuth()
 	r.Use(func(c *gin.Context) {

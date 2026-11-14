@@ -1,8 +1,8 @@
 package ws
 
 import (
+	"GOSpeak/internal/logger"
 	"encoding/json"
-	"log"
 	"sync"
 )
 
@@ -131,7 +131,7 @@ func (f *Fanout) BroadcastToNamespace(event string, data interface{}) {
 func (f *Fanout) sendAll(targets []*Client, payload interface{}) {
 	data, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("[ws] broadcast marshal error: %v", err)
+		logger.WithComponent("WS").Infof("[ws] broadcast marshal error: %v", err)
 		return
 	}
 	if len(targets) == 0 {
@@ -192,10 +192,16 @@ func (f *Fanout) RoomExists(room string) bool {
 }
 
 // GetClient 实现 Broadcaster.GetClient。
+// 未注册的 clientID 返回接口 nil（而非 (*Client)(nil)），
+// 调用方 `== nil` 判空才可靠。
 func (f *Fanout) GetClient(clientID string) ClientMessenger {
 	f.mu.RLock()
-	defer f.mu.RUnlock()
-	return f.clients[clientID]
+	c, ok := f.clients[clientID]
+	f.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	return c
 }
 
 // CloseAll 实现 Broadcaster.CloseAll — 快照当前注册客户端后逐个关闭。

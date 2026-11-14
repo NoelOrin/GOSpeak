@@ -163,7 +163,11 @@ export async function listJoinRequests(
 		data: input,
 	});
 	if (!data) throw new Error("join request list is missing");
-	return data;
+	return {
+		items: data.items ?? [],
+		total: data.total ?? 0,
+		counts: data.counts ?? {},
+	};
 }
 
 /** 管理端：通过或拒绝一条申请。 */

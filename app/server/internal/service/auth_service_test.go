@@ -238,10 +238,8 @@ func TestRefreshFromToken_LegacyTokenWithoutFamilyCannotReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sign legacy refresh token: %v", err)
 	}
-	if _, err := svc.RefreshFromToken(refresh); err != nil {
-		t.Fatalf("first refresh: %v", err)
-	}
+	// 无 family 的历史 refresh token 已退役：首次刷新即拒绝，客户端重新登录。
 	if _, err := svc.RefreshFromToken(refresh); err == nil {
-		t.Fatal("legacy refresh token replay must be rejected")
+		t.Fatal("legacy refresh token without family must be rejected")
 	}
 }

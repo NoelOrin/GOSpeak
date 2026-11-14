@@ -32,7 +32,8 @@ async function publish(
 		},
 	});
 	expect(res.code).toBe(0);
-	return res.data!;
+	if (!res.data) throw new Error("announcement response missing data");
+	return res.data;
 }
 
 describe("announcement module", () => {
@@ -56,7 +57,7 @@ describe("announcement module", () => {
 			"/api/v1/announcement/unread-count",
 			{ token: user.access_token, body: {} },
 		);
-		expect(before.data!.count).toBeGreaterThanOrEqual(1);
+		expect(before.data?.count).toBeGreaterThanOrEqual(1);
 
 		const marked = await api("/api/v1/announcement/mark-read", {
 			token: user.access_token,
@@ -68,7 +69,7 @@ describe("announcement module", () => {
 			"/api/v1/announcement/unread-count",
 			{ token: user.access_token, body: {} },
 		);
-		expect(after.data!.count).toBe(before.data!.count - 1);
+		expect(after.data?.count).toBe(before.data?.count - 1);
 
 		const again = await api("/api/v1/announcement/mark-read", {
 			token: user.access_token,
@@ -79,7 +80,7 @@ describe("announcement module", () => {
 			"/api/v1/announcement/unread-count",
 			{ token: user.access_token, body: {} },
 		);
-		expect(afterAgain.data!.count).toBe(after.data!.count);
+		expect(afterAgain.data?.count).toBe(after.data?.count);
 	});
 
 	it("rejects publishing from a regular user", async () => {

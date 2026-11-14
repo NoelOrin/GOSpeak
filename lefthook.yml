@@ -26,6 +26,9 @@ pre-push:
       run: node scripts/check-hook-deps.mjs
     "go vet":
       run: cd app/server && go vet ./...
+    "protocol gen-diff":
+      # 事件协议生成物防漂移：改了 internal/protocol 忘记重新生成时在 push 前拦截
+      run: pnpm gen:protocol && git diff --exit-code -- app/web/src/protocol/generated
     "radius tokens":
       run: node scripts/check-radius-tokens.mjs
     "desktop bridge contract":

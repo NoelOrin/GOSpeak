@@ -16,6 +16,8 @@ import (
 
 	"GOSpeak/internal/config"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/middleware"
+	"GOSpeak/internal/model"
 	gpsignal "GOSpeak/internal/signal"
 )
 
@@ -54,13 +56,12 @@ func NewMonitorHandler(signalHub *gpsignal.Hub, cfg *config.Config, stats InfraS
 // 鉴权由 protected 路由组统一完成（Header/cookie 均可）；此处仅做防御性 admin 校验，
 // 避免误注册到公开路由时泄露监控指标。
 func (h *MonitorHandler) HealthStream(c *gin.Context) {
-	roleVal, ok := c.Get("role")
-	if !ok {
+	claims := middleware.CurrentUser(c)
+	if claims == nil {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return
 	}
-	role, _ := roleVal.(string)
-	if role != "admin" {
+	if claims.Role != model.RoleAdmin {
 		pkg.Fail(c, pkg.FORBIDDEN)
 		return
 	}

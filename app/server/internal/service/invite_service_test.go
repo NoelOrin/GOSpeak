@@ -33,7 +33,6 @@ func setupInviteService(t *testing.T) (*InviteService, *gorm.DB) {
 		t.Fatalf("migrate: %v", err)
 	}
 	svc := NewInviteService(
-		db,
 		repository.NewDomainInviteRepository(db),
 		repository.NewDomainRepository(db),
 		testStorageKey,

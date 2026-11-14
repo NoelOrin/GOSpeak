@@ -47,15 +47,8 @@ func (f *failingGetStore) DeleteRoomMembers(ctx context.Context, room string) er
 	return nil
 }
 
-func (f *failingGetStore) PutStream(ctx context.Context, stream, room, identity string) error {
-	return nil
-}
 
-func (f *failingGetStore) GetStream(ctx context.Context, stream string) (string, string, error) {
-	return "", "", nil
-}
 
-func (f *failingGetStore) DeleteStream(ctx context.Context, stream string) error { return nil }
 
 func (f *failingGetStore) ListRoomNames(ctx context.Context) ([]string, error) { return nil, nil }
 
@@ -180,7 +173,7 @@ func TestOnMemberMicState_SyncsSharedState(t *testing.T) {
 	hub.connSlots["conn-1"] = &connRoomSlots{}
 	hub.mu.Unlock()
 
-	hub.OnMemberMicState(client, `{"room":"lobby","identity":"alice","isMicMuted":true}`)
+	hub.OnMemberMicState(client, `{"room":"lobby","identity":"alice","is_mic_muted":true}`)
 
 	snap, err := store.GetRoomMembers(context.Background(), key)
 	if err != nil {

@@ -3,7 +3,6 @@ package ws
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,6 +10,7 @@ import (
 	nhooyrws "nhooyr.io/websocket"
 
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/logger"
 )
 
 // ConnState 表示服务端 WS 客户端的连接生命周期状态。
@@ -111,7 +111,7 @@ func (c *Client) setState(state ConnState) {
 	}
 	c.state = state
 	c.mu.Unlock()
-	log.Printf("[ws] client=%s state=%s->%s", c.id, old, state)
+	logger.WithComponent("WS").Infof("[ws] client=%s state=%s->%s", c.id, old, state)
 	if c.OnStateChange != nil {
 		c.OnStateChange(old, state)
 	}
@@ -175,7 +175,7 @@ func (c *Client) writeLoop() {
 			err := c.conn.Write(ctx, nhooyrws.MessageText, data)
 			cancel()
 			if err != nil {
-				log.Printf("[ws] write error client=%s: %v", c.id, err)
+				logger.WithComponent("WS").Infof("[ws] write error client=%s: %v", c.id, err)
 				return
 			}
 		case <-c.ctx.Done():
@@ -200,7 +200,7 @@ func (c *Client) heartbeatLoop() {
 			err := c.conn.Ping(ctx)
 			cancel()
 			if err != nil {
-				log.Printf("[ws] heartbeat failed client=%s: %v", c.id, err)
+				logger.WithComponent("WS").Infof("[ws] heartbeat failed client=%s: %v", c.id, err)
 				c.Close()
 				return
 			}
@@ -213,7 +213,7 @@ func (c *Client) heartbeatLoop() {
 func (c *Client) Send(v interface{}) bool {
 	data, err := json.Marshal(v)
 	if err != nil {
-		log.Printf("[ws] marshal error: %v", err)
+		logger.WithComponent("WS").Infof("[ws] marshal error: %v", err)
 		return false
 	}
 	return c.sendRaw(data)
@@ -234,7 +234,7 @@ func (c *Client) sendRaw(data []byte) bool {
 		return true
 	case <-t.C:
 		dropped := atomic.AddUint64(&c.dropped, 1)
-		log.Printf("[ws] drop message to slow client %s (total=%d)", c.id, dropped)
+		logger.WithComponent("WS").Infof("[ws] drop message to slow client %s (total=%d)", c.id, dropped)
 		return false
 	case <-c.closed:
 		return false
@@ -266,7 +266,7 @@ func (c *Client) SendErrorACKAndClose(id, event string, code int, message string
 func (c *Client) writeACKSync(ack ACK) {
 	data, err := json.Marshal(ack)
 	if err != nil {
-		log.Printf("[ws] marshal ACK error client=%s: %v", c.id, err)
+		logger.WithComponent("WS").Infof("[ws] marshal ACK error client=%s: %v", c.id, err)
 		return
 	}
 	if c.conn == nil {
@@ -276,7 +276,7 @@ func (c *Client) writeACKSync(ack ACK) {
 	err = c.conn.Write(ctx, nhooyrws.MessageText, data)
 	cancel()
 	if err != nil {
-		log.Printf("[ws] write final ACK error client=%s: %v", c.id, err)
+		logger.WithComponent("WS").Infof("[ws] write final ACK error client=%s: %v", c.id, err)
 	}
 }
 

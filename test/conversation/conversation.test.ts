@@ -15,7 +15,7 @@ describe("conversation module", () => {
 			body: { target_identity: receiver.username, content: "private hello" },
 		});
 		expect(sent.code).toBe(0);
-		const conversationId = sent.data!.conversation_id;
+		const conversationId = sent.data?.conversation_id;
 		expect(conversationId).toBeTruthy();
 		expect(sent.data?.target_identity).toBe(receiver.username);
 

@@ -5,7 +5,7 @@ import Avatar from "@/components/common/avatar";
 import { LoadingRegion, SkeletonListRows } from "@/components/common/Skeletons";
 
 interface MemberSidebarProps {
-	onStartChat: (identity: string, displayName: string) => void;
+	onStartChat: (identity: string, display_name: string) => void;
 }
 
 export default function MemberSidebar({ onStartChat }: MemberSidebarProps) {
@@ -25,9 +25,9 @@ export default function MemberSidebar({ onStartChat }: MemberSidebarProps) {
 		return 0;
 	});
 
-	const handleClick = (identity: string, displayName: string) => {
+	const handleClick = (identity: string, display_name: string) => {
 		setSelectedIdentity(identity);
-		onStartChat(identity, displayName);
+		onStartChat(identity, display_name);
 	};
 
 	return (
@@ -49,7 +49,7 @@ export default function MemberSidebar({ onStartChat }: MemberSidebarProps) {
 							onClick={() =>
 								handleClick(
 									member.identity,
-									member.displayName || member.name || member.identity,
+									member.display_name || member.name || member.identity,
 								)
 							}
 						>
@@ -57,10 +57,10 @@ export default function MemberSidebar({ onStartChat }: MemberSidebarProps) {
 								className="size-6 shrink-0"
 								textClass="text-2xs"
 								src={member.avatar}
-								name={member.displayName || member.name || member.identity}
+								name={member.display_name || member.name || member.identity}
 							/>
 							<span className="flex-1 truncate text-xs font-medium">
-								{member.displayName || member.name || member.identity}
+								{member.display_name || member.name || member.identity}
 							</span>
 							{member.identity === myName && (
 								<span className="text-faint-foreground text-2xs">你</span>

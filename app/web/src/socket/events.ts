@@ -1,47 +1,8 @@
-// 事件常量（与后端 signal/events.go 一致）
-export const EVENTS = {
-	ROOM_CREATE: "room:create",
-	ROOM_JOIN: "room:join",
-	ROOM_LEAVE: "room:leave",
-	ROOM_LIST: "room:list",
-	ROOM_CREATED: "room:created",
-	ROOM_LEFT: "room:left",
-	ROOM_UPDATED: "room:updated",
-	MEMBER_JOINED: "member:joined",
-	MEMBER_LEFT: "member:left",
-	ROOM_LIST_RESULT: "room:list:result",
-	ROOM_JOIN_SFU: "room:join:sfu",
-	MEMBER_MIC_STATE: "member:mic-state",
-	MEMBER_UPDATED: "member:updated",
-	ROOM_KICK: "room:kick",
-	ROOM_KICKED: "room:kicked",
-	USER_MUTED: "user:muted",
-	USER_UNMUTED: "user:unmuted",
-	MEMBER_MUTED: "member:muted",
-	MEMBER_UNMUTED: "member:unmuted",
-	// 发言检测（房间级 active speakers 广播）
-	MEMBER_SPEAKING: "member:speaking",
-	ROOM_ACTIVE_SPEAKERS: "room:active-speakers",
-	// SFU 热切换：强制断连并刷新
-	SFU_PROVIDER_CHANGED: "sfu:provider-changed",
-	// 文字聊天消息事件
-	MESSAGE_SEND: "message:send",
-	MESSAGE_EDIT: "message:edit",
-	MESSAGE_DELETE: "message:delete",
-	MESSAGE_REACT: "message:react",
-	MESSAGE_UNREACT: "message:unreact",
-	MESSAGE_CREATED: "message:created",
-	MESSAGE_UPDATED: "message:updated",
-	MESSAGE_DELETED: "message:deleted",
-	MESSAGE_REACTION: "message:reaction",
-	MESSAGE_ACK: "message:ack",
-	MESSAGE_ERROR: "message:error",
-	// 私聊消息事件（客户端 → 服务端）
-	PRIVATE_SEND: "private:send",
-	// 私聊消息事件（服务端推送）
-	PRIVATE_NEW: "private:new",
-	// 文字房「正在输入」：上行上报 + 服务端按房间回播（payload 带 identity，前端过滤自己）
-	TYPING: "typing",
-	// 系统公告（服务端推送）：平台公告走 namespace 广播，域公告定向投递到 __user 房间
-	ANNOUNCEMENT_NEW: "announcement:new",
-} as const;
+// 事件常量已收编至 protocol/generated（由后端 internal/protocol 生成，CI 拦漂移）。
+// 本文件保留原 import 路径，消费点零改动；勿在此新增事件。
+export {
+	EVENTS,
+	EVENT_META,
+	type EventDirection,
+	type EventName,
+} from "../protocol/generated/events";

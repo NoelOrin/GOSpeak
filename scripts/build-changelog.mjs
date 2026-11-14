@@ -138,7 +138,7 @@ function classify(commits, excludeCI = false) {
 		let section = "Chores";
 		let scope = "";
 		let desc = c.subject;
-		if (m && m.groups) {
+		if (m?.groups) {
 			const type = m.groups.type.toLowerCase();
 			scope = m.groups.scope || "";
 			desc = m.groups.desc || c.subject;
@@ -208,7 +208,7 @@ function insertChangelog(newBlock, version, replaceExisting = false) {
 	const headerMatch = content.match(/^#\s+Changelog[^\n]*\n/);
 	if (headerMatch) {
 		const idx = headerMatch[0].length;
-		content = content.slice(0, idx) + "\n" + newBlock + content.slice(idx);
+		content = `${content.slice(0, idx)}\n${newBlock}${content.slice(idx)}`;
 	} else {
 		content = `# Changelog / 更新日志\n\n${newBlock}${content}`;
 	}

@@ -182,7 +182,10 @@ export async function listDomainRoles(
 		data: { domain_uuid: domainUUID },
 	});
 	if (!result) throw new Error("domain role data is missing");
-	return result;
+	return {
+		roles: result.roles ?? [],
+		assignable: result.assignable ?? [],
+	};
 }
 
 export async function createDomainRole(

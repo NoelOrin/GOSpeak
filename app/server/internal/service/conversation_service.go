@@ -16,6 +16,7 @@ import (
 	"GOSpeak/internal/bus"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/protocol"
 	"GOSpeak/internal/repository"
 
 	"github.com/google/uuid"
@@ -232,11 +233,12 @@ func (s *ConversationService) SendDirect(senderIdentity, targetIdentity, content
 	// 定向投递到双方的个人房间，避免 private:new 广播给所有在线连接。
 	// Hub.OnConnect 会把每个已认证连接加入 __user:{identity}。
 	if s.eventBus != nil {
-		payload, _ := json.Marshal(dto)
-		if err := s.eventBus.PublishRoom(context.Background(), "__user:"+senderIdentity, "private:new", payload); err != nil {
+		// payload 直接传 DTO struct；此前 json.Marshal 成 []byte 会被
+		// fanout 二次 marshal 成 base64 字符串，前端 PRIVATE_NEW 收不到对象。
+		if err := s.eventBus.PublishRoom(context.Background(), "__user:"+senderIdentity, protocol.EventPrivateNew, dto); err != nil {
 			log.Printf("[Conversation] publish private:new to sender %s failed: %v", senderIdentity, err)
 		}
-		if err := s.eventBus.PublishRoom(context.Background(), "__user:"+targetIdentity, "private:new", payload); err != nil {
+		if err := s.eventBus.PublishRoom(context.Background(), "__user:"+targetIdentity, protocol.EventPrivateNew, dto); err != nil {
 			log.Printf("[Conversation] publish private:new to receiver %s failed: %v", targetIdentity, err)
 		}
 	}

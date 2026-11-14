@@ -18,9 +18,9 @@ function toOverlayMember(m: MemberInfo): OverlayMember {
 	return {
 		identity: m.identity,
 		name: m.name,
-		displayName: m.displayName,
+		displayName: m.display_name,
 		avatar: m.avatar,
-		isMicMuted: m.isMicMuted || m.isMuted,
+		isMicMuted: m.is_mic_muted || m.is_muted,
 	};
 }
 
@@ -71,7 +71,7 @@ export function useOverlayRelay() {
 			const snapshot = {
 				roomName: st.selectedRoomInfo?.name ?? st.currentRoom ?? null,
 				members: selectMembers(st).map(toOverlayMember),
-				speakingIdentities: useSpeakingStore.getState().speakingIdentities,
+				speakingIdentities: useSpeakingStore.getState(),
 				connected: st.connected,
 			};
 			const key = JSON.stringify(snapshot);

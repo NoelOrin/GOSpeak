@@ -182,7 +182,7 @@ describe("invite registration and approval", () => {
 			token: owner.access_token,
 			body: {
 				domain_uuid: domain.uuid,
-				request_id: request!.id,
+				request_id: request?.id,
 				approve: true,
 			},
 		});

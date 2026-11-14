@@ -42,9 +42,8 @@ func TestDomainHandler_Update_OwnerSuccess(t *testing.T) {
 
 func TestDomainHandler_Delete_CallsHook(t *testing.T) {
 	db, domainSvc := setupDomainHandlerTestDB(t)
-	h := NewDomainHandler(domainSvc, nil)
 	var deleted string
-	h.SetOnDomainDelete(func(uuid string) { deleted = uuid })
+	h := NewDomainHandler(domainSvc, nil, nil, nil, nil, func(uuid string) { deleted = uuid })
 
 	router := setupDomainHandlerRouter(t, domainSvc)
 	router.POST("/api/v1/domain/delete-with-hook", h.Delete)

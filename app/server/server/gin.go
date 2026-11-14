@@ -102,7 +102,14 @@ func StartGin(env EnvEnum) error {
 	domainRepo := repository.NewDomainRepository(db)
 	domainRoleRepo := repository.NewDomainRoleRepository(db)
 	announcementRepo := repository.NewAnnouncementRepository(db)
-	domainSvc := service.NewDomainService(domainRepo, domainRoleRepo)
+	inviteSvc := service.NewInviteService(repository.NewDomainInviteRepository(db), domainRepo, cfg.StorageEncryptKey, cfg.JWTKey)
+	domainSvc := service.NewDomainService(domainRepo, domainRoleRepo, inviteSvc)
+	joinRequestSvc := service.NewJoinRequestService(
+		repository.NewDBTxRunner(db),
+		repository.NewDomainJoinRequestRepository(db),
+		domainRepo,
+		userRepo,
+	)
 
 	permSvc := service.NewPermissionService(permRepo)
 	if err := permSvc.UseCasbin(repository.NewCasbinAdapter(db)); err != nil {
@@ -112,16 +119,9 @@ func StartGin(env EnvEnum) error {
 		return fmt.Errorf("failed to init domain casbin: %w", err)
 	}
 
-	roleSvc := service.NewRoleService(roleRepo)
-	// 角色改名/删除后连锁重载权限缓存与 Casbin 策略（角色名是两者共用的 key）。
-	roleSvc.SetOnRoleChanged(func() {
-		if err := permSvc.LoadCache(); err != nil {
-			logger.WithComponent("Permission").WithError(err).Warn("role change: permission cache reload failed")
-		}
-	})
-	roleSvc.SetOnRoleRenamed(func(oldName, newName string) error {
-		return permSvc.RenameRole(oldName, newName)
-	})
+	// 角色改名/删除后连锁重载权限缓存与 Casbin 策略（角色名是两者共用的 key），
+	// 由 RoleService 直接依赖 permSvc 实现，不再走回调注入。
+	roleSvc := service.NewRoleService(roleRepo, permSvc)
 	emailConfigSvc := service.NewEmailConfigService(emailConfigRepo, cfg)
 	emailSvc := service.NewEmailService(emailConfigSvc.ResolveConfig)
 	emailVerificationSvc := service.NewEmailVerificationService(emailVerificationRepo, userRepo, emailSvc, emailConfigSvc.ResolveConfig)
@@ -129,22 +129,13 @@ func StartGin(env EnvEnum) error {
 	service.SetBcryptCost(cfg.BcryptCost)
 	pkg.AccessTokenTTL = cfg.JWTAccessTTLDuration()
 	pkg.RefreshTokenTTL = cfg.JWTRefreshTTLDuration()
-	inviteSvc := service.NewInviteService(db, repository.NewDomainInviteRepository(db), domainRepo, cfg.StorageEncryptKey, cfg.JWTKey)
-	joinRequestSvc := service.NewJoinRequestService(
-		db,
-		repository.NewDomainJoinRequestRepository(db),
-		domainRepo,
-		userRepo,
-	)
-	domainSvc.SetInviteCreator(inviteSvc)
+
 	storageSvc := service.NewStorageService(storageConfigRepo, cfg)
 	userSvc := service.NewUserService(userRepo)
 	userGroupSvc := service.NewUserGroupService(userGroupRepo)
-	oauthSvc := service.NewOAuthService(oauthProviderRepo, oauthAccountRepo, userRepo)
-	oauthSvc.SetAutoCreateUser(cfg.OAuthAutoCreateUser)
+	oauthSvc := service.NewOAuthService(oauthProviderRepo, oauthAccountRepo, userRepo, cfg.OAuthAutoCreateUser)
 	roomSvc := service.NewRoomService(roomRepo)
-	messageSvc := service.NewMessageService(messageRepo, roomRepo, domainSvc)
-	messageSvc.SetUserRepo(userRepo)
+	messageSvc := service.NewMessageService(messageRepo, roomRepo, domainSvc, userRepo)
 	muteSvc := service.NewMuteService(muteRepo, userRepo)
 	sfuConfigSvc := service.NewSFUConfigService(sfuConfigRepo, cfg)
 	var sfuProvider sfu.Provider = factory.NewDynamicProvider(sfuConfigSvc.ResolveConfig)
@@ -196,10 +187,8 @@ func StartGin(env EnvEnum) error {
 	logger.WithComponent("StateStore").Infof("ready backend=%s instance=%s", backend, instanceID)
 
 	var streamResolver signal.StreamNameResolver
-	if snr, ok := sfuProvider.(signal.StreamNameResolver); ok {
-		if sc, ok2 := sfuProvider.(interface{ SupportsStream() bool }); !ok2 || sc.SupportsStream() {
-			streamResolver = snr
-		}
+	if snr, ok := sfuProvider.(signal.StreamNameResolver); ok && sfuProvider.SupportsStream() {
+		streamResolver = snr
 	}
 	conversationSvc := service.NewConversationService(conversationRepo, messageRepo)
 	conversationSvc.SetEventBus(eventBus)
@@ -218,21 +207,33 @@ func StartGin(env EnvEnum) error {
 	})
 	signalHub.StartMembershipHeartbeat()
 	signalHub.StartEmptyRoomReconciler(0)
+	// 内部事件统一经 InternalDispatcher 查表分发；未注册事件交回 Hub 处理远端状态同步。
+	dispatcher := bus.NewInternalDispatcher()
+	dispatcher.Register(service.EventPermissionsInvalidated, permSvc.OnRemoteInvalidate)
+	dispatcher.Register(service.EventDomainMembershipChanged, domainSvc.OnRemoteInvalidate)
+	dispatcher.Register(service.EventMuteChanged, muteSvc.OnRemoteInvalidate)
+	dispatcher.Register(service.EventMuteExpired, func(payload interface{}) {
+		if p, err := bus.DecodePayload[service.MuteExpiredPayload](payload); err == nil {
+			if userID, uerr := strconv.ParseUint(p.UserID, 10, 64); uerr == nil && userID > 0 {
+				signalHub.BroadcastUnmute(uint(userID))
+			}
+		}
+	})
+	dispatcher.Register(service.EventDomainMemberAdded, func(payload interface{}) {
+		if p, err := bus.DecodePayload[service.DomainMemberAddedPayload](payload); err == nil && p.DomainUUID != "" && p.UserUUID != "" {
+			domainSvc.OnMemberAdded(p.DomainUUID, p.UserUUID)
+		}
+	})
+	dispatcher.Register(service.EventRoomListChanged, func(payload interface{}) {
+		if p, err := bus.DecodePayload[service.RoomListChangedPayload](payload); err == nil {
+			signalHub.BroadcastRoomList(p.DomainUUID)
+		}
+	})
 	if nb, ok := eventBus.(*bus.NATSBus); ok {
 		nb.SetRemoteHook(func(event string, payload interface{}) {
-			if event == service.EventPermissionsInvalidated {
-				permSvc.OnRemoteInvalidate(payload)
-				return
+			if !dispatcher.Dispatch(event, payload) {
+				signalHub.HandleRemoteEvent(event, payload)
 			}
-			if event == service.EventDomainMembershipChanged {
-				domainSvc.OnRemoteInvalidate(payload)
-				return
-			}
-			if event == service.EventMuteChanged {
-				muteSvc.OnRemoteInvalidate(payload)
-				return
-			}
-			signalHub.HandleRemoteEvent(event, payload)
 		})
 	}
 
@@ -263,10 +264,8 @@ func StartGin(env EnvEnum) error {
 		}
 	}
 	signalHub.SetupFanout(wsFanout, wsHandler)
-	sfuSvc := service.NewSFUService(sfuProvider, signalHub)
-	sfuSvc.SetDomainMemberChecker(domainSvc.IsMember)
-	signalH := handler.NewSignalHandler(sfuSvc)
-	signalH.SetLiveKitSecretResolver(func() string {
+	sfuSvc := service.NewSFUService(sfuProvider, signalHub, domainSvc.IsMember)
+	resolveLiveKitSecret := func() string {
 		resolved, err := sfuConfigSvc.ResolveConfig()
 		if err != nil || resolved == nil {
 			return cfg.LiveKitSecret
@@ -275,8 +274,8 @@ func StartGin(env EnvEnum) error {
 			return resolved.LiveKitSecret
 		}
 		return cfg.LiveKitSecret
-	})
-	signalH.SetLiveKitKeyResolver(func() string {
+	}
+	resolveLiveKitKey := func() string {
 		resolved, err := sfuConfigSvc.ResolveConfig()
 		if err != nil || resolved == nil {
 			return cfg.LiveKitKey
@@ -285,47 +284,32 @@ func StartGin(env EnvEnum) error {
 			return resolved.LiveKitKey
 		}
 		return cfg.LiveKitKey
-	})
-	if jobQueue != nil {
-		signalH.SetJobs(jobQueue)
 	}
+	signalH := handler.NewSignalHandler(sfuSvc, jobQueue, resolveLiveKitSecret, resolveLiveKitKey)
 
 	authCookieCfg := handler.NewAuthCookieConfig(cfg)
 	authH := handler.NewAuthHandler(authSvc, authCookieCfg)
-	joinRequestSvc.SetMemberAddedHook(domainSvc.OnMemberAdded)
+	joinRequestSvc.SetEventBus(eventBus)
 	inviteJoinSvc := service.NewInviteJoinService(
-		db, inviteSvc, joinRequestSvc,
+		repository.NewDBTxRunner(db), inviteSvc, joinRequestSvc,
 		repository.NewDomainInviteRepository(db), domainRepo, userRepo,
 		emailConfigSvc, emailVerificationSvc,
 	)
-	inviteH := handler.NewInviteHandler(inviteSvc)
+	inviteH := handler.NewInviteHandler(inviteSvc, domainSvc, permSvc)
 	inviteJoinH := handler.NewInviteJoinHandler(inviteJoinSvc, authCookieCfg)
-	joinRequestH := handler.NewJoinRequestHandler(joinRequestSvc, domainSvc)
-	joinRequestH.SetGlobalPermissionChecker(permSvc)
-	inviteH.SetPermissionCheckers(domainSvc, permSvc)
+	joinRequestH := handler.NewJoinRequestHandler(joinRequestSvc, domainSvc, permSvc)
+	auditSvc := audit.NewService(db)
 	emailH := handler.NewEmailVerificationHandler(emailVerificationSvc)
 	emailConfigH := handler.NewEmailConfigHandler(emailConfigSvc)
-	userH := handler.NewUserHandler(userSvc, permSvc)
-	auditSvc := audit.NewService(db)
-	userH.SetAuditor(auditSvc)
+	userH := handler.NewUserHandler(userSvc, permSvc, auditSvc)
 	userGroupH := handler.NewUserGroupHandler(userGroupSvc, userSvc)
 	oauthH := handler.NewOAuthHandler(oauthSvc, authCookieCfg)
 	roleH := handler.NewRoleHandler(roleSvc)
-	roomH := handler.NewRoomHandler(roomSvc, permSvc, domainSvc)
-	roomH.SetRoomListBroadcaster(signalHub)
-	roomH.SetAuditor(auditSvc)
+	roomH := handler.NewRoomHandler(roomSvc, permSvc, domainSvc, eventBus, auditSvc)
 	msgH := handler.NewMessageHandler(messageSvc, permSvc, roomSvc, domainSvc)
 	permH := handler.NewPermissionHandler(permSvc)
-	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub)
-	muteH.SetAuditor(auditSvc)
+	muteH := handler.NewMuteHandler(muteSvc, userSvc, signalHub, auditSvc)
 
-	// 临时禁言过期：删除记录后走完整 unmute（广播 + SFU 恢复），
-	// 若期间管理员已重新禁言则跳过，避免误解除新禁言。
-	muteSvc.SetOnExpired(func(userID uint) {
-		if muted, _, err := muteSvc.IsMuted(userID); err == nil && !muted {
-			signalHub.BroadcastUnmute(userID)
-		}
-	})
 	// 临时禁言到期扫描：ListActiveMutes 会清理过期记录并触发 onExpired（广播 + SFU 恢复）。
 	// 之前的到期清理依赖查询路径惰性触发，无定时任务时到期后订阅端会残留静音状态。
 	_ = jobs.StartMuteExpiryScanner(context.Background(), func() {
@@ -348,18 +332,14 @@ func StartGin(env EnvEnum) error {
 	}
 	startJobConsumers(jobQueue, eventBus.InstanceID(), signalHub, messageSvc, conversationSvc)
 
-	domainH := handler.NewDomainHandler(domainSvc, permSvc)
-	domainH.SetOnDomainKick(signalHub.KickUserFromDomain)
-	domainH.SetAuditor(auditSvc)
+	domainH := handler.NewDomainHandler(domainSvc, permSvc, auditSvc,
+		signalHub.KickUserFromDomain, signalHub.KickUserFromDomain,
+		func(serverUUID string) { signalHub.OnDomainDelete(serverUUID) })
 	auditH := handler.NewAuditHandler(auditSvc)
-	announcementSvc := service.NewAnnouncementService(announcementRepo, domainRepo, db)
+	announcementSvc := service.NewAnnouncementService(announcementRepo, domainRepo)
 	announcementSvc.SetEventBus(eventBus)
 	announcementSvc.SetDomainPermissionChecker(domainSvc.HasDomainPermission)
 	announcementH := handler.NewAnnouncementHandler(announcementSvc, permSvc)
-	domainH.SetOnDomainLeave(signalHub.KickUserFromDomain)
-	domainH.SetOnDomainDelete(func(serverUUID string) {
-		signalHub.OnDomainDelete(serverUUID)
-	})
 	conversationH := handler.NewConversationHandler(conversationSvc)
 
 	monitorH := handler.NewMonitorHandler(signalHub, cfg, newServerInfraStats(eventBus))

@@ -1,12 +1,9 @@
 import type { SignalSocket } from "@gospeak/sfu-client/types";
+import type { AckFrame } from "@/protocol/generated/envelope";
 import type { WSEndpointInfo } from "@/protocol/ws";
 
-interface WSMessage {
-	id?: string;
-	event: string;
-	data?: unknown;
-	error?: { code: number; message: string };
-}
+// wire 帧形状来自协议生成物（internal/protocol → cmd/gen-protocol）。
+type WSMessage = AckFrame;
 
 export type WSConnectionState =
 	| "new"
@@ -284,6 +281,7 @@ export function createWSClient(options: WSClientOptions = {}): SignalSocket & {
 		return true;
 	}
 
+	// P2 收紧：Promise<AckPayload<PayloadOf[E]>>（ack payload struct 逐事件补齐后）。
 	function emitAck(event: string, payload?: unknown): Promise<any> {
 		return new Promise((resolve, reject) => {
 			if (state !== "open" || !ws || ws.readyState !== WebSocket.OPEN) {

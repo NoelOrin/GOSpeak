@@ -3,11 +3,11 @@ package signal
 import (
 	"context"
 	"errors"
-	"log"
 	"sort"
 	"time"
 
 	"GOSpeak/internal/bus"
+	"GOSpeak/internal/logger"
 
 	"github.com/nats-io/nats.go"
 )
@@ -30,14 +30,11 @@ func kvTimeoutCtx() (context.Context, context.CancelFunc) {
 }
 
 // membershipStore abstracts JetStream KV (or test doubles) for cross-instance
-// membership and stream maps. Nil store means local-only mode (phase-1).
+// room membership. Nil store means local-only mode (phase-1).
 type membershipStore interface {
 	PutRoomMembers(ctx context.Context, snap bus.RoomMembersSnapshot) error
 	GetRoomMembers(ctx context.Context, room string) (bus.RoomMembersSnapshot, error)
 	DeleteRoomMembers(ctx context.Context, room string) error
-	PutStream(ctx context.Context, stream, room, identity string) error
-	GetStream(ctx context.Context, stream string) (room, identity string, err error)
-	DeleteStream(ctx context.Context, stream string) error
 	ListRoomNames(ctx context.Context) ([]string, error)
 }
 
@@ -81,7 +78,6 @@ func (h *Hub) StartMembershipHeartbeat() {
 				return
 			case <-ticker.C:
 				h.syncAllLocalRoomsToStore()
-				h.cleanupExpiredMuteCache()
 			}
 		}
 	}()
@@ -189,7 +185,7 @@ func (h *Hub) syncRoomToStorePlain(key string, now int64, local []bus.MemberReco
 		// 首次写入：允许继续
 	default:
 		// 读失败必须中止，避免把远程成员快照覆盖/删除
-		log.Printf("[Signal] state store get room %s: %v; skip merge to avoid clobber", key, err)
+		logger.WithComponent("Signal").Infof("[Signal] state store get room %s: %v; skip merge to avoid clobber", key, err)
 		return
 	}
 
@@ -198,7 +194,7 @@ func (h *Hub) syncRoomToStorePlain(key string, now int64, local []bus.MemberReco
 		err = h.membershipStore.DeleteRoomMembers(ctx, key)
 		cancel()
 		if err != nil {
-			log.Printf("[Signal] state store delete room %s: %v", key, err)
+			logger.WithComponent("Signal").Infof("[Signal] state store delete room %s: %v", key, err)
 		}
 		h.deleteRoomMeta(key)
 		h.notifyRoomStateChanged(key)
@@ -214,7 +210,7 @@ func (h *Hub) syncRoomToStorePlain(key string, now int64, local []bus.MemberReco
 	err = h.membershipStore.PutRoomMembers(ctx, snap)
 	cancel()
 	if err != nil {
-		log.Printf("[Signal] state store put room %s: %v", key, err)
+		logger.WithComponent("Signal").Infof("[Signal] state store put room %s: %v", key, err)
 		return
 	}
 	if prevRead && membershipRecordsEquivalent(prev.Members, merged) {
@@ -232,7 +228,7 @@ func (h *Hub) syncRoomToStoreWithRevision(rs revisionedMembershipStore, key stri
 		prev, rev, err := rs.GetRoomMembersRev(ctx, key)
 		cancel()
 		if err != nil && !errors.Is(err, nats.ErrKeyNotFound) && !bus.IsMembershipNotFound(err) {
-			log.Printf("[Signal] state store get room %s: %v", key, err)
+			logger.WithComponent("Signal").Infof("[Signal] state store get room %s: %v", key, err)
 			return
 		}
 		prevRead := err == nil
@@ -247,7 +243,7 @@ func (h *Hub) syncRoomToStoreWithRevision(rs revisionedMembershipStore, key stri
 					if isMembershipCASConflict(err) {
 						continue
 					}
-					log.Printf("[Signal] state store delete room %s: %v", key, err)
+					logger.WithComponent("Signal").Infof("[Signal] state store delete room %s: %v", key, err)
 					return
 				}
 			}
@@ -268,7 +264,7 @@ func (h *Hub) syncRoomToStoreWithRevision(rs revisionedMembershipStore, key stri
 			if isMembershipCASConflict(err) {
 				continue
 			}
-			log.Printf("[Signal] state store put room %s: %v", key, err)
+			logger.WithComponent("Signal").Infof("[Signal] state store put room %s: %v", key, err)
 			return
 		}
 		if !prevRead || !membershipRecordsEquivalent(prev.Members, merged) {
@@ -276,7 +272,7 @@ func (h *Hub) syncRoomToStoreWithRevision(rs revisionedMembershipStore, key stri
 		}
 		return
 	}
-	log.Printf("[Signal] state store sync room %s: revision conflicts exceeded %d attempts", key, maxMembershipSyncAttempts)
+	logger.WithComponent("Signal").Infof("[Signal] state store sync room %s: revision conflicts exceeded %d attempts", key, maxMembershipSyncAttempts)
 }
 
 // membershipRecordsEquivalent 比较两份成员快照的业务字段是否一致，忽略续期时间戳。

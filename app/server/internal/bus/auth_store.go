@@ -222,8 +222,8 @@ func (s *AuthStore) GetSigningKey() (string, bool, error) {
 	if json.Unmarshal([]byte(val), &rec) == nil && rec.Key != "" {
 		return rec.Key, true, nil
 	}
-	// 旧格式：纯 key 字符串
-	return val, true, nil
+	// 旧格式（纯 key 字符串）已退役（2026-11）：视为无效记录，由轮换流程重建。
+	return "", false, nil
 }
 
 // ErrSigningKeyExists 表示已有 active key，拒绝覆盖。
@@ -267,16 +267,7 @@ func (s *AuthStore) GetCreatedAt() (int64, bool, error) {
 	if json.Unmarshal([]byte(val), &rec) == nil && rec.Key != "" {
 		return rec.CreatedAt, true, nil
 	}
-	// 旧格式：读取单独创建的 jwt.created_at
-	legacy, ok2, err2 := s.get("jwt.created_at")
-	if err2 != nil || !ok2 {
-		return 0, false, err2
-	}
-	n, err := strconv.ParseInt(legacy, 10, 64)
-	if err != nil {
-		return 0, false, nil
-	}
-	return n, true, nil
+	return 0, false, nil
 }
 
 // AddHistoryKey appends key to history list (newline-separated, capped).

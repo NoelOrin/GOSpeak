@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"GOSpeak/internal/sfu"
+
 	"github.com/nats-io/nats.go"
 )
 
@@ -118,7 +120,7 @@ func (q *JobQueue) Publish(ctx context.Context, job JobEnvelope) error {
 func (q *JobQueue) PublishLiveKit(ctx context.Context, raw []byte) error {
 	return q.Publish(ctx, JobEnvelope{
 		ID:      fmt.Sprintf("lk-%d", time.Now().UnixNano()),
-		Type:    "livekit",
+		Type:    sfu.DefaultProviderName,
 		Payload: raw,
 	})
 }

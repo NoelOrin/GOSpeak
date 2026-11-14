@@ -114,8 +114,6 @@ func Init(opts Options) error {
 	closer = c
 	mu.Unlock()
 
-	// 标准库 log / gin 默认 writer 统一转发
-	RedirectStdLog()
 	return nil
 }
 

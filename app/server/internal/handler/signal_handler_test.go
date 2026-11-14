@@ -23,6 +23,7 @@ import (
 // ─── Mock SFU Provider ───
 
 type mockSFU struct {
+	sfu.BaseProvider
 	tokenFn          func(room, identity string) (string, error)
 	listRoomsFn      func() ([]sfu.RoomSummary, error)
 	listParticipants func(room string) ([]sfu.ParticipantSummary, error)
@@ -87,9 +88,8 @@ func setupRouterWithClusterResolver(sfu *mockSFU, resolver func(domainUUID strin
 func setupRouterFull(sfu *mockSFU, checker func(domainUUID, userUUID string) bool, _ func(domainUUID string) (string, error)) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	svc := service.NewSFUService(sfu, nil)
-	svc.SetDomainMemberChecker(checker)
-	h := NewSignalHandler(svc)
+	svc := service.NewSFUService(sfu, nil, checker)
+	h := NewSignalHandler(svc, nil, nil, nil)
 	// 模拟 JWTAuth 注入 username
 	r.Use(func(c *gin.Context) {
 		if c.GetHeader("X-Test-User") != "" {
@@ -119,12 +119,8 @@ const testLiveKitKey = "APItestkey"
 func setupWebhookRouter(sfu *mockSFU, secret string, jobs livekitJobPublisher) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	h := NewSignalHandler(service.NewSFUService(sfu, nil))
-	h.SetLiveKitSecretResolver(func() string { return secret })
-	h.SetLiveKitKeyResolver(func() string { return testLiveKitKey })
-	if jobs != nil {
-		h.SetJobs(jobs)
-	}
+	h := NewSignalHandler(service.NewSFUService(sfu, nil, nil), jobs,
+		func() string { return secret }, func() string { return testLiveKitKey })
 	r.POST("/webhook", h.LivekitWebhook)
 	return r
 }
@@ -579,7 +575,7 @@ func TestLivekitWebhook_InvalidJSON(t *testing.T) {
 func setupWSEndpointRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	h := NewSignalHandler(service.NewSFUService(&mockSFU{}, nil))
+	h := NewSignalHandler(service.NewSFUService(&mockSFU{}, nil, nil), nil, nil, nil)
 	r.Use(func(c *gin.Context) {
 		c.Set("claims", &pkg.Claims{
 			Username: "user-1", DisplayName: "User 1", UserUUID: "u-1",

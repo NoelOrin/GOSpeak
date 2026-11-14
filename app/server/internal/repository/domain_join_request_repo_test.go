@@ -238,3 +238,20 @@ func TestDomainJoinRequestRepository_CountByStatus(t *testing.T) {
 		t.Fatalf("approved count = %d, want 0", counts[model.JoinRequestApproved])
 	}
 }
+
+func TestDomainJoinRequestRepository_ListByDomain_EmptyDomainReturnsEmptySlice(t *testing.T) {
+	db := setupJoinRequestRepoDB(t)
+	repo := NewDomainJoinRequestRepository(db)
+
+	items, total, err := repo.ListByDomain("domain-empty", "", "", 1, 20)
+	if err != nil {
+		t.Fatalf("list empty domain: %v", err)
+	}
+	if total != 0 {
+		t.Fatalf("total = %d, want 0", total)
+	}
+	// 空结果必须是 [] 而非 nil：nil 经 JSON 序列化变成 null，前端列表组件直接取 length 会崩。
+	if items == nil {
+		t.Fatalf("items = nil, want non-nil empty slice")
+	}
+}

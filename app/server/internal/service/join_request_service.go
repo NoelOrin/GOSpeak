@@ -1,7 +1,9 @@
 package service
 
 import (
+	"context"
 	"errors"
+	"log"
 	"strings"
 
 	"GOSpeak/internal/model"
@@ -22,25 +24,25 @@ var (
 
 // JoinRequestService 管理域加入申请的提交、撤销、审核与查询。
 type JoinRequestService struct {
-	db            *gorm.DB
+	txRunner      repository.TxRunner
 	requestRepo   *repository.DomainJoinRequestRepository
 	domainRepo    *repository.DomainRepository
 	userRepo      *repository.UserRepository
-	onMemberAdded func(domainUUID, userUUID string)
+	bus cacheBus
 }
 
 func NewJoinRequestService(
-	db *gorm.DB,
+	txRunner repository.TxRunner,
 	requestRepo *repository.DomainJoinRequestRepository,
 	domainRepo *repository.DomainRepository,
 	userRepo *repository.UserRepository,
 ) *JoinRequestService {
-	return &JoinRequestService{db: db, requestRepo: requestRepo, domainRepo: domainRepo, userRepo: userRepo}
+	return &JoinRequestService{txRunner: txRunner, requestRepo: requestRepo, domainRepo: domainRepo, userRepo: userRepo}
 }
 
-// SetMemberAddedHook 注入「新成员已写入」回调，用于清理域成员缓存并广播失效。
-func (s *JoinRequestService) SetMemberAddedHook(fn func(domainUUID, userUUID string)) {
-	s.onMemberAdded = fn
+// SetEventBus 注入内部事件发布器：成员写入后广播失效事件（订阅方清缓存）。
+func (s *JoinRequestService) SetEventBus(b cacheBus) {
+	s.bus = b
 }
 
 // Submit 幂等提交申请。已是成员返回 ErrAlreadyMember；
@@ -134,7 +136,7 @@ func (s *JoinRequestService) Review(domainUUID string, requestID uint, approve b
 		}
 	}
 
-	txErr := s.db.Transaction(func(tx *gorm.DB) error {
+	txErr := s.txRunner.WithinTx(func(tx *gorm.DB) error {
 		repo := repository.NewDomainJoinRequestRepository(tx)
 		ok, err := repo.Review(requestID, approve, reviewerUUID)
 		if err != nil {
@@ -164,8 +166,11 @@ func (s *JoinRequestService) Review(domainUUID string, requestID uint, approve b
 		}
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, txErr.Error())
 	}
-	if approve && s.onMemberAdded != nil {
-		s.onMemberAdded(domainUUID, req.UserUUID)
+	if approve && s.bus != nil {
+		payload := DomainMemberAddedPayload{DomainUUID: domainUUID, UserUUID: req.UserUUID}
+		if err := s.bus.PublishInternal(context.Background(), EventDomainMemberAdded, payload); err != nil {
+			log.Printf("[JoinRequest] publish member added: %v", err)
+		}
 	}
 	return s.requestRepo.GetByID(requestID)
 }

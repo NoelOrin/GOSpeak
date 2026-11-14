@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"GOSpeak/internal/protocol"
 )
 
 const typingRoomKey = "domain-a:lobby"
@@ -41,11 +43,11 @@ func TestHub_OnTyping_StartStopAndThrottle(t *testing.T) {
 		t.Fatalf("duplicate typing stop must not re-broadcast, got %d broadcasts", got)
 	}
 
-	payload, ok := typingCasts(fanout)[1].(map[string]interface{})
+	payload, ok := typingCasts(fanout)[1].(protocol.TypingPayload)
 	if !ok {
-		t.Fatal("typing payload must be a map")
+		t.Fatalf("typing payload must be TypingPayload, got %T", typingCasts(fanout)[1])
 	}
-	if payload["typing"] != false || payload["room"] != "lobby" || payload["domain_uuid"] != "domain-a" {
+	if payload.Typing != false || payload.Room != "lobby" || payload.DomainUUID != "domain-a" {
 		t.Fatalf("unexpected stop payload: %#v", payload)
 	}
 }
@@ -73,12 +75,12 @@ func TestHub_OnTyping_UsesAuthenticatedIdentity(t *testing.T) {
 	// 客户端伪造 identity 不应生效
 	hub.OnTyping(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"bob","typing":true}`)
 
-	payload, ok := typingCasts(fanout)[0].(map[string]interface{})
+	payload, ok := typingCasts(fanout)[0].(protocol.TypingPayload)
 	if !ok {
-		t.Fatal("typing payload must be a map")
+		t.Fatalf("typing payload must be TypingPayload, got %T", typingCasts(fanout)[0])
 	}
-	if payload["identity"] != "alice" {
-		t.Fatalf("must broadcast the authenticated identity, got %v", payload["identity"])
+	if payload.Identity != "alice" {
+		t.Fatalf("must broadcast the authenticated identity, got %v", payload.Identity)
 	}
 }
 

@@ -43,7 +43,7 @@ describe("oauth module", () => {
 		);
 		expect(enabled.data?.some((item) => item.name === name)).toBe(true);
 
-		const login = await api("/api/v1/oauth/login/" + name, {
+		const login = await api(`/api/v1/oauth/login/${name}`, {
 			method: "GET",
 			redirect: "manual",
 		});

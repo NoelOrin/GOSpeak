@@ -1,0 +1,81 @@
+# =============================================================================
+# GOSpeak 简化部署（app + LiveKit）
+# =============================================================================
+# 只保留跑通语音所需的两个服务，不含 PostgreSQL / RustFS / 可观测性栈。
+# 数据库用 SQLite，存储用本地磁盘，开箱即用。
+#
+# 用法（在仓库根目录执行）:
+#   docker compose -f deploy/docker-compose.simple.yml up -d --build
+#   docker compose -f deploy/docker-compose.simple.yml logs -f gospeak
+#   docker compose -f deploy/docker-compose.simple.yml down
+#
+# 配置来源与完整版一致：deploy/.env（用 deploy/init.sh 生成）
+#
+# 与完整版 docker-compose.yml 的区别：
+#   - 无 profiles，up 即起，不需要 COMPOSE_PROFILES
+#   - 去掉 postgres / rustfs / prometheus / alertmanager / grafana / loki / promtail
+#   - 保留同名 volume，可与完整版互相切换而不丢数据
+#
+# 需要 PostgreSQL、对象存储或监控时，改用完整版 docker-compose.yml。
+# =============================================================================
+
+name: gospeak
+
+services:
+  # ── 应用（内置前端 SPA + Go API）──────────────────────────────────────────
+  gospeak:
+    restart: unless-stopped
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: ${GOSPEAK_IMAGE:-gospeak:latest}
+    pull_policy: ${GOSPEAK_PULL_POLICY:-missing}
+    container_name: gospeak-app
+    # 唯一配置来源：deploy/.env（compose 插值与应用 env 共用）
+    env_file:
+      - .env
+    environment:
+      SERVER_PORT: "8998"
+      STATIC_DIR: /app/static
+      DB_PATH: ${DB_PATH:-/app/db/app.db}
+    ports:
+      - "${GOSPEAK_PORT:-8998}:8998"
+    volumes:
+      - gospeak-db:/app/db
+      - gospeak-logs:/app/logs
+      - gospeak-uploads:/app/uploads
+    depends_on:
+      livekit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8998/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── LiveKit（音视频 SFU）──────────────────────────────────────────────────
+  livekit:
+    restart: unless-stopped
+    image: livekit/livekit-server:latest
+    container_name: gospeak-livekit
+    ports:
+      - "7880:7880"        # HTTP / WebSocket 信令
+      - "7881:7881"        # RTC over TCP（TLS）
+      - "7882:7882"        # RTC over TCP
+      - "7882:7882/udp"    # RTC over UDP（媒体主通道）
+      - "3478:3478/udp"    # TURN
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    environment:
+      # 密钥只从 deploy/.env 注入，livekit.yaml 里不含任何凭据。
+      # LIVEKIT_KEYS 覆盖 keys，LIVEKIT_WEBHOOK_API_KEY 覆盖 webhook 签名 key
+      # （LiveKit 1.13 起必填，否则启动报 "api_key is required to use webhooks"）。
+      LIVEKIT_KEYS: "${LIVEKIT_KEY}: ${LIVEKIT_SECRET}"
+      LIVEKIT_WEBHOOK_API_KEY: "${LIVEKIT_KEY}"
+    command: --config /etc/livekit.yaml
+
+volumes:
+  gospeak-db:
+  gospeak-logs:
+  gospeak-uploads:

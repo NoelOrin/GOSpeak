@@ -3,7 +3,6 @@ package signal
 import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
-	"encoding/json"
 	"testing"
 )
 
@@ -77,16 +76,12 @@ func TestHub_OnRoomLeave_ClearsConnSlot(t *testing.T) {
 	if exists {
 		t.Fatal("expected conn slot removed after leave")
 	}
-	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","domain_uuid":"domain-a","content":"hello"}`)
-	if err != nil {
-		t.Fatalf("send after leave: %v", err)
+	_, err := h.OnMessageSend(conn, `{"room":"text-chat","domain_uuid":"domain-a","content":"hello"}`)
+	if err == nil {
+		t.Fatal("expected send after leave to fail")
 	}
-	var ackMap map[string]interface{}
-	if err := json.Unmarshal([]byte(ack), &ackMap); err != nil {
-		t.Fatalf("bad ack json: %v", err)
-	}
-	if ackMap["error"] != "not in room: text-chat" {
-		t.Errorf("expected not in room error, got %v", ackMap["error"])
+	if err.Error() != "not in room: text-chat" {
+		t.Errorf("expected not in room error, got %v", err)
 	}
 }
 

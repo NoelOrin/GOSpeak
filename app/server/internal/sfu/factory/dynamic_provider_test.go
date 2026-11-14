@@ -10,6 +10,7 @@ import (
 )
 
 type stubProvider struct {
+	sfu.BaseProvider
 	name string
 }
 
@@ -103,41 +104,5 @@ func TestDynamicProvider_SupportsStream(t *testing.T) {
 	p := newDynamicProviderWithConfig(t, "livekit")
 	if p.SupportsStream() {
 		t.Fatal("livekit must not advertise stream support")
-	}
-}
-
-type stubRoomResolver struct{ room string }
-
-func (r *stubRoomResolver) RoomForStream(stream string) (string, bool) {
-	if r == nil || r.room == "" {
-		return "", false
-	}
-	return r.room, true
-}
-
-type resolverSetterStub struct {
-	stubProvider
-	got pkg.StreamRoomResolver
-}
-
-func (s *resolverSetterStub) SetStreamRoomResolver(r pkg.StreamRoomResolver) {
-	s.got = r
-}
-
-func TestDynamicProvider_StreamRoomResolverForwardedAndStored(t *testing.T) {
-	p := newDynamicProviderWithConfig(t, "mock")
-	stub := &resolverSetterStub{}
-	p.mu.Lock()
-	p.cachedProvider = stub
-	p.mu.Unlock()
-
-	resolver := &stubRoomResolver{room: "dom-a:r1"}
-	p.SetStreamRoomResolver(resolver)
-
-	if stub.got != resolver {
-		t.Fatal("resolver must be forwarded to the cached provider")
-	}
-	if p.streamRoomResolver != resolver {
-		t.Fatal("resolver must be stored for re-injection after provider rebuild")
 	}
 }

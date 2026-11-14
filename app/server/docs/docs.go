@@ -2749,11 +2749,6 @@ const docTemplate = `{
                 "domain_uuid": {
                     "type": "string"
                 },
-                "identity": {
-                    "description": "兼容字段，服务端以 JWT username 覆盖",
-                    "type": "string",
-                    "example": "user-123"
-                },
                 "password": {
                     "type": "string"
                 },

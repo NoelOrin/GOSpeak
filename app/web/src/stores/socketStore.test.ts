@@ -50,15 +50,11 @@ vi.mock("@/components/room/services/loadSfuClient", () => ({
 	preloadSfuClient: vi.fn(),
 }));
 
-vi.mock("@/handler_audio/speakingStore", () => ({
-	speakingStore: { set: vi.fn(), get: vi.fn(() => []) },
-}));
-
 vi.mock("@/socket/events", () => ({ EVENTS: { ROOM_LEAVE: "room:leave" } }));
 
 vi.mock("@/socket/roomState", () => ({
 	addCreatedRoom: vi.fn((prev) => prev),
-	applyMemberJoinedShell: vi.fn((prev) => prev),
+	applyMemberJoined: vi.fn((prev) => prev),
 	applyMemberLeft: vi.fn((prev) => prev),
 	applyMemberUpdated: vi.fn((prev) => prev),
 	mergeRoomUpdated: vi.fn((prev) => prev),
@@ -88,7 +84,7 @@ vi.mock("@/stores/domainStore", () => ({
 	default: { state: { currentDomainUUID: null } },
 }));
 
-import { socketStore } from "./socketStore";
+import { socketStore, useSocketStore } from "./socketStore";
 
 const onConnectedCb = mockAdapter.onConnected.mock.calls[0]?.[0] as
 	| (() => void)
@@ -157,15 +153,33 @@ describe("socketStore worker routing", () => {
 		expect(socketStore.socketState()).toBe("closing");
 	});
 
-	it("clearCurrentRoom clears speaking identities", async () => {
-		const { speakingStore } = await import("@/handler_audio/speakingStore");
+	it("clearCurrentRoom clears speaking identities", () => {
+		useSocketStore.setState({ speakingIdentities: ["alice"] });
 		socketStore.clearCurrentRoom();
-		expect(speakingStore.set).toHaveBeenCalledWith([]);
+		expect(useSocketStore.getState().speakingIdentities).toEqual([]);
 	});
 
-	it("disconnect clears speaking identities via resetRoomState", async () => {
-		const { speakingStore } = await import("@/handler_audio/speakingStore");
+	it("disconnect clears speaking identities via resetRoomState", () => {
+		useSocketStore.setState({ speakingIdentities: ["alice"] });
 		socketStore.disconnect();
-		expect(speakingStore.set).toHaveBeenCalledWith([]);
+		expect(useSocketStore.getState().speakingIdentities).toEqual([]);
+	});
+
+	it("disconnect clears the rejoin intent", () => {
+		useSocketStore.setState({
+			rejoinIntent: { room: "lobby", kind: "text" },
+		});
+		socketStore.disconnect();
+		expect(useSocketStore.getState().rejoinIntent).toBeNull();
+	});
+
+	it("clearCurrentRoom revokes the rejoin intent together with currentRoom", () => {
+		useSocketStore.setState({
+			currentRoom: "lobby",
+			rejoinIntent: { room: "lobby", kind: "text" },
+		});
+		socketStore.clearCurrentRoom();
+		expect(useSocketStore.getState().currentRoom).toBeNull();
+		expect(useSocketStore.getState().rejoinIntent).toBeNull();
 	});
 });

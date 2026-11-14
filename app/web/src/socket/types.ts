@@ -1,29 +1,23 @@
-export interface MemberInfo {
-	id: string;
-	identity: string;
-	name: string;
-	displayName: string;
-	avatar: string;
-	isMuted: boolean;
-	isMicMuted: boolean;
-	joinedAt: number;
-	stream?: string;
-}
+// wire 类型单一来源是 @/protocol/generated/payloads（后端 internal/protocol 生成）。
+// MemberInfo 与生成物完全一致，直接重导出；其余类型带本地扩展/容错字段，保留手写。
+import type { MemberInfo } from "@/protocol/generated/payloads";
+export type { MemberInfo };
 
 export interface RoomInfo {
 	id: number;
 	uuid: string;
 	name: string;
 	domain_uuid?: string;
-	hasPassword: boolean;
+	has_password: boolean;
 	description?: string;
 	limit: number;
-	audioOnly?: boolean;
-	allowAudience?: boolean;
+	audio_only?: boolean;
+	allow_audience?: boolean;
 	type?: string;
 	members: MemberInfo[];
 	count: number;
-	createdAt: number;
+	/** 服务端房间创建时间；本地未从服务端收到前不伪造（可选，缺省表示未知） */
+	created_at?: number;
 	/** @internal 临时传递密码，不从服务器获取 */
 	_password?: string;
 }

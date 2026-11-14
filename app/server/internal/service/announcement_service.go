@@ -9,14 +9,14 @@ import (
 	"GOSpeak/internal/notify"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/protocol"
 	"GOSpeak/internal/repository"
-
-	"gorm.io/gorm"
 )
 
 const (
 	// EventAnnouncementNew 是新公告的推送事件名，前端在 WS 上订阅。
-	EventAnnouncementNew = "announcement:new"
+	// 常量已收编至 internal/protocol（单一事实源），此处保留别名过渡。
+	EventAnnouncementNew = protocol.EventAnnouncementNew
 
 	announcementDefaultPageSize = 20
 	announcementMaxPageSize     = 100
@@ -24,21 +24,8 @@ const (
 	announcementMaxContentRunes = 20000
 )
 
-type AnnouncementDTO struct {
-	UUID          string `json:"uuid"`
-	ScopeType     string `json:"scope_type"`
-	ScopeID       string `json:"scope_id,omitempty"`
-	Title         string `json:"title"`
-	Content       string `json:"content"`
-	Level         string `json:"level"`
-	Pinned        bool   `json:"pinned"`
-	PublishedAt   *int64 `json:"published_at,omitempty"`
-	ExpiresAt     *int64 `json:"expires_at,omitempty"`
-	CreatedByUUID string `json:"created_by_uuid,omitempty"`
-	CreatedByName string `json:"created_by_name"`
-	IsRead        bool   `json:"is_read"`
-	CreatedAt     int64  `json:"created_at"`
-}
+// AnnouncementDTO 是公告事件的 wire 载荷（wire 定义见 protocol.AnnouncementPayload）。
+type AnnouncementDTO = protocol.AnnouncementPayload
 
 type AnnouncementActor struct {
 	UserUUID        string
@@ -65,15 +52,14 @@ type AnnouncementEventBus interface {
 type AnnouncementService struct {
 	repo       *repository.AnnouncementRepository
 	domainRepo *repository.DomainRepository
-	db         *gorm.DB
 	bus        AnnouncementEventBus
 	// domainPerm 判定域内权限码，由 DomainService.HasDomainPermission 注入。
 	// 不硬编码「角色名 == owner/admin」，否则自定义域角色拿到 domain:manage 也进不来。
 	domainPerm func(domainUUID, userUUID, permCode string) bool
 }
 
-func NewAnnouncementService(repo *repository.AnnouncementRepository, domainRepo *repository.DomainRepository, db *gorm.DB) *AnnouncementService {
-	return &AnnouncementService{repo: repo, domainRepo: domainRepo, db: db}
+func NewAnnouncementService(repo *repository.AnnouncementRepository, domainRepo *repository.DomainRepository) *AnnouncementService {
+	return &AnnouncementService{repo: repo, domainRepo: domainRepo}
 }
 
 func (s *AnnouncementService) SetEventBus(b AnnouncementEventBus) { s.bus = b }

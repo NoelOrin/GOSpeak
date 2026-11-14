@@ -87,8 +87,9 @@ func (r *DomainJoinRequestRepository) DeleteByDomainUser(domainUUID, userUUID st
 }
 
 // ListByDomain 分页查询域内申请，可按状态过滤、按申请人名字搜索。
+// items 以空切片初始化：空结果序列化为 [] 而非 null，前端列表组件直接取 length。
 func (r *DomainJoinRequestRepository) ListByDomain(domainUUID, status, keyword string, page, pageSize int) ([]model.DomainJoinRequestInfo, int64, error) {
-	var items []model.DomainJoinRequestInfo
+	items := make([]model.DomainJoinRequestInfo, 0)
 	var total int64
 
 	q := r.db.Table("domain_join_requests").

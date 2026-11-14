@@ -28,10 +28,10 @@ func setupInviteJoinService(t *testing.T) (*InviteJoinService, *InviteService, *
 	}
 	domainRepo := repository.NewDomainRepository(db)
 	inviteRepo := repository.NewDomainInviteRepository(db)
-	inviteSvc := NewInviteService(db, inviteRepo, domainRepo, testStorageKey, "jwt-key")
-	joinReqSvc := NewJoinRequestService(db, repository.NewDomainJoinRequestRepository(db), domainRepo, repository.NewUserRepository(db))
+	inviteSvc := NewInviteService(inviteRepo, domainRepo, testStorageKey, "jwt-key")
+	joinReqSvc := NewJoinRequestService(repository.NewDBTxRunner(db), repository.NewDomainJoinRequestRepository(db), domainRepo, repository.NewUserRepository(db))
 	svc := NewInviteJoinService(
-		db, inviteSvc, joinReqSvc, inviteRepo,
+		repository.NewDBTxRunner(db), inviteSvc, joinReqSvc, inviteRepo,
 		domainRepo, repository.NewUserRepository(db),
 		nil, nil,
 	)

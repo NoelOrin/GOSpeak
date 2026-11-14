@@ -17,14 +17,40 @@ export class VoiceJoinAbortError extends Error {
 	name = "AbortError";
 }
 
-// adapter.serializeJoins=true 时，同一 joinKey 的并发进房合并为一次执行，
-// 避免 effect 重入导致重复进房 publish（重复 tracks/new / 重复 client）。
-// 仅当没有同 key 的进行中 join 才真正发起；进行中则复用其 promise。
-// LiveKit 等 serializeJoins=false，互不影响。
-const inFlightJoins = new Map<
-	string,
-	Promise<{ client: SFUClient; provider: SFUProvider }>
->();
+export type VoiceJoinResult = {
+	client: SFUClient;
+	provider: SFUProvider;
+};
+
+/**
+ * 单个 voice session 的 join 状态机片段：同目标 join 进行中时复用同一 promise。
+ * 生命周期跟随 session（useVoiceSession 每实例持有一个），不存在跨 session 串扰，
+ * 也无需模块级 Map 的手工 set/finally 清理；重入防护由 session transition
+ * （abort 旧 join → setSession 新状态）保证。
+ */
+export interface VoiceJoinCoordinator {
+	run(
+		key: string,
+		execute: () => Promise<VoiceJoinResult>,
+	): Promise<VoiceJoinResult>;
+}
+
+export function createVoiceJoinCoordinator(): VoiceJoinCoordinator {
+	const inFlight = new Map<string, Promise<VoiceJoinResult>>();
+	return {
+		run(key, execute) {
+			const existing = inFlight.get(key);
+			if (existing) return existing;
+			const join = execute().finally(() => {
+				if (inFlight.get(key) === join) {
+					inFlight.delete(key);
+				}
+			});
+			inFlight.set(key, join);
+			return join;
+		},
+	};
+}
 
 export type VoiceJoinDeps = {
 	loadClient: (
@@ -34,13 +60,11 @@ export type VoiceJoinDeps = {
 	setupAudio: (client: SFUClient) => void;
 	joinSignalRoom: (
 		room: string,
-		identity: string,
 		password?: string,
 		domain_uuid?: string,
 	) => Promise<unknown>;
 	joinSignalSfu: (
 		room: string,
-		identity: string,
 		stream?: string,
 		domain_uuid?: string,
 	) => Promise<VoiceJoinAck>;
@@ -54,7 +78,6 @@ export type VoiceJoinDeps = {
 	rejoinTextRoom?: (
 		room: string,
 		domain_uuid: string | undefined,
-		identity: string,
 	) => Promise<unknown>;
 	onPhase: (phase: VoicePhase) => void;
 	/**
@@ -66,6 +89,8 @@ export type VoiceJoinDeps = {
 	socket?: SignalSocket | null;
 	password?: string;
 	signal?: AbortSignal;
+	/** session 状态机片段：serializeJoins=true 的 provider 依赖它做同目标 join 幂等 */
+	coordinator?: VoiceJoinCoordinator;
 };
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -115,24 +140,19 @@ function resolveJoinKey(
 export async function runVoiceJoin(
 	token: JoinTokenResponse,
 	deps: VoiceJoinDeps,
-): Promise<{ client: SFUClient; provider: SFUProvider }> {
+): Promise<VoiceJoinResult> {
 	const provider = resolveSFUProvider(token);
 	const adapter = getVoiceProviderAdapter(provider);
 	const run = () => executeVoiceJoin(token, deps, provider, adapter);
 
 	if (adapter.serializeJoins) {
 		const key = resolveJoinKey(adapter, token);
-		const existing = inFlightJoins.get(key);
-		if (existing) {
-			return existing;
+		if (deps.coordinator) {
+			return deps.coordinator.run(key, run);
 		}
-		const join = run().finally(() => {
-			if (inFlightJoins.get(key) === join) {
-				inFlightJoins.delete(key);
-			}
-		});
-		inFlightJoins.set(key, join);
-		return join;
+		// 无 session 状态机时无法安全去重：直接执行，
+		// 防重入由 session transition（abort 旧 join → 新状态）保证。
+		return run();
 	}
 	return run();
 }
@@ -142,7 +162,7 @@ async function executeVoiceJoin(
 	deps: VoiceJoinDeps,
 	provider: SFUProvider,
 	adapter: VoiceProviderAdapter,
-): Promise<{ client: SFUClient; provider: SFUProvider }> {
+): Promise<VoiceJoinResult> {
 	const {
 		loadClient,
 		setupAudio,
@@ -204,23 +224,17 @@ async function executeVoiceJoin(
 					await deps.rejoinTextRoom(
 						previousRoom.room,
 						previousRoom.domain_uuid,
-						token.identity,
 					);
 				}
 			}
 			await raceAbort(
-				joinSignalRoom(token.room, token.identity, password, token.domain_uuid),
+				joinSignalRoom(token.room, password, token.domain_uuid),
 				signal,
 			);
 			throwIfAborted(signal);
 
 			const ack = await raceAbort(
-				joinSignalSfu(
-					token.room,
-					token.identity,
-					token.stream,
-					token.domain_uuid,
-				),
+				joinSignalSfu(token.room, token.stream, token.domain_uuid),
 				signal,
 			);
 			throwIfAborted(signal);

@@ -29,6 +29,7 @@ func newTestOAuthService(t *testing.T) *OAuthService {
 		repository.NewOAuthProviderRepository(db),
 		repository.NewOAuthAccountRepository(db),
 		repository.NewUserRepository(db),
+		true,
 	)
 	if err := svc.providerRepo.Create(&model.OAuthProvider{Name: "github", Enabled: true}); err != nil {
 		t.Fatalf("seed oauth provider: %v", err)
@@ -100,7 +101,7 @@ func TestOAuthService_HandleCallback_AutoCreateDisabled(t *testing.T) {
 	svc := newTestOAuthService(t)
 	configureGithubProvider(t, svc, ts)
 
-	svc.SetAutoCreateUser(false)
+	svc.autoCreateUser = false
 	_, err := svc.HandleCallback("github", "code")
 	checkAppErrCode(t, err, pkg.FORBIDDEN)
 

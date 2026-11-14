@@ -7,6 +7,7 @@ import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
 	"GOSpeak/internal/signal"
+	"GOSpeak/internal/middleware"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -25,12 +26,10 @@ type MuteHandler struct {
 	auditor     *audit.Service
 }
 
-func NewMuteHandler(muteSvc *service.MuteService, userSvc *service.UserService, broadcaster MuteBroadcaster) *MuteHandler {
-	return &MuteHandler{muteSvc: muteSvc, userSvc: userSvc, broadcaster: broadcaster}
+func NewMuteHandler(muteSvc *service.MuteService, userSvc *service.UserService, broadcaster MuteBroadcaster, auditor *audit.Service) *MuteHandler {
+	return &MuteHandler{muteSvc: muteSvc, userSvc: userSvc, broadcaster: broadcaster, auditor: auditor}
 }
 
-// SetAuditor 注入审计服务，用于记录禁言/解禁操作。
-func (h *MuteHandler) SetAuditor(a *audit.Service) { h.auditor = a }
 
 // CreateMute
 // @Summary      禁言用户
@@ -59,14 +58,9 @@ func (h *MuteHandler) CreateMute(c *gin.Context) {
 		return
 	}
 
-	userUUID, ok := c.Get("user_uuid")
-	if !ok {
+	userUUIDStr := middleware.CurrentUserUUID(c)
+	if userUUIDStr == "" {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST, "missing user identity in context")
-		return
-	}
-	userUUIDStr, ok := userUUID.(string)
-	if !ok || userUUIDStr == "" {
-		pkg.Fail(c, pkg.TOKEN_NOT_EXIST, "invalid user identity in context")
 		return
 	}
 	muter, err := h.userSvc.GetByUUID(userUUIDStr)

@@ -19,8 +19,6 @@ type Room struct {
 	CreatedAt time.Time
 }
 
-// roomSetMember writes both Members (by socketID) and ByIdentity index.
-// Caller must hold h.mu write-lock.
 
 // roomSetMember writes both Members (by socketID) and ByIdentity index.
 // Caller must hold h.mu write-lock.
@@ -31,7 +29,6 @@ func roomSetMember(room *Room, sid, identity string, member *MemberInfo) {
 	}
 }
 
-// roomDelMember removes from both Members and ByIdentity. Caller must hold write-lock.
 
 // roomDelMember removes from both Members and ByIdentity. Caller must hold write-lock.
 func roomDelMember(room *Room, sid string) {
@@ -43,7 +40,6 @@ func roomDelMember(room *Room, sid string) {
 	delete(room.Members, sid)
 }
 
-// roomLookupIdentity O(1) identity lookup with index fallback.
 
 // roomLookupIdentity O(1) identity lookup with index fallback.
 func roomLookupIdentity(room *Room, identity string) *MemberInfo {

@@ -42,8 +42,8 @@ export function toEditRoomRecord(room: RoomInfo): RoomRecord {
 		name: room.name,
 		description: room.description ?? "",
 		limit: room.limit,
-		audio_only: room.audioOnly ?? true,
-		allow_audience: room.allowAudience ?? true,
+		audio_only: room.audio_only ?? true,
+		allow_audience: room.allow_audience ?? true,
 		type:
 			room.type === "text"
 				? "text"

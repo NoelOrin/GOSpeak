@@ -46,6 +46,34 @@ docker compose up -d --build                # 启动，档位由 .env 的 COMPOS
 
 ---
 
+## 1.1 简化版（推荐起步）
+
+只需要应用 + LiveKit 时，用 `docker-compose.simple.yml`：无 profiles、无 PostgreSQL、
+无 RustFS、无可观测性栈，数据库走 SQLite、存储走本地磁盘，开箱即用。
+
+```bash
+cd deploy
+./init.sh --domain voice.example.com
+
+# 在仓库根目录执行（注意 -f 路径）
+cd ..
+docker compose -f deploy/docker-compose.simple.yml up -d --build
+docker compose -f deploy/docker-compose.simple.yml logs -f gospeak
+```
+
+与完整版的区别：
+
+| | 简化版 | 完整版 |
+|---|---|---|
+| 服务 | app + livekit | app + livekit + 可选 postgres/rustfs/observability |
+| profiles | 无，`up` 即起 | 靠 `COMPOSE_PROFILES` 选档 |
+| 数据库 | SQLite（内嵌） | 可选 PostgreSQL |
+| 对象存储 | 本地磁盘 | 可选 RustFS/S3 |
+| 监控 | 无 | Prometheus/Grafana/Loki/Alertmanager |
+
+两个文件共用同一份 `deploy/.env` 和同名 volume，**可在两者间切换而不丢数据**。
+需要 PostgreSQL、对象存储或监控时改用完整版 `docker-compose.yml`。
+
 ## 2. 三种场景
 
 按你的实际情况选一个，不要混用。

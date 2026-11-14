@@ -1,9 +1,10 @@
 package signal
 
 import (
+	"GOSpeak/internal/protocol"
 	"GOSpeak/internal/policy"
 	"GOSpeak/internal/ws"
-	"log"
+	"GOSpeak/internal/logger"
 	"time"
 )
 
@@ -70,7 +71,7 @@ func (h *Hub) OnTyping(c ws.ClientMessenger, data string) {
 		} else {
 			muted, _, muteErr := h.muteStore.IsMutedByIdentity(identity)
 			if muteErr != nil {
-				log.Printf("[signal] OnTyping IsMutedByIdentity error: identity=%q err=%v", identity, muteErr)
+				logger.WithComponent("Signal").Infof("[signal] OnTyping IsMutedByIdentity error: identity=%q err=%v", identity, muteErr)
 				return
 			}
 			h.muteCacheSet(identity, muted)
@@ -116,11 +117,11 @@ func (h *Hub) OnTyping(c ws.ClientMessenger, data string) {
 	h.typingMu.Unlock()
 
 	if broadcast {
-		h.publishRoom(key, EventTyping, map[string]interface{}{
-			"room":        req.Room,
-			"domain_uuid": req.DomainUUID,
-			"identity":    identity,
-			"typing":      req.Typing,
+		h.publishRoom(key, EventTyping, protocol.TypingPayload{
+			Room:       req.Room,
+			DomainUUID: req.DomainUUID,
+			Identity:   identity,
+			Typing:     req.Typing,
 		})
 	}
 }

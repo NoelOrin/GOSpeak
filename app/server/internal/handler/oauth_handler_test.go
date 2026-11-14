@@ -29,6 +29,7 @@ func newTestOAuthHandler(t *testing.T) *OAuthHandler {
 		providerRepo,
 		repository.NewOAuthAccountRepository(db),
 		repository.NewUserRepository(db),
+		true,
 	)
 	if err := providerRepo.Create(&model.OAuthProvider{Name: "github", Enabled: true}); err != nil {
 		t.Fatalf("seed oauth provider: %v", err)

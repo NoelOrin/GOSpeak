@@ -75,17 +75,20 @@ func TestAuthStore_SigningKeyRecordAndLegacyCompat(t *testing.T) {
 		t.Fatalf("created=%d ok=%v err=%v", created, ok, err)
 	}
 
-	// 旧格式兼容：纯字符串 key + 独立 created_at
+	// 旧格式（纯字符串 jwt.active + 独立 jwt.created_at）已退役：
+	// GetSigningKey 对无法解析的 jwt.active 返回 miss，由轮换流程重建。
 	legacy := &AuthStore{kv: store.kv}
 	_ = legacy.put("jwt.active", "key-legacy")
-	_ = legacy.put("jwt.created_at", "111")
 	val, ok, err = store.GetSigningKey()
-	if err != nil || !ok || val != "key-legacy" {
-		t.Fatalf("legacy key=%q ok=%v err=%v", val, ok, err)
+	if err != nil {
+		t.Fatalf("legacy signing key err=%v", err)
 	}
-	created, ok, err = store.GetCreatedAt()
-	if err != nil || !ok || created != 111 {
-		t.Fatalf("legacy created=%d ok=%v err=%v", created, ok, err)
+	if ok && val == "key-legacy" {
+		t.Fatalf("legacy plain-string jwt.active must not be accepted, got %q", val)
+	}
+	_, ok, err = store.GetCreatedAt()
+	if err != nil || ok {
+		t.Fatalf("legacy created_at must be missing, ok=%v err=%v", ok, err)
 	}
 }
 

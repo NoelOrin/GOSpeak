@@ -17,14 +17,8 @@ type InviteHandler struct {
 	permSvc   globalPermissionChecker
 }
 
-func NewInviteHandler(svc *service.InviteService) *InviteHandler {
-	return &InviteHandler{svc: svc}
-}
-
-// SetPermissionCheckers 注入域/平台权限判决依赖（管理端点用）。
-func (h *InviteHandler) SetPermissionCheckers(domainSvc domainPermissionChecker, permSvc globalPermissionChecker) {
-	h.domainSvc = domainSvc
-	h.permSvc = permSvc
+func NewInviteHandler(svc *service.InviteService, domainSvc domainPermissionChecker, permSvc globalPermissionChecker) *InviteHandler {
+	return &InviteHandler{svc: svc, domainSvc: domainSvc, permSvc: permSvc}
 }
 
 func (h *InviteHandler) canManage(c *gin.Context, domainUUID string) bool {

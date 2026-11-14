@@ -59,6 +59,7 @@ export function useTypingReporter(
 		[timers, emit],
 	);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: room/domainUUID 为有意触发器（切房/切域即取消挂起计时器）
 	useEffect(() => {
 		timers.heartbeat.cancel();
 		timers.idle.cancel();

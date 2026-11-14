@@ -105,11 +105,11 @@ const bob = {
 	id: "2",
 	identity: "bob",
 	name: "bob",
-	displayName: "Bob",
+	display_name: "Bob",
 	avatar: "",
-	isMuted: false,
-	isMicMuted: false,
-	joinedAt: 0,
+	is_muted: false,
+	is_mic_muted: false,
+	joined_at: 0,
 };
 
 function joinWithMembers() {

@@ -13,6 +13,7 @@ import (
 )
 
 type guardProvider struct {
+	sfu.BaseProvider
 	deleted   []string
 	err       error
 	rooms     []sfu.RoomSummary

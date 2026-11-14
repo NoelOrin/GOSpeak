@@ -24,7 +24,7 @@ func setupJoinRequestService(t *testing.T) (*JoinRequestService, *gorm.DB) {
 		t.Fatalf("migrate: %v", err)
 	}
 	svc := NewJoinRequestService(
-		db,
+		repository.NewDBTxRunner(db),
 		repository.NewDomainJoinRequestRepository(db),
 		repository.NewDomainRepository(db),
 		repository.NewUserRepository(db),

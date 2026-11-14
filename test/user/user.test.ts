@@ -44,8 +44,12 @@ describe("user module", () => {
 		expect(byName.code).toBe(0);
 		expect(byName.data?.name).toBe(user.username);
 
+		// /user/get 挂 user:read 权限门：user:read/role:read 是平台后台只读
+		// 权限，按设计仅 admin 持有（model.DefaultRolePermissions 注释），
+		// 普通用户持有会让侧栏管理入口对所有人可见。
+		const admin = await getAdminToken();
 		const byId = await api<{ id: number; name: string }>("/api/v1/user/get", {
-			token: user.access_token,
+			token: admin,
 			body: { id: user.user.id },
 		});
 		expect(byId.code).toBe(0);

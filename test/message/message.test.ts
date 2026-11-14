@@ -81,26 +81,26 @@ describe("message module", () => {
 		const listed = await listMessages(reader.access_token, room.uuid);
 		const message = listed.find((item) => item.content === "hello integration");
 		expect(message).toBeTruthy();
-		expect(message!.author_id).toBe(author.username);
+		expect(message?.author_id).toBe(author.username);
 
 		// WS 编辑
 		const edited = await authorWs.emitAck("message:edit", {
 			room: room.name,
 			domain_uuid: domain.uuid,
-			message_uuid: message!.uuid,
+			message_uuid: message?.uuid,
 			content: "edited integration",
 		});
 		expect(edited.error).toBeUndefined();
 
 		const afterEdit = await listMessages(reader.access_token, room.uuid);
-		expect(afterEdit.find((item) => item.uuid === message!.uuid)?.content).toBe(
+		expect(afterEdit.find((item) => item.uuid === message?.uuid)?.content).toBe(
 			"edited integration",
 		);
 
 		// REST 表情（保留的 REST 死侧外端点）
 		const reacted = await react(reader.access_token, {
 			room_uuid: room.uuid,
-			message_uuid: message!.uuid,
+			message_uuid: message?.uuid,
 			emoji: "+1",
 		});
 		expect(reacted.code).toBe(0);
@@ -109,7 +109,7 @@ describe("message module", () => {
 		const unreacted = await readerWs.emitAck("message:unreact", {
 			room: room.name,
 			domain_uuid: domain.uuid,
-			message_uuid: message!.uuid,
+			message_uuid: message?.uuid,
 			emoji: "+1",
 		});
 		expect(unreacted.error).toBeUndefined();
@@ -118,7 +118,7 @@ describe("message module", () => {
 		const forbidden = await readerWs.emitAck("message:delete", {
 			room: room.name,
 			domain_uuid: domain.uuid,
-			message_uuid: message!.uuid,
+			message_uuid: message?.uuid,
 		});
 		expect(forbidden.error).toBeTruthy();
 
@@ -126,13 +126,13 @@ describe("message module", () => {
 		const deleted = await authorWs.emitAck("message:delete", {
 			room: room.name,
 			domain_uuid: domain.uuid,
-			message_uuid: message!.uuid,
+			message_uuid: message?.uuid,
 		});
 		expect(deleted.error).toBeUndefined();
 
 		const afterDelete = await listMessages(reader.access_token, room.uuid);
 		expect(
-			afterDelete.find((item) => item.uuid === message!.uuid),
+			afterDelete.find((item) => item.uuid === message?.uuid),
 		).toBeUndefined();
 
 		authorWs.close();

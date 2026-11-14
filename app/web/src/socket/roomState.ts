@@ -28,15 +28,15 @@ export function mergeRoomUpdated(prev: RoomInfo[], room: RoomInfo): RoomInfo[] {
 				uuid: room.uuid ?? "",
 				name: room.name,
 				domain_uuid: room.domain_uuid,
-				hasPassword: room.hasPassword,
+				has_password: room.has_password,
 				description: room.description,
 				limit: room.limit ?? 0,
-				audioOnly: room.audioOnly,
-				allowAudience: room.allowAudience,
+				audio_only: room.audio_only,
+				allow_audience: room.allow_audience,
 				type: room.type,
 				members: room.members ?? [],
 				count: room.count ?? room.members?.length ?? 0,
-				createdAt: room.createdAt ?? Date.now(),
+				created_at: room.created_at,
 			},
 		];
 	}
@@ -46,48 +46,32 @@ export function mergeRoomUpdated(prev: RoomInfo[], room: RoomInfo): RoomInfo[] {
 					...r,
 					name: room.name,
 					domain_uuid: room.domain_uuid ?? r.domain_uuid,
-					hasPassword: room.hasPassword,
+					has_password: room.has_password,
 					members: room.members ?? [],
 					count: room.count ?? room.members?.length ?? 0,
-					createdAt: room.createdAt ?? r.createdAt,
+					created_at: room.created_at ?? r.created_at,
 				}
 			: r,
 	);
 }
 
-export function applyMemberJoinedShell(
+export function applyMemberJoined(
 	prev: RoomInfo[],
 	data: {
 		room: string;
-		identity: string;
-		id: string;
+		identity?: string;
+		id?: string;
 		stream?: string;
 		domain_uuid?: string;
 	},
 ): RoomInfo[] {
-	return prev.map((r) => {
-		if (!matchesRoom(r, data.room, data.domain_uuid)) return r;
-		return {
-			...r,
-			count: r.count + 1,
-			members: r.members.some((m) => m.id === data.id)
-				? r.members
-				: [
-						...r.members,
-						{
-							id: data.id,
-							identity: data.identity,
-							name: "",
-							displayName: "",
-							avatar: "",
-							isMuted: false,
-							isMicMuted: false,
-							joinedAt: Date.now(),
-							stream: data.stream,
-						},
-					],
-		};
-	});
+	// 只做计数增量：成员明细不本地造壳（name/avatar 缺失），由 join ack /
+	// room:updated 全量补齐，服务端在 member:joined 后紧跟广播 room:updated。
+	return prev.map((r) =>
+		matchesRoom(r, data.room, data.domain_uuid)
+			? { ...r, count: r.count + 1 }
+			: r,
+	);
 }
 
 export function applyMemberLeft(
@@ -109,7 +93,7 @@ export function applyMemberUpdated(
 	data: {
 		room: string;
 		identity: string;
-		isMicMuted: boolean;
+		is_mic_muted: boolean;
 		domain_uuid?: string;
 	},
 ): RoomInfo[] {
@@ -119,7 +103,7 @@ export function applyMemberUpdated(
 			...r,
 			members: r.members.map((m) =>
 				m.identity === data.identity
-					? { ...m, isMicMuted: data.isMicMuted }
+					? { ...m, is_mic_muted: data.is_mic_muted }
 					: m,
 			),
 		};
@@ -142,11 +126,10 @@ export function upsertRoomMembersFromAck(
 				uuid: "",
 				name: roomName,
 				domain_uuid: domainUUID,
-				hasPassword: false,
+				has_password: false,
 				limit: 0,
 				members: ackMembers,
 				count: ackMembers.length,
-				createdAt: Date.now(),
 			},
 		];
 	}

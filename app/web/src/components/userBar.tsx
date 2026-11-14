@@ -118,7 +118,7 @@ export default function UserBar({
 							const roomName = socketStore.currentRoom();
 							const myName = user?.name;
 							if (roomName && myName) {
-								socketStore.emitMicState(roomName, myName, checked);
+								socketStore.emitMicState(roomName, checked);
 							}
 						}}
 					/>

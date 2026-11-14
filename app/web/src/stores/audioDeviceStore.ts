@@ -16,7 +16,7 @@ export type AudioSampleRate = 44100 | 48000;
 export type AudioSampleSize = 8 | 16 | 24 | 32;
 export type AudioInputMode = "voice" | "music";
 
-interface AudioDeviceState {
+interface AudioDeviceData {
 	selectedAudioInput: string;
 	selectedAudioOutput: string;
 	audioinputs: AudioDeviceInfo[];
@@ -45,7 +45,7 @@ interface AudioDeviceState {
 	deviceChangeNotice: boolean;
 }
 
-const initialState: AudioDeviceState = {
+const initialState: AudioDeviceData = {
 	selectedAudioInput: "",
 	selectedAudioOutput: "",
 	audioinputs: [],
@@ -68,19 +68,41 @@ const initialState: AudioDeviceState = {
 	deviceChangeNotice: true,
 };
 
-const loadPersistedState = async (): Promise<AudioDeviceState> => {
-	const [err, savedState] = await to(get<AudioDeviceState>("audioDeviceStore"));
+const loadPersistedState = async (): Promise<AudioDeviceData> => {
+	const [err, savedState] = await to(get<AudioDeviceData>("audioDeviceStore"));
 	if (!err) {
 		return savedState ? { ...initialState, ...savedState } : initialState;
 	}
 	throw err;
 };
 
-export const useAudioDeviceStore = create<AudioDeviceState>(() => initialState);
-
-// 顶层 await：与 solid 版语义一致，保证消费方读到的是已恢复的持久化状态
-const persisted = await loadPersistedState();
-useAudioDeviceStore.setState(persisted);
+export interface AudioDeviceStoreState extends AudioDeviceData {
+	fetchAudioDevices(options?: { notify?: boolean }): Promise<void>;
+	/** 只同步设备列表，不改动用户已选的设备（设备变化检测的"纯刷新"入口） */
+	syncDeviceList(devices: {
+		audioinputs: { deviceId: string; label: string }[];
+		audiooutputs: { deviceId: string; label: string }[];
+	}): void;
+	setAudioBitrate(audioBitrate: AudioBitrate): void;
+	setSelectedAudioInput(selectedAudioInput: string): void;
+	/** 只在用户还没选过设备时补默认选择；空值代表「跟随系统默认」 */
+	ensureSelectedAudioInput(deviceId: string): void;
+	setSelectedAudioOutput(selectedAudioOutput: string): void;
+	setStereo(stereo: boolean): void;
+	setDtx(dtx: boolean): void;
+	setRed(red: boolean): void;
+	setSampleRate(sampleRate: AudioSampleRate): void;
+	setSampleSize(sampleSize: AudioSampleSize): void;
+	setEchoCancellation(echoCancellation: boolean): void;
+	setNoiseSuppression(noiseSuppression: boolean): void;
+	setAutoGainControl(autoGainControl: boolean): void;
+	setVoiceIsolation(voiceIsolation: boolean): void;
+	setMuteOnJoin(muteOnJoin: boolean): void;
+	setDeviceChangeNotice(deviceChangeNotice: boolean): void;
+	setInputMode(inputMode: AudioInputMode): void;
+	setNotificationSounds(notificationSounds: boolean): void;
+	resetAudioDefaults(): void;
+}
 
 async function fetchAudioDevices(options?: { notify?: boolean }) {
 	let devices: Awaited<ReturnType<typeof getAudioDevices>>;
@@ -131,86 +153,64 @@ async function fetchAudioDevices(options?: { notify?: boolean }) {
 	});
 }
 
-/**
- * 只同步设备列表，不改动用户已选的设备。
- * 设备变化检测需要一个“纯刷新”入口：是否切换由用户确认后决定。
- */
-function syncDeviceList(devices: {
-	audioinputs: { deviceId: string; label: string }[];
-	audiooutputs: { deviceId: string; label: string }[];
-}) {
-	useAudioDeviceStore.setState({
-		audioinputs: devices.audioinputs.map((d) => ({
-			deviceId: d.deviceId,
-			label: d.label,
-		})),
-		audiooutputs: devices.audiooutputs.map((d) => ({
-			deviceId: d.deviceId,
-			label: d.label,
-		})),
-		loaded: true,
-	});
-}
-
-const debouncedPersist = debounce((state: AudioDeviceState) => {
+const debouncedPersist = debounce((state: AudioDeviceData) => {
 	try {
 		const cleanState = JSON.parse(JSON.stringify(state));
 		// 设备列表不持久化（会过期），只存选择与偏好
-		delete (cleanState as Partial<AudioDeviceState>).audioinputs;
-		delete (cleanState as Partial<AudioDeviceState>).audiooutputs;
-		delete (cleanState as Partial<AudioDeviceState>).loaded;
+		delete (cleanState as Partial<AudioDeviceData>).audioinputs;
+		delete (cleanState as Partial<AudioDeviceData>).audiooutputs;
+		delete (cleanState as Partial<AudioDeviceData>).loaded;
 		set("audioDeviceStore", cleanState);
 	} catch (error) {
 		console.error("Failed to serialize audio device state:", error);
 	}
 }, 200);
 
-useAudioDeviceStore.subscribe((state) => {
-	debouncedPersist(state);
-});
-
-const AudioDeviceStore = {
-	get state() {
-		return useAudioDeviceStore.getState();
-	},
+export const useAudioDeviceStore = create<AudioDeviceStoreState>(() => ({
+	...initialState,
 	fetchAudioDevices,
-	syncDeviceList,
-	setAudioBitrate: (audioBitrate: AudioBitrate) =>
+	syncDeviceList: (devices) => {
+		useAudioDeviceStore.setState({
+			audioinputs: devices.audioinputs.map((d) => ({
+				deviceId: d.deviceId,
+				label: d.label,
+			})),
+			audiooutputs: devices.audiooutputs.map((d) => ({
+				deviceId: d.deviceId,
+				label: d.label,
+			})),
+			loaded: true,
+		});
+	},
+	setAudioBitrate: (audioBitrate) =>
 		useAudioDeviceStore.setState({ audioBitrate }),
-	setSelectedAudioInput: (selectedAudioInput: string) =>
+	setSelectedAudioInput: (selectedAudioInput) =>
 		useAudioDeviceStore.setState({ selectedAudioInput }),
-	/**
-	 * 只在用户还没选过设备时，用启动授权解析出的真实设备补上默认选择。
-	 * 空值代表「跟随系统默认」，但那样无法跟踪具体设备，设备变化就提示不出来。
-	 */
-	ensureSelectedAudioInput: (deviceId: string) => {
+	ensureSelectedAudioInput: (deviceId) => {
 		if (!deviceId) return;
 		const { selectedAudioInput } = useAudioDeviceStore.getState();
 		if (selectedAudioInput) return;
 		useAudioDeviceStore.setState({ selectedAudioInput: deviceId });
 	},
-	setSelectedAudioOutput: (selectedAudioOutput: string) =>
+	setSelectedAudioOutput: (selectedAudioOutput) =>
 		useAudioDeviceStore.setState({ selectedAudioOutput }),
-	setStereo: (stereo: boolean) => useAudioDeviceStore.setState({ stereo }),
-	setDtx: (dtx: boolean) => useAudioDeviceStore.setState({ dtx }),
-	setRed: (red: boolean) => useAudioDeviceStore.setState({ red }),
-	setSampleRate: (sampleRate: AudioSampleRate) =>
-		useAudioDeviceStore.setState({ sampleRate }),
-	setSampleSize: (sampleSize: AudioSampleSize) =>
-		useAudioDeviceStore.setState({ sampleSize }),
-	setEchoCancellation: (echoCancellation: boolean) =>
+	setStereo: (stereo) => useAudioDeviceStore.setState({ stereo }),
+	setDtx: (dtx) => useAudioDeviceStore.setState({ dtx }),
+	setRed: (red) => useAudioDeviceStore.setState({ red }),
+	setSampleRate: (sampleRate) => useAudioDeviceStore.setState({ sampleRate }),
+	setSampleSize: (sampleSize) => useAudioDeviceStore.setState({ sampleSize }),
+	setEchoCancellation: (echoCancellation) =>
 		useAudioDeviceStore.setState({ echoCancellation }),
-	setNoiseSuppression: (noiseSuppression: boolean) =>
+	setNoiseSuppression: (noiseSuppression) =>
 		useAudioDeviceStore.setState({ noiseSuppression }),
-	setAutoGainControl: (autoGainControl: boolean) =>
+	setAutoGainControl: (autoGainControl) =>
 		useAudioDeviceStore.setState({ autoGainControl }),
-	setVoiceIsolation: (voiceIsolation: boolean) =>
+	setVoiceIsolation: (voiceIsolation) =>
 		useAudioDeviceStore.setState({ voiceIsolation }),
-	setMuteOnJoin: (muteOnJoin: boolean) =>
-		useAudioDeviceStore.setState({ muteOnJoin }),
-	setDeviceChangeNotice: (deviceChangeNotice: boolean) =>
+	setMuteOnJoin: (muteOnJoin) => useAudioDeviceStore.setState({ muteOnJoin }),
+	setDeviceChangeNotice: (deviceChangeNotice) =>
 		useAudioDeviceStore.setState({ deviceChangeNotice }),
-	setInputMode: (inputMode: AudioInputMode) => {
+	setInputMode: (inputMode) => {
 		useAudioDeviceStore.setState({ inputMode });
 		// 音乐模式默认关闭 AEC/NS/AGC，语音模式打开
 		if (inputMode === "music") {
@@ -232,7 +232,7 @@ const AudioDeviceStore = {
 			});
 		}
 	},
-	setNotificationSounds: (notificationSounds: boolean) =>
+	setNotificationSounds: (notificationSounds) =>
 		useAudioDeviceStore.setState({ notificationSounds }),
 	resetAudioDefaults: () => {
 		useAudioDeviceStore.setState({
@@ -252,6 +252,12 @@ const AudioDeviceStore = {
 			deviceChangeNotice: initialState.deviceChangeNotice,
 		});
 	},
-};
+}));
 
-export default AudioDeviceStore;
+// 顶层 await：与 solid 版语义一致，保证消费方读到的是已恢复的持久化状态
+const persisted = await loadPersistedState();
+useAudioDeviceStore.setState(persisted);
+
+useAudioDeviceStore.subscribe((state) => {
+	debouncedPersist(state);
+});

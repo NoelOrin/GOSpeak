@@ -24,8 +24,10 @@ server/
 │   │   └── providers/    # SFU 后端实现
 │   │       └── livekit/  # LiveKit 实现
 │   ├── bus/              # 进程内嵌事件总线与共享状态（固定 embedded NATS）
+│   ├── protocol/         # WS 事件协议单一事实源（Catalog + payload struct，gen-protocol 产出前端 TS）
+│   ├── ws/               # WebSocket 基础设施（upgrader / fanout / handler + ACK）
 │   ├── permcode/         # 权限码常量
-│   ├── signal/           # WebSocket 信令中心
+│   ├── signal/           # WebSocket 信令中心（Hub，事件 handler 走 protocol）
 │   ├── authstate/        # JWT 认证状态（黑名单、密钥轮换，NATS KV）
 │   └── pkg/              # 公共工具（错误码、JWT、响应、OAuth）
 ├── docs/                 # Swagger 文档

@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { Hash, Lock, LogOut, Mic, Pencil, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@gospeak/components";
 import { chatStore, useChatStore } from "@/stores/chatStore";
 import { useDomainStore } from "@/stores/domainStore";
@@ -119,7 +119,7 @@ export function RoomItem({
 		setContextMenu({ x, y });
 	};
 
-	const closeContextMenu = () => setContextMenu(null);
+	const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
 	useEffect(() => {
 		if (!contextMenu) return;
@@ -140,8 +140,9 @@ export function RoomItem({
 			window.removeEventListener("scroll", closeContextMenu, true);
 			window.removeEventListener("resize", closeContextMenu);
 		};
-	}, [contextMenu]);
+	}, [contextMenu, closeContextMenu]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: room.name 为有意触发器（改名/换房后需重测截断）
 	useEffect(() => {
 		const el = nameRef.current;
 		if (!el) return;
@@ -152,7 +153,7 @@ export function RoomItem({
 		return () => ro.disconnect();
 	}, [room.name]);
 
-	const tipText = `${room.name}${room.hasPassword ? " · 需要密码" : ""}`;
+	const tipText = `${room.name}${room.has_password ? " · 需要密码" : ""}`;
 
 	const showTip = (e: React.MouseEvent) => {
 		if (!truncated) return;
@@ -165,7 +166,7 @@ export function RoomItem({
 		setClickHint({ x: rect.left + rect.width / 2, y: rect.bottom + 6 });
 	};
 
-	const hideTip = () => setTip(null);
+	const hideTip = useCallback(() => setTip(null), []);
 
 	useEffect(() => {
 		if (!tip && !clickHint) return;
@@ -175,12 +176,12 @@ export function RoomItem({
 		};
 		window.addEventListener("scroll", onScroll, true);
 		return () => window.removeEventListener("scroll", onScroll, true);
-	}, [tip, clickHint]);
+	}, [tip, clickHint, hideTip]);
 
 	const handleJoin = () => {
 		setClickHint(null);
 		closeContextMenu();
-		if (room.hasPassword) {
+		if (room.has_password) {
 			setShowPasswordModal(true);
 		} else if (room.type === "text") {
 			chatStore.joinTextRoom({
@@ -246,7 +247,7 @@ export function RoomItem({
 							>
 								{room.name}
 							</span>
-							{room.hasPassword && (
+							{room.has_password && (
 								<span className="text-faint-foreground shrink-0">
 									<Lock size={14} />
 								</span>

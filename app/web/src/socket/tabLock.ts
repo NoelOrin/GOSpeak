@@ -16,16 +16,65 @@ export type TabLock = {
 	claim: () => Promise<boolean>;
 	release: () => void;
 	isOwner: () => boolean;
-	/** 确保 BroadcastChannel 已建立，能响应 probe */
+	/** 确保监听已建立，能响应他页的 probe（Web Locks 模式下为 no-op） */
 	ensureListening: () => void;
 	setOnForeignClaim: (cb: (() => void) | null) => void;
 };
 
+function hasWebLocks(): boolean {
+	return typeof navigator !== "undefined" && !!navigator.locks;
+}
+
+let warnedNoLocks = false;
+
 export function createTabLock(options: TabLockOptions): TabLock {
 	const probeTimeoutMs = options.probeTimeoutMs ?? 150;
-	let channel: BroadcastChannel | null = null;
 	let isOwner = false;
 	let onForeignClaim = options.onForeignClaim ?? null;
+
+	// ── Web Locks 模式：navigator.locks（ifAvailable）是浏览器原生的跨标签页互斥，
+	//    没有竞速窗口，也不需要 probe/owner 消息协议。锁随文档销毁自动释放。
+	let locksRelease: (() => void) | null = null;
+
+	async function claimWithLocks(): Promise<boolean> {
+		if (isOwner) return true;
+		return new Promise<boolean>((resolve) => {
+			let settled = false;
+			let resolveRelease: (() => void) | null = null;
+			void navigator.locks
+				.request(options.channelName, { ifAvailable: true }, (lock) => {
+					if (!lock) {
+						settled = true;
+						resolve(false);
+						return;
+					}
+					isOwner = true;
+					settled = true;
+					resolve(true);
+					// 挂住回调 promise 直到 release()：持锁期间 request 不会 settle
+					return new Promise<void>((r) => {
+						resolveRelease = r;
+					});
+				})
+				.catch(() => {
+					if (!settled) {
+						settled = true;
+						resolve(false);
+					}
+				});
+			locksRelease = () => resolveRelease?.();
+		});
+	}
+
+	function releaseWithLocks(): void {
+		if (!isOwner) return;
+		isOwner = false;
+		locksRelease?.();
+		locksRelease = null;
+	}
+
+	// ── BroadcastChannel 降级模式：150ms probe 竞速（旧浏览器无 Web Locks 时）──
+	let channel: BroadcastChannel | null = null;
 
 	function getChannel(): BroadcastChannel | null {
 		if (
@@ -56,7 +105,7 @@ export function createTabLock(options: TabLockOptions): TabLock {
 		return channel;
 	}
 
-	async function claim(): Promise<boolean> {
+	async function claimWithChannel(): Promise<boolean> {
 		const ch = getChannel();
 		if (!ch) {
 			// 不支持 BroadcastChannel 时放行
@@ -100,7 +149,7 @@ export function createTabLock(options: TabLockOptions): TabLock {
 		});
 	}
 
-	function release(): void {
+	function releaseWithChannel(): void {
 		if (!isOwner) return;
 		isOwner = false;
 		try {
@@ -113,12 +162,21 @@ export function createTabLock(options: TabLockOptions): TabLock {
 		}
 	}
 
+	if (!hasWebLocks() && !warnedNoLocks) {
+		warnedNoLocks = true;
+		console.warn(
+			"[tabLock] navigator.locks unavailable; falling back to BroadcastChannel probe lock",
+		);
+	}
+
+	const useLocks = hasWebLocks();
+
 	return {
-		claim,
-		release,
+		claim: () => (useLocks ? claimWithLocks() : claimWithChannel()),
+		release: () => (useLocks ? releaseWithLocks() : releaseWithChannel()),
 		isOwner: () => isOwner,
 		ensureListening: () => {
-			getChannel();
+			if (!useLocks) getChannel();
 		},
 		setOnForeignClaim: (cb) => {
 			onForeignClaim = cb;

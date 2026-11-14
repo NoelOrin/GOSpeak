@@ -238,8 +238,11 @@ function MemberCard({ member }: { member: MemberInfo }) {
 	const isMe = member.identity === useUserStore.getState().user?.name;
 	const user = useUserStore((s) => s.user);
 	const displayName = isMe
-		? user?.display_name || member.displayName || member.name || member.identity
-		: member.displayName || member.name || member.identity;
+		? user?.display_name ||
+			member.display_name ||
+			member.name ||
+			member.identity
+		: member.display_name || member.name || member.identity;
 
 	// selector 只返回原始值：若写成 `otherMemberState[id] ?? { ... }`，
 	// 每次渲染都会产生新对象，useSyncExternalStore 判定快照变化 →
