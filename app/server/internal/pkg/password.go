@@ -19,8 +19,7 @@ func HashPassword(password string) (string, error) {
 	return string(hash), nil
 }
 
-// VerifyPassword 校验密码；旧版本遗留的明文密码走恒定时间比较。
-// 调用方（登录链路）校验通过后应立即回写 bcrypt 哈希完成迁移，避免明文长期驻留 DB。
+// VerifyPassword 校验密码；旧版本遗留的明文密码也以恒定时间比较兼容，直到迁移完成。
 func VerifyPassword(stored, password string) bool {
 	if strings.HasPrefix(stored, "$2") {
 		return bcrypt.CompareHashAndPassword([]byte(stored), []byte(password)) == nil

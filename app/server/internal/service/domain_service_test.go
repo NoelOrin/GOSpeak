@@ -22,7 +22,7 @@ func setupDomainServiceTestDB(t *testing.T) (*DomainService, *gorm.DB) {
 	}
 	repo := repository.NewDomainRepository(db)
 	roleRepo := repository.NewDomainRoleRepository(db)
-	svc := NewDomainService(repo, roleRepo, nil)
+	svc := NewDomainService(repo, roleRepo)
 	return svc, db
 }
 

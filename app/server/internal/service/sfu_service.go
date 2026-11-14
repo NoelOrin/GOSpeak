@@ -1,12 +1,17 @@
 package service
 
 import (
-	"errors"
 	"fmt"
 
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/sfu"
 )
+
+// ownerAwareProvider is implemented by SFU providers that bind the joining
+// user UUID to the session created by GenerateToken.
+type ownerAwareProvider interface {
+	GenerateTokenForUser(room, identity, ownerUUID string) (string, error)
+}
 
 // JoinTokenResult 是 GetJoinToken 的聚合结果，handler 直接映射为 JSON 响应。
 type JoinTokenResult struct {
@@ -65,7 +70,7 @@ func (s *SFUService) GetJoinToken(domainUUID, room, identity, userUUID, password
 	}
 
 	sfuRoom := pkg.RoomKey(domainUUID, room)
-	token, err := s.generateTokenWithPublish(sfuRoom, identity, canPublish)
+	token, err := s.generateTokenWithPublish(sfuRoom, identity, userUUID, canPublish)
 	if err != nil {
 		return nil, err
 	}
@@ -76,9 +81,15 @@ func (s *SFUService) GetJoinToken(domainUUID, room, identity, userUUID, password
 		Capabilities: s.provider.Capabilities(),
 		SFURoom:      sfuRoom,
 	}
-	res.ClientInfo = s.provider.ClientInfo()
-	if s.provider.SupportsStream() {
-		st, stok, err := s.provider.StreamInfo(sfuRoom, identity)
+	if p, ok := s.provider.(sfu.ClientInfoProvider); ok {
+		res.ClientInfo = p.ClientInfo()
+	}
+	if p, ok := s.provider.(sfu.StreamProvider); ok {
+		// 动态门面可能实现 StreamProvider 但当前后端不支持流寻址，须按能力门面跳过。
+		if sc, ok2 := s.provider.(interface{ SupportsStream() bool }); ok2 && !sc.SupportsStream() {
+			return res, nil
+		}
+		st, stok, err := p.StreamInfo(sfuRoom, identity)
 		if err != nil {
 			return nil, err
 		}
@@ -91,12 +102,18 @@ func (s *SFUService) GetJoinToken(domainUUID, room, identity, userUUID, password
 // generateTokenWithPublish 在 Provider 支持发布控制（LiveKit）时按 canPublish 签发，
 // 直接反映禁说策略。不支持发布控制的 provider 无法在 token 阶段限制发布，
 // 其禁说降级由信令层在 SFU 进房确认后强制。
-func (s *SFUService) generateTokenWithPublish(room, identity string, canPublish bool) (string, error) {
-	token, err := s.provider.GenerateTokenWithPublish(room, identity, canPublish)
-	if errors.Is(err, pkg.ErrSFUNotSupported) {
-		return s.provider.GenerateToken(room, identity)
+func (s *SFUService) generateTokenWithPublish(room, identity, userUUID string, canPublish bool) (string, error) {
+	if op, ok := s.provider.(sfu.PublishControlProvider); ok {
+		return op.GenerateTokenWithPublish(room, identity, canPublish)
 	}
-	return token, err
+	return s.generateToken(room, identity, userUUID)
+}
+
+func (s *SFUService) generateToken(room, identity, userUUID string) (string, error) {
+	if op, ok := s.provider.(ownerAwareProvider); ok {
+		return op.GenerateTokenForUser(room, identity, userUUID)
+	}
+	return s.provider.GenerateToken(room, identity)
 }
 
 func (s *SFUService) ListRooms() ([]sfu.RoomSummary, error) {

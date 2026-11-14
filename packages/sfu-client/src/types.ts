@@ -193,4 +193,3 @@ export interface SFUClient {
 }
 
 export type { SFUProvider } from "./provider";
-export { SFU_PROVIDERS, isSFUProvider } from "./provider";

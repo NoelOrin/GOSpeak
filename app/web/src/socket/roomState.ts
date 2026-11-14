@@ -36,7 +36,7 @@ export function mergeRoomUpdated(prev: RoomInfo[], room: RoomInfo): RoomInfo[] {
 				type: room.type,
 				members: room.members ?? [],
 				count: room.count ?? room.members?.length ?? 0,
-				createdAt: room.createdAt,
+				createdAt: room.createdAt ?? Date.now(),
 			},
 		];
 	}
@@ -55,23 +55,39 @@ export function mergeRoomUpdated(prev: RoomInfo[], room: RoomInfo): RoomInfo[] {
 	);
 }
 
-export function applyMemberJoined(
+export function applyMemberJoinedShell(
 	prev: RoomInfo[],
 	data: {
 		room: string;
-		identity?: string;
-		id?: string;
+		identity: string;
+		id: string;
 		stream?: string;
 		domain_uuid?: string;
 	},
 ): RoomInfo[] {
-	// 只做计数增量：成员明细不本地造壳（name/avatar 缺失），由 join ack /
-	// room:updated 全量补齐，服务端在 member:joined 后紧跟广播 room:updated。
-	return prev.map((r) =>
-		matchesRoom(r, data.room, data.domain_uuid)
-			? { ...r, count: r.count + 1 }
-			: r,
-	);
+	return prev.map((r) => {
+		if (!matchesRoom(r, data.room, data.domain_uuid)) return r;
+		return {
+			...r,
+			count: r.count + 1,
+			members: r.members.some((m) => m.id === data.id)
+				? r.members
+				: [
+						...r.members,
+						{
+							id: data.id,
+							identity: data.identity,
+							name: "",
+							displayName: "",
+							avatar: "",
+							isMuted: false,
+							isMicMuted: false,
+							joinedAt: Date.now(),
+							stream: data.stream,
+						},
+					],
+		};
+	});
 }
 
 export function applyMemberLeft(
@@ -130,6 +146,7 @@ export function upsertRoomMembersFromAck(
 				limit: 0,
 				members: ackMembers,
 				count: ackMembers.length,
+				createdAt: Date.now(),
 			},
 		];
 	}

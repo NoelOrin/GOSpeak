@@ -68,7 +68,7 @@ func newRoomCasbinEnv(t *testing.T) (*gorm.DB, *model.Domain, *service.DomainSer
 		t.Fatalf("create room: %v", err)
 	}
 
-	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db), nil)
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
 	if err := domainSvc.UseCasbin(repository.NewDomainCasbinAdapter(db)); err != nil {
 		t.Fatalf("use casbin: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestRoomRoutes_PlatformAdminManagesForeignDomain(t *testing.T) {
 	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
 
 	db, domain, domainSvc, roomID := newRoomCasbinEnv(t)
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc, nil)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "platform-admin")
@@ -140,7 +140,7 @@ func TestRoomRoutes_DomainOwnerManagesForeignCreatedRoom(t *testing.T) {
 	middleware.SetDomainChecker(domainSvc.IsMember)
 	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
 
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc, nil)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "owner-human")
@@ -170,7 +170,7 @@ func TestRoomRoutes_BotAdminTokenDoesNotInheritPlatformAdmin(t *testing.T) {
 	middleware.SetDomainChecker(func(_, _ string) bool { return true })
 	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
 
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc, nil)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "bot-admin")

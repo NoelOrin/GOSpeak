@@ -69,6 +69,15 @@ function switchDarkTheme(name: string) {
 	}
 }
 
+/** 兼容旧调用：按当前模式写入对应主题 */
+function switchTheme(name: string) {
+	if (useThemeStore.getState().isDark) {
+		switchDarkTheme(name);
+		return;
+	}
+	switchLightTheme(name);
+}
+
 function toggleDark() {
 	const next = !useThemeStore.getState().isDark;
 	const theme = next
@@ -93,6 +102,7 @@ export {
 	setDarkMode,
 	switchDarkTheme,
 	switchLightTheme,
+	switchTheme,
 	toggleDark,
 };
 

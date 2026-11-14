@@ -1,9 +1,9 @@
+import { PROVIDER_LABELS } from "@gospeak/sfu-client";
 import { createSFUClient, preloadSFUClient } from "@gospeak/sfu-client/client";
-import {
-	isSFUProvider,
-	type SFUClient,
-	type SFUClientOptions,
-	type SFUProvider,
+import type {
+	SFUClient,
+	SFUClientOptions,
+	SFUProvider,
 } from "@gospeak/sfu-client/types";
 import { toast } from "@gospeak/components";
 
@@ -19,10 +19,14 @@ export function rememberSfuProvider(provider: SFUProvider): void {
 	localStorage.setItem(STORAGE_LAST_SFU_PROVIDER, provider);
 }
 
+const VALID_PROVIDERS = new Set<string>(Object.keys(PROVIDER_LABELS));
+
 export function getRememberedSfuProvider(): SFUProvider | undefined {
 	const provider = localStorage.getItem(STORAGE_LAST_SFU_PROVIDER);
-	// localStorage 是不可信输入：过白名单运行时校验后再当作 SFUProvider
-	return isSFUProvider(provider) ? provider : undefined;
+	if (provider && VALID_PROVIDERS.has(provider)) {
+		return provider as SFUProvider;
+	}
+	return undefined;
 }
 
 /** 预热 provider chunk；失败抛错（调用方可 catch 后仍继续刷新）。 */

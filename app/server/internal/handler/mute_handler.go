@@ -7,7 +7,6 @@ import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
 	"GOSpeak/internal/signal"
-	"GOSpeak/internal/middleware"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -60,9 +59,14 @@ func (h *MuteHandler) CreateMute(c *gin.Context) {
 		return
 	}
 
-	userUUIDStr := middleware.CurrentUserUUID(c)
-	if userUUIDStr == "" {
+	userUUID, ok := c.Get("user_uuid")
+	if !ok {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST, "missing user identity in context")
+		return
+	}
+	userUUIDStr, ok := userUUID.(string)
+	if !ok || userUUIDStr == "" {
+		pkg.Fail(c, pkg.TOKEN_NOT_EXIST, "invalid user identity in context")
 		return
 	}
 	muter, err := h.userSvc.GetByUUID(userUUIDStr)

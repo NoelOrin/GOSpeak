@@ -5,7 +5,6 @@ import (
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
-	"GOSpeak/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,7 +23,8 @@ func (h *AnnouncementHandler) actor(c *gin.Context) (service.AnnouncementActor, 
 	if userUUID == "" {
 		return service.AnnouncementActor{}, false
 	}
-	name := middleware.CurrentUsername(c)
+	nameVal, _ := c.Get("username")
+	name, _ := nameVal.(string)
 	return service.AnnouncementActor{
 		UserUUID:        userUUID,
 		Name:            name,

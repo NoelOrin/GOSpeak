@@ -3,7 +3,7 @@ package handler
 import (
 	"reflect"
 
-	"GOSpeak/internal/middleware"
+	"GOSpeak/internal/pkg"
 
 	"github.com/gin-gonic/gin"
 )
@@ -45,13 +45,15 @@ func domainPermissionGranted(
 		}
 		return domainSvc.HasDomainPermission(domainUUID, currentUserUUID(c), permCode)
 	}
-	if claims := middleware.CurrentUser(c); claims != nil && len(claims.Permissions) > 0 {
-		for _, p := range claims.Permissions {
-			if p == permCode {
-				return true
+	if claimsVal, ok := c.Get("claims"); ok {
+		if claims, ok := claimsVal.(*pkg.Claims); ok && len(claims.Permissions) > 0 {
+			for _, p := range claims.Permissions {
+				if p == permCode {
+					return true
+				}
 			}
+			return false
 		}
-		return false
 	}
 	if isNilChecker(permSvc) {
 		return false

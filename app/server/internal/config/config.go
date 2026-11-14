@@ -14,10 +14,6 @@ import (
 
 // Config 集中承载服务端环境配置。
 // 加载优先级：进程环境变量 > 环境专属文件(.env.dev/.env.prod) > 通用 .env > 字段默认值。
-// DefaultSFUProvider 是唯一内置 SFU provider，也是 env 未指定时的回退值。
-// 包内常量避免 config→sfu 反向依赖（sfu→pkg→authstate→config 已存在）。
-const DefaultSFUProvider = "livekit"
-
 type Config struct {
 	AppEnv string `env:"APP_ENV" envDefault:""`
 
@@ -44,7 +40,7 @@ type Config struct {
 	// BcryptCost 密码哈希工作因子，默认 12。
 	BcryptCost int `env:"BCRYPT_COST" envDefault:"12"`
 
-	SFUProvider string `env:"SFU_PROVIDER" envDefault:"livekit"` // 默认值须与 DefaultSFUProvider 一致
+	SFUProvider string `env:"SFU_PROVIDER" envDefault:"livekit"`
 	// LiveKitHost 是后端访问 LiveKit 的地址（admin API / RoomService），
 	// 容器部署填内网服务名 ws://livekit:7880 即可。
 	LiveKitHost string `env:"LIVEKIT_HOST" envDefault:""`
@@ -117,6 +113,18 @@ type Config struct {
 	StoragePathPrefix    string `env:"STORAGE_PATH_PREFIX" envDefault:"uploads/"`
 	StorageLocalDir      string `env:"STORAGE_LOCAL_DIR" envDefault:"uploads"`
 	StorageEncryptKey    string `env:"STORAGE_ENCRYPT_KEY" envDefault:""`
+}
+
+var current *Config
+
+// Current 返回最近一次成功 Load 的配置；未加载时返回 nil。
+func Current() *Config {
+	return current
+}
+
+// SetCurrent 供测试或特殊启动路径注入配置。
+func SetCurrent(cfg *Config) {
+	current = cfg
 }
 
 // LoadEnvFiles 按优先级加载 env 文件到进程环境。
@@ -198,6 +206,7 @@ func Load() (*Config, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	current = cfg
 	return cfg, nil
 }
 

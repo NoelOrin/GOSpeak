@@ -69,14 +69,18 @@ func NewOAuthService(
 	providerRepo *repository.OAuthProviderRepository,
 	accountRepo *repository.OAuthAccountRepository,
 	userRepo *repository.UserRepository,
-	autoCreateUser bool,
 ) *OAuthService {
 	return &OAuthService{
 		providerRepo:   providerRepo,
 		accountRepo:    accountRepo,
 		userRepo:       userRepo,
-		autoCreateUser: autoCreateUser,
+		autoCreateUser: true,
 	}
+}
+
+// SetAutoCreateUser 控制未绑定 OAuth 账号是否自动创建新用户（默认 true，保持兼容）。
+func (s *OAuthService) SetAutoCreateUser(enabled bool) {
+	s.autoCreateUser = enabled
 }
 
 // providerConfigFromModel 将 DB 模型转为 oauth.ProviderConfig（含 FieldMapping）。

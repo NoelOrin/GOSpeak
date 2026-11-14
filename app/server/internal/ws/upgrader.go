@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,7 +12,6 @@ import (
 
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/pkg"
-	"GOSpeak/internal/logger"
 )
 
 // ConnectPolicy 在 JWT 校验通过后、协议升级前对身份做一次策略判决。
@@ -116,7 +116,7 @@ func policyHTTPStatus(code pkg.ErrCode) int {
 
 func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !u.originAllowed(r) {
-		logger.WithComponent("WS").Infof("[ws] upgrade rejected: origin=%q client=%s", r.Header.Get("Origin"), r.RemoteAddr)
+		log.Printf("[ws] upgrade rejected: origin=%q client=%s", r.Header.Get("Origin"), r.RemoteAddr)
 		http.Error(w, "forbidden origin", http.StatusForbidden)
 		return
 	}
@@ -129,7 +129,7 @@ func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	claims, code := middleware.VerifyToken(tokenStr)
 	if code != pkg.SUCCESS || claims == nil || claims.TokenType != pkg.AccessTokenType {
-		logger.WithComponent("WS").Infof("[ws] upgrade rejected: code=%s client=%s", code.String(), r.RemoteAddr)
+		log.Printf("[ws] upgrade rejected: code=%s client=%s", code.String(), r.RemoteAddr)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -139,7 +139,7 @@ func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if u.cfg.ConnectPolicy != nil {
 		pCode, _ := u.cfg.ConnectPolicy(claims)
 		if pCode != pkg.SUCCESS {
-			logger.WithComponent("WS").Infof("[ws] upgrade rejected by policy: code=%s client=%s", pCode.String(), r.RemoteAddr)
+			log.Printf("[ws] upgrade rejected by policy: code=%s client=%s", pCode.String(), r.RemoteAddr)
 			w.WriteHeader(policyHTTPStatus(pCode))
 			return
 		}
@@ -150,7 +150,7 @@ func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		InsecureSkipVerify: true, // Origin 已由 Upgrader.originAllowed 校验
 	})
 	if err != nil {
-		logger.WithComponent("WS").Infof("[ws] upgrade error: %v", err)
+		log.Printf("[ws] upgrade error: %v", err)
 		return
 	}
 
@@ -194,7 +194,7 @@ func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		u.cfg.OnConnect(client)
 	}
 
-	logger.WithComponent("WS").Infof("[ws] client connected: %s (%s) ip=%s", clientID, claims.Username, r.RemoteAddr)
+	log.Printf("[ws] client connected: %s (%s) ip=%s", clientID, claims.Username, r.RemoteAddr)
 
 	// 阻塞读取循环 — ServeHTTP 在此期间阻塞
 	readLoopStarted = true
@@ -206,5 +206,5 @@ func (u *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		client.StartReadLoop(func(c ClientMessenger, msg Message) {})
 	}
 
-	logger.WithComponent("WS").Infof("[ws] client disconnected: %s (%s)", clientID, claims.Username)
+	log.Printf("[ws] client disconnected: %s (%s)", clientID, claims.Username)
 }

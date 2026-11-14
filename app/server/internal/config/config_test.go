@@ -46,6 +46,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.CORSOrigin != "*" {
 		t.Fatalf("CORSOrigin=%q want *", cfg.CORSOrigin)
 	}
+	if Current() != cfg {
+		t.Fatal("Current() should return loaded config")
+	}
 }
 
 func TestLoadTLSOptions(t *testing.T) {
@@ -265,6 +268,7 @@ func clearConfigEnv(t *testing.T) {
 		t.Setenv(k, "")
 		_ = os.Unsetenv(k)
 	}
+	SetCurrent(nil)
 }
 
 func TestNATStoreDirPath(t *testing.T) {

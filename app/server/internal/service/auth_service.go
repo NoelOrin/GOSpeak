@@ -12,7 +12,6 @@ import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
-	"GOSpeak/internal/logger"
 
 	"github.com/aarondl/authboss/v3"
 	"golang.org/x/crypto/bcrypt"
@@ -109,18 +108,7 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 	}
 
 	if err := authbossHasher.CompareHashAndPassword(user.Password, req.Password); err != nil {
-		// 存量明文口令透明升级：校验通过即回写 bcrypt 哈希（口令未变更，不递增 TokenVersion）。
-		if pkg.IsHashedPassword(user.Password) || !pkg.VerifyPassword(user.Password, req.Password) {
-			return nil, pkg.NewAppError(pkg.INVALID_PASSWORD, "invalid credentials")
-		}
-		hashed, herr := authbossHasher.GenerateHash(req.Password)
-		if herr != nil {
-			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, herr.Error())
-		}
-		user.Password = hashed
-		if uerr := s.userRepo.Update(user); uerr != nil {
-			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, uerr.Error())
-		}
+		return nil, pkg.NewAppError(pkg.INVALID_PASSWORD, "invalid credentials")
 	}
 
 	if user.IsBanned() || model.HasBanRole(user.Role) {
@@ -132,7 +120,7 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, err
 	}
 
-	needChange := user.Role == model.RoleAdmin && authbossHasher.CompareHashAndPassword(user.Password, DefaultAdminPassword) == nil
+	needChange := user.Role == "admin" && authbossHasher.CompareHashAndPassword(user.Password, DefaultAdminPassword) == nil
 
 	return &AuthResponse{
 		Token:              tokens.Access,
@@ -285,9 +273,7 @@ func (s *AuthService) RefreshFromToken(refreshToken string) (*RefreshResponse, e
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "refresh family store unavailable")
 	}
 	if used {
-		if err := authstate.RevokeRefreshFamily(family); err != nil {
-			logger.WithComponent("Auth").WithError(err).Warn("revoke refresh family on replay")
-		}
+		_ = authstate.RevokeRefreshFamily(family)
 		return nil, pkg.NewAppError(pkg.TOKEN_REVOKED)
 	}
 
@@ -297,9 +283,7 @@ func (s *AuthService) RefreshFromToken(refreshToken string) (*RefreshResponse, e
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "refresh family store unavailable")
 	}
 	if !marked {
-		if err := authstate.RevokeRefreshFamily(family); err != nil {
-			logger.WithComponent("Auth").WithError(err).Warn("revoke refresh family on concurrent refresh")
-		}
+		_ = authstate.RevokeRefreshFamily(family)
 		return nil, pkg.NewAppError(pkg.TOKEN_REVOKED)
 	}
 

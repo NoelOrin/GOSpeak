@@ -16,6 +16,8 @@ import (
 	casbinpersist "github.com/casbin/casbin/v2/persist"
 )
 
+const EventPermissionsInvalidated = "cache:permissions-invalidated"
+
 // cacheBus publishes internal cache invalidation events (no WebSocket).
 type cacheBus interface {
 	PublishInternal(ctx context.Context, event string, payload interface{}) error

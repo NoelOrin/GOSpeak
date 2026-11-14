@@ -13,7 +13,7 @@ import {
 	SCREEN_SHARE_QUALITY_PRESETS,
 } from "@gospeak/sfu-client";
 import { useEffect, useRef, useState } from "react";
-import {
+import AudioDeviceStore, {
 	useAudioDeviceStore,
 	type AudioBitrate,
 	type AudioInputMode,
@@ -145,7 +145,7 @@ function AudioForm() {
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: 挂载/卸载时启停麦克风测试；stopMicTest 稳定，加入依赖会导致重复启停与设备抢占
 	useEffect(() => {
-		void store.fetchAudioDevices();
+		void AudioDeviceStore.fetchAudioDevices();
 		return () => {
 			stopMicTest();
 		};
@@ -162,7 +162,9 @@ function AudioForm() {
 					<button
 						type="button"
 						className="hover:bg-muted inline-flex h-7 cursor-pointer items-center rounded-sm px-2 text-xs transition-colors"
-						onClick={() => void store.fetchAudioDevices({ notify: true })}
+						onClick={() =>
+							void AudioDeviceStore.fetchAudioDevices({ notify: true })
+						}
 					>
 						刷新设备
 					</button>
@@ -177,7 +179,9 @@ function AudioForm() {
 						<button
 							type="button"
 							className="underline underline-offset-2"
-							onClick={() => void store.fetchAudioDevices({ notify: true })}
+							onClick={() =>
+								void AudioDeviceStore.fetchAudioDevices({ notify: true })
+							}
 						>
 							重试
 						</button>
@@ -187,7 +191,9 @@ function AudioForm() {
 					<Select
 						value={store.selectedAudioInput || DEFAULT_DEVICE}
 						onValueChange={(value) =>
-							store.setSelectedAudioInput(value === DEFAULT_DEVICE ? "" : value)
+							AudioDeviceStore.setSelectedAudioInput(
+								value === DEFAULT_DEVICE ? "" : value,
+							)
 						}
 					>
 						<SelectTrigger>
@@ -213,7 +219,7 @@ function AudioForm() {
 					<Select
 						value={store.selectedAudioOutput || DEFAULT_DEVICE}
 						onValueChange={(value) =>
-							store.setSelectedAudioOutput(
+							AudioDeviceStore.setSelectedAudioOutput(
 								value === DEFAULT_DEVICE ? "" : value,
 							)
 						}
@@ -238,7 +244,7 @@ function AudioForm() {
 					label="设备变化时提醒"
 					desc="插入或拔出麦克风/扬声器时弹窗询问是否切换；关闭后静默沿用当前设备"
 					checked={store.deviceChangeNotice}
-					onChange={store.setDeviceChangeNotice}
+					onChange={AudioDeviceStore.setDeviceChangeNotice}
 				/>
 
 				<div className="border-border bg-muted/40 rounded-lg border p-3">
@@ -277,7 +283,7 @@ function AudioForm() {
 									? "border-foreground/40 bg-muted"
 									: "border-border hover:border-foreground/20"
 							}`}
-							onClick={() => store.setInputMode(opt.value)}
+							onClick={() => AudioDeviceStore.setInputMode(opt.value)}
 						>
 							<div className="text-sm font-medium">{opt.label}</div>
 							<div className="text-muted-foreground mt-1 text-xs">
@@ -294,7 +300,7 @@ function AudioForm() {
 						<Select
 							value={String(store.audioBitrate)}
 							onValueChange={(value) =>
-								store.setAudioBitrate(Number(value) as AudioBitrate)
+								AudioDeviceStore.setAudioBitrate(Number(value) as AudioBitrate)
 							}
 						>
 							<SelectTrigger>
@@ -313,7 +319,7 @@ function AudioForm() {
 						<Select
 							value={String(store.sampleRate)}
 							onValueChange={(value) =>
-								store.setSampleRate(Number(value) as AudioSampleRate)
+								AudioDeviceStore.setSampleRate(Number(value) as AudioSampleRate)
 							}
 						>
 							<SelectTrigger>
@@ -332,7 +338,7 @@ function AudioForm() {
 						<Select
 							value={String(store.sampleSize)}
 							onValueChange={(value) =>
-								store.setSampleSize(Number(value) as AudioSampleSize)
+								AudioDeviceStore.setSampleSize(Number(value) as AudioSampleSize)
 							}
 						>
 							<SelectTrigger>
@@ -355,25 +361,25 @@ function AudioForm() {
 					label="回声消除"
 					desc="消除扬声器声音反馈到麦克风"
 					checked={store.echoCancellation}
-					onChange={store.setEchoCancellation}
+					onChange={AudioDeviceStore.setEchoCancellation}
 				/>
 				<Toggle
 					label="噪声抑制"
 					desc="过滤背景噪音"
 					checked={store.noiseSuppression}
-					onChange={store.setNoiseSuppression}
+					onChange={AudioDeviceStore.setNoiseSuppression}
 				/>
 				<Toggle
 					label="自动增益"
 					desc="自动调节麦克风音量"
 					checked={store.autoGainControl}
-					onChange={store.setAutoGainControl}
+					onChange={AudioDeviceStore.setAutoGainControl}
 				/>
 				<Toggle
 					label="人声隔离（实验性）"
 					desc="比噪声抑制更强，开启后覆盖噪声抑制，浏览器支持有限"
 					checked={store.voiceIsolation}
-					onChange={store.setVoiceIsolation}
+					onChange={AudioDeviceStore.setVoiceIsolation}
 				/>
 			</Section>
 
@@ -382,19 +388,19 @@ function AudioForm() {
 					label="立体声"
 					desc="以双声道发布音频"
 					checked={store.stereo}
-					onChange={store.setStereo}
+					onChange={AudioDeviceStore.setStereo}
 				/>
 				<Toggle
 					label="DTX 不连续传输"
 					desc="静音时停止发包，节省带宽"
 					checked={store.dtx}
-					onChange={store.setDtx}
+					onChange={AudioDeviceStore.setDtx}
 				/>
 				<Toggle
 					label="RED 冗余音频"
 					desc="发送冗余数据抗丢包，轻微增加带宽"
 					checked={store.red}
-					onChange={store.setRed}
+					onChange={AudioDeviceStore.setRed}
 				/>
 			</Section>
 
@@ -432,7 +438,7 @@ function AudioForm() {
 				<Button
 					type="button"
 					variant="outline"
-					onClick={() => store.resetAudioDefaults()}
+					onClick={() => AudioDeviceStore.resetAudioDefaults()}
 				>
 					恢复音频默认值
 				</Button>

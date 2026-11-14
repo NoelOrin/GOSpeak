@@ -498,27 +498,42 @@ Standalone package at `internal/sfu/`. Provides a provider interface so multiple
 
 ### Provider Interface (`internal/sfu/provider.go`)
 
-能力方法统一收敛在主接口：调用方直接调用并按 `ErrSFUNotSupported` 降级，禁止类型断言探测能力。`sfu.BaseProvider` 提供"不支持"零实现供测试桩嵌入。
-
 ```go
 type Provider interface {
     ProviderName() string
     Capabilities() Capabilities
     GenerateToken(room, identity string) (string, error)
-    // GenerateTokenWithPublish 显式声明发布权限签发 token；不支持返回 ErrSFUNotSupported
-    GenerateTokenWithPublish(room, identity string, canPublish bool) (string, error)
     ListRooms() ([]RoomSummary, error)
     ListParticipants(room string) ([]ParticipantSummary, error)
     MuteParticipant(room, identity, trackSid string, muted bool) error
-    // MuteParticipantTimed 带 TTL 的定时禁言；不支持返回 ErrSFUNotSupported，调用方降级 MuteParticipant
-    MuteParticipantTimed(room, identity, trackSid string, muted bool, ttlSeconds int) error
     RemoveParticipant(room, identity string) error
     DeleteRoom(room string) error
     GetHost() string
-    SupportsStream() bool
+}
+
+// StreamProvider — stream-based addressing (WHIP/WHEP)
+type StreamProvider interface {
+    Provider
     StreamName(room, identity string) string
     StreamInfo(room, identity string) (stream, token string, err error)
+}
+
+// ClientInfoProvider — exposes provider-specific connection metadata to frontend
+type ClientInfoProvider interface {
+    Provider
     ClientInfo() map[string]interface{}
+}
+
+// PublishControlProvider — 由支持发布控制的 Provider 实现：
+// 签发 token 时显式声明是否允许发布媒体流（访客说权限等场景）
+type PublishControlProvider interface {
+    GenerateTokenWithPublish(room, identity string, canPublish bool) (string, error)
+}
+
+// TimedMuteProvider — 支持带 TTL 的定时禁言；Hub 优先于 MuteParticipant 使用
+type TimedMuteProvider interface {
+    Provider
+    MuteParticipantTimed(room, identity, trackSid string, muted bool, ttlSeconds int) error
 }
 ```
 

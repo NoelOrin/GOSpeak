@@ -1,10 +1,10 @@
 package signal
 
 import (
+	"log"
 	"sort"
 
 	"GOSpeak/internal/bus"
-	"GOSpeak/internal/logger"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -101,7 +101,7 @@ func (h *Hub) getMergedRoomsScoped(domainUUID string, platformOnly bool) []RoomI
 		}
 		localSnaps, snapErr = h.localRoomSnapshots(localKeys)
 		if snapErr != nil {
-			logger.WithComponent("Signal").Infof("[Signal] batch local room snapshots: %v; falling back to local members", snapErr)
+			log.Printf("[Signal] batch local room snapshots: %v; falling back to local members", snapErr)
 		}
 	}
 	for name, info := range memRooms {

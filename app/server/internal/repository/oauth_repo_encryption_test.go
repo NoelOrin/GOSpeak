@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"GOSpeak/internal/config"
 	"GOSpeak/internal/model"
-	"GOSpeak/internal/storage"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -13,8 +13,12 @@ import (
 
 func setOAuthCryptoKey(t *testing.T) {
 	t.Helper()
-	storage.InitCipher(strings.Repeat("ab", 32), false)
-	t.Cleanup(func() { storage.InitCipher("", false) })
+	old := config.Current()
+	config.SetCurrent(&config.Config{
+		AppEnv:            "test",
+		StorageEncryptKey: strings.Repeat("ab", 32),
+	})
+	t.Cleanup(func() { config.SetCurrent(old) })
 }
 
 func TestOAuthProviderRepository_EncryptsClientSecret(t *testing.T) {

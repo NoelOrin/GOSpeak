@@ -30,7 +30,7 @@ func setupDomainHandlerTestDB(t *testing.T) (*gorm.DB, *service.DomainService) {
 	}
 	domainRepo := repository.NewDomainRepository(db)
 	domainRoleRepo := repository.NewDomainRoleRepository(db)
-	domainSvc := service.NewDomainService(domainRepo, domainRoleRepo, nil)
+	domainSvc := service.NewDomainService(domainRepo, domainRoleRepo)
 	return db, domainSvc
 }
 

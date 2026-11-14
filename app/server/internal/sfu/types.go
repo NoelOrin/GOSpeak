@@ -44,6 +44,13 @@ type Capabilities struct {
 	ListLevel   string `json:"listLevel"`
 }
 
+// TimedMuteProvider optionally accepts TTL for mute enforcement.
+// Hub prefers this over MuteParticipant when available.
+type TimedMuteProvider interface {
+	Provider
+	MuteParticipantTimed(room, identity, trackSid string, muted bool, ttlSeconds int) error
+}
+
 // NormalizeLevel maps unknown values to soft.
 func NormalizeLevel(level string) string {
 	switch level {

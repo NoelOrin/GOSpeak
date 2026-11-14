@@ -2,9 +2,9 @@ package signal
 
 import (
 	"context"
+	"log"
 
 	"GOSpeak/internal/ws"
-	"GOSpeak/internal/logger"
 )
 
 // disconnectCleanup 记录断连后需要执行的 SFU 清理项。
@@ -23,6 +23,7 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	var cleanups []disconnectCleanup
 	var updatedRooms []string
 	var speakingChanged []string
+	var deletedStreams []string
 	var leaveEvents []leaveEvent
 	// Leave personal room on disconnect
 	if identity := clientIdentity(c); identity != "" {
@@ -46,20 +47,33 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	}
 	delete(h.connSlots, c.ID())
 	for _, roomName := range roomKeys {
-		removal, ok := h.removeMemberLocked(roomName, c.ID())
-		if !ok {
+		room := h.rooms[roomName]
+		if room == nil {
 			continue
 		}
-		if removal.wasSpeaking {
-			speakingChanged = append(speakingChanged, roomName)
+		if member, ok := room.Members[c.ID()]; ok {
+			identity := member.Identity
+			stream := member.Stream
+			wasSpeaking := room.Speaking[identity]
+			roomDelMember(room, c.ID())
+			delete(room.Speaking, identity)
+			delete(room.MicMuted, identity)
+			h.unregisterStreamLocked(roomName, identity, stream)
+			if stream != "" {
+				deletedStreams = append(deletedStreams, stream)
+			}
+			if wasSpeaking {
+				speakingChanged = append(speakingChanged, roomName)
+			}
+			leaveEvents = append(leaveEvents, leaveEvent{
+				room:     roomName,
+				identity: identity,
+				id:       c.ID(),
+			})
+			updatedRooms = append(updatedRooms, roomName)
+			deleted := h.deleteRoomIfEmptyLocked(roomName)
+			cleanups = append(cleanups, disconnectCleanup{roomName, identity, deleted})
 		}
-		leaveEvents = append(leaveEvents, leaveEvent{
-			room:     roomName,
-			identity: removal.identity,
-			id:       c.ID(),
-		})
-		updatedRooms = append(updatedRooms, roomName)
-		cleanups = append(cleanups, disconnectCleanup{roomName, removal.identity, removal.roomDeleted})
 	}
 	h.mu.Unlock()
 
@@ -70,6 +84,9 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 	// 先同步 KV，再发布事件：远端收到 member:left 时读到的一定是已更新的成员快照。
 	for _, name := range updatedRooms {
 		h.syncRoomToStore(name)
+	}
+	for _, stream := range deletedStreams {
+		h.syncStreamDelete(stream)
 	}
 
 	// publish after unlock: avoid holding hub mu across NATS/WebSocket I/O
@@ -96,8 +113,7 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 		if h.cleanupPub != nil {
 			for _, c := range cleanups {
 				if err := h.cleanupPub.PublishSFUCleanup(context.Background(), c.room, c.identity, c.deleted); err != nil {
-					// 入队失败：降级内联清理并 Warn 可见，避免队列故障时产生幽灵房间/成员。
-					logger.WithComponent("Signal").Warnf("[Signal] enqueue sfu cleanup failed, run inline: room=%s err=%v", c.room, err)
+					log.Printf("[Signal] enqueue sfu cleanup: %v; fallback to inline goroutine", err)
 					h.runCleanupsInline([]disconnectCleanup{c})
 				}
 			}
@@ -119,7 +135,7 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 		h.broadcastRoomUpdatedLocal(name)
 	}
 
-	logger.WithComponent("Signal").Infof("[Signal] client disconnected: %s", c.ID())
+	log.Printf("[Signal] client disconnected: %s", c.ID())
 }
 
 // runCleanupsInline 在后台 goroutine 中执行 SFU 清理，
@@ -133,6 +149,9 @@ func (h *Hub) runCleanupsInline(cleanups []disconnectCleanup) {
 			h.removeParticipantSafe(c.room, c.identity)
 			if c.deleted {
 				h.deleteRoomSafe(c.room)
+			}
+			if h.participantCleanup != nil {
+				h.participantCleanup.OnParticipantLeft(c.room, c.identity)
 			}
 		}
 	}(cleanups)

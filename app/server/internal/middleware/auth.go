@@ -42,27 +42,11 @@ var authMu sync.RWMutex
 
 var defaultAuth = &Auth{}
 
-// Configure 原子合并默认鉴权依赖（零值字段不覆盖既有注入），生产启动时调用一次。
-// 与下方字段级 setter 共享同一写锁与写语义，是依赖注入的唯一两个入口：
-// 生产走 Configure，测试缝走字段级 setter。
+// Configure 原子替换默认鉴权依赖，生产启动时调用一次。
 func Configure(deps Dependencies) {
 	authMu.Lock()
-	defer authMu.Unlock()
-	if deps.PermissionChecker != nil {
-		defaultAuth.deps.PermissionChecker = deps.PermissionChecker
-	}
-	if deps.TokenVersionChecker != nil {
-		defaultAuth.deps.TokenVersionChecker = deps.TokenVersionChecker
-	}
-	if deps.DomainChecker != nil {
-		defaultAuth.deps.DomainChecker = deps.DomainChecker
-	}
-	if deps.BlacklistChecker != nil {
-		defaultAuth.deps.BlacklistChecker = deps.BlacklistChecker
-	}
-	if deps.AuthCookieName != "" {
-		defaultAuth.deps.AuthCookieName = deps.AuthCookieName
-	}
+	defaultAuth = &Auth{deps: deps}
+	authMu.Unlock()
 }
 
 func currentAuth() *Auth {
@@ -84,14 +68,32 @@ var tokenVersionCache = struct {
 	m map[string]tokenVersionCacheEntry
 }{m: make(map[string]tokenVersionCacheEntry)}
 
-// SetPermissionChecker 注入权限查询实现（测试缝；生产路径走 Configure）。
+func init() {
+	// Periodically evict expired entries to prevent unbounded growth.
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			now := time.Now()
+			tokenVersionCache.Lock()
+			for k, entry := range tokenVersionCache.m {
+				if now.After(entry.expires) {
+					delete(tokenVersionCache.m, k)
+				}
+			}
+			tokenVersionCache.Unlock()
+		}
+	}()
+}
+
+// SetPermissionChecker 注入权限查询实现（启动时调用）。
 func SetPermissionChecker(c permissionChecker) {
 	authMu.Lock()
 	defaultAuth.deps.PermissionChecker = c
 	authMu.Unlock()
 }
 
-// SetTokenVersionChecker 注入 token 版本查询实现（测试缝；生产路径走 Configure）。
+// SetTokenVersionChecker 注入 token 版本查询实现（启动时调用）。
 func SetTokenVersionChecker(tvc tokenVersionChecker) {
 	authMu.Lock()
 	defaultAuth.deps.TokenVersionChecker = tvc
@@ -149,64 +151,13 @@ func tokenTypeAllowed(claims *pkg.Claims, allowedTypes ...string) bool {
 	return false
 }
 
-// gin context key 常量：仅通过下方 accessor 读取，禁止在包外散落魔法字符串。
-const (
-	ctxKeyUsername    = "username"
-	ctxKeyDisplayName = "display_name"
-	ctxKeyUserUUID    = "user_uuid"
-	ctxKeyRole        = "role"
-	ctxKeyClaims      = "claims"
-	ctxKeyAuthType    = "auth_type"
-)
-
 func setClaimsContext(c *gin.Context, claims *pkg.Claims) {
-	c.Set(ctxKeyUsername, claims.Username)
-	c.Set(ctxKeyDisplayName, claims.DisplayName)
-	c.Set(ctxKeyUserUUID, claims.UserUUID)
-	c.Set(ctxKeyRole, claims.Role)
-	c.Set(ctxKeyClaims, claims)
-	c.Set(ctxKeyAuthType, "jwt")
-}
-
-// CurrentUser 返回 JWTAuth 注入的 claims；未鉴权返回 nil。
-// 这是 handler/middleware 读取请求身份的唯一入口。
-func CurrentUser(c *gin.Context) *pkg.Claims {
-	v, ok := c.Get(ctxKeyClaims)
-	if !ok {
-		return nil
-	}
-	claims, _ := v.(*pkg.Claims)
-	return claims
-}
-
-// 以下字段级 accessor 优先读 claims；测试 mock 或轻量路径只注入单键时回退读取。
-
-func CurrentUsername(c *gin.Context) string {
-	if claims := CurrentUser(c); claims != nil {
-		return claims.Username
-	}
-	return c.GetString(ctxKeyUsername)
-}
-
-func CurrentUserUUID(c *gin.Context) string {
-	if claims := CurrentUser(c); claims != nil {
-		return claims.UserUUID
-	}
-	return c.GetString(ctxKeyUserUUID)
-}
-
-func CurrentDisplayName(c *gin.Context) string {
-	if claims := CurrentUser(c); claims != nil {
-		return claims.DisplayName
-	}
-	return c.GetString(ctxKeyDisplayName)
-}
-
-func CurrentRole(c *gin.Context) string {
-	if claims := CurrentUser(c); claims != nil {
-		return claims.Role
-	}
-	return c.GetString(ctxKeyRole)
+	c.Set("username", claims.Username)
+	c.Set("display_name", claims.DisplayName)
+	c.Set("user_uuid", claims.UserUUID)
+	c.Set("role", claims.Role)
+	c.Set("claims", claims)
+	c.Set("auth_type", "jwt")
 }
 
 func JWTAuth() gin.HandlerFunc {
@@ -245,13 +196,20 @@ func JWTAuth() gin.HandlerFunc {
 
 func RequireRole(roles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if CurrentUser(c) == nil {
+		role, exists := c.Get("role")
+		if !exists {
 			pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 			c.Abort()
 			return
 		}
 
-		roleStr := CurrentRole(c)
+		roleStr, ok := role.(string)
+		if !ok {
+			pkg.Fail(c, pkg.INTERNAL_ERROR)
+			c.Abort()
+			return
+		}
+
 		for _, allowedRole := range roles {
 			if roleStr == allowedRole {
 				c.Next()
@@ -266,7 +224,13 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 
 // permissionGranted 判断当前 caller 是否拥有 permCode。
 func permissionGranted(c *gin.Context, permCode string) bool {
-	return PermissionGranted(CurrentUser(c), CurrentRole(c), permCode, currentAuth().deps.PermissionChecker)
+	var claims *pkg.Claims
+	if v, ok := c.Get("claims"); ok {
+		claims, _ = v.(*pkg.Claims)
+	}
+	role, _ := c.Get("role")
+	roleStr, _ := role.(string)
+	return PermissionGranted(claims, roleStr, permCode, currentAuth().deps.PermissionChecker)
 }
 
 // PermissionGranted 统一权限判定：role → checker 映射。
@@ -278,7 +242,8 @@ func PermissionGranted(_ *pkg.Claims, role string, permCode string, checker perm
 // RequirePermission 基于权限码的鉴权，替代硬编码角色名。
 func RequirePermission(permCode string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if CurrentUser(c) == nil {
+		_, exists := c.Get("role")
+		if !exists {
 			pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 			c.Abort()
 			return
@@ -303,7 +268,11 @@ func RequireOwnerOrPermission(ownerContextKey, permCode string) gin.HandlerFunc 
 			return
 		}
 
-		if owner, ok := c.Get(ownerContextKey); ok && owner == CurrentUsername(c) && owner != "" {
+		owner, ownerOK := c.Get(ownerContextKey)
+		username, usernameOK := c.Get("username")
+		ownerStr, ownerIsString := owner.(string)
+		usernameStr, usernameIsString := username.(string)
+		if ownerOK && usernameOK && ownerIsString && usernameIsString && ownerStr == usernameStr {
 			c.Next()
 			return
 		}
@@ -317,7 +286,12 @@ func RequireOwnerOrPermission(ownerContextKey, permCode string) gin.HandlerFunc 
 // roleCache 未初始化时 policy 层的字面量兜底仍能拦住 ban 角色，避免 fail-open。
 func BanCheck() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		sub := policy.Subject{Role: CurrentRole(c)}
+		var sub policy.Subject
+		if role, exists := c.Get("role"); exists {
+			if roleStr, ok := role.(string); ok {
+				sub.Role = roleStr
+			}
+		}
 		if d := policy.CheckBan(sub); !d.Allowed {
 			pkg.Fail(c, d.Code)
 			c.Abort()
@@ -388,12 +362,6 @@ func cachedTokenVersion(userUUID string) (uint, error) {
 	if entry, ok := tokenVersionCache.m[userUUID]; ok && now.Before(entry.expires) {
 		tokenVersionCache.Unlock()
 		return entry.version, nil
-	}
-	// 惰性清理：读路径顺手淘汰过期条目，避免无界增长（替代后台 ticker goroutine）。
-	for k, entry := range tokenVersionCache.m {
-		if now.After(entry.expires) {
-			delete(tokenVersionCache.m, k)
-		}
 	}
 	tokenVersionCache.Unlock()
 

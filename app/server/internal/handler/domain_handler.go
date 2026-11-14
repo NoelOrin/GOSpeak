@@ -6,7 +6,6 @@ import (
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
-	"GOSpeak/internal/middleware"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -47,7 +46,12 @@ func (h *DomainHandler) hasPermission(c *gin.Context, code string) bool {
 	if h.permSvc == nil {
 		return false
 	}
-	return h.permSvc.HasPermission(middleware.CurrentRole(c), code)
+	roleVal, ok := c.Get("role")
+	if !ok {
+		return false
+	}
+	role, _ := roleVal.(string)
+	return h.permSvc.HasPermission(role, code)
 }
 
 type CreateDomainRequest struct {
@@ -63,11 +67,12 @@ func (h *DomainHandler) Create(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, err.Error())
 		return
 	}
-	userUUID := middleware.CurrentUserUUID(c)
-	if userUUID == "" {
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
+	userUUID, _ := userUUIDVal.(string)
 	domain, err := h.domainSvc.Create(req.Name, req.Description, userUUID, req.IsPublic)
 	if err != nil {
 		pkg.HandleError(c, err)
@@ -132,11 +137,12 @@ func (h *DomainHandler) ListPublic(c *gin.Context) {
 
 // MyDomains 返回当前用户加入的 Domain 批量详情（含成员数与房间数）。
 func (h *DomainHandler) MyDomains(c *gin.Context) {
-	userUUID := middleware.CurrentUserUUID(c)
-	if userUUID == "" {
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
+	userUUID, _ := userUUIDVal.(string)
 	domains, err := h.domainSvc.ListUserDomainDetails(userUUID)
 	if err != nil {
 		pkg.HandleError(c, err)
@@ -169,11 +175,12 @@ func (h *DomainHandler) Update(c *gin.Context) {
 		pkg.HandleError(c, err)
 		return
 	}
-	userUUID := middleware.CurrentUserUUID(c)
-	if userUUID == "" {
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
+	userUUID, _ := userUUIDVal.(string)
 	if !h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainManage) &&
 		!h.domainSvc.IsOwner(domainUUID, userUUID) &&
 		!h.hasPermission(c, permcode.PermDomainManage) {
@@ -209,11 +216,12 @@ func (h *DomainHandler) Delete(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
 		return
 	}
-	userUUID := middleware.CurrentUserUUID(c)
-	if userUUID == "" {
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
+	userUUID, _ := userUUIDVal.(string)
 	permOK := h.hasPermission(c, permcode.PermDomainDelete)
 	ownerOK := h.domainSvc.IsOwner(domainUUID, userUUID)
 	if !permOK && !ownerOK {
@@ -240,11 +248,12 @@ func (h *DomainHandler) Leave(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
 		return
 	}
-	userUUID := middleware.CurrentUserUUID(c)
-	if userUUID == "" {
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
+	userUUID, _ := userUUIDVal.(string)
 	if err := h.domainSvc.Leave(domainUUID, userUUID); err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -271,11 +280,12 @@ func (h *DomainHandler) Kick(c *gin.Context) {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "domain_uuid is required")
 		return
 	}
-	userUUID := middleware.CurrentUserUUID(c)
-	if userUUID == "" {
+	userUUIDVal, ok := c.Get("user_uuid")
+	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
+	userUUID, _ := userUUIDVal.(string)
 	roleOK := h.domainSvc.HasDomainPermission(domainUUID, userUUID, permcode.PermDomainKick)
 	permOK := h.hasPermission(c, permcode.PermDomainKick)
 	if !permOK && !roleOK {

@@ -8,7 +8,6 @@ import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
-	"GOSpeak/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -58,8 +57,14 @@ func (h *UserHandler) PresetAvatars(c *gin.Context) {
 // @Success      200  {object}  pkg.Response
 // @Router       /user/profile [post]
 func (h *UserHandler) GetProfile(c *gin.Context) {
-	uuidStr := middleware.CurrentUserUUID(c)
-	if uuidStr == "" {
+	userUUID, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
+		return
+	}
+
+	uuidStr, ok := userUUID.(string)
+	if !ok || uuidStr == "" {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return
 	}
@@ -223,8 +228,14 @@ func (h *UserHandler) GetByName(c *gin.Context) {
 // @Success      200   {object}  pkg.Response
 // @Router       /user/update-profile [post]
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
-	uuidStr := middleware.CurrentUserUUID(c)
-	if uuidStr == "" {
+	userUUID, ok := c.Get("user_uuid")
+	if !ok {
+		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
+		return
+	}
+
+	uuidStr, ok := userUUID.(string)
+	if !ok || uuidStr == "" {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return
 	}

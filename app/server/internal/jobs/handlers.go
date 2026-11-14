@@ -5,7 +5,6 @@ import (
 	"log"
 
 	"GOSpeak/internal/bus"
-	"GOSpeak/internal/sfu"
 )
 
 // SFUCleaner performs SFU-side leave cleanup.
@@ -29,7 +28,7 @@ type Deps struct {
 // Handle dispatches a JobEnvelope to the appropriate handler.
 func Handle(job bus.JobEnvelope, deps Deps) error {
 	switch job.Type {
-	case sfu.DefaultProviderName:
+	case "livekit":
 		return handleLiveKit(job.Payload, deps.Cleaner)
 	case "sfu_cleanup":
 		return handleCleanup(job.Payload, deps.Cleaner)

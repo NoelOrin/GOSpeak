@@ -5,7 +5,6 @@ import (
 
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
-	"GOSpeak/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -124,7 +123,10 @@ func (h *AuthHandler) GetRefreshToken(c *gin.Context) {
 // @Success      200  {object}  pkg.Response
 // @Router       /auth/logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
-	accessClaims := middleware.CurrentUser(c)
+	var accessClaims *pkg.Claims
+	if v, ok := c.Get("claims"); ok {
+		accessClaims, _ = v.(*pkg.Claims)
+	}
 
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
@@ -155,8 +157,9 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 // @Success      200      {object}  pkg.Response
 // @Router       /auth/refresh [post]
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
-	uuidStr := middleware.CurrentUserUUID(c)
-	if uuidStr == "" {
+	userUUID, _ := c.Get("user_uuid")
+	uuidStr, ok := userUUID.(string)
+	if !ok || uuidStr == "" {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return
 	}
@@ -192,8 +195,9 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	usernameStr := middleware.CurrentUsername(c)
-	if usernameStr == "" {
+	username, _ := c.Get("username")
+	usernameStr, ok := username.(string)
+	if !ok {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return
 	}
@@ -226,8 +230,9 @@ func (h *AuthHandler) FirstChangePassword(c *gin.Context) {
 		return
 	}
 
-	usernameStr := middleware.CurrentUsername(c)
-	if usernameStr == "" {
+	username, _ := c.Get("username")
+	usernameStr, ok := username.(string)
+	if !ok {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return
 	}

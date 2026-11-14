@@ -8,12 +8,15 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-// MembershipStore is the shared room membership backend.
+// MembershipStore is the shared room membership / stream map backend.
 // Used by signal.Hub for cross-instance room views.
 type MembershipStore interface {
 	PutRoomMembers(ctx context.Context, snap RoomMembersSnapshot) error
 	GetRoomMembers(ctx context.Context, room string) (RoomMembersSnapshot, error)
 	DeleteRoomMembers(ctx context.Context, room string) error
+	PutStream(ctx context.Context, stream, room, identity string) error
+	GetStream(ctx context.Context, stream string) (room, identity string, err error)
+	DeleteStream(ctx context.Context, stream string) error
 	ListRoomNames(ctx context.Context) ([]string, error)
 	Backend() string // "nats" | "none"
 	Close() error

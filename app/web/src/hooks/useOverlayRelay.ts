@@ -71,7 +71,7 @@ export function useOverlayRelay() {
 			const snapshot = {
 				roomName: st.selectedRoomInfo?.name ?? st.currentRoom ?? null,
 				members: selectMembers(st).map(toOverlayMember),
-				speakingIdentities: useSpeakingStore.getState(),
+				speakingIdentities: useSpeakingStore.getState().speakingIdentities,
 				connected: st.connected,
 			};
 			const key = JSON.stringify(snapshot);

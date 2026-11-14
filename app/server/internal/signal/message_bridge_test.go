@@ -167,14 +167,14 @@ func TestOnMessageSend_NotInRoom(t *testing.T) {
 
 	// Try sending without joining
 	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","content":"hello"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error path")
 	}
-
-	var ackMap map[string]interface{}
-	json.Unmarshal([]byte(ack), &ackMap)
-	if ackMap["error"] != "not in room: text-chat" {
-		t.Errorf("expected 'not in room', got %v", ackMap["error"])
+	if ack != "" {
+		t.Errorf("expected empty ack data, got %q", ack)
+	}
+	if err.Error() != "not in room: text-chat" {
+		t.Errorf("expected 'not in room', got %v", err)
 	}
 	if msgSvc.sendCalled > 0 {
 		t.Error("expected no Send call when not in room")
@@ -201,11 +201,8 @@ func TestOnMessageSend_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	var ackMap map[string]interface{}
-	json.Unmarshal([]byte(ack), &ackMap)
-	if ackMap["success"] != true {
-		t.Errorf("expected success, got %v", ackMap)
+	if ack != "" {
+		t.Errorf("expected empty ack data on success, got %q", ack)
 	}
 	if msgSvc.sendCalled != 1 {
 		t.Errorf("expected 1 send call, got %d", msgSvc.sendCalled)
@@ -228,13 +225,12 @@ func TestOnMessageSend_BotWithoutPermissionDenied(t *testing.T) {
 	if _, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"bot_helper"}`); err != nil {
 		t.Fatalf("join: %v", err)
 	}
-	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","content":"hello"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_, err := h.OnMessageSend(conn, `{"room":"text-chat","content":"hello"}`)
+	if err == nil {
+		t.Fatal("expected error path")
 	}
-	ackMap := decodeAck(t, ack)
-	if ackMap["error"] != "permission denied" {
-		t.Errorf("expected permission denied, got %v", ackMap)
+	if err.Error() != "permission denied" {
+		t.Errorf("expected permission denied, got %v", err)
 	}
 	if msgSvc.sendCalled != 0 {
 		t.Errorf("expected no send call, got %d", msgSvc.sendCalled)
@@ -262,10 +258,8 @@ func TestOnMessageSend_UsesDomainScopedRoom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	var ackMap map[string]interface{}
-	json.Unmarshal([]byte(ack), &ackMap)
-	if ackMap["success"] != true {
-		t.Errorf("expected success, got %v", ackMap)
+	if ack != "" {
+		t.Errorf("expected empty ack data on success, got %q", ack)
 	}
 	if msgSvc.lastRoomUUID != "uuid-domain" {
 		t.Fatalf("expected domain room UUID, got %s", msgSvc.lastRoomUUID)
@@ -279,14 +273,12 @@ func TestOnMessageSend_RejectsMissingUserUUID(t *testing.T) {
 	h.SetMessageService(&mockMessageSvc{})
 	conn := newAuthedMockClient("conn-1", "alice")
 	conn.claims.UserUUID = ""
-	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","content":"hello"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_, err := h.OnMessageSend(conn, `{"room":"text-chat","content":"hello"}`)
+	if err == nil {
+		t.Fatal("expected error path")
 	}
-	var ackMap map[string]interface{}
-	json.Unmarshal([]byte(ack), &ackMap)
-	if ackMap["error"] != "unauthorized" {
-		t.Errorf("expected unauthorized, got %v", ackMap)
+	if err.Error() != "unauthorized" {
+		t.Errorf("expected unauthorized, got %v", err)
 	}
 }
 
@@ -299,15 +291,12 @@ func TestOnMessageSend_Unauthed(t *testing.T) {
 	// Unauthed conn (no claims in context)
 	conn := newMockClient("conn-1")
 
-	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","content":"hello"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_, err := h.OnMessageSend(conn, `{"room":"text-chat","content":"hello"}`)
+	if err == nil {
+		t.Fatal("expected error path")
 	}
-
-	var ackMap map[string]interface{}
-	json.Unmarshal([]byte(ack), &ackMap)
-	if ackMap["error"] != "unauthorized" {
-		t.Errorf("expected 'unauthorized', got %v", ackMap["error"])
+	if err.Error() != "unauthorized" {
+		t.Errorf("expected 'unauthorized', got %v", err)
 	}
 }
 
@@ -332,11 +321,8 @@ func TestOnMessageDelete_WithModPerm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	var ackMap map[string]interface{}
-	json.Unmarshal([]byte(ack), &ackMap)
-	if ackMap["success"] != true {
-		t.Errorf("expected success, got %v", ackMap)
+	if ack != "" {
+		t.Errorf("expected empty ack data on success, got %q", ack)
 	}
 	if msgSvc.deleteCalled != 1 {
 		t.Errorf("expected 1 delete call, got %d", msgSvc.deleteCalled)
@@ -384,12 +370,12 @@ func TestResolveMessageRoom_IdentityRequired(t *testing.T) {
 
 	conn := newMockClient("conn-1") // no claims
 
-	_, _, _, ackErr := h.resolveMessageRoom(conn, "text-chat", "")
-	if ackErr == "" {
+	_, _, _, err := h.resolveMessageRoom(conn, "text-chat", "")
+	if err == nil {
 		t.Fatal("expected error")
 	}
-	if ackErr != `{"error":"unauthorized"}` {
-		t.Errorf("expected unauthorized, got %s", ackErr)
+	if err.Error() != "unauthorized" {
+		t.Errorf("expected unauthorized, got %v", err)
 	}
 }
 
@@ -458,9 +444,8 @@ func TestOnMessageDelete_DomainRoleCanDeleteOthers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	ackMap := decodeAck(t, ack)
-	if ackMap["success"] != true {
-		t.Fatalf("expected success, got %v", ackMap)
+	if ack != "" {
+		t.Fatalf("expected empty ack data on success, got %q", ack)
 	}
 	if msgSvc.lastCanDeleteOthers != true {
 		t.Fatalf("expected canDeleteOthers true, got %v", msgSvc.lastCanDeleteOthers)
@@ -485,13 +470,12 @@ func TestOnMessageDelete_DomainPermissionGatesDeleteWhenCheckerWired(t *testing.
 	if _, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"admin-1","domain_uuid":"domain-a"}`); err != nil {
 		t.Fatalf("join: %v", err)
 	}
-	ack, err := h.OnMessageDelete(conn, `{"room":"text-chat","domain_uuid":"domain-a","message_uuid":"msg-1"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_, err := h.OnMessageDelete(conn, `{"room":"text-chat","domain_uuid":"domain-a","message_uuid":"msg-1"}`)
+	if err == nil {
+		t.Fatal("expected error path")
 	}
-	ackMap := decodeAck(t, ack)
-	if ackMap["error"] != "permission denied" {
-		t.Fatalf("expected permission denied, got %v", ackMap)
+	if err.Error() != "permission denied" {
+		t.Fatalf("expected permission denied, got %v", err)
 	}
 	if msgSvc.deleteCalled != 0 {
 		t.Fatalf("delete must not be called, got %d calls", msgSvc.deleteCalled)
@@ -523,9 +507,8 @@ func TestOnMessageDelete_UsesResolvedRoomDomain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	ackMap := decodeAck(t, ack)
-	if ackMap["success"] != true {
-		t.Fatalf("expected success, got %v", ackMap)
+	if ack != "" {
+		t.Fatalf("expected empty ack data on success, got %q", ack)
 	}
 	if msgSvc.lastCanDeleteOthers != true {
 		t.Fatalf("expected domain permission from resolved room, got %v", msgSvc.lastCanDeleteOthers)
@@ -550,13 +533,12 @@ func TestOnMessageSend_DomainPermissionRequiredWhenCheckerWired(t *testing.T) {
 	if _, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"guest-1","domain_uuid":"domain-a"}`); err != nil {
 		t.Fatalf("join: %v", err)
 	}
-	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","domain_uuid":"domain-a","content":"hi"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_, err := h.OnMessageSend(conn, `{"room":"text-chat","domain_uuid":"domain-a","content":"hi"}`)
+	if err == nil {
+		t.Fatal("expected error path")
 	}
-	ackMap := decodeAck(t, ack)
-	if ackMap["error"] != "permission denied" {
-		t.Fatalf("expected permission denied, got %v", ackMap)
+	if err.Error() != "permission denied" {
+		t.Fatalf("expected permission denied, got %v", err)
 	}
 	if msgSvc.sendCalled != 0 {
 		t.Fatalf("send must not be called, got %d calls", msgSvc.sendCalled)
@@ -585,9 +567,8 @@ func TestOnMessageSend_DomainPermissionAllowsMember(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	ackMap := decodeAck(t, ack)
-	if ackMap["success"] != true {
-		t.Fatalf("expected success, got %v", ackMap)
+	if ack != "" {
+		t.Fatalf("expected empty ack data on success, got %q", ack)
 	}
 }
 
@@ -606,13 +587,12 @@ func TestOnMessageSend_DomainPermissionNilCheckerFailsClosed(t *testing.T) {
 	if _, err := h.OnRoomJoin(conn, `{"room":"text-chat","identity":"guest-1","domain_uuid":"domain-a"}`); err != nil {
 		t.Fatalf("join: %v", err)
 	}
-	ack, err := h.OnMessageSend(conn, `{"room":"text-chat","domain_uuid":"domain-a","content":"hi"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_, err := h.OnMessageSend(conn, `{"room":"text-chat","domain_uuid":"domain-a","content":"hi"}`)
+	if err == nil {
+		t.Fatal("expected error path")
 	}
-	ackMap := decodeAck(t, ack)
-	if ackMap["error"] != "permission denied" {
-		t.Fatalf("expected permission denied without domain checker, got %v", ackMap)
+	if err.Error() != "permission denied" {
+		t.Fatalf("expected permission denied without domain checker, got %v", err)
 	}
 	if msgSvc.sendCalled != 0 {
 		t.Fatalf("send must not be called, got %d calls", msgSvc.sendCalled)
@@ -622,10 +602,10 @@ func TestOnMessageSend_DomainPermissionNilCheckerFailsClosed(t *testing.T) {
 func TestCheckMessagePerm_NilClaimsFailsClosed(t *testing.T) {
 	h := newTestHub()
 	conn := newMockClient("conn-1")
-	if ack := h.checkMessagePerm(conn, "domain-a"); ack == "" {
+	if err := h.checkMessagePerm(conn, "domain-a"); err == nil {
 		t.Fatal("expected permission denied for nil claims on domain room")
 	}
-	if ack := h.checkMessagePerm(conn, ""); ack == "" {
+	if err := h.checkMessagePerm(conn, ""); err == nil {
 		t.Fatal("expected permission denied for nil claims on platform room")
 	}
 }
@@ -635,7 +615,7 @@ func TestCheckMessagePerm_DomainRoomEmptyUserUUIDFailsClosed(t *testing.T) {
 	h.domainPermChecker = func(domainUUID, userUUID, permCode string) bool { return true }
 	conn := newMockClient("conn-1")
 	conn.claims = &pkg.Claims{Username: "guest-1", UserUUID: "", Role: "user"}
-	if ack := h.checkMessagePerm(conn, "domain-a"); ack == "" {
+	if err := h.checkMessagePerm(conn, "domain-a"); err == nil {
 		t.Fatal("expected permission denied for empty user uuid on domain room")
 	}
 }
@@ -664,9 +644,8 @@ func TestOnMessageDelete_DomainPermissionDoesNotFallBackToGlobalDeleteOthers(t *
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	ackMap := decodeAck(t, ack)
-	if ackMap["success"] != true {
-		t.Fatalf("expected success, got %v", ackMap)
+	if ack != "" {
+		t.Fatalf("expected empty ack data on success, got %q", ack)
 	}
 	if msgSvc.lastCanDeleteOthers != false {
 		t.Fatalf("domain room must not fall back to global delete_others, got %v", msgSvc.lastCanDeleteOthers)

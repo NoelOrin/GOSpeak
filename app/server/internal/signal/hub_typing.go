@@ -3,7 +3,7 @@ package signal
 import (
 	"GOSpeak/internal/policy"
 	"GOSpeak/internal/ws"
-	"GOSpeak/internal/logger"
+	"log"
 	"time"
 )
 
@@ -70,7 +70,7 @@ func (h *Hub) OnTyping(c ws.ClientMessenger, data string) {
 		} else {
 			muted, _, muteErr := h.muteStore.IsMutedByIdentity(identity)
 			if muteErr != nil {
-				logger.WithComponent("Signal").Infof("[signal] OnTyping IsMutedByIdentity error: identity=%q err=%v", identity, muteErr)
+				log.Printf("[signal] OnTyping IsMutedByIdentity error: identity=%q err=%v", identity, muteErr)
 				return
 			}
 			h.muteCacheSet(identity, muted)

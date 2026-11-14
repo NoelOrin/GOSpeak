@@ -9,7 +9,7 @@ import {
 } from "@gospeak/components";
 import { HeadphoneOff, MicOff, MoveRight } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useAudioDeviceStore } from "@/stores/audioDeviceStore";
+import AudioDeviceStore from "@/stores/audioDeviceStore";
 import DeviceChangeStore, {
 	useDeviceChangeStore,
 	type DeviceSwap,
@@ -70,8 +70,7 @@ export default function DeviceChangeNotice() {
 
 	const close = (accept: boolean) => {
 		// 勾选后本次仍按点击的按钮处理，只是下次不再询问
-		if (dontAskAgain)
-			useAudioDeviceStore.getState().setDeviceChangeNotice(false);
+		if (dontAskAgain) AudioDeviceStore.setDeviceChangeNotice(false);
 		if (accept) DeviceChangeStore.confirm();
 		else DeviceChangeStore.cancel();
 	};

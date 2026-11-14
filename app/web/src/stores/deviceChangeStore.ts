@@ -4,7 +4,7 @@ import {
 	getResolvedInputDeviceId,
 	requestAudioPermission,
 } from "../hooks/media";
-import { useAudioDeviceStore } from "./audioDeviceStore";
+import AudioDeviceStore, { useAudioDeviceStore } from "./audioDeviceStore";
 
 /** 单个设备维度的切换建议：从哪个设备换到哪个设备 */
 export interface DeviceSwap {
@@ -102,18 +102,18 @@ function computeSwap(
 
 /** 已选设备失效时静默回退到第一个可用设备（不弹窗场景） */
 function reconcileSelection(inputs: DeviceEntry[], outputs: DeviceEntry[]) {
-	const audio = useAudioDeviceStore.getState();
+	const state = useAudioDeviceStore.getState();
 	if (
-		audio.selectedAudioInput &&
-		!inputs.some((d) => d.id === audio.selectedAudioInput)
+		state.selectedAudioInput &&
+		!inputs.some((d) => d.id === state.selectedAudioInput)
 	) {
-		audio.setSelectedAudioInput(fallbackId(inputs));
+		AudioDeviceStore.setSelectedAudioInput(fallbackId(inputs));
 	}
 	if (
-		audio.selectedAudioOutput &&
-		!outputs.some((d) => d.id === audio.selectedAudioOutput)
+		state.selectedAudioOutput &&
+		!outputs.some((d) => d.id === state.selectedAudioOutput)
 	) {
-		audio.setSelectedAudioOutput(fallbackId(outputs));
+		AudioDeviceStore.setSelectedAudioOutput(fallbackId(outputs));
 	}
 }
 
@@ -160,13 +160,13 @@ async function detect() {
 	// 仍然没有基线：只建快照 + 刷新列表，不做切换判断
 	if (!snapshot) {
 		snapshot = current;
-		useAudioDeviceStore.getState().syncDeviceList(devices);
+		AudioDeviceStore.syncDeviceList(devices);
 		return;
 	}
 
 	const prev = snapshot;
 	snapshot = current;
-	useAudioDeviceStore.getState().syncDeviceList(devices);
+	AudioDeviceStore.syncDeviceList(devices);
 
 	const pending: PendingDeviceChange = {
 		inputs: computeSwap(prev.inputs, current.inputs, state.selectedAudioInput),
@@ -220,9 +220,7 @@ export function startDeviceChangeWatch() {
 		// 顺带补一个默认设备选择，否则「系统默认」空值无法跟踪具体设备变化。
 		void requestAudioPermission().then((granted) => {
 			if (granted) {
-				useAudioDeviceStore
-					.getState()
-					.ensureSelectedAudioInput(getResolvedInputDeviceId());
+				AudioDeviceStore.ensureSelectedAudioInput(getResolvedInputDeviceId());
 			}
 			void detect();
 		});
@@ -245,12 +243,11 @@ const DeviceChangeStore = {
 	confirm: () => {
 		const { pending } = useDeviceChangeStore.getState();
 		if (!pending) return;
-		const audio = useAudioDeviceStore.getState();
 		if (pending.inputs) {
-			audio.setSelectedAudioInput(pending.inputs.to.id);
+			AudioDeviceStore.setSelectedAudioInput(pending.inputs.to.id);
 		}
 		if (pending.outputs) {
-			audio.setSelectedAudioOutput(pending.outputs.to.id);
+			AudioDeviceStore.setSelectedAudioOutput(pending.outputs.to.id);
 		}
 		useDeviceChangeStore.setState({ pending: null });
 	},

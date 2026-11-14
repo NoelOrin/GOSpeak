@@ -1,7 +1,7 @@
 package signal
 
 import (
-	"GOSpeak/internal/logger"
+	"log"
 	"time"
 )
 
@@ -25,7 +25,7 @@ func (h *Hub) reconcileEmptyRooms(now func() int64) int {
 	}
 	rooms, err := h.sfuProvider.ListRooms()
 	if err != nil {
-		logger.WithComponent("Signal").Infof("[Signal] reconcile list SFU rooms: %v", err)
+		log.Printf("[Signal] reconcile list SFU rooms: %v", err)
 		return 0
 	}
 
@@ -57,7 +57,7 @@ func (h *Hub) reconcileEmptyRooms(now func() int64) int {
 		if h.membershipStore != nil {
 			hasRemote, err := h.roomHasLiveRemoteMember(name)
 			if err != nil {
-				logger.WithComponent("Signal").Infof("[Signal] reconcile skip %s: membership read failed: %v", name, err)
+				log.Printf("[Signal] reconcile skip %s: membership read failed: %v", name, err)
 				continue
 			}
 			if hasRemote {
@@ -69,7 +69,7 @@ func (h *Hub) reconcileEmptyRooms(now func() int64) int {
 		delete(h.emptyRoomSeen, name)
 		h.reconcileMu.Unlock()
 		deleted++
-		logger.WithComponent("Signal").Infof("[Signal] reconcile deleted empty SFU room: %s", name)
+		log.Printf("[Signal] reconcile deleted empty SFU room: %s", name)
 	}
 	return deleted
 }

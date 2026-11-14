@@ -9,6 +9,7 @@ import (
 	"GOSpeak/internal/notify"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/protocol"
 	"GOSpeak/internal/repository"
 
 	"gorm.io/gorm"
@@ -16,7 +17,8 @@ import (
 
 const (
 	// EventAnnouncementNew 是新公告的推送事件名，前端在 WS 上订阅。
-	EventAnnouncementNew = "announcement:new"
+	// 常量已收编至 internal/protocol（单一事实源），此处保留别名过渡。
+	EventAnnouncementNew = protocol.EventAnnouncementNew
 
 	announcementDefaultPageSize = 20
 	announcementMaxPageSize     = 100

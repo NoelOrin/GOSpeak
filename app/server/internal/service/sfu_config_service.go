@@ -8,7 +8,6 @@ import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
-	"GOSpeak/internal/sfu"
 
 	"gorm.io/gorm"
 )
@@ -37,8 +36,8 @@ type SFUConfigService struct {
 	baseCfg *config.Config
 }
 
-// defaultSFUProvider 是 env 未指定时的回退值。
-const defaultSFUProvider = sfu.DefaultProviderName
+// defaultSFUProvider 是唯一支持的 provider，也是 env 未指定时的回退值。
+const defaultSFUProvider = "livekit"
 
 func NewSFUConfigService(repo *repository.SFUConfigRepository, baseCfg *config.Config) *SFUConfigService {
 	return &SFUConfigService{repo: repo, baseCfg: baseCfg}
@@ -50,9 +49,8 @@ func (s *SFUConfigService) Get() (*model.SFUConfig, error) {
 	if err != nil {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
-	// 兼容历史数据：旧版本可能写入已下线 provider，读路径自愈回默认并 Warn 可见。
+	// 兼容历史数据：旧版本可能写入已下线 provider。
 	if !isValidProvider(active) {
-		logger.WithComponent("SFU").Warnf("active provider %q is no longer valid, falling back to %s", active, defaultSFUProvider)
 		active = defaultSFUProvider
 		if err := s.repo.SetActiveProvider(active); err != nil {
 			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())

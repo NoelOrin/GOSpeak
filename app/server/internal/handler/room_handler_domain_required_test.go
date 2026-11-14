@@ -36,7 +36,7 @@ func TestRoomHandler_Create_RejectsMissingOrBlankDomainUUID(t *testing.T) {
 		c.Set("user_uuid", "user-1")
 		c.Next()
 	})
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil, nil)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)
 	r.POST("/api/v1/room/create", h.Create)
 
 	for _, body := range []string{
@@ -97,8 +97,8 @@ func TestRoomHandler_Create_UsesRequestBodyDomainUUID(t *testing.T) {
 		c.Set("user_uuid", "user-1")
 		c.Next()
 	})
-	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db), nil)
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc, nil)
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
 	r.POST("/api/v1/room/create", h.Create)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/create", strings.NewReader(`{"name":"lobby","domain_uuid":"domain-a"}`))
@@ -142,7 +142,7 @@ func TestRoomHandler_Create_RejectsDomainUUIDMismatch(t *testing.T) {
 		c.Set("domain_uuid", "domain-b")
 		c.Next()
 	})
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil, nil)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, nil)
 	r.POST("/api/v1/room/create", h.Create)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/create", strings.NewReader(`{"name":"lobby","domain_uuid":"domain-a"}`))

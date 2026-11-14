@@ -1,14 +1,12 @@
 package handler
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"GOSpeak/internal/audit"
-	"GOSpeak/internal/logger"
 	"GOSpeak/internal/middleware"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
@@ -18,44 +16,43 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// cacheBus 发布内部事件（与 service 层同形，事件名常量定义在 service/events.go）。
-type cacheBus interface {
-	PublishInternal(ctx context.Context, event string, payload interface{}) error
-}
-
 type RoomHandler struct {
-	roomSvc    *service.RoomService
-	permSvc    *service.PermissionService
-	domainSvc  *service.DomainService
-	eventBus   cacheBus
-	auditor    *audit.Service
+	roomSvc             *service.RoomService
+	permSvc             *service.PermissionService
+	domainSvc           *service.DomainService
+	roomListBroadcaster roomListBroadcaster
+	auditor             *audit.Service
 }
 
-func NewRoomHandler(roomSvc *service.RoomService, permSvc *service.PermissionService, domainSvc *service.DomainService, eventBus cacheBus) *RoomHandler {
-	return &RoomHandler{roomSvc: roomSvc, permSvc: permSvc, domainSvc: domainSvc, eventBus: eventBus}
+func NewRoomHandler(roomSvc *service.RoomService, permSvc *service.PermissionService, domainSvc *service.DomainService) *RoomHandler {
+	return &RoomHandler{roomSvc: roomSvc, permSvc: permSvc, domainSvc: domainSvc}
 }
 
 // SetAuditor 注入审计服务，用于记录删除房间等敏感操作。
 func (h *RoomHandler) SetAuditor(a *audit.Service) { h.auditor = a }
 
-// notifyRoomListChanged 房间元数据变更后发内部事件，由 signal Hub 单点重新广播
-// 房间列表（REST/WS 双通道写同一视图的旧模式已移除）。
-func (h *RoomHandler) notifyRoomListChanged(domainUUID string) {
-	if h.eventBus == nil {
-		return
-	}
-	payload := map[string]string{"domain_uuid": domainUUID}
-	if err := h.eventBus.PublishInternal(context.Background(), service.EventRoomListChanged, payload); err != nil {
-		logger.WithComponent("Room").Warnf("publish room list changed: %v", err)
-	}
+// roomListBroadcaster 注入信号层的房间列表广播器（Hub.BroadcastRoomList）。
+type roomListBroadcaster interface {
+	BroadcastRoomList(domainUUID string)
 }
 
-// currentUserUUID 优先取 JWT UserUUID；访客等 UserUUID 为空的身份回退 username。
+// SetRoomListBroadcaster 注入 Hub.BroadcastRoomList，供 Create/Update 触发房间列表广播。
+func (h *RoomHandler) SetRoomListBroadcaster(b roomListBroadcaster) {
+	h.roomListBroadcaster = b
+}
+
 func currentUserUUID(c *gin.Context) string {
-	if uuid := middleware.CurrentUserUUID(c); uuid != "" {
-		return uuid
+	if v, ok := c.Get("user_uuid"); ok {
+		if s, ok := v.(string); ok && s != "" {
+			return s
+		}
 	}
-	return middleware.CurrentUsername(c)
+	if v, ok := c.Get("username"); ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
 }
 
 // domainUUIDFromContext returns the domain_uuid resolved by RequireDomainMember middleware.
@@ -80,11 +77,15 @@ func (h *RoomHandler) canManageRoom(c *gin.Context, room *model.Room, perm strin
 		return true
 	}
 	// 平台房间与域房间都只保留创建者管理权，不回退到其它全局角色权限。
-	return room.CreatedBy == middleware.CurrentUsername(c)
+	username, _ := c.Get("username")
+	usernameStr, _ := username.(string)
+	return room.CreatedBy == usernameStr
 }
 
 func roleFromContext(c *gin.Context) string {
-	return middleware.CurrentRole(c)
+	role, _ := c.Get("role")
+	roleStr, _ := role.(string)
+	return roleStr
 }
 
 type CreateRoomRequest struct {
@@ -115,11 +116,12 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		return
 	}
 
-	username := middleware.CurrentUsername(c)
-	if username == "" {
+	usernameVal, ok := c.Get("username")
+	if !ok {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
 		return
 	}
+	username, _ := usernameVal.(string)
 	domainUUID := strings.TrimSpace(req.DomainUUID)
 	if ctxDomain := domainUUIDFromContext(c); ctxDomain != "" {
 		if domainUUID != "" && domainUUID != ctxDomain {
@@ -159,7 +161,9 @@ func (h *RoomHandler) Create(c *gin.Context) {
 		return
 	}
 
-	h.notifyRoomListChanged(domainUUID)
+	if h.roomListBroadcaster != nil {
+		h.roomListBroadcaster.BroadcastRoomList(domainUUID)
+	}
 
 	pkg.Success(c, service.RoomToDTO(room))
 }
@@ -382,7 +386,9 @@ func (h *RoomHandler) Delete(c *gin.Context) {
 		})
 	}
 
-	h.notifyRoomListChanged(room.DomainUUID)
+	if h.roomListBroadcaster != nil {
+		h.roomListBroadcaster.BroadcastRoomList(room.DomainUUID)
+	}
 
 	pkg.Success(c, nil)
 }

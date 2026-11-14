@@ -3,8 +3,7 @@ import {
 	darkThemes,
 	lightThemes,
 	setDarkMode,
-	switchDarkTheme,
-	switchLightTheme,
+	switchTheme,
 	type ThemeOption,
 } from "@/stores/themeStore";
 import { Page, Section, Toggle } from "./shared";
@@ -80,11 +79,7 @@ function AppearanceForm() {
 							key={option.name}
 							option={option}
 							active={activeTheme === option.name}
-							onSelect={() =>
-								isDark
-									? switchDarkTheme(option.name)
-									: switchLightTheme(option.name)
-							}
+							onSelect={() => switchTheme(option.name)}
 						/>
 					))}
 				</div>

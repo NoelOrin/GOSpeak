@@ -5,9 +5,7 @@ import (
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
 	message "GOSpeak/internal/pkg/message"
-	"GOSpeak/internal/policy"
 	"GOSpeak/internal/ws"
-	"fmt"
 )
 
 // messageSender abstracts message operations for the signal layer.
@@ -40,39 +38,37 @@ type messageMutatePayload struct {
 	Emoji       string `json:"emoji,omitempty"`
 }
 
-// marshalPolicyAck 把策略判决转成与既有消息 ACK 一致的 {"error","code"} 串。
-func marshalPolicyAck(d policy.Decision) string {
-	ack, _ := marshalAck(map[string]interface{}{"error": d.Message, "code": d.Code})
-	return ack
-}
+// ACK 约定（protocol 单一事实源，规格 §3.3）：
+// 成功 return "", nil（wire ACK 无 data）；失败 return "", *AppError
+// （dispatcher 转 SendErrorACK）。禁止把错误塞进成功 ACK 的 data。
 
 // resolveMessageRoom looks up a DB room by name, validates the conn slot,
-// and returns (roomUUID, roomType, roomDomainUUID) or an ack error string.
+// and returns (roomUUID, roomType, roomDomainUUID) or an error.
 // roomDomainUUID 来自 DB，是权威域上下文。
 //
 // 访问策略不在这里复查：ws.HandlerRegistry 的 PolicyGuard 已对每条上行消息
 // 做过一次判决（handler 层是通用入口），这里再评估一次无信息量。
-func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, roomName, domainUUID string) (roomUUID, roomType, roomDomainUUID string, ackErr string) {
+func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, roomName, domainUUID string) (roomUUID, roomType, roomDomainUUID string, err error) {
 	identity := clientIdentity(c)
 	if identity == "" {
-		return "", "", "", `{"error":"unauthorized"}`
+		return "", "", "", pkg.NewAppError(pkg.FORBIDDEN, "unauthorized")
 	}
 	if c == nil || c.Claims() == nil || c.Claims().UserUUID == "" {
-		return "", "", "", `{"error":"unauthorized"}`
+		return "", "", "", pkg.NewAppError(pkg.FORBIDDEN, "unauthorized")
 	}
 
 	if h.roomStore == nil {
-		return "", "", "", `{"error":"room store unavailable"}`
+		return "", "", "", pkg.NewAppError(pkg.INTERNAL_ERROR, "room store unavailable")
 	}
 	var dbRoom *model.Room
-	var err error
+	var lookupErr error
 	if domainUUID != "" {
-		dbRoom, err = h.roomStore.GetByDomainAndName(domainUUID, roomName)
+		dbRoom, lookupErr = h.roomStore.GetByDomainAndName(domainUUID, roomName)
 	} else {
-		dbRoom, err = h.roomStore.GetByName(roomName)
+		dbRoom, lookupErr = h.roomStore.GetByName(roomName)
 	}
-	if err != nil || dbRoom == nil {
-		return "", "", "", fmt.Sprintf(`{"error":"room not found: %s"}`, roomName)
+	if lookupErr != nil || dbRoom == nil {
+		return "", "", "", pkg.NewAppError(pkg.NOT_FOUND, "room not found: "+roomName)
 	}
 	roomUUID = dbRoom.UUID
 	roomType = model.NormalizeRoomType(dbRoom.Type)
@@ -94,18 +90,18 @@ func (h *Hub) resolveMessageRoom(c ws.ClientMessenger, roomName, domainUUID stri
 	}
 	h.mu.RUnlock()
 	if !allowed {
-		return "", "", "", fmt.Sprintf(`{"error":"not in room: %s"}`, roomName)
+		return "", "", "", pkg.NewAppError(pkg.INVALID_PARAMS, "not in room: "+roomName)
 	}
 
-	return roomUUID, roomType, roomDomainUUID, ""
+	return roomUUID, roomType, roomDomainUUID, nil
 }
 
-// checkMessagePerm returns an ack error string if the connection lacks message:send.
+// checkMessagePerm returns an error if the connection lacks message:send.
 // 域房间只认域角色权限；平台房间 token 显式权限优先，否则回退全局角色。
-func (h *Hub) checkMessagePerm(c ws.ClientMessenger, roomDomainUUID string) string {
+func (h *Hub) checkMessagePerm(c ws.ClientMessenger, roomDomainUUID string) error {
 	claims := c.Claims()
 	if claims == nil {
-		return `{"error":"permission denied"}`
+		return pkg.NewAppError(pkg.FORBIDDEN, "permission denied")
 	}
 	role := claims.Role
 	if role == "" && h.userStore != nil {
@@ -115,17 +111,17 @@ func (h *Hub) checkMessagePerm(c ws.ClientMessenger, roomDomainUUID string) stri
 	}
 	if roomDomainUUID != "" {
 		if h.domainPermChecker == nil || claims.UserUUID == "" {
-			return `{"error":"permission denied"}`
+			return pkg.NewAppError(pkg.FORBIDDEN, "permission denied")
 		}
 		if !h.domainPermChecker(roomDomainUUID, claims.UserUUID, permcode.PermMessageSend) {
-			return `{"error":"permission denied"}`
+			return pkg.NewAppError(pkg.FORBIDDEN, "permission denied")
 		}
-		return ""
+		return nil
 	}
 	if !permissionGranted(claims, role, permcode.PermMessageSend, h.permChecker) {
-		return `{"error":"permission denied"}`
+		return pkg.NewAppError(pkg.FORBIDDEN, "permission denied")
 	}
-	return ""
+	return nil
 }
 
 func messageActorFromConn(c ws.ClientMessenger) (message.Actor, bool) {
@@ -136,95 +132,88 @@ func messageActorFromConn(c ws.ClientMessenger) (message.Actor, bool) {
 	return message.Actor{Identity: identity, UserUUID: c.Claims().UserUUID}, true
 }
 
-// messageErrAck 将服务层错误按 pkg.HandleError 语义脱敏后返回给 WS 客户端，
-// 避免内部 SQL/SFU 实现细节通过 ACK 泄露。
-func messageErrAck(err error) (string, error) {
-	code, msg := pkg.ClientError(err)
-	return marshalAck(map[string]interface{}{"error": msg, "code": code})
-}
-
 // OnMessageSend handles message:send events from clients.
 func (h *Hub) OnMessageSend(c ws.ClientMessenger, data string) (string, error) {
 	if h.msgSvc == nil {
-		return marshalAck(map[string]interface{}{"error": "message service unavailable"})
+		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, "message service unavailable")
 	}
 
 	var req messageSendPayload
 	if err := parseJSON(data, &req); err != nil || req.Room == "" {
-		return marshalAck(map[string]interface{}{"error": "room is required"})
+		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "room is required")
 	}
 
 	actor, ok := messageActorFromConn(c)
 	if !ok {
-		return marshalAck(map[string]interface{}{"error": "unauthorized"})
+		return "", pkg.NewAppError(pkg.FORBIDDEN, "unauthorized")
 	}
 
-	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
-	if ackErr != "" {
-		return ackErr, nil
+	roomUUID, _, roomDomainUUID, err := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
+	if err != nil {
+		return "", err
 	}
-	if ack := h.checkMessagePerm(c, roomDomainUUID); ack != "" {
-		return ack, nil
+	if err := h.checkMessagePerm(c, roomDomainUUID); err != nil {
+		return "", err
 	}
 
 	if _, err := h.msgSvc.Send(roomUUID, actor, req.Content, req.ReplyTo, req.ClientNonce, req.Mentions); err != nil {
-		return messageErrAck(err)
+		return "", err
 	}
-	return marshalAck(map[string]interface{}{"success": true})
+	return "", nil
 }
 
 // OnMessageEdit handles message:edit events from clients.
 func (h *Hub) OnMessageEdit(c ws.ClientMessenger, data string) (string, error) {
 	if h.msgSvc == nil {
-		return marshalAck(map[string]interface{}{"error": "message service unavailable"})
+		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, "message service unavailable")
 	}
 
 	var req messageMutatePayload
 	if err := parseJSON(data, &req); err != nil || req.Room == "" || req.MessageUUID == "" {
-		return marshalAck(map[string]interface{}{"error": "room and message_uuid are required"})
+		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "room and message_uuid are required")
 	}
 
 	actor, ok := messageActorFromConn(c)
 	if !ok {
-		return marshalAck(map[string]interface{}{"error": "unauthorized"})
+		return "", pkg.NewAppError(pkg.FORBIDDEN, "unauthorized")
 	}
 
-	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
-	if ackErr != "" {
-		return ackErr, nil
+	roomUUID, _, roomDomainUUID, err := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
+	if err != nil {
+		return "", err
 	}
-	if ack := h.checkMessagePerm(c, roomDomainUUID); ack != "" {
-		return ack, nil
+	if err := h.checkMessagePerm(c, roomDomainUUID); err != nil {
+		return "", err
 	}
 
 	if _, err := h.msgSvc.Edit(roomUUID, req.MessageUUID, actor, req.Content); err != nil {
-		return messageErrAck(err)
+		return "", err
 	}
-	return marshalAck(map[string]interface{}{"success": true})
+	return "", nil
 }
 
 // OnMessageDelete handles message:delete events from clients.
 func (h *Hub) OnMessageDelete(c ws.ClientMessenger, data string) (string, error) {
 	if h.msgSvc == nil {
-		return marshalAck(map[string]interface{}{"error": "message service unavailable"})
+		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, "message service unavailable")
 	}
 
 	var req messageMutatePayload
 	if err := parseJSON(data, &req); err != nil || req.Room == "" || req.MessageUUID == "" {
-		return marshalAck(map[string]interface{}{"error": "room and message_uuid are required"})
+		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "room and message_uuid are required")
 	}
 
 	actor, ok := messageActorFromConn(c)
 	if !ok {
-		return marshalAck(map[string]interface{}{"error": "unauthorized"})
+		return "", pkg.NewAppError(pkg.FORBIDDEN, "unauthorized")
 	}
 
-	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
-	if ackErr != "" {
-		return ackErr, nil
+	roomUUID, _, roomDomainUUID, err := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
+	if err != nil {
+		return "", err
 	}
-	if ack := h.checkMessagePerm(c, roomDomainUUID); ack != "" {
-		return ack, nil
+	if err := h.checkMessagePerm(c, roomDomainUUID); err != nil {
+		return "", err
 	}
 
 	// 域房间只认域角色 delete_others；平台房间 token 显式权限优先，否则全局角色。
@@ -240,67 +229,67 @@ func (h *Hub) OnMessageDelete(c ws.ClientMessenger, data string) (string, error)
 	}
 
 	if err := h.msgSvc.Delete(roomUUID, req.MessageUUID, actor, canDeleteOthers); err != nil {
-		return messageErrAck(err)
+		return "", err
 	}
-	return marshalAck(map[string]interface{}{"success": true})
+	return "", nil
 }
 
 // OnMessageReact handles message:react events from clients.
 func (h *Hub) OnMessageReact(c ws.ClientMessenger, data string) (string, error) {
 	if h.msgSvc == nil {
-		return marshalAck(map[string]interface{}{"error": "message service unavailable"})
+		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, "message service unavailable")
 	}
 
 	var req messageMutatePayload
 	if err := parseJSON(data, &req); err != nil || req.Room == "" || req.MessageUUID == "" || req.Emoji == "" {
-		return marshalAck(map[string]interface{}{"error": "room, message_uuid, and emoji are required"})
+		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "room, message_uuid, and emoji are required")
 	}
 
 	actor, ok := messageActorFromConn(c)
 	if !ok {
-		return marshalAck(map[string]interface{}{"error": "unauthorized"})
+		return "", pkg.NewAppError(pkg.FORBIDDEN, "unauthorized")
 	}
 
-	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
-	if ackErr != "" {
-		return ackErr, nil
+	roomUUID, _, roomDomainUUID, err := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
+	if err != nil {
+		return "", err
 	}
-	if ack := h.checkMessagePerm(c, roomDomainUUID); ack != "" {
-		return ack, nil
+	if err := h.checkMessagePerm(c, roomDomainUUID); err != nil {
+		return "", err
 	}
 
 	if err := h.msgSvc.React(roomUUID, req.MessageUUID, actor, req.Emoji); err != nil {
-		return messageErrAck(err)
+		return "", err
 	}
-	return marshalAck(map[string]interface{}{"success": true})
+	return "", nil
 }
 
 // OnMessageUnreact handles message:unreact events from clients.
 func (h *Hub) OnMessageUnreact(c ws.ClientMessenger, data string) (string, error) {
 	if h.msgSvc == nil {
-		return marshalAck(map[string]interface{}{"error": "message service unavailable"})
+		return "", pkg.NewAppError(pkg.INTERNAL_ERROR, "message service unavailable")
 	}
 
 	var req messageMutatePayload
 	if err := parseJSON(data, &req); err != nil || req.Room == "" || req.MessageUUID == "" || req.Emoji == "" {
-		return marshalAck(map[string]interface{}{"error": "room, message_uuid, and emoji are required"})
+		return "", pkg.NewAppError(pkg.INVALID_PARAMS, "room, message_uuid, and emoji are required")
 	}
 
 	actor, ok := messageActorFromConn(c)
 	if !ok {
-		return marshalAck(map[string]interface{}{"error": "unauthorized"})
+		return "", pkg.NewAppError(pkg.FORBIDDEN, "unauthorized")
 	}
 
-	roomUUID, _, roomDomainUUID, ackErr := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
-	if ackErr != "" {
-		return ackErr, nil
+	roomUUID, _, roomDomainUUID, err := h.resolveMessageRoom(c, req.Room, req.DomainUUID)
+	if err != nil {
+		return "", err
 	}
-	if ack := h.checkMessagePerm(c, roomDomainUUID); ack != "" {
-		return ack, nil
+	if err := h.checkMessagePerm(c, roomDomainUUID); err != nil {
+		return "", err
 	}
 
 	if err := h.msgSvc.Unreact(roomUUID, req.MessageUUID, actor, req.Emoji); err != nil {
-		return messageErrAck(err)
+		return "", err
 	}
-	return marshalAck(map[string]interface{}{"success": true})
+	return "", nil
 }

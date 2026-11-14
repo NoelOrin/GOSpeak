@@ -5,7 +5,6 @@ import (
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
-	"GOSpeak/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,7 +21,11 @@ func NewMessageHandler(msgSvc *service.MessageService, permSvc *service.Permissi
 }
 
 func messageActorFromContext(c *gin.Context) (service.MessageActor, bool) {
-	username := middleware.CurrentUsername(c)
+	usernameVal, ok := c.Get("username")
+	if !ok {
+		return service.MessageActor{}, false
+	}
+	username, _ := usernameVal.(string)
 	userUUID := currentUserUUID(c)
 	if userUUID == "" {
 		return service.MessageActor{}, false

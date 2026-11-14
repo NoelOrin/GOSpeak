@@ -211,6 +211,11 @@ jobs:
           go-version-file: app/server/go.mod
           cache-dependency-path: app/server/go.sum
           cache: true
+      - name: Protocol gen-diff
+        working-directory: app/server
+        run: |
+          go run ./cmd/gen-protocol
+          git diff --exit-code -- ../web/src/protocol/generated
       - name: Test
         working-directory: app/server
         env:

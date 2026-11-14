@@ -8,10 +8,11 @@ import { EVENTS } from "@/socket/events";
 import { bindServerEvents } from "@/socket/socketEvents";
 import { createProviderReloadHandler } from "@/socket/providerReload";
 import { upsertRoomMembersFromAck } from "@/socket/roomState";
+import { notificationStore } from "@/stores/notificationStore";
 import { createTabLock } from "@/socket/tabLock";
 import type { PrivateMessageDTO } from "@/protocol/conversation";
-import type { AnnouncementDTO } from "@/protocol/announcement";
 import type { MessageDTO } from "@/types/message";
+import { speakingStore } from "@/handler_audio/speakingStore";
 import { useUserStore } from "@/stores/userStore";
 import { useDomainStore } from "@/stores/domainStore";
 import { create } from "zustand";
@@ -22,8 +23,7 @@ import type {
 	RoomPresenceEvent,
 } from "@/socket/types";
 
-// 私聊/文字房/公告事件通过注册回调消费：全局监听一次，由各 store 自行驱动，
-// 避免 socketStore 与业务 store 互相 import 形成环依赖（socketStore 只负责连接）。
+// 私聊事件通过 chatStore 注册回调消费，避免两个 store 模块互相 import 形成环依赖。
 let privateNewHandler: ((dto: PrivateMessageDTO) => void) | null = null;
 export function setPrivateNewHandler(
 	handler: (dto: PrivateMessageDTO) => void,
@@ -31,18 +31,11 @@ export function setPrivateNewHandler(
 	privateNewHandler = handler;
 }
 
+// 文字房消息同样通过回调注册：全局监听一次，用户不在任何文字房时也要能累计未读。
 let messageCreatedHandler: ((dto: MessageDTO) => void) | null = null;
 export function setMessageCreatedHandler(handler: (dto: MessageDTO) => void) {
 	messageCreatedHandler = handler;
 }
-
-let announcementHandler: ((dto: AnnouncementDTO) => void) | null = null;
-export function setAnnouncementHandler(
-	handler: (dto: AnnouncementDTO) => void,
-) {
-	announcementHandler = handler;
-}
-
 export { EVENTS } from "@/socket/events";
 
 export type {
@@ -52,15 +45,7 @@ export type {
 	RoomPresenceEvent,
 } from "@/socket/types";
 
-/** 用户意图：想留在哪个房间。断线重连时由此派生 rejoin，与服务端派生状态分层。 */
-export interface RoomRejoinIntent {
-	room: string;
-	domain_uuid?: string;
-	/** 文字房需完整 re-join；语音房只补信令注册，媒体重建走 voice session 状态机 */
-	kind: "text" | "voice";
-}
-
-export interface SocketState {
+interface SocketState {
 	connected: boolean;
 	connecting: boolean;
 	socketState: WSConnectionState;
@@ -74,16 +59,6 @@ export interface SocketState {
 		expires_at: string | null;
 		reason: string;
 	} | null;
-	/** 发言高亮 identities（signal 聚合 + SFU 原生事件双源写入），事实源在本 store */
-	speakingIdentities: string[];
-	/** 用户意图：想留在的房间；重连时由此派生 rejoin */
-	rejoinIntent: RoomRejoinIntent | null;
-	/** 意外掉线提示 toast id，重连成功后 dismiss */
-	disconnectNoticeId: string | number | null;
-	/** server 事件绑定状态：一次连接生命周期内只绑定一次 */
-	serverEventsBound: boolean;
-	/** 主动断连（登出 / 让出标签页）：true 时不弹掉线提示 */
-	intentionalDisconnect: boolean;
 }
 
 export const useSocketStore = create<SocketState>(() => ({
@@ -96,11 +71,6 @@ export const useSocketStore = create<SocketState>(() => ({
 	activeSFUProvider: undefined,
 	speechRestricted: false,
 	speechRestrictionInfo: null,
-	speakingIdentities: [],
-	rejoinIntent: null,
-	disconnectNoticeId: null,
-	serverEventsBound: false,
-	intentionalDisconnect: false,
 }));
 
 const tabLock = createTabLock({
@@ -115,17 +85,6 @@ const tabLock = createTabLock({
 const handleProviderChanged = createProviderReloadHandler({
 	showToast: toast as (msg: string) => void,
 	preloadSfuClient,
-	canRejoin: () =>
-		!!useUserStore.getState().user && !!useSocketStore.getState().rejoinIntent,
-	attemptRejoin: () => {
-		// 语音会话的完整重建交给挂载中的 voice session（拆旧媒体 + refetch token），
-		// 清掉语音意图避免重连后 connected 钩子再做一次重复的信令注册。
-		const intent = useSocketStore.getState().rejoinIntent;
-		if (intent?.kind === "voice") setRejoinIntent(null);
-		for (const listener of voiceRebuildListeners) listener();
-		connect();
-	},
-	isConnected: () => adapter.isConnected(),
 });
 
 const adapter = createWSClient({
@@ -149,14 +108,9 @@ const setRooms = (updater: RoomInfo[] | ((prev: RoomInfo[]) => RoomInfo[])) =>
 const setCurrentRoom = (
 	room: string | null | ((prev: string | null) => string | null),
 ) =>
-	useSocketStore.setState((prev) => {
-		const next = resolveUpdater(room, prev.currentRoom);
-		return {
-			currentRoom: next,
-			// currentRoom 清空 = 用户不再想留在任何房间，rejoin 意图一并撤销
-			...(next === null ? { rejoinIntent: null } : {}),
-		};
-	});
+	useSocketStore.setState((prev) => ({
+		currentRoom: resolveUpdater(room, prev.currentRoom),
+	}));
 const setSelectedRoomInfo = (
 	info: RoomInfo | null | ((prev: RoomInfo | null) => RoomInfo | null),
 ) =>
@@ -186,12 +140,6 @@ const setSpeechRestrictionInfo = (
 	useSocketStore.setState((prev) => ({
 		speechRestrictionInfo: resolveUpdater(info, prev.speechRestrictionInfo),
 	}));
-const setSpeakingIdentities = (v: string[] | ((prev: string[]) => string[])) =>
-	useSocketStore.setState((prev) => ({
-		speakingIdentities: resolveUpdater(v, prev.speakingIdentities),
-	}));
-const setRejoinIntent = (intent: RoomRejoinIntent | null) =>
-	useSocketStore.setState({ rejoinIntent: intent });
 const setSocketState = (s: WSConnectionState) =>
 	useSocketStore.setState({ socketState: s });
 
@@ -215,18 +163,13 @@ export function selectMembers(state: SocketState): MemberInfo[] {
 	);
 }
 
+let pendingTextRejoin: { room: string; domain_uuid?: string } | null = null;
+/** 信令断线后待重新注册的语音房间（媒体链路独立，通常无需重建） */
+let pendingVoiceRejoin: { room: string; domain_uuid?: string } | null = null;
+
 const activityListeners = new Set<(event: ActivityEvent) => void>();
 const presenceListeners = new Set<(event: RoomPresenceEvent) => void>();
 const kickedListeners = new Set<() => void>();
-/** SFU provider 切换时的 voice session 原地重建回调（useVoiceSession 注册） */
-const voiceRebuildListeners = new Set<() => void>();
-
-export function onVoiceSessionRebuild(cb: () => void): () => void {
-	voiceRebuildListeners.add(cb);
-	return () => {
-		voiceRebuildListeners.delete(cb);
-	};
-}
 
 function emitActivity(event: ActivityEvent) {
 	for (const listener of activityListeners) listener(event);
@@ -251,46 +194,48 @@ adapter.onStateChange((_prev, next) => {
 });
 
 // 断线提示只在「意外掉线」时弹一次，重连成功后清掉，避免抖动刷屏
+let disconnectNoticeId: string | number | null = null;
+let intentionalDisconnect = false;
 
 adapter.onConnected(() => {
 	setConnecting(false);
 	setConnected(true);
 	console.log("[Socket] connected");
-	const noticeId = useSocketStore.getState().disconnectNoticeId;
-	if (noticeId !== null) {
-		toast.dismiss(noticeId);
-		useSocketStore.setState({ disconnectNoticeId: null });
+	if (disconnectNoticeId !== null) {
+		toast.dismiss(disconnectNoticeId);
+		disconnectNoticeId = null;
 		toast.success("已重新连接");
 	}
-	// 重连时的 rejoin 由用户意图（rejoinIntent）派生，而非手工维护的 pending 标志
-	const intent = useSocketStore.getState().rejoinIntent;
-	if (intent?.kind === "text") {
+	if (pendingTextRejoin) {
+		const rejoin = pendingTextRejoin;
+		pendingTextRejoin = null;
 		const identity = useUserStore.getState().user?.name ?? "";
-		void joinRoom(intent.room, identity, undefined, intent.domain_uuid)
+		void joinRoom(rejoin.room, identity, undefined, rejoin.domain_uuid)
 			.then(() => {
-				console.log("[Socket] text room re-joined after reconnect");
+				console.log("[Socket] text room re-joined after worker switch");
 			})
 			.catch((err: unknown) => {
-				// 本轮 rejoin 放弃：清意图，等用户手动进房
-				setRejoinIntent(null);
 				console.warn("[Socket] text room re-join failed:", err);
 			});
 	}
-	// 语音房：只补信令面的注册（媒体链路独立，通常仍连着，不重建会话）。
-	if (intent?.kind === "voice") {
+	// WS 不重放断线期间的事件：连接（含重连）成功后必须拉一次未读数兜底。
+	void notificationStore.loadUnreadCount();
+	// 语音房重连：把信令面的房间注册补回来。
+	// 媒体（LiveKit）是独立链路，通常仍连着，所以这里只补信令，不重建会话。
+	if (pendingVoiceRejoin) {
+		const rejoin = pendingVoiceRejoin;
+		pendingVoiceRejoin = null;
 		const identity = useUserStore.getState().user?.name ?? "";
 		const password = (
 			useSocketStore.getState().selectedRoomInfo as {
 				_password?: string;
 			} | null
 		)?._password;
-		void joinRoom(intent.room, identity, password, intent.domain_uuid)
+		void joinRoom(rejoin.room, identity, password, rejoin.domain_uuid)
 			.then(() => {
 				console.log("[Socket] voice room signal re-registered");
 			})
 			.catch((err: unknown) => {
-				// 语音会话 UI 已随失败关闭：清意图，避免下次重连幽灵重注册
-				setRejoinIntent(null);
 				console.warn("[Socket] voice room re-register failed:", err);
 				toast.error("语音房间连接已断开，请重新进入房间");
 				clearSelectedRoom();
@@ -316,26 +261,33 @@ adapter.onDisconnected((reason: string) => {
 		? state.rooms.find((r) => r.name === prevRoom)
 		: undefined;
 	const wasText = prevRoomMeta?.type === "text";
-	// 临时断线：保留 currentRoom / selectedRoomInfo / rejoinIntent，
-	// 让语音会话继续存活。真要离开房间时由 useVoiceSession 的 teardown 走 resetRoomState()。
+	const wasVoice = !!prevRoom && !wasText;
+	// 临时断线：保留 currentRoom / selectedRoomInfo，让语音会话继续存活。
+	// 真要离开房间时由 useVoiceSession 的 teardown 走 resetRoomState()。
 	resetTransientState();
-	// 掉线时以服务端派生的房间元数据修正意图的 kind（join 时房间可能尚未入列表）
-	if (prevRoom) {
-		setRejoinIntent({
-			room: prevRoom,
-			domain_uuid: prevDomain ?? undefined,
-			kind: wasText ? "text" : "voice",
-		});
-	}
 	// 主动断连（登出 / 让出标签页）不打扰用户，只有意外掉线才提示
-	if (!state.intentionalDisconnect && useUserStore.getState().user) {
-		const noticeId = toast.warning("连接已断开，正在尝试重连…", {
+	if (!intentionalDisconnect && useUserStore.getState().user) {
+		disconnectNoticeId = toast.warning("连接已断开，正在尝试重连…", {
 			duration: Number.POSITIVE_INFINITY,
 		});
-		useSocketStore.setState({ disconnectNoticeId: noticeId });
+	}
+	if (wasText && prevRoom) {
+		pendingTextRejoin = {
+			room: prevRoom,
+			domain_uuid: prevDomain ?? undefined,
+		};
+	}
+	// 语音房记录重连后要重新注册的信令房间（媒体连接若还活着则不用重建）
+	if (wasVoice && prevRoom) {
+		pendingVoiceRejoin = {
+			room: prevRoom,
+			domain_uuid: prevDomain ?? undefined,
+		};
 	}
 	console.log("[Socket] disconnected:", reason);
 });
+
+let serverEventsBound = false;
 
 async function connectWithLock(url: string): Promise<string> {
 	if (adapter.isConnected()) {
@@ -347,7 +299,7 @@ async function connectWithLock(url: string): Promise<string> {
 	if (state.connecting) {
 		throw new Error("socket connection already in progress");
 	}
-	// 源头禁止多标签页连接：Web Locks（降级 BroadcastChannel probe），同一浏览器仅一个活动标签页持有 socket
+	// 源头禁止多标签页连接：BroadcastChannel 探测，同一浏览器仅允许一个活动标签页持有 socket
 	setConnecting(true);
 	const ok = await tabLock.claim();
 	if (!ok) {
@@ -365,8 +317,8 @@ async function connectWithLock(url: string): Promise<string> {
 	}
 	try {
 		adapter.connect(url);
-		if (!useSocketStore.getState().serverEventsBound) {
-			useSocketStore.setState({ serverEventsBound: true });
+		if (!serverEventsBound) {
+			serverEventsBound = true;
 			bindServerEvents(adapter, {
 				setRooms,
 				setCurrentRoom,
@@ -376,7 +328,6 @@ async function connectWithLock(url: string): Promise<string> {
 				setConnected,
 				setSpeechRestricted,
 				setSpeechRestrictionInfo,
-				setSpeakingIdentities,
 				currentRoom,
 				currentDomainUUID,
 				emitActivity,
@@ -387,7 +338,11 @@ async function connectWithLock(url: string): Promise<string> {
 				handleProviderChanged,
 				handlePrivateNew: (dto) => privateNewHandler?.(dto),
 				handleMessageCreated: (dto) => messageCreatedHandler?.(dto),
-				handleAnnouncementNew: (dto) => announcementHandler?.(dto),
+				handleAnnouncementNew: (dto) => notificationStore.handleIncoming(dto),
+				setSpeakingIdentities: (v) =>
+					speakingStore.set(
+						typeof v === "function" ? v(speakingStore.get()) : v,
+					),
 				currentUserName: () => useUserStore.getState().user?.name ?? "",
 				currentUserID: () => useUserStore.getState().user?.id,
 			});
@@ -413,13 +368,13 @@ function connect() {
 }
 
 /** 网络抖动 / 临时断线：只清「服务端派生」状态，保留用户想待的房间意图。
- *  selectedRoomInfo / currentRoom / rejoinIntent 必须保留 —— 它们是"我要在这个房间"的
- *  本地意图，而 SFU 媒体连接与信令是两条独立的链路，信令抖动不该把语音踢掉。 */
+ *  selectedRoomInfo / currentRoom 必须保留 —— 它们是"我要在这个房间"的本地意图，
+ *  而 SFU 媒体连接与信令是两条独立的链路，信令抖动不该把语音踢掉。 */
 function resetTransientState() {
 	useSocketStore.setState({ rooms: [] });
 	setSpeechRestricted(false);
 	setSpeechRestrictionInfo(null);
-	setSpeakingIdentities([]);
+	speakingStore.set([]);
 }
 
 function resetRoomState() {
@@ -430,27 +385,25 @@ function resetRoomState() {
 	setSpeechRestrictionInfo(null);
 	setActiveSFUProvider(undefined);
 	// 断连后旧房间的发言高亮不再有效，清空避免重连/换房时残留误亮。
-	setSpeakingIdentities([]);
+	speakingStore.set([]);
 }
 
 function disconnect() {
-	useSocketStore.setState({ intentionalDisconnect: true });
+	intentionalDisconnect = true;
 	activityListeners.clear();
 	presenceListeners.clear();
 	kickedListeners.clear();
 	adapter.offAllServerEvents();
-	useSocketStore.setState({ serverEventsBound: false });
+	serverEventsBound = false;
 	adapter.disconnect();
 	tabLock.release();
+	notificationStore.reset();
 	setConnecting(false);
 	setConnected(false);
-	const noticeId = useSocketStore.getState().disconnectNoticeId;
-	if (noticeId !== null) {
-		toast.dismiss(noticeId);
-		useSocketStore.setState({ disconnectNoticeId: null });
-	}
+	pendingTextRejoin = null;
+	pendingVoiceRejoin = null;
 	resetRoomState();
-	useSocketStore.setState({ intentionalDisconnect: false });
+	intentionalDisconnect = false;
 }
 
 function createRoom(name: string, password?: string) {
@@ -477,10 +430,9 @@ function signalEmit(
 }
 
 function clearCurrentRoom() {
-	// 离开/被踢/切房退出当前会话：currentRoom 置空同时撤销 rejoin 意图，
-	// 并清空发言态，防止陈旧 identity 残留高亮。
 	setCurrentRoom(null);
-	setSpeakingIdentities([]);
+	// 离开/被踢/切房退出当前会话时清空发言态，防止陈旧 identity 残留高亮。
+	speakingStore.set([]);
 }
 
 function waitForConnected(timeoutMs = 8000): Promise<void> {
@@ -523,24 +475,9 @@ function joinRoom(
 			if (data.error) {
 				throw new Error(data.error);
 			}
-			const resolvedDomain = domain_uuid ?? currentDomainUUID() ?? undefined;
 			setCurrentRoom(data.room);
-			// 记录用户意图：想留在这个房间（断线重连时由此派生 rejoin）。
-			// kind 以本地 rooms 元数据判别，掉线时会再按最新元数据修正。
-			const roomMeta = useSocketStore
-				.getState()
-				.rooms.find(
-					(r) =>
-						r.name === data.room &&
-						(r.domain_uuid || "") === (resolvedDomain || ""),
-				);
-			setRejoinIntent({
-				room: data.room,
-				domain_uuid: resolvedDomain,
-				kind: roomMeta?.type === "text" ? "text" : "voice",
-			});
 			// 切房时旧房发言态已失效；新房发言列表由 join 回放 / SFU 原生事件随后送达。
-			setSpeakingIdentities([]);
+			speakingStore.set([]);
 			return data;
 		});
 }
@@ -691,7 +628,7 @@ if (typeof window !== "undefined") {
 		toast.warning("连接已切换到其他标签页");
 		disconnect();
 	});
-	// 确保监听已建立，能响应他页 probe（Web Locks 模式下为 no-op）
+	// 确保 BroadcastChannel 已建立，能响应 probe
 	tabLock.ensureListening();
 }
 
@@ -719,7 +656,6 @@ export const socketStore = {
 	activeSFUProvider: () => useSocketStore.getState().activeSFUProvider,
 	speechRestricted: () => useSocketStore.getState().speechRestricted,
 	speechRestrictionInfo: () => useSocketStore.getState().speechRestrictionInfo,
-	speakingIdentities: () => useSocketStore.getState().speakingIdentities,
 	connect,
 	disconnect,
 	connectToWorker: (workerUrl: string) => connectWithLock(workerUrl),
@@ -731,7 +667,6 @@ export const socketStore = {
 	onActivity,
 	onPresence,
 	onRoomKicked,
-	onVoiceSessionRebuild,
 	getSocket,
 	onConnected: (cb: () => void) => adapter.onConnected(cb),
 	listRooms,

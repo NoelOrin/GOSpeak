@@ -6,8 +6,6 @@ import {
 	markAnnouncementRead,
 } from "@/api/announcement";
 import type { AnnouncementDTO } from "@/protocol/announcement";
-import { setAnnouncementHandler, socketStore } from "@/stores/socketStore";
-import { useUserStore } from "@/stores/userStore";
 
 interface NotificationState {
 	unreadCount: number;
@@ -88,15 +86,5 @@ export const notificationStore = {
 	markRead,
 	reset,
 };
-
-// socket 事件自行驱动（socketStore 只负责连接，不反向调用本 store）：
-// - 公告推送 → 计入未读并提示
-// - 连接（含重连）成功 → 补拉未读数（WS 不重放断线期间的事件）
-// - 登出 → 清空本地通知状态
-setAnnouncementHandler(handleIncoming);
-socketStore.onConnected(() => void loadUnreadCount());
-useUserStore.subscribe((state) => {
-	if (!state.user) reset();
-});
 
 export default notificationStore;

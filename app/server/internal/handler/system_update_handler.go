@@ -6,8 +6,6 @@ import (
 	"GOSpeak/internal/buildinfo"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
-	"GOSpeak/internal/middleware"
-	"GOSpeak/internal/model"
 )
 
 // SystemUpdateHandler 服务端更新检查（仅 admin）。
@@ -25,12 +23,13 @@ func NewSystemUpdateHandler(svc *service.SystemUpdateService) *SystemUpdateHandl
 // requireAdmin 防御性二次校验，与 HealthStream 保持一致：路由已挂
 // middleware.RequireRole("admin")，此处兜底防止误注册到公开路由泄露版本信息。
 func (h *SystemUpdateHandler) requireAdmin(c *gin.Context) bool {
-	claims := middleware.CurrentUser(c)
-	if claims == nil {
+	roleVal, ok := c.Get("role")
+	if !ok {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return false
 	}
-	if claims.Role != model.RoleAdmin {
+	role, _ := roleVal.(string)
+	if role != "admin" {
 		pkg.Fail(c, pkg.FORBIDDEN)
 		return false
 	}

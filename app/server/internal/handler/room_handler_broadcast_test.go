@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -18,19 +17,12 @@ import (
 	"gorm.io/gorm"
 )
 
-
-type recordedEvent struct {
-	event   string
-	payload interface{}
+type recordingRoomListBroadcaster struct {
+	domains []string
 }
 
-type recordingEventBus struct {
-	events []recordedEvent
-}
-
-func (b *recordingEventBus) PublishInternal(_ context.Context, event string, payload interface{}) error {
-	b.events = append(b.events, recordedEvent{event: event, payload: payload})
-	return nil
+func (r *recordingRoomListBroadcaster) BroadcastRoomList(domainUUID string) {
+	r.domains = append(r.domains, domainUUID)
 }
 
 func TestRoomHandler_Create_BroadcastsRoomList(t *testing.T) {
@@ -62,9 +54,10 @@ func TestRoomHandler_Create_BroadcastsRoomList(t *testing.T) {
 		c.Set("user_uuid", "user-1")
 		c.Next()
 	})
-	broadcaster := &recordingEventBus{}
-	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db), nil)
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc, broadcaster)
+	broadcaster := &recordingRoomListBroadcaster{}
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+	h.SetRoomListBroadcaster(broadcaster)
 	r.POST("/api/v1/room/create", h.Create)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/room/create", strings.NewReader(`{"name":"lobby","domain_uuid":"domain-a"}`))
@@ -79,10 +72,7 @@ func TestRoomHandler_Create_BroadcastsRoomList(t *testing.T) {
 	if code := intCode(resp["code"]); code != 0 {
 		t.Fatalf("expected code 0, got %d: %s", code, resp["msg"])
 	}
-	if len(broadcaster.events) != 1 || broadcaster.events[0].event != service.EventRoomListChanged {
-		t.Fatalf("expected room list changed event, got %v", broadcaster.events)
-	}
-	if broadcaster.events[0].payload.(map[string]string)["domain_uuid"] != "domain-a" {
-		t.Fatalf("expected domain-a payload, got %v", broadcaster.events[0].payload)
+	if len(broadcaster.domains) != 1 || broadcaster.domains[0] != "domain-a" {
+		t.Fatalf("expected room list broadcast for domain-a, got %v", broadcaster.domains)
 	}
 }

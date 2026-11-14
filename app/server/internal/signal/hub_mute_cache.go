@@ -18,17 +18,21 @@ func (h *Hub) muteCacheGet(identity string) (bool, bool) {
 }
 
 func (h *Hub) muteCacheSet(identity string, muted bool) {
-	now := time.Now()
 	h.mu.Lock()
 	if h.muteCache == nil {
 		h.muteCache = make(map[string]muteCacheEntry)
 	}
-	// 惰性清理：写入时顺手淘汰过期条目，无需后台 goroutine。
-	for id, entry := range h.muteCache {
+	h.muteCache[identity] = muteCacheEntry{muted: muted, expires: time.Now().Add(5 * time.Second)}
+	h.mu.Unlock()
+}
+
+func (h *Hub) cleanupExpiredMuteCache() {
+	now := time.Now()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for identity, entry := range h.muteCache {
 		if now.After(entry.expires) {
-			delete(h.muteCache, id)
+			delete(h.muteCache, identity)
 		}
 	}
-	h.muteCache[identity] = muteCacheEntry{muted: muted, expires: now.Add(5 * time.Second)}
-	h.mu.Unlock()
 }

@@ -47,8 +47,15 @@ func (f *failingGetStore) DeleteRoomMembers(ctx context.Context, room string) er
 	return nil
 }
 
+func (f *failingGetStore) PutStream(ctx context.Context, stream, room, identity string) error {
+	return nil
+}
 
+func (f *failingGetStore) GetStream(ctx context.Context, stream string) (string, string, error) {
+	return "", "", nil
+}
 
+func (f *failingGetStore) DeleteStream(ctx context.Context, stream string) error { return nil }
 
 func (f *failingGetStore) ListRoomNames(ctx context.Context) ([]string, error) { return nil, nil }
 

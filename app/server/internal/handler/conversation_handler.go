@@ -3,7 +3,6 @@ package handler
 import (
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
-	"GOSpeak/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,9 +24,14 @@ func (h *ConversationHandler) List(c *gin.Context) {
 		return
 	}
 
-	identity := middleware.CurrentUsername(c)
-	if middleware.CurrentUser(c) == nil {
+	username, exists := c.Get("username")
+	if !exists {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	identity, ok := username.(string)
+	if !ok {
+		pkg.Fail(c, pkg.INTERNAL_ERROR, "invalid context")
 		return
 	}
 
@@ -50,9 +54,14 @@ func (h *ConversationHandler) Messages(c *gin.Context) {
 		return
 	}
 
-	identity := middleware.CurrentUsername(c)
-	if middleware.CurrentUser(c) == nil {
+	username, exists := c.Get("username")
+	if !exists {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	identity, ok := username.(string)
+	if !ok {
+		pkg.Fail(c, pkg.INTERNAL_ERROR, "invalid context")
 		return
 	}
 
@@ -73,9 +82,14 @@ func (h *ConversationHandler) MarkRead(c *gin.Context) {
 		return
 	}
 
-	identity := middleware.CurrentUsername(c)
-	if middleware.CurrentUser(c) == nil {
+	username, exists := c.Get("username")
+	if !exists {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	identity, ok := username.(string)
+	if !ok {
+		pkg.Fail(c, pkg.INTERNAL_ERROR, "invalid context")
 		return
 	}
 
@@ -97,9 +111,14 @@ func (h *ConversationHandler) Send(c *gin.Context) {
 		return
 	}
 
-	identity := middleware.CurrentUsername(c)
-	if middleware.CurrentUser(c) == nil {
+	username, exists := c.Get("username")
+	if !exists {
 		pkg.Fail(c, pkg.INVALID_PARAMS, "not authenticated")
+		return
+	}
+	identity, ok := username.(string)
+	if !ok {
+		pkg.Fail(c, pkg.INTERNAL_ERROR, "invalid context")
 		return
 	}
 

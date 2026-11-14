@@ -27,6 +27,7 @@ const (
 	DomainRoleMember = model.DomainRoleMember
 
 	// EventDomainMembershipChanged 是 Domain 成员变更的 NATS 内部失效事件。
+	EventDomainMembershipChanged = "cache:domain-membership-changed"
 
 	// domainMemberCacheTTL 控制 Worker 从读副本/缓存读取成员关系的最大陈旧窗口。
 	// 踢人/退出/删除等变更会立即发布 NATS 失效，缓存只是分区降级兜底。
@@ -53,17 +54,21 @@ func (s *DomainService) OnMemberAdded(domainUUID, userUUID string) {
 	s.invalidateMembership(domainUUID, userUUID, true)
 }
 
+// SetInviteCreator 注入邀请码创建器。
+func (s *DomainService) SetInviteCreator(svc *InviteService) {
+	s.inviteCreator = svc
+}
+
 type domainMemberCacheEntry struct {
 	ok      bool
 	expires time.Time
 }
 
-func NewDomainService(domainRepo *repository.DomainRepository, roleRepo *repository.DomainRoleRepository, inviteCreator *InviteService) *DomainService {
+func NewDomainService(domainRepo *repository.DomainRepository, roleRepo *repository.DomainRoleRepository) *DomainService {
 	return &DomainService{
-		inviteCreator: inviteCreator,
-		domainRepo:    domainRepo,
-		roleRepo:      roleRepo,
-		memberCache:   make(map[string]domainMemberCacheEntry),
+		domainRepo:  domainRepo,
+		roleRepo:    roleRepo,
+		memberCache: make(map[string]domainMemberCacheEntry),
 	}
 }
 
