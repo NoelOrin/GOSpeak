@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [release, dev]
   push:
-    branches: [release, dev, dev-1108]
+    branches: [release, dev, dev-1108, dev-1114]
   workflow_dispatch:
     inputs:
       run_tests:
