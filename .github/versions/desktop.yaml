@@ -12,22 +12,15 @@
 #   app/desktop/package.json 的 version
 #   app/desktop/mygo.config.ts 的 version（决定安装包文件名）
 # 两者都必须与本文件一致。
-version: "1.0.1"
+version: "1.0.2"
 
 # 本次发版说明：优先作为 GitHub Release 的 release notes（块标量 | 多行）。
 # 留空时以最近的 gospeak-desktop-v* tag 为基线按 commit 生成
 # （首个桌面版本无基线，会使用简短默认说明）。
 notes: |
-  GOSpeak Desktop 1.0.1 —— 原生覆盖层渲染与稳定性加固。
+  GOSpeak Desktop 1.0.2 —— 内嵌前端随 1.0.2 全量更新（桌面宿主本身无变更）。
 
-  ## 新增
-  - 游戏内覆盖层改用 mygo 原生 Panel 渲染，不再依赖全屏检测
-  - 覆盖层按显示器分辨率自适应缩放，头像异步加载并缓存
-  - 显示策略改为「离开 GOSpeak 时显示」，并保留始终显示 / 手动模式
-  - 覆盖层设置页与托盘入口
-
-  ## 修复
-  - 加固本地回环代理：限制 worker 主机并发、阻断 cookie 泄漏
-  - 登录前校验服务器 URL，限制调试模式自动退出
-  - 固定更新比较所用的版本来源（mygo packageVersion），避免反复提示同一版本
-  - 稳定覆盖层接力的启动与生命周期
+  ## 随前端更新
+  - WS 协议切换到单一事实源生成类型，payload 字段统一 snake_case
+  - 覆盖层成员快照链路适配新 MemberInfo 结构（display_name / is_mic_muted）
+  - 加载骨架屏、列表缺字段兜底等前端修复一并生效

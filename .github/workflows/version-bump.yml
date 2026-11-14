@@ -39,7 +39,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       released: ${{ steps.gate.outputs.released }}
-      tag: ${{ steps.gate.outputs.tag }}
+      server_tag: ${{ steps.gate.outputs.server_tag }}
+      desktop_tag: ${{ steps.gate.outputs.desktop_tag }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -102,24 +103,29 @@ jobs:
         env:
           SERVER_VERSION: ${{ steps.versions.outputs.server }}
           SERVER_EXISTS: ${{ steps.tags.outputs.server_exists }}
+          DESKTOP_VERSION: ${{ steps.versions.outputs.desktop }}
           DESKTOP_EXISTS: ${{ steps.tags.outputs.desktop_exists }}
         run: |
           set -euo pipefail
-          # 服务端优先作为发布入口；只有桌面端需要发版时也单独发一次。
-          if [ "$SERVER_EXISTS" = "false" ]; then
-            tag="$(node scripts/release-naming.mjs tag server "$SERVER_VERSION")"
+          # 同步发版：任一组件的声明版本未发布，则两个组件一起发。
+          # 未发布的组件输出对应 tag（缺省为空），发布编排按 tag 逐一调用。
+          if [ "$SERVER_EXISTS" = "false" ] || [ "$DESKTOP_EXISTS" = "false" ]; then
             echo "released=true" >> "$GITHUB_OUTPUT"
-            echo "tag=$tag" >> "$GITHUB_OUTPUT"
-            echo "::notice::服务端 ${SERVER_VERSION} 未发布，将创建 ${tag} 并触发发布"
-          elif [ "$DESKTOP_EXISTS" = "false" ]; then
-            tag="$(node scripts/release-naming.mjs tag desktop "$DESKTOP_VERSION")"
-            echo "released=true" >> "$GITHUB_OUTPUT"
-            echo "tag=$tag" >> "$GITHUB_OUTPUT"
-            echo "::notice::桌面端 ${DESKTOP_VERSION} 未发布，将创建 ${tag} 并触发发布"
           else
             echo "released=false" >> "$GITHUB_OUTPUT"
-            echo "tag=" >> "$GITHUB_OUTPUT"
             echo "::notice::两个组件版本均未变化，本次不发布"
+          fi
+          if [ "$SERVER_EXISTS" = "false" ]; then
+            echo "server_tag=$(node scripts/release-naming.mjs tag server "$SERVER_VERSION")" >> "$GITHUB_OUTPUT"
+            echo "::notice::服务端 ${SERVER_VERSION} 将随本次同步发布"
+          else
+            echo "server_tag=" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$DESKTOP_EXISTS" = "false" ]; then
+            echo "desktop_tag=$(node scripts/release-naming.mjs tag desktop "$DESKTOP_VERSION")" >> "$GITHUB_OUTPUT"
+            echo "::notice::桌面端 ${DESKTOP_VERSION} 将随本次同步发布"
+          else
+            echo "desktop_tag=" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Tag server release if version changed
@@ -181,24 +187,34 @@ jobs:
   # 直接调用 release.yml / docker.yml，而不是等 tag push 派生 workflow ——
   # GITHUB_TOKEN 推送的 tag 不会触发 downstream workflow（docker.yml 的
   # on: push: tags 对 bot tag 永远不触发，镜像发布必须在这里显式调用）。
-  release:
-    name: Publish release
+  release-server:
+    name: Publish server release
     needs: [bump-tags]
-    if: needs.bump-tags.outputs.released == 'true'
+    if: needs.bump-tags.outputs.released == 'true' && needs.bump-tags.outputs.server_tag != ''
     permissions:
       contents: write
     uses: ./.github/workflows/release.yml
     with:
-      tag: ${{ needs.bump-tags.outputs.tag }}
+      tag: ${{ needs.bump-tags.outputs.server_tag }}
+
+  release-desktop:
+    name: Publish desktop release
+    needs: [bump-tags]
+    if: needs.bump-tags.outputs.released == 'true' && needs.bump-tags.outputs.desktop_tag != ''
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.bump-tags.outputs.desktop_tag }}
 
   docker:
     name: Publish image
     needs: [bump-tags]
-    if: needs.bump-tags.outputs.released == 'true'
+    if: needs.bump-tags.outputs.released == 'true' && needs.bump-tags.outputs.server_tag != ''
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/docker.yml
     with:
-      release_tag: ${{ needs.bump-tags.outputs.tag }}
+      release_tag: ${{ needs.bump-tags.outputs.server_tag }}
 

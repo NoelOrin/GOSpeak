@@ -18,7 +18,7 @@ export default defineConfig({
 	name: "GOSpeak",
 	// Release version: names the .app / dmg / installer artifacts. Keep in sync
 	// with .github/versions/desktop.yaml (release CI overrides via -ldflags too).
-	version: "1.0.1",
+	version: "1.0.2",
 	// Reverse-DNS bundle identifier used for the packaged app / auto-update.
 	identifier: "dev.gospeak.desktop",
 	// 深链协议：gospeak://invite/d/<CODE> 由打包注册（CFBundleURLTypes / 安装器
