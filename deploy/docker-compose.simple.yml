@@ -25,10 +25,8 @@ services:
   # ── 应用（内置前端 SPA + Go API）──────────────────────────────────────────
   gospeak:
     restart: unless-stopped
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    image: ${GOSPEAK_IMAGE:-gospeak:latest}
+    # 直接使用 GHCR 发布镜像（免构建）；自建镜像时用 GOSPEAK_IMAGE 覆盖
+    image: ${GOSPEAK_IMAGE:-ghcr.io/noelorin/gospeak:latest}
     pull_policy: ${GOSPEAK_PULL_POLICY:-missing}
     container_name: gospeak-app
     # 唯一配置来源：deploy/.env（compose 插值与应用 env 共用）
