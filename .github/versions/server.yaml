@@ -10,26 +10,28 @@
 #
 # 同步约束（release.yml 的 version-check 会校验）：根 VERSION 与根 package.json
 # 的 version 必须与本文件一致。
-version: "1.0.1"
+version: "1.0.2"
 
 # 本次发版说明：优先作为 GitHub Release 的 release notes（块标量 | 多行）。
 # 留空时由 scripts/build-changelog.mjs 按 conventional commits 生成，
 # 基线只取本组件的历史 tag。
 notes: |
-  GOSpeak 1.0.1 —— 桌面覆盖层原生渲染、加载骨架屏与安全加固。
+  GOSpeak 1.0.2 —— 事件协议单一来源、架构清理与命名约定统一。
 
   ## 新增
-  - 游戏内覆盖层改用 mygo 原生 Panel 渲染，按显示器分辨率自适应缩放，
-    显示策略改为「离开 GOSpeak 时显示」，支持始终显示与手动模式
-  - 统一加载骨架屏体系：Skeleton 原语 + LoadingRegion/SkeletonListRows 组合件，
-    覆盖消息、会话、域列表、成员、邀请、监控指标卡等主要加载态
-  - 工作区文字频道面板重构：全屏视图、会话内搜索、输入区交互改进
+  - WS 事件协议单一事实源：internal/protocol 统一声明事件名/方向/ACK/payload，
+    生成器产出前端类型，内存比对 + pre-push + CI 三道防线防漂移
+  - WS payload 全量结构化（房间/成员/消息/私聊/公告/内部事件），字段统一 snake_case
+  - 新增简化版 docker compose（app + LiveKit 单机部署）
+  - 文档全量对齐：权限种子、事件表、API 参考、配置变量
 
   ## 修复
-  - WS 策略守卫改为 fail-closed，并在断连前投递 ACK，避免静默丢消息
-  - 内嵌 NATS 初始化传入持久化 StoreDir，重启不再丢失 JWT 密钥与 Token 黑名单
-  - 服务端更新检查对限流结果做负缓存，版本说明按 rune 截断
-  - 加固桌面端回环代理：限制 worker 主机、阻断 cookie 泄漏
-  - 校验服务器 URL、限制调试自动退出、修正更新版本比较
-  - 稳定覆盖层接力的启动与生命周期，避免启动期 unhandled rejection
-  - 分享链接入口并入发现页，移除侧栏重复入口
+  - 私聊推送 payload 双重序列化导致前端收不到对象的缺陷
+  - 列表类 API 响应缺字段时前端兜底默认值，不再白屏
+  - 集成测试稳定性：SQLite 并发写竞态（WAL）与权限断言修正
+
+  ## 重构（无行为变更）
+  - 架构清理：鉴权读取统一 accessor、SFU 能力收敛主接口、
+    service→signal 事件化、死流索引子系统删除、Unit-of-Work 消除 gorm 直穿、
+    Set 后置装配收敛为构造参数
+  - 数据兼容路径全量退役（明文密码迁移/legacy KV 映射/JTI 兜底/Identity 假字段）
