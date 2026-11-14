@@ -3,7 +3,7 @@
 > 唯一权威部署入口。  
 > 入口文件：`deploy/docker-compose.yml`  
 > 配置文件：`deploy/.env`（唯一配置文件，compose 插值与应用环境变量共用）  
-> 镜像：仓库根 `Dockerfile`（Go API + 前端 SPA）
+> 镜像：默认拉取 GHCR 发布镜像 `ghcr.io/noelorin/gospeak:latest`（免构建，可用 `GOSPEAK_IMAGE` 换版本）；要自建时用仓库根 `Dockerfile`（Go API + 前端 SPA），构建命令见 `docker-compose.yml` 内注释
 
 核心结论先放在前面：
 
@@ -18,10 +18,10 @@
 ```bash
 cd deploy
 ./init.sh --domain voice.example.com        # 生成 deploy/.env，写入域名并自动启用 edge
-docker compose up -d --build                # 启动，档位由 .env 的 COMPOSE_PROFILES 决定
+docker compose up -d                # 启动，档位由 .env 的 COMPOSE_PROFILES 决定
 ```
 
-`./init.sh --domain voice.example.com` 会写入域名并自动把 `edge` 加进 `COMPOSE_PROFILES`（已有 `app,livekit` 时追加为 `app,livekit,edge`）。跑完直接 `docker compose up -d --build` 即可，无需手改档位。
+`./init.sh --domain voice.example.com` 会写入域名并自动把 `edge` 加进 `COMPOSE_PROFILES`（已有 `app,livekit` 时追加为 `app,livekit,edge`）。跑完直接 `docker compose up -d` 即可，无需手改档位。
 
 `edge` 就是内置 Caddy。填了 `GOSPEAK_DOMAIN` 后它自动申请 Let's Encrypt 证书，把 80 重定向到 443，浏览器打开 `https://voice.example.com` 即可。
 
@@ -57,7 +57,7 @@ cd deploy
 
 # 在仓库根目录执行（注意 -f 路径）
 cd ..
-docker compose -f deploy/docker-compose.simple.yml up -d --build
+docker compose -f deploy/docker-compose.simple.yml up -d
 docker compose -f deploy/docker-compose.simple.yml logs -f gospeak
 ```
 
@@ -83,7 +83,7 @@ docker compose -f deploy/docker-compose.simple.yml logs -f gospeak
 ```bash
 cd deploy
 ./init.sh --domain voice.example.com   # 自动写入域名并把 edge 追加进 COMPOSE_PROFILES
-docker compose up -d --build
+docker compose up -d
 ```
 
 跑完 `deploy/.env` 里就是：
@@ -104,7 +104,7 @@ GOSPEAK_DOMAIN=voice.example.com
 ```bash
 cd deploy
 ./init.sh                      # 不传 --domain，edge 不会被加进来
-docker compose up -d --build
+docker compose up -d
 ```
 
 此时 `deploy/.env` 里保持：
@@ -258,7 +258,7 @@ curl -sI https://voice.example.com | head -1
 ```bash
 git pull
 cd deploy
-docker compose up -d --build
+docker compose up -d
 ```
 
 数据库表结构启动时自动迁移。升级前先备份。

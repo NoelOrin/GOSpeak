@@ -23,19 +23,15 @@ x-restart: &restart
 services:
   # ── 应用 ──────────────────────────────────────────────────────────────
   # 默认本地构建；也可直接用 release tag 发布的 GHCR 镜像（免构建）：
-  #   GOSPEAK_IMAGE=ghcr.io/<owner>/gospeak:latest  # 或具体版本如 :1.2.3
+  #   GOSPEAK_IMAGE=ghcr.io/noelorin/gospeak:latest  # 或具体版本如 :1.2.3
   gospeak:
     <<: *restart
     profiles: ["app"]
-    build:
-      context: ..
-      dockerfile: Dockerfile
-      # 注入 buildinfo.Version/Commit：不传时镜像恒为 dev/unknown，
-      # 系统更新检查的 compareVersion 永远返回 0，永远报不出 available。
-      args:
-        VERSION: ${VERSION:-dev}
-        COMMIT: ${COMMIT:-unknown}
-    image: ${GOSPEAK_IMAGE:-gospeak:latest}
+    # 默认使用 GHCR 发布镜像（免构建）；要本地构建时在 .env 设
+    # GOSPEAK_IMAGE=gospeak:local 并执行：
+    #   docker build --build-arg VERSION=$(cat VERSION) --build-arg COMMIT=$(git rev-parse --short HEAD) -t gospeak:local .
+    # （不注入 buildinfo.Version/Commit 时镜像内恒为 dev/unknown，更新检查永远报不出新版本）
+    image: ${GOSPEAK_IMAGE:-ghcr.io/noelorin/gospeak:latest}
     pull_policy: ${GOSPEAK_PULL_POLICY:-missing}
     container_name: gospeak-app
     # 唯一配置来源: deploy/.env（compose 插值与应用 env 共用）
