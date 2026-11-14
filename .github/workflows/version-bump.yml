@@ -178,8 +178,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ── 发布编排 ────────────────────────────────────────────────────────────
-  # 直接调用 release.yml，而不是等 tag push 派生 workflow —— GITHUB_TOKEN
-  # 推送的 tag 不会触发 downstream workflow。
+  # 直接调用 release.yml / docker.yml，而不是等 tag push 派生 workflow ——
+  # GITHUB_TOKEN 推送的 tag 不会触发 downstream workflow（docker.yml 的
+  # on: push: tags 对 bot tag 永远不触发，镜像发布必须在这里显式调用）。
   release:
     name: Publish release
     needs: [bump-tags]
@@ -189,3 +190,15 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.bump-tags.outputs.tag }}
+
+  docker:
+    name: Publish image
+    needs: [bump-tags]
+    if: needs.bump-tags.outputs.released == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker.yml
+    with:
+      release_tag: ${{ needs.bump-tags.outputs.tag }}
+

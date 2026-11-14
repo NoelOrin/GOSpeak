@@ -10,18 +10,29 @@ on:
   push:
     tags: ["gospeak-server-v*"]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "发布模式：填 gospeak-server-v* tag（如 gospeak-server-v1.0.2）；留空 = 仅构建验证"
+        required: false
+        default: ""
+  workflow_call:
+    inputs:
+      release_tag:
+        description: "gospeak-server-v* tag，由 version-bump 在打 tag 后传入"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: docker-${{ github.ref }}
+  group: docker-${{ github.event_name == 'workflow_call' && inputs.release_tag || github.ref }}
   cancel-in-progress: true
 
 jobs:
   verify:
     name: Build Image
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.release_tag == '')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -43,16 +54,35 @@ jobs:
 
   publish:
     name: Publish Image
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/gospeak-server-v')
+    # tag push 直接触发；workflow_call 由 version-bump 在 bot 打 tag 后显式调用
+    # （GITHUB_TOKEN 推送的 tag 不会派生本 workflow，见 version-bump.yml 头部说明）。
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/gospeak-server-v')) ||
+      (github.event_name == 'workflow_call' && startsWith(inputs.release_tag, 'gospeak-server-v')) ||
+      (github.event_name == 'workflow_dispatch' && startsWith(inputs.release_tag, 'gospeak-server-v'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
+      - name: Resolve release ref
+        id: ref
+        # tag push 用触发 ref；call/dispatch 用显式输入的 tag 名。
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+            echo "sha=" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.ref.outputs.tag }}
       - name: Check release version
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ steps.ref.outputs.tag }}
         run: node scripts/check-version.mjs . "$RELEASE_TAG" server
       - name: Resolve image version
         id: version
@@ -60,7 +90,7 @@ jobs:
         # 因此走 release-naming.mjs 解析而不是字符串裁剪。
         run: |
           set -euo pipefail
-          parsed="$(node scripts/release-naming.mjs parse "$GITHUB_REF_NAME")"
+          parsed="$(node scripts/release-naming.mjs parse "${{ steps.ref.outputs.tag }}")"
           echo "version=${parsed##* }" >> "$GITHUB_OUTPUT"
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -94,4 +124,4 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
-            COMMIT=${{ github.sha }}
+            COMMIT=${{ steps.ref.outputs.sha }}
