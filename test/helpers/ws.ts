@@ -71,9 +71,9 @@ export class TestWSClient {
 				return;
 			}
 			if (msg.id != null && this.pending.has(msg.id)) {
-				const entry = this.pending.get(msg.id)!;
+				const entry = this.pending.get(msg.id);
 				this.pending.delete(msg.id);
-				entry.resolve(normalizeAck(msg));
+				if (entry) entry.resolve(normalizeAck(msg));
 				return;
 			}
 			if (typeof msg.event === "string" && msg.id == null) {

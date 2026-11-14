@@ -32,7 +32,7 @@ describe("storage module", () => {
 		);
 		expect(presigned.code).toBe(0);
 		expect(presigned.data?.provider_type).toBe("local");
-		const objectKey = presigned.data!.object_key;
+		const objectKey = presigned.data?.object_key;
 		expect(objectKey).toContain(user.user.uuid);
 
 		const form = new FormData();
@@ -54,7 +54,7 @@ describe("storage module", () => {
 
 		// public_url 必须真的可访问：本地存储落盘目录与 /uploads 静态服务必须同源，
 		// 否则上传成功但访问 404（STORAGE_LOCAL_DIR 与路由目录错位即触发）。
-		const publicURL = uploaded.data!.public_url;
+		const publicURL = uploaded.data?.public_url;
 		const fetched = await fetch(`${getBaseURL()}${publicURL}`);
 		expect(fetched.status).toBe(200);
 		expect(await fetched.text()).toBe("integration");
