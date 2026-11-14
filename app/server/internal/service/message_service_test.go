@@ -108,8 +108,7 @@ type userRepoCallCount struct {
 
 func newTestMessageService(t *testing.T) *MessageService {
 	t.Helper()
-	svc := NewMessageService(nil, nil, nil)
-	svc.SetUserRepo(&testUserRepo{
+	svc := NewMessageService(nil, nil, nil, &testUserRepo{
 		users: map[string]*model.User{
 			"alice": {Name: "alice", DisplayName: "Alice"},
 			"bob":   {Name: "bob", DisplayName: "Bob"},
@@ -220,7 +219,7 @@ func setupMessageServiceTest(t *testing.T) (*MessageService, *fakeBus, *fakeQueu
 	bus := &fakeBus{}
 	queue := &fakeQueue{}
 
-	svc := NewMessageService(msgRepo, roomRepo, allowAllDomainMembers{})
+	svc := NewMessageService(msgRepo, roomRepo, allowAllDomainMembers{}, nil)
 	// Do NOT set bus/queue by default — tests that need them wire them explicitly.
 	// Default mode is sync-persist so chained operations (Send→Edit, Send→Delete)
 	// find messages in DB.
@@ -258,7 +257,7 @@ func setupRestrictedMessageServiceTest(t *testing.T, members map[string]bool) (*
 	}
 	msgRepo := repository.NewMessageRepository(db)
 	roomRepo := newMemRoomRepo()
-	svc := NewMessageService(msgRepo, roomRepo, fakeDomainChecker{members: members})
+	svc := NewMessageService(msgRepo, roomRepo, fakeDomainChecker{members: members}, nil)
 	var textUUID string
 	for uuid, r := range roomRepo.rooms {
 		if r.Type == model.RoomTypeText {
@@ -311,11 +310,11 @@ func TestEnrichAuthorInfo_Batch(t *testing.T) {
 func TestMessageService_Send_BroadcastCarriesAuthorInfo(t *testing.T) {
 	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
 	t.Cleanup(func() { bus.reset(); queue.reset() })
-	svc.SetUserRepo(&testUserRepo{
+	svc.userRepo = &testUserRepo{
 		users: map[string]*model.User{
 			"alice": {Name: "alice", DisplayName: "Alice", Avatar: "/uploads/alice.png"},
 		},
-	})
+	}
 	svc.SetEventBus(bus)
 	svc.SetJobQueue(queue)
 
@@ -340,11 +339,11 @@ func TestMessageService_Send_BroadcastCarriesAuthorInfo(t *testing.T) {
 func TestMessageService_Edit_BroadcastCarriesAuthorInfo(t *testing.T) {
 	svc, bus, queue, _, textUUID := setupMessageServiceTest(t)
 	t.Cleanup(func() { bus.reset(); queue.reset() })
-	svc.SetUserRepo(&testUserRepo{
+	svc.userRepo = &testUserRepo{
 		users: map[string]*model.User{
 			"alice": {Name: "alice", DisplayName: "Alice", Avatar: "/uploads/alice.png"},
 		},
-	})
+	}
 
 	dto, err := svc.Send(textUUID, testActorWithUUID("alice", "uuid-alice"), "original", "", "", nil)
 	assertNoError(t, err)

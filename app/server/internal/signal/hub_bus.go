@@ -1,8 +1,8 @@
 package signal
 
 import (
+	"GOSpeak/internal/logger"
 	"context"
-	"log"
 )
 
 func (h *Hub) SetEventBus(b eventBus) {
@@ -29,7 +29,7 @@ func (h *Hub) publishRoom(room, event string, data interface{}) {
 	// 下面的 BroadcastToRoom 直调仅在 eventBus 为 nil 时使用（仅测试机的裸 WS 路径）。
 	if h.eventBus != nil {
 		if err := h.eventBus.PublishRoom(context.Background(), room, event, data); err != nil {
-			log.Printf("[Signal] eventbus publish room %s %s: %v", room, event, err)
+			logger.WithComponent("Signal").Infof("[Signal] eventbus publish room %s %s: %v", room, event, err)
 		}
 		return
 	}
@@ -41,7 +41,7 @@ func (h *Hub) publishRoom(room, event string, data interface{}) {
 func (h *Hub) publishNamespace(event string, data interface{}) {
 	if h.eventBus != nil {
 		if err := h.eventBus.PublishNamespace(context.Background(), event, data); err != nil {
-			log.Printf("[Signal] eventbus publish ns %s: %v", event, err)
+			logger.WithComponent("Signal").Infof("[Signal] eventbus publish ns %s: %v", event, err)
 		}
 		return
 	}

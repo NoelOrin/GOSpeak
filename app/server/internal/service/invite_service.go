@@ -8,6 +8,7 @@ import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
+	"GOSpeak/internal/logger"
 
 	"gorm.io/gorm"
 )
@@ -21,7 +22,6 @@ type InviteValidation struct {
 
 // InviteService 管理域邀请码的创建、校验、消耗与禁用。
 type InviteService struct {
-	db         *gorm.DB
 	inviteRepo *repository.DomainInviteRepository
 	domainRepo *repository.DomainRepository
 	key        []byte
@@ -29,7 +29,6 @@ type InviteService struct {
 
 // NewInviteService 构造 InviteService。storageEncryptKey 为空时回退 jwtKey 并打 warn。
 func NewInviteService(
-	db *gorm.DB,
 	inviteRepo *repository.DomainInviteRepository,
 	domainRepo *repository.DomainRepository,
 	storageEncryptKey, jwtKey string,
@@ -38,7 +37,6 @@ func NewInviteService(
 		log.Printf("[invite] STORAGE_ENCRYPT_KEY is empty; falling back to JWT_KEY for invite signing")
 	}
 	return &InviteService{
-		db:         db,
 		inviteRepo: inviteRepo,
 		domainRepo: domainRepo,
 		key:        DeriveInviteKey(storageEncryptKey, jwtKey),
@@ -162,10 +160,12 @@ func (s *InviteService) Consume(raw, userUUID string, recordSuccess bool) (*mode
 			reason = model.InviteFailDisabled
 		}
 		// 失败记录独立事务写入，避免随主流程回滚而丢失审计。
-		_ = s.inviteRepo.CreateRedemption(&model.DomainInviteRedemption{
+		if err := s.inviteRepo.CreateRedemption(&model.DomainInviteRedemption{
 			InviteID: invite.ID, DomainUUID: invite.DomainUUID, UserUUID: userUUID,
 			Code: invite.Code, Success: false, FailReason: reason,
-		})
+		}); err != nil {
+			logger.WithComponent("Invite").WithError(err).Warn("record invite redemption failure")
+		}
 		return nil, pkg.NewAppError(pkg.INVALID_PARAMS, "invite code is no longer usable")
 	}
 

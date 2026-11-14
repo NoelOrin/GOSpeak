@@ -84,6 +84,30 @@ var payloadStructs = map[string]bool{
 	"MemberInfo":  true,
 	"RoomInfo":    true,
 	"MuteInfo":    true,
+
+	"PermissionsInvalidatedPayload":     true,
+	"MuteChangedPayload":                true,
+	"MuteExpiredPayload":                true,
+	"DomainMembershipChangedPayload":    true,
+	"DomainMemberAddedPayload":          true,
+	"RoomListChangedPayload":            true,
+
+	"MemberLeftPayload":          true,
+	"MemberUpdatedPayload":       true,
+	"RoomActiveSpeakersPayload":  true,
+	"TypingPayload":              true,
+	"RoomListResultPayload":      true,
+	"RoomKickedPayload":          true,
+	"RoomLeftPayload":            true,
+	"MemberMutedStatePayload":    true,
+	"SFUProviderChangedPayload":  true,
+
+	"MessageDTO":             true,
+	"MessageReactionPayload": true,
+	"MessageSendPayload":     true,
+	"MessageMutatePayload":   true,
+	"PrivateSendPayload":     true,
+	"AnnouncementPayload":    true,
 }
 
 // eventConsts 供测试校验 Catalog 与常量一致；登记全部事件名常量。
@@ -137,6 +161,13 @@ var eventConsts = map[string]string{
 	EventPrivateNew:  EventPrivateNew,
 
 	EventAnnouncementNew: EventAnnouncementNew,
+
+	EventPermissionsInvalidated:    EventPermissionsInvalidated,
+	EventMuteChanged:               EventMuteChanged,
+	EventDomainMembershipChanged:   EventDomainMembershipChanged,
+	EventMuteExpired:               EventMuteExpired,
+	EventDomainMemberAdded:         EventDomainMemberAdded,
+	EventRoomListChanged:           EventRoomListChanged,
 }
 
 // Catalog 是全部事件的权威目录。Ack 标志与 signal/hub.go SetupFanout 的
@@ -152,42 +183,50 @@ var Catalog = []Event{
 	{Name: EventRoomJoinSFU, Dir: DirClientToServer, Ack: true},
 
 	{Name: EventRoomCreated, Dir: DirServerToClient},
-	{Name: EventRoomLeft, Dir: DirServerToClient},
+	{Name: EventRoomLeft, Dir: DirServerToClient, Payload: "RoomLeftPayload"},
 	{Name: EventRoomUpdated, Dir: DirServerToClient, Payload: "RoomInfo"},
 	{Name: EventMemberJoined, Dir: DirServerToClient, Payload: "MemberInfo"},
-	{Name: EventMemberLeft, Dir: DirServerToClient},
-	{Name: EventMemberUpdated, Dir: DirServerToClient},
-	{Name: EventRoomListResult, Dir: DirServerToClient},
+	{Name: EventMemberLeft, Dir: DirServerToClient, Payload: "MemberLeftPayload"},
+	{Name: EventMemberUpdated, Dir: DirServerToClient, Payload: "MemberUpdatedPayload"},
+	{Name: EventRoomListResult, Dir: DirServerToClient, Payload: "RoomListResultPayload"},
 
 	{Name: EventMemberMicState, Dir: DirClientToServer},
 	{Name: EventRoomKick, Dir: DirClientToServer},
-	{Name: EventRoomKicked, Dir: DirServerToClient},
+	{Name: EventRoomKicked, Dir: DirServerToClient, Payload: "RoomKickedPayload"},
 
 	{Name: EventMemberSpeaking, Dir: DirClientToServer},
-	{Name: EventRoomActiveSpeakers, Dir: DirServerToClient},
-	{Name: EventTyping, Dir: DirBoth},
+	{Name: EventRoomActiveSpeakers, Dir: DirServerToClient, Payload: "RoomActiveSpeakersPayload"},
+	{Name: EventTyping, Dir: DirBoth, Payload: "TypingPayload"},
 
 	{Name: EventUserMuted, Dir: DirServerToClient, Payload: "MuteInfo"},
 	{Name: EventUserUnmuted, Dir: DirServerToClient, Payload: "MuteInfo"},
-	{Name: EventMemberMuted, Dir: DirServerToClient},
-	{Name: EventMemberUnmuted, Dir: DirServerToClient},
+	{Name: EventMemberMuted, Dir: DirServerToClient, Payload: "MemberMutedStatePayload"},
+	{Name: EventMemberUnmuted, Dir: DirServerToClient, Payload: "MemberMutedStatePayload"},
 
-	{Name: EventSFUProviderChanged, Dir: DirServerToClient},
+	{Name: EventSFUProviderChanged, Dir: DirServerToClient, Payload: "SFUProviderChangedPayload"},
 
-	{Name: EventMessageSend, Dir: DirClientToServer, Ack: true},
-	{Name: EventMessageEdit, Dir: DirClientToServer, Ack: true},
-	{Name: EventMessageDelete, Dir: DirClientToServer, Ack: true},
-	{Name: EventMessageReact, Dir: DirClientToServer, Ack: true},
-	{Name: EventMessageUnreact, Dir: DirClientToServer, Ack: true},
-	{Name: EventMessageCreated, Dir: DirServerToClient},
-	{Name: EventMessageUpdated, Dir: DirServerToClient},
-	{Name: EventMessageDeleted, Dir: DirServerToClient},
-	{Name: EventMessageReaction, Dir: DirServerToClient},
+	{Name: EventMessageSend, Dir: DirClientToServer, Ack: true, Payload: "MessageSendPayload"},
+	{Name: EventMessageEdit, Dir: DirClientToServer, Ack: true, Payload: "MessageMutatePayload"},
+	{Name: EventMessageDelete, Dir: DirClientToServer, Ack: true, Payload: "MessageMutatePayload"},
+	{Name: EventMessageReact, Dir: DirClientToServer, Ack: true, Payload: "MessageMutatePayload"},
+	{Name: EventMessageUnreact, Dir: DirClientToServer, Ack: true, Payload: "MessageMutatePayload"},
+	{Name: EventMessageCreated, Dir: DirServerToClient, Payload: "MessageDTO"},
+	{Name: EventMessageUpdated, Dir: DirServerToClient, Payload: "MessageDTO"},
+	{Name: EventMessageDeleted, Dir: DirServerToClient, Payload: "MessageDTO"},
+	{Name: EventMessageReaction, Dir: DirServerToClient, Payload: "MessageReactionPayload"},
 	{Name: EventMessageAck, Dir: DirServerToClient},
 	{Name: EventMessageError, Dir: DirServerToClient},
 
-	{Name: EventPrivateSend, Dir: DirClientToServer, Ack: true},
-	{Name: EventPrivateNew, Dir: DirServerToClient},
+	{Name: EventPrivateSend, Dir: DirClientToServer, Ack: true, Payload: "PrivateSendPayload"},
+	{Name: EventPrivateNew, Dir: DirServerToClient, Payload: "MessageDTO"},
 
-	{Name: EventAnnouncementNew, Dir: DirServerToClient},
+	{Name: EventAnnouncementNew, Dir: DirServerToClient, Payload: "AnnouncementPayload"},
+
+	// bus 内部事件（Go→Go，不产出 TS）
+	{Name: EventPermissionsInvalidated, Dir: DirInternal, Payload: "PermissionsInvalidatedPayload"},
+	{Name: EventMuteChanged, Dir: DirInternal, Payload: "MuteChangedPayload"},
+	{Name: EventDomainMembershipChanged, Dir: DirInternal, Payload: "DomainMembershipChangedPayload"},
+	{Name: EventMuteExpired, Dir: DirInternal, Payload: "MuteExpiredPayload"},
+	{Name: EventDomainMemberAdded, Dir: DirInternal, Payload: "DomainMemberAddedPayload"},
+	{Name: EventRoomListChanged, Dir: DirInternal, Payload: "RoomListChangedPayload"},
 }

@@ -12,6 +12,7 @@ import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/repository"
+	"GOSpeak/internal/logger"
 
 	"github.com/aarondl/authboss/v3"
 	"golang.org/x/crypto/bcrypt"
@@ -120,7 +121,7 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, err
 	}
 
-	needChange := user.Role == "admin" && authbossHasher.CompareHashAndPassword(user.Password, DefaultAdminPassword) == nil
+	needChange := user.Role == model.RoleAdmin && authbossHasher.CompareHashAndPassword(user.Password, DefaultAdminPassword) == nil
 
 	return &AuthResponse{
 		Token:              tokens.Access,
@@ -263,8 +264,9 @@ func (s *AuthService) RefreshFromToken(refreshToken string) (*RefreshResponse, e
 
 	family := claims.RefreshFamily
 	if family == "" {
-		// 历史 token 没有 family：用 JTI 作为一次性标记，防止无限重放。
-		family = claims.ID
+		// 无 family 的历史 refresh token 已退役（2026-11，超过 JWT_REFRESH_TTL
+		// 后自然绝迹）：直接拒绝，客户端重新登录换取带 family 的新 token。
+		return nil, pkg.NewAppError(pkg.TOKEN_REVOKED)
 	}
 
 	// family 已用说明旧 token 被重放，吊销整族后拒绝本次刷新
@@ -273,7 +275,9 @@ func (s *AuthService) RefreshFromToken(refreshToken string) (*RefreshResponse, e
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "refresh family store unavailable")
 	}
 	if used {
-		_ = authstate.RevokeRefreshFamily(family)
+		if err := authstate.RevokeRefreshFamily(family); err != nil {
+			logger.WithComponent("Auth").WithError(err).Warn("revoke refresh family on replay")
+		}
 		return nil, pkg.NewAppError(pkg.TOKEN_REVOKED)
 	}
 
@@ -283,7 +287,9 @@ func (s *AuthService) RefreshFromToken(refreshToken string) (*RefreshResponse, e
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "refresh family store unavailable")
 	}
 	if !marked {
-		_ = authstate.RevokeRefreshFamily(family)
+		if err := authstate.RevokeRefreshFamily(family); err != nil {
+			logger.WithComponent("Auth").WithError(err).Warn("revoke refresh family on concurrent refresh")
+		}
 		return nil, pkg.NewAppError(pkg.TOKEN_REVOKED)
 	}
 

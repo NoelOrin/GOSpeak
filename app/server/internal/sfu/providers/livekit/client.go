@@ -203,9 +203,25 @@ func (s *Service) GetHost() string {
 
 // ProviderName 返回 SFU provider 标识，用于 hub 的 provider 特性判断（如 kick 踢人）。
 func (s *Service) ProviderName() string {
-	return "livekit"
+	return sfu.DefaultProviderName
 }
 
 func (s *Service) Capabilities() sfu.Capabilities {
-	return sfu.CapabilitiesFor("livekit")
+	return sfu.CapabilitiesFor(sfu.DefaultProviderName)
 }
+
+// 定时禁言与流寻址不受支持：调用方按 ErrSFUNotSupported 降级（timed→普通 mute；stream→跳过）。
+
+func (s *Service) MuteParticipantTimed(room, identity, trackSid string, muted bool, ttlSeconds int) error {
+	return pkg.NewErrSFUNotSupported()
+}
+
+func (s *Service) SupportsStream() bool { return false }
+
+func (s *Service) StreamName(room, identity string) string { return "" }
+
+func (s *Service) StreamInfo(room, identity string) (string, string, error) {
+	return "", "", pkg.NewErrSFUNotSupported()
+}
+
+func (s *Service) ClientInfo() map[string]interface{} { return map[string]interface{}{} }

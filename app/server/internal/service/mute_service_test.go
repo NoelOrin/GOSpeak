@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -74,14 +75,20 @@ func TestMuteService_ExpiredTemporaryMuteRunsFullUnmute(t *testing.T) {
 	}
 
 	var mu sync.Mutex
-	calls := 0
-	svc.SetOnExpired(func(userID uint) {
-		mu.Lock()
-		calls++
-		mu.Unlock()
-		if userID != 42 {
-			t.Fatalf("expected expired user 42, got %d", userID)
-		}
+	var events []string
+	svc.SetEventBus(eventPublishRecorder{
+		fn: func(event string, payload interface{}) error {
+			if event == EventMuteExpired {
+				m, _ := payload.(MuteExpiredPayload)
+				if m.UserID != "42" {
+					t.Fatalf("expected user_id 42, got %+v", m)
+				}
+			}
+			mu.Lock()
+			events = append(events, event)
+			mu.Unlock()
+			return nil
+		},
 	})
 
 	muted, _, err := svc.IsMuted(42)
@@ -93,10 +100,10 @@ func TestMuteService_ExpiredTemporaryMuteRunsFullUnmute(t *testing.T) {
 	}
 
 	mu.Lock()
-	got := calls
+	got := events[len(events)-1]
 	mu.Unlock()
-	if got != 1 {
-		t.Fatalf("expected 1 unmute callback, got %d", got)
+	if got != EventMuteExpired {
+		t.Fatalf("expected final %s event, got %q", EventMuteExpired, got)
 	}
 
 	if _, err := muteRepo.GetByUserID(42); err == nil {
@@ -107,10 +114,16 @@ func TestMuteService_ExpiredTemporaryMuteRunsFullUnmute(t *testing.T) {
 		t.Fatal(err)
 	}
 	mu.Lock()
-	got = calls
+	allEvents := events
 	mu.Unlock()
-	if got != 1 {
-		t.Fatalf("expected no duplicate callback, got %d", got)
+	expiredCount := 0
+	for _, e := range allEvents {
+		if e == EventMuteExpired {
+			expiredCount++
+		}
+	}
+	if expiredCount != 1 {
+		t.Fatalf("expected exactly one expiry event, got %d in %v", expiredCount, allEvents)
 	}
 }
 
@@ -137,4 +150,12 @@ func TestMuteService_CacheHitAvoidsUserLookup(t *testing.T) {
 	if _, ok := svc.byUserID[42]; ok {
 		t.Fatal("expected user id cache entry to be removed")
 	}
+}
+
+type eventPublishRecorder struct {
+	fn func(event string, payload interface{}) error
+}
+
+func (r eventPublishRecorder) PublishInternal(_ context.Context, event string, payload interface{}) error {
+	return r.fn(event, payload)
 }

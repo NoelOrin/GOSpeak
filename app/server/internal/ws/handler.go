@@ -1,9 +1,9 @@
 package ws
 
 import (
-	"log"
 
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/logger"
 )
 
 // handlerEntry 注册一个事件的处理函数。
@@ -62,7 +62,7 @@ func (r *HandlerRegistry) HandleAck(event string, fn func(ClientMessenger, strin
 func (r *HandlerRegistry) Dispatch(c ClientMessenger, msg Message) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			log.Printf("[ws] panic in handler event=%s client=%s: %v", msg.Event, c.ID(), rec)
+			logger.WithComponent("WS").Infof("[ws] panic in handler event=%s client=%s: %v", msg.Event, c.ID(), rec)
 			if msg.ID != "" {
 				c.SendErrorACK(msg.ID, msg.Event, 5001, "internal server error")
 			}
@@ -73,7 +73,7 @@ func (r *HandlerRegistry) Dispatch(c ClientMessenger, msg Message) {
 	// 只在建连时查一次会让被封访客凭已建立的长连接继续发消息/私信。
 	// guard 未注入时 fail-closed：组合根漏接线不能被静默解释为「全部放行」。
 	if r.guard == nil {
-		log.Printf("[ws] policy guard not installed, rejecting event=%s client=%s", msg.Event, c.ID())
+		logger.WithComponent("WS").Infof("[ws] policy guard not installed, rejecting event=%s client=%s", msg.Event, c.ID())
 		if msg.ID != "" {
 			c.SendErrorACK(msg.ID, msg.Event, int(pkg.INTERNAL_ERROR), pkg.GetErrMsg(pkg.INTERNAL_ERROR))
 		}
@@ -86,7 +86,7 @@ func (r *HandlerRegistry) Dispatch(c ClientMessenger, msg Message) {
 		if clientMsg == "" {
 			clientMsg = pkg.GetErrMsg(d.Code)
 		}
-		log.Printf("[ws] policy rejected event=%s client=%s code=%d", msg.Event, c.ID(), d.Code)
+		logger.WithComponent("WS").Infof("[ws] policy rejected event=%s client=%s code=%d", msg.Event, c.ID(), d.Code)
 		// 命中封禁时先把 ACK 真正写出去再断连：只入队后 Close 会丢 ACK。
 		if d.Terminate {
 			if m, ok := c.(PolicyClosingMessenger); ok {
@@ -107,7 +107,7 @@ func (r *HandlerRegistry) Dispatch(c ClientMessenger, msg Message) {
 
 	entry, ok := r.handlers[msg.Event]
 	if !ok {
-		log.Printf("[ws] unknown event: %s from client=%s", msg.Event, c.ID())
+		logger.WithComponent("WS").Infof("[ws] unknown event: %s from client=%s", msg.Event, c.ID())
 		if msg.ID != "" {
 			c.SendErrorACK(msg.ID, msg.Event, int(pkg.INVALID_PARAMS), "unknown event")
 		}

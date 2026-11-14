@@ -15,6 +15,7 @@ import (
 	"GOSpeak/internal/livekitproxy"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
+	"GOSpeak/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 	"github.com/livekit/protocol/auth"
@@ -40,23 +41,13 @@ type SignalHandler struct {
 	resolveLiveKitKey    func() string
 }
 
-func NewSignalHandler(sfuSvc *service.SFUService) *SignalHandler {
-	return &SignalHandler{sfuSvc: sfuSvc}
-}
-
-func (h *SignalHandler) SetJobs(j livekitJobPublisher) {
-	h.jobs = j
-}
-
-// SetLiveKitSecretResolver 注入当前 LiveKit API secret 解析器（env/DB 配置）。
-func (h *SignalHandler) SetLiveKitSecretResolver(fn func() string) {
-	h.resolveLiveKitSecret = fn
-}
-
-// SetLiveKitKeyResolver 注入当前 LiveKit API key 解析器（env/DB 配置）。
-// webhook JWT 的 iss 是 api key，必须与 secret 配对才能验签。
-func (h *SignalHandler) SetLiveKitKeyResolver(fn func() string) {
-	h.resolveLiveKitKey = fn
+func NewSignalHandler(sfuSvc *service.SFUService, jobs livekitJobPublisher, resolveLiveKitSecret, resolveLiveKitKey func() string) *SignalHandler {
+	return &SignalHandler{
+		sfuSvc:               sfuSvc,
+		jobs:                 jobs,
+		resolveLiveKitSecret: resolveLiveKitSecret,
+		resolveLiveKitKey:    resolveLiveKitKey,
+	}
 }
 
 func (h *SignalHandler) currentLiveKitSecret() string {
@@ -124,16 +115,12 @@ var (
 // @Success      200  {object}  pkg.Response
 // @Router       /signal/ws-endpoint [get]
 func (h *SignalHandler) GetWSEndpoint(c *gin.Context) {
-	claimsVal, ok := c.Get("claims")
-	if !ok {
+	claims := middleware.CurrentUser(c)
+	if claims == nil {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return
 	}
-	claims, ok := claimsVal.(*pkg.Claims)
-	if !ok || claims == nil || claims.Username == "" {
-		pkg.Fail(c, pkg.TOKEN_WRONG)
-		return
-	}
+	_ = claims
 	data := gin.H{}
 	pkg.Success(c, data)
 }
@@ -142,7 +129,6 @@ func (h *SignalHandler) GetWSEndpoint(c *gin.Context) {
 type JoinRoomRequest struct {
 	Room       string `json:"room" binding:"required" example:"my-room"`
 	DomainUUID string `json:"domain_uuid,omitempty"`
-	Identity   string `json:"identity,omitempty" example:"user-123"` // 兼容字段，服务端以 JWT username 覆盖
 	Password   string `json:"password,omitempty"`
 }
 
@@ -163,19 +149,13 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 	}
 
 	// 身份以 JWT 为准，拒绝客户端伪造他人 identity
-	username, ok := c.Get("username")
-	if !ok {
+	identity := middleware.CurrentUsername(c)
+	if identity == "" {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return
 	}
-	identity, ok := username.(string)
-	if !ok || identity == "" {
-		pkg.Fail(c, pkg.TOKEN_WRONG, "invalid token identity")
-		return
-	}
-	req.Identity = identity
 
-	result, err := h.sfuSvc.GetJoinToken(req.DomainUUID, req.Room, req.Identity, currentUserUUID(c), req.Password)
+	result, err := h.sfuSvc.GetJoinToken(req.DomainUUID, req.Room, identity, currentUserUUID(c), req.Password)
 	if err != nil {
 		pkg.HandleError(c, err)
 		return
@@ -192,7 +172,7 @@ func (h *SignalHandler) GetJoinToken(c *gin.Context) {
 		"token":       result.Token,
 		"serverUrl":   serverURL,
 		"room":        req.Room,
-		"identity":    req.Identity,
+		"identity":    identity,
 		"sfuRoom":     result.SFURoom,
 		"domain_uuid": req.DomainUUID,
 	}

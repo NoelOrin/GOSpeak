@@ -2,6 +2,7 @@ package signal
 
 import (
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/protocol"
 	"GOSpeak/internal/pkg/message"
 	"GOSpeak/internal/policy"
 	"GOSpeak/internal/ws"
@@ -13,12 +14,8 @@ type conversationSender interface {
 	SendDirect(senderIdentity, targetIdentity, content, clientNonce string) (*message.DTO, error)
 }
 
-// privateSendPayload is the client->server payload for private:send.
-type privateSendPayload struct {
-	TargetIdentity string `json:"target_identity"`
-	Content        string `json:"content"`
-	ClientNonce    string `json:"client_nonce,omitempty"`
-}
+// privateSendPayload 定义已收编至 protocol（PrivateSendPayload）。
+type privateSendPayload = protocol.PrivateSendPayload
 
 // OnPrivateMessageSend handles private:send events from clients.
 // ACK 约定：成功 data = 私聊消息 DTO；失败走 error 返回路径（*AppError）。

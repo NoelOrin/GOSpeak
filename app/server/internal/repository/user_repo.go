@@ -15,6 +15,11 @@ func NewUserRepository(db *gorm.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
+// WithTx 返回绑定事务的副本，供 service 层在 TxRunner 回调内使用。
+func (r *UserRepository) WithTx(tx *gorm.DB) *UserRepository {
+	return &UserRepository{db: tx}
+}
+
 func (r *UserRepository) Create(user *model.User) error {
 	return r.db.Create(user).Error
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/protocol"
 )
 
 // ─── Mocks for stability tests ───
@@ -274,11 +275,11 @@ func TestOnRoomJoinSFU_ReplaysActiveSpeakers(t *testing.T) {
 	if len(casts) != castsBefore+1 {
 		t.Fatalf("join must replay active speakers: got %d broadcasts, want %d", len(casts), castsBefore+1)
 	}
-	last := casts[len(casts)-1].(map[string]interface{})
-	ids, ok := last["identities"].([]string)
+	last, ok := casts[len(casts)-1].(protocol.RoomActiveSpeakersPayload)
 	if !ok {
-		t.Fatalf("replay payload identities type = %T, want []string", last["identities"])
+		t.Fatalf("replay payload type = %T, want RoomActiveSpeakersPayload", casts[len(casts)-1])
 	}
+	ids := last.Identities
 	foundAlice := false
 	for _, id := range ids {
 		if id == "alice" {

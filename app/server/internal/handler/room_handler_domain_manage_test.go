@@ -59,7 +59,7 @@ func newRoomDomainManageEnv(t *testing.T, userUUID, roleName, createdBy string, 
 	if err := db.Create(&room).Error; err != nil {
 		t.Fatalf("seed room: %v", err)
 	}
-	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db), nil)
 	return db, domain, domainSvc, room.ID
 }
 
@@ -86,7 +86,7 @@ func TestRoomHandler_Update_AllowsDomainRolePermission(t *testing.T) {
 	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
 
 	db, _, domainSvc, roomID := newRoomDomainManageEnv(t, "mod-1", "moderator", "someone-else", true, []string{model.PermRoomUpdate})
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc, nil, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "mod-1")
@@ -125,7 +125,7 @@ func TestRoomHandler_Delete_DomainPermissionDoesNotFallBackToGlobal(t *testing.T
 		t.Fatal("test precondition: global user role must have room:delete")
 	}
 
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), permSvc, domainSvc)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), permSvc, domainSvc, nil, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "guest-1")
@@ -172,7 +172,7 @@ func TestRoomHandler_Update_BotClaimsMissingPermissionDoesNotFallBackToGlobal(t 
 		t.Fatal("test precondition: global user role must have room:update")
 	}
 
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), permSvc, nil)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), permSvc, nil, nil, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "bot-1")
@@ -212,7 +212,7 @@ func TestRoomHandler_Get_DomainReadPermissionRequired(t *testing.T) {
 		t.Fatal("test precondition: global user role must have room:read")
 	}
 
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), permSvc, domainSvc)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), permSvc, domainSvc, nil, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "viewer-1")
@@ -251,7 +251,7 @@ func TestRoomHandler_List_DomainReadPermissionRequired(t *testing.T) {
 		t.Fatal("test precondition: global user role must have room:read")
 	}
 
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), permSvc, domainSvc)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), permSvc, domainSvc, nil, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "viewer-1")
@@ -273,7 +273,7 @@ func TestRoomHandler_Get_AllowsDomainRoleWithoutGlobalPermission(t *testing.T) {
 	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
 
 	db, _, domainSvc, roomID := newRoomDomainManageEnv(t, "reader-1", "reader", "someone-else", true, []string{model.PermRoomRead})
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc, nil, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "reader-1")
@@ -294,7 +294,7 @@ func TestRoomHandler_List_AllowsDomainRoleWithoutGlobalPermission(t *testing.T) 
 	t.Cleanup(func() { middleware.SetDomainChecker(nil) })
 
 	db, domain, domainSvc, _ := newRoomDomainManageEnv(t, "reader-1", "reader", "someone-else", true, []string{model.PermRoomRead})
-	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+	h := NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc, nil, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("username", "reader-1")

@@ -57,7 +57,7 @@ type JoinRequestView struct {
 // InviteJoinService 负责内联注册、已登录加入、申请查询与撤销。
 // 不改动第一部分 InviteService 的构造函数，仅复用其校验能力。
 type InviteJoinService struct {
-	db          *gorm.DB
+	txRunner    repository.TxRunner
 	inviteSvc   *InviteService
 	joinReqSvc  *JoinRequestService
 	inviteRepo  *repository.DomainInviteRepository
@@ -68,7 +68,7 @@ type InviteJoinService struct {
 }
 
 func NewInviteJoinService(
-	db *gorm.DB,
+	txRunner repository.TxRunner,
 	inviteSvc *InviteService,
 	joinReqSvc *JoinRequestService,
 	inviteRepo *repository.DomainInviteRepository,
@@ -78,7 +78,7 @@ func NewInviteJoinService(
 	emailVerify *EmailVerificationService,
 ) *InviteJoinService {
 	return &InviteJoinService{
-		db: db, inviteSvc: inviteSvc, joinReqSvc: joinReqSvc,
+		txRunner: txRunner, inviteSvc: inviteSvc, joinReqSvc: joinReqSvc,
 		inviteRepo: inviteRepo, domainRepo: domainRepo, userRepo: userRepo,
 		emailConfig: emailConfig, emailVerify: emailVerify,
 	}
@@ -149,8 +149,8 @@ func (s *InviteJoinService) RegisterAndJoin(req *InviteRegisterRequest) (*Invite
 	}
 
 	status := JoinStatusJoined
-	txErr := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(user).Error; err != nil {
+	txErr := s.txRunner.WithinTx(func(tx *gorm.DB) error {
+		if err := s.userRepo.WithTx(tx).Create(user); err != nil {
 			if errors.Is(err, gorm.ErrDuplicatedKey) {
 				if strings.Contains(strings.ToLower(err.Error()), "email") {
 					return pkg.NewAppError(pkg.EMAIL_ALREADY_EXISTS)
@@ -257,7 +257,7 @@ func (s *InviteJoinService) Join(userUUID string, req *InviteJoinRequest) (*Invi
 		return &InviteJoinResponse{Domain: domain, Status: JoinStatusPending}, nil
 	}
 
-	txErr := s.db.Transaction(func(tx *gorm.DB) error {
+	txErr := s.txRunner.WithinTx(func(tx *gorm.DB) error {
 		if inviteID != 0 {
 			inviteRepo := repository.NewDomainInviteRepository(tx)
 			ok, err := inviteRepo.ConsumeUse(inviteID)

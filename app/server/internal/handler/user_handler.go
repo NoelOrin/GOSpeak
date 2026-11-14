@@ -8,6 +8,7 @@ import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	"GOSpeak/internal/service"
+	"GOSpeak/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,12 +19,10 @@ type UserHandler struct {
 	auditor     *audit.Service
 }
 
-func NewUserHandler(userService *service.UserService, permSvc *service.PermissionService) *UserHandler {
-	return &UserHandler{userService: userService, permSvc: permSvc}
+func NewUserHandler(userService *service.UserService, permSvc *service.PermissionService, auditor *audit.Service) *UserHandler {
+	return &UserHandler{userService: userService, permSvc: permSvc, auditor: auditor}
 }
 
-// SetAuditor 注入审计服务，用于记录删除用户等敏感操作。
-func (h *UserHandler) SetAuditor(a *audit.Service) { h.auditor = a }
 
 var presetAvatarPaths = []string{
 	"/presets/avatar-1.svg",
@@ -57,14 +56,8 @@ func (h *UserHandler) PresetAvatars(c *gin.Context) {
 // @Success      200  {object}  pkg.Response
 // @Router       /user/profile [post]
 func (h *UserHandler) GetProfile(c *gin.Context) {
-	userUUID, ok := c.Get("user_uuid")
-	if !ok {
-		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
-		return
-	}
-
-	uuidStr, ok := userUUID.(string)
-	if !ok || uuidStr == "" {
+	uuidStr := middleware.CurrentUserUUID(c)
+	if uuidStr == "" {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return
 	}
@@ -228,14 +221,8 @@ func (h *UserHandler) GetByName(c *gin.Context) {
 // @Success      200   {object}  pkg.Response
 // @Router       /user/update-profile [post]
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
-	userUUID, ok := c.Get("user_uuid")
-	if !ok {
-		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
-		return
-	}
-
-	uuidStr, ok := userUUID.(string)
-	if !ok || uuidStr == "" {
+	uuidStr := middleware.CurrentUserUUID(c)
+	if uuidStr == "" {
 		pkg.Fail(c, pkg.TOKEN_NOT_EXIST)
 		return
 	}

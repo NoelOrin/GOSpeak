@@ -44,7 +44,7 @@ func setupAnnouncementService(t *testing.T) (*AnnouncementService, *gorm.DB, *an
 	}
 	bus := &announcementTestBus{}
 	domainRepo := repository.NewDomainRepository(db)
-	svc := NewAnnouncementService(repository.NewAnnouncementRepository(db), domainRepo, db)
+	svc := NewAnnouncementService(repository.NewAnnouncementRepository(db), domainRepo)
 	svc.SetEventBus(bus)
 	svc.SetDomainPermissionChecker(func(domainUUID, userUUID, _ string) bool {
 		member, err := domainRepo.GetMember(domainUUID, userUUID)

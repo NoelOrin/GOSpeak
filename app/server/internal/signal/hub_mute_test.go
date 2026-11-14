@@ -7,43 +7,36 @@ import (
 
 	"GOSpeak/internal/bus"
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/protocol"
 	"GOSpeak/internal/sfu"
 )
 
 // captureMuteBus 记录 namespace 事件与 payload，用于验证 mute 事件广播。
 type captureMuteBus struct {
 	mu   sync.Mutex
-	ns   map[string][]map[string]interface{}
-	room map[string]map[string][]map[string]interface{}
+	ns   map[string][]interface{}
+	room map[string]map[string][]interface{}
 }
 
 func (c *captureMuteBus) PublishNamespace(ctx context.Context, event string, payload interface{}) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.ns == nil {
-		c.ns = map[string][]map[string]interface{}{}
+		c.ns = map[string][]interface{}{}
 	}
-	if m, ok := payload.(map[string]interface{}); ok {
-		c.ns[event] = append(c.ns[event], m)
-	} else {
-		c.ns[event] = append(c.ns[event], nil)
-	}
+	c.ns[event] = append(c.ns[event], payload)
 	return nil
 }
 func (c *captureMuteBus) PublishRoom(ctx context.Context, room, event string, payload interface{}) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.room == nil {
-		c.room = map[string]map[string][]map[string]interface{}{}
+		c.room = map[string]map[string][]interface{}{}
 	}
 	if c.room[room] == nil {
-		c.room[room] = map[string][]map[string]interface{}{}
+		c.room[room] = map[string][]interface{}{}
 	}
-	if m, ok := payload.(map[string]interface{}); ok {
-		c.room[room][event] = append(c.room[room][event], m)
-	} else {
-		c.room[room][event] = append(c.room[room][event], nil)
-	}
+	c.room[room][event] = append(c.room[room][event], payload)
 	return nil
 }
 func (c *captureMuteBus) Mode() string       { return "test" }
@@ -94,7 +87,7 @@ func TestBroadcastMute_PublishesMemberMuted(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("member:muted events = %d, want 1", len(events))
 	}
-	if events[0]["identity"] != "alice" || events[0]["muted"] != true {
+	if m, ok := events[0].(protocol.MemberMutedStatePayload); !ok || m.Identity != "alice" || m.Muted != true {
 		t.Fatalf("member:muted payload = %+v, want identity=alice muted=true", events[0])
 	}
 }
@@ -147,7 +140,7 @@ func TestBroadcastUnmute_PublishesMemberUnmuted(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("member:unmuted events = %d, want 1", len(events))
 	}
-	if events[0]["identity"] != "alice" || events[0]["muted"] != false {
+	if m, ok := events[0].(protocol.MemberMutedStatePayload); !ok || m.Identity != "alice" || m.Muted != false {
 		t.Fatalf("member:unmuted payload = %+v, want identity=alice muted=false", events[0])
 	}
 }
@@ -177,7 +170,7 @@ func TestBroadcastUnmute_PublishesMemberUnmuted_ToMemberRooms(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected member:unmuted published to room dom-a:lobby, got %+v", bus.room)
 	}
-	if events[0]["identity"] != "alice" || events[0]["muted"] != false {
+	if m, ok := events[0].(protocol.MemberMutedStatePayload); !ok || m.Identity != "alice" || m.Muted != false {
 		t.Fatalf("member:unmuted payload = %+v, want identity=alice muted=false", events[0])
 	}
 	if len(bus.ns[EventMemberUnmuted]) != 0 {

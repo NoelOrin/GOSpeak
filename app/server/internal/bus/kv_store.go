@@ -239,40 +239,6 @@ func (s *StateStore) DeleteRoomMembersRev(ctx context.Context, room string, rev 
 	})
 }
 
-func (s *StateStore) PutStream(ctx context.Context, stream, room, identity string) error {
-	b, err := json.Marshal(map[string]string{
-		"room":     room,
-		"identity": identity,
-	})
-	if err != nil {
-		return err
-	}
-	return kvDo(ctx, func() error {
-		_, err := s.strm.Put("stream."+sanitizeKey(stream), b)
-		return err
-	})
-}
-
-func (s *StateStore) GetStream(ctx context.Context, stream string) (room, identity string, err error) {
-	entry, err := kvEntry(ctx, func() (nats.KeyValueEntry, error) {
-		return s.strm.Get("stream." + sanitizeKey(stream))
-	})
-	if err != nil {
-		return "", "", err
-	}
-	var m map[string]string
-	if err := json.Unmarshal(entry.Value(), &m); err != nil {
-		return "", "", err
-	}
-	return m["room"], m["identity"], nil
-}
-
-func (s *StateStore) DeleteStream(ctx context.Context, stream string) error {
-	return kvDo(ctx, func() error {
-		return s.strm.Delete("stream." + sanitizeKey(stream))
-	})
-}
-
 func (s *StateStore) PutRoomMeta(ctx context.Context, room string, meta RoomMeta) error {
 	b, err := json.Marshal(meta)
 	if err != nil {
@@ -373,20 +339,15 @@ var validKeyBytes = func() [256]bool {
 // NATS 只接受 [-/_=.a-zA-Z0-9]；房间名允许中文/emoji，直接拼 key 会返回
 // "nats: invalid key" 并让成员注册整条链路失败。
 //
-// 先沿用历史上的 `:`/空格 → `_` 映射：只要结果合法就原样返回，
-// 保证既有 ASCII 房间 key（如 domain:room）与升级前的 KV 记录完全一致。
-// 只有映射后仍非法（中文/emoji 等）才编码为 b64_ + base64url，
-// 该字母表是 NATS 合法 key 的子集。
+// 历史 `:`/空格 → `_` 映射已退役（2026-11）：一律编码为 b64_ + base64url，
+// 该字母表是 NATS 合法 key 的子集。既有 legacy 格式 KV 记录不迁移——
+// membership lease 带 TTL，重启后由心跳重建。
 func sanitizeKey(s string) string {
-	legacy := strings.ReplaceAll(strings.ReplaceAll(s, " ", "_"), ":", "_")
-	if isValidNATSKey(legacy) && !strings.HasPrefix(legacy, encodedKeyPrefix) {
-		return legacy
-	}
 	return encodedKeyPrefix + base64.RawURLEncoding.EncodeToString([]byte(s))
 }
 
 // desanitizeKey 还原 sanitizeKey 编码的 key，供 ListRoomNames 取回房间名。
-// 历史映射是有损的（无法逆推），非编码 key 原样返回。
+// 非 b64 编码 key（含已退役的 legacy 映射）原样返回，无法逆推。
 func desanitizeKey(s string) string {
 	if !strings.HasPrefix(s, encodedKeyPrefix) {
 		return s

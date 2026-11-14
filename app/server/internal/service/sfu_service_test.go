@@ -9,12 +9,15 @@ import (
 )
 
 type fakeSFUProvider struct {
+	sfu.BaseProvider
 	generatedRoom     string
 	generatedIdentity string
 	streamRoom        string
 }
 
 func (f *fakeSFUProvider) ProviderName() string { return "fake" }
+
+func (f *fakeSFUProvider) SupportsStream() bool { return true }
 func (f *fakeSFUProvider) Capabilities() sfu.Capabilities {
 	return sfu.Capabilities{}
 }
@@ -47,28 +50,6 @@ func (f *fakeSFUProvider) StreamInfo(room, identity string) (string, string, err
 	return "stream-" + room, "stream-token", nil
 }
 
-type ownerAwareFakeProvider struct {
-	fakeSFUProvider
-	ownerUUID string
-}
-
-func (p *ownerAwareFakeProvider) GenerateTokenForUser(room, identity, ownerUUID string) (string, error) {
-	p.ownerUUID = ownerUUID
-	return "token-" + room, nil
-}
-
-func TestGetJoinToken_ForwardsOwnerToOwnerAwareProvider(t *testing.T) {
-	p := &ownerAwareFakeProvider{}
-	svc := NewSFUService(p, nil)
-
-	if _, err := svc.GetJoinToken("", "lobby", "user-1", "uuid-user-1", ""); err != nil {
-		t.Fatalf("expected success, got %v", err)
-	}
-	if p.ownerUUID != "uuid-user-1" {
-		t.Fatalf("ownerUUID = %q, want uuid-user-1", p.ownerUUID)
-	}
-}
-
 func assertForbidden(t *testing.T, err error) {
 	t.Helper()
 	var appErr *pkg.AppError
@@ -81,15 +62,14 @@ func assertForbidden(t *testing.T, err error) {
 }
 
 func TestGetJoinToken_NonDomainMemberForbidden(t *testing.T) {
-	svc := NewSFUService(&fakeSFUProvider{}, nil)
-	svc.SetDomainMemberChecker(func(domainUUID, userUUID string) bool { return false })
+	svc := NewSFUService(&fakeSFUProvider{}, nil, func(domainUUID, userUUID string) bool { return false })
 
 	_, err := svc.GetJoinToken("domain-a", "lobby", "user-1", "user-1", "")
 	assertForbidden(t, err)
 }
 
 func TestGetJoinToken_NilDomainCheckerForbidden(t *testing.T) {
-	svc := NewSFUService(&fakeSFUProvider{}, nil)
+	svc := NewSFUService(&fakeSFUProvider{}, nil, nil)
 
 	_, err := svc.GetJoinToken("domain-a", "lobby", "user-1", "user-1", "")
 	assertForbidden(t, err)
@@ -97,10 +77,7 @@ func TestGetJoinToken_NilDomainCheckerForbidden(t *testing.T) {
 
 func TestGetJoinToken_DomainMemberUsesCompositeRoom(t *testing.T) {
 	p := &fakeSFUProvider{}
-	svc := NewSFUService(p, nil)
-	svc.SetDomainMemberChecker(func(domainUUID, userUUID string) bool {
-		return domainUUID == "domain-a" && userUUID == "user-1"
-	})
+	svc := NewSFUService(p, nil, func(domainUUID, userUUID string) bool { 		return domainUUID == "domain-a" && userUUID == "user-1" 	})
 
 	res, err := svc.GetJoinToken("domain-a", "lobby", "user-1", "user-1", "")
 	if err != nil {
@@ -119,7 +96,7 @@ func TestGetJoinToken_DomainMemberUsesCompositeRoom(t *testing.T) {
 
 func TestGetJoinToken_PlatformRoomKeepsLogicalName(t *testing.T) {
 	p := &fakeSFUProvider{}
-	svc := NewSFUService(p, nil)
+	svc := NewSFUService(p, nil, nil)
 
 	res, err := svc.GetJoinToken("", "lobby", "user-1", "user-1", "")
 	if err != nil {

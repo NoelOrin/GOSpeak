@@ -1,7 +1,6 @@
 package pkg
 
 import (
-	"crypto/subtle"
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
@@ -19,15 +18,10 @@ func HashPassword(password string) (string, error) {
 	return string(hash), nil
 }
 
-// VerifyPassword 校验密码；旧版本遗留的明文密码也以恒定时间比较兼容，直到迁移完成。
+// VerifyPassword 校验 bcrypt 密码哈希。明文密码兼容路径已退役（2026-11）：
+// 存量明文口令无法通过校验，需走重置密码流程。
 func VerifyPassword(stored, password string) bool {
-	if strings.HasPrefix(stored, "$2") {
-		return bcrypt.CompareHashAndPassword([]byte(stored), []byte(password)) == nil
-	}
-	if len(stored) == 0 || len(password) == 0 {
-		return stored == password
-	}
-	return subtle.ConstantTimeCompare([]byte(stored), []byte(password)) == 1
+	return bcrypt.CompareHashAndPassword([]byte(stored), []byte(password)) == nil
 }
 
 // IsHashedPassword 判断存储值是否为 bcrypt 哈希。

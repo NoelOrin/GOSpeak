@@ -106,7 +106,7 @@ func TestOnRoomKick_BotWithoutPermissionDenied(t *testing.T) {
 		Permissions: []string{"mute:manage"}, // 无 kick
 	}}
 
-	hub.OnRoomKick(bot, `{"room":"room-1","targetIdentity":"alice"}`)
+	hub.OnRoomKick(bot, `{"room":"room-1","target_identity":"alice"}`)
 
 	if _, ok := hub.rooms["room-1"].Members["alice-sock"]; !ok {
 		t.Fatal("alice should remain when bot lacks signal:kick")
@@ -132,7 +132,7 @@ func TestOnRoomKick_BotCannotKickAdmin(t *testing.T) {
 		Permissions: []string{"signal:kick"},
 	}}
 
-	hub.OnRoomKick(bot, `{"room":"room-1","targetIdentity":"root"}`)
+	hub.OnRoomKick(bot, `{"room":"room-1","target_identity":"root"}`)
 
 	if _, ok := hub.rooms["room-1"].Members["admin-sock"]; !ok {
 		t.Fatal("admin should not be kicked by bot")
@@ -157,7 +157,7 @@ func TestOnRoomKick_HumanAdminCanKickAdmin(t *testing.T) {
 	// 人类 admin token 不带 permissions 列表，走 role 映射
 	caller := &mockClient{id: "root-sock", claims: &pkg.Claims{Username: "root", Role: "admin"}}
 
-	hub.OnRoomKick(caller, `{"room":"room-1","targetIdentity":"admin2"}`)
+	hub.OnRoomKick(caller, `{"room":"room-1","target_identity":"admin2"}`)
 
 	if _, ok := hub.rooms["room-1"].Members["admin-sock"]; ok {
 		t.Fatal("human admin should be able to kick another admin")
@@ -177,7 +177,7 @@ func TestOnRoomKick_ClearsTargetConnSlot(t *testing.T) {
 	hub.connSlots["alice-sock"] = &connRoomSlots{VoiceRoom: "domain-a:room-1"}
 
 	caller := &mockClient{id: "admin-sock", claims: &pkg.Claims{Username: "admin", UserUUID: "admin", Role: "admin"}}
-	hub.OnRoomKick(caller, `{"room":"room-1","domain_uuid":"domain-a","targetIdentity":"alice"}`)
+	hub.OnRoomKick(caller, `{"room":"room-1","domain_uuid":"domain-a","target_identity":"alice"}`)
 
 	hub.mu.RLock()
 	_, exists := hub.connSlots["alice-sock"]

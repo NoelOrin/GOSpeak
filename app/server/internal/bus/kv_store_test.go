@@ -3,16 +3,21 @@ package bus
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/nats-io/nats.go"
 )
 
-func TestSanitizeKeyRemovesNATSInvalidColon(t *testing.T) {
+// 含冒号 key 必须编码成 NATS 合法 key（legacy `:`→`_` 映射已退役）。
+func TestSanitizeKeyEncodesInvalidColon(t *testing.T) {
 	got := sanitizeKey("ws:user-uuid")
-	if got != "ws_user-uuid" {
-		t.Fatalf("expected ws_user-uuid, got %q", got)
+	if !isValidNATSKey(got) {
+		t.Fatalf("sanitizeKey(ws:user-uuid) = %q is not a valid NATS key", got)
+	}
+	if back := desanitizeKey(got); back != "ws:user-uuid" {
+		t.Fatalf("roundtrip failed: %q -> %q", got, back)
 	}
 }
 
@@ -35,15 +40,18 @@ func TestSanitizeKeyRoundTripNonASCII(t *testing.T) {
 			t.Fatalf("roundtrip %q -> %q -> %q", in, enc, got)
 		}
 	}
-	// ASCII 房间名沿用历史有损映射（空格/冒号 → 下划线），
-	// 保证升级前写入的 KV 记录仍能命中；这类 key 不做可逆编码。
-	for in, want := range map[string]string{
-		"domain:lobby": "domain_lobby",
-		"a b":          "a_b",
-		"ws:user-uuid": "ws_user-uuid",
+	// legacy 有损映射（空格/冒号 → 下划线）已退役：ASCII 房间名同样走可逆编码。
+	for in := range map[string]struct{}{
+		"domain:lobby": {},
+		"a b":          {},
+		"ws:user-uuid": {},
 	} {
-		if got := sanitizeKey(in); got != want {
-			t.Fatalf("legacy mapping %q = %q, want %q", in, got, want)
+		enc := sanitizeKey(in)
+		if !strings.HasPrefix(enc, encodedKeyPrefix) {
+			t.Fatalf("sanitizeKey(%q) = %q, want encoded prefix", in, enc)
+		}
+		if got := desanitizeKey(enc); got != in {
+			t.Fatalf("roundtrip %q -> %q -> %q", in, enc, got)
 		}
 	}
 }
@@ -139,42 +147,6 @@ func TestMembershipKV_PutGet(t *testing.T) {
 	}
 	if len(got.Members) != 1 || got.Members[0].Identity != "alice" {
 		t.Fatalf("got %+v", got)
-	}
-}
-
-func TestStreamKV_PutGetDelete(t *testing.T) {
-	es, err := StartEmbeddedServer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(es.Shutdown)
-
-	store, err := OpenStateStore(StateStoreConfig{
-		URL:    es.ClientURL(),
-		Prefix: "gospeak_test_stream",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-
-	if err := store.PutStream(context.Background(), "gs-aaa", "room-a", "bob"); err != nil {
-		t.Fatal(err)
-	}
-	room, identity, err := store.GetStream(context.Background(), "gs-aaa")
-	if err != nil || room != "room-a" || identity != "bob" {
-		t.Fatalf("room=%q identity=%q err=%v", room, identity, err)
-	}
-	if err := store.DeleteStream(context.Background(), "gs-aaa"); err != nil {
-		t.Fatal(err)
-	}
-	_, _, err = store.GetStream(context.Background(), "gs-aaa")
-	if err == nil {
-		t.Fatal("expected miss after delete")
-	}
-	if !errors.Is(err, nats.ErrKeyNotFound) && !errors.Is(err, nats.ErrKeyDeleted) {
-		// nats may wrap; still accept any error on miss
-		t.Logf("delete miss err=%v (ok if key absent)", err)
 	}
 }
 

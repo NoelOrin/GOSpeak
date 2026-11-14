@@ -14,6 +14,7 @@ import (
 
 // recordingMuteProvider 记录 unmute 媒体调用，验证 join 自愈清理。
 type recordingMuteProvider struct {
+	sfu.BaseProvider
 	capsProvider
 	mu      sync.Mutex
 	unmuted []string // room\x00identity
@@ -53,6 +54,7 @@ func (p *recordingMuteProvider) lastTTL() int {
 
 // plainMuteProvider 只实现 MuteParticipant，不实现 TimedMuteProvider，覆盖非 Timed 回退分支。
 type plainMuteProvider struct {
+	sfu.BaseProvider
 	caps    sfu.Capabilities
 	mu      sync.Mutex
 	unmuted []string // room\x00identity

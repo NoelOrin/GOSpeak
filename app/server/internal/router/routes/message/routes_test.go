@@ -96,9 +96,9 @@ func TestMessageHandler_CRUD_AllowedThroughProtectedRoutesWithoutGlobalPermissio
 		t.Fatalf("seed other message: %v", err)
 	}
 
-	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db), nil)
 	roomSvc := service.NewRoomService(repository.NewRoomRepository(db))
-	msgSvc := service.NewMessageService(repository.NewMessageRepository(db), repository.NewRoomRepository(db), domainSvc)
+	msgSvc := service.NewMessageService(repository.NewMessageRepository(db), repository.NewRoomRepository(db), domainSvc, nil)
 	h := handler.NewMessageHandler(msgSvc, nil, roomSvc, domainSvc)
 
 	r := gin.New()

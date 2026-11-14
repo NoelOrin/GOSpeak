@@ -1,10 +1,11 @@
 package signal
 
 import (
-	"log"
 	"sort"
 
 	"GOSpeak/internal/bus"
+	"GOSpeak/internal/protocol"
+	"GOSpeak/internal/logger"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -101,7 +102,7 @@ func (h *Hub) getMergedRoomsScoped(domainUUID string, platformOnly bool) []RoomI
 		}
 		localSnaps, snapErr = h.localRoomSnapshots(localKeys)
 		if snapErr != nil {
-			log.Printf("[Signal] batch local room snapshots: %v; falling back to local members", snapErr)
+			logger.WithComponent("Signal").Infof("[Signal] batch local room snapshots: %v; falling back to local members", snapErr)
 		}
 	}
 	for name, info := range memRooms {
@@ -256,9 +257,9 @@ func (h *Hub) broadcastRoomList(domainUUID string) {
 	} else {
 		rooms = h.getMergedRooms(domainUUID)
 	}
-	h.fanout.BroadcastToRoom(domainRoomKey(domainUUID), EventRoomListResult, map[string]interface{}{
-		"rooms": rooms,
-		"count": len(rooms),
+	h.fanout.BroadcastToRoom(domainRoomKey(domainUUID), EventRoomListResult, protocol.RoomListResultPayload{
+		Rooms: rooms,
+		Count: len(rooms),
 	})
 }
 

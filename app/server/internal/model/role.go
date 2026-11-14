@@ -16,11 +16,18 @@ func (Role) TableName() string {
 	return "roles"
 }
 
+// 平台角色名单一来源；ban 的判定走 HasBanRole（含角色缓存校验）。
+const (
+	RoleAdmin = "admin"
+	RoleUser  = "user"
+	RoleBan   = "ban"
+)
+
 // DefaultRoles 启动时种子写入的角色列表。
 var DefaultRoles = []Role{
-	{Name: "admin"},
-	{Name: "user"},
-	{Name: "ban"},
+	{Name: RoleAdmin},
+	{Name: RoleUser},
+	{Name: RoleBan},
 }
 
 // roleCache 进程级角色缓存，启动时从 roles 表加载。
@@ -52,5 +59,5 @@ func HasBanRole(name string) bool {
 	roleCacheMu.RLock()
 	defer roleCacheMu.RUnlock()
 	_, ok := roleCache[name]
-	return ok && name == "ban"
+	return ok && name == RoleBan
 }

@@ -44,8 +44,8 @@ func newJoinRequestHandlerEnv(t *testing.T, granted bool) *joinRequestHandlerEnv
 		t.Fatalf("migrate: %v", err)
 	}
 	domainRepo := repository.NewDomainRepository(db)
-	svc := service.NewJoinRequestService(db, repository.NewDomainJoinRequestRepository(db), domainRepo, repository.NewUserRepository(db))
-	h := NewJoinRequestHandler(svc, &stubReviewPerm{granted: granted})
+	svc := service.NewJoinRequestService(repository.NewDBTxRunner(db), repository.NewDomainJoinRequestRepository(db), domainRepo, repository.NewUserRepository(db))
+	h := NewJoinRequestHandler(svc, &stubReviewPerm{granted: granted}, nil)
 
 	r := gin.New()
 	// 伪造登录态：与生产 middleware.JWTAuth 注入的 key 保持一致。

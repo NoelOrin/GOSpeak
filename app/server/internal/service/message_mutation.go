@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"GOSpeak/internal/protocol"
 	"GOSpeak/internal/bus"
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
@@ -74,7 +75,7 @@ func (s *MessageService) Edit(roomUUID, messageUUID string, actor MessageActor, 
 	// 1) broadcast first
 	s.enrichAuthorDTO(dto)
 	if s.bus != nil {
-		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:updated", dto)
+		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), protocol.EventMessageUpdated, dto)
 	}
 
 	// 2) enqueue mutate
@@ -144,7 +145,7 @@ func (s *MessageService) Delete(roomUUID, messageUUID string, actor MessageActor
 		CreatedAt:  msg.CreatedAt,
 	}
 	if s.bus != nil {
-		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:deleted", dto)
+		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), protocol.EventMessageDeleted, dto)
 	}
 
 	// 2) enqueue mutate
@@ -203,11 +204,11 @@ func (s *MessageService) React(roomUUID, messageUUID string, actor MessageActor,
 
 	// 1) broadcast first
 	if s.bus != nil {
-		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:reaction", map[string]interface{}{
-			"action":       "added",
-			"message_uuid": messageUUID,
-			"user_id":      actor.Identity,
-			"emoji":        emoji,
+		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), protocol.EventMessageReaction, protocol.MessageReactionPayload{
+			Action:      "added",
+			MessageUUID: messageUUID,
+			UserID:      actor.Identity,
+			Emoji:       emoji,
 		})
 	}
 
@@ -270,11 +271,11 @@ func (s *MessageService) Unreact(roomUUID, messageUUID string, actor MessageActo
 
 	// 1) broadcast first
 	if s.bus != nil {
-		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:reaction", map[string]interface{}{
-			"action":       "removed",
-			"message_uuid": messageUUID,
-			"user_id":      actor.Identity,
-			"emoji":        emoji,
+		_ = s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), protocol.EventMessageReaction, protocol.MessageReactionPayload{
+			Action:      "removed",
+			MessageUUID: messageUUID,
+			UserID:      actor.Identity,
+			Emoji:       emoji,
 		})
 	}
 

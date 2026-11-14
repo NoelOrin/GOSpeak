@@ -15,13 +15,8 @@ type JoinRequestHandler struct {
 	permSvc   globalPermissionChecker
 }
 
-func NewJoinRequestHandler(svc *service.JoinRequestService, domainSvc domainPermissionChecker) *JoinRequestHandler {
-	return &JoinRequestHandler{svc: svc, domainSvc: domainSvc}
-}
-
-// SetGlobalPermissionChecker 注入平台权限判决依赖（平台管理员跨域审核时使用）。
-func (h *JoinRequestHandler) SetGlobalPermissionChecker(permSvc globalPermissionChecker) {
-	h.permSvc = permSvc
+func NewJoinRequestHandler(svc *service.JoinRequestService, domainSvc domainPermissionChecker, permSvc globalPermissionChecker) *JoinRequestHandler {
+	return &JoinRequestHandler{svc: svc, domainSvc: domainSvc, permSvc: permSvc}
 }
 
 func (h *JoinRequestHandler) canReview(c *gin.Context, domainUUID string) bool {

@@ -26,10 +26,6 @@ definitions:
     properties:
       domain_uuid:
         type: string
-      identity:
-        description: 兼容字段，服务端以 JWT username 覆盖
-        example: user-123
-        type: string
       password:
         type: string
       room:

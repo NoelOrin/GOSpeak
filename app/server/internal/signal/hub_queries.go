@@ -3,9 +3,9 @@ package signal
 import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/logger"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 )
 
@@ -251,7 +251,7 @@ func (h *Hub) enrichMembers(members []MemberInfo) []MemberInfo {
 			for _, id := range identities {
 				muted[id] = true
 			}
-			log.Printf("[Signal] mute batch check failed: %v", err)
+			logger.WithComponent("Signal").Infof("[Signal] mute batch check failed: %v", err)
 		}
 	}
 
@@ -316,9 +316,6 @@ func (h *Hub) deleteRoomIfEmptyLocked(roomName string) bool {
 	delete(h.rooms, roomName)
 	return true
 }
-
-// registerStreamLocked 在 WS join 时登记 stream→room 反查 + room→streams 聚合 + identity→stream 映射。
-// 调用方须持有 h.mu（写）。stream 为空则跳过（provider 无 stream 概念）。
 
 // DomainOnlineIdentities 返回指定域下所有房间内去重后的在线身份名。
 // 用于域级访客在线统计（软上限）。

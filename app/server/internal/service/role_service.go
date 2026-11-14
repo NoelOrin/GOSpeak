@@ -2,6 +2,7 @@
 package service
 
 import (
+	"log"
 	"strings"
 
 	"GOSpeak/internal/model"
@@ -14,27 +15,16 @@ import (
 // RoleService 角色服务，封装角色 CRUD 及缓存管理。
 type RoleService struct {
 	roleRepo *repository.RoleRepository
+	permSvc  *PermissionService
 }
 
-// onRoleChanged 角色增删改后触发的回调（权限缓存/Casbin 策略重载），由组合根注入。
-var onRoleChanged func()
-
-// onRoleRenamed 角色改名回调（迁移 role_permissions 关联行 + Casbin 策略重载）。
-var onRoleRenamed func(oldName, newName string) error
-
-// SetOnRoleRenamed 注册角色改名回调。
-func (s *RoleService) SetOnRoleRenamed(fn func(oldName, newName string) error) {
-	onRoleRenamed = fn
-}
-
-// SetOnRoleChanged 注册角色变更回调，避免 RoleService 直接依赖 PermissionService。
-func (s *RoleService) SetOnRoleChanged(fn func()) {
-	onRoleChanged = fn
-}
+// notifyChanged 里权限缓存重载失败仅告警不阻断角色变更。
 
 func (s *RoleService) notifyChanged() {
-	if onRoleChanged != nil {
-		onRoleChanged()
+	if s.permSvc != nil {
+		if err := s.permSvc.LoadCache(); err != nil {
+			log.Printf("[Permission] role change: permission cache reload failed: %v", err)
+		}
 	}
 }
 
@@ -47,8 +37,8 @@ func validateRoleName(name string) (string, error) {
 	return name, nil
 }
 
-func NewRoleService(roleRepo *repository.RoleRepository) *RoleService {
-	return &RoleService{roleRepo: roleRepo}
+func NewRoleService(roleRepo *repository.RoleRepository, permSvc *PermissionService) *RoleService {
+	return &RoleService{roleRepo: roleRepo, permSvc: permSvc}
 }
 
 // List 获取所有角色列表。
@@ -97,8 +87,8 @@ func (s *RoleService) Update(id uint, name string) (*model.Role, error) {
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, err.Error())
 	}
 	// 角色名是权限关联行与 Casbin 策略的 key，改名必须连带迁移，否则权限立即丢失。
-	if onRoleRenamed != nil && oldRole.Name != name {
-		if err := onRoleRenamed(oldRole.Name, name); err != nil {
+	if s.permSvc != nil && oldRole.Name != name {
+		if err := s.permSvc.RenameRole(oldRole.Name, name); err != nil {
 			return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "role renamed but permissions migration failed: "+err.Error())
 		}
 	}

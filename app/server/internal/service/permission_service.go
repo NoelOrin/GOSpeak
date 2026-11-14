@@ -16,8 +16,6 @@ import (
 	casbinpersist "github.com/casbin/casbin/v2/persist"
 )
 
-const EventPermissionsInvalidated = "cache:permissions-invalidated"
-
 // cacheBus publishes internal cache invalidation events (no WebSocket).
 type cacheBus interface {
 	PublishInternal(ctx context.Context, event string, payload interface{}) error
@@ -175,9 +173,8 @@ func (s *PermissionService) SyncRolePermissions(roleName string, permCodes []str
 	s.cache[roleName] = set
 	s.cacheMu.Unlock()
 	if s.bus != nil {
-		if err := s.bus.PublishInternal(context.Background(), EventPermissionsInvalidated, map[string]string{
-			"role": roleName,
-		}); err != nil {
+		if err := s.bus.PublishInternal(context.Background(), EventPermissionsInvalidated,
+			PermissionsInvalidatedPayload{Role: roleName}); err != nil {
 			log.Printf("[Permission] publish invalidate: %v", err)
 		}
 	}

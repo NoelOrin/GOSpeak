@@ -39,9 +39,15 @@ func Generate(pkgDir string) (map[string]string, error) {
 		return nil, fmt.Errorf("parse %s: %w", pkgDir, err)
 	}
 	g := &gen{fset: fset, consts: map[string]string{}, structs: map[string]*structDef{}, goNameByWire: map[string]string{}}
+	// 两阶段：先全量收集常量/struct（Catalog 条目引用跨文件常量），再解析 Catalog。
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Files {
-			g.walkFile(file)
+			g.walkFile(file, phaseCollect)
+		}
+	}
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Files {
+			g.walkFile(file, phaseCatalog)
 		}
 	}
 	for constName, value := range g.consts {
@@ -71,19 +77,26 @@ type gen struct {
 	goNameByWire map[string]string
 }
 
-func (g *gen) walkFile(file *ast.File) {
+type parsePhase int
+
+const (
+	phaseCollect parsePhase = iota
+	phaseCatalog
+)
+
+func (g *gen) walkFile(file *ast.File, phase parsePhase) {
 	for _, decl := range file.Decls {
 		gd, ok := decl.(*ast.GenDecl)
 		if !ok {
 			continue
 		}
 		for _, spec := range gd.Specs {
-			g.genSpec(spec)
+			g.genSpec(spec, phase)
 		}
 	}
 }
 
-func (g *gen) genSpec(spec ast.Spec) {
+func (g *gen) genSpec(spec ast.Spec, phase parsePhase) {
 	switch s := spec.(type) {
 	case *ast.ValueSpec:
 		// 字符串常量收集（事件名 + Direction 等，统一供 Ident 解析）
@@ -95,9 +108,9 @@ func (g *gen) genSpec(spec ast.Spec) {
 				g.consts[name.Name] = lit
 			}
 		}
-		// Catalog 变量：var Catalog = []Event{...}
+		// Catalog 变量：var Catalog = []Event{...}（仅在 catalog 阶段解析）
 		for i, name := range s.Names {
-			if name.Name != "Catalog" || i >= len(s.Values) {
+			if name.Name != "Catalog" || i >= len(s.Values) || phase != phaseCatalog {
 				continue
 			}
 			cl, ok := s.Values[i].(*ast.CompositeLit)
@@ -288,9 +301,12 @@ func (g *gen) tsType(expr ast.Expr) (string, error) {
 			return "", err
 		}
 		return fmt.Sprintf("Record<string, %s>", val), nil
-	case *ast.SelectorExpr:
+	case *ast.SelectorExpr: // json.RawMessage / time.Time 等
 		if id, ok := t.X.(*ast.Ident); ok && id.Name == "json" && t.Sel.Name == "RawMessage" {
 			return "unknown", nil
+		}
+		if id, ok := t.X.(*ast.Ident); ok && id.Name == "time" && t.Sel.Name == "Time" {
+			return "string", nil
 		}
 		return "", fmt.Errorf("%w: selector %s.%s", errUnsupported, t.X, t.Sel)
 	case *ast.InterfaceType:
@@ -393,15 +409,44 @@ func (g *gen) emitPayloads() string {
 	var b bytes.Buffer
 	b.WriteString(generatedHeader)
 	b.WriteString("// WS 事件 payload 类型：来源 app/server/internal/protocol/payloads.go\n")
-	names := make([]string, 0, len(g.structs))
-	for n := range g.structs {
+	// 只输出 wire 事件引用的 payload（含嵌套依赖）；Internal 事件的 payload 不产出 TS。
+	referenced := map[string]bool{}
+	var collect func(name string)
+	collect = func(name string) {
+		if referenced[name] {
+			return
+		}
+		referenced[name] = true
+		if def, ok := g.structs[name]; ok {
+			for _, f := range def.Fields {
+				// 字段类型里的自定义 struct 引用递归收集
+				for cand := range g.structs {
+					if strings.Contains(f.Type, cand) {
+						collect(cand)
+					}
+				}
+			}
+		}
+	}
+	for _, e := range g.wireEvents() {
+		if e.Payload != "" {
+			collect(e.Payload)
+		}
+	}
+	names := make([]string, 0, len(referenced))
+	for n := range referenced {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	for _, n := range names {
+	// 接口之间以空行分隔，文件末尾不加空行——与 biome 格式化结果一致，
+	// 否则 pre-commit 的 stage_fixed 会重写产物造成永久漂移。
+	for i, n := range names {
 		def := g.structs[n]
 		if len(def.Fields) == 0 {
 			continue
+		}
+		if i > 0 {
+			b.WriteString("\n")
 		}
 		fmt.Fprintf(&b, "export interface %s {\n", n)
 		for _, f := range def.Fields {
@@ -414,7 +459,7 @@ func (g *gen) emitPayloads() string {
 			}
 			fmt.Fprintf(&b, "\t%s%s: %s;\n", f.Name, opt, f.Type)
 		}
-		b.WriteString("}\n\n")
+		b.WriteString("}\n")
 	}
 	return b.String()
 }
@@ -424,8 +469,6 @@ func (g *gen) emitEnvelope() string {
 	b.WriteString(generatedHeader)
 	b.WriteString(`// ACK 信封约定（与 ws.ACK 对应）：成功 data 携带结果、失败走 error 通道。
 // emitAck 成功路径 resolve 的是 data 本身（非信封）。
-import type { EventName } from "./events";
-
 export interface AckFrame<T = unknown> {
 	id?: string;
 	event: string;
@@ -437,7 +480,7 @@ export interface AckFrame<T = unknown> {
 // P1 各事件 data 尚未全部类型化（PayloadOf 于 P2 补齐），统一先 unknown。
 export type AckPayload<T> = T;
 
-export type AckResult<E extends EventName = EventName> = AckPayload<unknown>;
+export type AckResult = AckPayload<unknown>;
 `)
 	return b.String()
 }

@@ -51,7 +51,7 @@ func (c *Config) normalize() {
 		c.NATSSubjectPrefix = "gospeak"
 	}
 	if c.SFUProvider == "" {
-		c.SFUProvider = "livekit"
+		c.SFUProvider = DefaultSFUProvider
 	}
 	if c.ServerPort == "" {
 		c.ServerPort = "8998"

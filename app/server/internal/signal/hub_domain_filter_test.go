@@ -1,11 +1,13 @@
 package signal
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
 	"GOSpeak/internal/bus"
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/protocol"
 	"GOSpeak/internal/pkg"
 )
 
@@ -94,15 +96,15 @@ func TestHub_DomainEventPayloadsIncludeDomainUUID(t *testing.T) {
 
 	assertDomainPayload(t, fanout.roomCasts["domain-a:lobby"][EventMemberJoined][0], "domain-a")
 
-	hub.OnMemberMicState(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"alice","isMicMuted":true}`)
+	hub.OnMemberMicState(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"alice","is_mic_muted":true}`)
 	assertDomainPayload(t, fanout.roomCasts["domain-a:lobby"][EventMemberUpdated][0], "domain-a")
 
 	hub.OnMemberSpeaking(conn, `{"room":"lobby","domain_uuid":"domain-a","identity":"alice","speaking":true}`)
 	assertDomainPayload(t, fanout.roomCasts["domain-a:lobby"][EventRoomActiveSpeakers][0], "domain-a")
 
 	hub.OnRoomLeave(conn, `{"room":"lobby","domain_uuid":"domain-a"}`)
-	left, ok := conn.lastEvent(EventRoomLeft).(map[string]interface{})
-	if !ok || left["domain_uuid"] != "domain-a" {
+	left, ok := conn.lastEvent(EventRoomLeft).(protocol.RoomLeftPayload)
+	if !ok || left.DomainUUID != "domain-a" {
 		t.Fatalf("expected room:left to carry domain_uuid, got %#v", left)
 	}
 	assertDomainPayload(t, fanout.roomCasts["domain-a:lobby"][EventMemberLeft][0], "domain-a")
@@ -125,7 +127,7 @@ func TestHub_DomainEventPayloadsIncludeDomainUUID(t *testing.T) {
 		Role:        "user",
 		Permissions: []string{"signal:kick"},
 	}}
-	kickHub.OnRoomKick(bot, `{"room":"lobby","domain_uuid":"domain-a","targetIdentity":"alice"}`)
+	kickHub.OnRoomKick(bot, `{"room":"lobby","domain_uuid":"domain-a","target_identity":"alice"}`)
 	kickFanout := kickHub.fanout.(*mockBroadcaster)
 	assertDomainPayload(t, kickFanout.roomCasts["domain-a:lobby"][EventRoomKicked][0], "domain-a")
 	assertDomainPayload(t, kickFanout.roomCasts["domain-a:lobby"][EventMemberLeft][0], "domain-a")
@@ -133,9 +135,17 @@ func TestHub_DomainEventPayloadsIncludeDomainUUID(t *testing.T) {
 
 func assertDomainPayload(t *testing.T, payload interface{}, want string) {
 	t.Helper()
-	m, ok := payload.(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected map payload, got %T: %#v", payload, payload)
+	var m map[string]interface{}
+	if mm, ok := payload.(map[string]interface{}); ok {
+		m = mm
+	} else {
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("marshal payload %T: %v", payload, err)
+		}
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("unmarshal payload %T: %v", payload, err)
+		}
 	}
 	if got, _ := m["domain_uuid"].(string); got != want {
 		t.Fatalf("expected domain_uuid %q, got %q in %#v", want, got, m)

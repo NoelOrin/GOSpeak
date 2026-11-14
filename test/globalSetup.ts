@@ -143,7 +143,9 @@ export default async function setup(): Promise<() => Promise<void>> {
 			SERVER_PORT: String(port),
 			DB_TYPE: "SQLite",
 			DB_PATH: join(dir, "app.db"),
-			DB_WAL: "false",
+			// 并行 vitest worker 会并发写 SQLite（私聊未读计数、消息落库等）；
+			// WAL + busy_timeout 消除 SQLITE_BUSY 下的静默写失败（见 repository/db.go）。
+			DB_WAL: "true",
 			// auto = embedded NATS (default when NATS_URL empty); none 降级路径已在 v5138 移除
 			STATE_STORE: "auto",
 			NATS_EMBEDDED_PORT: "0",

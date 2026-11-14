@@ -4,6 +4,7 @@ import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/permcode"
 	"GOSpeak/internal/pkg"
+	"GOSpeak/internal/protocol"
 	message "GOSpeak/internal/pkg/message"
 	"GOSpeak/internal/ws"
 )
@@ -18,25 +19,9 @@ type messageSender interface {
 	Unreact(roomUUID, messageUUID string, actor message.Actor, emoji string) error
 }
 
-// messageSendPayload is the client->server payload for message:send.
-type messageSendPayload struct {
-	Room        string   `json:"room"`
-	DomainUUID  string   `json:"domain_uuid,omitempty"`
-	Content     string   `json:"content"`
-	ReplyTo     string   `json:"reply_to,omitempty"`
-	Mentions    []string `json:"mentions,omitempty"`
-	ClientNonce string   `json:"client_nonce,omitempty"`
-}
-
-// messageMutatePayload is the client->server payload for message operations
-// targeting an existing message (edit/delete/react/unreact).
-type messageMutatePayload struct {
-	Room        string `json:"room"`
-	DomainUUID  string `json:"domain_uuid,omitempty"`
-	MessageUUID string `json:"message_uuid"`
-	Content     string `json:"content,omitempty"`
-	Emoji       string `json:"emoji,omitempty"`
-}
+// 上行 payload 定义已收编至 protocol（MessageSendPayload/MessageMutatePayload）。
+type messageSendPayload = protocol.MessageSendPayload
+type messageMutatePayload = protocol.MessageMutatePayload
 
 // ACK 约定（protocol 单一事实源，规格 §3.3）：
 // 成功 return "", nil（wire ACK 无 data）；失败 return "", *AppError

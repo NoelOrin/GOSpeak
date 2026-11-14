@@ -2,6 +2,7 @@ package repository
 
 import (
 	"GOSpeak/internal/model"
+	"GOSpeak/internal/sfu"
 
 	"gorm.io/gorm"
 )
@@ -33,13 +34,13 @@ func (r *SFUConfigRepository) ListProviders() ([]model.SFUConfig, error) {
 	return cfgs, err
 }
 
-// GetActiveProvider 返回当前激活的 provider 名称。默认 "livekit"。
+// GetActiveProvider 返回当前激活的 provider 名称，默认回退内置 provider。
 func (r *SFUConfigRepository) GetActiveProvider() (string, error) {
 	var ap model.SFUActiveProvider
 	err := r.db.First(&ap).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return "livekit", nil
+			return sfu.DefaultProviderName, nil
 		}
 		return "", err
 	}

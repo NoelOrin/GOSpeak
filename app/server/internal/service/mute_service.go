@@ -18,7 +18,6 @@ import (
 
 const (
 	// EventMuteChanged 是禁言状态变更的 NATS 内部失效事件。
-	EventMuteChanged = "cache:mute-changed"
 
 	// muteCacheTTL 控制 Worker 禁言判定的最大缓存窗口；禁言/解禁会主动失效。
 	muteCacheTTL = 5 * time.Second
@@ -43,18 +42,13 @@ type MuteService struct {
 	muteRepo *repository.MuteRepository
 	userRepo *repository.UserRepository
 	bus      cacheBus
-	// onExpired 在临时禁言过期且 DB 记录被删除后触发完整 unmute 流程。
-	onExpired MuteExpiryHandler
-	expiryMu  sync.Mutex
+	expiryMu sync.Mutex
 	expiring  map[uint]bool
 
 	byIdentity map[string]muteCacheEntry
 	byUserID   map[uint]muteCacheEntry
 	cacheMu    sync.RWMutex
 }
-
-// MuteExpiryHandler 处理临时禁言到期后的业务通知（广播 unmute + SFU 恢复）。
-type MuteExpiryHandler func(userID uint)
 
 func NewMuteService(muteRepo *repository.MuteRepository, userRepo *repository.UserRepository) *MuteService {
 	return &MuteService{
@@ -116,19 +110,14 @@ func (s *MuteService) invalidateMute(userID uint, identity string, publish bool)
 	s.cacheMu.Unlock()
 
 	if publish && s.bus != nil {
-		payload := map[string]string{
-			"user_id":  strconv.FormatUint(uint64(userID), 10),
-			"identity": identity,
+		payload := MuteChangedPayload{
+			UserID:   strconv.FormatUint(uint64(userID), 10),
+			Identity: identity,
 		}
 		if err := s.bus.PublishInternal(context.Background(), EventMuteChanged, payload); err != nil {
 			log.Printf("[Mute] publish invalidate: %v", err)
 		}
 	}
-}
-
-// SetOnExpired 注入临时禁言过期后的完整解禁回调。
-func (s *MuteService) SetOnExpired(fn MuteExpiryHandler) {
-	s.onExpired = fn
 }
 
 // IsMuted 检查用户是否被禁言
@@ -289,7 +278,7 @@ func (s *MuteService) MuteUser(muterID, userID uint, duration int64, permanent b
 		return nil, pkg.NewAppError(pkg.INTERNAL_ERROR)
 	}
 	// 禁止禁言管理员；Bot 可禁言普通用户，但不可抬权到管理面。
-	if target.Role == "admin" {
+	if target.Role == model.RoleAdmin {
 		muter, merr := s.userRepo.GetByID(muterID)
 		if merr != nil || muter == nil || muter.Role != "admin" || muter.IsBot {
 			return nil, pkg.NewAppError(pkg.FORBIDDEN, "cannot mute admin")
@@ -341,9 +330,9 @@ func (s *MuteService) UnmuteUser(userID uint) error {
 	return nil
 }
 
-// notifyExpired 触发过期后的完整 unmute 回调，并防止并发调用重复触发。
+// notifyExpired 发布禁言到期事件（订阅方执行完整 unmute），并防止并发调用重复触发。
 func (s *MuteService) notifyExpired(userID uint) {
-	if userID == 0 || s.onExpired == nil {
+	if userID == 0 || s.bus == nil {
 		return
 	}
 	s.expiryMu.Lock()
@@ -361,7 +350,14 @@ func (s *MuteService) notifyExpired(userID uint) {
 		delete(s.expiring, userID)
 		s.expiryMu.Unlock()
 	}()
-	s.onExpired(userID)
+	// 发布到期事件：订阅方（signal Hub）执行完整 unmute（广播 + SFU 恢复），
+	// service 层不再倒挂依赖 signal。
+	if s.bus != nil {
+		payload := MuteExpiredPayload{UserID: strconv.FormatUint(uint64(userID), 10)}
+		if err := s.bus.PublishInternal(context.Background(), EventMuteExpired, payload); err != nil {
+			log.Printf("[Mute] publish expiry: %v", err)
+		}
+	}
 }
 
 // GetMuteStatus 查询禁言状态

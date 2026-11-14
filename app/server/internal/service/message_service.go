@@ -14,6 +14,7 @@ import (
 	"GOSpeak/internal/model"
 	"GOSpeak/internal/pkg"
 	message "GOSpeak/internal/pkg/message"
+	"GOSpeak/internal/protocol"
 	"GOSpeak/internal/repository"
 
 	"github.com/google/uuid"
@@ -81,14 +82,13 @@ type MessageService struct {
 }
 
 // NewMessageService creates a MessageService.
-// Room repo is required; bus and queue are optional (set via setters).
-// NewMessageService creates a MessageService.
-// Room repo is required; bus and queue are optional (set via setters).
-func NewMessageService(msgRepo *repository.MessageRepository, roomRepo roomByUUID, domainChecker DomainMemberChecker) *MessageService {
+// Room repo is required; userRepo 可选（昵称展示），bus/queue 经 setter 延迟绑定。
+func NewMessageService(msgRepo *repository.MessageRepository, roomRepo roomByUUID, domainChecker DomainMemberChecker, userRepo userByName) *MessageService {
 	return &MessageService{
 		msgRepo:          msgRepo,
 		roomRepo:         roomRepo,
 		domainChecker:    domainChecker,
+		userRepo:         userRepo,
 		syncWriteAllowed: true,
 	}
 }
@@ -97,15 +97,6 @@ func NewMessageService(msgRepo *repository.MessageRepository, roomRepo roomByUUI
 // the database synchronously. Worker data-plane instances must disable this.
 func (s *MessageService) SetSyncWriteAllowed(allowed bool) {
 	s.syncWriteAllowed = allowed
-}
-
-// SetEventBus sets the event bus for broadcasting to online clients.
-// SetUserRepo sets the user repository for fetching author info.
-
-// SetEventBus sets the event bus for broadcasting to online clients.
-// SetUserRepo sets the user repository for fetching author info.
-func (s *MessageService) SetUserRepo(repo userByName) {
-	s.userRepo = repo
 }
 
 // enrichAuthorInfo fills AuthorName and AuthorAvatar for a batch of MessageDTOs.
@@ -247,7 +238,7 @@ func (s *MessageService) Send(roomUUID string, actor MessageActor, content, repl
 	// 1) broadcast first；广播失败时立即同步落库，避免消息仅存在于易失广播面。
 	s.enrichAuthorDTO(dto)
 	if s.bus != nil {
-		if err := s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), "message:created", dto); err != nil {
+		if err := s.bus.PublishRoom(context.Background(), broadcastRoomKey(room.DomainUUID, room.Name), protocol.EventMessageCreated, dto); err != nil {
 			if !s.syncWriteAllowed {
 				return nil, pkg.NewAppError(pkg.INTERNAL_ERROR, "message persistence unavailable on data-plane instance")
 			}

@@ -40,9 +40,9 @@ func newInviteJoinHandlerEnv(t *testing.T) *inviteJoinHandlerEnv {
 	domainRepo := repository.NewDomainRepository(db)
 	userRepo := repository.NewUserRepository(db)
 	inviteRepo := repository.NewDomainInviteRepository(db)
-	inviteSvc := service.NewInviteService(db, inviteRepo, domainRepo, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "jwt-key")
-	joinReqSvc := service.NewJoinRequestService(db, repository.NewDomainJoinRequestRepository(db), domainRepo, userRepo)
-	joinSvc := service.NewInviteJoinService(db, inviteSvc, joinReqSvc, inviteRepo, domainRepo, userRepo, nil, nil)
+	inviteSvc := service.NewInviteService(inviteRepo, domainRepo, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "jwt-key")
+	joinReqSvc := service.NewJoinRequestService(repository.NewDBTxRunner(db), repository.NewDomainJoinRequestRepository(db), domainRepo, userRepo)
+	joinSvc := service.NewInviteJoinService(repository.NewDBTxRunner(db), inviteSvc, joinReqSvc, inviteRepo, domainRepo, userRepo, nil, nil)
 	h := NewInviteJoinHandler(joinSvc, defaultAuthCookieConfig())
 
 	r := gin.New()

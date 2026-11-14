@@ -10,7 +10,7 @@
 // 脚本会明确报错而不是静默放行。
 import { execFileSync } from "node:child_process";
 
-const BASELINE = 11;
+const BASELINE = 0;
 const RULE = "lint/correctness/useExhaustiveDependencies";
 const args = [
 	"exec",

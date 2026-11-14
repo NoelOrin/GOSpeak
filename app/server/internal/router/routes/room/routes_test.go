@@ -86,8 +86,8 @@ func TestRoomHandler_CRUD_AllowedThroughProtectedRoutesWithoutGlobalPermission(t
 		t.Fatalf("seed room: %v", err)
 	}
 
-	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db))
-	h := handler.NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc)
+	domainSvc := service.NewDomainService(repository.NewDomainRepository(db), repository.NewDomainRoleRepository(db), nil)
+	h := handler.NewRoomHandler(service.NewRoomService(repository.NewRoomRepository(db)), nil, domainSvc, nil, nil)
 
 	r := gin.New()
 	protected := r.Group("/room")
