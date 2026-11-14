@@ -57,7 +57,6 @@ describe("chatStore domain payloads", () => {
 
 		expect(storeMock.joinRoom).toHaveBeenCalledWith(
 			"text-chat",
-			"",
 			undefined,
 			"domain-1",
 		);
@@ -84,7 +83,6 @@ describe("chatStore domain payloads", () => {
 
 		expect(storeMock.joinRoom).toHaveBeenCalledWith(
 			"text-chat-2",
-			"",
 			undefined,
 			"fallback-domain",
 		);
@@ -148,7 +146,6 @@ describe("chatStore domain payloads", () => {
 
 		expect(storeMock.joinRoom).toHaveBeenCalledWith(
 			"text-chat-5",
-			"",
 			"secret",
 			"domain-1",
 		);

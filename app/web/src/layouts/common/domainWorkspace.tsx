@@ -67,6 +67,7 @@ export default function DomainWorkspace({
 	const searching = useTextRoomUiStore((s) => s.searching);
 
 	// 切换文字频道时清掉上一个房间的搜索 / 线程 / 回复状态
+	// biome-ignore lint/correctness/useExhaustiveDependencies: textRoom 为有意触发器（切频道即重置）
 	useEffect(() => {
 		useTextRoomUiStore.getState().resetForRoom();
 	}, [textRoom]);
@@ -362,7 +363,7 @@ function ChannelPicker({
 	if (list.length === 0) return null;
 
 	const join = (room: RoomInfo) => {
-		if (room.hasPassword) return;
+		if (room.has_password) return;
 		if (room.type === "text") {
 			void chatStore.joinTextRoom({
 				uuid: room.uuid,
@@ -382,10 +383,10 @@ function ChannelPicker({
 				<button
 					key={`${room.domain_uuid ?? ""}:${room.name}`}
 					type="button"
-					disabled={room.hasPassword}
+					disabled={room.has_password}
 					onClick={() => join(room)}
 					title={
-						room.hasPassword
+						room.has_password
 							? "该频道需要密码，请在左侧列表双击进入"
 							: `进入 ${room.name}`
 					}
@@ -399,7 +400,7 @@ function ChannelPicker({
 					<span className="text-foreground min-w-0 flex-1 truncate text-sm">
 						{room.name}
 					</span>
-					{room.hasPassword && (
+					{room.has_password && (
 						<Lock size={12} className="text-muted-foreground shrink-0" />
 					)}
 					<span className="text-muted-foreground shrink-0 text-xs">

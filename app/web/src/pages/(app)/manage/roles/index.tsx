@@ -88,6 +88,7 @@ function RolesPage() {
 		}
 	}, [roleList.length]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: permsReload 为有意触发器（保存/同步权限后重拉当前角色权限）
 	useEffect(() => {
 		const role = selectedRole;
 		if (!role) return;

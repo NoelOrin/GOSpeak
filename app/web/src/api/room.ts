@@ -63,7 +63,12 @@ export async function listRooms(
 	});
 
 	if (!data) throw new Error("room data is missing");
-	return data;
+	return {
+		rooms: data.rooms ?? [],
+		total: data.total ?? 0,
+		page: data.page ?? page,
+		size: data.size ?? pageSize,
+	};
 }
 
 export async function updateRoom(req: UpdateRoomReq): Promise<RoomRecord> {

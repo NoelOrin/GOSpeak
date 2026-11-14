@@ -10,10 +10,10 @@ import UserInfoPopover from "./userInfoPopover";
 interface MemberItemProps {
 	identity: string;
 	name: string;
-	displayName: string;
+	display_name: string;
 	avatar: string;
-	isMicMuted: boolean;
-	isMuted: boolean;
+	is_mic_muted: boolean;
+	is_muted: boolean;
 	isMe: boolean;
 	onSelect: (identity: string, x: number, y: number) => void;
 	isSelected: boolean;
@@ -22,10 +22,10 @@ interface MemberItemProps {
 function MemberListItem(props: MemberItemProps) {
 	const displayName = props.isMe
 		? useUserStore.getState().user?.display_name ||
-			props.displayName ||
+			props.display_name ||
 			props.name ||
 			props.identity
-		: props.displayName || props.name || props.identity;
+		: props.display_name || props.name || props.identity;
 
 	return (
 		<button
@@ -40,7 +40,7 @@ function MemberListItem(props: MemberItemProps) {
 					className="size-6"
 					textClass="text-2xs"
 					src={props.avatar}
-					name={props.displayName || props.name || props.identity}
+					name={props.display_name || props.name || props.identity}
 				/>
 				<span
 					className="border-card bg-success absolute -right-0.5 -bottom-0.5 size-2 rounded-full border"
@@ -48,7 +48,7 @@ function MemberListItem(props: MemberItemProps) {
 				/>
 			</span>
 			<span className="flex-1 truncate text-xs font-medium">{displayName}</span>
-			{(props.isMicMuted || props.isMuted) && (
+			{(props.is_mic_muted || props.is_muted) && (
 				<MicOff size={12} className="text-faint-foreground shrink-0" />
 			)}
 			{props.isMe && <span className="text-faint-foreground text-2xs">你</span>}
@@ -112,10 +112,10 @@ export default function MemberSidebar({
 							key={member.identity}
 							identity={member.identity}
 							name={member.name}
-							displayName={member.displayName ?? ""}
+							display_name={member.display_name ?? ""}
 							avatar={member.avatar ?? ""}
-							isMicMuted={!!member.isMicMuted}
-							isMuted={!!member.isMuted}
+							is_mic_muted={!!member.is_mic_muted}
+							is_muted={!!member.is_muted}
 							isMe={member.identity === myName}
 							onSelect={handleSelect}
 							isSelected={selectedIdentity?.identity === member.identity}

@@ -5,7 +5,18 @@ vi.mock("@/api/sfu", () => ({
 		response.provider || "livekit",
 }));
 
-import { runVoiceJoin, VoiceJoinAbortError } from "./runVoiceJoin";
+import type { SFUClient } from "@gospeak/sfu-client/types";
+import {
+	createVoiceJoinCoordinator,
+	runVoiceJoin,
+	VoiceJoinAbortError,
+	type VoiceJoinResult,
+} from "./runVoiceJoin";
+
+const joinResult = (): VoiceJoinResult => ({
+	client: {} as unknown as SFUClient,
+	provider: "livekit",
+});
 
 vi.mock("idb-keyval", () => ({
 	get: vi.fn(async () => undefined),
@@ -106,7 +117,7 @@ describe("runVoiceJoin", () => {
 			deps as any,
 		);
 		expect(connectSignal).toHaveBeenCalledWith("wss://worker-a.example");
-		expect(rejoinTextRoom).toHaveBeenCalledWith("lobby", "domain-a", "alice");
+		expect(rejoinTextRoom).toHaveBeenCalledWith("lobby", "domain-a");
 		expect(deps.joinSignalRoom.mock.invocationCallOrder[0]).toBeGreaterThan(
 			rejoinTextRoom.mock.invocationCallOrder[0],
 		);
@@ -128,15 +139,9 @@ describe("runVoiceJoin", () => {
 			stream: undefined,
 			streamToken: undefined,
 		});
-		expect(deps.joinSignalRoom).toHaveBeenCalledWith(
-			"r1",
-			"alice",
-			"pwd",
-			"domain-a",
-		);
+		expect(deps.joinSignalRoom).toHaveBeenCalledWith("r1", "pwd", "domain-a");
 		expect(deps.joinSignalSfu).toHaveBeenCalledWith(
 			"r1",
-			"alice",
 			undefined,
 			"domain-a",
 		);
@@ -179,18 +184,8 @@ describe("runVoiceJoin", () => {
 			streamToken: undefined,
 		});
 		expect(deps.setupAudio).toHaveBeenCalledWith(client);
-		expect(deps.joinSignalRoom).toHaveBeenCalledWith(
-			"r1",
-			"alice",
-			"pwd",
-			undefined,
-		);
-		expect(deps.joinSignalSfu).toHaveBeenCalledWith(
-			"r1",
-			"alice",
-			undefined,
-			undefined,
-		);
+		expect(deps.joinSignalRoom).toHaveBeenCalledWith("r1", "pwd", undefined);
+		expect(deps.joinSignalSfu).toHaveBeenCalledWith("r1", undefined, undefined);
 	});
 
 	it("livekit does not serialize concurrent joins", async () => {
@@ -275,5 +270,62 @@ describe("runVoiceJoin", () => {
 		expect(leaveRoom).toHaveBeenCalled();
 		expect(destroy).toHaveBeenCalled();
 		expect(deps.joinSignalRoom).not.toHaveBeenCalled();
+	});
+});
+
+describe("createVoiceJoinCoordinator", () => {
+	it("reuses the in-flight promise for the same key", async () => {
+		const coordinator = createVoiceJoinCoordinator();
+		let executions = 0;
+		const join = () => {
+			executions += 1;
+			return new Promise<VoiceJoinResult>((resolve) => {
+				setTimeout(() => resolve(joinResult()), 10);
+			});
+		};
+		const p1 = coordinator.run("k", join);
+		const p2 = coordinator.run("k", join);
+		const [r1, r2] = await Promise.all([p1, p2]);
+		expect(executions).toBe(1);
+		expect(r2).toBe(r1);
+	});
+
+	it("different keys run independently", async () => {
+		const coordinator = createVoiceJoinCoordinator();
+		let executions = 0;
+		const join = async (): Promise<VoiceJoinResult> => {
+			executions += 1;
+			return joinResult();
+		};
+		await Promise.all([
+			coordinator.run("k1", join),
+			coordinator.run("k2", join),
+		]);
+		expect(executions).toBe(2);
+	});
+
+	it("a settled join is removed so a later call runs again", async () => {
+		const coordinator = createVoiceJoinCoordinator();
+		let executions = 0;
+		const join = async (): Promise<VoiceJoinResult> => {
+			executions += 1;
+			return joinResult();
+		};
+		await coordinator.run("k", join);
+		await coordinator.run("k", join);
+		expect(executions).toBe(2);
+	});
+
+	it("a failed join is removed so a later call can retry", async () => {
+		const coordinator = createVoiceJoinCoordinator();
+		let executions = 0;
+		const join = async (): Promise<VoiceJoinResult> => {
+			executions += 1;
+			if (executions === 1) throw new Error("boom");
+			return joinResult();
+		};
+		await expect(coordinator.run("k", join)).rejects.toThrow("boom");
+		await expect(coordinator.run("k", join)).resolves.toEqual(joinResult());
+		expect(executions).toBe(2);
 	});
 });

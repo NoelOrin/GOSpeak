@@ -19,8 +19,8 @@ export interface CreateRoomConfig {
 	password: string;
 	limit: number;
 	joinAfterCreate: boolean;
-	audioOnly: boolean;
-	allowAudience: boolean;
+	audio_only: boolean;
+	allow_audience: boolean;
 	description: string;
 	type: "text" | "voice";
 	domainUUID: string;
@@ -45,8 +45,8 @@ export default function CreateRoomModal({
 		name: "",
 		password: "",
 		limit: 12,
-		audioOnly: true,
-		allowAudience: true,
+		audio_only: true,
+		allow_audience: true,
 		joinAfterCreate: true,
 		description: "",
 	});
@@ -88,8 +88,8 @@ export default function CreateRoomModal({
 			required: true,
 			validation: (v: number) => fieldError(createRoomLimitSchema, v),
 		},
-		{ name: "audioOnly", label: "仅语音模式", type: "switch" },
-		{ name: "allowAudience", label: "允许听众加入", type: "switch" },
+		{ name: "audio_only", label: "仅语音模式", type: "switch" },
+		{ name: "allow_audience", label: "允许听众加入", type: "switch" },
 		{ name: "joinAfterCreate", label: "创建后进入域页", type: "switch" },
 		{
 			name: "description",
@@ -107,10 +107,10 @@ export default function CreateRoomModal({
 		mode:
 			values.type === "text"
 				? "文字聊天"
-				: values.audioOnly
+				: values.audio_only
 					? "语音"
 					: "音视频",
-		audience: values.allowAudience ? "允许旁听" : "仅成员加入",
+		audience: values.allow_audience ? "允许旁听" : "仅成员加入",
 	};
 
 	async function handleSubmit(formValues: Record<string, any>) {
@@ -125,8 +125,8 @@ export default function CreateRoomModal({
 				password: formValues.password,
 				limit: formValues.limit,
 				joinAfterCreate: formValues.joinAfterCreate,
-				audioOnly: formValues.audioOnly,
-				allowAudience: formValues.allowAudience,
+				audio_only: formValues.audio_only,
+				allow_audience: formValues.allow_audience,
 				description: formValues.description.trim(),
 				type: formValues.type === "text" ? "text" : "voice",
 				domainUUID: duuid,
@@ -136,8 +136,8 @@ export default function CreateRoomModal({
 				password: payload.password || undefined,
 				description: payload.description,
 				limit: payload.limit,
-				audio_only: payload.audioOnly,
-				allow_audience: payload.allowAudience,
+				audio_only: payload.audio_only,
+				allow_audience: payload.allow_audience,
 				type: payload.type,
 				domain_uuid: payload.domainUUID,
 			});
@@ -149,15 +149,15 @@ export default function CreateRoomModal({
 				uuid: room.uuid,
 				name: room.name,
 				domain_uuid: payload.domainUUID,
-				hasPassword: !!payload.password,
+				has_password: !!payload.password,
 				description: room.description,
 				limit: room.limit,
-				audioOnly: room.audio_only,
-				allowAudience: room.allow_audience,
+				audio_only: room.audio_only,
+				allow_audience: room.allow_audience,
 				type: room.type,
 				members: [],
 				count: 0,
-				createdAt: Date.now(),
+				created_at: Date.now(),
 			});
 			socketStore.listRooms();
 			toast.success(`已创建房间: ${payload.name}`);

@@ -45,6 +45,7 @@ export function useRoomAudioBridge(client: SFUClient | null, joined: boolean) {
 	const isInputMute = useVoiceChatStore((s) => s.isInputMute);
 	const speechRestricted = useSocketStore((s) => s.speechRestricted);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: isInputMute/speechRestricted 为有意触发器（静音态变化即同步推流开关）
 	useEffect(() => {
 		if (!client || !joined) return;
 		// 开麦可能因为权限被拒而失败：必须让用户知道"我没在说话"，而不是静默无声

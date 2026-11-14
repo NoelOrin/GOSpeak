@@ -19,13 +19,6 @@ export function clearReconnectingToast() {
 	}
 }
 
-export type JoinState =
-	| "idle"
-	| "connecting"
-	| "joined"
-	| "reconnecting"
-	| "failed";
-
 export type Session = {
 	roomName: string;
 	domain_uuid?: string;
@@ -35,19 +28,3 @@ export type Session = {
 	provider?: SFUProvider;
 	error?: string | null;
 };
-
-export function toLegacyJoinState(phase: VoicePhase): JoinState {
-	switch (phase) {
-		case "ready":
-		case "media_ready":
-			return "joined";
-		case "reconnecting":
-			return "reconnecting";
-		case "failed":
-			return "failed";
-		case "idle":
-			return "idle";
-		default:
-			return "connecting";
-	}
-}

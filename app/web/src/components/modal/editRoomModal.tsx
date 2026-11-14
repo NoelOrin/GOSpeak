@@ -40,8 +40,8 @@ export default function EditRoomModal({
 			required: true,
 			validation: (v: number) => fieldError(editRoomLimitSchema, v),
 		},
-		{ name: "audioOnly", label: "仅语音模式", type: "switch" },
-		{ name: "allowAudience", label: "允许听众加入", type: "switch" },
+		{ name: "audio_only", label: "仅语音模式", type: "switch" },
+		{ name: "allow_audience", label: "允许听众加入", type: "switch" },
 		{
 			name: "description",
 			label: "房间说明",
@@ -58,8 +58,8 @@ export default function EditRoomModal({
 				name: formValues.name.trim(),
 				description: formValues.description.trim(),
 				limit: formValues.limit,
-				audio_only: formValues.audioOnly,
-				allow_audience: formValues.allowAudience,
+				audio_only: formValues.audio_only,
+				allow_audience: formValues.allow_audience,
 			});
 			await onSaved(updated);
 			toast.success(`已更新房间: ${updated.name}`);
@@ -97,8 +97,8 @@ export default function EditRoomModal({
 							name: room.name,
 							description: room.description,
 							limit: room.limit,
-							audioOnly: room.audio_only,
-							allowAudience: room.allow_audience,
+							audio_only: room.audio_only,
+							allow_audience: room.allow_audience,
 						}}
 						formClassName="grid gap-2 md:grid-cols-2 md:gap-x-4"
 						submitButtonText="保存修改"

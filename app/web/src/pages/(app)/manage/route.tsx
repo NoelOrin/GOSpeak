@@ -20,6 +20,7 @@ function ManageLayout() {
 	const scrollRef = useRef<HTMLDivElement>(null);
 
 	// 子页切换时只滚内部容器，避免整页重挂 + window 滚顶叠加跳闪
+	// biome-ignore lint/correctness/useExhaustiveDependencies: location.pathname 为有意触发器（子页切换即滚顶）
 	useEffect(() => {
 		if (scrollRef.current) {
 			scrollRef.current.scrollTop = 0;

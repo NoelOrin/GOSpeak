@@ -52,7 +52,7 @@ src/
 ├── api/            # HTTP 客户端封装（axios）与按领域拆分的 API 模块
 ├── socket/         # WS 客户端：wsClient / events / socketEvents / roomState / providerReload / tabLock
 ├── handler_audio/  # 音频处理（AudioContext、按成员音量控制）
-├── protocol/       # WS 协议类型
+├── protocol/       # WS 协议类型（generated/ 为生成产物勿手改）
 ├── types/ utils/ assets/
 ├── main.tsx        # 入口：QueryClientProvider + RouterProvider
 ├── styles.css      # 全局样式入口
@@ -103,7 +103,7 @@ src/
 ## Conventions
 
 - 文件名沿用所在目录既有风格：页面平铺 `discover.tsx`、通用组件 `camelCase`、页面私有组件多为 `PascalCase`
-- 事件名常量集中定义在 `src/socket/events.ts` 的 `EVENTS` 对象
+- 事件名与 payload 类型由 `src/protocol/generated/` 提供（后端 `internal/protocol` 经 gen-protocol 生成，禁止手改）；`src/socket/events.ts` 仅重导出
 - TypeScript 严格模式；Biome 开启 `noUnusedImports: error`、`noExplicitAny: off`
 - 页面编排层保持轻量，复杂 UI 下沉到同级 `components/`（该目录不会被生成成路由）
 

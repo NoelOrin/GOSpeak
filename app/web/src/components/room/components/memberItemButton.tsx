@@ -11,7 +11,7 @@ export default function MemberItemButton({
 	member,
 	onSelectMember,
 }: MemberItemButtonPropsType) {
-	const name = member.displayName || member.name || member.identity;
+	const name = member.display_name || member.name || member.identity;
 	return (
 		<button
 			type="button"
@@ -31,7 +31,7 @@ export default function MemberItemButton({
 				/>
 			</span>
 			<span className="flex-1 truncate text-left">{name}</span>
-			{(member.isMicMuted || member.isMuted) && (
+			{(member.is_mic_muted || member.is_muted) && (
 				<MicOff size={12} className="text-faint-foreground shrink-0" />
 			)}
 		</button>

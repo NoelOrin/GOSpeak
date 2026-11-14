@@ -64,6 +64,7 @@ export default function ChatWindow() {
 	virtualizerRef.current = virtualizer;
 
 	// 切换会话后一律回到最新消息
+	// biome-ignore lint/correctness/useExhaustiveDependencies: active 为有意触发器（切会话即重置贴底标记），effect 体内无需引用
 	useEffect(() => {
 		atBottomRef.current = true;
 	}, [active]);

@@ -253,7 +253,6 @@ async function joinTextRoom(room: {
 		try {
 			await socketStore.joinRoom(
 				room.name,
-				useUserStore.getState().user?.name ?? "",
 				room.password,
 				room.domain_uuid ?? socketStore.currentDomainUUID() ?? undefined,
 			);
@@ -315,7 +314,6 @@ async function retryTextRoomWithPassword(password: string) {
 		try {
 			await socketStore.joinRoom(
 				textRoomName,
-				useUserStore.getState().user?.name ?? "",
 				password,
 				textRoomDomainUUID ?? undefined,
 			);

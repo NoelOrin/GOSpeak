@@ -170,8 +170,8 @@ export default function RoomList() {
 				domain_uuid: updated.domain_uuid,
 				description: updated.description,
 				limit: updated.limit,
-				audioOnly: updated.audio_only,
-				allowAudience: updated.allow_audience,
+				audio_only: updated.audio_only,
+				allow_audience: updated.allow_audience,
 				type: updated.type,
 			});
 		}

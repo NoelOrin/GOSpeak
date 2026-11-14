@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	addCreatedRoom,
-	applyMemberJoinedShell,
+	applyMemberJoined,
 	applyMemberLeft,
 	applyMemberUpdated,
 	mergeRoomUpdated,
@@ -16,11 +16,11 @@ const member = (
 	id: identity,
 	identity,
 	name: identity,
-	displayName: identity,
+	display_name: identity,
 	avatar: "",
-	isMuted: false,
-	isMicMuted: false,
-	joinedAt: 1,
+	is_muted: false,
+	is_mic_muted: false,
+	joined_at: 1,
 	...extra,
 });
 
@@ -33,14 +33,14 @@ const room = (
 	uuid: "u1",
 	name,
 	domain_uuid,
-	hasPassword: false,
+	has_password: false,
 	description: "desc",
 	limit: 10,
-	audioOnly: true,
-	allowAudience: false,
+	audio_only: true,
+	allow_audience: false,
 	members,
 	count: members.length,
-	createdAt: 100,
+	created_at: 100,
 });
 
 describe("roomState reducers", () => {
@@ -48,10 +48,10 @@ describe("roomState reducers", () => {
 		const prev = [room("lobby", [member("a")])];
 		const incoming = {
 			name: "lobby",
-			hasPassword: true,
+			has_password: true,
 			members: [member("a"), member("b")],
 			count: 2,
-			createdAt: 200,
+			created_at: 200,
 			// 这些零值不应覆盖本地 DB 字段
 			id: 0,
 			uuid: "",
@@ -62,8 +62,8 @@ describe("roomState reducers", () => {
 		const next = mergeRoomUpdated(prev, incoming);
 		expect(next[0].description).toBe("desc");
 		expect(next[0].limit).toBe(10);
-		expect(next[0].audioOnly).toBe(true);
-		expect(next[0].hasPassword).toBe(true);
+		expect(next[0].audio_only).toBe(true);
+		expect(next[0].has_password).toBe(true);
 		expect(next[0].members.map((m) => m.identity)).toEqual(["a", "b"]);
 		expect(next[0].count).toBe(2);
 		expect(next[0].id).toBe(1);
@@ -88,7 +88,7 @@ describe("roomState reducers", () => {
 	it("mergeRoomUpdated inserts missing room shell", () => {
 		const next = mergeRoomUpdated([], {
 			name: "new-room",
-			hasPassword: false,
+			has_password: false,
 			members: [member("x")],
 			count: 1,
 		} as RoomInfo);
@@ -103,25 +103,23 @@ describe("roomState reducers", () => {
 		expect(next).toBe(prev);
 	});
 
-	it("applyMemberJoinedShell appends shell member without wiping existing ones", () => {
-		const prev = [room("lobby", [member("a", { displayName: "Alice" })])];
-		const next = applyMemberJoinedShell(prev, {
+	it("applyMemberJoined only bumps count and never fabricates member shells", () => {
+		const prev = [room("lobby", [member("a", { display_name: "Alice" })])];
+		const next = applyMemberJoined(prev, {
 			room: "lobby",
 			identity: "b",
 			id: "id-b",
 			stream: "s1",
 		});
-		expect(next[0].members.map((m) => m.identity)).toEqual(["a", "b"]);
-		expect(next[0].members[0].displayName).toBe("Alice");
-		expect(next[0].members[1].name).toBe("");
-		expect(next[0].members[1].displayName).toBe("");
-		expect(next[0].members[1].stream).toBe("s1");
+		// 成员明细不本地造壳：等 room:updated / join ack 全量补齐
+		expect(next[0].members.map((m) => m.identity)).toEqual(["a"]);
+		expect(next[0].members[0].display_name).toBe("Alice");
 		expect(next[0].count).toBe(2);
 	});
 
-	it("applyMemberJoinedShell only updates the matching domain room", () => {
+	it("applyMemberJoined only updates the matching domain room", () => {
 		const prev = [room("lobby", [], "domain-a"), room("lobby", [], "domain-b")];
-		const next = applyMemberJoinedShell(prev, {
+		const next = applyMemberJoined(prev, {
 			room: "lobby",
 			domain_uuid: "domain-b",
 			identity: "b",
@@ -129,12 +127,12 @@ describe("roomState reducers", () => {
 		});
 		expect(next[0].count).toBe(0);
 		expect(next[1].count).toBe(1);
-		expect(next[1].members[0].identity).toBe("b");
+		expect(next[1].members).toHaveLength(0);
 	});
 
-	it("applyMemberJoinedShell is idempotent for same id but still bumps count like current store", () => {
+	it("applyMemberJoined bumps count even for an already present member", () => {
 		const prev = [room("lobby", [member("a", { id: "id-a" })])];
-		const once = applyMemberJoinedShell(prev, {
+		const once = applyMemberJoined(prev, {
 			room: "lobby",
 			identity: "a",
 			id: "id-a",
@@ -187,12 +185,12 @@ describe("roomState reducers", () => {
 		const next = applyMemberUpdated(prev, {
 			room: "lobby",
 			identity: "b",
-			isMicMuted: true,
+			is_mic_muted: true,
 		});
-		expect(next[0].members.find((m) => m.identity === "b")?.isMicMuted).toBe(
+		expect(next[0].members.find((m) => m.identity === "b")?.is_mic_muted).toBe(
 			true,
 		);
-		expect(next[0].members.find((m) => m.identity === "a")?.isMicMuted).toBe(
+		expect(next[0].members.find((m) => m.identity === "a")?.is_mic_muted).toBe(
 			false,
 		);
 	});
@@ -206,10 +204,10 @@ describe("roomState reducers", () => {
 			room: "lobby",
 			domain_uuid: "domain-a",
 			identity: "a",
-			isMicMuted: true,
+			is_mic_muted: true,
 		});
-		expect(next[0].members[0].isMicMuted).toBe(true);
-		expect(next[1].members[0].isMicMuted).toBe(false);
+		expect(next[0].members[0].is_mic_muted).toBe(true);
+		expect(next[1].members[0].is_mic_muted).toBe(false);
 	});
 
 	it("upsertRoomMembersFromAck replaces members for room and inserts if missing", () => {

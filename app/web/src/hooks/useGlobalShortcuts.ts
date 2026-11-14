@@ -45,7 +45,7 @@ export function useGlobalShortcuts() {
 			const roomName = socketStore.currentRoom();
 			const myName = useUserStore.getState().user?.name;
 			if (roomName && myName) {
-				socketStore.emitMicState(roomName, myName, next);
+				socketStore.emitMicState(roomName, next);
 			}
 			e.preventDefault();
 		};
