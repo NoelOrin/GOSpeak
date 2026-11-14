@@ -228,7 +228,7 @@ jobs:
           release_args=(
             "$RELEASE_TAG"
             --target "$target_sha"
-            --title "$RELEASE_TAG"
+            --title "GOSpeak v${RELEASE_VERSION}"
             --notes-file /tmp/release-notes.md
           )
           # 预发布版本（含 - / + 的语义化版本）自动标记 prerelease
