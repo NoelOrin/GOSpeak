@@ -1,8 +1,6 @@
 package signal
 
 import (
-	"context"
-
 	"GOSpeak/internal/protocol"
 	"GOSpeak/internal/ws"
 	"GOSpeak/internal/logger"
@@ -89,22 +87,12 @@ func (h *Hub) OnDisconnect(c ws.ClientMessenger) {
 		h.broadcastActiveSpeakers(domainUUID, logicalName)
 	}
 
-	// SFU 清理异步：RemoveParticipant/DeleteRoom 是 HTTP/gRPC 调用，可能慢。
-	// 同步阻塞会拉长 OnDisconnect 持续时间，加剧连接 goroutine
-	// 竞态（连接已 failed 时库 serveRead 状态错乱触发 gorilla panic）。
-	// 丢后台 goroutine，handler 立即返回。
-	if len(cleanups) > 0 {
-		if h.cleanupPub != nil {
-			for _, c := range cleanups {
-				if err := h.cleanupPub.PublishSFUCleanup(context.Background(), c.room, c.identity, c.deleted); err != nil {
-					// 入队失败：降级内联清理并 Warn 可见，避免队列故障时产生幽灵房间/成员。
-					logger.WithComponent("Signal").Warnf("[Signal] enqueue sfu cleanup failed, run inline: room=%s err=%v", c.room, err)
-					h.runCleanupsInline([]disconnectCleanup{c})
-				}
-			}
-		} else {
-			h.runCleanupsInline(cleanups)
-		}
+	// SFU 清理走「断连宽限」：RemoveParticipant/DeleteRoom 是 HTTP/gRPC 调用，可能慢，
+	// 且一次 WS 抖动不应立即把媒体 participant 移除。延迟到宽限期结束执行，
+	// 期间同一 identity 重新加入同房间则取消（重新加入时 cancelPendingCleanup）。
+	// 信令侧成员移除/member:left 广播仍在上面同步完成，保持房间列表一致。
+	for _, c := range cleanups {
+		h.scheduleDisconnectCleanup(c)
 	}
 
 	for _, name := range updatedRooms {

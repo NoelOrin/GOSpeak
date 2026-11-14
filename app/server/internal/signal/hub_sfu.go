@@ -58,7 +58,7 @@ func (h *Hub) roomHasLiveRemoteMember(room string) (bool, error) {
 	return false, nil
 }
 
-// deleteRoomSafe 删除 SFU room，仅在共享成员里没有其他实例存活成员时执行。
+// deleteRoomSafe 删除 SFU room，仅在确认没有其他实例存活成员、且 SFU 侧也已无参与者时执行。
 // provider 不支持时静默降级。
 func (h *Hub) deleteRoomSafe(room string) {
 	if h.membershipStore != nil {
@@ -70,6 +70,21 @@ func (h *Hub) deleteRoomSafe(room string) {
 		if hasRemote {
 			logger.WithComponent("Signal").Infof("[Signal] skip SFU room delete %s: live remote members", room)
 			return
+		}
+		// 共享 KV 的成员 lease 会因实例心跳抖动/短暂分区而临时过期，此时 KV 里读不到远端成员，
+		// 但他们仍连着媒体。多实例下以 SFU 事实为准：SFU 仍有参与者就绝不删房，避免误删活人房
+		// 导致跨实例的用户被踢。空房最终由 reconcileEmptyRooms 依据 SFU 空房状态兜底删除。
+		if h.sfuProvider != nil {
+			parts, listErr := h.sfuProvider.ListParticipants(room)
+			if listErr != nil {
+				if !errors.Is(listErr, pkg.ErrSFUNotSupported) {
+					logger.WithComponent("Signal").Infof("[Signal] skip SFU room delete %s: list participants failed: %v", room, listErr)
+					return
+				}
+			} else if len(parts) > 0 {
+				logger.WithComponent("Signal").Infof("[Signal] skip SFU room delete %s: %d participants still present", room, len(parts))
+				return
+			}
 		}
 	}
 	h.forceDeleteRoom(room)

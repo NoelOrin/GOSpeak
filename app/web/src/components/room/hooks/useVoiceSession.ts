@@ -60,6 +60,8 @@ export function useVoiceSession() {
 	}
 	const leavingRef = useRef(new WeakSet<SFUClient>());
 	const reconnectingClientsRef = useRef(new WeakSet<SFUClient>());
+	// 媒体单独掉线时的自动重进次数（有上限，防止抖动循环）；join 成功/重连成功后归零。
+	const mediaRejoinAttemptsRef = useRef(0);
 	// session 的镜像 ref：回调里读取最新值，避免闭包过期
 	const sessionRef = useRef<Session | null>(null);
 	sessionRef.current = session;
@@ -89,6 +91,13 @@ export function useVoiceSession() {
 		},
 		retry: false,
 		staleTime: 5 * 60 * 1000,
+		// 关键：禁止窗口重新聚焦 / 网络重连时自动 refetch。
+		// tokenQuery.data 变化会触发下面的 join effect 拆掉当前 LiveKit 会话并重进；
+		// 若允许 focus/reconnect 自动 refetch，用户切到别的标签页久了再回来（token 已 stale）
+		// 就会被「踢出房间 + 自动重进」。会话恢复只走显式的 refetch()（信令重连自愈、
+		// 媒体掉线自动重进、provider 切换、手动重试）。
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
 	});
 
 	// 信令重连后的自愈（会话生命周期，不属于 provider 适配）：
@@ -192,6 +201,7 @@ export function useVoiceSession() {
 
 	// token 到达 → 发起 join（对应 Solid effect on(tokenQuery.data)）
 	// 依赖数组已完整覆盖 tokenQuery.data / abortCurrentJoin / teardownClient / teardownSession，
+	// 以及媒体掉线自动重进用到的 tokenQuery.refetch（react-query 的 refetch 引用稳定）。
 	// 无需 lint suppression（此处原有的失效 eslint 注释已删除）。
 	useEffect(() => {
 		const data = tokenQuery.data;
@@ -295,6 +305,7 @@ export function useVoiceSession() {
 					// media_ready 时 VoiceChat/audio bridge 需要 client 已就绪。
 					onClientReady: (client, joinedProvider) => {
 						if (signal.aborted) return;
+						mediaRejoinAttemptsRef.current = 0;
 						createdClient = client;
 						activeJoinClientRef.current = client;
 						socketStore.setCurrentSFUProvider(joinedProvider);
@@ -360,6 +371,33 @@ export function useVoiceSession() {
 					) {
 						return;
 					}
+					// 媒体单独掉线（信令 WS 仍在线）且为可恢复原因时，自动重取 token 重新加入，
+					// 覆盖「LiveKit 重启/ICE 失败但 WS 未断」场景：此时 connected 不会翻转，
+					// 原有重连自愈不会触发。次数上限避免抖动循环。
+					const socketOnline = useSocketStore.getState().connected;
+					if (
+						socketOnline &&
+						!info?.unrecoverable &&
+						mediaRejoinAttemptsRef.current < 3
+					) {
+						mediaRejoinAttemptsRef.current += 1;
+						reconnectingClientsRef.current.delete(joinedClient);
+						console.warn(
+							"[RoomDetail] SFU media dropped while signaling online, auto re-join",
+							info,
+						);
+						setSession((s) =>
+							s && s.client === joinedClient
+								? { ...s, status: "reconnecting", error: null }
+								: s,
+						);
+						void (async () => {
+							await teardownClient(joinedClient);
+							if (signal.aborted) return;
+							void tokenQuery.refetch();
+						})();
+						return;
+					}
 					console.warn("[RoomDetail] SFU disconnected unexpectedly", info);
 					const disconnectedMsg =
 						info?.reason === "DUPLICATE_IDENTITY"
@@ -403,6 +441,7 @@ export function useVoiceSession() {
 						reconnectingClientsRef.current.has(joinedClient) ||
 						cur?.status === "reconnecting";
 					reconnectingClientsRef.current.delete(joinedClient);
+					mediaRejoinAttemptsRef.current = 0;
 					if (!wasReconnecting) {
 						clearReconnectingToast();
 						return;
@@ -457,7 +496,13 @@ export function useVoiceSession() {
 				}
 			}
 		})();
-	}, [tokenQuery.data, abortCurrentJoin, teardownClient, teardownSession]);
+	}, [
+		tokenQuery.data,
+		abortCurrentJoin,
+		teardownClient,
+		teardownSession,
+		tokenQuery.refetch,
+	]);
 
 	// token 查询失败（对应 Solid effect on tokenQuery.isError）
 	useEffect(() => {

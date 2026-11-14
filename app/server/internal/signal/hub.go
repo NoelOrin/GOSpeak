@@ -89,6 +89,14 @@ type Hub struct {
 	// typing 记录「正在输入」的节流状态，避免每个按键都向房间广播。
 	typingMu sync.Mutex
 	typing   map[string]*typingEntry
+	// pendingCleanups 是断连后延迟执行的 SFU 清理任务（key = roomKey\x00identity）。
+	// WS 抖动（切网/锁屏/代理超时/后端发布）断连时，若 grace 窗口内同一 identity 重新
+	// 加入同一房间则取消清理，避免媒体 participant 被立即移除导致「被踢」。
+	// 由 cleanupMu 保护，与 h.mu 解耦（定时器回调先取 cleanupMu、释放后再取 h.mu）。
+	pendingCleanups map[string]*pendingCleanup
+	cleanupMu       sync.Mutex
+	// disconnectGrace 是断连到 SFU 清理的宽限期；0 表示立即清理（测试默认）。
+	disconnectGrace time.Duration
 }
 
 // HubOptions 聚合 Hub 的协作依赖，由组合根在构造时一次传入。
@@ -104,6 +112,9 @@ type HubOptions struct {
 	MembershipStore         membershipStore
 	InstanceID              string
 	StateNotifier           stateNotifier
+	// DisconnectGrace 是 WS 断连到 SFU 清理的宽限期；0 = 立即清理。
+	// 生产组合根应注入正值，避免信令抖动导致媒体被立即踢出。
+	DisconnectGrace time.Duration
 }
 
 // NewHub 测试缝四参构造（配合 Set* 后置注入）；生产路径请使用 NewHubWithOptions。
@@ -125,6 +136,8 @@ func NewHubWithOptions(store roomStore, mStore muteStore, uStore userStore, pChe
 		muteCache:        make(map[string]muteCacheEntry),
 		typing:           make(map[string]*typingEntry),
 		emptyRoomSeen:    make(map[string]int64),
+		pendingCleanups:  make(map[string]*pendingCleanup),
+		disconnectGrace:  opts.DisconnectGrace,
 	}
 	h.fanout = opts.Fanout
 	h.eventBus = opts.EventBus

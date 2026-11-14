@@ -283,6 +283,10 @@ func (h *Hub) OnRoomJoin(c ws.ClientMessenger, data string) (string, error) {
 	}
 	h.mu.Unlock()
 
+	// 断连宽限期内同一 identity 重新走 room:join（语音房重连只补信令面注册、媒体仍在）
+	// 也视为已重新加入：取消待执行的 SFU 清理，避免媒体 participant 被移除后用户掉线。
+	h.cancelPendingCleanup(key, identity)
+
 	if roomType == model.RoomTypeText {
 		h.setClientDomain(c, req.DomainUUID)
 	}
@@ -611,6 +615,9 @@ func (h *Hub) OnRoomJoinSFU(c ws.ClientMessenger, data string) (string, error) {
 			"error": "not in room",
 		})
 	}
+
+	// 断连宽限期内重新加入同一房间：取消待执行的 SFU 清理，媒体 participant 得以保留。
+	h.cancelPendingCleanup(newKey, identity)
 
 	h.publishRoom(roomKey(req.DomainUUID, req.Room), EventMemberJoined, map[string]interface{}{
 		"room":        req.Room,

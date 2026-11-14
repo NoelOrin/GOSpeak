@@ -204,6 +204,7 @@ func StartGin(env EnvEnum) error {
 		MembershipStore:         store,
 		InstanceID:              instanceID,
 		StateNotifier:           eventBus,
+		DisconnectGrace:         signal.DefaultDisconnectGracePeriod,
 	})
 	signalHub.StartMembershipHeartbeat()
 	signalHub.StartEmptyRoomReconciler(0)
